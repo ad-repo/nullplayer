@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| BB15 | `parser_*` / `shutdown()` | 6 skins / 15 MAKI program symbols ([M9]) | M | Measured |
 | BB9 | Finish the Multi Content View visualization placements | 4 variants / 2 base markups ([M6]) | M | Measured |
 | B14 | `<Wasabi:TabSheet>` | 4 skins / 5 declarations ([M10]); contradicts the old “one measured skin” note | L | Measured |
 | B21 | `enqueueFile` / `playFile` | 3 skins / 3 MAKI program symbols ([M11]) | M | Measured |
@@ -64,7 +63,6 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m6"></a>**M6:** `rg -i -l 'info\.component\.vis|vis\.content\.group' "$corpus"/Big\ Bento\ Modern* --glob '*.xml'`
 - <a id="m7"></a>**M7:** `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
 - <a id="m8"></a>**M8:** `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
-- <a id="m9"></a>**M9:** `rg -a -i -o 'parser_[A-Za-z0-9_]+|shutdown' "$corpus"`
 - <a id="m10"></a>**M10:** `rg -i -o '<[[:space:]]*Wasabi:TabSheet' "$corpus" --glob '*.xml'`
 - <a id="m11"></a>**M11:** `rg -a -i -o 'enqueueFile|playFile' "$corpus"`
 - <a id="m12"></a>**M12:** `rg -a -i -o 'getItemLabel|getItemFocused|setSubItem' "$corpus"`
@@ -169,10 +167,6 @@ The implementation and its automated coverage shipped; that record is in
       this check is accepted.
 
 ---
-
-### BB15
-
-- [ ] **BB15. `parser_*` (XmlDoc) and `shutdown()`** — inert, no measured demand in this family.
 
 **Not open, and not a defect:**
 

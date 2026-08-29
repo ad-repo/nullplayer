@@ -2418,3 +2418,37 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
       Manual QA accepted 2026-08-28 on Defix Hi-End 200 (wood frame, 406 wide, bands filling the
       width). CornerAmp Redux re-checked in the same session: `equalizer=declared:eq` and its own
       275×145 window, unchanged. `swift test`: 1344 passed.
+
+---
+
+## BB15 — `parser_*` (XmlDoc) and `shutdown()` — closed 2026-08-29
+
+- [x] **BB15. The Web Reader's provider list is read from the skin's own XML. Fixed 2026-08-29.**
+      The ranked reach was wrong in both halves. **`shutdown()` has no demand at all:** its seven
+      corpus hits are in `.m` source files the skins ship but never compile, so nothing executes it.
+      **`parser_*` is 2 base skins plus their 2 Light siblings, not 6** — every hit is in Big Bento
+      Modern's `scripts/reader/main.maki`.
+
+      What it gated was concrete: `XmlDoc.exists()` answered a hardcoded false, so the reader took
+      its `"Oops! Something went wrong!"` branch on every `onSetVisible`, hid its address group and
+      left the provider drop-down empty. `load`/`exists` now resolve through the VFS, and
+      `parser_addCallback`/`parser_start`/`parser_destroy` walk the document and dispatch
+      `parser_onCallback(path, tag, names, values)` for each match — the four arguments and the two
+      `List` receivers read off the bytecode, not guessed. All 31 providers now land in the skin's
+      list with their labels, comments, icons and URLs.
+
+      **The handler aborted three instructions in**, the same masking shape `scripting.md` records
+      for `getSettingsPath`, so seven methods came with it: `setIconWidth`/`setIconHeight`/
+      `setShowIcons`, `setItemLabel`/`setSubItem`/`setItemIcon`/`setSelected`,
+      `setCancelIEErrorPage`, and `setText`/`getText` on a script string object (path-variable
+      expanding, which is how the skin builds its `%CUSTOMSOURCE%` path). `WasabiGuiList` grew a
+      column and icon model; a row written with a plain `addItem` still draws across the whole box.
+      The render harness gained an `onsetvisible` driver — there had been no headless route to this
+      handler at all.
+
+      **Verified at the script level, not on screen.** BB25 covers this skin's reader toolbar with
+      the WebKit surface, so the drop-down is not reachable in the app. The handover that uncovers
+      it is written and committed **switched off** (`usesSkinAuthoredReaderToolbar`), because three
+      of that row's four controls are still dead: `Browser.back()`/`forward()` are unimplemented and
+      Refresh aborts on `getColor`. Flipping it today would trade working host chrome for a toolbar
+      with one live control. `swift test`: 1430 passed.
