@@ -346,6 +346,9 @@ protocol WinampModernBrowserSurface: AnyObject {
     var view: NSView { get }
     func navigate(_ request: WinampModernBrowserRequest)
     func setVisible(_ visible: Bool)
+    /// Whether the surface draws its own address/navigation bar. Off for a skin that authored one of
+    /// its own over the same box — see `WinampModernMainView.suppressesHostLocationBar`.
+    func setShowsLocationBar(_ shows: Bool)
     func applySkinScale(_ scale: CGFloat)
     func unmountFromHolder()
     func prepareForUITeardown()

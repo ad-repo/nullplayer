@@ -47,16 +47,65 @@ final class WinampModernBrowserTests: XCTestCase {
                        surface.bounds.height - WinampModernBrowserSurfaceView.locationBarHeight)
     }
 
-    func testBentoReaderUsesTheWholeParentSoItsDuplicateToolbarIsCovered() {
+    /// The shipped default: `usesSkinAuthoredReaderToolbar` is off, so BB25 still stands — the
+    /// surface fills Bento's reader parent and covers the skin's toolbar row, and the host keeps its
+    /// own chrome. Three of that row's four controls are still dead (`back`, `forward`, and Refresh
+    /// via `getColor`), which is why the switch has not been flipped.
+    func testBentoReaderStaysCoveredWhileItsToolbarIsUnfinished() {
+        let authored = CGRect(x: 20, y: 43, width: 500, height: 300)
+        let parent = CGRect(x: 20, y: 5, width: 500, height: 338)
+
+        XCTAssertFalse(WinampModernMainView.usesSkinAuthoredReaderToolbar)
+        XCTAssertEqual(WinampModernMainView.browserSurfaceFrame(
+            browserFrame: authored, browserID: "browserpro.browser",
+            parentID: "centro.browser", parentFrame: parent), parent)
+        XCTAssertFalse(WinampModernMainView.suppressesHostLocationBar(
+            browserID: "browserpro.browser", parentID: "centro.browser"))
+    }
+
+    /// What the switch flips to, so the parked code cannot rot unnoticed: the browser keeps the
+    /// rectangle the skin authored and the *host's* bar is the one that goes.
+    func testSwitchedOnTheSkinKeepsItsOwnToolbarAndTheHostDropsIts() {
         let authored = CGRect(x: 20, y: 43, width: 500, height: 300)
         let parent = CGRect(x: 20, y: 5, width: 500, height: 338)
 
         XCTAssertEqual(WinampModernMainView.browserSurfaceFrame(
-            browserFrame: authored, browserID: "browserpro.browser",
-            parentID: "centro.browser", parentFrame: parent), parent)
-        XCTAssertEqual(WinampModernMainView.browserSurfaceFrame(
-            browserFrame: authored, browserID: "some.browser",
-            parentID: "some.group", parentFrame: parent), authored)
+            browserFrame: authored, browserID: "browserpro.browser", parentID: "centro.browser",
+            parentFrame: parent, usesSkinToolbar: true), authored)
+        XCTAssertTrue(WinampModernMainView.suppressesHostLocationBar(
+            browserID: "browserpro.browser", parentID: "centro.browser", usesSkinToolbar: true))
+    }
+
+    /// Every other browser keeps its authored box and our chrome in **both** states: a skin that
+    /// merely puts a button near a browser has not built an address bar, and losing ours would leave
+    /// it with no way to navigate at all.
+    func testOtherBrowsersAreUnaffectedInEitherState() {
+        let authored = CGRect(x: 20, y: 43, width: 500, height: 300)
+        let parent = CGRect(x: 20, y: 5, width: 500, height: 338)
+
+        for uses in [false, true] {
+            XCTAssertEqual(WinampModernMainView.browserSurfaceFrame(
+                browserFrame: authored, browserID: "some.browser", parentID: "some.group",
+                parentFrame: parent, usesSkinToolbar: uses), authored)
+            XCTAssertFalse(WinampModernMainView.suppressesHostLocationBar(
+                browserID: "browserpro.browser", parentID: "some.group", usesSkinToolbar: uses))
+            XCTAssertFalse(WinampModernMainView.suppressesHostLocationBar(
+                browserID: "some.browser", parentID: "centro.browser", usesSkinToolbar: uses))
+            XCTAssertFalse(WinampModernMainView.suppressesHostLocationBar(
+                browserID: nil, parentID: nil, usesSkinToolbar: uses))
+        }
+    }
+
+    func testSuppressedLocationBarGivesTheWebViewTheWholeBox() {
+        let surface = WinampModernBrowserSurfaceView(
+            frame: NSRect(x: 0, y: 0, width: 600, height: 400), vfs: nil)
+        surface.setShowsLocationBar(false)
+        surface.layoutSubtreeIfNeeded()
+
+        let webView = surface.subviews.compactMap { $0 as? WKWebView }.first
+        XCTAssertEqual(webView?.frame.height, surface.bounds.height)
+        let bar = surface.subviews.first { $0.subviews.contains(where: { $0 is NSSearchField }) }
+        XCTAssertEqual(bar?.isHidden, true)
     }
 
     func testRemoteHTTPAndHTTPSAreAllowed() {

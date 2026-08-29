@@ -21,6 +21,10 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
     private var pendingRequest: WinampModernBrowserRequest?
     private var isSurfaceVisible = false
     private var isTornDown = false
+    /// Off when the skin supplies its own reader toolbar over this box (Big Bento Modern's Web
+    /// Reader). Two address bars stacked on one browser is the BB25 complaint; the skin's is the one
+    /// that keeps its provider drop-down, so ours is the one that goes.
+    private var showsLocationBar = true
 
     var view: NSView { self }
 
@@ -56,9 +60,16 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    func setShowsLocationBar(_ shows: Bool) {
+        guard showsLocationBar != shows else { return }
+        showsLocationBar = shows
+        locationBar.isHidden = !shows
+        needsLayout = true
+    }
+
     override func layout() {
         super.layout()
-        let barHeight = min(Self.locationBarHeight, bounds.height)
+        let barHeight = showsLocationBar ? min(Self.locationBarHeight, bounds.height) : 0
         webView.frame = NSRect(x: 0, y: 0, width: bounds.width,
                                height: max(0, bounds.height - barHeight))
         locationBar.frame = NSRect(x: 0, y: max(0, bounds.height - barHeight),

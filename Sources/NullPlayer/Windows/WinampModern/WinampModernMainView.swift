@@ -843,6 +843,8 @@ final class WinampModernMainView: NSView {
                     sourceLogicalPath: browser.object.source.path)
                 let request = pendingBrowserRequests.removeValue(forKey: id) ?? markupRequest
                 guard let surface = componentHost?.makeBrowserSurface(initialRequest: request) else { continue }
+                surface.setShowsLocationBar(!Self.suppressesHostLocationBar(
+                    browserID: browser.object.xmlID, parentID: browser.object.parent?.xmlID))
                 surface.applySkinScale(skinScale)
                 addSubview(surface.view)
                 browserSurfaces[id] = surface
@@ -970,16 +972,51 @@ final class WinampModernMainView: NSView {
     }
 
     /// Big Bento Modern's four variants inherit one reader which draws a 38px Winamp browser
-    /// toolbar above `browserpro.browser`. NullPlayer supplies its own working address/navigation
-    /// chrome inside the WebKit surface, so leaving that skin row exposed creates the duplicate,
-    /// inert toolbar reported in BB25. Replace the exact shared reader structure's whole parent;
-    /// other skins keep the browser rectangle they authored.
+    /// toolbar above `browserpro.browser`.
+    ///
+    /// **BB25 covered that row with the WebKit surface; BB15 uncovered it again, and the difference
+    /// is that the row is no longer inert.** When BB25 was closed the skin's toolbar was decoration
+    /// over a backend that did not exist, so filling the whole parent hid a duplicate of chrome we
+    /// already supplied. The provider drop-down on that row is now live — `XmlDoc`'s callback parser
+    /// fills it with the 31 entries of the skin's own `reader_providers.xml` — so covering it hides
+    /// a working control, which is a worse defect than the one BB25 fixed.
+    ///
+    /// The answer to "two toolbars" is therefore *whose wins*, not *cover it*: the browser keeps the
+    /// rectangle it authored, and `suppressesHostLocationBar` turns **our** chrome off for the one
+    /// structure that brings its own. Anything else still gets ours.
+    ///
+    /// **`usesSkinAuthoredReaderToolbar` is off, and the switch is the whole point.** Uncovering that
+    /// row is only an improvement once the row *works*, and three of its four buttons still do not:
+    /// `Browser.back()` and `Browser.forward()` are not implemented at all (the handler aborts on the
+    /// unknown method), and Refresh re-enters the navigate routine, which aborts on `getColor` —
+    /// script access to the skin's palette, which needs a colour-resolution seam the runtime does not
+    /// have. Switched on today the user trades working host chrome for a toolbar with one live
+    /// control, which is a worse defect than the duplicate BB25 was filed for. Finish those three and
+    /// flip this; the code below is what it flips to.
+    static let usesSkinAuthoredReaderToolbar = false
+
     static func browserSurfaceFrame(browserFrame: CGRect, browserID: String?, parentID: String?,
-                                    parentFrame: CGRect?) -> CGRect {
-        guard browserID?.caseInsensitiveCompare("browserpro.browser") == .orderedSame,
-              parentID?.caseInsensitiveCompare("centro.browser") == .orderedSame,
+                                    parentFrame: CGRect?,
+                                    usesSkinToolbar: Bool = usesSkinAuthoredReaderToolbar) -> CGRect {
+        guard !usesSkinToolbar else { return browserFrame }
+        guard isBentoReader(browserID: browserID, parentID: parentID),
               let parentFrame else { return browserFrame }
         return parentFrame
+    }
+
+    /// Whether the skin draws its own reader toolbar over this `<browser>`, so the host must not add
+    /// a second one. Gated on the exact shared Bento reader structure rather than on a guess about
+    /// sibling controls: a skin that merely puts a button near a browser has not built an address
+    /// bar, and losing ours would leave it with no way to navigate at all.
+    static func suppressesHostLocationBar(browserID: String?, parentID: String?,
+                                          usesSkinToolbar: Bool = usesSkinAuthoredReaderToolbar) -> Bool {
+        usesSkinToolbar && isBentoReader(browserID: browserID, parentID: parentID)
+    }
+
+    /// The one shared structure the four Big Bento Modern variants inherit.
+    private static func isBentoReader(browserID: String?, parentID: String?) -> Bool {
+        browserID?.caseInsensitiveCompare("browserpro.browser") == .orderedSame
+            && parentID?.caseInsensitiveCompare("centro.browser") == .orderedSame
     }
 
     /// Top-left skin coordinates to the view's bottom-left ones, at the current UI Size.
