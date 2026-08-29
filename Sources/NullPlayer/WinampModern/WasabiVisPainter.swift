@@ -229,20 +229,31 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
         let levels = input.levels
         let count = max(1, min(style.isThin ? Self.thinAnalyzerBands : Self.wideAnalyzerBands,
                                min(levels.count, Int(frame.width))))
-        // One band, as the fraction of the box its bar fills: the loudest bin in the bucket, on the
-        // **decibel** scale `getVisBand` and the VU meters already answer in (Phases 29–30). The tap
-        // is linear, and drawn linearly ordinary music sits in the bottom of the box.
+        // One band, as the fraction of the box its bar fills: the loudest bin in the bucket, used
+        // **as it stands** — no decibel curve, and no `Gain.builtInAnalyzer` calibration.
+        //
+        // Both existed to serve a premise that measurement disproved: that `host.spectrumLevels` is a
+        // linear FFT magnitude. It is not. `AudioEngine` has already taken `20·log10` of the bins and
+        // normalized the result to 0…1 — over a 20 dB window in `.accurate`, or against an adaptive
+        // per-region reference under a square-root curve in the other two modes — so the tap arrives
+        // display-ready and already compressed. Sending it through `visByte(forMagnitude:)` took the
+        // log of a log, and two compounded logs are what flattened the row: the whole 0.1…1.0 range
+        // of the engine's output landed between 67% and 100% of the box, so music with real range
+        // drew as a straight line near the ceiling. Measured on a live frame, the tap alone already
+        // reports a mean of 0.78–0.98 with up to 52 of its 75 bands pinned at exactly 1.0.
+        //
+        // The 0.8 calibration went with it: it was cut to pull *this decibel curve* down to where
+        // Cava and vis_classic could meet it, and against an already-normalized band all it does is
+        // put the ceiling out of reach. Sensitivity alone remains, so `Normal` is ×1 and a full-scale
+        // band fills the box. `getVisBand` still answers in Winamp's vis byte — that is a script-
+        // facing contract and is deliberately left alone.
         func bandFraction(_ index: Int) -> CGFloat {
             let start = index * levels.count / count
             let end = min(levels.count, max(start + 1, (index + 1) * levels.count / count))
             var peak: Float = 0
             for bin in start..<end { peak = max(peak, levels[bin]) }
-            let byte = WinampModernScriptRuntime.visByte(forMagnitude: peak)
-            // The dB curve puts ordinary music at the top of the box; the gain is what brings it
-            // back down to where the other two engines can meet it (`WasabiVisStyle.Gain`), times
-            // whatever the user has set Sensitivity to.
-            return max(0, min(1, CGFloat(byte) / 255
-                                 * WinampModernVisSensitivity.gain(for: .skin)))
+            return max(0, min(1, CGFloat(peak)
+                                 * WinampModernVisSensitivity.stored(for: .skin).multiplier))
         }
         // Bars are laid out on whole pixels. A fractional slot antialiases the 1px gap between bars
         // into a smear, and a `wide` row then reads as one solid block rather than as Winamp's

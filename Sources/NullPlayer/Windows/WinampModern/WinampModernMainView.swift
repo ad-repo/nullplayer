@@ -1634,9 +1634,14 @@ final class WinampModernMainView: NSView {
     /// The boxes of every `<vis>`/`<eqvis>` in this scene, cached with the other animation rects.
     private func visualizationRects() -> [NSRect] {
         if let visualizationRectsCache { return visualizationRectsCache }
-        let rects = renderer.sceneNodes().compactMap { node -> NSRect? in
+        var rects = renderer.sceneNodes().compactMap { node -> NSRect? in
             guard ["vis", "eqvis"].contains(node.object.typeName.lowercased()) else { return nil }
             return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+        }
+        // A `{0000000A}` holder drawing its own analyzer (BB9) is not a `<vis>` and was invisible to
+        // the filter above, so nothing on this clock ever repainted it.
+        rects += renderer.analyzerComponentHolderFrames().map {
+            viewRect(fromSkin: $0).insetBy(dx: -2, dy: -2)
         }
         visualizationRectsCache = rects
         return rects

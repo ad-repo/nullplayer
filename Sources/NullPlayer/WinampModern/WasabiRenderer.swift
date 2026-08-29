@@ -1297,6 +1297,22 @@ final class WasabiSceneRenderer {
         }
     }
 
+    /// The boxes of every `{0000000A}` holder that draws the analyzer itself (BB9) — that is, every
+    /// visualization holder the view layer has *not* filled with the host's engine, which draws into
+    /// its own view and needs no repaint from us.
+    ///
+    /// These are not `<vis>` elements, so the visualization clock's `typeName` filter never saw them
+    /// and the analyzer in Big Bento's Multi Content View repainted only when something else happened
+    /// to invalidate the whole window — about once a second.
+    func analyzerComponentHolderFrames() -> [CGRect] {
+        componentHolders().compactMap { holder in
+            guard holder.kind == .visualization,
+                  !hostedVisualizationHolders.contains(holder.object.stableID),
+                  holder.frame.width > 1, holder.frame.height > 1 else { return nil }
+            return holder.frame
+        }
+    }
+
     func componentHolder(at point: CGPoint) -> WinampModernComponentHolder? {
         componentHolders().reversed().first { $0.frame.contains(point) }
     }
@@ -2923,13 +2939,38 @@ final class WasabiSceneRenderer {
     /// The waveform every `<vis>` in *this* frame draws from. See `draw(in:)`.
     private var frameWaveform: (left: [UInt8], right: [UInt8])?
 
-    /// The `{0000000A}` holder fallback's falling caps, keyed by object, in bar fractions. Decayed
-    /// once per draw — that surface has no `<vis>` to take a `peakfalloff` from, by design, and is
-    /// left as it was.
-    private var analyzerPeaks: [WasabiObjectID: [CGFloat]] = [:]
-    /// How far one of those caps falls per frame. At the scene's redraw rate this is roughly the drop
-    /// Winamp's own caps have — fast enough to follow a track, slow enough to read as a cap.
-    private static let analyzerPeakDecay: CGFloat = 0.015
+    /// The `{0000000A}` holder analyzer's falling bars and caps, keyed by object, in bar fractions,
+    /// with the clock they were last decayed against.
+    ///
+    /// It has no `<vis>` to take `falloff`/`peakfalloff` from, so it picks a step from the same
+    /// engine-wide tables the `<vis>` analyzer reads — the rates therefore mean the same thing in
+    /// both surfaces, and the one control below is the only thing that has to be tuned.
+    private struct ComponentAnalyzerState {
+        var bars: [CGFloat] = []
+        var peaks: [CGFloat] = []
+        var lastDraw: CFTimeInterval = 0
+    }
+    private var analyzerBoxes: [WasabiObjectID: ComponentAnalyzerState] = [:]
+
+    /// **The two knobs for this surface.** Indices into `WasabiVisStyle.barFalloffSteps` /
+    /// `peakFalloffSteps` — the skin menus' Slower / Slow / Moderate / Fast / Faster. The decay used
+    /// to be a fixed 0.015 *per draw*, which is not a rate at all: this box repainted about once a
+    /// second (the clock never had it), so the caps hung.
+    private static let analyzerBarFalloffStep = 4
+    private static let analyzerPeakFalloffStep = 4
+
+
+    /// The longest step one frame may decay by, so a stall — or the first draw — cannot drop
+    /// everything to the floor at once. `WasabiBuiltInVisRenderer`'s value, for its reason.
+    private static let analyzerMaximumDecayStep: CFTimeInterval = 0.25
+
+    /// Whether this surface still has something falling, so the visualization clock keeps painting
+    /// the decay out instead of stopping with the caps frozen mid-air.
+    var hasDecayingComponentAnalyzerState: Bool {
+        analyzerBoxes.values.contains { state in
+            state.bars.contains { $0 > 0.001 } || state.peaks.contains { $0 > 0.001 }
+        }
+    }
 
     /// What actually paints a `<vis>` box (`WasabiVisPainter.swift`) — Winamp's own analyzer and
     /// oscilloscope, or one of NullPlayer's (B53). Behind a protocol because each of those engines
@@ -2996,7 +3037,9 @@ final class WasabiSceneRenderer {
 
     /// Whether any box still has a bar or a cap above the floor — what tells the window it can stop
     /// repainting once the audio has gone quiet.
-    var hasDecayingVisualizationState: Bool { visRenderer.hasDecayingState }
+    var hasDecayingVisualizationState: Bool {
+        visRenderer.hasDecayingState || hasDecayingComponentAnalyzerState
+    }
 
     private func drawVisualization(_ object: WasabiObject, frame: CGRect, context: CGContext) {
         // Only the box's own size is a precondition here. The spectrum-levels check used to be, and
@@ -3977,16 +4020,55 @@ final class WasabiSceneRenderer {
     /// bands across a 1400px pane is a row of slabs. The band count comes from the box, and the
     /// colours from the skin's palette — the same route every other NullPlayer-owned surface inside a
     /// `.wal` takes, so a colour-theme switch recolours this with everything else.
+    /// `WINAMP_MODERN_VIS_TRACE=1` — what the analyzer is actually being handed, once a second.
+    ///
+    /// The question this exists to settle is whether the flat top is the renderer's or the tap's:
+    /// `AudioEngine`'s `.accurate` path normalizes each band over a **20 dB** window and clamps, so a
+    /// band louder than its ceiling arrives as exactly 1.0 and no scaling here can recover it. `pinned`
+    /// is the count of bands sitting at the clamp.
+    private static var lastVisTrace: CFTimeInterval = 0
+    static func traceVisInput(_ levels: [Float]) {
+        guard ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_TRACE"] == "1",
+              !levels.isEmpty else { return }
+        let now = CACurrentMediaTime()
+        guard now - lastVisTrace > 1 else { return }
+        lastVisTrace = now
+        let pinned = levels.filter { $0 >= 0.999 }.count
+        let mean = levels.reduce(0, +) / Float(levels.count)
+        let head = levels.prefix(12).map { String(format: "%.2f", $0) }.joined(separator: " ")
+        let mode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode") ?? "(default)"
+        NSLog("[VIS_TRACE] mode=\(mode) bands=\(levels.count) pinned@1.0=\(pinned) "
+              + String(format: "min=%.3f max=%.3f mean=%.3f ", levels.min() ?? 0, levels.max() ?? 0, mean)
+              + "low12=[\(head)]")
+    }
+
     private func drawVisualizationBars(_ object: WasabiObject, frame: CGRect, context: CGContext) {
         guard !host.spectrumLevels.isEmpty, frame.width > 0, frame.height > 0 else { return }
         let levels = host.spectrumLevels
         let count = max(1, min(levels.count, Int(frame.width / Self.analyzerBandPitch)))
         let slot = frame.width / CGFloat(count)
 
-        // The same falling caps the `<vis>` analyzer has, held in the same store — a `<component>`
-        // holder and a `<vis>` are different objects, so the keys cannot collide.
-        var peaks = analyzerPeaks[object.stableID] ?? []
-        if peaks.count != count { peaks = Array(repeating: 0, count: count) }
+        // The same falling bars and caps the `<vis>` analyzer has, on the same per-second rates —
+        // held in this surface's own store, because a `<component>` holder and a `<vis>` are
+        // different objects and one skin draws both.
+        var state = analyzerBoxes[object.stableID] ?? ComponentAnalyzerState()
+        if state.bars.count != count { state.bars = Array(repeating: 0, count: count) }
+        if state.peaks.count != count { state.peaks = Array(repeating: 0, count: count) }
+        let now = CACurrentMediaTime()
+        let elapsed = state.lastDraw > 0
+            ? min(Self.analyzerMaximumDecayStep, max(0, now - state.lastDraw)) : 0
+        state.lastDraw = now
+        let barStep = WasabiVisStyle.barFalloffSteps[Self.analyzerBarFalloffStep] * CGFloat(elapsed)
+        let peakStep = WasabiVisStyle.peakFalloffSteps[Self.analyzerPeakFalloffStep] * CGFloat(elapsed)
+        // The user's Sensitivity, and **only** that — not `WasabiVisStyle.Gain.builtInAnalyzer`.
+        //
+        // That 0.8 calibration exists to pull the `<vis>` analyzer's *decibel* curve down to where
+        // Cava and vis_classic can meet it. There is no decibel curve here any more, and against a
+        // band that is already normalized 0…1 the only thing 0.8 does is put the ceiling out of
+        // reach: a full-scale band stopped at 80% of the box and nothing ever touched the top.
+        // At `Normal` the multiplier is exactly 1, so a band at full scale fills the box, and the
+        // five steps still move it either way.
+        let gain = WinampModernVisSensitivity.stored(for: .skin).multiplier
 
         var bars: [CGRect] = []
         var caps: [CGRect] = []
@@ -3999,24 +4081,38 @@ final class WasabiSceneRenderer {
             let end = min(levels.count, max(start + 1, (index + 1) * levels.count / count))
             var magnitude: Float = 0
             for bin in start..<end { magnitude = max(magnitude, levels[bin]) }
-            let level = max(0, min(1, CGFloat(WinampModernScriptRuntime.visByte(forMagnitude: magnitude)) / 255))
-            peaks[index] = max(level, peaks[index] - Self.analyzerPeakDecay)
+            // **The band is used as it stands — no decibel curve.** `host.spectrumLevels` is not a
+            // linear FFT magnitude: `AudioEngine` has already taken `20·log10` of it and normalized
+            // the result to 0…1 over its own window (`.accurate`, the default), and the adaptive and
+            // dynamic modes hand back a normalized value too. Pushing that through
+            // `visByte(forMagnitude:)` takes the log of a log, and two compounded logs are what flatten
+            // the row: the entire 0.1…1.0 range of the engine's output lands between 67% and 100% of
+            // the box, so music with real range draws as a straight line near the ceiling and the gain
+            // only slides that line down. It is the trap `vuValue` already names one screen away —
+            // "its bands are already normalised so bars fill their window".
+            let level = max(0, min(1, CGFloat(magnitude) * gain))
+            // Rises instantly, falls at a rate per second. Drawn straight from `level`, the bar had
+            // no fall of its own and stepped at whatever rate the FFT happened to arrive.
+            let bar = max(level, state.bars[index] - barStep)
+            state.bars[index] = bar
+            state.peaks[index] = max(bar, state.peaks[index] - peakStep)
             // Whole pixels, for the `<vis>` analyzer's reason: a fractional slot antialiases the 1px
             // gap into a smear and the row reads as one solid block.
             let left = (CGFloat(index) * slot).rounded(.down)
             let right = (CGFloat(index + 1) * slot).rounded(.down)
             let x = frame.minX + left
             let width = max(1, right - left - 1)
-            if level > 0 {
-                bars.append(CGRect(x: x, y: frame.maxY - level * frame.height,
-                                   width: width, height: level * frame.height))
+            if bar > 0 {
+                bars.append(CGRect(x: x, y: frame.maxY - bar * frame.height,
+                                   width: width, height: bar * frame.height))
             }
-            guard peaks[index] > level else { continue }
+            guard state.peaks[index] > bar else { continue }
             caps.append(CGRect(x: x, y: min(frame.maxY - capHeight,
-                                            frame.maxY - peaks[index] * frame.height),
+                                            frame.maxY - state.peaks[index] * frame.height),
                                width: width, height: capHeight))
         }
-        analyzerPeaks[object.stableID] = peaks
+        analyzerBoxes[object.stableID] = state
+        Self.traceVisInput(levels)
 
         let bright = palette.listText
         let dim = Self.blend(bright, toward: palette.contentBackground, by: 0.6)
