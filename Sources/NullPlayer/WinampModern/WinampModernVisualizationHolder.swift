@@ -32,13 +32,24 @@ enum WinampModernVisualizationHolder {
         frame.height > 0 && frame.width / frame.height >= analyzerAspectRatio
     }
 
+    /// The same question for a live holder, which can answer from more than its current box.
+    ///
+    /// Big Bento Modern's stretched pane is declared full-holder-width — a 7:1 strip — and is narrow
+    /// only because the side-by-side Multi Content View layout narrowed it (BB9). Measuring the box
+    /// it ended up with would take it under the ratio and hand it the engine, so it answers from the
+    /// shape its markup declares. Every other holder is still routed on the box alone.
+    static func prefersAnalyzer(holder: WinampModernComponentHolder) -> Bool {
+        if WinampModernBentoMultiContentView.isStretchedVisualizationPane(holder.object) { return true }
+        return prefersAnalyzer(frame: holder.frame)
+    }
+
     /// The one holder the engine mounts in, or `nil` when every live holder is a letterbox strip.
     ///
     /// Ties keep the earliest holder in scene order rather than resolving arbitrarily: a layout pass
     /// that reported the same two boxes in a different order must not move the picture.
     static func engineHolder(among holders: [WinampModernComponentHolder]) -> WasabiObjectID? {
         var best: WinampModernComponentHolder?
-        for holder in holders where holder.kind == .visualization && !prefersAnalyzer(frame: holder.frame) {
+        for holder in holders where holder.kind == .visualization && !prefersAnalyzer(holder: holder) {
             guard let current = best else { best = holder; continue }
             let area = holder.frame.width * holder.frame.height
             if area > current.frame.width * current.frame.height { best = holder }

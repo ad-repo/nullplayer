@@ -76,6 +76,15 @@ never on a skin's object ids:
   from under the first, which is why "the tab works and the mini doesn't".
 - Every other holder draws the analyzer rather than sitting black.
 
+**The box a holder is routed on is the one its markup declares, where the two differ (BB9,
+2026-08-29).** Big Bento's stretched pane is `w="0" relatw="1"` — the whole holder, 7:1 — and the
+side-by-side Multi Content View layout narrows it to whatever the cover and mini pane leave, which is
+about 2.3:1. Measured on that box it stopped being a letterbox, claimed the engine and went black,
+which is precisely the placement BB9 settled is a **spectrum analyzer**. `prefersAnalyzer(holder:)`
+asks `WinampModernBentoMultiContentView.isStretchedVisualizationPane` first and the box second; every
+other holder is still routed on the box alone. The general rule this is an instance of: **a holder
+the host has resized is not evidence about what the skin meant to put in it.**
+
 ### A `<component>` can name its holder in `hold` (Defix, 2026-08-28)
 
 Three elements can hold a component, and they do not read the same attribute. `windowholder` /

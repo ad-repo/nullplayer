@@ -71,6 +71,15 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: Big Bento Modern's Multi Content View shows its panels side by side** —
+  setting that wide panel at the top of the player to *Visualization* used to draw the track title,
+  artist, album and rating straight on top of the spectrum bars a few seconds after launch, and the
+  spectrum took the whole width with nothing beside it. The album art now keeps its place next to a
+  narrowed spectrum, and the track-info lines stay out of the way while the spectrum is up. Tick
+  *Visualization* under **Skin Settings → Multi Content View → File Info Components** and the small
+  visualizer joins them, so all three sit in a row. The skin's own layout on every other page is
+  untouched.
+
 - **Winamp 5.x modern skins: settings labels no longer lose their last couple of characters** — in
   *impulse*, every switch in the Configuration window's *Skin Options* and *Notifier Options* boxes
   was cut short: *Animate Draw*, *Always On T*, *Never Sh*, *Disable In Fullscre*. A skin can tell a

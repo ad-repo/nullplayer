@@ -1467,6 +1467,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return trimmed.hasPrefix("{") && trimmed.hasSuffix("}")
     }
 
+    /// The current value of a registered setting addressed the way `cfgattrib` addresses it, or nil
+    /// when the skin registered no such attribute. Lets the renderer read a setting that no object in
+    /// the scene carries a binding for — Big Bento Modern's two *File Info Components* check boxes
+    /// live in its config window, which is closed while the panes they govern are on screen (BB9).
+    func configAttributeValue(section: String, key: String) -> String? {
+        guard let setting = registeredSettings.first(where: {
+            $0.section.caseInsensitiveCompare(section) == .orderedSame &&
+            $0.name.caseInsensitiveCompare(key) == .orderedSame
+        }) else { return nil }
+        return configAttributeValue(setting)
+    }
+
     /// The current value of a registered setting, straight from the skin's own configuration.
     func configAttributeValue(_ setting: RegisteredSetting) -> String {
         loadedSkin.configuration.string(section: setting.section, key: setting.name,

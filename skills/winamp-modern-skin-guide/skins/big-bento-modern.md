@@ -604,9 +604,43 @@ Two things measured while chasing it, both worth not re-deriving:
   The corpus sweep was clean (287/288) and it still broke the skin, which is the lesson: **a sweep
   measures the default state, and this skin's defect lives in a non-default one.**
 
-Open: the user wants cover, mini vis and the stretched spectrum visible **side by side**. The skin
-does not do that — `info.component.vis.full` is declared `w="0" relatw="1"` and its layout routine
-hides the others — so that is a NullPlayer-side layout override, not a skin behaviour to restore.
+**Resolved 2026-08-29: the page is laid out side by side, by us.** The skin does not do that —
+`info.component.vis.full` is declared `w="0" relatw="1"` and its layout routine hides the others — so
+it is a NullPlayer-side layout override rather than a skin behaviour to restore, and it lives in
+`WinampModernBentoMultiContentView`. While the stretched pane is up: the file-info text lines stay
+hidden (which is what the one-shot brings back over the bars), the cover takes its slot, the mini
+pane joins it when its own check box is ticked, and the spectrum is narrowed to what they leave.
+Positions are `mcvcore`'s own — the mini pane at `x=3`, the cover at `x=195`, a 186-wide slot and a
+6px gutter — so the row matches what the skin itself draws when both are ticked on the File Info
+page. It never fixes the timer, which stays exactly as the skin wrote it.
+
+**`Album Art` and `Visualization ` are one either/or, and reading `Album Art` is a trap.** Both are
+`cfgattrib` check boxes under `{8D3829F9-5790-4c8e-9C3A-C397D3602FF9}` and they share the single
+186px slot the *File Info* page has room for, so the skin switches one off when the other is ticked
+— there is no setting that means "art *and* the mini pane". The first cut of the override honoured
+`Album Art`, which meant that for anyone who had picked the mini pane the cover was off, the row was
+empty, and the spectrum took the whole width again — the very thing the override exists to stop. The
+side-by-side layout is what removes the constraint the pair exists for, so on this page the **cover
+is unconditional** and only the mini pane reads a setting.
+
+Two more things measured while landing it, both worth not re-deriving:
+
+- **The pair is enforced on the toggle, not at load.** Writing both values straight into the store
+  and relaunching leaves both set; it is `onDataChanged` that turns the other one off. So a defaults
+  write is not a way to reach a state the UI refuses, and a state reached that way is not evidence
+  about what the skin allows.
+- **Narrowing the stretched pane changes what draws in it.** It is a `{0000000A}` holder, and those
+  are routed on the *box*: at or above 3:1 a holder is a letterbox strip and draws the analyzer,
+  below it the largest takes the host's engine. Full width the pane is 7:1; with the cover beside it
+  it measures about 2.3:1, so it claimed ProjectM and went black. `WinampModernVisualizationHolder`
+  now asks the pane before the box — see
+  [reference/components/visualization.md](../reference/components/visualization.md).
+
+**Still open: the mini pane's engine never starts.** With the mini pane ticked the row is right and
+the pane is *black*. `WINAMP-MODERN-VIS: resume … visible=0 … rendering=0` is the last word — the
+surface asks to render while the window is still not visible and nothing asks it again, which is the
+shape of *The engine will not start in a window nobody has shown yet* but for a holder in the **main**
+window, where `setSceneVisible(true)` was supposed to cover it. Filed as **BB34**.
 
 ## B36/B37 — why five separate symptoms had one cause
 

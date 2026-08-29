@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| BB9 | Finish the Multi Content View visualization placements | 4 variants / 2 base markups ([M6]) | M | Measured |
 | B14 | `<Wasabi:TabSheet>` | 4 skins / 5 declarations ([M10]); contradicts the old “one measured skin” note | L | Measured |
 | B21 | `enqueueFile` / `playFile` | 3 skins / 3 MAKI program symbols ([M11]) | M | Measured |
 | BB11 | List accessors | 3 skins / 9 MAKI program symbols ([M12]) | M | Measured |
@@ -43,6 +42,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B59 | Skins whose own player leaves almost no drag handle | 2 skins measured under 50% ([M19]) | M | Live-reported |
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
 | B71 | A layout script loads before the frame beside it has a client area | — · seen on Defix's detached visualizer (2026-08-29); corpus reach unmeasured | L | Live-reported |
+| BB34 | An embedded visualization pane's engine never starts | — · seen on Big Bento Modern's Multi Content View mini pane (2026-08-29) | M | Live-reported |
 
 ### Awaiting manual QA
 
@@ -60,7 +60,6 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m19"></a>**M19:** `WINAMP_MODERN_DRAG_PROBE="$corpus_wal" swift test --filter WinampModernDragProbe` over the 36 installed `.wal` files, where `$corpus_wal` is `~/Library/Application Support/NullPlayer/WinampModernSkins`. Reports each container's draggable share; add `WINAMP_MODERN_DRAG_MAP=1` for the face map. See `skills/winamp-modern-skin-guide/reference/harness.md`.
 - <a id="m3"></a>**M3:** `rg -a -i -o 'newAttribute' "$corpus"`
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
-- <a id="m6"></a>**M6:** `rg -i -l 'info\.component\.vis|vis\.content\.group' "$corpus"/Big\ Bento\ Modern* --glob '*.xml'`
 - <a id="m7"></a>**M7:** `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
 - <a id="m8"></a>**M8:** `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
 - <a id="m10"></a>**M10:** `rg -i -o '<[[:space:]]*Wasabi:TabSheet' "$corpus" --glob '*.xml'`
@@ -92,65 +91,18 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
 
 ---
 
-### BB9
+### BB34
 
-- [ ] **BB9. The Multi Content View's three visualization placements. Partly done 2026-08-24 —
-      routing and the analyzer landed; the overlap at launch is still open. Rewritten again; the
-      entry this replaces was wrong on every count and cost a session.**
-      **What the user wants:** the *stretched* pane (`info.component.vis.full`) is a **spectrum
-      analyzer**; the *Visualization tab* (`wdh.vis.object`) and the *mini* pane
-      (`info.component.vis`, album-art sized) are **NullPlayer's visualization** — ProjectM / Geiss /
-      Tripex. Chosen 2026-08-24 when asked: with all three ticked they should sit **side by side**
-      (`cover | viz | spectrum`), not replace each other.
-      **Done.** `{0000000A-…}` is Winamp's visualization *plugin host*, whose default content is
-      Winamp's own analyzer; we mounted the engine over every such holder unconditionally and
-      `VisualizationEngineType` has no analyzer in it, so an analyzer there was unreachable by
-      construction. `WinampModernVisualizationHolder` now routes on the **box** — a holder at or above
-      3:1 is a letterbox strip and never takes the engine; of the rest the largest does; every other
-      holder draws the analyzer instead of sitting black. `drawVisualizationBars` is a real analyzer
-      now (band count from the box, `WasabiPalette` colours, peak caps) rather than 64 flat green
-      bars, and deliberately borrows nothing from a nearby `<vis>` — `bandwidth="wide"` is 19 bands
-      and 19 bands across a 1400px pane is a row of slabs. Rules:
-      `reference/components.md` → *`{0000000A}` is a plugin host*; `reference/rendering.md` → *The
-      analyzer a `<component>` box draws*. `swift test` 1104 pass (7 new,
-      `WinampModernPhase60Tests`).
-      **Still open — the overlap at launch.** Reported again 2026-08-24 after the session's revert:
-      on reload the stretched pane and the file-info panes are all visible and drawn over each other.
-      Cause is measured and is the skin's own: `mcvcore` declares `System.onScriptLoaded()` **twice**,
-      and the second body starts a 700 ms one-shot whose `onTimer` shows the file-info panes back
-      unconditionally, with no reference to which MCV page is current — so at launch it is the last
-      word. Detail and the two dead ends in `skins/big-bento-modern.md` → *BB9*. **Do not fix it by
-      running only the first `onScriptLoaded` body** — that was tried and reverted; the second body is
-      where the panel's width layout lives, so it takes the sizing out (177 nodes and no
-      `set_maxwidth`, against 188 with both). The corpus sweep was clean and it still broke the skin.
-      **Next step is the side-by-side layout, which supersedes the exclusivity question**: the skin
-      never lays all three out (`info.component.vis.full` is `w="0" relatw="1"` and its routine hides
-      the others), so this is a NullPlayer-side layout override. The narrow version is to narrow that
-      holder to the span its visible siblings leave — Bento already places `mini vis | cover | file
-      info` correctly at `x=3` / `x=195` / `x=370` when both are ticked. Open question recorded when
-      the choice was made: with **Show file info** still ticked the track text would sit over the
-      bars, unless the spectrum takes only what is left after it.
-      **A fourth placement exists, and nobody knew — found live by the user 2026-08-24.** Widening the
-      player pane reveals `main.vis.group` in the **header**, beside the transport buttons: a
-      288×60 group of four `<vis>` boxes at `x=436`, declared in `player-normal-group.xml:255`. It is
-      not one of BB9's three `{0000000A}` holders and is not routed by
-      `WinampModernVisualizationHolder` at all — these are real `<vis>` elements the renderer draws
-      itself. Two things came out of it, both engine-wide and both in `TASKS.md`: **B43**
-      (`fliph`/`flipv` were ignored, so the intended mirrored butterfly drew as two identical blocks
-      with a seam) and **B44** (the divider position was not persisted, which is the only reason this
-      went undiscovered for the whole B35–BB22 run; a dragged divider now survives a relaunch, though
-      the skin's own narrow default still hides the group until the first drag).
-      `visualizer.maki` also registers an **`Alt Visualizer`** setting that swaps the pair for
-      `main.vis.group.alt` — a single 252px analyzer plus reflection — along with `Visualizer Mode`,
-      `Show Peaks`, `Visualizer show Lines` and the two falloff speeds. Both groups are placed with no
-      `visible=`, and the script hides whichever is not chosen; that hide is running correctly. So the
-      header's own visualization has a settings surface already, which is BB7 territory rather
-      than new work here. **Do not fold the header into BB9's side-by-side layout question** — it is a
-      separate placement with its own script and its own config.
-      **Corrections to what this entry used to say:** the defaults *are* reachable and the plumbing
-      *does* work; an embedded `<component>` in the player body **does** get a surface — that question
-      is closed; BB7 and B40 are not involved; and **the skin ships no `.m` sources at all**, so the
-      `mcvcore.m:256` / `:266–267` citations refer to nothing in the archive.
+- [ ] **BB34. An embedded `{0000000A}` visualization pane's engine never starts.** With Big Bento
+      Modern's Multi Content View mini pane ticked, the pane is laid out correctly and draws
+      **black**: `WINAMP-MODERN-VIS: resume … visible=0 … rendering=0` is the last line, and nothing
+      asks the surface again. That is the shape of *The engine will not start in a window nobody has
+      shown yet* ([reference/components/visualization.md](skills/winamp-modern-skin-guide/reference/components/visualization.md)),
+      which `resumeRendering()` was added to fix — but for a holder in the **main** window, where
+      `WinampModernMainView.setSceneVisible(true)` was supposed to cover it. Found while landing BB9's
+      side-by-side layout, 2026-08-29; the layout itself is correct and confirmed live. Corpus reach
+      unmeasured — the seven other skins with a `{0000000A}` holder all keep it in an auxiliary
+      window, so this may be specific to a pane embedded in the player.
 
 ---
 

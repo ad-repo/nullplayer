@@ -171,6 +171,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // the settings window and the control it mirrors in another window always agree.
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
             renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
+            renderer.settingStateProvider = { [weak scripts] section, key in
+                scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
+            }
             renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge)
@@ -404,6 +407,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             renderer.textScale = WinampModernSkinState.textScale(in: loaded.configuration)
             renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
             renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
+            renderer.settingStateProvider = { [weak scripts] section, key in
+                scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
+            }
             renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge, drivesScripts: false)

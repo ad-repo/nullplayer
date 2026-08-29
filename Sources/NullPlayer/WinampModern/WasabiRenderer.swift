@@ -536,6 +536,12 @@ final class WasabiSceneRenderer {
     /// `Crossfade time`, and reading its seconds as a truth value would light an `activeimage`.
     /// Nil in a renderer built without a script runtime (the pixel tests).
     var configValueProvider: ((WasabiObject) -> Int32?)?
+    /// The current value of one of the skin's *registered* settings, addressed the way `cfgattrib`
+    /// addresses it (`section`, `key`). Separate from the two providers above, which answer for an
+    /// object that carries a binding; this one answers for a setting no object in the scene need
+    /// carry. Big Bento Modern's side-by-side Multi Content View reads its two *File Info
+    /// Components* check boxes through it (BB9). Nil in a renderer built without a script runtime.
+    var settingStateProvider: ((String, String) -> Bool?)?
     /// Visualization holders the view layer has put a live engine into (B20a). The renderer paints
     /// their boxes black and leaves the drawing to it.
     var hostedVisualizationHolders: Set<WasabiObjectID> = []
@@ -1807,7 +1813,12 @@ final class WasabiSceneRenderer {
             let placed = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
             // A correction for arithmetic the skin's own script gets wrong. Deliberately rare — see
             // `WasabiSkinQuirks` for the bar an entry has to clear.
-            resolved = WasabiSkinQuirks.correctedFrame(for: object, resolved: placed) ?? placed
+            // Big Bento Modern's Multi Content View is laid out side by side rather than one pane
+            // at a time (BB9); see `WinampModernBentoMultiContentView`.
+            let arranged = WinampModernBentoMultiContentView.correctedFrame(
+                for: object, parentFrame: parentFrame, resolved: placed,
+                reading: settingStateProvider) ?? placed
+            resolved = WasabiSkinQuirks.correctedFrame(for: object, resolved: arranged) ?? arranged
         }
         // An object parked outside its parent draws nothing, and neither do its children. Skins use
         // that as a hiding place: MMD3 keeps a dummy volume slider at (400,400) — outside the 583×216
@@ -4215,6 +4226,11 @@ final class WasabiSceneRenderer {
 
     private func isVisible(_ object: WasabiObject) -> Bool {
         guard !object.isTornDown else { return false }
+        // Big Bento Modern's Multi Content View decides its own panes while the stretched
+        // visualization is up — the skin's 700 ms one-shot shows the file-info panes back over it
+        // with no reference to the current page (BB9).
+        if let forced = WinampModernBentoMultiContentView.forcedVisibility(
+            of: object, reading: settingStateProvider) { return forced }
         let value = object.attributes["visible"]?.lowercased()
         return value != "0" && value != "false" && value != "no"
     }
