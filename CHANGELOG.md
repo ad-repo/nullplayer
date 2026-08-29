@@ -71,6 +71,13 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: Anexa's progress bar is visible while it fills** — it could be clicked
+  and it seeked correctly, but it only ever appeared once it was completely full. Skins that scale a
+  readout from the playing track's length, rather than from a plain fraction of it, now get the
+  numbers they were written for, and a skin may drive its own progress display from the player's
+  position again. The same correction gives Styx's track notification its track length back, which
+  had been missing from the toast entirely.
+
 - **Winamp 5.x modern skins: a film playing in cPro-Bento's Video tab now has a running clock, and
   stays in the tab** — the picture appeared in the tab exactly as it should, but the skin's transport
   sat on its paused artwork and the time readout stayed at 0:00 for the whole film, because the skin

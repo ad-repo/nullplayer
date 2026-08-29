@@ -15,9 +15,9 @@ import ZIPFoundation
 /// installed skins (`getPlayItemMetaDataString("…")` in Anaheim, BLAKK, Ebonite, Styx, the Nokia
 /// 5220 display and four notifiers) and the string table of Big Bento's compiled `fileinfo.maki`,
 /// which asks for eighteen of them. The corpus also pins the *units*, which is the part a guess gets
-/// wrong: every caller of `length` wraps it in `integerToTime(stringToInteger(…))`, so it is whole
-/// seconds, and `stereo`/`vbr` are compared against the literal `"1"`, so they are flags rather than
-/// counts.
+/// wrong: every caller of `length` wraps it in `integerToTime(stringToInteger(…))`, so it is the
+/// same milliseconds `integerToTime` takes (B64), and `stereo`/`vbr` are compared against the literal
+/// `"1"`, so they are flags rather than counts.
 ///
 /// Ratings were the second half. The task note claimed a star rating was "a different concept" here
 /// and should stay empty — that was wrong, and checking the app rather than the note is the lesson:
@@ -101,13 +101,14 @@ final class WinampModernPhase65Tests: XCTestCase {
                        host.playItemMetadata(forKey: "albumartist"))
     }
 
-    /// Whole seconds, because every caller in the corpus wraps the answer in
-    /// `integerToTime(stringToInteger(l))` — a millisecond answer would print a four-hour track.
-    /// An unknown length is `""`, which is the case the callers' `if (l != "")` guard exists for.
-    func testLengthIsWholeSecondsAndUnknownIsEmpty() {
+    /// Whole **milliseconds**, because every caller in the corpus wraps the answer in
+    /// `integerToTime(stringToInteger(l))` and `integerToTime` takes the same milliseconds
+    /// `System.getPosition()` answers in (B64). An unknown length is `""`, which is the case the
+    /// callers' `if (l != "")` guard exists for.
+    func testLengthIsWholeMillisecondsAndUnknownIsEmpty() {
         let host = Host()
         host.duration = 269.7
-        XCTAssertEqual(host.playItemMetadata(forKey: "length"), "269")
+        XCTAssertEqual(host.playItemMetadata(forKey: "length"), "269700")
         host.duration = 0
         XCTAssertEqual(host.playItemMetadata(forKey: "length"), "")
     }

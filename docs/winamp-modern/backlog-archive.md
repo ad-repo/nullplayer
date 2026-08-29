@@ -17,6 +17,42 @@ belong in MAKI geometry. Fractional values floor, invalid/non-positive values an
 beyond MAKI's signed integer range clamp. `WinampModernPhase78Tests` covers dispatch, numeric
 boundaries, unsupported-demand accounting and teardown.
 
+## B64 — Anexa: the progress bar was invisible unless it was full — closed 2026-08-28
+
+Reported live: *"the progress/seek bar only shows when it is 100% full. otherwise it is invisible but
+functional"*. Anexa draws both its main and its shade progress bar as a `<layer>` clipped by a region
+map. **Two independent faults were stacked on it, and both produce the same empty bar**, so fixing
+either alone changes nothing on screen.
+
+1. **`System.onSeek` had no arity.** The only thing that ever fills the bar is the skin calling its
+   own system handler from a 99 ms timer (`UpateTimer.onTimer() { System.onSeek(getPosition()); }`).
+   `onseek` was missing from `dispatchableEventArity`; dispatch is fail-closed, so the call abandoned
+   the whole `onTimer` at its first statement. The bar was only ever *seen* full because `onStop`
+   sets the region to 255 — the one path that still ran. Nothing dispatches `onSeek`; it is callable
+   only, because the one corpus handler drives itself.
+
+2. **The playback clock answered seconds.** Behind that, the skin scales with
+   `int devby = len/255; setRegionFromMap(map, pos/devby, 1)`, and in seconds `devby` narrows to
+   **0** for every track under 4:15 and takes the script's own `if (devby <= 0) return;`. The unit is
+   **milliseconds**: `getPosition`, `getPlayItemLength`, `seekTo`, `integerToTime`'s argument and the
+   `length` metadata key all moved together, through one `WinampModernScriptRuntime.milliseconds(_:)`.
+
+**It fixed one other skin.** Styx's notifier formats its length by hand from
+`getPlayItemLength()/1000`, which was 0 in seconds, so it took its own `else` and printed the title
+with no duration. Traced before/after through the render harness: `settext(… Display    )` →
+`settext(… Display (4:05))`. Shield_Amp ships the same notifier code and is **not** fixed — its
+`onScriptLoaded` still aborts on `setChecked`, so the notifier never initialises at all.
+
+Everything else in the corpus is invariant: every other `getPosition`/`getPlayItemLength` call site in
+the 19 skins that ship `.m` sources is either a ratio of the two or feeds `integerToTime`, and the
+family moved as one. 16 of the 35 installed skins are compiled-only and could not be scanned that way.
+
+`WinampModernB64Tests` covers both halves; the durable rule is in
+[`compatibility/maki-surface.md`](../../skills/winamp-modern-skin-guide/compatibility/maki-surface.md)
+→ *Time is milliseconds*, and the method that settled the unit is in
+[`triage-playbook.md`](../../skills/winamp-modern-skin-guide/triage-playbook.md) → *A unit is settled
+by the minority*.
+
 ## B63 — cPro-Bento: the clock froze during a film, and the video window popped out on a tab switch — closed 2026-08-28
 
 Reported live: "when you play video in the cpro_bento skin, it displays properly in the tab but the

@@ -139,16 +139,22 @@ final class WinampModernPhase11Tests: XCTestCase {
     }
 
     /// `getPosition` shares its unit with `getPlayItemLength` — `SC-ProgressGrid` divides one by the
-    /// other, and `info.maki` runs the length through `integerToTime`, which pins both to seconds.
+    /// other — and the unit is **milliseconds**, read off the two skins that do absolute arithmetic
+    /// rather than a ratio: Styx's notifier formats `getPlayItemLength()/1000` by hand, and Anexa
+    /// scales its progress bar by `len/255` (which truncates to zero in seconds — B64).
     func testGetPositionSharesItsUnitWithPlayItemLength() throws {
         let host = TestHost()
         host.currentTime = 73
         host.duration = 245
         let (runtime, program) = try makeRuntime(host: host)
         XCTAssertEqual(try runtime.invoke(method: "getPosition", on: MakiObjectReference(.system),
-                                          arguments: [], program: program).integerValue, 73)
+                                          arguments: [], program: program).integerValue, 73_000)
         XCTAssertEqual(try runtime.invoke(method: "getPlayItemLength", on: MakiObjectReference(.system),
-                                          arguments: [], program: program).integerValue, 245)
+                                          arguments: [], program: program).integerValue, 245_000)
+        // `integerToTime` is the other half of the family: it takes what those two answer.
+        XCTAssertEqual(try runtime.invoke(method: "integerToTime", on: MakiObjectReference(.system),
+                                          arguments: [.integer(245_000)], program: program).stringValue,
+                       "4:05")
     }
 
     /// A skin asking the player to load a *different* skin is a host decision. The call is accepted

@@ -113,6 +113,33 @@ step 3 answers.
 7. **The skin's own `screenshot.png`**, when it ships one — the author's reference render is ground
    truth for Class B, and it is the only ground truth we have that isn't real Winamp.
 
+### A unit is settled by the minority
+
+When a host API answers a *number* — a time, a level, an angle — the corpus does not vote on its unit.
+Most call sites divide two of our own values into a ratio (`255 * getPosition() / getPlayItemLength()`)
+or hand one straight back to another of our own methods (`integerToTime(getPlayItemLength())`). Every
+one of those is **invariant** under a change of unit and therefore says nothing, however many of them
+there are. Counting them is how the seconds reading survived 60 phases.
+
+Read the unit off the few sites that do **absolute** arithmetic instead — a division by a literal, a
+comparison against a constant, a hand-rolled formatter. Two of those settled milliseconds in B64
+(Styx's `getPlayItemLength()/1000` and Anexa's `int devby = len/255`), against a dozen ratio sites that
+were equally happy either way. `grep` the API name across every `.m` in the corpus and discard every
+hit whose other operand is also ours.
+
+Two corollaries:
+
+- **A unit belongs to a family, not a method.** Change every producer and every consumer in one edit —
+  in B64 that was `getPosition`, `getPlayItemLength`, `seekTo`, `onSeek`'s argument, `integerToTime`'s
+  argument and the `length` metadata key. Split it and a skin disagrees with its own readout, which is
+  a worse defect than the one being fixed and a much quieter one.
+- **Then the change is no-worse by construction.** Once the family moves together, every invariant
+  call site renders exactly as before, so the blast radius is only the absolute sites — which is what
+  makes such a change safe to make on two skins' evidence.
+
+The general shape: **an instrument that cannot distinguish the two answers is not evidence for
+either.** It is the same failure as a [blind probe](reference/harness.md), one level up.
+
 ---
 
 ## 4b. Historical ranking (B1–B10, closed; 2026-08-20)

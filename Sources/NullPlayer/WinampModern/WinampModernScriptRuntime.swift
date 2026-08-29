@@ -372,6 +372,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // dispatch either way.
         "onkeydown": 1,
         "onshownotification": 0,
+        // `System.onSeek(int newpos)` — the position the player moved to, in the same milliseconds
+        // `getPosition()` answers. It is in this table because Anexa *calls* it: both its main and
+        // shade progress bars are a `<layer>` clipped by a region map, and the only thing that fills
+        // them is a 99 ms timer whose whole body is `System.onSeek(getPosition())`. Dispatch is
+        // fail-closed, so without an arity that call abandoned the handler on its first statement and
+        // the bar never moved — it was only ever seen full, because `onStop` sets it to 255 (B64).
+        "onseek": 1,
         // The `<edit>` control's own three events, all arity 0 in Wasabi. `onEnter` is the one every
         // corpus consumer declares (Big Bento's `playlistpro.maki` runs the playlist search from it);
         // `onAbort` is Escape leaving the box, and `onEditUpdate` fires per keystroke for a skin that
@@ -393,6 +400,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "ondatachanged": 0,
         "onscriptunloading": 0
     ]
+
+    /// A host time in seconds as the milliseconds Winamp's script API reports — the single place the
+    /// conversion happens, so `getPosition`, `getPlayItemLength` and the `length` metadata key cannot
+    /// drift apart. Clamped, because a skin's Int is 32-bit and a stream reports no duration at all.
+    static func milliseconds(_ seconds: TimeInterval) -> Int32 {
+        guard seconds.isFinite, seconds > 0 else { return 0 }
+        return Int32(clamping: Int64((seconds * 1000).rounded()))
+    }
 
     /// Version-gate shim. ClassicPro's `WinampVersionCheck.maki` early-returns when the reported build
     /// number is at least the skin's required build (`2405` for cPro-Bento), so a comfortably modern
@@ -2487,10 +2502,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "play": host.play(); return .null
         case "pause": host.pause(); return .null
         case "stop": host.stop(); return .null
+        // Milliseconds, like `getPosition` and `getPlayItemLength` — see `getposition`.
         case "seekto":
-            host.seek(to: TimeInterval(arguments[0].integerValue))
+            host.seek(to: TimeInterval(arguments[0].integerValue) / 1000)
             return .null
-        case "getplayitemlength": return .integer(Int32(clamping: Int64(host.duration)))
+        case "getplayitemlength": return .integer(Self.milliseconds(host.duration))
         // The number of tracks in the queue, from the same snapshot `PE_Info` is built from, so a
         // skin that shows both cannot disagree with itself. Defix's playlist box reads it directly
         // (`Items: ` + `integerToString(getPlaylistLength())`) rather than parsing the status line —
@@ -2505,14 +2521,23 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getplaylistindex":
             return .integer(Int32(clamping: Int64(playlistSnapshot.currentIndex)))
         case "getposition":
-            // Same unit as `getPlayItemLength` and `seekTo` — seconds. The engine's scripts only ever
-            // use the two together as a ratio (`SC-ProgressGrid` scales its grid by
-            // `getPosition()/getPlayItemLength()`), so the unit must match, and `integerToTime`
-            // is applied to the length elsewhere, which pins both to seconds.
-            return .integer(Int32(clamping: Int64(host.currentTime)))
+            // **Milliseconds**, and so are `getPlayItemLength`, `seekTo`, the metadata `length` key
+            // and `integerToTime`'s argument — the whole family moves together or a skin's own
+            // arithmetic stops agreeing with its own readout.
+            //
+            // Most of the corpus divides the two into a ratio and cannot tell the difference, so the
+            // unit has to be read off the skins that do absolute arithmetic. Two independent ones
+            // say milliseconds: Styx's notifier formats the length by hand from
+            // `getPlayItemLength()/1000`, and Anexa scales its progress bar with
+            // `devby = len/255; setRegionFromMap(map, pos/devby, 1)` — which in seconds truncates to
+            // zero for every track under 4:15 and bails out, leaving the bar empty (B64).
+            return .integer(Self.milliseconds(host.currentTime))
         case "integertostring": return .string(String(arguments[0].integerValue))
+        // The argument is **milliseconds**, matching `getPosition`/`getPlayItemLength` — every corpus
+        // caller feeds it one of those directly (micro's `oldTimer` pads the result to `mm:ss`, which
+        // is the shape this has to keep).
         case "integertotime":
-            let seconds = max(0, Int(arguments[0].integerValue))
+            let seconds = max(0, Int(arguments[0].integerValue)) / 1000
             return .string(String(format: "%d:%02d", seconds / 60, seconds % 60))
         case "floattostring":
             let digits = max(0, min(12, Int(arguments[1].integerValue)))
@@ -2937,7 +2962,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case "artist": return .string(entry.artist)
             case "album": return .string(entry.album)
             case "filename": return .string(entry.filePath)
-            case "length": return .string(entry.duration > 0 ? String(Int(entry.duration)) : "")
+            // Milliseconds, the same unit as `System.getPlayItemMetaDataString("length")`, so a
+            // panel that reads one and a list that reads the other cannot disagree.
+            case "length": return .string(entry.duration > 0 ? String(Self.milliseconds(entry.duration)) : "")
             default: return .string("")
             }
         case "playtrack":

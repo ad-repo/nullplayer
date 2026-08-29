@@ -194,10 +194,11 @@ extension WinampModernHost {
         // deliberately the same answer as `System.getDecoderName()` rather than a second, differently
         // derived string that could disagree with it on the same panel.
         case "format", "decoder": return decoderName
-        // Whole seconds, which is the unit the callers pin: every one wraps this in
-        // `integerToTime(stringToInteger(...))`, and the playlist-side `getMetaData("length")`
-        // already answers in the same unit.
-        case "length": return duration > 0 ? String(Int(duration)) : ""
+        // **Milliseconds**, which is the unit every caller pins: each one wraps this in
+        // `integerToTime(stringToInteger(...))`, and `integerToTime` takes the same milliseconds
+        // `System.getPosition()` and `System.getPlayItemLength()` answer in. The playlist-side
+        // `getMetaData("length")` answers in the same unit.
+        case "length": return duration > 0 ? String(WinampModernScriptRuntime.milliseconds(duration)) : ""
         case "bitrate": return bitrateKbps > 0 ? String(bitrateKbps) : ""
         case "srate", "samplerate": return sampleRateHz > 0 ? String(sampleRateHz) : ""
         // A flag, not a count — skins compare it to the literal "1" and print "Stereo"/"Mono".

@@ -58,7 +58,7 @@ final class WinampModernPhase79Tests: XCTestCase {
         XCTAssertEqual(host.playItemMetadata(forKey: "title"), "Rear Window")
         XCTAssertEqual(host.playItemMetadata(forKey: "timeelapsed"), "1:35")
         XCTAssertEqual(host.playItemMetadata(forKey: "timeremaining"), "4:45")
-        XCTAssertEqual(host.playItemMetadata(forKey: "length"), "380")
+        XCTAssertEqual(host.playItemMetadata(forKey: "length"), "380000")
     }
 
     /// The session is read through a closure rather than captured, because it is polled from the

@@ -230,7 +230,8 @@ By area:
   ticked in a skin's own components menu and still absent is a *missing key*, not a broken toggle.
 
   **The units are measured, not guessed**, and a guess gets them wrong. Every corpus caller of
-  `length` wraps it in `integerToTime(stringToInteger(l))`, which pins seconds; `stereo` and `vbr` are
+  `length` wraps it in `integerToTime(stringToInteger(l))`, which pins it to `integerToTime`'s own
+  unit — **milliseconds**, see *Time is milliseconds* below (B64); `stereo` and `vbr` are
   compared against the literal `"1"`, which makes them flags; `timeelapsed`/`timeremaining` go
   straight into `setText`, which makes them pre-formatted. Read the call site before adding a key.
 
@@ -428,6 +429,7 @@ By area:
 | `onToggle` | yes | from `setActivated` **and, since Phase 33, from a user click**: a togglebutton flips its own `activated` and then notifies, as in Wasabi. Until then the only sender was a script talking to itself, so a togglebutton a person clicked was inert however completely the skin implemented it — multipass's bottom drawer opens from this event and from nothing else. `setActivatedNoCallback` is the deliberate silent write. A `cfgattrib`-bound control is excluded: the stored preference *is* its state, and it has `onDataChanged` as its route |
 | `onActivate(activated)` | yes (B32) | the **indicator's** event, not `onToggle`'s twin: raised whenever a button's activation changes, whoever changed it. Sent from `toggleActivation`, `setActivated` (never `setActivatedNoCallback`), a `cfgattrib` write — and, unlike `onToggle`, a bound control is **not** excluded, because for it the stored preference *is* the activation. A `cfgattrib` write reaches every object bound to that attribute, since a skin declares the same switch once per layout. It had no sender at all before, so no skin could show a toggle's state: mmd3 gives Crossfade/Shuffle/Repeat identical `image` and `activeImage` and does the whole indication with six `ghost="1"` layers at `activated * 255`. 8 of 30 skins declare a handler. A change made **outside** the skin (NullPlayer's Playback menu, a restored session) arrives through `refreshBridgedConfigState()` on `.audioPlaybackOptionsChanged` — an indicator is written once and never polled |
 | `onDataChanged` | yes | from every write through `setConfigAttribute`, to every object bound to that attribute in creation order — **and as a method** (`attribute.onDataChanged()`), which is how a skin applies its stored settings at load. The method receiver was added 2026-08-26 (BB32); until then the call was inert and a skin's whole settings pass was skipped at launch. See `reference/scripting.md` → *An event handler is also a method* |
+| `onSeek(newpos)` | callable, never sent (B64) | Winamp raises it on a seek; nothing here does, because the one corpus handler does not need it. It is in `dispatchableEventArity` so a skin can **call** it, which is how Anexa fills both its progress bars — a 99 ms timer whose whole body is `System.onSeek(getPosition())`. `newpos` is milliseconds, like `getPosition` |
 | `onKeyDown(key)` | yes (Phase 43) | a **System** event carrying Winamp's own accelerator **string** — `"alt+g"`, `"ctrl+w"`, `"esc"` — not a virtual keycode, and **lowercase**: two of the three handlers compare without normalising first. Reaches every program whatever window is focused, as in Winamp, which is why a skin that means one window gates on `isActive()`. macOS modifiers map literally (Control→`ctrl`, Option→`alt`, Shift→`shift`, in that order); **Command is not folded onto `ctrl`**, so a ⌘ event is no accelerator at all and the app's menu equivalents keep working. A handler that reaches MAKI's `complete;` consumes the key; anything else falls back to the responder chain. Three of the 17 skins bind one: multipass and winampmodern566 toggle their EQ drawer on `alt+g`, winampmodern566 also shades its playlist on `ctrl+w` and its album-art window on `alt+a`, Defix closes its playlist search line on `esc`. Rika and T800 ship Winamp's stock `playlisteditor.maki`, whose `onKeyDown(Int vkcode)` is the **edit control's** — a GUI receiver and an integer, a different event — and neither loads that program. Drive it with `WINAMP_MODERN_RENDER_KEY` (harness) or `WINAMP_MODERN_DEBUG_KEY` (the app) |
 | `onEqBandChanged(band, value)` / `onEqPreampChanged(value)` | yes (Phase 41) | whoever moved the equalizer: the skin's own slider, `System.setEqBand`/`setEqPreamp`, a preset, `EQ_AUTO`, the menu bar, the classic equalizer window, a restored session. One funnel (`refreshEqualizerState()`), dispatching only what changed, driven from every playback-state hook and a 1 Hz safety poll; the first observation announces, so a readout written only from this handler learns its opening value. `band` is 0-based (the XML `param=` is 1-based); `value` is MAKI's −127…127, the scale `getEqBand` answers in — Rika slices a region map at `128 - value`. Every `EQ_BAND`/`EQ_PREAMP` slider's position is synced **before** the events go out, because multipass's eleven `ledfillbar` bars ignore both arguments and re-read their `parentslider` |
 | `onDock` / `onUndock` (3 / 3) | **no** | no docked-state model for `.wal` windows |
@@ -439,6 +441,18 @@ By area:
 it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —
 see `dispatchableEventArity` — because the stack cannot be unwound without one. This works for
 **system** events too (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
+
+**Time is milliseconds**, throughout: `System.getPosition()`, `System.getPlayItemLength()`,
+`System.seekTo()`, `System.onSeek`'s argument, `System.integerToTime()`'s argument, and the `length`
+key of `getPlayItemMetaDataString` / `PE_Info.getMetaData`. They move as one family — a skin reads two
+of them into the same expression, so splitting the unit makes a skin disagree with itself.
+
+Most of the corpus only ever divides two of them into a ratio and cannot tell seconds from
+milliseconds, so the unit has to be read off the skins that do **absolute** arithmetic. Two
+independent ones say milliseconds: Styx's notifier formats the length by hand from
+`getPlayItemLength()/1000`, and Anexa scales its progress bar with `int devby = len/255;
+setRegionFromMap(map, pos/devby, 1)` — which in seconds narrows to `devby == 0` for every track under
+4:15, takes the script's own `if (devby <= 0) return;` and draws nothing (B64).
 
 **Arithmetic.** `+`, `−`, `*` keep an Int result an Int; **`/` is always real division**, and the
 narrowing happens on the **store** into a declared variable (opcodes 48 and 3), which is where MAKI's
