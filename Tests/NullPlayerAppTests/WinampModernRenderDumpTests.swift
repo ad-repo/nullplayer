@@ -1352,6 +1352,31 @@ final class WinampModernRenderDumpTests: XCTestCase {
                       + "text=\(edit.attributes["text"] ?? "") in \(chain.joined(separator: "<"))")
             }
             if edits.isEmpty { print("EVENT \(event): this layout declares no <edit>") }
+        case "onsetvisible":
+            // `onSetVisible(1)` at every object in the layout. A skin does real work here — Big Bento
+            // Modern's Web Reader reads its provider file and fills the drop-down from this handler —
+            // and the only other headless route to it is `RENDER_SHOW`, which reaches a *container*'s
+            // subtree and so cannot touch a group inside the player's own tab strip.
+            var objects: [WasabiObject] = []
+            var stack = [renderer.layout]
+            while let node = stack.popLast() {
+                stack.append(contentsOf: node.children)
+                objects.append(node)
+            }
+            var reached = 0
+            let previous = runtime.dispatchObserver
+            runtime.dispatchObserver = { name, program, failure in
+                previous?(name, program, failure)
+                guard let failure else { return }
+                print("EVENT \(name) !FAILED in \((program.source.path as NSString).lastPathComponent): "
+                      + failure.diagnostics.map(\.message).joined(separator: "; "))
+            }
+            defer { runtime.dispatchObserver = previous }
+            for object in objects {
+                reached += (try? runtime.dispatch(object: object, event: event,
+                                                  arguments: [.boolean(true)])) ?? 0
+            }
+            print("EVENT \(event) -> \(reached) handlers over \(objects.count) objects")
         case "onmousewheelup", "onmousewheeldown":
             // Addressed to the **layout**, which is where every corpus binding for these lands, and
             // with two arguments (both `op3` stores at the handler's entry, in two independent skins).

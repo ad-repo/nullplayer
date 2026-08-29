@@ -23,11 +23,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         /// A `Region` that has been loaded from a map. Settled the same way a `Map` is: `new Region`
         /// is the same bare `new` as `new Map`, and only `loadFromMap` accepts a region.
         case region(clip: WasabiRegionClip)
-        /// An `XmlDoc` the script asked to `load`. ClassicPro uses one only to read the optional
-        /// `ClassicPro.xml` extras (songticker antialiasing, custom beat-vis names), always behind
-        /// `if (myDoc.exists())`. The callback-driven parser is not implemented, so the document
-        /// reports that it does not exist and every caller takes its own skip path.
-        case xmlDocument
+        /// An `XmlDoc` the script asked to `load`, carrying the logical path the load resolved to —
+        /// `nil` when the file is not in the VFS, which is what `exists()` answers on. ClassicPro
+        /// reads the optional `ClassicPro.xml` extras (songticker antialiasing, custom beat-vis
+        /// names) through one, always behind `if (myDoc.exists())`; Big Bento Modern's Web Reader
+        /// runs the *callback* parser over `scripts/reader/source/reader_providers.xml` to build its
+        /// provider drop-down. See `parserStart(…)`.
+        case xmlDocument(logicalPath: String?)
         /// A `WinampConfigGroup` — one section of Winamp's own preferences, addressed by GUID.
         /// ClassicPro reads exactly one value from one (`eq.m` asks whether the EQ uses classic or
         /// ISO frequencies before it labels the bands).
@@ -45,6 +47,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         /// `List` is created by the same `new` as a `Timer` or a `Map` and only its first list call
         /// would distinguish it, and nothing else ever touches these items.
         var items: [MakiValue] = []
+        /// Element paths an `XmlDoc` has registered with `parser_addCallback`, in the order the
+        /// script added them. Kept beside `items` for the same reason: the role is settled by the
+        /// first call that only an `XmlDoc` accepts, and these arrive before `parser_start`.
+        var parserCallbacks: [String] = []
+        /// A script-owned string object's contents — `new`, `setText(…)`, `getText()`. Kept here for
+        /// the same reason as `items`: `new` says nothing about the class, and this is the first call
+        /// that would distinguish one.
+        var text: String = ""
     }
 
     /// Ceiling on one `List`'s length. ClassicPro's longest is its tab order (a dozen entries); the
@@ -2168,6 +2178,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getfirstitemselected": .init(argumentCount: 0, returnKind: .integer),
             "getnextitemselected": .init(argumentCount: 1, returnKind: .integer),
             "scrolltoitem": .init(argumentCount: 1, returnKind: .null),
+            // The write half of the same control, and Big Bento Modern's Web Reader is the measured
+            // consumer: its provider drop-down adds a placeholder row per `parser_onCallback` and
+            // then fills that row's two columns and its icon. The three `setIcon*`/`setShowIcons`
+            // calls sit at the very top of the same `onSetVisible` that loads the provider file, so
+            // until they existed the handler aborted before reaching the parser at all.
+            "setitemlabel": .init(argumentCount: 2, returnKind: .null),
+            "setsubitem": .init(argumentCount: 3, returnKind: .null),
+            "setitemicon": .init(argumentCount: 2, returnKind: .null),
+            // `setSelected(row, selected)` — the write half of `getFirstItemSelected`. The reader
+            // selects the provider it restored so the drop-down opens on it.
+            "setselected": .init(argumentCount: 2, returnKind: .null),
+            "seticonwidth": .init(argumentCount: 1, returnKind: .null),
+            "seticonheight": .init(argumentCount: 1, returnKind: .null),
+            "setshowicons": .init(argumentCount: 1, returnKind: .null),
             "leftclick": .init(argumentCount: 0, returnKind: .null),
             // Layer FX: Winamp warps a layer through a grid whose per-pixel source is supplied by the
             // skin's own `fx_onGetPixel*` callbacks — implemented in Phase 28 (`invokeLayerFX`,
@@ -2414,6 +2438,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "isnamedwindowvisible": .init(argumentCount: 1, returnKind: .boolean),
             "navigateurl": .init(argumentCount: 1, returnKind: .null),
             "navigateurlbrowser": .init(argumentCount: 1, returnKind: .null),
+            // Internet Explorer's own error page, which a `<browser>` asks Winamp to suppress so it
+            // can show its own. There is no IE here — the surface is WebKit — so the preference is
+            // recorded and nothing else; refusing it aborted the handler that sets it, which on Big
+            // Bento Modern is the one that also loads the Web Reader's provider list.
+            "setcancelieerrorpage": .init(argumentCount: 1, returnKind: .null),
             "addcommand": .init(argumentCount: 4, returnKind: .null),
             "addseparator": .init(argumentCount: 0, returnKind: .null),
             "addsubmenu": .init(argumentCount: 2, returnKind: .null),
@@ -2450,6 +2479,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // `XmlDoc`: load an optional config document. Bounded — see `DynamicRole.xmlDocument`.
             "load": .init(argumentCount: 1, returnKind: .null),
             "exists": .init(argumentCount: 0, returnKind: .boolean),
+            // `XmlDoc`'s callback parser. The document is walked once by `parser_start()`, which
+            // dispatches `parser_onCallback` back at the same object for every element matching a
+            // path registered with `parser_addCallback`. Big Bento Modern's Web Reader is the whole
+            // measured demand: its provider drop-down is built entirely from those callbacks, so
+            // without them `exists()` answered false, the skin took its "Oops! Something went wrong!"
+            // branch on every `onSetVisible`, and the list came up empty.
+            "parser_addcallback": .init(argumentCount: 1, returnKind: .null),
+            "parser_start": .init(argumentCount: 0, returnKind: .null),
+            "parser_destroy": .init(argumentCount: 0, returnKind: .null),
             "getfilesize": .init(argumentCount: 1, returnKind: .integer),
             "getlanguageid": .init(argumentCount: 0, returnKind: .string),
             // `List`: MAKI's own container (`extern List.addItem(Any)` …). ClassicPro builds its tab
@@ -3519,6 +3557,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             WasabiGuiList.setItems([], on: object)
             WasabiGuiList.setSelection([], on: object)
             WasabiGuiList.setScrollOffset(0, on: object)
+            _ = object.setAttribute(WasabiGuiList.iconsKey, value: "")
             notifyObjectDidMutate(object)
             return .null
         case "additem" where WasabiGuiList.isList(object):
@@ -3531,17 +3570,53 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getnumitems" where WasabiGuiList.isList(object):
             return .integer(Int32(clamping: WasabiGuiList.items(of: object).count))
         case "getitemlabel" where WasabiGuiList.isList(object):
-            // One column: the skin's own list is `nocolheader="1"` and puts the whole row in the
-            // string it adds, so the column argument names the only column there is.
-            let items = WasabiGuiList.items(of: object)
-            let index = Int(arguments[0].integerValue)
-            guard items.indices.contains(index) else { return .string("") }
-            return .string(items[index])
+            // `getItemLabel(row, column)`. A row a script wrote with a plain `addItem` has one cell,
+            // so column 0 is that whole string — which is what Big Bento's playlist search reads back
+            // — while its Web Reader, which fills two columns per row, gets the cell it asks for.
+            let cells = WasabiGuiList.columns(ofRow: Int(arguments[0].integerValue), on: object)
+            let column = Int(arguments[1].integerValue)
+            return .string(cells.indices.contains(column) ? cells[column] : "")
         case "getfirstitemselected" where WasabiGuiList.isList(object):
             return .integer(Int32(WasabiGuiList.selection(of: object).first ?? -1))
         case "getnextitemselected" where WasabiGuiList.isList(object):
             let after = Int(arguments[0].integerValue)
             return .integer(Int32(WasabiGuiList.selection(of: object).first { $0 > after } ?? -1))
+        case "setitemlabel" where WasabiGuiList.isList(object):
+            WasabiGuiList.setColumn(0, ofRow: Int(arguments[0].integerValue),
+                                    to: arguments[1].stringValue, on: object)
+            notifyObjectDidMutate(object)
+            return .null
+        case "setsubitem" where WasabiGuiList.isList(object):
+            WasabiGuiList.setColumn(Int(arguments[1].integerValue), ofRow: Int(arguments[0].integerValue),
+                                    to: arguments[2].stringValue, on: object)
+            notifyObjectDidMutate(object)
+            return .null
+        case "setselected" where WasabiGuiList.isList(object):
+            var selection = Set(WasabiGuiList.selection(of: object))
+            let row = Int(arguments[0].integerValue)
+            if arguments[1].truthy { selection.insert(row) } else { selection.remove(row) }
+            WasabiGuiList.setSelection(Array(selection), on: object)
+            notifyObjectDidMutate(object)
+            return .null
+        case "setitemicon" where WasabiGuiList.isList(object):
+            WasabiGuiList.setIcon(arguments[1].stringValue, ofRow: Int(arguments[0].integerValue),
+                                  on: object)
+            notifyObjectDidMutate(object)
+            return .null
+        case "seticonwidth", "seticonheight", "setshowicons":
+            // The icon column's geometry, written before the rows are added. The renderer draws the
+            // icons at the row's own height, so the two sizes are recorded rather than obeyed; what
+            // matters is `setShowIcons`, which is what decides whether the column is drawn at all.
+            guard WasabiGuiList.isList(object) else { return .null }
+            _ = object.setAttribute(method == "setshowicons" ? WasabiGuiList.showIconsKey
+                                        : "nullplayer.script.list\(method.dropFirst(3))",
+                                    value: arguments[0].stringValue)
+            notifyObjectDidMutate(object)
+            return .null
+        case "setcancelieerrorpage":
+            _ = object.setAttribute("nullplayer.script.cancelieerrorpage",
+                                    value: arguments[0].truthy ? "1" : "0")
+            return .null
         case "scrolltoitem" where WasabiGuiList.isList(object):
             // The row becomes the top of the box. Wasabi scrolls the least it can, but the renderer
             // clamps this against the box it ends up drawing in, and a script only ever asks for this
@@ -3866,11 +3941,29 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             dynamicObjects[id] = state
             return .null
         case "load":
-            state.role = .xmlDocument
+            state.role = .xmlDocument(logicalPath: xmlDocumentPath(arguments[0].stringValue,
+                                                                   program: program))
+            state.parserCallbacks = []
             dynamicObjects[id] = state
             return .null
         case "exists":
-            return .boolean(false)
+            guard case .xmlDocument(let path) = state.role else { return .boolean(false) }
+            return .boolean(path != nil)
+        case "parser_addcallback":
+            guard case .xmlDocument = state.role,
+                  state.parserCallbacks.count < Self.maximumParserCallbacks else { return .null }
+            state.parserCallbacks.append(arguments[0].stringValue)
+            dynamicObjects[id] = state
+            return .null
+        case "parser_start":
+            guard case .xmlDocument(let path) = state.role, let path else { return .null }
+            parserStart(documentAt: path, callbacks: state.parserCallbacks, id: id, program: program)
+            return .null
+        case "parser_destroy":
+            guard case .xmlDocument = state.role else { return .null }
+            state.parserCallbacks = []
+            dynamicObjects[id] = state
+            return .null
         case "inregion", "getvalue":
             guard case .map(let bitmapID, let source) = state.role else {
                 return method == "inregion" ? .boolean(false) : .integer(0)
@@ -4012,13 +4105,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // only to the caller left the write visible in exactly the window that made it.
             setConfigAttribute(section: section, key: key, value: arguments[0].stringValue)
             return .null
+        // A script-owned string object: `setText` stores, `getText` reads back **with Wasabi's path
+        // variables expanded**, which is the whole reason a skin makes one. Big Bento Modern's Web
+        // Reader builds the path behind its `%CUSTOMSOURCE%` token that way —
+        // `s.setText("@SKINSPATH@"); s.getText() + "/Big Bento Modern/scripts/reader/source/"` — and
+        // a string with no `@…@` in it is handed back untouched, because canonicalising ordinary text
+        // as a path would turn it into one.
+        case "settext":
+            state.text = arguments[0].stringValue
+            dynamicObjects[id] = state
+            return .null
+        case "gettext":
+            guard state.text.contains("@") else { return .string(state.text) }
+            let expanded = try? loadedSkin.vfs.resolve(state.text, relativeTo: program.source.path,
+                                                       location: program.source, mustExist: false)
+            return .string(expanded?.logicalPath ?? state.text)
         case "getid":
             switch state.role {
             case .configItem(let section): return .string(section)
             case .configAttribute(_, let key): return .string(key)
             case .map(let bitmapID, _): return .string(bitmapID)
             case .region(let clip): return .string(clip.mapID)
-            case .xmlDocument: return .string("")
+            case .xmlDocument(let path): return .string(path ?? "")
             case .configGroup(let section): return .string(section)
             case .gammaSet(let name): return .string(name)
             case .generic: return .string("dynamic_\(id)")
@@ -4027,6 +4135,91 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         default:
             if let value = classicProFileMethod(method, arguments: arguments) { return value }
             throw unsupported(method, program: program)
+        }
+    }
+
+    // MARK: - XmlDoc's callback parser
+
+    /// Ceiling on the paths one `XmlDoc` may register. Big Bento Modern registers one.
+    private static let maximumParserCallbacks = 16
+    /// Ceiling on the elements one `parser_start()` reports. The measured document holds 31
+    /// `<sourceitem>`s; the cap is what stops a hand-edited one — this file is the skin's own
+    /// documented customisation point, so users do edit it — from driving an unbounded number of
+    /// script dispatches inside a single event.
+    private static let maximumParserElements = 512
+
+    /// Where `XmlDoc.load(path)` landed, or `nil` when the file is not in the VFS. Skins call `load`
+    /// speculatively and branch on `exists()`, so a miss is the ordinary case rather than a failure:
+    /// Big Bento Modern's reader tries its own `@SKINSPATH@\…\reader_providers.xml` first and then
+    /// falls back to a Windows install path under `getApplicationPath()`, which resolves to nothing
+    /// here and must answer false rather than abort the handler.
+    private func xmlDocumentPath(_ rawPath: String, program: MakiProgram) -> String? {
+        guard !rawPath.isEmpty else { return nil }
+        guard let resolved = try? loadedSkin.vfs.resolve(rawPath, relativeTo: program.source.path,
+                                                         location: program.source) else { return nil }
+        return resolved.logicalPath
+    }
+
+    /// Walks the loaded document once and dispatches `parser_onCallback` at the `XmlDoc` for every
+    /// element whose path matches one of the registered callbacks.
+    ///
+    /// The handler's four arguments are pinned by Big Bento Modern's bytecode, which pops them into
+    /// `(String path, String tag, List names, List values)` and then walks the two lists in parallel
+    /// with `getNumItems`/`enumItem`, branching on the name to fill its provider row. The two lists
+    /// are one reused pair of dynamic objects rather than a pair per element: the callback reads them
+    /// synchronously and keeps neither, and a document of hand-edited length would otherwise allocate
+    /// a script object per attribute set with nothing to free it.
+    private func parserStart(documentAt path: String, callbacks: [String], id: UInt64,
+                             program: MakiProgram) {
+        guard !callbacks.isEmpty,
+              let data = try? loadedSkin.vfs.data(at: path, location: program.source),
+              let text = String(data: data, encoding: .utf8)
+                  ?? String(data: data, encoding: .isoLatin1),
+              let parsed = try? WalLenientXMLParser().parse(text, path: path) else { return }
+
+        let names = makeParserList()
+        let values = makeParserList()
+        defer {
+            dynamicObjects.removeValue(forKey: names.id)
+            dynamicObjects.removeValue(forKey: values.id)
+        }
+
+        var reported = 0
+        func walk(_ node: WalXMLNode, path components: [String]) {
+            guard reported < Self.maximumParserElements else { return }
+            let here = components + [node.name]
+            if callbacks.contains(where: { Self.parserPath($0, matches: here) }) {
+                reported += 1
+                let attributes = node.attributes.sorted { $0.key < $1.key }
+                dynamicObjects[names.id]?.items = attributes.map { .string($0.key) }
+                dynamicObjects[values.id]?.items = attributes.map { .string($0.value) }
+                _ = try? dispatch(target: MakiObjectReference(.dynamic(id)),
+                                  event: "parser_oncallback",
+                                  arguments: [.string(here.joined(separator: "/")),
+                                              .string(node.name),
+                                              .object(names.reference),
+                                              .object(values.reference)])
+            }
+            for child in node.children { walk(child, path: here) }
+        }
+        for root in parsed.roots { walk(root, path: []) }
+    }
+
+    private func makeParserList() -> (id: UInt64, reference: MakiObjectReference) {
+        let id = nextPopupID
+        nextPopupID &+= 1
+        dynamicObjects[id] = DynamicObjectState()
+        return (id, MakiObjectReference(.dynamic(id)))
+    }
+
+    /// A `parser_addCallback` path against an element's own path. Components are compared
+    /// case-insensitively and `*` matches any one component — the form Big Bento Modern registers
+    /// (`WasabiXML/BrowserPro/*`, every child of that node whatever it is called).
+    private static func parserPath(_ pattern: String, matches components: [String]) -> Bool {
+        let wanted = pattern.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard wanted.count == components.count else { return false }
+        return zip(wanted, components).allSatisfy { expected, actual in
+            expected == "*" || expected.caseInsensitiveCompare(actual) == .orderedSame
         }
     }
 

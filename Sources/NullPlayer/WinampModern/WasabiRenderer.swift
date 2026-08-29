@@ -2226,6 +2226,9 @@ final class WasabiSceneRenderer {
         let selected = Set(WasabiGuiList.selection(of: object))
         let pointSize = CGFloat(WasabiTextMetrics.pixelHeight(of: object)
                                 * WasabiTextMetrics.pixelHeightToPointSize)
+        let showsIcons = WasabiGuiList.showsIcons(object)
+        let columnWidths = (object.attributes["columnwidths"] ?? "")
+            .split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         context.saveGState()
         context.clip(to: frame)
         for slot in 0..<visible {
@@ -2240,8 +2243,37 @@ final class WasabiSceneRenderer {
             }
             let color = legibleRowColor(isSelected ? palette.selectionText : palette.listText,
                                         selected: isSelected)
-            drawSurfaceText(items[index], in: rowRect.insetBy(dx: 3, dy: 1), color: color,
-                            alignment: .left, pointSize: pointSize, context: context)
+            var cell = rowRect.insetBy(dx: 3, dy: 1)
+            // The icon column, when the script asked for one. It is drawn square at the row's own
+            // height rather than at the `setIconWidth`/`setIconHeight` the script named: those are
+            // Winamp's native list metrics, and a row here is already sized from the font.
+            if showsIcons, let icon = WasabiGuiList.icon(ofRow: index, on: object),
+               let image = resources.bitmap(identifier: icon)?.image {
+                let side = min(cell.height, cell.width)
+                drawImage(image, in: CGRect(x: cell.minX, y: cell.minY, width: side, height: side),
+                          context: context)
+                cell = CGRect(x: cell.minX + side + 3, y: cell.minY,
+                              width: max(0, cell.width - side - 3), height: cell.height)
+            }
+            // Each cell in its own column. `columnwidths` is the skin's own declaration, in skin
+            // pixels, with a trailing `-1` meaning "the rest of the box" — Big Bento Modern's provider
+            // drop-down is `numcolumns="2" columnwidths="280,-1"`, the provider name beside its
+            // comment. A row with one cell (everything a plain `addItem` writes) ignores all of this
+            // and draws across the whole width, exactly as it did before columns existed.
+            let cells = WasabiGuiList.columns(ofRow: index, on: object)
+            var x = cell.minX
+            for (column, text) in cells.enumerated() where x < cell.maxX {
+                guard cells.count > 1 else {
+                    drawSurfaceText(text, in: cell, color: color, alignment: .left,
+                                    pointSize: pointSize, context: context)
+                    break
+                }
+                let declared = columnWidths.indices.contains(column) ? columnWidths[column] : -1
+                let width = declared > 0 ? min(CGFloat(declared), cell.maxX - x) : cell.maxX - x
+                drawSurfaceText(text, in: CGRect(x: x, y: cell.minY, width: width, height: cell.height),
+                                color: color, alignment: .left, pointSize: pointSize, context: context)
+                x += width + 3
+            }
         }
         context.restoreGState()
     }
