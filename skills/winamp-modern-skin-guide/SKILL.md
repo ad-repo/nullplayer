@@ -120,6 +120,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Window restores at the wrong size or one skin inherits another's frame | [reference/rendering.md](reference/rendering.md) → *A .wal window's size is still the skin's* |
 | Toggle works but never looks active | [reference/rendering.md](reference/rendering.md) → *onActivate* |
 | Settings window is an empty slab, or a `<Wasabi:TitleBox>` shows neither label nor body | [reference/rendering.md](reference/rendering.md) → *`<Wasabi:TitleBox>` is a body, not just a border* |
+| Settings page has boxes but no switches, labels, sliders or drop-downs | [reference/rendering.md](reference/rendering.md) → *The Wasabi standard form widgets are the primitives they wrap* |
 | Several windows in the menu share one name | [reference/components.md](reference/components.md) → *default_visible*, and `WinampModernContainerTopology.menuLabels` |
 | Shuffle/repeat/crossfade disagree with the host | [reference/rendering.md](reference/rendering.md) → *Some cfgattrib values are the host's* |
 | Control works once, hides itself, and cannot be clicked again | [reference/scripting.md](reference/scripting.md) → *A layout must not be left with no way to seek* |

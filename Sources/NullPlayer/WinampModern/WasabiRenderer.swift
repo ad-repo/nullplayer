@@ -1665,10 +1665,63 @@ final class WasabiSceneRenderer {
            let source = descendant(of: object, xmlID: sourceID) {
             return autoWidth(of: source)
         }
+        // A `<Wasabi:CheckBox>` states no width — Winamp sizes it to its own label, the way the
+        // groupdefs that replace the tag do (`autowidthsource` on their label). Left at zero the box
+        // and its text both fell outside the object and the whole switch was unclickable.
+        if WasabiFormWidgets.kind(of: object) == .checkBox {
+            let label = object.attributes["text"] ?? ""
+            return WasabiFormWidgets.checkBoxGlyph + WasabiFormWidgets.checkBoxLabelGap
+                + resources.metrics.width(of: object, text: label)
+        }
         let type = object.typeName.lowercased()
         guard type == "text" || type == "songticker" else { return nil }
         return resources.metrics.width(of: object,
                                        text: WasabiTextMetrics.content(of: object, host: host))
+    }
+
+    /// How tall a `<Wasabi:TitleBox>` that declares no height has to be, or `nil` when its body says
+    /// nothing that can be measured (B67).
+    ///
+    /// **Measured, not guessed.** The height is the body's own content height plus the inset the body
+    /// already sits in (`WasabiTitleBox.contentInset` — 18 above, 6 below), which is the only number
+    /// that makes the box fit exactly what it was drawn around. Checked against impulse, the one skin
+    /// that needs it: `Skin Options` measures 74 + 24 = 98 under a box declared at `y="5"` with the
+    /// next box at `y="110"`, and `Glass Opacity` 13 + 24 = 37 at `y="273"` with the next at
+    /// `y="319"` — a 7–9px gap between boxes in all three cases, which is the spacing the skin's own
+    /// sized box has.
+    ///
+    /// The body's content height comes from the same two sources Wasabi resolves any auto height
+    /// from: an `autoheightsource="<id>"` naming the last child (all four of impulse's content groups
+    /// state one), and otherwise the lowest edge any child reaches. Both answer the child's **bottom**
+    /// rather than its own height — a group sized to the height of its last row would clip everything
+    /// above it.
+    private func titleBoxAutoHeight(of object: WasabiObject) -> CGFloat? {
+        guard let body = object.children.first(where: { $0.typeName.lowercased() == "group" }),
+              let content = contentBottom(of: body) else { return nil }
+        return content - CGFloat(WasabiTitleBox.contentInset.height)
+    }
+
+    /// The lowest edge anything inside this group reaches, in the group's own coordinates.
+    ///
+    /// Relative geometry is skipped rather than resolved: a child anchored to a parent whose height
+    /// is what we are trying to compute has no answer, and one that states a relative height is
+    /// asking to *fill* the box, not to size it.
+    private func contentBottom(of group: WasabiObject) -> CGFloat? {
+        if let sourceID = group.attributes["autoheightsource"],
+           let source = descendant(of: group, xmlID: sourceID), source !== group {
+            return declaredBottom(of: source)
+        }
+        return group.children.compactMap(declaredBottom(of:)).max()
+    }
+
+    private func declaredBottom(of object: WasabiObject) -> CGFloat? {
+        let spec = WasabiGeometrySpec(attributes: object.attributes)
+        guard !spec.relativeY, !spec.relativeHeight else { return nil }
+        if let height = spec.height, height > 0 { return CGFloat(spec.y + height) }
+        guard (object.typeName.lowercased().components(separatedBy: ":").last ?? "") == "text" else {
+            return nil
+        }
+        return CGFloat(spec.y) + resources.metrics.lineHeight(of: object)
     }
 
     private func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
@@ -1715,6 +1768,14 @@ final class WasabiSceneRenderer {
         if object.attributes["h"] == nil,
            (object.typeName.lowercased().components(separatedBy: ":").last ?? "") == "text" {
             intrinsic.height = Double(resources.metrics.lineHeight(of: object))
+        }
+        // A `<Wasabi:TitleBox>` that declares no `h` is as tall as its body needs (B67). Four of
+        // impulse's five say `<Wasabi:TitleBox x="320" y="5" w="-325" relatw="1" …/>` and nothing
+        // more, so the box resolved to no height, the negative-box guard below dropped it, and its
+        // whole content group was laid out inside nothing — only its one sized box appeared.
+        if object.attributes["h"] == nil, WasabiTitleBox.isTitleBox(object),
+           let height = titleBoxAutoHeight(of: object) {
+            intrinsic.height = Double(height)
         }
         let resolved: CGRect
         if isRoot {
@@ -1920,6 +1981,15 @@ final class WasabiSceneRenderer {
         if let background = object.attributes["background"],
            let bitmap = resources.bitmap(identifier: background) {
             drawImage(bitmap.image, in: node.frame, context: context)
+        }
+
+        // A Wasabi standard form widget's own chrome, under whatever the primitive it became draws
+        // on top of it: an edit's box, a slider's track, the whole of a check box or a drop-down.
+        // Before the type chain rather than inside it, because two of the five (`text`, `edit`) are
+        // primitives that already have a branch there and only want a frame drawn behind them.
+        if let widget = WasabiFormWidgets.kind(of: object) {
+            drawFormWidget(widget, object: object, frame: node.frame, context: context,
+                           pressed: pressed == object.stableID)
         }
 
         if type == "text" || type == "songticker" {
@@ -3613,6 +3683,157 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
+    /// A Wasabi standard form widget's chrome (B66).
+    ///
+    /// The same deliberate exception to the identifier-only-shell rule as `drawTextButton` and
+    /// `drawTitleBox`, and for the same reason: no `.wal` in the corpus ships `wasabi.checkbox.*` or
+    /// `wasabi.edit.*` artwork, because in real Winamp the standard library supplies it. Nothing here
+    /// is invented styling — every stroke is the object's own `color=` when it states one and the
+    /// skin's list colour when it does not, exactly as the title box's border is.
+    ///
+    /// A slider is the one case that mostly *does* not reach the drawn path: 19 installed skins ship
+    /// `wasabi.slider.horizontal.*`, so the substitution seeds those ids and this draws the skin's own
+    /// three-part track under the skin's own thumb. The flat track is the fallback for a skin that
+    /// ships neither.
+    private func drawFormWidget(_ kind: WasabiFormWidgets.Kind, object: WasabiObject, frame: CGRect,
+                                context: CGContext, pressed: Bool) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        let color = object.attributes["color"].flatMap(resolvedColor) ?? palette.listText
+        context.saveGState()
+        defer { context.restoreGState() }
+        switch kind {
+        case .text:
+            break
+        case .edit:
+            // Winamp fills an edit with a native child window, which is why a skin draws no box for
+            // one. `drawEdit` paints the string and the caret straight after this.
+            context.setFillColor(palette.contentBackground.cgColor)
+            context.fill(frame)
+            context.setStrokeColor(color.withAlphaComponent(0.55).cgColor)
+            context.setLineWidth(1)
+            context.stroke(frame.insetBy(dx: 0.5, dy: 0.5))
+        case .horizontalSlider:
+            drawStandardSliderTrack(object, frame: frame, color: color, context: context,
+                                    pressed: pressed)
+        case .checkBox:
+            drawCheckBox(object, frame: frame, color: color, context: context)
+        case .dropDownList:
+            drawDropDownList(object, frame: frame, color: color, context: context)
+        }
+    }
+
+    /// The standard horizontal slider's track: the skin's own left/middle/right strip when it ships
+    /// one, and a hairline when it does not. `drawSlider` puts the thumb on top of whichever it is.
+    private func drawStandardSliderTrack(_ object: WasabiObject, frame: CGRect, color: NSColor,
+                                         context: CGContext, pressed: Bool) {
+        let ids = WasabiFormWidgets.horizontalTrack
+        if let left = resources.bitmap(identifier: ids.left),
+           let middle = resources.bitmap(identifier: ids.middle),
+           let right = resources.bitmap(identifier: ids.right) {
+            let height = CGFloat(middle.height)
+            let y = frame.midY - height / 2
+            let leftWidth = min(CGFloat(left.width), frame.width / 2)
+            let rightWidth = min(CGFloat(right.width), frame.width / 2)
+            drawImage(left.image, in: CGRect(x: frame.minX, y: y, width: leftWidth, height: height),
+                      context: context)
+            drawImage(middle.image,
+                      in: CGRect(x: frame.minX + leftWidth, y: y,
+                                 width: max(0, frame.width - leftWidth - rightWidth), height: height),
+                      context: context)
+            drawImage(right.image,
+                      in: CGRect(x: frame.maxX - rightWidth, y: y, width: rightWidth, height: height),
+                      context: context)
+        } else {
+            context.setFillColor(color.withAlphaComponent(0.4).cgColor)
+            context.fill(CGRect(x: frame.minX, y: frame.midY - 1, width: frame.width, height: 2))
+        }
+        // Only when the skin ships no thumb either: `drawSlider` returns without painting one, and a
+        // track with no handle is a control nobody can see the position of.
+        guard resources.bitmap(identifier: object.attributes["thumb"]) == nil else { return }
+        let clamped = normalizedValue(of: object)
+        let width: CGFloat = 7
+        let travel = max(0, frame.width - width)
+        let thumb = CGRect(x: frame.minX + clamped * travel, y: frame.minY,
+                           width: width, height: frame.height)
+        context.setFillColor(color.withAlphaComponent(pressed ? 1 : 0.85).cgColor)
+        context.fill(thumb)
+    }
+
+    /// A `<Wasabi:CheckBox>`: the box, its tick, and the label beside it.
+    ///
+    /// Two shapes, one control. A check box that names a `radioid` is one of a set of which exactly
+    /// one is on, so it draws round with a filled centre — Styx spells all four of its preference
+    /// pairs that way, and 32 of the corpus's 67 declarations carry the attribute.
+    ///
+    /// The state comes from wherever the control keeps it: a `cfgattrib` binding *is* the state for a
+    /// bound box (the same rule `resolvedBitmapID` follows for a bound togglebutton), and `activated`
+    /// for one the skin's own script drives.
+    private func drawCheckBox(_ object: WasabiObject, frame: CGRect, color: NSColor,
+                              context: CGContext) {
+        let side = min(WasabiFormWidgets.checkBoxGlyph, frame.height)
+        let box = CGRect(x: frame.minX, y: frame.midY - side / 2, width: side, height: side)
+        let radio = WasabiFormWidgets.radioIdentifier(of: object) != nil
+        let on = configStateProvider?(object) ?? (object.attributes["activated"] == "1")
+        context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
+        context.setFillColor(color.cgColor)
+        context.setLineWidth(1)
+        let outline = box.insetBy(dx: 0.5, dy: 0.5)
+        if radio {
+            context.strokeEllipse(in: outline)
+            if on { context.fillEllipse(in: box.insetBy(dx: side / 3, dy: side / 3)) }
+        } else {
+            context.stroke(outline)
+            if on { context.fill(box.insetBy(dx: side / 3, dy: side / 3)) }
+        }
+        let label = object.attributes["text"] ?? ""
+        guard !label.isEmpty else { return }
+        let start = box.maxX + WasabiFormWidgets.checkBoxLabelGap
+        // Drawn through the object's own text path, not `drawSurfaceText`: a check box carries the
+        // same `font`/`fontsize`/`color`/`bold` attributes any other Wasabi text does, and Styx's
+        // labels are meant to be in the skin's font.
+        drawText(label, object: object,
+                 frame: CGRect(x: start, y: frame.minY, width: max(0, frame.maxX - start),
+                               height: frame.height),
+                 context: context, undeclaredColor: palette.listText)
+    }
+
+    /// A `<Wasabi:DropDownList>`: the box, the item it is showing, and the arrow that says it opens.
+    ///
+    /// The label is drawn here rather than by the invisible `dropdownlist.text` the initializer puts
+    /// inside the object — that node exists to be *found* by the skin's script, which persists the
+    /// pick from its `onTextChanged`, and drawing it as well would print the selection twice.
+    private func drawDropDownList(_ object: WasabiObject, frame: CGRect, color: NSColor,
+                                  context: CGContext) {
+        context.setFillColor(palette.contentBackground.cgColor)
+        context.fill(frame)
+        context.setStrokeColor(color.withAlphaComponent(0.55).cgColor)
+        context.setLineWidth(1)
+        context.stroke(frame.insetBy(dx: 0.5, dy: 0.5))
+        let arrowWidth = min(WasabiFormWidgets.dropDownArrowWidth, frame.width)
+        let arrow = CGRect(x: frame.maxX - arrowWidth, y: frame.minY, width: arrowWidth,
+                           height: frame.height)
+        context.setFillColor(color.cgColor)
+        context.beginPath()
+        context.move(to: CGPoint(x: arrow.midX - 4, y: arrow.midY - 2))
+        context.addLine(to: CGPoint(x: arrow.midX + 4, y: arrow.midY - 2))
+        context.addLine(to: CGPoint(x: arrow.midX, y: arrow.midY + 3))
+        context.closePath()
+        context.fillPath()
+        let label = WasabiFormWidgets.selection(of: object)
+        guard !label.isEmpty else { return }
+        // The plate is ours, so the text on it has to be legible against it rather than merely
+        // declared: Itemskin's list colour is nearly its own content background, and the selection
+        // came out dark on dark — the same guarantee `legibleRowColor` gives the rows this renderer
+        // draws, needed again because this surface never passes through one.
+        drawText(label, object: object,
+                 frame: CGRect(x: frame.minX + 4, y: frame.minY,
+                               width: max(0, frame.width - arrowWidth - 6), height: frame.height),
+                 context: context,
+                 undeclaredColor: WinampModernSurfaceStyle.legible(
+                    preferring: [palette.listText, palette.currentText, palette.selectionText],
+                    on: palette.contentBackground))
+    }
+
     private func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: CGContext) {
         // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
         // and selection follow the skin's colour resources and its active colour theme.
@@ -3942,6 +4163,10 @@ final class WasabiSceneRenderer {
         // hit testing without owning a bitmap.
         if Self.isColorThemeList(object) || Self.isTextButton(object)
             || Self.isComponentBucket(object) { return true }
+        // A substituted Wasabi form widget paints a surface of its own — a check box's box, a
+        // drop-down's frame, an edit's field — so it is opaque to hit testing without a bitmap. Its
+        // primitive type already makes it interactive (`togglebutton`, `button`, `slider`).
+        if WasabiFormWidgets.kind(of: object) != nil { return true }
         return object.attributes["background"] != nil || bitmapID != nil ||
             object.typeName.caseInsensitiveCompare("text") == .orderedSame ||
             object.typeName.caseInsensitiveCompare("songticker") == .orderedSame ||

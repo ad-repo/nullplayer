@@ -386,10 +386,83 @@ Three things worth keeping:
   `h="40"` with the row at `y="0"`, which puts the body 18px down with 6px under it —
   `WasabiTitleBox.contentInset`.
 
-What still does not draw: a title box that declares **no `h`** (four of impulse's five) resolves to no
-height and stays invisible, and the Wasabi standard *widgets* many bodies are made of
-(`<Wasabi:Text>`, `<Wasabi:HSlider>`, `<Wasabi:CheckBox>`) are still inert shells — which is why
-Styx's Config gains three labelled boxes and two of them are empty. Both are in `TASKS.md`.
+##### A title box that declares no height is as tall as its body needs
+
+Four of impulse's five say `<Wasabi:TitleBox x="320" y="5" w="-325" relatw="1" title="Skin Options"
+content="…"/>` and nothing more — no `h`, no `relath` — so the box resolved to no height and its body
+was laid out inside nothing. In Winamp the standard library's own object supplies the height from the
+content group.
+
+**Measured, never a constant.** The height is the body's own content height plus the inset the body
+already sits in (`WasabiTitleBox.contentInset`, 18 above and 6 below), which is the only number that
+makes the box fit exactly what it was drawn around. The body's content height comes from the two
+sources Wasabi resolves any auto height from, in order:
+
+1. `autoheightsource="<id>"` naming a descendant — all four of impulse's content groups state one.
+2. Otherwise the lowest edge any child reaches.
+
+Both answer the child's **bottom** (`y + h`), not its own height: a group sized to the height of its
+last row would clip everything above it, and impulse's Notifier Options names a 10px slider sitting at
+`y="120"`. Relative geometry is skipped rather than resolved — a child anchored to the height being
+computed has no answer, and one that states a relative height is asking to *fill* the box, not to size
+it. A body that says nothing measurable leaves the box exactly as declared; inventing a number is
+worse than leaving it.
+
+Checked against impulse, the one skin that needs it: `Skin Options` measures 74 + 24 = 98 under a box
+at `y="5"` with the next at `y="110"`, and `Glass Opacity` 13 + 24 = 37 at `y="273"` with the next at
+`y="319"` — a 7–9px gap in all three cases, which is the spacing the skin's own *sized* box has.
+
+##### The Wasabi standard form widgets are the primitives they wrap
+
+`<Wasabi:Text>` (55 declarations / 13 skins), `<Wasabi:CheckBox>` (67 / 5), `<Wasabi:EditBox>` (14 /
+5), `<Wasabi:HSlider>` (9 / 4) and `<Wasabi:DropDownList>` — 156 declarations across 15 skins, the
+widest measured demand there was. Each is a conventional XUI tag whose body lives in Winamp, so each
+resolved to a structure-free shell and became an inert node. **This is what an empty settings page
+usually is**: with the title box implemented, Styx's Config drew three labelled boxes and two were
+empty, because their bodies are these widgets.
+
+The measured insight is that **Winamp's own definition of each is a thin wrapper around one primitive
+this engine already has.** The three skins that ship a *replacement* for one all say so — Lobe, Big
+Bento Modern and ZDL each write `<groupdef id="wasabi.text.group" xuitag="Wasabi:Text"
+embed_xui="wasabi.text" h="12"><text …/></groupdef>`. So `WasabiFormWidgets` is a **type
+substitution**, applied once in `WasabiSkinInitializer` where the object is created, and everything
+downstream — drawing, hit testing, `cfgattrib` binding, script dispatch, geometry — follows with
+nothing else to teach:
+
+| Tag | Becomes | Notes |
+|---|---|---|
+| `Wasabi:Text` | `text` | |
+| `Wasabi:EditBox` / `EditBox2` | `edit` | plus a drawn field, since Winamp fills one with a native child window |
+| `Wasabi:HSlider` | `slider` | seeds the conventional `wasabi.slider.horizontal.*` ids |
+| `Wasabi:CheckBox` | `togglebutton` | plus a drawn box; `radioid` makes it a radio |
+| `Wasabi:DropDownList` | `button` | plus a drawn box, arrow and menu |
+
+Four things worth keeping:
+
+- **The `else` is the whole containment.** The substitution runs only when `types.definition(forInstance:)`
+  resolved nothing, so a skin that defines the tag itself never reaches it. That is how Big Bento
+  Modern keeps its own search box and how Styx and Shield_Amp keep their own `Wasabi:CustomDropDownList`
+  wrappers — all three of that tag's users define it, which is why only the inner `Wasabi:DropDownList`
+  needed implementing.
+- **A slider is the case that argues against drawing.** 19 of the 36 installed skins ship
+  `wasabi.slider.horizontal.button`, including all four that use the tag, so the substitution seeds
+  those ids and the skin's own artwork draws. Only a skin shipping neither reaches the flat track and
+  drawn thumb. A check box is the opposite — **no** `.wal` ships `wasabi.checkbox.*` — so it is drawn,
+  on the same deliberate exception as an artwork-less `<Wasabi:Button>` above.
+- **A `radioid` check box is a radio, and that is half the tag**: 32 of the 67 declarations carry the
+  attribute. It draws round, its set is looked up from the top of its own tree (`radioid` is flat, and
+  Styx's pairs live in two different content groups of one window), and clicking the member already on
+  leaves it on. Only members that actually *change* are told, because `onToggle` is what a skin reads
+  the choice from.
+- **A drop-down needs an object to be found, not just drawn.** Styx's and Shield_Amp's
+  `customdropdownlist.maki` are the same script: `findObject("dropdownlist.text")`, then
+  `onTextChanged` writes the pick to a private string. The initializer expands an invisible `<text
+  id="dropdownlist.text">` beneath the control for exactly that — the drop-down draws its own label
+  from `default`, so a visible one would print the selection twice.
+
+What still does not draw: `<Wasabi:RadioGroup>` (9 declarations) is a bare grouping id with no
+geometry and is correctly inert; `<Wasabi:TabSheet>` is B14 and is why Shield_Amp's Configuration is
+still an empty slab.
 
 #### Animated layers are played as a range
 

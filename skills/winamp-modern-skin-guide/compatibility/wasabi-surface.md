@@ -151,10 +151,22 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
 - `<Wasabi:TitleBox>`: **supported** (Phase 80). The box **instantiates the group its `content=`
   names**, inset clear of the border and below the label, and the renderer draws the label and a 1px
   box in the instance's `color=` (the skin's list colour when it states none) — no `.wal` ships
-  `wasabi.titlebox.*` art either. 9 skins / 33 declarations. A box that declares no `h` resolves to no
-  height and stays invisible, and the standard widgets inside many bodies are still inert; see
-  [../reference/rendering.md](../reference/rendering.md) — *`<Wasabi:TitleBox>` is a body, not just a
-  border*
+  `wasabi.titlebox.*` art either. 9 skins / 33 declarations. A box that declares **no `h`** takes its
+  height from its body — the body's own content height (from `autoheightsource`, else the lowest edge
+  a child reaches, in both cases the child's *bottom*) plus the inset it already sits in — and a body
+  that says nothing measurable leaves the box as declared rather than inventing a number (B67,
+  Phase 81, impulse). See [../reference/rendering.md](../reference/rendering.md) — *`<Wasabi:TitleBox>`
+  is a body, not just a border*
+- The Wasabi standard **form widgets**: `<Wasabi:Text>`, `<Wasabi:EditBox>`/`EditBox2`,
+  `<Wasabi:HSlider>`, `<Wasabi:CheckBox>` and `<Wasabi:DropDownList>` — 156 declarations across 15
+  skins (B66, Phase 81). Each becomes the engine primitive Winamp's own definition wraps (`text`,
+  `edit`, `slider`, `togglebutton`, `button`), so hit testing, `cfgattrib` binding and script dispatch
+  work as for any primitive. A check box carries a drawn box, a `radioid` one draws and behaves as a
+  radio, and a drop-down carries a drawn box, an arrow, a menu and the invisible `dropdownlist.text`
+  handle a skin's script persists the pick from. A slider takes the conventional
+  `wasabi.slider.horizontal.*` artwork 19 skins ship. **A skin's own `<groupdef xuitag="…">` for any of
+  these always wins.** See [../reference/rendering.md](../reference/rendering.md) — *The Wasabi
+  standard form widgets are the primitives they wrap*
 - **Hidden objects are still laid out.** They are not painted and take no clicks, but their geometry
   resolves, they receive `onResize`, and `getWidth()` answers for them — Wasabi lays a hidden window out
   too, and a skin that hides a pane can only bring it back from its own `onResize` seeing the pane grow
@@ -207,10 +219,10 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
 **Not supported / degraded**
 
 - Most remaining **`wasabi.*` shells are structure-free**, so a widget that has no body of its own
-  draws nothing. Unresolved conventional *tags* — `<Wasabi:Button>` (CornerAmp and mmd3 colour-theme
-  dialogs) and `<Wasabi:TabSheet>` (mmd3's winshade sidecar) — become inert nodes the same way. This
-  is what empties an otherwise working `<Wasabi:TitleBox>`: the box and its label draw, and the
-  `<Wasabi:Text>` / `<Wasabi:HSlider>` / `<Wasabi:CheckBox>` rows inside it do not.
+  draws nothing, and an unresolved conventional *tag* becomes an inert node the same way. The two that
+  still matter are `<Wasabi:TabSheet>` (B14; it is what leaves Shield_Amp's Configuration an empty
+  slab, and mmd3's winshade sidecar) and `<Wasabi:RadioGroup>` (9 declarations — a bare grouping id
+  with no geometry, which is correctly inert: the members name it with `radioid`).
 - A base group outside the curated set warns and is dropped.
 - A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
 - `file="$solid"` / `file="$gradient"` predefined bitmaps generate no **pixels**, so a layer that

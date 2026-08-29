@@ -1208,6 +1208,42 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// A `cfgattrib`-bound control is deliberately excluded: for those the stored preference *is* the
     /// state (`configValue`), they already have `toggleConfigAttribute` as their route, and flipping a
     /// second copy of the state here would let `getActivated()` disagree with the value the skin reads.
+    /// Click a `<Wasabi:CheckBox radioid="…">`: this one goes on and the rest of its set goes off
+    /// (B66).
+    ///
+    /// A radio is not a toggle and must not be flipped like one — clicking the member that is already
+    /// on leaves it on, which is the difference between "choose Classic" and "choose nothing". Styx's
+    /// four preference pairs are all this shape, and its scripts read the choice back from
+    /// `onToggle`, so every member that *changes* has to be told, not just the one clicked.
+    ///
+    /// The set is looked up from the top of the object's own tree: `radioid` is a flat name shared
+    /// across whatever groups the skin happens to have nested, and Styx's pairs live in two different
+    /// content groups of the same window.
+    @discardableResult
+    func selectRadioMember(_ object: WasabiObject) -> Bool {
+        guard WasabiFormWidgets.kind(of: object) == .checkBox,
+              let radio = WasabiFormWidgets.radioIdentifier(of: object) else { return false }
+        var root = object
+        while let parent = root.parent { root = parent }
+        var members: [WasabiObject] = []
+        func collect(_ node: WasabiObject) {
+            if WasabiFormWidgets.radioIdentifier(of: node) == radio,
+               WasabiFormWidgets.kind(of: node) == .checkBox {
+                members.append(node)
+            }
+            node.children.forEach(collect)
+        }
+        collect(root)
+        for member in members {
+            let wanted = member === object
+            guard (member.attributes["activated"] == "1") != wanted else { continue }
+            setActivated(member, wanted)
+            _ = try? dispatch(object: member, event: "ontoggle", arguments: [.boolean(wanted)])
+            notifyActivated(member, activated: wanted)
+        }
+        return true
+    }
+
     @discardableResult
     func toggleActivation(of object: WasabiObject) -> Bool {
         let type = object.typeName.lowercased()

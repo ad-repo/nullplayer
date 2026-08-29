@@ -1847,6 +1847,19 @@ final class WinampModernMainView: NSView {
     }
 
     private func performAction(for object: WasabiObject) {
+        // A Wasabi standard drop-down opens its list; nothing else this method does applies to it
+        // (B66).
+        if WasabiFormWidgets.kind(of: object) == .dropDownList {
+            presentDropDownList(object)
+            return
+        }
+        // A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and
+        // its set goes off, and clicking the one already on changes nothing. Before the toggle below,
+        // which would otherwise flip it back off.
+        if scripts.selectRadioMember(object) {
+            needsDisplay = true
+            return
+        }
         // A togglebutton flips itself first, then tells the skin — the whole of some skins' UI hangs
         // off that notification (multipass's bottom drawer opens from `onToggle` and nowhere else).
         // It runs alongside whatever `action=` the button also carries, as it does in Wasabi.
@@ -1880,6 +1893,43 @@ final class WinampModernMainView: NSView {
             }
         }
         updatePlaybackState()
+    }
+
+    /// Open a `<Wasabi:DropDownList>` and apply what the user picks (B66).
+    ///
+    /// The pick is written back the way Winamp's own object writes it: `default` on the drop-down —
+    /// which is what it draws and what a script reads with `getXmlParam` — and then the label object
+    /// inside it is told, because `onTextChanged` on `dropdownlist.text` is where the skin persists
+    /// the choice. Styx's and Shield_Amp's `customdropdownlist.maki` are both exactly that handler,
+    /// so without the dispatch the list would change on screen and forget by the next launch.
+    private func presentDropDownList(_ object: WasabiObject) {
+        let items = WasabiFormWidgets.items(of: object)
+        guard !items.isEmpty, let frame = renderer.frame(of: object) else { return }
+        let current = WasabiFormWidgets.selection(of: object)
+        let target = ScriptPopupTarget()
+        let menu = NSMenu()
+        for (index, item) in items.enumerated() {
+            let entry = NSMenuItem(title: item, action: #selector(ScriptPopupTarget.pick(_:)),
+                                   keyEquivalent: "")
+            // Tags count from one so that zero keeps meaning "nothing chosen", as it does for a
+            // script-built popup.
+            entry.tag = index + 1
+            entry.target = target
+            entry.state = item == current ? .on : .off
+            menu.addItem(entry)
+        }
+        let rect = viewRect(fromSkin: frame)
+        menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: rect.minY), in: self)
+        guard target.chosen > 0, items.indices.contains(Int(target.chosen) - 1) else { return }
+        let picked = items[Int(target.chosen) - 1]
+        guard picked != current else { return }
+        _ = object.setAttribute("default", value: picked)
+        if let label = WasabiFormWidgets.dropDownLabel(of: object) {
+            _ = label.setAttribute("text", value: picked)
+            _ = try? scripts.dispatch(object: label, event: "ontextchanged",
+                                      arguments: [.string(picked)])
+        }
+        needsDisplay = true
     }
 
     /// Perform the command a skin hung on a double- or right-click, if it hung one there.

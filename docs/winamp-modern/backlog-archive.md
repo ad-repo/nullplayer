@@ -2,6 +2,88 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B66 — the Wasabi standard form widgets are inert shells — closed 2026-08-29 (Phase 81)
+
+Closed together with B67; the two were one change, because B67 is what made B66 visible on impulse
+and B66 is what made B67's boxes worth having on Styx.
+
+The measured insight is that **Winamp's own definition of each widget is a thin wrapper around one
+primitive this engine already has** — the three skins that ship a *replacement* for `Wasabi:Text`
+(Lobe, Big Bento Modern, ZDL) all write it as `<groupdef xuitag="Wasabi:Text" embed_xui="wasabi.text"
+h="12"><text …/></groupdef>`. So `WasabiFormWidgets` is a **type substitution** applied once where the
+object is created, and drawing, hit testing, `cfgattrib` binding, script dispatch and geometry all
+follow: `Wasabi:Text` → `text`, `Wasabi:EditBox`/`EditBox2` → `edit`, `Wasabi:HSlider` → `slider`,
+`Wasabi:CheckBox` → `togglebutton`, `Wasabi:DropDownList` → `button`. It runs only when
+`types.definition(forInstance:)` resolved nothing, which is the whole containment — a skin that
+defines the tag itself never reaches it.
+
+A check box and a drop-down are additionally *drawn*, on the same deliberate exception to the
+identifier-only-shell rule as an artwork-less `<Wasabi:Button text="…">`: no `.wal` ships
+`wasabi.checkbox.*`. A slider is the opposite case and is why the exception stays narrow — 19 of the
+36 installed skins ship `wasabi.slider.horizontal.button`, including all four that use the tag, so the
+substitution seeds those ids and the skin's own artwork draws.
+
+Two behaviours that are not obvious from the tag names. A check box with a `radioid` is a **radio**,
+which is half the tag rather than an edge of it (32 of 67 declarations): its set is looked up from the
+top of its own tree because `radioid` is flat across nested groups, clicking the live member leaves it
+on, and only members that actually change are told — `onToggle` is what a skin reads the choice from.
+And a drop-down needs an object to be **found**, not just drawn: Styx's and Shield_Amp's
+`customdropdownlist.maki` are the same script, `findObject("dropdownlist.text")` then `onTextChanged`
+writes the pick to a private string, so the initializer expands an invisible `<text
+id="dropdownlist.text">` beneath the control.
+
+Verified across the corpus render sweep: Styx's Config, Ebonite's 48 switches, Itemskin's and BLAKK's
+preference windows and Big Bento's two edit dialogs all populate where they were empty; all 36 skins
+still render. `WinampModernPhase81Tests` (15 tests, 11 of them checked to fail with the substitution
+and the auto height disabled). Rules in
+[`reference/rendering.md`](../../skills/winamp-modern-skin-guide/reference/rendering.md) → *The Wasabi
+standard form widgets are the primitives they wrap*.
+
+Two neighbours found and deliberately left: Shield_Amp's Configuration is still empty because its body
+is a `<Wasabi:TabSheet>` (**B14**), and impulse's own `Impulse:Checkbox` labels clip because
+`autowidthsource` answers the source's string width rather than its right edge (**B68**).
+
+The original entry, verbatim:
+
+- [ ] **B66. The Wasabi standard form widgets draw nothing.** `<Wasabi:Text>` (55 declarations / 13
+      skins), `<Wasabi:CheckBox>` (67 / 5), `<Wasabi:EditBox>` (14 / 5), `<Wasabi:HSlider>` (9 / 4),
+      `<Wasabi:RadioGroup>` (9 / 4), `<Wasabi:CustomDropDownList>` (5 / 3) — 156 declarations across
+      15 skins, the widest measured demand in this table. Each is a conventional XUI tag whose body
+      lives in Winamp, so each resolves to a structure-free shell and becomes an inert node.
+      **This is what an empty settings page usually is**, and Phase 80 made it visible rather than
+      causing it: with `<Wasabi:TitleBox>` implemented, Styx's Config now draws three labelled boxes
+      and two of them are empty, because their bodies are these widgets. Ebonite (48), Itemskin (21)
+      and Shield_Amp (21) are the heaviest users.
+      Same shape as the artwork-less `<Wasabi:Button>` and the title box: no `.wal` ships
+      `wasabi.checkbox.*` / `wasabi.edit.*` artwork, so anything drawn here is drawn by us against the
+      skin's palette. Take them one at a time, by measured demand, and check each against a skin that
+      states its own colours — `reference/rendering.md` → *Artwork-less `<Wasabi:Button text="…">`*
+      and *`<Wasabi:TitleBox>` is a body, not just a border* are the two precedents to follow.
+
+## B67 — a `<Wasabi:TitleBox>` with no declared height was invisible — closed 2026-08-29 (Phase 81)
+
+The height is now **measured, not guessed** — the entry's own instruction. It is the body's content
+height plus the inset the body already sits in (`WasabiTitleBox.contentInset`, 18 above and 6 below),
+where the content height comes from `autoheightsource` when the group names one and otherwise from the
+lowest edge any child reaches. Both answer the child's **bottom** (`y + h`) rather than its own height:
+a group sized to the height of its last row would clip everything above it, and impulse's Notifier
+Options names a 10px slider sitting at `y="120"`. Relative geometry is skipped rather than resolved,
+and a body that says nothing measurable leaves the box exactly as declared.
+
+Checked against impulse: `Skin Options` measures 74 + 24 = 98 under a box at `y="5"` with the next at
+`y="110"`; `Glass Opacity` 13 + 24 = 37 at `y="273"` with the next at `y="319"` — a 7–9px gap in all
+three cases, which is the spacing the skin's one *sized* box has.
+
+The original entry, verbatim:
+
+- [ ] **B67. A `<Wasabi:TitleBox>` that declares no `h` is invisible.** Four of impulse's five say
+      `<Wasabi:TitleBox x="320" y="5" w="-325" relatw="1" title="Skin Options" content="…"/>` — no
+      `h`, no `relath` — so the box resolves to no height, the renderer's size guard skips it, and its
+      body is laid out inside nothing. Only its `Color Themes` box (which states `h`) appears. In
+      Winamp the standard library's own object supplies the height, presumably auto-sized from the
+      content group. **Do not guess a constant**: measure what the body actually needs (there is
+      already `getAutoHeight`/`autowidthsource` machinery) or leave it. One skin, four declarations.
+
 ## B41 (implementation) — `getMonitorWidth` / `getMonitorHeight` answer the player's own display — shipped 2026-08-26
 
 Moved out of `TASKS.md`, where it had been sitting as a closed `- [x]` item under an otherwise open

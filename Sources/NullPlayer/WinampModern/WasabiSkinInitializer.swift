@@ -1023,6 +1023,8 @@ final class WasabiSkinInitializer {
             let instanceChildren = node.children
             var embeddedXUITag: String?
             var nextDefinitionStack = definitionStack
+            var typeName = node.name
+            var formWidget: WasabiFormWidgets.Substitution?
             // A node the document itself contains is stamped with its own position; a template child
             // — expanded here, but written elsewhere — instantiates at the position of the reference
             // that brought it in, which is when Winamp would have read it.
@@ -1049,13 +1051,30 @@ final class WasabiSkinInitializer {
                 templateChildren = resolved.templateChildren
                 embeddedXUITag = resolved.embeddedXUITag
                 nextDefinitionStack.append(key)
+            } else if let substitution = WasabiFormWidgets.substitution(forTypeName: node.name) {
+                // A Wasabi standard **form widget** nothing else claims. Winamp's own definition of
+                // each is a thin wrapper around a primitive this engine already has, so the tag
+                // becomes that primitive here and the rest of the engine needs to know nothing about
+                // it — drawing, hit testing, `cfgattrib` binding and script dispatch all key off the
+                // type. Without it 156 declarations across 15 skins were structure-free shells, which
+                // is what an empty settings page usually is (B66).
+                //
+                // The `else` is the whole containment: a skin that defines the tag itself resolved a
+                // definition above and never reaches here, so Big Bento Modern keeps its own search
+                // box and Styx keeps its own drop-down wrapper.
+                formWidget = substitution
+                typeName = substitution.typeName
+                attributes[WasabiFormWidgets.kindAttribute] = substitution.kind.rawValue
+                for (name, value) in substitution.defaults where attributes[name] == nil {
+                    attributes[name] = value
+                }
             }
 
             createdCount += 1
             guard createdCount <= maximumObjectCount else {
                 throw WalFailure(WalDiagnostic(.expandedNodeLimitExceeded, "Retained graph exceeds \(maximumObjectCount) objects.", location: node.location))
             }
-            let object = graph.makeObject(typeName: node.name, attributes: attributes, source: node.location)
+            let object = graph.makeObject(typeName: typeName, attributes: attributes, source: node.location)
             if let parent { try parent.appendChild(object) } else { graph.appendRoot(object) }
             try createObjects(from: templateChildren, parent: object, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
@@ -1130,6 +1149,22 @@ final class WasabiSkinInitializer {
             if WasabiTitleBox.isTitleBox(object),
                let content = WasabiTitleBox.contentGroupNode(for: object, location: node.location) {
                 try createObjects(from: [content], parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            }
+            // Winamp's drop-down carries a label object inside itself, and a skin's script reaches
+            // for it by name: Styx's and Shield_Amp's `customdropdownlist.maki` are the same script,
+            // and both do `findObject("dropdownlist.text")` then persist the pick from that object's
+            // `onTextChanged`. With no such object the handle is null and the selection survives
+            // nothing. The node is invisible — the drop-down draws its own label — so this adds a
+            // handle, not a second copy of the text.
+            if formWidget?.kind == .dropDownList,
+               findObject(xmlID: WasabiFormWidgets.dropDownLabelID, beneath: object) == nil {
+                try createObjects(from: [WasabiFormWidgets.labelNode(location: node.location)],
+                                  parent: object, graph: graph, types: types,
                                   pendingScripts: &pendingScripts,
                                   pendingMetaCommands: &pendingMetaCommands,
                                   definitionStack: nextDefinitionStack,

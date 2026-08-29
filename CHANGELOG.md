@@ -71,6 +71,20 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: settings pages have their switches, labels and sliders** — check boxes,
+  radio buttons, text labels, text fields, sliders and drop-down lists are pieces Winamp supplies
+  rather than the skin, so a settings page built out of them came up as a set of empty boxes.
+  Fifteen of the installed modern skins are affected and some are made almost entirely of them:
+  **Ebonite**'s config window has all 48 of its switches back, **Styx**'s Config gains its four
+  either/or choices, its hold-time slider and its notifier-position list, **Itemskin**'s notifier
+  preferences gain theirs, and **Big Bento Modern**'s *Open Folder or URL* and welcome-message
+  dialogs finally show the fields you type into. Where a skin ships its own artwork for one of these
+  — most do, for sliders — that artwork is what draws; the rest are drawn in the skin's own colours.
+  A drop-down remembers what you pick.
+- **Winamp 5.x modern skins: a settings box that states no height is no longer invisible** —
+  **impulse**'s Configuration window declares five titled boxes and only one of them says how tall it
+  is, so the other four collapsed to nothing and the window showed a single column where it should
+  show two. Each box is now as tall as what it holds.
 - **Winamp 5.x modern skins: a skin's own settings boxes have their contents back** — a titled group
   box is one of the pieces Winamp supplies rather than the skin, and NullPlayer drew neither the box
   nor anything inside it, so a window built out of them came up empty. Nine of the installed modern

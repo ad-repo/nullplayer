@@ -18,7 +18,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B66 | The Wasabi standard **form widgets** are inert shells | 15 skins / 156 declarations ([M20]) | L | Measured |
+| B68 | `autowidthsource` ignores where the source **sits**, so the group runs short | 11 skins / 26 declarations ([M22]) | S | Measured |
 | BB15 | `parser_*` / `shutdown()` | 6 skins / 15 MAKI program symbols ([M9]) | M | Measured |
 | BB9 | Finish the Multi Content View visualization placements | 4 variants / 2 base markups ([M6]) | M | Measured |
 | B14 | `<Wasabi:TabSheet>` | 4 skins / 5 declarations ([M10]); contradicts the old “one measured skin” note | L | Measured |
@@ -30,7 +30,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B23a | Player-embedded visualization holder | 1 skin / 1 player holder ([M16]) | L | Measured |
 | B45 | Container declared without a reachable renderable layout | 1 skin / 1 container ([M17]) | M | Measured |
 | BB13 | `setClipboardText()` | 1 skin / 1 MAKI program symbol; the program contains three calls ([M18]) | S | Measured |
-| B67 | A `<Wasabi:TitleBox>` with no declared height is invisible | 1 skin / 4 declarations ([M21]) | S | Measured |
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
 
@@ -51,6 +50,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Remaining check |
 |---|---|---|
 | B41 | `getMonitorWidth` / `getMonitorHeight` | Move Big Bento Modern between displays and verify its side-playlist sizing follows the display containing the player |
+| B66 | The Wasabi standard form widgets | The **drawing** half is verified in the render sweep across the corpus. The **interaction** half has no headless route: on Styx's Config, click a radio in each of the four sets (the set changes, the live member does not turn itself off), tick the two `cfgattrib` check boxes, and open the `Position` drop-down — then reopen the window and confirm the pick survived, which is the skin's own `onTextChanged` persisting it |
 
 ## Reproducible reach commands
 
@@ -76,6 +76,7 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
 - <a id="m20"></a>**M20:** `rg -i -o '<[[:space:]]*Wasabi:(Text|CheckBox|HSlider|RadioGroup|EditBox|CustomDropDownList)[[:space:]]' "$corpus" --glob '*.xml'`
 - <a id="m21"></a>**M21:** `rg -i -o '<[[:space:]]*Wasabi:TitleBox[^>]*>' "$corpus" --glob '*.xml'`, then keep only the matches with no `h="` attribute.
+- <a id="m22"></a>**M22:** per skin, collect every `autowidthsource="<id>"` and every `id="…" … x="…"` in that skin's XML, then keep the declarations whose named source has a **non-zero** `x`. 53 declarations in 13 skins carry the attribute; 26 in 11 skins name a source that is offset. The other 27 are the ones a fix cannot move: ClassicPro's whole menu bar (`label.txt` ×14, `File.txt`/`Play.txt`/`Options.txt`/`View.txt`/`Help.txt`) is `x="0"`.
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
 number of matched declarations or MAKI program symbols. A compiled MAKI method name is a program
@@ -281,34 +282,25 @@ The implementation and its automated coverage shipped; that record is in
 
 ---
 
-### B66
+### B68
 
-- [ ] **B66. The Wasabi standard form widgets draw nothing.** `<Wasabi:Text>` (55 declarations / 13
-      skins), `<Wasabi:CheckBox>` (67 / 5), `<Wasabi:EditBox>` (14 / 5), `<Wasabi:HSlider>` (9 / 4),
-      `<Wasabi:RadioGroup>` (9 / 4), `<Wasabi:CustomDropDownList>` (5 / 3) — 156 declarations across
-      15 skins, the widest measured demand in this table. Each is a conventional XUI tag whose body
-      lives in Winamp, so each resolves to a structure-free shell and becomes an inert node.
-      **This is what an empty settings page usually is**, and Phase 80 made it visible rather than
-      causing it: with `<Wasabi:TitleBox>` implemented, Styx's Config now draws three labelled boxes
-      and two of them are empty, because their bodies are these widgets. Ebonite (48), Itemskin (21)
-      and Shield_Amp (21) are the heaviest users.
-      Same shape as the artwork-less `<Wasabi:Button>` and the title box: no `.wal` ships
-      `wasabi.checkbox.*` / `wasabi.edit.*` artwork, so anything drawn here is drawn by us against the
-      skin's palette. Take them one at a time, by measured demand, and check each against a skin that
-      states its own colours — `reference/rendering.md` → *Artwork-less `<Wasabi:Button text="…">`*
-      and *`<Wasabi:TitleBox>` is a body, not just a border* are the two precedents to follow.
-
----
-
-### B67
-
-- [ ] **B67. A `<Wasabi:TitleBox>` that declares no `h` is invisible.** Four of impulse's five say
-      `<Wasabi:TitleBox x="320" y="5" w="-325" relatw="1" title="Skin Options" content="…"/>` — no
-      `h`, no `relath` — so the box resolves to no height, the renderer's size guard skips it, and its
-      body is laid out inside nothing. Only its `Color Themes` box (which states `h`) appears. In
-      Winamp the standard library's own object supplies the height, presumably auto-sized from the
-      content group. **Do not guess a constant**: measure what the body actually needs (there is
-      already `getAutoHeight`/`autowidthsource` machinery) or leave it. One skin, four declarations.
+- [ ] **B68. `autowidthsource` answers the source's string width, not its right edge, so the group
+      comes out short by however far the source is inset.** `WasabiSceneRenderer.autoWidth(of:)`
+      delegates to the named descendant and returns *its* measured text width; Winamp's own answer is
+      how far the source **reaches** inside the group, which is `x + width`. Every group whose source
+      sits at a non-zero `x` is therefore narrower than its own content by exactly that offset.
+      Seen live 2026-08-29 on impulse's Configuration, whose four *Skin Options* check-box labels
+      clip by about two characters: `<groupdef id="impulse.checkbox" autowidthsource="checkbox.text">`
+      holds `<text id="checkbox.text" x="13" w="-14" relatw="1">`, so the group is sized to the string
+      while the label inside it gets 14px less than that. **It is not a Wasabi form-widget defect** —
+      `Impulse:Checkbox` is the skin's own groupdef — but B67 is what made it visible, because those
+      boxes had no height at all before.
+      26 declarations across 11 skins name an offset source, and the offsets are 3–170px
+      ([M22]). **The other 27 are the safety argument**: ClassicPro's entire menu bar — the tuned case
+      `autoWidth` exists for, whose comment in the source is about exactly it — sources at `x="0"`,
+      where `x + width` is the width it already returns. Check that claim before changing the
+      expression, then re-render the ClassicPro skins and the two `wasabi.tabsheet.button.*` groups
+      that also use it.
 
 ---
 
