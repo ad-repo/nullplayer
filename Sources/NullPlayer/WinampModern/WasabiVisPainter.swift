@@ -148,8 +148,15 @@ struct WasabiVisStyle {
 struct WasabiVisInput {
     let objectID: WasabiObjectID
     let style: WasabiVisStyle
-    /// The spectrum tap's band magnitudes. Empty while nothing is playing.
-    let levels: [Float]
+    /// The analyzer's bands, 0…1 and lowest frequency first, for a band count only the renderer
+    /// knows — `bandwidth` picks 19 or 75, and a NullPlayer engine picks its own.
+    ///
+    /// A closure rather than an array because the count is decided *inside* the draw, and because
+    /// the analysis behind it is memoized per frame: several `<vis>` boxes in one frame (Big Bento's
+    /// butterfly is four) ask for the same count and get the same answer without a second FFT.
+    /// Empty while nothing has been analysed yet; all-zero once the audio has gone quiet, so the
+    /// bars fall to the floor rather than freezing where the music left them (B73).
+    let bands: (Int) -> [CGFloat]
     /// Winamp's 576-sample `visdata` waveform, `UInt8` centred on 128, flat when silent.
     let waveform: (left: [UInt8], right: [UInt8])
     /// What the waveform was sampled at. Winamp's own scope does not care — it draws the buffer it
@@ -170,6 +177,10 @@ protocol WasabiVisRenderer: AnyObject {
     /// has to run. Deliberately answered from the mode alone: it is recomputed whenever the graph
     /// changes, so it must not cost a colour resolution per box per frame.
     func needsWaveform(forMode mode: WasabiVisualizationMode) -> Bool
+    /// Whether this renderer reads the analyzer's FFT for that mode, and therefore whether the
+    /// host's own spectrum tap has to run (B73). Answered from the mode alone, for `needsWaveform`'s
+    /// reason: it is recomputed whenever the graph changes.
+    func needsAnalyzerBands(forMode mode: WasabiVisualizationMode) -> Bool
     func draw(_ input: WasabiVisInput, in frame: CGRect, context: CGContext)
     /// Whether any box still has a bar or a cap above the floor — what tells the window it can stop
     /// repainting after the audio went quiet.
@@ -194,11 +205,24 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
     }
     private var boxes: [WasabiObjectID: BoxState] = [:]
 
+    /// The clear space a cap must have above its bar before it is drawn at all, in points. One
+    /// pixel is enough to read as a gap and is the least that can: below that the cap and the bar
+    /// share an edge and the cap stops looking like a cap.
+    static let minimumCapGap: CGFloat = 1
+
+    /// Whether a cap at `capY` clears a bar whose top edge is `barTop` by enough space to read as a
+    /// floating cap. Shared with `WasabiRenderer.drawVisualizationBars` so the `<vis>` analyzer and
+    /// the `{0000000A}` holder cannot drift on what a cap is.
+    static func capClears(barTop: CGFloat, capY: CGFloat, capHeight: CGFloat) -> Bool {
+        barTop - (capY + capHeight) >= minimumCapGap
+    }
+
     /// The longest step a single frame may decay by. A stall — or the first draw, whose `lastDraw` is
     /// zero — must not drop every bar to the floor in one frame.
     private static let maximumDecayStep: CFTimeInterval = 0.25
 
     func needsWaveform(forMode mode: WasabiVisualizationMode) -> Bool { mode == .oscilloscope }
+    func needsAnalyzerBands(forMode mode: WasabiVisualizationMode) -> Bool { mode == .analyzer }
 
     var hasDecayingState: Bool {
         boxes.values.contains { state in
@@ -213,9 +237,6 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
         case .off:
             return
         case .analyzer:
-            // The spectrum is the analyzer's input and only the analyzer's: with nothing playing
-            // there are no levels, and the bars simply stop being drawn.
-            guard !input.levels.isEmpty else { return }
             drawAnalyzer(input, in: frame, context: context)
         case .oscilloscope:
             drawOscilloscope(input, in: frame, context: context)
@@ -226,34 +247,35 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
 
     private func drawAnalyzer(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
         let style = input.style
-        let levels = input.levels
+        // `bandwidth` picks the band **count**, and the tap is asked for exactly that many: the
+        // analysis is log-spaced across 20 Hz–20 kHz for whatever count it is given, so there is no
+        // bucket-collapsing left to do here and no ceiling imposed by however many bands some other
+        // consumer happened to want.
         let count = max(1, min(style.isThin ? Self.thinAnalyzerBands : Self.wideAnalyzerBands,
-                               min(levels.count, Int(frame.width))))
-        // One band, as the fraction of the box its bar fills: the loudest bin in the bucket, used
-        // **as it stands** — no decibel curve, and no `Gain.builtInAnalyzer` calibration.
+                               Int(frame.width)))
+        let bands = input.bands(count)
+        // Nothing analysed yet — before the first buffer after a skin load, or with no audio tap at
+        // all (the render harness) — and the bars simply are not drawn. Silence is a different
+        // thing: it arrives as zeroes, and the bars fall to the floor.
+        guard bands.count == count else { return }
+        // **The band is used as it stands — no decibel curve here.** The dB mapping, its window and
+        // its frequency weighting all live in `WinampModernAnalyzerTap`, once, so this analyzer and
+        // the `{0000000A}` holder's cannot read the same audio at different heights.
         //
-        // Both existed to serve a premise that measurement disproved: that `host.spectrumLevels` is a
-        // linear FFT magnitude. It is not. `AudioEngine` has already taken `20·log10` of the bins and
-        // normalized the result to 0…1 — over a 20 dB window in `.accurate`, or against an adaptive
-        // per-region reference under a square-root curve in the other two modes — so the tap arrives
-        // display-ready and already compressed. Sending it through `visByte(forMagnitude:)` took the
-        // log of a log, and two compounded logs are what flattened the row: the whole 0.1…1.0 range
-        // of the engine's output landed between 67% and 100% of the box, so music with real range
-        // drew as a straight line near the ceiling. Measured on a live frame, the tap alone already
-        // reports a mean of 0.78–0.98 with up to 52 of its 75 bands pinned at exactly 1.0.
+        // This used to be `host.spectrumLevels` put through `visByte(forMagnitude:)`, then
+        // `host.spectrumLevels` raw. Both were wrong in the same way: that array is a *display*
+        // signal `AudioEngine` has already log-scaled, normalised and clamped, and it saturates —
+        // 52 of its 75 bands measured at exactly 1.0 on a loud frame. Sending it through a second
+        // logarithm compressed the whole 0.1…1.0 range into the top third of the box; using it raw
+        // still left the row pinned at the ceiling with every peak cap latched to the identical 1.0,
+        // which is the white line B54 reported. B73 replaced the input, not the curve.
         //
-        // The 0.8 calibration went with it: it was cut to pull *this decibel curve* down to where
-        // Cava and vis_classic could meet it, and against an already-normalized band all it does is
-        // put the ceiling out of reach. Sensitivity alone remains, so `Normal` is ×1 and a full-scale
-        // band fills the box. `getVisBand` still answers in Winamp's vis byte — that is a script-
-        // facing contract and is deliberately left alone.
+        // `Gain.builtInAnalyzer` stays gone with it: that 0.8 was cut to pull the old decibel curve
+        // down to where Cava and vis_classic could meet it. Sensitivity alone remains, so `Normal`
+        // is ×1 and a full-scale band fills the box.
+        let gain = WinampModernVisSensitivity.stored(for: .skin).multiplier
         func bandFraction(_ index: Int) -> CGFloat {
-            let start = index * levels.count / count
-            let end = min(levels.count, max(start + 1, (index + 1) * levels.count / count))
-            var peak: Float = 0
-            for bin in start..<end { peak = max(peak, levels[bin]) }
-            return max(0, min(1, CGFloat(peak)
-                                 * WinampModernVisSensitivity.stored(for: .skin).multiplier))
+            max(0, min(1, bands[index] * gain))
         }
         // Bars are laid out on whole pixels. A fractional slot antialiases the 1px gap between bars
         // into a smear, and a `wide` row then reads as one solid block rather than as Winamp's
@@ -287,14 +309,25 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
             let (x, barWidth) = columns(index)
             context.fill(CGRect(x: x, y: frame.maxY - bar * frame.height,
                                 width: barWidth, height: bar * frame.height))
-            guard style.showsPeaks, state.peaks[index] > bar else { continue }
+            // **A cap draws only once it has cleared its bar by a visible gap**, not merely once
+            // `peaks > bar`. That test is true the instant a bar falls by a fraction of a pixel, and
+            // the cap it paints then touches the bar top — which is not a floating cap at all, it is
+            // a brighter fringe along the top of the row. At `thin`'s 75 bands in a 144px box the
+            // fringe is continuous and reads as a defect, which is what B54 was still reporting
+            // after its parked-cap cause was fixed.
             let capHeight: CGFloat = frame.height >= 16 ? 2 : 1
+            let barTop = frame.maxY - bar * frame.height
             let capY = min(frame.maxY - capHeight, frame.maxY - state.peaks[index] * frame.height)
+            guard style.showsPeaks,
+                  Self.capClears(barTop: barTop, capY: capY, capHeight: capHeight)
+            else { continue }
             context.setFillColor(style.peakColor
                                  ?? style.barColor(index: index, count: count, level: bar))
             context.fill(CGRect(x: x, y: capY, width: barWidth, height: capHeight))
         }
         boxes[input.objectID] = state
+        WasabiSceneRenderer.traceVisInput(bands, site: style.isThin ? "vis/thin" : "vis/wide",
+                                          peaks: state.peaks)
     }
 
     // MARK: - The oscilloscope

@@ -102,6 +102,26 @@ protocol WinampModernHost: AnyObject {
     /// graph changes and pushes it here only when the answer moves. Idempotent.
     func setWaveformNeeded(_ needed: Bool)
 
+    /// `count` spectrum band levels, 0…1, lowest frequency first — the `<vis mode="1">` analyzer's
+    /// input, and the `{0000000A}` holder's (B73).
+    ///
+    /// **Not `spectrumLevels`.** That is a *display* array the engine has already log-scaled,
+    /// normalised and clamped, and it saturates: 52 of its 75 bands measured at exactly 1.0 on a
+    /// loud frame, which is why the analyzer had no range and its peak caps could only draw a flat
+    /// line across the bar tops. This runs NullPlayer's own FFT over the full-precision stereo PCM
+    /// tap instead (`WinampModernAnalyzerTap`), so the bands are an analysis rather than a picture
+    /// and no longer depend on the user's `spectrumNormalizationMode`. `spectrumLevels` stays where
+    /// it is for `getVisBand` and the VU meters — those are script-facing contracts.
+    ///
+    /// Empty while nothing has been analysed yet, all-zero once the audio has gone quiet. A host
+    /// with no tap (the render harness, a test double) has no bands, and the analyzer draws nothing.
+    func analyzerBands(count: Int) -> [CGFloat]
+
+    /// Whether anything on screen is asking for those bands, on the same terms as
+    /// `setWaveformNeeded`: the tap costs a real-time audio consumer, so it stays off unless a skin
+    /// actually draws an analyzer. Idempotent.
+    func setAnalyzerNeeded(_ needed: Bool)
+
     func play()
     func pause()
     func stop()
@@ -143,6 +163,8 @@ extension WinampModernHost {
         (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
     }
     func setWaveformNeeded(_ needed: Bool) {}
+    func analyzerBands(count: Int) -> [CGFloat] { [] }
+    func setAnalyzerNeeded(_ needed: Bool) {}
     var trackArtist: String { "" }
     var trackAlbum: String { "" }
     var trackMetadata: WinampModernTrackMetadata { .empty }
@@ -295,6 +317,23 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         guard needed != isWaveformNeeded else { return }
         isWaveformNeeded = needed
         if needed { waveformTap.start() } else { waveformTap.stop() }
+    }
+
+    /// The analyzer's own FFT (B73). Lazy and demand-gated exactly like `waveformTap`, and for the
+    /// same reason: it registers a full-stereo consumer in `AudioEngine.processAudioBuffer`, and a
+    /// skin whose visualization is off — or is being drawn by Cava or vis_classic, which bring their
+    /// own input — must not pay for it.
+    private lazy var analyzerTap = WinampModernAnalyzerTap(consumerId: consumerID + ".analyzer")
+    private var isAnalyzerNeeded = false
+
+    func analyzerBands(count: Int) -> [CGFloat] {
+        isAnalyzerNeeded ? analyzerTap.bands(count: count) : []
+    }
+
+    func setAnalyzerNeeded(_ needed: Bool) {
+        guard needed != isAnalyzerNeeded else { return }
+        isAnalyzerNeeded = needed
+        if needed { analyzerTap.start() } else { analyzerTap.stop() }
     }
 
     /// What the skin's window installs to hear that the audio went quiet — the one clock that can
@@ -591,6 +630,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         engine.removeSpectrumConsumer(consumerID)
         levelMeter.stop()
         setWaveformNeeded(false)
+        setAnalyzerNeeded(false)
         spectrumLevels.removeAll(keepingCapacity: false)
     }
 

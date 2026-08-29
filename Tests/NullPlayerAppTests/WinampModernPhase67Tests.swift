@@ -139,7 +139,7 @@ final class WinampModernPhase67Tests: XCTestCase {
     /// off. This is the inline-attribute path, not the resource path.
     func testAHexColourInlineOnAnObjectResolves() throws {
         let pixels = try renderVis(attributes: ##"colorallbands="#808589""##)
-        XCTAssertEqual(pixel(pixels, x: 2, y: 10), [0x80, 0x85, 0x89, 255],
+        XCTAssertEqual(pixel(pixels, x: 1, y: 10), [0x80, 0x85, 0x89, 255],
                        "the grey the skin asked for, not unparseableColor's white")
     }
 
@@ -256,6 +256,11 @@ final class WinampModernPhase67Tests: XCTestCase {
         var sampleRateHz = 0
         var channelCount = 2
         var spectrumLevels: [Float] = Array(repeating: 1, count: 16)
+        /// B73 — the analyzer's input is the host's own FFT now, not `spectrumLevels`. A stub host
+        /// has no tap, so it answers from the levels this test sets. See `analyzerTestBands`.
+        func analyzerBands(count: Int) -> [CGFloat] {
+            analyzerTestBands(from: spectrumLevels, count: count)
+        }
 
         func play() {}
         func pause() {}

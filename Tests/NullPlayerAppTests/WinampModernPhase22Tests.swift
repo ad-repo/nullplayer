@@ -27,6 +27,11 @@ final class WinampModernPhase22Tests: XCTestCase {
         /// Every band at full scale, so a bar covers its whole column and a sampled pixel is the
         /// band's colour and nothing else.
         var spectrumLevels: [Float] = Array(repeating: 1, count: 16)
+        /// B73 — the analyzer's input is the host's own FFT now, not `spectrumLevels`. A stub host
+        /// has no tap, so it answers from the levels this test sets. See `analyzerTestBands`.
+        func analyzerBands(count: Int) -> [CGFloat] {
+            analyzerTestBands(from: spectrumLevels, count: count)
+        }
 
         func play() {}
         func pause() {}
@@ -41,13 +46,13 @@ final class WinampModernPhase22Tests: XCTestCase {
 
     func testColorAllBandsColoursTheAnalyzer() throws {
         let pixels = try render(visAttributes: #"colorallbands="0,0,255""#)
-        XCTAssertEqual(pixel(pixels, x: 2, y: 10), [0, 0, 255, 255],
+        XCTAssertEqual(pixel(pixels, x: 1, y: 10), [0, 0, 255, 255],
                        "the skin's one-stroke band colour, not the white default")
     }
 
     func testAPerBandColourStillWinsOverColorAllBands() throws {
         let pixels = try render(visAttributes: #"colorallbands="0,0,255" colorband1="255,0,0""#)
-        XCTAssertEqual(pixel(pixels, x: 2, y: 10), [255, 0, 0, 255], "band 1 keeps its own colour")
+        XCTAssertEqual(pixel(pixels, x: 1, y: 10), [255, 0, 0, 255], "band 1 keeps its own colour")
         XCTAssertEqual(pixel(pixels, x: 34, y: 10), [0, 0, 255, 255], "the rest fall back")
     }
 
@@ -55,7 +60,7 @@ final class WinampModernPhase22Tests: XCTestCase {
     /// bar chart drawn on top of it.
     func testTheVisualizationHonoursItsOwnAlpha() throws {
         let pixels = try render(visAttributes: #"colorallbands="0,0,0" alpha="50""#)
-        let sample = pixel(pixels, x: 2, y: 10)
+        let sample = pixel(pixels, x: 1, y: 10)
         XCTAssertEqual(sample[3], 50, "the object's alpha reaches the analyzer")
         XCTAssertNotEqual(sample[3], 255, "which is the whole difference from painting over the skin")
     }

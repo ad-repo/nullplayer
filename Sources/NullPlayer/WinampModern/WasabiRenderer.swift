@@ -2922,20 +2922,39 @@ final class WasabiSceneRenderer {
         // Resolved once, not once per box: `visRenderer` is a lookup through the skin's runtime now
         // that the engine is selectable (B53).
         let renderer = visRenderer
-        let needed = visualizationObjects().contains {
+        let boxes = visualizationObjects()
+        let needed = boxes.contains {
             renderer.needsWaveform(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
         }
+        // The analyzer's own FFT tap (B73), on exactly the same terms and the same key. Two demands
+        // rather than one because a skin can want either without the other: Big Bento's scope needs
+        // the waveform and not the FFT, its analyzer the FFT and not the waveform, and a skin drawing
+        // with Cava or vis_classic needs neither.
+        //
+        // A `{0000000A}` holder counts too, and is why this is not simply a filter over `<vis>`: an
+        // unhosted one draws the same analyzer (BB9) and reads the same bands. **Whole-graph**, not
+        // this renderer's hosted set — `hostedVisualizationHolders` is view-layer state and differs
+        // between the renderers of one skin, and they all push to a single host that does not
+        // refcount. Erring towards *running* the tap is the safe side of that: the cost is one
+        // consumer in `processAudioBuffer`, not a wrong picture.
+        let analyzerNeeded = boxes.contains {
+            renderer.needsAnalyzerBands(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
+        } || loadedSkin.runtime.graph.allObjectsUnordered.contains {
+            Self.componentKind(of: $0) == .visualization
+        }
         let changed = waveformDemand?.needed != needed
-        waveformDemand = (generation, needed)
-        // Pushed only on a change, though `setWaveformNeeded` is idempotent regardless.
+        let analyzerChanged = waveformDemand?.analyzer != analyzerNeeded
+        waveformDemand = (generation, needed, analyzerNeeded)
+        // Pushed only on a change, though both setters are idempotent regardless.
         if changed { host.setWaveformNeeded(needed) }
+        if analyzerChanged { host.setAnalyzerNeeded(analyzerNeeded) }
     }
 
     /// Whether any box in this skin is a PCM-fed visualization, as of the last `refreshWaveformDemand`
     /// — the window reads it to decide how fast its visualization clock has to run.
     var visualizationNeedsWaveform: Bool { waveformDemand?.needed ?? false }
 
-    private var waveformDemand: (generation: UInt64, needed: Bool)?
+    private var waveformDemand: (generation: UInt64, needed: Bool, analyzer: Bool)?
     /// The waveform every `<vis>` in *this* frame draws from. See `draw(in:)`.
     private var frameWaveform: (left: [UInt8], right: [UInt8])?
 
@@ -3084,8 +3103,12 @@ final class WasabiSceneRenderer {
         let waveform = visRenderer.needsWaveform(forMode: style.mode)
             ? (frameWaveform ?? host.waveformSamples)
             : (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+        // The analyzer's bands are asked for by count from inside the draw — the renderer is what
+        // knows whether this box wants 19 or 75 — and the tap memoizes the analysis behind them, so
+        // the four boxes of a butterfly share one FFT (B73).
         visRenderer.draw(WasabiVisInput(objectID: object.stableID, style: style,
-                                        levels: host.spectrumLevels, waveform: waveform,
+                                        bands: { [host] in host.analyzerBands(count: $0) },
+                                        waveform: waveform,
                                         sampleRate: host.sampleRateHz > 0
                                             ? Double(host.sampleRateHz) : 44_100),
                          in: drawFrame, context: context)
@@ -4026,26 +4049,47 @@ final class WasabiSceneRenderer {
     /// `AudioEngine`'s `.accurate` path normalizes each band over a **20 dB** window and clamps, so a
     /// band louder than its ceiling arrives as exactly 1.0 and no scaling here can recover it. `pinned`
     /// is the count of bands sitting at the clamp.
-    private static var lastVisTrace: CFTimeInterval = 0
-    static func traceVisInput(_ levels: [Float]) {
+    /// Throttled per **site**, not globally: a skin can draw a `<vis>` analyzer and a `{0000000A}`
+    /// holder in the same frame, and one shared clock would let whichever drew first starve the
+    /// other out of the log entirely.
+    private static var lastVisTrace: [String: CFTimeInterval] = [:]
+    static func traceVisInput(_ levels: [CGFloat], site: String, peaks: [CGFloat]? = nil) {
         guard ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_TRACE"] == "1",
               !levels.isEmpty else { return }
         let now = CACurrentMediaTime()
-        guard now - lastVisTrace > 1 else { return }
-        lastVisTrace = now
+        guard now - (lastVisTrace[site] ?? 0) > 1 else { return }
+        lastVisTrace[site] = now
         let pinned = levels.filter { $0 >= 0.999 }.count
-        let mean = levels.reduce(0, +) / Float(levels.count)
+        let mean = levels.reduce(0, +) / CGFloat(levels.count)
         let head = levels.prefix(12).map { String(format: "%.2f", $0) }.joined(separator: " ")
-        let mode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode") ?? "(default)"
-        NSLog("[VIS_TRACE] mode=\(mode) bands=\(levels.count) pinned@1.0=\(pinned) "
+        // The caps, where the caller has them. B54 is a question about *these*, not about the bands:
+        // a cap that tracks the music spreads out, and a cap that has latched on a clipped input
+        // reads as `pinned@1.0` equal to the band count — one flat white row across the bar tops.
+        var capReport = ""
+        if let peaks, !peaks.isEmpty {
+            let capPinned = peaks.filter { $0 >= 0.999 }.count
+            let capMean = peaks.reduce(0, +) / CGFloat(peaks.count)
+            capReport = String(format: " caps: pinned@1.0=%d min=%.3f max=%.3f mean=%.3f",
+                               capPinned, peaks.min() ?? 0, peaks.max() ?? 0, capMean)
+        }
+        // `pinned@1.0` is what this probe is for. It is what measured the old input's saturation —
+        // 52 of 75 bands at exactly 1.0 — and it is the number that says whether B73's tap, its dB
+        // window and its weighting have actually given the row somewhere to move.
+        NSLog("[VIS_TRACE] \(site) bands=\(levels.count) pinned@1.0=\(pinned) "
               + String(format: "min=%.3f max=%.3f mean=%.3f ", levels.min() ?? 0, levels.max() ?? 0, mean)
-              + "low12=[\(head)]")
+              + "low12=[\(head)]" + capReport)
     }
 
     private func drawVisualizationBars(_ object: WasabiObject, frame: CGRect, context: CGContext) {
-        guard !host.spectrumLevels.isEmpty, frame.width > 0, frame.height > 0 else { return }
-        let levels = host.spectrumLevels
-        let count = max(1, min(levels.count, Int(frame.width / Self.analyzerBandPitch)))
+        guard frame.width > 0, frame.height > 0 else { return }
+        // Band count comes from the box (~1 band per 6pt), and the tap is asked for exactly that
+        // many: the analysis is log-spaced across 20 Hz-20 kHz for whatever count it is given, so
+        // there is no ceiling here from however many bands some other consumer wanted (B73).
+        let count = max(1, Int(frame.width / Self.analyzerBandPitch))
+        let levels = host.analyzerBands(count: count)
+        // Nothing analysed yet — before the first buffer, or with no audio tap at all — and the bars
+        // are not drawn. Silence is a different thing: it arrives as zeroes and they fall.
+        guard levels.count == count else { return }
         let slot = frame.width / CGFloat(count)
 
         // The same falling bars and caps the `<vis>` analyzer has, on the same per-second rates —
@@ -4074,23 +4118,18 @@ final class WasabiSceneRenderer {
         var caps: [CGRect] = []
         let capHeight: CGFloat = frame.height >= 16 ? 2 : 1
         for index in 0..<count {
-            // One band is the loudest bin in its bucket, on the same decibel scale `getVisBand` and
-            // the `<vis>` analyzer answer in: the tap is linear, and drawn linearly ordinary music
-            // sits in the bottom of the box.
-            let start = index * levels.count / count
-            let end = min(levels.count, max(start + 1, (index + 1) * levels.count / count))
-            var magnitude: Float = 0
-            for bin in start..<end { magnitude = max(magnitude, levels[bin]) }
-            // **The band is used as it stands — no decibel curve.** `host.spectrumLevels` is not a
-            // linear FFT magnitude: `AudioEngine` has already taken `20·log10` of it and normalized
-            // the result to 0…1 over its own window (`.accurate`, the default), and the adaptive and
-            // dynamic modes hand back a normalized value too. Pushing that through
-            // `visByte(forMagnitude:)` takes the log of a log, and two compounded logs are what flatten
-            // the row: the entire 0.1…1.0 range of the engine's output lands between 67% and 100% of
-            // the box, so music with real range draws as a straight line near the ceiling and the gain
-            // only slides that line down. It is the trap `vuValue` already names one screen away —
-            // "its bands are already normalised so bars fill their window".
-            let level = max(0, min(1, CGFloat(magnitude) * gain))
+            // **The band is used as it stands — no decibel curve here.** The dB mapping, its window
+            // and its frequency weighting live once in `WinampModernAnalyzerTap`, which is what
+            // keeps this holder and the `<vis>` analyzer from drawing the same audio at different
+            // heights.
+            //
+            // It used to be one bucket of `host.spectrumLevels`, first through
+            // `visByte(forMagnitude:)` and then raw. Both were wrong the same way: that array is a
+            // *display* signal `AudioEngine` has already log-scaled, normalised and clamped, and it
+            // saturates — 52 of its 75 bands at exactly 1.0 on a loud frame. A second logarithm
+            // squeezed its whole 0.1…1.0 range into the top third of the box; raw, the row simply
+            // sat at the ceiling. B73 replaced the input rather than the curve.
+            let level = max(0, min(1, levels[index] * gain))
             // Rises instantly, falls at a rate per second. Drawn straight from `level`, the bar had
             // no fall of its own and stepped at whatever rate the FFT happened to arrive.
             let bar = max(level, state.bars[index] - barStep)
@@ -4106,13 +4145,17 @@ final class WasabiSceneRenderer {
                 bars.append(CGRect(x: x, y: frame.maxY - bar * frame.height,
                                    width: width, height: bar * frame.height))
             }
-            guard state.peaks[index] > bar else { continue }
-            caps.append(CGRect(x: x, y: min(frame.maxY - capHeight,
-                                            frame.maxY - state.peaks[index] * frame.height),
-                               width: width, height: capHeight))
+            // The same visible-gap rule the `<vis>` analyzer draws its caps by — see
+            // `WasabiBuiltInVisRenderer.drawAnalyzer`. A cap that merely clears its bar by a
+            // fraction of a pixel is a bright fringe along the row, not a floating cap.
+            let barTop = frame.maxY - bar * frame.height
+            let capY = min(frame.maxY - capHeight, frame.maxY - state.peaks[index] * frame.height)
+            guard WasabiBuiltInVisRenderer.capClears(barTop: barTop, capY: capY,
+                                                     capHeight: capHeight) else { continue }
+            caps.append(CGRect(x: x, y: capY, width: width, height: capHeight))
         }
         analyzerBoxes[object.stableID] = state
-        Self.traceVisInput(levels)
+        Self.traceVisInput(levels, site: "component", peaks: state.peaks)
 
         let bright = palette.listText
         let dim = Self.blend(bright, toward: palette.contentBackground, by: 0.6)

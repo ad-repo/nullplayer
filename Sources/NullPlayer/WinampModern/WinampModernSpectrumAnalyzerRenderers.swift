@@ -69,9 +69,10 @@ final class CavaVisRenderer: WasabiSpectrumAnalyzerRenderer {
     private var lastMotion: CFTimeInterval = 0
     private static let motionWindow: CFTimeInterval = 0.75
 
-    /// Cava takes the full-stereo tap through its own render model, so the `<vis>` PCM tap B51 built
-    /// for the oscilloscope stays off while this is what is drawing.
+    /// Cava takes the full-stereo tap through its own render model, so neither the `<vis>` PCM tap
+    /// B51 built for the oscilloscope nor B73's analyzer FFT runs while this is what is drawing.
     func needsWaveform(forMode mode: WasabiVisualizationMode) -> Bool { false }
+    func needsAnalyzerBands(forMode mode: WasabiVisualizationMode) -> Bool { false }
 
     /// Whether the picture is still **moving** — what keeps the window's visualization clock
     /// running so a fall is painted rather than frozen half way down.
@@ -181,6 +182,9 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
     /// Always, for any mode the skin is not switching off: this *is* a PCM visualization, and its
     /// input is the tap.
     func needsWaveform(forMode mode: WasabiVisualizationMode) -> Bool { mode != .off }
+    /// Never: the core runs its own FFT over that same waveform, so B73's analyzer tap would be a
+    /// second analysis of audio this engine has already analysed.
+    func needsAnalyzerBands(forMode mode: WasabiVisualizationMode) -> Bool { false }
 
     var hasDecayingState: Bool {
         bridge != nil && CACurrentMediaTime() - lastActiveDraw < Self.decayWindow

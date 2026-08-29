@@ -355,8 +355,15 @@ By area:
   documents the band range as **0…75**, so a request is resampled into whatever band count the host's
   analyser produces (75 today) rather than indexed straight into it. The source is the one spectrum
   tap every other visualization window consumes (`AudioEngine` → `updateSpectrum` →
-  `host.spectrumLevels`); it is **mono**, so both channels answer the same value — a stereo split
-  would mean a second FFT for skins alone. Phase 27. **On a decibel scale since Phase 30**: the tap's
+  `host.spectrumLevels`); it is **mono**, so both channels answer the same value.
+
+  **This is deliberately not where the drawn analyzer reads any more.** B73 moved
+  `<vis mode="1">` and the `{0000000A}` holder onto NullPlayer's own FFT
+  (`WinampModernAnalyzerTap`, `reference/rendering/vis.md`), because `spectrumLevels` is a saturating
+  *display* array. `getVisBand` stays here on purpose — it is a script-facing contract answering in
+  Winamp's vis byte, and a skin's scripted meters agreeing with each other matters more than their
+  agreeing with the bars. So the two *can* now disagree about the same audio, which is the trade B73
+  accepted knowingly. Phase 27. **On a decibel scale since Phase 30**: the tap's
   linear magnitude scaled by 255 put ordinary music at the very bottom of the range (measured on
   Defix: mean 4, max 39 out of 255, its 25-frame cone on frame 0 for 96.5% of a track), so the
   magnitude is mapped through `20·log10` over a 60 dB window. Same material after: mean 139, max 232

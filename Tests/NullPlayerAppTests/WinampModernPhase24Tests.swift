@@ -23,6 +23,11 @@ final class WinampModernPhase24Tests: XCTestCase {
         var sampleRateHz = 0
         var channelCount = 2
         var spectrumLevels: [Float] = []
+        /// B73 — the analyzer's input is the host's own FFT now, not `spectrumLevels`. A stub host
+        /// has no tap, so it answers from the levels this test sets. See `analyzerTestBands`.
+        func analyzerBands(count: Int) -> [CGFloat] {
+            analyzerTestBands(from: spectrumLevels, count: count)
+        }
 
         func play() {}
         func pause() {}

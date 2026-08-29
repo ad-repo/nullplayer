@@ -35,6 +35,11 @@ final class WinampModernPhase48Tests: XCTestCase {
         /// Every band at full scale, so a bar covers its whole column and a painted analyzer cannot
         /// be mistaken for the black behind it.
         var spectrumLevels: [Float] = Array(repeating: 1, count: 16)
+        /// B73 — the analyzer's input is the host's own FFT now, not `spectrumLevels`. A stub host
+        /// has no tap, so it answers from the levels this test sets. See `analyzerTestBands`.
+        func analyzerBands(count: Int) -> [CGFloat] {
+            analyzerTestBands(from: spectrumLevels, count: count)
+        }
 
         func play() {}
         func pause() {}
@@ -92,7 +97,7 @@ final class WinampModernPhase48Tests: XCTestCase {
         renderer.hostedVisualizationHolders = Set(
             loaded.runtime.graph.allObjectsUnordered.map(\.stableID))
         let pixels = try render(renderer)
-        XCTAssertEqual(pixel(pixels, x: 2, y: 10), [0, 0, 255, 255],
+        XCTAssertEqual(pixel(pixels, x: 1, y: 10), [0, 0, 255, 255],
                        "the skin's own analyzer is untouched by what fills its AVS window")
     }
 

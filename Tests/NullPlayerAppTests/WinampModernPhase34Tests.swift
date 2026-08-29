@@ -25,6 +25,11 @@ final class WinampModernPhase34Tests: XCTestCase {
         var trackTitle = "Synthetic Song"
         var trackInfo = "Synthetic Artist"
         var spectrumLevels: [Float] = []
+        /// B73 — the analyzer's input is the host's own FFT now, not `spectrumLevels`. A stub host
+        /// has no tap, so it answers from the levels this test sets. See `analyzerTestBands`.
+        func analyzerBands(count: Int) -> [CGFloat] {
+            analyzerTestBands(from: spectrumLevels, count: count)
+        }
 
         func play() {}
         func pause() {}
@@ -256,20 +261,23 @@ final class WinampModernPhase34Tests: XCTestCase {
     /// linear magnitude: drawn linearly, ordinary music sits in the bottom of the box (Phase 29 found
     /// the same fault in the VU meter, Phase 30 in `getVisBand`; the drawn analyzer was the third
     /// site). −20 dBFS is two thirds of the way up a 60 dB window, not a tenth of the way.
-    func testBarHeightIsTheDecibelScaleGetVisBandAnswersIn() throws {
+    /// **The bar is the band, drawn straight.** It was `visByte(forMagnitude:)` times a 0.8
+    /// calibration when the input was a linear FFT magnitude; 1b1880aa dropped the decibel curve
+    /// here after measuring that the input was already logarithmic, and B73 moved the one real dB
+    /// mapping into `WinampModernAnalyzerTap`, where `WinampModernB73Tests` pins it. What is left at
+    /// the draw site is deliberately nothing but the band fraction and the user's Sensitivity — this
+    /// test exists to keep a second curve from growing back here.
+    ///
+    /// (This assertion was left behind by 1b1880aa and had been failing on `feat/winamp-modern`
+    /// before B73 touched it.)
+    func testBarHeightIsTheBandFractionWithNoCurveOfItsOwn() throws {
         let host = Host()
-        host.spectrumLevels = Array(repeating: 0.1, count: 19)     // −20 dBFS
+        host.spectrumLevels = Array(repeating: 0.5, count: 19)
         let pixels = try renderScene(body: """
             <vis id="vis" x="0" y="0" w="16" h="16" colorallbands="255,0,0"/>
             """, host: host)
         let painted = (0..<16).filter { alpha(pixels, x: 0, y: $0) > 0 }.count
-        // Times the analyzer's calibration gain (B53): three engines can paint this box now, and
-        // Winamp's own read hot against the other two off exactly this decibel curve. The *shape* is
-        // what this test is about and is unchanged — the sweep still decides the height.
-        let sweep = Double(WinampModernScriptRuntime.visByte(forMagnitude: 0.1)) / 255
-        let expected = Int((sweep * Double(WasabiVisStyle.Gain.builtInAnalyzer) * 16).rounded())
-        XCTAssertEqual(painted, expected, accuracy: 1, "the bar follows the dB sweep")
-        XCTAssertGreaterThan(painted, 6, "and −20 dBFS is well clear of the floor")
+        XCTAssertEqual(painted, 8, accuracy: 1, "half a box for a band at half scale")
     }
 
     /// Silence stays silent — the floor of the sweep is 0, not a permanent stub of a bar.
@@ -293,6 +301,12 @@ final class WinampModernPhase34Tests: XCTestCase {
         addTeardownBlock { loaded.teardown() }
         _ = try render(renderer: renderer, size: 16)                // full-scale frame: peaks at the top
         host.spectrumLevels = Array(repeating: 0, count: 19)
+        // **Real time has to pass between the two frames.** Both falls are rates per second, and a
+        // cap is only drawn once it has cleared its bar by a visible gap (B73/B54) — back-to-back
+        // renders are microseconds apart, so the bar would still be at the ceiling with its cap
+        // inside it and there would be no cap to find. A tenth of a second drops the bar by ~0.4 of
+        // the box and the cap by ~0.09, which is the separation the eye is meant to see.
+        Thread.sleep(forTimeInterval: 0.1)
         let pixels = try render(renderer: renderer, size: 16)       // silence: the cap is still falling
 
         // The cap sits on a fractional row, so its edge is antialiased: the channels are compared
