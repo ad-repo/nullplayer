@@ -46,6 +46,14 @@ enum WinampModernSkinState {
     static let textSizeKey = "size"
     static let visSection = "@nullplayer.vis"
     static let analyzerKey = "engine"
+    /// The `{0000000A}` pane's own engine, on a key of its own so the `<vis>` boxes' `engine` above
+    /// keeps meaning exactly what it meant before this surface had a choice at all.
+    static let holderAnalyzerKey = "engine.holder"
+    /// The `{0000000A}` pane's analyzer/oscilloscope/off. The `<vis>` boxes have no entry here
+    /// because their mode is a `mode=` attribute the skin itself declares and its scripts write; an
+    /// unhosted plugin pane has no markup of its own, so the host is the only thing that can remember
+    /// what the user put in it.
+    static let holderModeKey = "mode.holder"
 
     // MARK: - A splitter's divider offset
 
@@ -115,21 +123,48 @@ enum WinampModernSkinState {
         configuration.setInteger(Int32(scale.storedValue), section: textSection, key: textSizeKey)
     }
 
-    // MARK: - What paints the skin's `<vis>` box
+    // MARK: - What paints a visualization box
 
     /// The visualization engine the user chose for this skin's `<vis>` boxes, or `.skin` when they
     /// never have — a skin looks the way its author drew it until somebody says otherwise.
     ///
     /// A string rather than an integer, because the value is an engine's *name*: an ordinal would
     /// silently re-point at a different engine the first time the list changes order.
-    static func spectrumAnalyzer(in configuration: WinampModernConfiguration) -> WinampModernSpectrumAnalyzer {
+    static func spectrumAnalyzer(for surface: WinampModernVisSurface,
+                                 in configuration: WinampModernConfiguration) -> WinampModernSpectrumAnalyzer {
         WinampModernSpectrumAnalyzer.from(
-            storedValue: configuration.string(section: visSection, key: analyzerKey, default: ""))
+            storedValue: configuration.string(section: visSection, key: analyzerKey(for: surface),
+                                              default: ""))
     }
 
     static func setSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer,
-                            in configuration: WinampModernConfiguration) {
-        configuration.setString(suite.rawValue, section: visSection, key: analyzerKey)
+                                    for surface: WinampModernVisSurface,
+                                    in configuration: WinampModernConfiguration) {
+        configuration.setString(suite.rawValue, section: visSection, key: analyzerKey(for: surface))
+    }
+
+    private static func analyzerKey(for surface: WinampModernVisSurface) -> String {
+        switch surface {
+        case .visBox: return analyzerKey
+        case .componentHolder: return holderAnalyzerKey
+        }
+    }
+
+    // MARK: - What an unhosted `{0000000A}` pane is showing
+
+    /// Analyzer, oscilloscope or nothing, for the plugin panes that have no `<vis>` markup to say.
+    /// Winamp's own default in that slot is its spectrum analyzer (BB9), so that is what a user who
+    /// has never chosen gets.
+    static func visualizationHolderMode(in configuration: WinampModernConfiguration) -> WasabiVisualizationMode {
+        // An unwritten entry is the empty string, which `WasabiVisualizationMode` already reads as
+        // the analyzer — the same default a `<vis>` with no `mode=` gets.
+        WasabiVisualizationMode(
+            attribute: configuration.string(section: visSection, key: holderModeKey, default: ""))
+    }
+
+    static func setVisualizationHolderMode(_ mode: WasabiVisualizationMode,
+                                           in configuration: WinampModernConfiguration) {
+        configuration.setString(mode.attributeValue, section: visSection, key: holderModeKey)
     }
 
     // MARK: - The sentinel

@@ -39,7 +39,45 @@ enum WinampModernSpectrumAnalyzer: String, CaseIterable {
     }
 }
 
-/// The selection and the engines behind it, **skin-wide**.
+/// **Which of a skin's two visualization surfaces a selection belongs to.**
+///
+/// A `.wal` skin draws in two different kinds of box and they are not the same surface:
+///
+/// - `.visBox` — the skin's own `<vis>` elements, cut and coloured by its author. Big Bento Modern's
+///   butterfly is four of them.
+/// - `.componentHolder` — an unhosted `{0000000A}` plugin holder, which has no `<vis>` markup at all
+///   and is drawn from the host's palette (BB9). Big Bento's stretched Multi Content View pane is
+///   one, as is its mini pane.
+///
+/// They carry **separate** selections on purpose: the butterfly is the skin's artwork and the pane
+/// is an empty plugin slot, so wanting Cava in the big pane is not a request to overpaint the
+/// artwork — which is exactly what one skin-wide choice would have done.
+enum WinampModernVisSurface: String, CaseIterable {
+    case visBox
+    case componentHolder
+}
+
+extension WinampModernSpectrumAnalyzer {
+    /// **The engine a pick in the combined mode/engine group implies.**
+    ///
+    /// A visualization menu lists Winamp's own two modes and NullPlayer's engines as *one* radio
+    /// group, because they are answers to the same question — what is in this box. So picking a mode
+    /// is also a choice against whatever NullPlayer engine was drawing: `Spectrum Analyzer` and
+    /// `Oscilloscope` are Winamp's own, and they mean the box goes back to Winamp's engine.
+    ///
+    /// Missing this is a one-way door, and it reached the running app: the row ticked, vis_classic
+    /// kept painting, and there was no way back out of it. `presentScriptPopup` applies the same rule
+    /// to a skin's own mode rows.
+    ///
+    /// `Off` is the exception. It is not one of Winamp's modes but the absence of all of them, so it
+    /// leaves the selection alone and switching back on returns the box to what was last in it.
+    static func chosen(byPicking mode: WasabiVisualizationMode,
+                       current: WinampModernSpectrumAnalyzer) -> WinampModernSpectrumAnalyzer {
+        mode == .off ? current : .skin
+    }
+}
+
+/// The selections and the engines behind them, **skin-wide, one per surface**.
 ///
 /// On `WasabiSkinRuntime` beside `componentBucket`, and for the same reason: one skin draws its
 /// visualization in several boxes, layouts and containers — Big Bento Modern shows six at once — and
@@ -47,38 +85,54 @@ enum WinampModernSpectrumAnalyzer: String, CaseIterable {
 /// of one skin disagree about what is drawing, and the engines below hold per-box state keyed by
 /// object, which is only coherent if there is one of each per skin.
 ///
+/// Skin-wide is not *surface*-wide, though: `WinampModernVisSurface` splits the `<vis>` boxes from
+/// the `{0000000A}` panes, so each keeps its own choice while both share the engine objects.
+///
 /// Loaded from the skin's own config on first use and cached: this is read once per box per frame.
 /// Main-thread only, like the renderer that owns it — every route in is a draw, a menu or a teardown.
 final class WinampModernSpectrumAnalyzerState {
-    private var cachedSuite: WinampModernSpectrumAnalyzer?
+    private var cachedSuites: [WinampModernVisSurface: WinampModernSpectrumAnalyzer] = [:]
     private let builtIn = WasabiBuiltInVisRenderer()
     /// Built on first selection, never before: an engine nobody chose must not register an audio
     /// consumer or allocate a vis_classic core, which is B51's gating rule one level up.
+    ///
+    /// Keyed by *suite*, not by surface: the engines hold their per-box state keyed by object, so one
+    /// `CavaVisRenderer` serves the `<vis>` boxes and a `{0000000A}` pane at once without their bars
+    /// meeting. Two instances would be two audio consumers against the same audio.
     private var suiteRenderers: [WinampModernSpectrumAnalyzer: WasabiVisRenderer] = [:]
 
-    func suite(in configuration: WinampModernConfiguration) -> WinampModernSpectrumAnalyzer {
-        if let cachedSuite { return cachedSuite }
-        let stored = WinampModernSkinState.spectrumAnalyzer(in: configuration)
-        cachedSuite = stored
+    func suite(for surface: WinampModernVisSurface,
+               in configuration: WinampModernConfiguration) -> WinampModernSpectrumAnalyzer {
+        if let cached = cachedSuites[surface] { return cached }
+        let stored = WinampModernSkinState.spectrumAnalyzer(for: surface, in: configuration)
+        cachedSuites[surface] = stored
         return stored
     }
 
-    func renderer(in configuration: WinampModernConfiguration) -> WasabiVisRenderer {
-        renderer(for: suite(in: configuration))
+    func renderer(for surface: WinampModernVisSurface,
+                  in configuration: WinampModernConfiguration) -> WasabiVisRenderer {
+        renderer(for: suite(for: surface, in: configuration))
     }
 
-    /// Switch engines, reporting whether anything moved so the caller can skip the repaint.
+    /// Switch engines for one surface, reporting whether anything moved so the caller can skip the
+    /// repaint.
     ///
     /// The outgoing engine's state goes with it — its taps, its cores and its per-box bars — because
-    /// an engine nobody is looking at must not keep costing audio work.
+    /// an engine nobody is looking at must not keep costing audio work. **Unless the other surface is
+    /// still drawing with it**: the two selections are independent, and discarding then would wipe
+    /// the bars out from under a box the user never touched.
     @discardableResult
     func select(_ suite: WinampModernSpectrumAnalyzer,
+                for surface: WinampModernVisSurface,
                 in configuration: WinampModernConfiguration) -> Bool {
-        let current = self.suite(in: configuration)
+        let current = self.suite(for: surface, in: configuration)
         guard suite != current else { return false }
-        renderer(for: current).discardState()
-        cachedSuite = suite
-        WinampModernSkinState.setSpectrumAnalyzer(suite, in: configuration)
+        cachedSuites[surface] = suite
+        WinampModernSkinState.setSpectrumAnalyzer(suite, for: surface, in: configuration)
+        let stillDrawing = WinampModernVisSurface.allCases.contains {
+            self.suite(for: $0, in: configuration) == current
+        }
+        if !stillDrawing { renderer(for: current).discardState() }
         return true
     }
 
@@ -97,8 +151,8 @@ final class WinampModernSpectrumAnalyzerState {
         }
     }
 
-    /// Stop everything: a skin change, a UI teardown. Idempotent, and it leaves the *selection*
-    /// alone — that is a preference, and it is on disk.
+    /// Stop everything: a skin change, a UI teardown. Idempotent, and it leaves the *selections*
+    /// alone — they are preferences, and they are on disk.
     func discardAll() {
         builtIn.discardState()
         for renderer in suiteRenderers.values { renderer.discardState() }

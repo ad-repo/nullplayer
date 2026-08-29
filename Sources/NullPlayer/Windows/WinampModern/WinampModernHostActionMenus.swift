@@ -132,6 +132,93 @@ extension WinampModernMainView {
         popUpMenu(menu, from: object)
     }
 
+    /// The right-click menu over an unhosted `{0000000A}` pane — Big Bento Modern's stretched Multi
+    /// Content View pane, its mini pane, and its Visualization tab (BB9).
+    ///
+    /// The same question, the same shape and the same engines as a `<vis>` box's menu above, against
+    /// this surface's **own** selection: the pane is an empty plugin slot and the butterfly is the
+    /// skin's artwork, so putting Cava in the pane must not overpaint the artwork. Winamp's own
+    /// analyzer and oscilloscope, Cava and vis_classic are one radio group with `Off` last, because
+    /// they are five answers to "what is in this box" and `Off` is the one that means "nothing".
+    ///
+    /// A pane the view layer has filled with the real visualization engine never reaches here — that
+    /// one answers with the engine's own menu, in `rightMouseDown`.
+    func showVisualizationHolderMenu(from object: WasabiObject?) {
+        let menu = NSMenu(title: "Visualization")
+        menu.autoenablesItems = false
+        let suite = renderer.spectrumAnalyzer(for: .componentHolder)
+        let mode = renderer.visualizationHolderMode
+        func modeItem(_ candidate: WasabiVisualizationMode) -> NSMenuItem {
+            let item = NSMenuItem(title: candidate.displayName,
+                                  action: #selector(applyHolderVisualizationModeFromMenu(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = candidate.attributeValue
+            // Winamp's modes are only what is on screen while Winamp's own engine is drawing.
+            item.state = candidate == mode && (suite == .skin || candidate == .off) ? .on : .off
+            return item
+        }
+        // Winamp's own two modes, then NullPlayer's engines, then `Off` — one group, read as a list
+        // of things that can be *in* the pane with "nothing" last. `Off` is not a peer of the other
+        // four (it is the absence of all of them), so it sits at the end of the group rather than
+        // third in Winamp's own enum order.
+        for candidate in WasabiVisualizationMode.allCases where candidate != .off {
+            menu.addItem(modeItem(candidate))
+        }
+        for candidate in WinampModernSpectrumAnalyzer.allCases where candidate != .skin {
+            let item = NSMenuItem(title: candidate.displayName,
+                                  action: #selector(applyHolderSpectrumAnalyzerFromMenu(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = candidate.rawValue
+            item.state = candidate == suite ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(modeItem(.off))
+        menu.addItem(.separator())
+        // The controls of whatever is actually drawing. The pane has no `<vis>` attributes, so for
+        // Winamp's own engine the one control that applies is how loud we draw it.
+        if suite != .skin,
+           let engine = renderer.spectrumAnalyzerMenus().first(where: { $0.suite == suite }) {
+            engine.menu.autoenablesItems = false
+            let settings = NSMenuItem(title: "\(suite.displayName) Settings", action: nil,
+                                      keyEquivalent: "")
+            settings.submenu = engine.menu
+            menu.addItem(settings)
+        } else {
+            menu.addItem(WinampModernVisSensitivityMenu.shared.menuItem(for: .skin))
+        }
+        menu.addItem(.separator())
+        let hostItem = NSMenuItem(title: "Visualizations", action: nil, keyEquivalent: "")
+        hostItem.submenu = ContextMenuBuilder.buildVisualizationsMenu()
+        menu.addItem(hostItem)
+        popUpMenu(menu, from: object, atMouse: object == nil)
+    }
+
+    @objc private func applyHolderVisualizationModeFromMenu(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        let mode = WasabiVisualizationMode(attribute: value)
+        // The modes and the engines are one group, so picking a mode is also a choice about the
+        // engine — see `WinampModernSpectrumAnalyzer.chosen(byPicking:current:)`, which owns that
+        // rule and the defect it exists to prevent.
+        let current = renderer.spectrumAnalyzer(for: .componentHolder)
+        WindowManager.shared.setWinampModernVisualizationHolderEngine(
+            .chosen(byPicking: mode, current: current))
+        WindowManager.shared.setWinampModernVisualizationHolderMode(mode)
+    }
+
+    @objc private func applyHolderSpectrumAnalyzerFromMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        WindowManager.shared.setWinampModernVisualizationHolderEngine(
+            WinampModernSpectrumAnalyzer.from(storedValue: raw))
+        // Picking an engine out of a group whose other rows are modes means "put this in the pane",
+        // so a pane the user had switched off is switched back on — the same rule the `<vis>` menu
+        // follows one level up.
+        if renderer.visualizationHolderMode == .off {
+            WindowManager.shared.setWinampModernVisualizationHolderMode(.analyzer)
+        }
+    }
+
     /// `VIS_CFG` — the options *of* the current visualization, which is what Defix labels "Options"
     /// next to its "Presets" button. With the visualization window up that is its own live menu
     /// (preset list, rating, engine settings); otherwise it is the analyzer's one real option.

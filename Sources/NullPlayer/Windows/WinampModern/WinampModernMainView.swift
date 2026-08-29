@@ -1305,6 +1305,21 @@ final class WinampModernMainView: NSView {
             popUpMenu(surface.buildMenu(), from: nil, atMouse: true)
             return
         }
+        // An **unhosted** `{0000000A}` pane answers with the same question a `<vis>` box does —
+        // which engine, which mode — against its own selection (BB9). A holder is found whatever is
+        // stacked on it, so the same two conditions the `<vis>` rule below carries apply: the pane
+        // has to be what the pointer is actually over, and a skin control sitting on it (Big Bento's
+        // `vis.full.buttons` overlap their pane) keeps its own right-button handler.
+        if renderer.componentHolder(at: point)?.kind == .visualization {
+            let claimed = renderer.object(at: point).map {
+                scripts.hasBinding(for: $0, event: "onrightbuttondown")
+                    || scripts.hasBinding(for: $0, event: "onrightbuttonup")
+            } ?? false
+            if !claimed {
+                showVisualizationHolderMenu(from: nil)
+                return
+            }
+        }
         guard let object = renderer.object(at: point) else { return }
         // A `<vis>` box nothing else has claimed answers for itself: which engine paints it, that
         // engine's own options, and Winamp's own `<vis>` attributes (B53). Two conditions, and both

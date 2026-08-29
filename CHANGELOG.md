@@ -9,6 +9,16 @@
 
 ### Bug Fixes
 
+- **Modern skins: the big visualization pane can now be an oscilloscope, Cava or vis_classic** — a
+  Winamp 5.x skin draws its visualization in two different kinds of box, and only one of them had a
+  choice. The skin's own `<vis>` boxes (Big Bento Modern's butterfly beside the transport) could
+  already be switched between Winamp's analyzer, Winamp's oscilloscope, Cava and vis_classic; the
+  larger plugin pane — Big Bento's top-right Multi Content View pane, its mini pane and its
+  Visualization tab — always drew the same spectrum analyzer with no way to change it. Right-clicking
+  one now opens the same picker, with the engine's own settings and the Visualizations menu under it.
+  The pane keeps its **own** choice, so putting Cava in it leaves the skin's butterfly drawing the
+  artwork its author cut, and the choice is remembered per skin.
+
 - **Switching skin family no longer leaves the player at the old skin's size** — going from a Winamp
   5.x modern skin to a Classic one left the classic player squeezed into the outgoing skin's window,
   drawing its artwork shrunk inside a box the wrong shape ("the main window is tiny in classic mode").

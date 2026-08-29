@@ -54,17 +54,17 @@ final class WinampModernPhase75Tests: XCTestCase {
     /// says otherwise, which is the rule the colour themes and Text Size already follow.
     func testAnUntouchedSkinDrawsWithItsOwnEngine() {
         let configuration = WinampModernConfiguration(namespace: "untouched", defaults: defaults)
-        XCTAssertEqual(WinampModernSkinState.spectrumAnalyzer(in: configuration), .skin)
+        XCTAssertEqual(WinampModernSkinState.spectrumAnalyzer(for: .visBox, in: configuration), .skin)
     }
 
     func testTheChoiceIsRememberedPerSkin() {
         let bento = WinampModernConfiguration(namespace: "bento", defaults: defaults)
         let miku = WinampModernConfiguration(namespace: "miku", defaults: defaults)
-        WinampModernSkinState.setSpectrumAnalyzer(.cava, in: bento)
+        WinampModernSkinState.setSpectrumAnalyzer(.cava, for: .visBox, in: bento)
 
-        XCTAssertEqual(WinampModernSkinState.spectrumAnalyzer(in: bento), .cava)
+        XCTAssertEqual(WinampModernSkinState.spectrumAnalyzer(for: .visBox, in: bento), .cava)
         // The other skin is untouched — the choice is about how *this* skin should look.
-        XCTAssertEqual(WinampModernSkinState.spectrumAnalyzer(in: miku), .skin)
+        XCTAssertEqual(WinampModernSkinState.spectrumAnalyzer(for: .visBox, in: miku), .skin)
     }
 
     /// Stored by name rather than by ordinal, so a value the build no longer knows falls back to the
@@ -73,7 +73,7 @@ final class WinampModernPhase75Tests: XCTestCase {
         let configuration = WinampModernConfiguration(namespace: "future", defaults: defaults)
         configuration.setString("milkdrop", section: WinampModernSkinState.visSection,
                                 key: WinampModernSkinState.analyzerKey)
-        XCTAssertEqual(WinampModernSkinState.spectrumAnalyzer(in: configuration), .skin)
+        XCTAssertEqual(WinampModernSkinState.spectrumAnalyzer(for: .visBox, in: configuration), .skin)
         XCTAssertEqual(WinampModernSpectrumAnalyzer.from(storedValue: ""), .skin)
     }
 

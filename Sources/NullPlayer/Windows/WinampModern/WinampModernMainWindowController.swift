@@ -573,13 +573,29 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         skinView?.renderer.spectrumAnalyzerMenus() ?? []
     }
 
-    /// Switch engines and remember it for this skin.
-    ///
-    /// Fans out like `setTextScale`: the *selection* is skin-wide (it lives on the skin's runtime),
-    /// but each container has to be told to repaint — a separate-window skin can draw a `<vis>` in
-    /// an auxiliary container, and one of Big Bento's six sits in the player while others do not.
+    /// Switch the `<vis>` boxes' engine and remember it for this skin.
     func setSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer) {
-        guard let skinView, skinView.renderer.setSpectrumAnalyzer(suite) else { return }
+        applyVisualizationChange { $0.setSpectrumAnalyzer(suite) }
+    }
+
+    /// The engine an unhosted `{0000000A}` pane draws with — its own selection, separate from the
+    /// `<vis>` boxes' above (BB9). Fans out the same way: Big Bento draws three of these panes.
+    func setVisualizationHolderEngine(_ suite: WinampModernSpectrumAnalyzer) {
+        applyVisualizationChange { $0.setSpectrumAnalyzer(suite, for: .componentHolder) }
+    }
+
+    /// Analyzer, oscilloscope or nothing in those panes.
+    func setVisualizationHolderMode(_ mode: WasabiVisualizationMode) {
+        applyVisualizationChange { $0.setVisualizationHolderMode(mode) }
+    }
+
+    /// Apply one visualization selection and repaint every container that draws this skin.
+    ///
+    /// The *selection* is skin-wide (it lives on the skin's runtime), but each container has to be
+    /// told to repaint — a separate-window skin can draw a `<vis>` in an auxiliary container, and
+    /// one of Big Bento's six sits in the player while others do not. Same fan-out as `setTextScale`.
+    private func applyVisualizationChange(_ change: (WasabiSceneRenderer) -> Bool) {
+        guard let skinView, change(skinView.renderer) else { return }
         skinView.needsDisplay = true
         for container in auxiliaryContainers {
             // The renderers share one selection through the runtime, so this only re-derives the

@@ -98,6 +98,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Clock or transport frozen while a video plays | [reference/components/video.md](reference/components/video.md) → *The picture's clock* |
 | Video window pops out when a tab changes | [reference/components/video.md](reference/components/video.md) → *A holder leaving is a tab switch* |
 | AVS/MilkDrop component holder or embedded visualization | [reference/components/visualization.md](reference/components/visualization.md) |
+| Plugin pane draws an analyzer and the user wants something else in it | [reference/components/visualization.md](reference/components/visualization.md) → *An unhosted pane is a surface with a choice of its own* |
 | Several visualization holders show the wrong engine | [reference/components/visualization.md](reference/components/visualization.md) → *one holder per skin* |
 | Browser/WebKit, navigation, search URL, duplicate toolbar | [reference/components/browser.md](reference/components/browser.md) |
 | Scheme-less web address is mistaken for a VFS path | [reference/components/browser.md](reference/components/browser.md) → *four navigation routes* |

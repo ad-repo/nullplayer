@@ -2923,25 +2923,30 @@ final class WasabiSceneRenderer {
         // that the engine is selectable (B53).
         let renderer = visRenderer
         let boxes = visualizationObjects()
+        // A `{0000000A}` pane has a mode and an engine of its own (BB9), so it asks for the taps on
+        // its own terms: a pane set to the oscilloscope wants the PCM tap even in a skin whose every
+        // `<vis>` is an analyzer, and one drawing with Cava wants neither.
+        let holderRenderer = visRenderer(for: .componentHolder)
+        let holderMode = visualizationHolderMode
+        // **Whole-graph**, not this renderer's hosted set — `hostedVisualizationHolders` is view-layer
+        // state and differs between the renderers of one skin, and they all push to a single host
+        // that does not refcount. Erring towards *running* a tap is the safe side of that: the cost
+        // is one consumer in `processAudioBuffer`, not a wrong picture.
+        let hasVisualizationHolder = loadedSkin.runtime.graph.allObjectsUnordered.contains {
+            Self.componentKind(of: $0) == .visualization
+        }
         let needed = boxes.contains {
             renderer.needsWaveform(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
-        }
+        } || (hasVisualizationHolder && holderRenderer.needsWaveform(forMode: holderMode))
         // The analyzer's own FFT tap (B73), on exactly the same terms and the same key. Two demands
         // rather than one because a skin can want either without the other: Big Bento's scope needs
         // the waveform and not the FFT, its analyzer the FFT and not the waveform, and a skin drawing
         // with Cava or vis_classic needs neither.
         //
-        // A `{0000000A}` holder counts too, and is why this is not simply a filter over `<vis>`: an
-        // unhosted one draws the same analyzer (BB9) and reads the same bands. **Whole-graph**, not
-        // this renderer's hosted set — `hostedVisualizationHolders` is view-layer state and differs
-        // between the renderers of one skin, and they all push to a single host that does not
-        // refcount. Erring towards *running* the tap is the safe side of that: the cost is one
-        // consumer in `processAudioBuffer`, not a wrong picture.
+        // A `{0000000A}` pane counts too, and is why this is not simply a filter over `<vis>`.
         let analyzerNeeded = boxes.contains {
             renderer.needsAnalyzerBands(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
-        } || loadedSkin.runtime.graph.allObjectsUnordered.contains {
-            Self.componentKind(of: $0) == .visualization
-        }
+        } || (hasVisualizationHolder && holderRenderer.needsAnalyzerBands(forMode: holderMode))
         let changed = waveformDemand?.needed != needed
         let analyzerChanged = waveformDemand?.analyzer != analyzerNeeded
         waveformDemand = (generation, needed, analyzerNeeded)
@@ -3000,12 +3005,37 @@ final class WasabiSceneRenderer {
     /// containers and several `WasabiSceneRenderer`s, and they must all draw the same engine from
     /// the same per-object state.
     var visRenderer: WasabiVisRenderer {
-        loadedSkin.runtime.spectrumAnalyzer.renderer(in: loadedSkin.configuration)
+        visRenderer(for: .visBox)
+    }
+
+    func visRenderer(for surface: WinampModernVisSurface) -> WasabiVisRenderer {
+        loadedSkin.runtime.spectrumAnalyzer.renderer(for: surface, in: loadedSkin.configuration)
     }
 
     /// Which engine is drawing this skin's `<vis>` boxes.
     var spectrumAnalyzer: WinampModernSpectrumAnalyzer {
-        loadedSkin.runtime.spectrumAnalyzer.suite(in: loadedSkin.configuration)
+        spectrumAnalyzer(for: .visBox)
+    }
+
+    func spectrumAnalyzer(for surface: WinampModernVisSurface) -> WinampModernSpectrumAnalyzer {
+        loadedSkin.runtime.spectrumAnalyzer.suite(for: surface, in: loadedSkin.configuration)
+    }
+
+    /// What an unhosted `{0000000A}` pane shows — analyzer, oscilloscope or nothing.
+    ///
+    /// Not `visualizationMode`, which reads the skin's own `<vis>` markup: a plugin pane has none, so
+    /// this is the host's own remembered answer for that surface (BB9).
+    var visualizationHolderMode: WasabiVisualizationMode {
+        WinampModernSkinState.visualizationHolderMode(in: loadedSkin.configuration)
+    }
+
+    @discardableResult
+    func setVisualizationHolderMode(_ mode: WasabiVisualizationMode) -> Bool {
+        guard mode != visualizationHolderMode else { return false }
+        WinampModernSkinState.setVisualizationHolderMode(mode, in: loadedSkin.configuration)
+        invalidateWaveformDemand()
+        invalidateSceneCache()
+        return true
     }
 
     /// Every NullPlayer engine's own controls, for the menus that offer them.
@@ -3036,8 +3066,10 @@ final class WasabiSceneRenderer {
     /// *on* without a single attribute moving, so the cached answer has to be dropped rather than
     /// re-derived.
     @discardableResult
-    func setSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer) -> Bool {
-        guard loadedSkin.runtime.spectrumAnalyzer.select(suite, in: loadedSkin.configuration) else {
+    func setSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer,
+                             for surface: WinampModernVisSurface = .visBox) -> Bool {
+        guard loadedSkin.runtime.spectrumAnalyzer.select(suite, for: surface,
+                                                         in: loadedSkin.configuration) else {
             return false
         }
         invalidateWaveformDemand()
@@ -3057,7 +3089,8 @@ final class WasabiSceneRenderer {
     /// Whether any box still has a bar or a cap above the floor — what tells the window it can stop
     /// repainting once the audio has gone quiet.
     var hasDecayingVisualizationState: Bool {
-        visRenderer.hasDecayingState || hasDecayingComponentAnalyzerState
+        visRenderer.hasDecayingState || visRenderer(for: .componentHolder).hasDecayingState
+            || hasDecayingComponentAnalyzerState
     }
 
     private func drawVisualization(_ object: WasabiObject, frame: CGRect, context: CGContext) {
@@ -3613,7 +3646,7 @@ final class WasabiSceneRenderer {
             // while the single engine surface is in the first — gets the analyzer, which is what the
             // slot shows in Winamp by default anyway (BB9). Headlessly the set is always empty.
             guard !hostedVisualizationHolders.contains(object.stableID) else { return }
-            drawVisualizationBars(object, frame: frame, context: context)
+            drawVisualizationHolder(object, frame: frame, context: context)
         case .video:
             // Black, not the palette's content colour: a video box is black in Winamp and in all five
             // corpus skins that draw one, and while a film is playing this is what shows in the
@@ -4078,6 +4111,70 @@ final class WasabiSceneRenderer {
         NSLog("[VIS_TRACE] \(site) bands=\(levels.count) pinned@1.0=\(pinned) "
               + String(format: "min=%.3f max=%.3f mean=%.3f ", levels.min() ?? 0, levels.max() ?? 0, mean)
               + "low12=[\(head)]" + capReport)
+    }
+
+    /// What an unhosted `{0000000A}` pane draws — the user's choice for that surface (BB9).
+    ///
+    /// The pane has **no `<vis>` markup**, so neither the engine nor the mode can come from the skin
+    /// and both are the host's remembered answer for `.componentHolder`. Two routes out of here:
+    ///
+    /// - Winamp's own analyzer is `drawVisualizationBars` below, unchanged. It is not
+    ///   `WasabiBuiltInVisRenderer`'s: that one takes its band count from `bandwidth` (19 or 75,
+    ///   sized for a 144px `<vis>`), and 19 bands across a 1400px pane is a row of slabs. This
+    ///   surface counts bands off its own width.
+    /// - Everything else — the oscilloscope, Cava, vis_classic — is the same `WasabiVisRenderer` seam
+    ///   the `<vis>` boxes paint through, handed a style synthesized from the skin's palette, which
+    ///   is the route every other NullPlayer-owned surface inside a `.wal` takes.
+    private func drawVisualizationHolder(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        let suite = spectrumAnalyzer(for: .componentHolder)
+        let mode = visualizationHolderMode
+        if suite == .skin && mode == .analyzer {
+            drawVisualizationBars(object, frame: frame, context: context)
+            return
+        }
+        // Off is off, whichever engine is selected — the same thing `mode="0"` means to a `<vis>`.
+        guard mode != .off else { return }
+        let style = visualizationHolderStyle(mode: mode)
+        let renderer = visRenderer(for: .componentHolder)
+        let waveform = renderer.needsWaveform(forMode: mode)
+            ? (frameWaveform ?? host.waveformSamples)
+            : (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.clip(to: frame)
+        renderer.draw(WasabiVisInput(objectID: object.stableID, style: style,
+                                     bands: { [host] in host.analyzerBands(count: $0) },
+                                     waveform: waveform,
+                                     sampleRate: host.sampleRateHz > 0
+                                         ? Double(host.sampleRateHz) : 44_100),
+                      in: frame, context: context)
+    }
+
+    /// The style a plugin pane is drawn with, standing in for the `<vis>` attributes it does not have.
+    ///
+    /// Colours from the skin's palette rather than from a nearby `<vis>` — a colour-theme switch then
+    /// recolours this with every other host-drawn surface, and borrowing the butterfly's palette
+    /// would make the pane a second copy of artwork cut for a different box. The falloff rates are
+    /// the same two constants `drawVisualizationBars` uses, so Winamp's analyzer and the other
+    /// engines do not fall at different speeds in one pane.
+    private func visualizationHolderStyle(mode: WasabiVisualizationMode) -> WasabiVisStyle {
+        var style = WasabiVisStyle()
+        style.mode = mode
+        style.isThin = true
+        style.barFalloff = WasabiVisStyle.barFalloffSteps[Self.analyzerBarFalloffStep]
+        style.peakFalloff = WasabiVisStyle.peakFalloffSteps[Self.analyzerPeakFalloffStep]
+        let bright = palette.listText
+        let dim = Self.blend(bright, toward: palette.contentBackground, by: 0.6)
+        // The same dim→bright ramp the bars are filled with, spread over the sixteen bands and the
+        // five oscilloscope excursion steps those two lists are indexed by.
+        style.bandColors = (0..<16).map {
+            Self.blend(dim, toward: bright, by: CGFloat($0) / 15).cgColor
+        }
+        style.oscColors = (0..<5).map {
+            Self.blend(dim, toward: bright, by: CGFloat($0) / 4).cgColor
+        }
+        style.peakColor = bright.cgColor
+        return style
     }
 
     private func drawVisualizationBars(_ object: WasabiObject, frame: CGRect, context: CGContext) {

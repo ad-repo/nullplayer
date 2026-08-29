@@ -122,6 +122,58 @@ still opens NullPlayer's own window.
 > Confirm a visualization holder **in the app** (`WINAMP-MODERN-VIS: resume`) before trusting a
 > headless zero.
 
+### An unhosted pane is a surface with a choice of its own (BB9a, 2026-08-29)
+
+**A pane that draws the analyzer is not stuck with it.** Right-clicking one opens the same question a
+`<vis>` box answers — Winamp's own analyzer, Winamp's oscilloscope, Cava, vis_classic, or `Off` —
+against a selection that is **this surface's**, not the `<vis>` boxes'.
+
+The split is `WinampModernVisSurface` (`.visBox` / `.componentHolder`), and it exists because the two
+boxes are not the same kind of thing. A `<vis>` is the skin's artwork: cut to size, coloured by its
+author, and in Big Bento Modern mirrored into a butterfly. A `{0000000A}` pane is an **empty plugin
+slot** with no markup at all. Wanting Cava in the big pane is not a request to overpaint the artwork,
+which is exactly what one skin-wide choice did.
+
+| | `<vis>` boxes | `{0000000A}` pane |
+|---|---|---|
+| Engine | `@nullplayer.vis/engine` | `@nullplayer.vis/engine.holder` |
+| Mode | the skin's own `mode=` attribute | `@nullplayer.vis/mode.holder` |
+| Colours | the skin's `colorband*` / `colorosc*` | the host palette, so a theme switch recolours it |
+| Menu | `showVisualizationMenu` | `showVisualizationHolderMenu` |
+
+The **selections** are separate; the **engine objects** are not. `WinampModernSpectrumAnalyzerState`
+keys its renderers by suite, so one `CavaVisRenderer` serves both surfaces — two instances would be
+two audio consumers against the same audio, and their per-box state is keyed by object anyway. The
+one thing that has to be conditional is `select`'s discard: dropping the outgoing engine's taps and
+cores while the *other* surface is still drawing with it wipes the bars out from under a box the user
+never touched.
+
+Drawing routes in `drawVisualizationHolder`. Winamp's own analyzer stays `drawVisualizationBars` and
+is not `WasabiBuiltInVisRenderer`'s: that one takes its band count from `bandwidth` (19 or 75, cut for
+a 144px `<vis>`), and 19 bands across a 1400px pane is a row of slabs — this surface counts bands off
+its own width. Everything else goes through the same `WasabiVisRenderer` seam the `<vis>` boxes paint
+through, handed a style synthesized from the palette. The tap demand asks the pane on its own terms
+too: a pane on the oscilloscope turns the PCM tap on in a skin whose every `<vis>` is an analyzer, and
+one on Cava turns both taps off.
+
+> **The modes and the engines are one radio group, so picking a mode is also a choice about the
+> engine.** `Spectrum Analyzer` and `Oscilloscope` are Winamp's *own* two, and they mean the box goes
+> back to Winamp's engine. Writing only the mode is a **one-way door** and it reached the running app:
+> the row ticked, vis_classic kept painting, and the pane could not be got off it. The rule lives once,
+> in `WinampModernSpectrumAnalyzer.chosen(byPicking:current:)` — `presentScriptPopup` applies the same
+> one to a skin's own mode rows. `Off` is the exception: it is the absence of all of them rather than a
+> peer, so it leaves the selection alone (switching back on returns the last engine) and it sits at the
+> **end** of the group rather than third in Winamp's enum order.
+
+Two conditions guard the click, both the skin's right to be left alone. A pane the view layer *has*
+filled with the real engine answers with that engine's own menu instead. And because
+`componentHolder(at:)` finds a holder whatever is stacked on it, a skin control sitting over a pane —
+Big Bento's `vis.full.buttons` overlap theirs — keeps its own right-button handler.
+
+The same gap still exists in the host's `<vis>` menu (`applyVisualizationModeFromMenu` writes only the
+mode). It is unreachable on Big Bento, whose butterfly menu comes through the skin-popup route that
+already hands back, but a skin that leaves the right button alone over its `<vis>` would hit it.
+
 ### What the renderer draws
 
 `WasabiSceneRenderer.hostedVisualizationHolders` is the set of holders the view layer has actually

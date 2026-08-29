@@ -2,6 +2,16 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## BB9a — an engine picker over the unhosted `{0000000A}` panes — closed 2026-08-29
+
+Live request against Big Bento Modern's top-right Multi Content View pane: the same right-click choice its `<vis>` butterfly already has. BB9 had settled that an unhosted plugin pane draws the spectrum analyzer, and that was the only thing it could ever be — `VisualizationEngineType` covers ProjectM/Geiss/Tripex, so the pane was unreachable by construction rather than by a setting nobody had found.
+
+Closed by `WinampModernVisSurface`, which splits the selection into `.visBox` and `.componentHolder`. Separate stored engine (`engine.holder`) and mode (`mode.holder`) per skin, shared engine *objects*, palette-derived colours, and `drawVisualizationHolder` routing Winamp's own analyzer to the existing width-derived `drawVisualizationBars` while everything else takes the `WasabiVisRenderer` seam. The `<vis>` boxes' existing `engine` key is untouched, so nothing already stored moves.
+
+Two things came out of live QA rather than the design. The pane's menu was a **one-way door** — picking a mode row wrote the mode and left vis_classic selected, so the row ticked and the pane went on drawing vis_classic; the rule that fixes it now lives once in `WinampModernSpectrumAnalyzer.chosen(byPicking:current:)`, and the same gap is still open in the host's own `<vis>` menu (unreachable on Bento, whose butterfly menu comes through the skin-popup route that already hands back). And `Off` moved to the end of the group: it is the absence of all the others rather than a peer of them.
+
+Detail in `skills/winamp-modern-skin-guide/reference/components/visualization.md` → *An unhosted pane is a surface with a choice of its own*.
+
 ## BB9 — the Multi Content View's three visualization placements — closed 2026-08-29
 
 Closed by the side-by-side layout: while the stretched pane is up the file-info text lines stay hidden, the cover takes its slot, the mini pane joins it when its own check box is ticked, and the spectrum is narrowed to what they leave (`WinampModernBentoMultiContentView`). The skin's 700 ms one-shot is untouched — the overlap it caused is answered by the layout rather than by fighting the timer. Two things the original entry could not have known: `Album Art` and `Visualization ` are one either/or in the skin, so the cover is unconditional on this page; and narrowing the pane took it under the 3:1 letterbox ratio, so the holder routing now asks the pane before the box. Detail in `skills/winamp-modern-skin-guide/skins/big-bento-modern.md` → *BB9*. One thing came out still open and is **BB34** in `TASKS.md`: the mini pane's ProjectM surface never starts, so that pane draws black. `swift test` 1442 pass (12 new, `WinampModernBentoMultiContentViewTests`).

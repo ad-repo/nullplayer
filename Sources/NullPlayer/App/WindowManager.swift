@@ -1018,6 +1018,20 @@ class WindowManager {
         (mainWindowController as? WinampModernMainWindowController)?.setSpectrumAnalyzer(suite)
     }
 
+    /// The engine and the mode for the loaded skin's unhosted `{0000000A}` panes, which carry a
+    /// selection of their own (BB9). Mode-guarded like everything else here.
+    func setWinampModernVisualizationHolderEngine(_ suite: WinampModernSpectrumAnalyzer) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?
+            .setVisualizationHolderEngine(suite)
+    }
+
+    func setWinampModernVisualizationHolderMode(_ mode: WasabiVisualizationMode) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?
+            .setVisualizationHolderMode(mode)
+    }
+
     /// Open the list of settings the skin registered but bound no control to.
     func showWinampModernSkinSettings() {
         guard uiMode.controllerFamily == .winampModern else { return }
