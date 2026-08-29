@@ -1076,6 +1076,16 @@ final class WasabiSkinInitializer {
             }
             let object = graph.makeObject(typeName: typeName, attributes: attributes, source: node.location)
             if let parent { try parent.appendChild(object) } else { graph.appendRoot(object) }
+            // A top-level container's *declared* visibility, snapshotted before anything can write
+            // over it. `visible` is one attribute serving two questions — "is this an SUI-collapsed
+            // stub the skin never means to show" (markup) and "is this window open right now"
+            // (`setVisible`) — and a script hiding its own window at startup is the ordinary case, so
+            // the second answer buries the first. Defix hides `VISCON` from `CORE_SCRIPT.maki` and
+            // every later reader then classified the window as a stub that does not exist (B16).
+            if parent == nil, typeName.caseInsensitiveCompare("container") == .orderedSame {
+                _ = object.setAttribute(WinampModernContainerTopology.declaredVisibleAttribute,
+                                        value: object.attributes["visible"] ?? "1")
+            }
             try createObjects(from: templateChildren, parent: object, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                               definitionStack: nextDefinitionStack,
@@ -1103,6 +1113,18 @@ final class WasabiSkinInitializer {
                 // Only the range is carried across; geometry, identity and appearance belong to the
                 // wrapper, and forwarding those would move the control inside its own group.
                 for key in ["low", "high"] where embeddedParent.attributes[key] == nil {
+                    if let value = attributes[key] { _ = embeddedParent.setAttribute(key, value: value) }
+                }
+                // The **commands** the instance declares, for the same reason and by the same rule:
+                // the wrapper is a `<group>`, which has no click behaviour of its own, and the object
+                // the pointer actually lands on is the embedded one. Enkera's whole transport is
+                // `<button:glow … action="play">` over a bare `<button id="but" fitparent="1"/>`, and
+                // Defix's two button bars are `<Defix:Bottom.bar.button action="PE_Add">` over a
+                // `mousetrap`: in both the artwork drew, the press animated, and the command reached
+                // nothing, because it stayed on a group that cannot run it. Commands only — geometry,
+                // identity and appearance stay on the wrapper, which is what draws.
+                for key in ["action", "param", "dblclickaction", "dbclickaction", "rightclickaction",
+                            "tooltip"] where embeddedParent.attributes[key] == nil {
                     if let value = attributes[key] { _ = embeddedParent.setAttribute(key, value: value) }
                 }
                 // A **vertical** slider starts at the top of its travel, which is `high` — not at the

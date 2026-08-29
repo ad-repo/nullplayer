@@ -467,6 +467,21 @@ broken on its own, and each fix looked like it had done nothing until the next o
   the wrapper is just as wrong: it draws nothing itself, so `getTextWidth()` on it is the width of
   an empty string.
 
+- **The commands declared on the wrapper are the embedded control's commands** (B70). A `<groupdef
+  xuitag="…" embed_xui="…">` wrapper is a `<group>`, which has no click behaviour of its own, and the
+  object the pointer lands on is the embedded one — so `action`, `param`, `dblclickaction`,
+  `rightclickaction` and `tooltip` are forwarded to it at creation, and only those. Geometry, identity
+  and appearance stay on the wrapper, which is what draws: our renderer honours an `image=` on the
+  group, and copying it down would paint the artwork twice.
+  Enkera's **whole transport** is `<button:glow … action="play">` over a bare `<button id="but"
+  fitparent="1"/>`; Defix's playlist and visualization bars are `<Defix:Bottom.bar.button
+  action="PE_Add">` over a `mousetrap`. In every one the artwork drew, the press animated and the
+  script's hover glow ran, so the button looked alive and reached nothing — *"they react but do
+  nothing"*, which is the signature of this defect. **23 declarations in 2 skins**: Enkera 6
+  (`play`/`pause`/`stop`/`prev`/`next`/`eject`), Defix 17 (`PE_*` ×5, `VIS_*` ×8, `TOGGLE` ×4).
+  The probe line that names it is `CLICK markup action:` — absent entirely when the hit object carries
+  no command, which reads exactly like a button with no behaviour to declare.
+
 Two related rules that fell out of the same investigation:
 
 - **`setPosition` clamps to the declared `low…high`.** Every scrollbar in the corpus steps its slider

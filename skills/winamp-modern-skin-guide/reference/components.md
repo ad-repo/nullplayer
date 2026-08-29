@@ -59,6 +59,28 @@ Shield_Amp, S7Reflex and Defix enter this same path rather than being parsed as 
   Browser-only containers are not suppressed: their real, policy-gated WebKit surface opens when
   `default_visible="1"`, subject to the same remembered user choice.
 
+#### `visible` on a container answers two questions, and only the declared one classifies it (B16)
+
+`WinampModernContainerTopology` drops a container that is an **SUI-collapsed stub** — a window a skin
+neutralises because its surface is embedded elsewhere. The evidence for that used to be the live
+`visible` attribute, and it is the wrong attribute: `setVisible` writes the *same* key when a script
+calls `hide()`, so a skin that closes its own detachable panel at startup — the ordinary thing to do
+with one — erased the window from `windowContainers` for the rest of the session, taking its native
+window, its Skin Windows entry and every probe line about it along with it.
+
+The declared value is snapshotted at container creation (`declaredVisibleAttribute`,
+`WasabiSkinInitializer`) and is what `isHidden` reads. **No container in the 36-skin corpus declares a
+bare `visible=` at all**, so the check only ever fired on a runtime hide; the collapsed-stub case is
+carried by the 1×1 size test beside it, which is what `window-overrides.xml` actually writes.
+
+Measured on Defix, the only skin in the corpus that does this: `CORE_SCRIPT.maki` hides `VISCON` — a
+406×360 detached-visualizer window with its own `{0000000A}` holder and control bar — from
+`onScriptLoaded`. `RENDER-DUMP` prints its container list *after* `scripts.start()`, so for the whole
+life of the subsystem that window was never listed, never rendered, and never measured. The app was
+unaffected only by luck of ordering: `setupAuxiliaryContainers` runs **before** `scripts.start()`, so
+it saw the container while it was still declared-visible. Any reader added after startup would not
+have. Third confirmed instance of *a blind instrument reads as a working feature*.
+
 ### Component hosting
 
 A `.wal` skin is a whole UI suite, and skins disagree about where the playlist, equalizer, and library

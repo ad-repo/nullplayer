@@ -13,8 +13,8 @@ bars and the speaker cones. So every "static" verdict on those objects is a real
 undriven measurement. A skin's own thumbnail cannot answer this class of question.
 
 **Shape of the skin:** separate windows — `main` (406×355) plus `pledit`, `SUI` (its media
-library/browser/visualization window, 800×600), two `SPEAKER` cabinets, `Config` (an About page),
-`browserpro`, `searchresults` and `notifier`. **The equalizer is the fallback, not a synthesized
+library/browser/visualization window, 800×600), `VISCON` (its **detached visualizer**, 406×360), two
+`SPEAKER` cabinets, `Config` (an About page), `browserpro`, `searchresults` and `notifier`. **The equalizer is the fallback, not a synthesized
 window** — the catalog says so in as many words (`equalizer=classic(the skin declares no equalizer
 surface)`), because this skin declares no equalizer surface *and* no `EQ_BAND`/`EQ_PREAMP`/
 `<eqvis>` control for one to be recognised from, so nothing qualifies for synthesis. Its `EQSwitch`
@@ -35,6 +35,38 @@ the remaining findings are duplicate ids and optional missing bitmaps. `main/nor
 35 bitmaps resolved and none missing. **All 50 script programs ran with `failed=-`.** Coverage
 **271/432 declared objects ever rendered (~63%)** — the unexplored set is dominated by the seven
 non-default display styles, which have no headless route in (below). **Grade B, confidence medium.**
+
+**`VISCON` is an eleventh container, and nothing measured it until 2026-08-29 (B16).** It is the
+window behind the SUI Visualization tab's *Detach Visualizer* control: `406x360, 50 nodes`, a
+`<Wasabi:StandardFrame:Static content="VISCON.component.gp">` holding a **second `{0000000A}`
+holder** — `VISCON.component.vis(17, 41, 372, 272)` — over its own bar of Previous / Next / Random /
+Presets / Options / Reattach Visualizer. So this skin has *two* visualization holders, the other being
+`wdh.vis.object` in the SUI's Visualization tab. Every earlier probe reported neither the container nor
+the holder, because `CORE_SCRIPT.maki` hides `VISCON` from `onScriptLoaded` and the dump's container
+list is taken after `scripts.start()` — see the archive's B16.
+
+Its own two bitmaps do **not** resolve — `BITMAPS VISCON/normal: resolved=12 missing=Lighting.Element
+studio.BaseTexture`, the frame's base texture and its lighting overlay. Both are declared with
+backslash paths elsewhere in the skin and are already in the skin's `resourceMissing` warnings, so
+this is the same optional-artwork gap the rest of the skin has rather than anything new; it is
+recorded because it is the first measurement this window has ever had.
+
+Two live defects sit on that bar, and they are unrelated to each other:
+
+- **Previous / Next / Options work as of B70.** They are `<Defix:Bottom.bar.button action="VIS_Prev">`
+  wrappers over a `mousetrap`, and the command never crossed the `embed_xui` seam.
+- **Reattach Visualizer and Random still do nothing — B71, open.** `visrb2.maki` owns them, and it
+  loads before the standard frame beside it has instantiated `VISCON.component.gp`, so all eleven of
+  its `findObject` lookups answer null and `bind onleftbuttonup v50 -> null`. Fixing that is a
+  reordering of script startup for the whole corpus, and it exposes a second layer — the same script
+  hides the bar at load and re-shows it from a 300 ms timer gated on `layout.isActive()`. Tried and
+  reverted 2026-08-29.
+- **`Presets` is unreachable at the default width** and that one is the skin's own: `x="249" w="84"`
+  sits underneath the right-anchored `Reattach Visualizer` (`x="-150" w="150"`) until the window is
+  widened past 406.
+
+The same `Bottom.bar.button` wrapper carries the **playlist window's** `PE_Add`/`PE_Rem`/`PE_Sel`/
+`PE_Misc`/`PE_List`, which were dead for the identical reason and work as of B70.
 
 ### Working
 

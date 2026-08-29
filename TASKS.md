@@ -26,12 +26,12 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | BB11 | List accessors | 3 skins / 9 MAKI program symbols ([M12]) | M | Measured |
 | BB3 | Light-overlay bitmap precedence | 2 skins / 83 shared artwork paths each ([M13]) | M | Measured |
 | BB18 | Host a waveform seeker at `wdh.waveseeker` | 2 skins / 2 declarations ([M14]) | L | Measured |
-| B16 | Investigate the missing `VISCON` container | 1 skin / 6 uses ([M15]) | M | Measured |
 | B23a | Player-embedded visualization holder | 1 skin / 1 player holder ([M16]) | L | Measured |
 | B45 | Container declared without a reachable renderable layout | 1 skin / 1 container ([M17]) | M | Measured |
 | BB13 | `setClipboardText()` | 1 skin / 1 MAKI program symbol; the program contains three calls ([M18]) | S | Measured |
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
+| B72 | Give the render dump the corpus directory mode the drag probe already has | — · harness, not a skin capability | S | Measured |
 
 ### Live-reported draw defects
 
@@ -44,6 +44,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
 | B59 | Skins whose own player leaves almost no drag handle | 2 skins measured under 50% ([M19]) | M | Live-reported |
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
+| B71 | A layout script loads before the frame beside it has a client area | — · seen on Defix's detached visualizer (2026-08-29); corpus reach unmeasured | L | Live-reported |
 
 ### Awaiting manual QA
 
@@ -70,7 +71,6 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m12"></a>**M12:** `rg -a -i -o 'getItemLabel|getItemFocused|setSubItem' "$corpus"`
 - <a id="m13"></a>**M13:** for each Light skin, `comm -12 <(cd "$corpus/$base" && find . -type f | sort) <(cd "$corpus/$light" && find . -type f | sort) | rg -i '\.(png|jpg|jpeg|gif|bmp)$'`
 - <a id="m14"></a>**M14:** `rg -i -o 'wdh\.waveseeker' "$corpus" --glob '*.xml'`
-- <a id="m15"></a>**M15:** `rg -i -o 'VISCON' "$corpus"`
 - <a id="m16"></a>**M16:** `rg -i -o 'hold="guid:\{0000000A-000C-0010-FF7B-01014263450C\}"' "$corpus/BLAKK/xml/blakk-remote.xml"`
 - <a id="m17"></a>**M17:** `rg -i -o '<container[^>]*id="Pledit"' "$corpus/Shield_Amp/xml/pledit.xml"`, then verify that file contains no `<layout>`.
 - <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
@@ -240,11 +240,52 @@ The implementation and its automated coverage shipped; that record is in
 
 ---
 
-### B16
+### B72
 
-- [ ] **B16. `VISCON`** — a container scripts bind to that `RENDER-DUMP containers` never lists. Find
-      out why; it may be a probe blind spot rather than an engine gap, and blind probes have made real
-      defects look absent three times in this subsystem
+- [ ] **B72. `WinampModernRenderDumpTests` should accept a directory, the way `WinampModernDragProbe`
+      already does.** The render dump takes one `WINAMP_MODERN_WAL` and exits, so the corpus sweep —
+      the regression proof every engine-wide change needs — is a shell loop paying **36 test-binary
+      startups, ~25 minutes a pass, two passes**. `WinampModernDragProbe` solved this already:
+      `WINAMP_MODERN_DRAG_PROBE=<directory>` enumerates the archives and loops inside a single
+      invocation. The same treatment here turns each pass into about a minute and makes the sweep
+      something to run casually rather than something to schedule around.
+      Measured 2026-08-29 while proving B16/B70: the loop's own overhead is nearly all of the cost, and
+      its fragility is the real argument — a sweep is a build, so an edit to `Sources/` or `Tests/`
+      mid-run silently writes **empty** captures, which then diff as "everything changed". That cost
+      one baseline pass this session. One invocation cannot be invalidated halfway.
+      The sweep itself, its invariants and both traps are in
+      **[reference/harness.md](skills/winamp-modern-skin-guide/reference/harness.md)** → *The corpus
+      render sweep*.
+
+---
+
+### B71
+
+- [ ] **B71. A layout's own script loads before the standard frame beside it has a client area, so
+      every name it resolves is null.** `WinampModernScriptRuntime.start()` dispatches `onScriptLoaded`
+      to **every** object-owned program, and only then delivers XUI params. A
+      `<Wasabi:StandardFrame:*>` has no client area until its `content` param arrives — that is what
+      `onSetXuiParam` builds — so a `<script>` declared *after* the frame in the same layout runs
+      against an empty frame, and every `findObject` in its `onScriptLoaded` answers null.
+      **Measured on Defix's detached visualizer (VISCON), 2026-08-29**, the window B16 made visible.
+      `visrb2.maki` resolves eleven names — `vis.DTB` (Reattach), `vis.random`, `VIS_Menu`, `VIS_Cfg`,
+      `VISCON.component.control`, `VISCON.component.vis`, … — and `RENDER_SCRIPTS=bindings` prints
+      `bind onleftbuttonup v50 -> null` for each. The trace order is
+      `WASABI_STANDARDFRAME@398` (the frame's `onScriptLoaded`) → `SUI.xml@270` (visrb2's) →
+      `WASABI_STANDARDFRAME@989` (`onSetXuiParam`, which instantiates the content) → the content's own
+      scripts. Only the last group finds anything, which is why `syncbutton.maki` — declared *inside*
+      the instantiated group — binds correctly while the layout's script does not.
+      **The fix is a reordering of script startup for every skin, and it was tried and reverted once**
+      (2026-08-29): delivering each owner's params immediately after that owner's own `onScriptLoaded`,
+      in document order, does make the bindings live — and then `visrb2`'s own logic starts running,
+      which hides the control bar at load and re-shows it from a 300 ms timer gated on
+      `layout.isActive()`, plus an `onResize` that re-lays-out the bar. The observed result in the app
+      was Reattach still dead **and** the Options button gone. So this is two pieces of work: the
+      ordering change (which needs the 36-skin render sweep behind it, not a live poke at one window),
+      then the auto-hide/relayout behaviour, which has no measurement yet.
+      **Do not treat "Reattach does nothing" as the whole item** — the *other* buttons on that bar were
+      dead for an unrelated reason (B70, closed), and fixing that one made three of them work without moving
+      this at all.
 
 ---
 
@@ -264,8 +305,10 @@ The implementation and its automated coverage shipped; that record is in
       is a probe blind spot, not a contradiction. The holder lives in the `remote` layout
       (`blakk-remote.xml:113`), not the default `boombox` one, so a visibility-filtered `VIS holder`
       sweep never sees it. Identical to the failure mode B23 already recorded for
-      `VIDEO holder … hidden`, and exactly what B16 warns about. Fixing the probe to print a hidden
-      holder is probably the first step, and would also re-answer B16.
+      `VIDEO holder … hidden`, and to the one B16 turned out to be — a container the dump listed only
+      while a script had not yet hidden it, closed 2026-08-29. **B16's fix does not cover this one**:
+      that was a *container* dropped by visibility, this is a *layout* the probe never selects, so
+      printing a holder in a non-default layout is still the first step.
 
 ---
 

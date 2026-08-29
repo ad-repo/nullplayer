@@ -2,6 +2,74 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B70 — a XUI wrapper's commands never reached the control inside it — closed 2026-08-29 (Phase 83)
+
+Never filed as a backlog item; found while measuring B16's newly visible window, and reported live as
+*"the reattach button and all other buttons on that window react but do nothing"*.
+
+A `<groupdef xuitag="…" embed_xui="…">` wrapper is a `<group>`. It has no click behaviour of its own,
+and the object the pointer actually lands on is the embedded control — so a command declared on the
+instance stayed on an object that could not run it. The engine already forwarded the *range*
+(`low`/`high`, BB19) and the *value* accessors (B40) across that seam; the commands were the missing
+third, and nothing forwarded them.
+
+**23 declarations in 2 skins**, and both are whole features rather than stray buttons:
+
+- **Enkera's entire transport** — `<button:glow x="309" … image="main.cbuttons.play" action="play">`
+  over a bare `<button id="but" fitparent="1"/>`. Play, pause, stop, prev, next and eject: six dead
+  buttons, i.e. a skin that could not start playback from its own face.
+- **Defix's two button bars** — 17 declarations of `<Defix:Bottom.bar.button action="…">` over a
+  `mousetrap`: the playlist window's `PE_Add`/`PE_Rem`/`PE_Sel`/`PE_Misc`/`PE_List`, and the
+  visualization bars' `VIS_Prev`/`VIS_Next`/`VIS_Menu`/`VIS_Cfg` in both the SUI's Visualization tab
+  and the detached `VISCON` window.
+
+Every one of them *looked* alive: the wrapper carries the artwork and our renderer draws an `image=`
+on a group, and each skin hangs a hover/press script off the inner button, so the button lit up,
+depressed and glowed while reaching nothing. **`CLICK markup action:` printing nothing at all is the
+tell** — an object with no command produces no line, which reads identically to a button that has no
+behaviour to declare.
+
+`action`, `param`, `dblclickaction`, `dbclickaction`, `rightclickaction` and `tooltip` are now copied
+to the `embed_xui` object at creation when it declares none of its own; geometry, identity and
+appearance deliberately stay on the wrapper, which is what draws. Rule:
+`reference/scripting.md` → *`embed_xui` — the wrapper **is** the control*.
+
+Verified live 2026-08-29 by the user on Defix's detached visualizer: Previous, Next and Options went
+from inert to working. Reattach did **not**, for an unrelated reason now filed as B71.
+
+## B16 — the missing `VISCON` container — closed 2026-08-29 (Phase 83)
+
+*"A container scripts bind to that `RENDER-DUMP containers` never lists. Find out why; it may be a
+probe blind spot rather than an engine gap."* It was a probe blind spot, caused by a real bug in
+shared classification code — the fourth time a blind instrument in this subsystem has made a real
+defect look absent.
+
+`WinampModernContainerTopology.isHidden` read the **live** `visible` attribute to decide whether a
+container was an SUI-collapsed stub. `WinampModernScriptRuntime.setVisible` writes that same key when
+a script calls `hide()`. Defix's `CORE_SCRIPT.maki` hides `VISCON` from `onScriptLoaded`
+(`SETVISIBLE VISCON -> 0 by=skin.xml@7231`) — the ordinary thing to do with a detachable panel — so
+from `scripts.start()` onward the window was classified as a stub that does not exist.
+
+`RENDER-DUMP` prints its container list *after* `start()`, which is why the window was never listed,
+never rendered to PNG, and never measured. **The app was unaffected only by ordering luck**:
+`setupAuxiliaryContainers` runs *before* `scripts.start()`, so it built the window while the container
+was still declared-visible. Any reader added after startup would have inherited the bug.
+
+The declared value is now snapshotted at container creation (`declaredVisibleAttribute`,
+`WasabiSkinInitializer`) and that is what `isHidden` reads. **No container in the 36-skin corpus
+declares a bare `visible=`**, so the check had only ever fired on runtime hides; the collapsed-stub
+case it exists for is carried by the 1×1 size test beside it, which is what `window-overrides.xml`
+actually writes. Reach, swept across all 36 skins: **1 skin / 1 container**.
+
+What it revealed: an eleventh container for Defix, `406x360, 50 nodes`, with a second `{0000000A}`
+holder at `VISCON.component.vis(17, 41, 372, 272)` — a detached visualizer window with its own
+Previous / Next / Random / Presets / Options / Reattach bar, never measured before. Two defects came
+straight out of it, B70 (closed above) and B71 (open). Note also that at the skin's own default 406
+width its `Presets` button (`x="249" w="84"`) sits underneath the right-anchored `Reattach Visualizer`
+(`x="-150" w="150"`) and is unreachable until the window is widened — Defix's markup, not ours.
+
+Rule: `reference/components.md` → *`visible` on a container answers two questions*.
+
 ## B69 — a skin's window chrome never finds its content — closed 2026-08-29 (Phase 82)
 
 Reported live against **Itemskin**: *"the windows, eq, play, library etc are empty panes and the

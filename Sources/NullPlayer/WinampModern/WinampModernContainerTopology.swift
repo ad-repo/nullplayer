@@ -226,8 +226,16 @@ enum WinampModernContainerTopology {
         return CGSize(width: dimension(keys[0]), height: dimension(keys[1]))
     }
 
+    /// The container's visibility **as the skin declared it**, stamped by `WasabiSkinInitializer`
+    /// before any script runs. Reading the live `visible` instead is B16: a window a startup script
+    /// closes — which is what a skin does with a detachable panel — reads as a collapsed stub and
+    /// leaves `windowContainers` for good, taking its window, its menu entry and every probe line
+    /// about it with it. The fallback is for a graph built without the initializer (fixtures).
+    static let declaredVisibleAttribute = "nullplayer_declared_visible"
+
     private static func isHidden(_ container: WasabiObject) -> Bool {
-        let value = container.attributes["visible"]?.lowercased()
+        let declared = container.attributes[declaredVisibleAttribute] ?? container.attributes["visible"]
+        let value = declared?.lowercased()
         return value == "0" || value == "false" || value == "no"
     }
 

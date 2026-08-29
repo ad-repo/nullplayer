@@ -141,7 +141,8 @@ section is the list; read it *before* changing engine code on that skin's behalf
   two-step, `RENDER_XUI` misreading, frame-pane clipping
 - [Love is War Miku](skins/love-is-war-miku.md#traps-this-skin-sets)
 - [Defix Hi-End 200](skins/defix-hi-end-200.md#traps-this-skin-sets) — unseeded background preference,
-  alpha-multiplexed readouts, `rectrgn` hit testing, `findObject`'s wide lookup, timer-gated tabs
+  alpha-multiplexed readouts, `rectrgn` hit testing, `findObject`'s wide lookup, timer-gated tabs,
+  **an eleventh container (`VISCON`) its own startup script hides**
 - [Itemskin](skins/itemskin.md#traps-this-skin-sets) — two windows per component, cross-window
   `getLeft()`, the frame is the only draggable half
 - [LOBE](skins/lobe.md#traps-this-skin-sets) — `degraded` inflated by legal double-includes,

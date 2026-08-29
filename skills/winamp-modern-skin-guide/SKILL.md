@@ -111,6 +111,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Whole skin dead or startup handler aborts | [reference/harness.md](reference/harness.md) → *The order that made Phase 33 cheap* |
 | Meter moves too little | [reference/harness.md](reference/harness.md) → histogram the frames |
 | Renderer regression proof | [reference/harness.md](reference/harness.md) → *The golden images* |
+| Proving an engine-wide change broke no other skin | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
 | Supported Wasabi markup | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
 | Host action is accepted but deliberately inert | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) → action families |
 | Implemented MAKI method/events | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
@@ -123,6 +124,8 @@ This file is a router. Read the one focused reference your symptom names.
 | Toggle works but never looks active | [reference/rendering.md](reference/rendering.md) → *onActivate* |
 | Settings window is an empty slab, or a `<Wasabi:TitleBox>` shows neither label nor body | [reference/rendering.md](reference/rendering.md) → *`<Wasabi:TitleBox>` is a body, not just a border* |
 | Settings page has boxes but no switches, labels, sliders or drop-downs | [reference/rendering.md](reference/rendering.md) → *The Wasabi standard form widgets are the primitives they wrap* |
+| A window the skin closes at startup is missing from every probe | [reference/components.md](reference/components.md) → *`visible` on a container answers two questions* |
+| A button draws, presses and glows but runs no command | [reference/scripting.md](reference/scripting.md) → *`embed_xui` — the wrapper **is** the control* |
 | Several windows in the menu share one name | [reference/components.md](reference/components.md) → *default_visible*, and `WinampModernContainerTopology.menuLabels` |
 | Shuffle/repeat/crossfade disagree with the host | [reference/rendering.md](reference/rendering.md) → *Some cfgattrib values are the host's* |
 | Control works once, hides itself, and cannot be clicked again | [reference/scripting.md](reference/scripting.md) → *A layout must not be left with no way to seek* |

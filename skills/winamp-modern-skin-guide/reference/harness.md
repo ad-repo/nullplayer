@@ -239,6 +239,45 @@ That is how a title box overlapping the artist beneath it survived a clean rende
 are deliberately long enough to need more room than a toast declares, because auto-width and ticker
 behaviour are only exercised by a string that does not fit.
 
+### The corpus render sweep — the regression proof for any engine-wide change
+
+A change to loading, initialization, script startup or hit testing reaches every skin, so the proof
+that it broke none of them is a **before/after capture across all 36 installed archives**. There is no
+batch mode: `WinampModernRenderDumpTests` takes one `WINAMP_MODERN_WAL`, so the sweep is a shell loop
+paying 36 test-binary startups — budget **~25 minutes per pass, two passes**.
+
+```sh
+sweep() {  # $1 = output directory
+  for f in ~/Library/Application\ Support/NullPlayer/WinampModernSkins/*.wal \
+           ~/Library/Application\ Support/NullPlayer/WinampModernSkins/*.WAL; do
+    WINAMP_MODERN_WAL="$f" WINAMP_MODERN_RENDER_DUMP="$1/png" WINAMP_MODERN_RENDER_BITMAPS=1 \
+      swift test --filter WinampModernRenderDumpTests 2>&1 \
+      | grep -E "^(RENDER-DUMP (containers|catalog|skin windows|arrangement)|RENDER-DUMP [^ ]+/[^ ]+:|HOLDERS|VIS holder|VIDEO holder|PLAYLIST holder|BITMAPS)" \
+      > "$1/$(basename "$f").txt"
+  done
+}
+git stash && sweep base; git stash pop && sweep curr
+diff -rq base curr
+```
+
+Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
+the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
+resolved/missing bitmap counts. A clean run is *byte-identical* per skin.
+
+**Two traps, both of which have already cost a pass:**
+
+- **A sweep is a build. Freeze the tree.** Editing anything under `Sources/` or `Tests/` mid-run
+  invalidates every remaining item — and it fails *silently*: a run whose binary will not compile
+  writes an **empty** capture, and an empty capture diffs as "everything changed." Adding one new test
+  file during a baseline pass emptied 15 of 36 captures that way (2026-08-29). Check
+  `find <dir> -name '*.txt' -empty` before believing any diff.
+- **`git stash` does not stash untracked files.** A new test file stays in the tree across the
+  baseline pass, which is exactly how the above happened. Move it aside, or `git stash -u`.
+
+Worth fixing at the source: `WinampModernDragProbe` already accepts a **directory** and loops the
+whole corpus inside one invocation (see `WINAMP_MODERN_DRAG_PROBE` in the table above). Giving the
+render dump the same directory mode would turn each pass from ~25 minutes into about one.
+
 ### The golden images
 
 `WinampModernGoldenImageTests` (Phase 44, backlog B10) is the same idea at scene scale: five

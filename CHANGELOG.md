@@ -71,6 +71,21 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: buttons that lit up but did nothing now do what they say** — in
+  *Enkera*, the entire transport was inert: play, pause, stop, previous, next and eject all animated
+  under the pointer and started nothing. In *Defix Hi-End 200*, the same was true of the playlist
+  window's *Add* / *Rem* / *Sel* / *Misc* / *Manage Playlist* row and the visualization bars'
+  *Previous* / *Next* / *Presets* / *Options*. These skins build a button as a decorated frame with a
+  plain, invisible button inside it, and the command was being left on the frame rather than handed to
+  the part that is actually clicked — so the artwork, the press and the hover glow all worked while the
+  button reached nothing.
+
+- **Winamp 5.x modern skins: a window a skin closes at startup is no longer forgotten** — a skin that
+  hides one of its own windows as it loads (*Defix Hi-End 200* does this with its detachable
+  visualizer) had that window classified as one that does not exist, which would have cost it its
+  entry in the Skin Windows menu and any later route to it. It also meant the window had never once
+  been looked at during development; doing so is what turned up the two dead button bars above.
+
 - **Winamp 5.x modern skins: Itemskin's windows have their contents back** — in *Itemskin*, the
   playlist, video, library and visualization windows opened as empty glass frames while their actual
   contents drew as bare, chrome-less panels somewhere else on screen. This skin is built unusually:
