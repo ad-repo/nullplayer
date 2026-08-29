@@ -42,6 +42,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
 | B59 | Skins whose own player leaves almost no drag handle | 2 skins measured under 50% ([M19]) | M | Live-reported |
+| B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
 
 ### Awaiting manual QA
 
@@ -351,6 +352,26 @@ The implementation and its automated coverage shipped; that record is in
       reason.
 
 ---
+
+### B65
+
+- [ ] **B65. A division by zero abandons the whole handler, where Winamp carries on.** Found
+      2026-08-28 while measuring Shield_Amp for B64. Its songticker never initialises: the
+      third-party `OneDirectionText` widget reads an attribute (`{9149C445-…};Text Ticker Speed`)
+      that **no script in that archive registers** — the widget expects a different host skin to
+      create it — so `getData()` answers `""`, which is `!= "0"`, the guard passes, and
+      `Delay = 20/stringToFloat("")` divides by zero. `MakiBytecode.swift` opcode 67 raises a typed
+      `invalidScript` there, which abandons the enclosing `onScriptLoaded`.
+      **Winamp does not**: MAKI's `/` is a float divide, so it yields infinity and the handler runs
+      on. Fail-closed is right for a *missing* method (we cannot unwind the stack without an arity);
+      it is wrong for arithmetic, where the IEEE answer exists and the skin's own later guards may
+      well cope with it. Same failure class as Phase 33's — one fault takes a whole startup handler
+      and every feature behind it reads as missing.
+      **Before changing it:** confirm what Winamp actually produces for the integer case as well as
+      the float one (opcode 67 sees both), and measure the corpus — a `RENDER_SCRIPTS=1` sweep
+      counting `failed=…division by zero` is the reach number this row is missing. Do not relax the
+      *diagnostic*; a warning should still be recorded, per the "degrade gracefully with a warning"
+      rule in the skill.
 
 ### B60
 
