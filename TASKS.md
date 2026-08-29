@@ -303,6 +303,82 @@ The implementation and its automated coverage shipped; that record is in
       bandwidth and worsen as the box narrows. If that holds, the fix is about how a cap is drawn
       when a band owns fewer than ~3 px, not about repainting
 
+      **Picked up 2026-08-29.** The slot arithmetic confirms the hypothesis on paper: `main.vis` is
+      144x30, so `thin` puts 75 bands in 144 px -> a 1.92 px slot, and `columns()` answers
+      `max(1, end - start - 1)` = 1 px wide with a 0 px gap for most bands. At height 30 the caps are
+      2 px, so 75 of them abut into one continuous bright row. Made **much** more visible by 1b1880aa:
+      the cap draws only when `peaks[index] > bar`, and with the analyzer's real dynamic range
+      restored the bars now sit well below their caps, so that row draws nearly every frame instead
+      of rarely.
+
+      - [x] Confirm live at `wide` vs `thin`. **Reported bad at `wide` too (2026-08-29), so the
+            abutting-caps hypothesis above is WRONG** — at 19 bands in 144 px the slot is 7.6 px and
+            nothing abuts. Geometry is not the cause and the band count is not the lever.
+      - [ ] **New hypothesis: the cap latches onto the clipped tap and parks at the ceiling.**
+            `WINAMP_MODERN_VIS_TRACE=1` measured 52 of 75 bands at *exactly* 1.0 on a loud frame and
+            8 of 75 on a quiet one, so `peaks[index] = max(bar, peaks - peakStep)` latches to 1.0
+            constantly and then bleeds off at only 0.35-2.4/s (`peakFalloffSteps`). The caps sit at
+            the top of the box while the bars move below — a white line across the bar tops, at any
+            bandwidth. 1b1880aa did not cause it: with the bars formerly pinned near 1.0 too, the
+            caps were hidden *inside* them (`peaks > bar` rarely held), so restoring real range
+            uncovered a defect that was always there. Confirm by watching whether the caps track the
+            music at all or simply hold the ceiling.
+            **Update, same session: reported bad at `wide` AND worse at `thin`.** So both effects are
+            real and the original hypothesis was incomplete rather than wrong: parked caps are
+            bandwidth-independent (hence `wide`), and at `thin`'s 1.92 px slot they additionally abut
+            into a gapless row (hence worse). Both have the same root — a cap over clipped data can
+            only ever draw a flat line, because every band's peak-hold latches to the identical 1.0.
+      - [x] Decide the fix. **Own FFT chosen (2026-08-29).** Broken out as B73 below; B54 closes when
+            that lands and the caps are confirmed to track the music.
+      - [ ] ~~Decide the fix.~~ The root cause is the saturating tap, so the durable answer is the same
+            own-FFT route the range work already pointed at — a cap cannot latch to a clip that no
+            longer exists. Stopgaps if that is not taken now: refuse to latch a cap on a band reading
+            a clipped 1.0, or raise the cap falloff floor. Both are cosmetics over the clip.
+      - [ ] Verify on the butterfly (`main.vis` + `main.vis2`, and the `flipv` mirror strips) and on
+            one wide-box skin as a control that nothing moved there.
+
+---
+
+### B73
+
+- [ ] **B73. Give the `.wal` analyzers their own FFT, off the full-stereo PCM tap.** Chosen
+      2026-08-29 as the root fix for B54 and for the range/bass work in 1b1880aa.
+
+      **Why.** Every remaining analyzer defect is one root cause: `host.spectrumLevels` is a cooked
+      display array, not an analysis result. `AudioEngine` has already taken `20*log10`, normalized,
+      clamped, and smoothed it before any skin sees it. Measured live
+      (`WINAMP_MODERN_VIS_TRACE=1`): **52 of 75 bands at exactly 1.0** on a loud frame, mean 0.98.
+      That single fact explains the flat bass (`.accurate` clamps a 20 dB window with no frequency
+      weighting), the missing dynamic range, and B54's white line (a peak-hold over clipped data can
+      only draw a flat line, because every band's peak latches to the identical 1.0). It also makes
+      the look of every `.wal` skin depend on `spectrumNormalizationMode` — a preference owned by a
+      different window's context menu, which silently changed the analyzer twice in one session.
+
+      **Input: `.audioStereoPCMFullDataUpdated`** — 2048 `Float` per channel plus `sampleRate`,
+      consumer-gated by `addFullStereoConsumer`/`removeFullStereoConsumer`. Not the 576-sample
+      `UInt8` visdata tap: 8-bit quantisation caps the usable range near 48 dB and 576 samples give
+      ~86 Hz bins, which cannot resolve bass at all. 2048 samples give ~21 Hz bins at full precision.
+
+      - [ ] `WinampModernAnalyzerTap`, shaped after `WinampModernWaveformTap` — same real-time rules:
+            never `queue: .main`, copy-under-lock-and-return, no drawing or allocation in the
+            observer, main thread only ever reads the latest frame. Demand-gated the way the waveform
+            tap is, so a skin with no analyzer on screen registers no consumer.
+      - [ ] The FFT itself: vDSP real FFT over the 2048 samples, Hann window, magnitudes to
+            log-spaced bands across 20 Hz-20 kHz, band count asked for by the caller (the box already
+            decides it). Runs once per frame per skin, not per box — several boxes in a frame must
+            draw the same analysis, as the waveform tap already guarantees for the scope.
+      - [ ] One dB mapping, over a window wide enough to have range (start ~70-80 dB, tune by eye),
+            with the frequency weighting the tap's `.accurate` path never applies. This replaces the
+            band scaling in BOTH analyzer sites: `WasabiBuiltInVisRenderer.drawAnalyzer` and
+            `WasabiRenderer.drawVisualizationBars`.
+      - [ ] Point both sites at it and drop their reads of `host.spectrumLevels`. Keep `getVisBand`
+            and the VU meters on the existing tap — those are script-facing contracts.
+      - [ ] Confirm B54: caps track the music instead of parking at the ceiling, at `wide` and
+            `thin`, on the butterfly and its `flipv` mirror strips.
+      - [ ] Confirm the preference dependency is gone: the analyzer looks identical with
+            `spectrumNormalizationMode` unset, `Accurate`, and `Dynamic`.
+      - [ ] Re-tune or retire the two falloff-step constants and Sensitivity against unclipped input.
+
 ---
 
 ### B58
