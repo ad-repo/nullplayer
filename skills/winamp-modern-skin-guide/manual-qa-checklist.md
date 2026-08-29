@@ -184,6 +184,14 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
 - [ ] mmd3 / CornerAmp: the synthesized library window is drawn with **the skin's own frame** (its
       title bar, borders, and buttons), not NullPlayer chrome
 - [ ] A surface with no home falls back to a window of its own, and the DEBUG log names the reason
+- [ ] **Itemskin: the frame windows follow their content** (B69) — open the playlist, video, library
+      and AVS windows. Each must be a *single* composed window, not an empty frame in one place and a
+      chromeless panel in another: this skin builds every component window as a pair (a bare content
+      box plus a separate `dynamic="1"` chrome container) and its own `Wasabi:StandardFrame:*` scripts
+      keep them laid over each other. Then **drag one by its frame** — the content must travel with
+      it, with no snap-back when you let go, and it must stay together when you drag it so its edge
+      hangs off the screen. This is the only route that exercises `onMove()`: a binding is compiled
+      MAKI addressed at a variable a script assigns at runtime, so there is no headless route to it
 
 **Playlist**
 

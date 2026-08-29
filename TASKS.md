@@ -410,9 +410,9 @@ The implementation and its automated coverage shipped; that record is in
       anything is unverified — measure it in the running app rather than reasoning it out.
       `WinampModernBrowserSurfaceView` is out of scope: it is a WKWebView and the page owns the
       mouse.
-      Also found by the hosted probe and unexplained: **Itemskin** builds a standard frame but
-      produces no host-window holder (`surfaces=0` for every id), so its hosted windows are a frame
-      around nothing.
+      (The Itemskin observation that used to sit here — a standard frame with `surfaces=0` for every
+      hosted id — was a different defect and is closed as B69: its frames are a *second* container per
+      window, so the hosted probe was looking at the content half of a pair.)
 
 <details>
 <summary>B52's task list, kept for the measurements it records</summary>

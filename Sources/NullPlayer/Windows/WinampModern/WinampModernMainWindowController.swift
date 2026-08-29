@@ -1538,7 +1538,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// the visible frame, as `place` clamps its own guess: Winamp's viewport excludes the taskbar and
     /// ours does not, so a toast that puts itself two pixels above the bottom edge of the screen would
     /// otherwise land under the Dock.
-    private func moveContainerWindow(_ container: WasabiObjectID, to point: CGPoint) {
+    private func moveContainerWindow(_ container: WasabiObjectID, to point: CGPoint,
+                                     pinned: Bool = false) {
         let target: NSWindow?
         if let auxiliary = auxiliaryContainers.first(where: { $0.view.containerID == container }) {
             target = auxiliary.window
@@ -1551,9 +1552,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let size = target.frame.size
         var origin = NSPoint(x: screen.frame.minX + point.x,
                              y: screen.frame.maxY - point.y - size.height)
-        let visible = screen.visibleFrame
-        origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
-        origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        // A *placement* is kept on screen; a **pin** is not. Itemskin draws each component window's
+        // frame as a second window laid exactly over it, and the clamp is what pulled the two apart:
+        // the tiler had already put the library window's right edge past the visible frame, so the
+        // frame window — the only one of the pair moved by a script — stopped 82px short of it (B69).
+        if !pinned {
+            let visible = screen.visibleFrame
+            origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
+            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        }
         guard origin != target.frame.origin else { return }
         if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
             // A script parking its own window overrides whatever `place` decided, and legitimately
@@ -1594,8 +1601,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         scripts.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
         }
-        scripts.containerMoveRequested = { [weak self] container, point in
-            self?.moveContainerWindow(container, to: point)
+        scripts.containerMoveRequested = { [weak self] container, point, pinned in
+            self?.moveContainerWindow(container, to: point, pinned: pinned)
         }
         scripts.browserNavigationRequested = { [weak self] objectID, address in
             guard let self else { return }
@@ -2092,6 +2099,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // Through the same route a script's `hide()` takes, so the graph and the window agree.
             setAuxiliaryWindow(id: candidate.containerID, visible: false)
         }
+    }
+
+    /// Wasabi's `onMove()`. A `.wal` window moves by the user's drag, by `place`, by the tiler and
+    /// by state restoration, and a skin that draws one window's chrome in another window has to hear
+    /// about every one of them — Itemskin's frame windows follow their content window from here
+    /// (B69).
+    func windowDidMove(_ notification: Notification) {
+        guard let moved = notification.object as? NSWindow,
+              let view = moved.contentView as? WinampModernMainView else { return }
+        view.dispatchWindowMoved()
     }
 
     func windowDidResize(_ notification: Notification) {

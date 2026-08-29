@@ -464,6 +464,16 @@ every skin-owned step has declined (B55, above).
   `SkinElements` constants are untouched, so Classic and Original keep their 275.
   **When a geometry rule appears to do nothing, check the clamp before the arithmetic.**
 
+#### A skin's chrome can live in a *second* window
+
+Itemskin is the measured case: `PLEdit`, `Video`, `MLibrary` and `AVS_window` are bare boxes holding
+one `<component>` each, and the frame the user sees is a separate `dynamic="1"` container
+(`cont.clear.pl`, `cont.clear.vd`, …) that the window's own `Wasabi:StandardFrame:*` script keeps laid
+exactly over it. Nothing in the hosting model needs to know — both are ordinary containers, and the
+skin's script does the pairing. What it needs from the engine is that a window can be moved to another
+window's position and that `onMove()` reaches a script at all; both are in
+[scripting.md](scripting.md) → *Writing back the position a window just read* (B69).
+
 #### A frame supplies chrome, not a drag surface (B57)
 
 The rule: **a hosted surface passes a press it does not consume to the window drag.** The frame's

@@ -348,6 +348,13 @@ final class WinampModernMainView: NSView {
         dispatchResize(seeding: false)
     }
 
+    /// This window was moved on the desktop, by the user's drag or by anything else. Wasabi's
+    /// `onMove()`; see `WinampModernScriptRuntime.dispatchWindowMove`.
+    func dispatchWindowMoved() {
+        guard !isTornDown else { return }
+        scripts.dispatchWindowMove(container: renderer.container, layout: renderer.layout)
+    }
+
     /// Resolved frames at the last dispatch, so only an object whose own box actually moved is told
     /// about it — Wasabi does not resize what did not change.
     private var lastResizeFrames: [WasabiObjectID: CGRect] = [:]

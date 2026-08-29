@@ -2,6 +2,60 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B69 — a skin's window chrome never finds its content — closed 2026-08-29 (Phase 82)
+
+Reported live against **Itemskin**: *"the windows, eq, play, library etc are empty panes and the
+content for the window renders separately as paneless panels separated from their window shells"*,
+with a screenshot of three empty frames in one column and their contents floating in another. Never
+worked; the observation had been sitting as an unexplained footnote under B60 (*"builds a standard
+frame but produces no host-window holder"*), which was the same skin seen from the other half of the
+pair.
+
+**The shape of the skin is the finding.** Itemskin builds every component window as *two* containers:
+a bare box holding one `<component>` (`PLEdit`, `Video`, `MLibrary`, `AVS_window`, `DLibrary`, 6 scene
+nodes each) and a separate `dynamic="1"` container holding the frame artwork (`cont.clear.pl`,
+`cont.clear.vd`, `cont.clear.ml`, …, 10–40 nodes). Each content layout carries a custom
+`<Wasabi:StandardFrame:PL|VD|ML|AVS|DL>` whose `.maki` calls `newDynamicContainer`, then keeps the two
+laid over each other from a 10 ms timer and from `onMove`/`onResize`/`onSetVisible`:
+
+```
+chrome.resize(content.getLeft(), content.getTop(), content.getWidth(), content.getHeight())
+```
+
+**Three causes, all in the geometry seam.**
+
+1. *The cross-window round trip.* Both receivers are `<layout>`s, which answer `getLeft()`/`getTop()`
+   in their own canvas space — 0 — while the `x`/`y` a `resize()` writes go out to the desktop. B61 had
+   fixed the *self* round trip by recognising it and not moving; the *cross-window* one was suppressed
+   by that same guard, so every frame stayed wherever the tiler had parked it. Fixed on the write, as
+   B61 was: `borrowedWindowOrigin` remembers what the last window object *reported* alongside the
+   desktop origin it sits at, and re-expresses that exact pair when it is handed to `resize()` on a
+   different window. The record is spent by the write that uses it. Making a layout report its desktop
+   position is the obvious fix and stays forbidden — multipass lays its side drawers out against that 0.
+2. *`onMove()` was never dispatched anywhere.* Without it the frame could be dragged off its content
+   and the sync timer snapped it back a frame later — reported as *"the window shell now pulls away
+   from the content when dragged; the content and the shell snaps back"*. It is now dispatched from
+   `windowDidMove`, arity 0, to the container and its active layout only (a move changes nothing
+   *inside* the scene, unlike a resize). 6 of the 36 installed skins bind it: Ebonite, Itemskin, Defix,
+   both Big Bentos, winampmodern566.
+3. *A pinned move was clamped to the visible frame.* The tiler had already put `MLibrary`'s right edge
+   past the screen; the clamp then stopped the frame window — the only one of the pair a script moves —
+   82px short of its content. `containerMoveRequested` now carries a `pinned` flag: placing a window is
+   clamped, mirroring one is not.
+
+Verified in the running app: all three pairs coincide exactly at launch, a driven `CGEvent` drag on a
+frame moves both windows together with no snap-back, and Big Bento Modern (the highest-traffic skin
+that binds `onMove`) launches and renders unchanged. `WinampModernPhase82Tests` (9 tests), plus the
+Itemskin row in [`manual-qa-checklist.md`](../../skills/winamp-modern-skin-guide/manual-qa-checklist.md)
+for the bound-`onMove` half, which has no headless route. Rules in
+[`reference/scripting.md`](../../skills/winamp-modern-skin-guide/reference/scripting.md) → *Writing back
+the position a window just read* and *`onMove()` is dispatched to the window objects only*; the skin
+itself in [`skins/itemskin.md`](../../skills/winamp-modern-skin-guide/skins/itemskin.md).
+
+**Left open:** the library frame's inner group paints a `basetexture` strip over the left of the hosted
+library surface and tints the rest of it. Its layers are `w="0"` with `stretch="-2"`/`sysregion="-2"`,
+so that is a layer-sizing question, not a placement one.
+
 ## B66 — the Wasabi standard form widgets are inert shells — closed 2026-08-29 (Phase 81)
 
 Closed together with B67; the two were one change, because B67 is what made B66 visible on impulse

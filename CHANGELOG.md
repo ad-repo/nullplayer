@@ -71,6 +71,17 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: Itemskin's windows have their contents back** — in *Itemskin*, the
+  playlist, video, library and visualization windows opened as empty glass frames while their actual
+  contents drew as bare, chrome-less panels somewhere else on screen. This skin is built unusually:
+  each of those windows is really *two* windows — a transparent box holding the content, and a second
+  one holding the frame you see — which the skin keeps stacked on top of each other itself. It asks
+  the player where the first window is and moves the second one there, and nullPlayer answered that
+  question in the wrong coordinates, so the frames never moved from where they first opened. Dragging
+  one now takes its contents with it instead of tearing the two apart, and a window that hangs off the
+  edge of the screen stays in one piece. The event a skin uses to follow another window's move was
+  never delivered at all, which five other skins also listen for.
+
 - **Winamp 5.x modern skins: settings pages have their switches, labels and sliders** — check boxes,
   radio buttons, text labels, text fields, sliders and drop-down lists are pieces Winamp supplies
   rather than the skin, so a settings page built out of them came up as a set of empty boxes.

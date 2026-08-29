@@ -122,7 +122,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// two reach nothing the renderer draws — Big Bento's notifier parks itself at the bottom-right
     /// corner with `resize()` and a `setTargetX/Y` animation, and with this unwired the toast stayed
     /// wherever the host had first placed it (BB27).
-    var containerMoveRequested: ((WasabiObjectID, CGPoint) -> Void)?
+    ///
+    /// The third argument says the point is **pinned** to another window rather than chosen: it is
+    /// the desktop origin of a window the script just read, so it must be honoured as-is. Placing a
+    /// window is clamped to the visible frame; mirroring one is not, or a pair that the host has
+    /// already let sit partly off-screen comes apart at the edge (B69).
+    var containerMoveRequested: ((WasabiObjectID, CGPoint, Bool) -> Void)?
     /// `layout.setScale(f)` — the skin asking for the **whole UI** at a different size. Defix's
     /// configurator offers seven of them (100–300%) and every one of its five window scripts calls
     /// this on its own layout from the same stored `SCALING`, so it is one global request repeated,
@@ -1072,6 +1077,48 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return enclosingWindowID(of: object).flatMap { containerOriginQuery?($0) }
     }
 
+    /// The last position a script read off a **window object**, with the desktop origin that same
+    /// object actually sits at. `reported` is what `getLeft()`/`getTop()` answered — the canvas
+    /// origin for a layout, already the desktop origin for a container — so the pair is what
+    /// recognises those coordinates being handed straight back to `resize()` on *another* window.
+    /// See `borrowedWindowOrigin`.
+    private var lastWindowOriginRead: (objectID: WasabiObjectID, reported: CGPoint, desktop: CGPoint)?
+
+    /// Remember a window object's position read, for `borrowedWindowOrigin` to recognise.
+    private func noteWindowOriginRead(of object: WasabiObject) {
+        guard Self.isWindowObject(object), let desktop = windowOrigin(of: object) else { return }
+        lastWindowOriginRead = (object.stableID, reportedOrigin(of: object), desktop)
+    }
+
+    /// **One window placed at another window's position** — the desktop origin a `resize()` is
+    /// really asking for, or `nil` when it is not that idiom.
+    ///
+    /// A layout answers `getLeft()`/`getTop()` in its own canvas space (0), while the `x`/`y` a
+    /// `resize()` writes are pushed to the desktop. B61 fixed the *self* round trip
+    /// (`me.resize(me.getLeft(), …)`) by recognising it and not moving. The other half of the same
+    /// asymmetry is the *cross-window* round trip: Itemskin's window chrome is a second, dynamic
+    /// container per component window, and every frame script keeps it on top of its content window
+    /// with `chrome.resize(content.getLeft(), content.getTop(), content.getWidth(),
+    /// content.getHeight())`. Both sides are layouts, so both read 0, and the move was suppressed as
+    /// a no-op — the chrome stayed wherever the tiler had parked it while the content window sat
+    /// somewhere else on screen (B69).
+    ///
+    /// So the coordinates are re-expressed in the space the *reader* was in: only when they are the
+    /// exact pair another window object just reported, and only when that window is not this one.
+    /// A value the script did not read stays a plain move, as it does for B61.
+    private func borrowedWindowOrigin(matching requested: CGPoint,
+                                      writtenOn object: WasabiObject) -> CGPoint? {
+        guard Self.isWindowObject(object), let read = lastWindowOriginRead,
+              read.objectID != object.stableID,
+              Int(requested.x.rounded()) == Int(read.reported.x.rounded()),
+              Int(requested.y.rounded()) == Int(read.reported.y.rounded())
+        else { return nil }
+        // Consumed: each of these writes is preceded by its own pair of reads, so a stale record
+        // must not be able to pin a later write that only happens to name the same coordinates.
+        lastWindowOriginRead = nil
+        return read.desktop
+    }
+
     /// Exactly what `getLeft()`/`getTop()` would answer for this object right now, in whatever space
     /// they answer in — the host's desktop origin for a container, the layout's own canvas origin
     /// (usually 0) for a layout. Used to recognise a write that is only handing back what was just
@@ -1491,6 +1538,26 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// one dispatch that has to happen after `start()` — a script that only assigns state inside
     /// `onResize` (ClassicPro's `beat.m` sets `showBeat`/`showPromo` nowhere else) has none of it until
     /// the event has fired at least once, and the first `onPlay` then hides its display for good.
+    /// (Its declaration follows `dispatchWindowMove` below.)
+
+    /// The **window** moved on the desktop — Wasabi's `onMove()`, which takes no arguments and is
+    /// addressed at the container and its active layout.
+    ///
+    /// A resize is a change inside the scene and every object hears it; a move is not, because
+    /// nothing inside the window changed position relative to anything else. Only the window objects
+    /// are told. Itemskin is what needs it: each of its component windows is drawn by a *second*,
+    /// dynamic container holding the frame artwork, and `onMove` on the frame's layout is how the
+    /// content window is pulled along when the user drags the frame (B69).
+    @discardableResult
+    func dispatchWindowMove(container: WasabiObject, layout: WasabiObject) -> Int {
+        var dispatched = 0
+        for object in (container === layout ? [container] : [container, layout]) {
+            guard hasBinding(for: object, event: "onmove") else { continue }
+            if (try? dispatch(object: object, event: "onmove")) != nil { dispatched += 1 }
+        }
+        return dispatched
+    }
+
     @discardableResult
     func dispatchResize(targets: [(object: WasabiObject, frame: CGRect)],
                         previous: [WasabiObjectID: CGRect]?) -> Int {
@@ -3186,6 +3253,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .string(object.attributes["guid"] ?? "")
         case "resize":
             let reportedBeforeResize = reportedOrigin(of: object)
+            let borrowed = borrowedWindowOrigin(
+                matching: CGPoint(x: Double(arguments[0].integerValue),
+                                  y: Double(arguments[1].integerValue)),
+                writtenOn: object)
             for (key, value) in zip(["x", "y", "w", "h"], arguments) {
                 _ = object.setAttribute(key, value: String(value.integerValue))
             }
@@ -3195,7 +3266,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                        CGSize(width: CGFloat(arguments[2].integerValue),
                                               height: CGFloat(arguments[3].integerValue)))
             }
-            applyContainerGeometry(object, reportedOrigin: reportedBeforeResize)
+            applyContainerGeometry(object, reportedOrigin: reportedBeforeResize,
+                                   desktopOrigin: borrowed)
             noteGeometryChange()
             notifyGraphDidMutate()
             return .null
@@ -3300,6 +3372,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // `applyContainerGeometry`.
         case "getleft", "getguix":
             if Self.isWindowObject(object) {
+                noteWindowOriginRead(of: object)
                 if object.typeName.caseInsensitiveCompare("container") == .orderedSame,
                    let origin = windowOrigin(of: object) {
                     return .integer(Int32(clamping: Int(origin.x.rounded())))
@@ -3311,6 +3384,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .integer(dimension(resolvedFrame(of: object)?.minX, declared: object.geometry.x))
         case "gettop", "getguiy":
             if Self.isWindowObject(object) {
+                noteWindowOriginRead(of: object)
                 if object.typeName.caseInsensitiveCompare("container") == .orderedSame,
                    let origin = windowOrigin(of: object) {
                     return .integer(Int32(clamping: Int(origin.y.rounded())))
@@ -4359,7 +4433,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// animates itself into the corner of the screen. Silently dropping these is why that toast came
     /// out at its declared 540 with the text clipped into the third of it the XML reserves for the
     /// album art it had already hidden (BB27).
-    private func applyContainerGeometry(_ object: WasabiObject, reportedOrigin: CGPoint? = nil) {
+    ///
+    /// `desktopOrigin` overrides the position half: the caller has recognised the coordinates as
+    /// another window's, and re-expressed them in the desktop space this move is answered in. See
+    /// `borrowedWindowOrigin`.
+    private func applyContainerGeometry(_ object: WasabiObject, reportedOrigin: CGPoint? = nil,
+                                        desktopOrigin: CGPoint? = nil) {
         // A **layout** is its window as much as the container is — a `noparent` popup is placed and
         // sized by writing `x`/`y`/`w`/`h` on the layout, in screen coordinates the script builds with
         // `clientToScreenX/Y`. Big Bento's playlist search does exactly that before showing its
@@ -4378,7 +4457,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
            let height = Double(object.attributes["h"] ?? ""), width > 0, height > 0 {
             layoutResizeRequested?(target.stableID, CGSize(width: width, height: height))
         }
-        if let x = Double(object.attributes["x"] ?? ""), let y = Double(object.attributes["y"] ?? "") {
+        if let desktopOrigin {
+            containerMoveRequested?(target.stableID, desktopOrigin, true)
+        } else if let x = Double(object.attributes["x"] ?? ""),
+                  let y = Double(object.attributes["y"] ?? "") {
             // **Writing back the position that was just read is not a move.** `resize(getLeft(),
             // getTop(), w, h)` is how a skin resizes a window while leaving it where it is, and the
             // two halves have to agree about the space they are in: `getLeft()`/`getTop()` on a
@@ -4392,7 +4474,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let unmoved = reportedOrigin.map {
                 Int(x.rounded()) == Int($0.x.rounded()) && Int(y.rounded()) == Int($0.y.rounded())
             } ?? false
-            if !unmoved { containerMoveRequested?(target.stableID, CGPoint(x: x, y: y)) }
+            if !unmoved { containerMoveRequested?(target.stableID, CGPoint(x: x, y: y), false) }
         }
     }
 

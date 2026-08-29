@@ -95,7 +95,7 @@ final class WinampModernPhase69Tests: XCTestCase {
         var size: CGSize?
         var origin: CGPoint?
         runtime.layoutResizeRequested = { _, requested in size = requested }
-        runtime.containerMoveRequested = { _, point in origin = point }
+        runtime.containerMoveRequested = { _, point, _ in origin = point }
 
         let container = try XCTUnwrap(object(runtime, type: "container", id: "main"))
         _ = try runtime.invoke(method: "resize", on: MakiObjectReference(.gui(container.stableID)),
@@ -115,7 +115,7 @@ final class WinampModernPhase69Tests: XCTestCase {
         var size: CGSize?
         var origin: CGPoint?
         runtime.layoutResizeRequested = { _, requested in size = requested }
-        runtime.containerMoveRequested = { _, point in origin = point }
+        runtime.containerMoveRequested = { _, point, _ in origin = point }
 
         let container = try XCTUnwrap(object(runtime, type: "container", id: "main"))
         let target = MakiObjectReference(.gui(container.stableID))
@@ -137,7 +137,7 @@ final class WinampModernPhase69Tests: XCTestCase {
     func testAnObjectInsideALayoutIsNotAWindow() throws {
         let (runtime, program) = try makeRuntime()
         var moved = false
-        runtime.containerMoveRequested = { _, _ in moved = true }
+        runtime.containerMoveRequested = { _, _, _ in moved = true }
         let text = try XCTUnwrap(object(runtime, type: "text", id: "title"))
         _ = try runtime.invoke(method: "resize", on: MakiObjectReference(.gui(text.stableID)),
                                arguments: [.integer(0), .integer(0), .integer(10), .integer(10)],

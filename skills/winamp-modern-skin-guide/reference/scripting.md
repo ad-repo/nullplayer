@@ -726,6 +726,39 @@ layout space of its own, so it does report the host's desktop origin, via `conta
 the last position a *script* wrote and go stale the moment the user drags the window, `place`, the
 tiler or state restoration moves it.
 
+**The other half of the same asymmetry is the *cross-window* round trip** (B69). A skin can draw one
+window's chrome in a *second* window and keep the two laid over each other:
+
+```
+chrome.resize(content.getLeft(), content.getTop(), content.getWidth(), content.getHeight())
+```
+
+Both receivers are layouts, so both read 0, and the write above was suppressed as "unmoved" — the
+frame stayed wherever the tiler had parked it while the content window sat somewhere else on screen.
+Recognised on the write, the same way: `borrowedWindowOrigin` remembers the origin the last window
+object *reported* along with the desktop origin it actually sits at, and when that exact pair is
+handed to `resize()` on a **different** window object, the point is re-expressed in the reader's
+space. The record is spent by the write that uses it, so a stale read cannot pin a later write that
+only happens to name the same coordinates, and a value the script did not read is still a plain move.
+
+Such a move is **pinned**, and a pin is not clamped to the visible frame — `containerMoveRequested`
+carries the flag. Clamping it is what pulled Itemskin's library frame 82px off its content window: the
+tiler had already put the content window's right edge past the screen, and only the frame — the one of
+the pair a script moves — was pushed back.
+
+### `onMove()` is dispatched to the window objects only
+
+A resize is a change *inside* the scene, so `onResize` reaches every object whose own box moved. A
+move is not: nothing inside the window changed position relative to anything else, so `onMove()`
+(arity 0) is addressed at the `<container>` and its active layout and at nothing else
+(`dispatchWindowMove`). It fires from `WinampModernMainWindowController.windowDidMove`, so every route
+that moves a `.wal` window reaches it — the user's drag, `place`, the tiler, state restoration.
+
+It went undispatched entirely until B69. Six corpus skins bind it (Ebonite, Itemskin, Defix, both Big
+Bentos, winampmodern566), and for Itemskin it is what lets the user drag a frame window at all: without
+it the frame came away from its content and the frame script's 10 ms sync timer snapped it back a frame
+later.
+
 ### gotoTarget animation
 
 `setTargetX/Y/W/H/A` + `setTargetSpeed` + `gotoTarget()` animates an object toward its target

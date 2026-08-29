@@ -82,6 +82,8 @@ This file is a router. Read the one focused reference your symptom names.
 | Keyboard, mouse wheel, wrapper value, scrolling | [reference/scripting.md](reference/scripting.md) |
 | `getAutoWidth` / `getAutoHeight`, scripted layout drift | [reference/scripting.md](reference/scripting.md) |
 | Window jumps to a screen corner when a skin panel opens | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read* |
+| A skin's window chrome drifts away from the window's content | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read* |
+| Dragging one window should pull another along and does not | [reference/scripting.md](reference/scripting.md) → *`onMove()` is dispatched to the window objects only* |
 | `setText`/search terms disappear through `embed_xui` | [reference/scripting.md](reference/scripting.md) |
 | Slider action families and `onSetPosition` | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
 | Playlist/EQ/library hosting, synthesis, topology | [reference/components.md](reference/components.md) |
