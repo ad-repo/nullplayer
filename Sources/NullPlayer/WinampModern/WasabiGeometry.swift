@@ -59,6 +59,30 @@ struct WasabiGeometrySpec: Equatable {
         relativeHeight = flag("relath")
     }
 
+    /// How much wider than its source a group with `autowidthsource` has to be for the source to
+    /// actually *reach* its own auto width (B68).
+    ///
+    /// The source's width is not the group's width — it is whatever the source's own geometry
+    /// resolves to inside it, and every corpus source that names an offset keeps room on both
+    /// sides. Two shapes, and both are just "solve the resolve for the group width":
+    ///
+    /// - A relative width (`w="-14" relatw="1"`) makes the source `groupWidth + w` wide, so the
+    ///   group needs `sourceWidth - w`. impulse's `<text id="checkbox.text" x="13" w="-14"
+    ///   relatw="1">` is this case: sized to the bare string, the label came out 14px short and
+    ///   clipped about two characters off every *Skin Options* switch.
+    /// - An absolute width does not depend on the group at all, so what matters is how far the
+    ///   source reaches: `x + sourceWidth`.
+    ///
+    /// Zero for a source at `x="0"` that states no width of its own, which is every one of the
+    /// 27 declarations that must not move — ClassicPro's and stock Winamp Modern's whole menu bar
+    /// (`<layer id="File.txt" x="0" y="0"/>`), and the three `wasabi.titlebox.center.group`
+    /// bodies at `x="0" w="0" relatw="1"`.
+    static func autoWidthInset(of attributes: [String: String]) -> Double {
+        let spec = WasabiGeometrySpec(attributes: attributes)
+        let inset = spec.relativeWidth ? -(spec.width ?? 0) : spec.x
+        return max(0, inset)
+    }
+
     /// A Wasabi boolean attribute, read the way Winamp reads one.
     ///
     /// Winamp reads these with `atoi`, so the test is **non-zero**, not "== 1". Skins ship other

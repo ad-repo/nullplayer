@@ -1663,7 +1663,12 @@ final class WasabiSceneRenderer {
     private func autoWidth(of object: WasabiObject) -> CGFloat? {
         if let sourceID = object.attributes["autowidthsource"],
            let source = descendant(of: object, xmlID: sourceID) {
-            return autoWidth(of: source)
+            // The inset corrects a real measurement. A source that measures nothing — S7Reflex's
+            // config tabs are `<text default="">` filled in by a script that has not run — wants a
+            // collapsed group, not a group the width of its own padding.
+            guard let width = autoWidth(of: source) else { return nil }
+            guard width > 0 else { return width }
+            return width + WasabiGeometrySpec.autoWidthInset(of: source.attributes)
         }
         // A `<Wasabi:CheckBox>` states no width — Winamp sizes it to its own label, the way the
         // groupdefs that replace the tag do (`autowidthsource` on their label). Left at zero the box

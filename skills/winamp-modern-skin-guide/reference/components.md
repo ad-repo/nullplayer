@@ -340,6 +340,15 @@ Two things about the embedded case that are easy to get wrong:
   drawer, three holders all declaring `autoopen="1"` — so forcing every one of them open after the
   script had already switched tabs put two more copies of the surface on screen. `revealEmbeddedSurface`
   now asks the scene (`hasVisibleHolder`) between the two halves.
+- **A skin-drawn equalizer is embedded only when the skin declares no equalizer window** (B73).
+  Winamp defines no EQ component GUID, so an equalizer is recognised from ordinary sliders carrying
+  `EQ_BAND`/`EQ_PREAMP` — cPro in a drawer, mmd3 and stock Winamp Modern in a main-window drawer,
+  CornerAmp in its own `eq` container. That match used to be unconditional and beat the declared
+  container, which is the same trap `.video` fell into below: impulse draws EQ sliders in its player
+  **and** ships a 198×158 `Equalizer` container, so the drawer won the catalog and the window became
+  unreachable — routed to as the equalizer surface, and therefore absent from **Skin Windows** too.
+  The gate is measured, not assumed: over the 36 installed skins 14 declare an equalizer container
+  and 4 embed, and impulse is the only skin in both sets, so this moves that one skin.
 - **`.video` can be embedded, `.visualization` cannot** (B23). B20 made video never-embedded to stop
   Winamp Modern's *invisible* in-player holder winning over its real video window; the rule is now
   conditional on the skin declaring a **visible** video container, so an SUI skin whose only video

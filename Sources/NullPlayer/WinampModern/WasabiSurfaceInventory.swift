@@ -251,10 +251,6 @@ struct WinampModernSurfaceInventory {
         let main = containers.first { $0.isMainPlayer } ?? containers.first
         let mainReaches = main?.reachableKinds ?? []
         var embedded = mainReaches
-        // A skin-drawn equalizer *is* the equalizer surface. Winamp defines no EQ component GUID, so
-        // every measured skin expresses one as ordinary sliders carrying `EQ_BAND`/`EQ_PREAMP` — cPro
-        // in a drawer, mmd3 in a main-window drawer, CornerAmp in its own `eq` container.
-        if main?.hasEqualizerControls == true { embedded.insert(.equalizer) }
         embedded.formIntersection(Set(managedKinds))
 
         var declared: [WinampModernComponentKind: String] = [:]
@@ -287,6 +283,19 @@ struct WinampModernSurfaceInventory {
         // only corpus skin it would move is BLAKK, whose AVS would go from NullPlayer's window to an
         // in-player box — a behaviour change to a skin nobody reported, and one no measurement has
         // been taken of. It stays never-embedded until a report or a measurement asks for it.
+        // **A skin-drawn equalizer** *is* the equalizer surface. Winamp defines no EQ component GUID,
+        // so every measured skin expresses one as ordinary sliders carrying `EQ_BAND`/`EQ_PREAMP` —
+        // cPro in a drawer, mmd3 and stock Winamp Modern in a main-window drawer, CornerAmp in its
+        // own `eq` container.
+        //
+        // Gated on the skin declaring no equalizer window, for the same reason `.video` below is
+        // (B73): impulse draws EQ sliders in its player *and* ships a 198×158 `Equalizer` container,
+        // and with the drawer winning the catalog that window was unreachable — routed to as the
+        // equalizer surface, so it never appeared in **Skin Windows** either, and the skin's own EQ
+        // window could not be opened at all. Measured over the 36 installed skins: 14 declare an
+        // equalizer container and 4 embed, and impulse is the only skin in both sets, so this moves
+        // that one skin and nothing else.
+        if main?.hasEqualizerControls == true, declared[.equalizer] == nil { embedded.insert(.equalizer) }
         if mainReaches.contains(.video), declared[.video] == nil { embedded.insert(.video) }
 
         // cPro-Bento hosts its surfaces inside the player window; everyone else opens windows. The

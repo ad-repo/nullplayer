@@ -550,7 +550,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private func autoWidth(of object: WasabiObject) -> Int32 {
         if let sourceID = object.attributes["autowidthsource"],
            let source = descendant(of: object, xmlID: sourceID), source !== object {
-            return autoWidth(of: source)
+            // The source's width is not the group's: it is what the source resolves to *inside*
+            // the group, so a source that keeps room beside itself needs the group to be that much
+            // wider (B68). Shared with the renderer so a script's measurement and the drawn box stay
+            // one number. Only applied to a real measurement — a source that answers 0 answers 0.
+            let width = autoWidth(of: source)
+            guard width > 0 else { return width }
+            let inset = WasabiGeometrySpec.autoWidthInset(of: source.attributes)
+            return Int32(clamping: Int(width) + Int(inset.rounded(.up)))
         }
         // Measured with the font the renderer draws with, not estimated: ClassicPro sizes every SUI
         // tab to `label.getAutoWidth() + 14` and lays its menu bar out from these numbers, so an

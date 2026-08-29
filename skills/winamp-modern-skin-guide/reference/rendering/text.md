@@ -12,6 +12,25 @@ Two auto-sizing rules in the renderer, both only when the object declares no `w`
 `autowidthsource="<id>"` takes the width of the descendant it names, and a `<text>` takes its own
 content's width.
 
+> **The source's width is not the group's width** (B68). The source then resolves its own geometry
+> *inside* the group, so a group sized to the bare measurement leaves the source short by whatever
+> room the source keeps beside itself. The rule is that resolve, solved for the group's width, and
+> `WasabiGeometrySpec.autoWidthInset(of:)` is the one place it lives — shared by the renderer and by
+> `getAutoWidth()` so a script's measurement and the drawn box stay one number:
+>
+> - a **relative** width (`w="-14" relatw="1"`) makes the source `groupWidth + w` wide, so the group
+>   needs `sourceWidth - w`. The negative `w` already states the *total* room on both sides, so `x`
+>   is not added on top of it — impulse writes `w="-14"` for `x="13"`, Bio-Nid `w="-13"` for `x="5"`;
+> - an **absolute** width does not depend on the group at all, so what matters is how far the source
+>   reaches: `x + sourceWidth`;
+> - a source that measures **nothing** leaves the group collapsed rather than sizing it to its own
+>   padding. S7Reflex's config tabs are `<text default="">` filled in by a script.
+>
+> An inset of zero is the answer for every declaration this machinery was originally tuned for —
+> ClassicPro's and stock Winamp Modern's menu bars are `<layer id="File.txt" x="0" y="0"/>`, and the
+> `wasabi.titlebox.center.group` bodies are `x="0" w="0" relatw="1"` — so those are unchanged. Of 53
+> declarations in 13 corpus skins, 26 name an offset source and 27 do not.
+
 #### How big the font is, and which one
 
 Three rules, all measured against Love is War Miku's shipped `screenshot.png` (a skin's own reference
@@ -106,8 +125,8 @@ because `songinfo.maki` reads a text object back out and tokenises it:
    to its shipped placeholder, "updating songticker", for the entire session.
 
 A script measures the same strings two ways, and the difference matters: **`getAutoWidth()`** is how
-wide the object *wants to be* (a named `autowidthsource`, else a declared `w`, else its artwork, else
-its text), while **`getTextWidth()`** is how wide the string it currently shows actually draws. Skins
+wide the object *wants to be* (a named `autowidthsource` plus that source's inset, else a declared
+`w`, else its artwork, else its text), while **`getTextWidth()`** is how wide the string it currently shows actually draws. Skins
 compare them — `if (t.getWidth() < t.getTextWidth()) t.hide(); else t.show();` — to decide whether a
 caption fits. `getAutoHeight()` is `getAutoWidth`'s vertical twin, resolved from the same three
 sources plus a one-line font height for text.

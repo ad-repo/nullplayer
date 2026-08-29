@@ -2,6 +2,86 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B68 — `autowidthsource` ignored where its source sits — closed 2026-08-29 (Phase 84)
+
+The source's width is not the group's width. The source resolves its own geometry *inside* the group,
+so a group sized to the bare measurement leaves the source short by whatever room it keeps beside
+itself — and every corpus source that names an offset keeps room on both sides. The rule is now that
+resolve solved for the group's width, in one shared place (`WasabiGeometrySpec.autoWidthInset(of:)`,
+used by the renderer and by `getAutoWidth()` so a script's number and the drawn box cannot drift):
+
+- a **relative** width (`w="-14" relatw="1"`) makes the source `groupWidth + w` wide, so the group
+  needs `sourceWidth - w`. The negative `w` already states the total room on both sides, so `x` is not
+  added on top of it — impulse writes `w="-14"` for `x="13"`, Bio-Nid `w="-13"` for `x="5"`. The
+  entry's proposed `x + width` would have been 1px short here and 8px short on the tab sheets;
+- an **absolute** width does not depend on the group, so what matters is how far the source reaches:
+  `x + sourceWidth`;
+- a source that measures **nothing** leaves the group collapsed. S7Reflex's config tabs are
+  `<text default="">` filled in by a script, and widening them to their own padding invented two 24px
+  tabs — caught by the corpus render sweep, which reported two extra scene nodes.
+
+**The safety claim was checked before the expression changed, and it holds** — with one correction to
+the entry: the 27 zero-offset declarations are not ClassicPro's menu bar but *stock Winamp Modern*'s
+and *The_Nokia_5220*'s (`<layer id="File.txt" x="0" y="0"/>` ×13 each), plus three
+`wasabi.titlebox.center.group` bodies at `x="0" w="0" relatw="1"`. ClassicPro's own engine menu bar
+(`player.mainmenu.*` → `<text x="0">`) and its `wasabi.button.group` (`x="0" w="0" relatw="1"`) also
+answer zero. All unchanged.
+
+Verified by rendering every skin that declares the attribute (13) plus the two zero-offset skins and
+the ClassicPro engine skin, before and after: **structure byte-identical across all of them**, and
+exactly two skins changed a pixel — impulse's Configuration (the fix) and stock Winamp Modern's closed
+config drawer (one scanline of tab text, whose menu bar is untouched). The other 23 corpus skins
+declare the attribute zero times and cannot reach the code path. Confirmed live on impulse
+2026-08-29. `WinampModernPhase84Tests` (9 tests, 3 of them checked to fail with the inset removed).
+Rules in [`reference/rendering/text.md`](../../skills/winamp-modern-skin-guide/reference/rendering/text.md).
+
+The original entry, verbatim:
+
+- [ ] **B68. `autowidthsource` answers the source's string width, not its right edge, so the group
+      comes out short by however far the source is inset.** `WasabiSceneRenderer.autoWidth(of:)`
+      delegates to the named descendant and returns *its* measured text width; Winamp's own answer is
+      how far the source **reaches** inside the group, which is `x + width`. Every group whose source
+      sits at a non-zero `x` is therefore narrower than its own content by exactly that offset.
+      Seen live 2026-08-29 on impulse's Configuration, whose four *Skin Options* check-box labels
+      clip by about two characters: `<groupdef id="impulse.checkbox" autowidthsource="checkbox.text">`
+      holds `<text id="checkbox.text" x="13" w="-14" relatw="1">`, so the group is sized to the string
+      while the label inside it gets 14px less than that. **It is not a Wasabi form-widget defect** —
+      `Impulse:Checkbox` is the skin's own groupdef — but B67 is what made it visible, because those
+      boxes had no height at all before.
+      26 declarations across 11 skins name an offset source, and the offsets are 3–170px
+      ([M22]). **The other 27 are the safety argument**: ClassicPro's entire menu bar — the tuned case
+      `autoWidth` exists for, whose comment in the source is about exactly it — sources at `x="0"`,
+      where `x + width` is the width it already returns. Check that claim before changing the
+      expression, then re-render the ClassicPro skins and the two `wasabi.tabsheet.button.*` groups
+      that also use it.
+
+## B73 — a skin-drawn equalizer beat the skin's own equalizer window — closed 2026-08-29 (Phase 84)
+
+Never filed as a backlog item; reported live while checking B68 on impulse, as *"the eq window not
+opening is the only defect i see with impulse"*.
+
+Winamp defines no EQ component GUID, so an equalizer is recognised from ordinary sliders carrying
+`EQ_BAND`/`EQ_PREAMP` — cPro in a drawer, mmd3 and stock Winamp Modern in a main-window drawer,
+CornerAmp in its own `eq` container. That match was **unconditional** and ran before the declared
+containers were collected, so it beat them. impulse draws EQ sliders in its player *and* ships a
+198×158 `Equalizer` container: the drawer won the catalog (`equalizer=embedded`), the window was
+routed to as the equalizer surface, and it could be opened from nowhere — not the menu, not the
+skin's own button, and not **Skin Windows**, which lists no container that is already a managed
+surface.
+
+This is the same trap `.video` fell into in B20, and it takes the same fix: the embed is now gated on
+the skin declaring no equalizer window, and moved below the `declared` loop so there is something to
+gate on.
+
+**The reach was measured before the expression changed, not assumed.** Over the 36 installed skins,
+14 declare an equalizer container and 4 embed one, and impulse is the only skin in both sets. Rendered
+before and after across all 14 plus mmd3, stock Winamp Modern and micro: exactly one catalog line
+moved, `impulse … equalizer=embedded` → `equalizer=declared:Equalizer`. The other 16 are unchanged,
+including all three remaining embedders. Confirmed live 2026-08-29. Tests in
+`WinampModernPhase84Tests` (3 of them, 2 checked to fail with the gate removed). Rules in
+[`reference/components.md`](../../skills/winamp-modern-skin-guide/reference/components.md) → *Where a
+surface lives*.
+
 ## B70 — a XUI wrapper's commands never reached the control inside it — closed 2026-08-29 (Phase 83)
 
 Never filed as a backlog item; found while measuring B16's newly visible window, and reported live as

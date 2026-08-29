@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B68 | `autowidthsource` ignores where the source **sits**, so the group runs short | 11 skins / 26 declarations ([M22]) | S | Measured |
 | BB15 | `parser_*` / `shutdown()` | 6 skins / 15 MAKI program symbols ([M9]) | M | Measured |
 | BB9 | Finish the Multi Content View visualization placements | 4 variants / 2 base markups ([M6]) | M | Measured |
 | B14 | `<Wasabi:TabSheet>` | 4 skins / 5 declarations ([M10]); contradicts the old “one measured skin” note | L | Measured |
@@ -76,7 +75,6 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
 - <a id="m20"></a>**M20:** `rg -i -o '<[[:space:]]*Wasabi:(Text|CheckBox|HSlider|RadioGroup|EditBox|CustomDropDownList)[[:space:]]' "$corpus" --glob '*.xml'`
 - <a id="m21"></a>**M21:** `rg -i -o '<[[:space:]]*Wasabi:TitleBox[^>]*>' "$corpus" --glob '*.xml'`, then keep only the matches with no `h="` attribute.
-- <a id="m22"></a>**M22:** per skin, collect every `autowidthsource="<id>"` and every `id="…" … x="…"` in that skin's XML, then keep the declarations whose named source has a **non-zero** `x`. 53 declarations in 13 skins carry the attribute; 26 in 11 skins name a source that is offset. The other 27 are the ones a fix cannot move: ClassicPro's whole menu bar (`label.txt` ×14, `File.txt`/`Play.txt`/`Options.txt`/`View.txt`/`Help.txt`) is `x="0"`.
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
 number of matched declarations or MAKI program symbols. A compiled MAKI method name is a program
@@ -322,28 +320,6 @@ The implementation and its automated coverage shipped; that record is in
       layout named something other than `normal` — LOBE's B26 was the last of those and the container
       was being dropped silently, so check that first. Nothing else about this skin has been measured
       beyond the render sweep and one live launch
-
----
-
-### B68
-
-- [ ] **B68. `autowidthsource` answers the source's string width, not its right edge, so the group
-      comes out short by however far the source is inset.** `WasabiSceneRenderer.autoWidth(of:)`
-      delegates to the named descendant and returns *its* measured text width; Winamp's own answer is
-      how far the source **reaches** inside the group, which is `x + width`. Every group whose source
-      sits at a non-zero `x` is therefore narrower than its own content by exactly that offset.
-      Seen live 2026-08-29 on impulse's Configuration, whose four *Skin Options* check-box labels
-      clip by about two characters: `<groupdef id="impulse.checkbox" autowidthsource="checkbox.text">`
-      holds `<text id="checkbox.text" x="13" w="-14" relatw="1">`, so the group is sized to the string
-      while the label inside it gets 14px less than that. **It is not a Wasabi form-widget defect** —
-      `Impulse:Checkbox` is the skin's own groupdef — but B67 is what made it visible, because those
-      boxes had no height at all before.
-      26 declarations across 11 skins name an offset source, and the offsets are 3–170px
-      ([M22]). **The other 27 are the safety argument**: ClassicPro's entire menu bar — the tuned case
-      `autoWidth` exists for, whose comment in the source is about exactly it — sources at `x="0"`,
-      where `x + width` is the width it already returns. Check that claim before changing the
-      expression, then re-render the ClassicPro skins and the two `wasabi.tabsheet.button.*` groups
-      that also use it.
 
 ---
 

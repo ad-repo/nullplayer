@@ -140,6 +140,30 @@ Two corollaries:
 The general shape: **an instrument that cannot distinguish the two answers is not evidence for
 either.** It is the same failure as a [blind probe](reference/harness.md), one level up.
 
+### The backlog entry is a report, not a spec
+
+A ranked entry carries a diagnosis, a proposed expression and a safety claim. Treat all three as
+**the previous investigator's hypothesis**, and re-derive each before touching the code — B68 shipped
+with all three subtly wrong, and each would have produced a defect of its own:
+
+- **The proposed expression was wrong.** The entry said `autowidthsource` should answer `x + width`.
+  That is right only when the source's width does not depend on its parent; every offset source in
+  the corpus states `w="-N" relatw="1"`, where the answer is `width - w`. Following the entry would
+  have left impulse 1px short and the tab sheets 8px short — a fix that looks applied and is not.
+  **Derive the rule from the resolve** (solve `resolve()` for the unknown), not from the shape of the
+  numbers in one skin.
+- **The safety claim named the wrong skins.** The entry said the 27 must-not-move declarations were
+  ClassicPro's menu bar; they are stock Winamp Modern's and The_Nokia_5220's, plus three title-box
+  bodies. The claim's *conclusion* survived — all of them source at `x="0"` — but only because it was
+  re-run. Re-run it: the entry tells you which measurement to repeat ([M22] here), and that is what
+  the reach commands are for.
+- **The reach count was reproducible and correct.** Which is the point: the numbers a `grep` produces
+  survive; the prose around them decays.
+
+The cheap discipline is to re-run the entry's own measurement command first, before reading any
+source. It takes a minute, it either confirms the entry or hands you a corrected one, and it is the
+difference between fixing the defect and fixing the description of it.
+
 ---
 
 ## 4b. Historical ranking (B1–B10, closed; 2026-08-20)

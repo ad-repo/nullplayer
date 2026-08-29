@@ -193,9 +193,10 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   written. Restored in `scriptsDidStart()` and re-asserted once at 1.0s, because the skin's own
   `setPosition` may come from a timer
 - Auto-sizing from text: a group with `autowidthsource="<id>"` takes the width of the descendant it
-  names, and a `<text>` with no `w` takes its own content's width. `getAutoWidth()` measures with the
-  object's real font (bitmap-font pitch or Core Text) plus `leftpadding`/`rightpadding`, so a skin
-  that sizes its own boxes from that number gets boxes that fit
+  names **plus the room that source keeps inside it**, and a `<text>` with no `w` takes its own
+  content's width. `getAutoWidth()` measures with the object's real font (bitmap-font pitch or Core
+  Text) plus `leftpadding`/`rightpadding`, so a skin that sizes its own boxes from that number gets
+  boxes that fit. See `reference/rendering/text.md` for the inset rule (B68)
 - `alpha` is honoured for **every** object, not only bitmap-backed ones: it is set once per node
   before the type-specific drawing, so a `<text alpha="0">` is invisible. Skins stack readouts in one
   slot and show one at a time by moving their alphas (Defix's Kbps / KHz / Channels), so text that

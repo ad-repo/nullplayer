@@ -71,6 +71,19 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: settings labels no longer lose their last couple of characters** — in
+  *impulse*, every switch in the Configuration window's *Skin Options* and *Notifier Options* boxes
+  was cut short: *Animate Draw*, *Always On T*, *Never Sh*, *Disable In Fullscre*. A skin can tell a
+  box to be as wide as one of the things inside it, and the box was being measured against the text
+  alone while ignoring the margin that text sits in, so it always came out exactly that margin too
+  narrow. Menu bars and title boxes, which put their label flush against the edge, are unaffected and
+  look exactly as before.
+
+- **Winamp 5.x modern skins: *impulse*'s own Equalizer window opens** — the skin both draws EQ sliders
+  in its player and ships a separate equalizer window, and the player's sliders were being treated as
+  the skin's one and only equalizer. The window could not be opened from the menu, from the skin's own
+  buttons, or from **Skin Windows**, where it did not appear at all.
+
 - **Winamp 5.x modern skins: buttons that lit up but did nothing now do what they say** — in
   *Enkera*, the entire transport was inert: play, pause, stop, previous, next and eject all animated
   under the pointer and started nothing. In *Defix Hi-End 200*, the same was true of the playlist
