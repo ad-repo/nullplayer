@@ -352,6 +352,45 @@ library supplies it. The renderer draws a 1px border in `palette.listText` with 
 only when the instance resolves *no* bitmap and carries a non-empty `text=` — a skin with its own
 button artwork never reaches the fallback.
 
+##### `<Wasabi:TitleBox>` is a body, not just a border
+
+A title box **names its body by group id**, exactly as a standard frame does:
+
+```xml
+<Wasabi:TitleBox id="radarbox" x="1" y="12" w="-3" h="70" relatw="1"
+                 title=" THIS BUTTON MUST BE TURNED ON FOR GRAPHICS SMOOTHING"
+                 content="dtabox.content" />
+```
+
+The difference is *who instantiates it*. A standard frame's own `standardframe.maki` does the
+`newGroup(getParam("content"))` and every skin ships that script; the title box's equivalent lives
+inside Winamp, so the tag resolved to nothing and **the entire content group stayed out of the
+graph** — not merely undrawn, absent. Bio-Nid's only settings window is one title box, which is why
+it came up as a slab of frame with a hole in it, and why "empty window" was the right description of
+a missing *object*, not a missing paint. `WasabiTitleBox` supplies both halves: the initializer
+expands `content` beneath the box (beside the `<Wasabi:Frame>` pane expansion, for the same reason),
+and the renderer draws the label and the box.
+
+Reach when this landed: **9 of the 35 installed skins, 33 declarations** — Bio-Nid, BLAKK, Core-X5,
+Ebonite, Enkera, impulse, Itemskin, Shield_Amp, Styx.
+
+Three things worth keeping:
+
+- **The artwork is Winamp's.** No `.wal` in the corpus ships a `wasabi.titlebox.*` bitmap, so the box
+  is drawn, on the same deliberate exception as an artwork-less `<Wasabi:Button>` above. It takes the
+  instance's own `color=` when it states one (Bio-Nid, Core-X5) and the skin's list colour otherwise.
+- **The label sits above the border, not in a gap cut through it.** Winamp cuts the gap; matching that
+  means measuring the label in whatever font draws it, which may be one of the skin's bitmap fonts,
+  and a gap that does not match the text is worse than no gap. The body inset clears both either way.
+- **The inset is calibrated, not invented.** Shield_Amp and Itemskin each wrap one 20px row in
+  `h="40"` with the row at `y="0"`, which puts the body 18px down with 6px under it —
+  `WasabiTitleBox.contentInset`.
+
+What still does not draw: a title box that declares **no `h`** (four of impulse's five) resolves to no
+height and stays invisible, and the Wasabi standard *widgets* many bodies are made of
+(`<Wasabi:Text>`, `<Wasabi:HSlider>`, `<Wasabi:CheckBox>`) are still inert shells — which is why
+Styx's Config gains three labelled boxes and two of them are empty. Both are in `TASKS.md`.
+
 #### Animated layers are played as a range
 
 `animatedlayer` is a sprite sheet plus a play head, and scripts drive it as a range:

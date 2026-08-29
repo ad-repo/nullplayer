@@ -71,6 +71,20 @@
 
 ### Bug Fixes
 
+- **Winamp 5.x modern skins: a skin's own settings boxes have their contents back** — a titled group
+  box is one of the pieces Winamp supplies rather than the skin, and NullPlayer drew neither the box
+  nor anything inside it, so a window built out of them came up empty. Nine of the installed modern
+  skins use them, and the effect ranged from a missing label to a whole window with nothing in it:
+  Bio-Nid's **IMPORTANT** window is a single such box, and the setting it exists to offer — the
+  graphics-smoothing toggle — simply was not there. Styx's Config and impulse's Configuration gain
+  their headings too. Where a skin states a colour for the box, that is the colour it is drawn in.
+
+- **Winamp 5.x modern skins: windows a skin gives the same name are told apart in the menu** — Bio-Nid
+  scatters eight decorative spiders across the desktop and named every one of them *Equalizer*, so the
+  Windows menu offered eight identical entries and no way to know which was which. Windows that share
+  a name now carry the skin's own id for that window beside it; a window whose name is already unique
+  is untouched.
+
 - **Winamp 5.x modern skins: Anexa's progress bar is visible while it fills** — it could be clicked
   and it seeked correctly, but it only ever appeared once it was completely full. Skins that scale a
   readout from the playing track's length, rather than from a plain fraction of it, now get the

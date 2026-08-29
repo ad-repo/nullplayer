@@ -148,6 +148,13 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   `<Wasabi:Scrollbar>` beside the list stays inert
 - A `<Wasabi:Button text="…">` that resolves no artwork is drawn as a bordered label (Phase 32). No
   `.wal` ships `wasabi.button.*` art; it lives inside Winamp
+- `<Wasabi:TitleBox>`: **supported** (Phase 80). The box **instantiates the group its `content=`
+  names**, inset clear of the border and below the label, and the renderer draws the label and a 1px
+  box in the instance's `color=` (the skin's list colour when it states none) — no `.wal` ships
+  `wasabi.titlebox.*` art either. 9 skins / 33 declarations. A box that declares no `h` resolves to no
+  height and stays invisible, and the standard widgets inside many bodies are still inert; see
+  [../reference/rendering.md](../reference/rendering.md) — *`<Wasabi:TitleBox>` is a body, not just a
+  border*
 - **Hidden objects are still laid out.** They are not painted and take no clicks, but their geometry
   resolves, they receive `onResize`, and `getWidth()` answers for them — Wasabi lays a hidden window out
   too, and a skin that hides a pane can only bring it back from its own `onResize` seeing the pane grow
@@ -201,7 +208,9 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
 
 - Most remaining **`wasabi.*` shells are structure-free**, so a widget that has no body of its own
   draws nothing. Unresolved conventional *tags* — `<Wasabi:Button>` (CornerAmp and mmd3 colour-theme
-  dialogs) and `<Wasabi:TabSheet>` (mmd3's winshade sidecar) — become inert nodes the same way.
+  dialogs) and `<Wasabi:TabSheet>` (mmd3's winshade sidecar) — become inert nodes the same way. This
+  is what empties an otherwise working `<Wasabi:TitleBox>`: the box and its label draw, and the
+  `<Wasabi:Text>` / `<Wasabi:HSlider>` / `<Wasabi:CheckBox>` rows inside it do not.
 - A base group outside the curated set warns and is dropped.
 - A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
 - `file="$solid"` / `file="$gradient"` predefined bitmaps generate no **pixels**, so a layer that

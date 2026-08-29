@@ -860,6 +860,7 @@ final class WasabiSkinInitializer {
         // Tabs / grouping
         "wasabi.tabsheet",
         "wasabi.titlebar",
+        "wasabi.titlebox",
         "wasabi.tooltip",
         // Media-facing composites
         "wasabi.albumart",
@@ -878,6 +879,7 @@ final class WasabiSkinInitializer {
     /// only fill an *unclaimed* tag, so Winamp Modern's own `xuitag="Wasabi:TitleBar"` still wins.
     static let wasabiStandardLibraryXUITags: [(tag: String, identifier: String)] = [
         ("Wasabi:TitleBar", "wasabi.titlebar"),
+        (WasabiTitleBox.xuiTag, WasabiTitleBox.groupIdentifier),
     ]
 
     /// The standard-library shells that can be reconstructed from conventional skin resources.
@@ -1120,6 +1122,19 @@ final class WasabiSkinInitializer {
                                   createdCount: &createdCount,
                                   documentOrder: documentOrder, enclosingOrder: nodeOrder)
                 WasabiFrame.applyLayout(to: object)
+            }
+            // A `<Wasabi:TitleBox>` names its body by group id the way a standard frame does, and
+            // the object that would instantiate it lives in Winamp rather than in the skin. Without
+            // this the body never enters the graph at all: Bio-Nid's `dtabox.content` — the one
+            // control its only settings window exists to show — was simply absent.
+            if WasabiTitleBox.isTitleBox(object),
+               let content = WasabiTitleBox.contentGroupNode(for: object, location: node.location) {
+                try createObjects(from: [content], parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
             }
         }
     }

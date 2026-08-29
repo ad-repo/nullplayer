@@ -1978,6 +1978,8 @@ final class WasabiSceneRenderer {
         } else if Self.isTextButton(object) {
             drawTextButton(object, frame: node.frame, context: context,
                            pressed: pressed == object.stableID)
+        } else if WasabiTitleBox.isTitleBox(object) {
+            drawTitleBox(object, frame: node.frame, context: context)
         }
         context.restoreGState()
     }
@@ -3576,6 +3578,38 @@ final class WasabiSceneRenderer {
         let inset = frame.insetBy(dx: 2, dy: max(0, (frame.height - 11) / 2))
         drawSurfaceText(label, in: inset, color: color, alignment: .center, pointSize: 9,
                         context: context)
+        context.restoreGState()
+    }
+
+    /// A `<Wasabi:TitleBox>`: the label, and the box drawn under it.
+    ///
+    /// The same deliberate exception to the identifier-only-shell rule as `drawTextButton`, for the
+    /// same reason — the artwork is Winamp's, not the skin's, and **no** measured `.wal` ships a
+    /// `wasabi.titlebox.*` bitmap, so the alternative is a labelled settings box with neither label
+    /// nor box. Nothing here is invented styling: the border takes the box's own `color=` when it
+    /// states one (Bio-Nid and Core-X5 both do) and the skin's list colour when it does not.
+    ///
+    /// Winamp sits the label *on* the top border, in a gap cut for it. We put it above instead: the
+    /// gap has to be measured in the font actually drawing the label, which may be one of the skin's
+    /// own bitmap fonts, and a gap that does not match the text is worse than no gap at all. The body
+    /// group is inset clear of both (`WasabiTitleBox.contentInset`), so nothing overlaps either way.
+    private func drawTitleBox(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        let titleHeight = WasabiTitleBox.titleHeight
+        guard frame.width > 4, frame.height > titleHeight else { return }
+        let color = object.attributes["color"].flatMap(resolvedColor) ?? palette.listText
+        context.saveGState()
+        let border = CGRect(x: frame.minX + 0.5, y: frame.minY + titleHeight + 0.5,
+                            width: frame.width - 1, height: frame.height - titleHeight - 1)
+        context.setStrokeColor(color.withAlphaComponent(0.55).cgColor)
+        context.setLineWidth(1)
+        context.stroke(border)
+        let title = WasabiTitleBox.title(of: object)
+        if !title.isEmpty {
+            drawSurfaceText(title,
+                            in: CGRect(x: frame.minX + 4, y: frame.minY,
+                                       width: frame.width - 8, height: titleHeight),
+                            color: color, alignment: .left, pointSize: 9, context: context)
+        }
         context.restoreGState()
     }
 

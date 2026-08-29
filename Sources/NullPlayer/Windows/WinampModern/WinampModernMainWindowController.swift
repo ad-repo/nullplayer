@@ -1797,9 +1797,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // container is *routed* is a runtime fact (Defix's `pledit` carries no component GUID and is
         // recognized from the declarative inventory), and the catalog is the only thing that knows it.
         let routed = surfaceCoordinator?.catalog.routedContainerIDs ?? []
-        return auxiliaryContainers
+        let listed = auxiliaryContainers
             .filter { $0.isListedInWindowMenu && !routed.contains($0.containerID.lowercased()) }
-            .map { ($0.containerID, $0.displayName, $0.window.isVisible) }
+        let labels = WinampModernContainerTopology.menuLabels(
+            forWindowNames: listed.map { (id: $0.containerID, name: $0.displayName) })
+        return zip(listed, labels).map { ($0.containerID, $1, $0.window.isVisible) }
     }
 
     /// Show or hide one of them. Deliberately *not* routed through `WinampModernSurfaceCoordinator`:

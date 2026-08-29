@@ -168,6 +168,26 @@ enum WinampModernContainerTopology {
         info.object.attributes["name"] ?? info.id
     }
 
+    /// Menu labels for the skin-owned windows, qualified only where the skin left them ambiguous.
+    ///
+    /// A `name=` is the skin author's prose, not an identifier, and nothing makes it unique. Bio-Nid
+    /// copies one equalizer container eight times to scatter decorative spiders across the desktop
+    /// and every copy kept `name="Equalizer"` — so the menu offered eight identical items, none of
+    /// them the equalizer, which is routed to its own surface and never listed here at all. The
+    /// container id is what tells them apart, and it is the only thing that can: two spiders differ
+    /// in nothing else.
+    ///
+    /// Unique names are returned exactly as written. A skin's own wording is the label wherever it
+    /// says something, and appending an id to it everywhere would make every other skin's menu worse
+    /// to fix one skin's.
+    static func menuLabels(forWindowNames windows: [(id: String, name: String)]) -> [String] {
+        var occurrences: [String: Int] = [:]
+        for window in windows { occurrences[window.name, default: 0] += 1 }
+        return windows.map { window in
+            (occurrences[window.name] ?? 0) > 1 ? "\(window.name) (\(window.id))" : window.name
+        }
+    }
+
     /// A container declares the surface it *is* with `component="guid:…"` — mmd3's
     /// `<container id="Pledit" component="guid:{45F3F7C1-…}">`. The id is not evidence: `Pledit`,
     /// `MLibrary`, and `eq` only look like their kinds by convention, and reading them as such would
