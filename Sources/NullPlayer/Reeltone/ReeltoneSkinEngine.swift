@@ -46,16 +46,22 @@ final class ReeltoneSkinEngine {
     @discardableResult
     func activatePreferredTheme() -> ReeltoneThemeAdapter {
         preferredSkinLoadDiagnostic = nil
+        let hadPreferredIdentity = ReeltoneSkinState.selectedSkinIdentity(in: defaults) != nil
         do {
-            _ = try loadPreferredSkin()
+            let loaded = try loadPreferredSkin()
+            if hadPreferredIdentity, loaded == nil {
+                store.selectPreferred(nil, in: defaults)
+            }
         } catch let diagnostic as ReeltoneDiagnostic {
             preferredSkinLoadDiagnostic = diagnostic
+            store.selectPreferred(nil, in: defaults)
             replaceCurrent(with: nil, installation: nil)
         } catch {
             preferredSkinLoadDiagnostic = ReeltoneDiagnostic(
                 code: .storeFailure,
                 message: "The preferred Reeltone skin could not be loaded: \(error.localizedDescription)"
             )
+            store.selectPreferred(nil, in: defaults)
             replaceCurrent(with: nil, installation: nil)
         }
         return currentTheme

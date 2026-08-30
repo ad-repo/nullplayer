@@ -63,6 +63,7 @@ final class ReeltoneSkinEngineTests: XCTestCase {
         XCTAssertNil(engine.currentInstallation)
         XCTAssertEqual(theme.name, "Default Reeltone")
         XCTAssertEqual(theme.palette, ReeltoneThemeAdapter.defaultPalette)
+        XCTAssertNil(ReeltoneSkinState.selectedSkinIdentity(in: defaults))
         XCTAssertEqual(defaults.string(forKey: ModernSkinFamily.modern.skinNameKey), "Original Fixture")
     }
 }

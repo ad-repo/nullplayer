@@ -75,5 +75,5 @@ coverage for every existing mode affected by the seam.
   controllers. Playlist, Equalizer, Library, and Spectrum therefore share one coherent palette.
 - The menu discovers only store-validated installations. Import and selection go through
   `ReeltoneSkinEngine`; no menu action extracts an archive directly.
-- A missing or invalid preferred installation renders the built-in Reeltone theme and never
-  changes either Original-family preference.
+- A missing or invalid preferred installation clears only the stale Reeltone identity, renders
+  the built-in Reeltone theme, and never changes either Original-family preference.
