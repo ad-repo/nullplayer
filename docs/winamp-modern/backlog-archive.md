@@ -2,6 +2,136 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B72 — the render dump takes a corpus directory — closed 2026-08-30
+
+`WINAMP_MODERN_WAL` now accepts a **directory** as well as a single archive and loops the corpus
+inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has.
+
+**Measured: 36 skins in 64 seconds**, against the ~25 minutes per pass the shell loop cost — the
+startups really were nearly all of it. Verified byte-identical across two consecutive runs on an
+unchanged tree (720 invariant lines), which is what makes it usable as the before/after regression
+proof it exists to be.
+
+Shape of the change, all in `WinampModernRenderDumpTests.swift` and none of it in `Sources/`:
+
+- The test body moved wholesale into `render(wal:dumpDirectory:store:env:)`, unchanged. The test
+  method now resolves `WINAMP_MODERN_WAL` to a list — one archive, or every `.wal` in a directory
+  (extension matched case-insensitively, so `Defix Hi-END 200.WAL` is included) — and loops.
+- Every archive prints **`SKIN <file.wal>`** first. Without it a flat capture is unattributable:
+  every other line is keyed by `<container>/<layout>`, which is not unique across skins. Printed for
+  a single archive too, so one skin's capture and its row in a sweep stay byte-identical.
+- A skin that fails to load prints `SKIN <file> FAILED <error>` and the sweep continues. One broken
+  archive must not abandon the other 35, and the failure lands in the diff.
+- In a directory run each skin gets its own PNG subdirectory, so 36 skins cannot collide on a shared
+  container name. A single `.wal` still writes straight into the directory it was given, so every
+  existing invocation and every documented path is unchanged.
+- The ClassicPro engine is imported **once**, not per skin — it unpacks an executable and every cPro
+  skin in a sweep wants the same one.
+
+The trap that motivated it is half-retired rather than gone. A sweep is a build, and the old loop
+failed *silently*: a run whose binary would not compile wrote an **empty** capture, which then diffed
+as "everything changed" (that cost one baseline pass, 2026-08-29). One invocation cannot be
+invalidated halfway — but the rule still binds the *pair* of passes, since the stash and rebuild sit
+between them. The recipe, the `git stash -u` trap and the empty-capture check are in
+[reference/harness.md](../../skills/winamp-modern-skin-guide/reference/harness.md) → *The corpus
+render sweep*.
+
+Built while closing B23a, whose corpus re-measurement was 16 sequential invocations and would have
+been one.
+
+## B23 harness — `VIDEO holder` for an embedded holder — closed 2026-08-30, already shipped
+
+Carried in *Verification detail* as an open check: "`VIDEO holder` line should print for an embedded
+holder too (it prints per container/layout today and the tab's group is hidden at load)". The pass
+that does this shipped with B23 itself (`WinampModernRenderDumpTests.swift`, the
+`hiddenComponentHolders(kind: .video, …)` loop); only the checklist entry was left behind.
+
+Verified 2026-08-30 against the SUI skins it was filed for:
+
+```
+VIDEO holder main/normal: centro.windowholder.video hidden cmdbar=1   (2222-cPro__Bento)
+VIDEO holder main/normal: wdh hidden cmdbar=1                          (Big Bento Modern)
+VIDEO holder SUI/normal:  wdh hidden cmdbar=1                          (Defix Hi-END 200)
+```
+
+Found while closing B23a, which needed the same pass for `.visualization` and did not have it.
+
+## B23a — `.visualization` embedded in a player (BLAKK) — closed 2026-08-30, no product change
+
+**It already worked.** Confirmed live 2026-08-30: load BLAKK, switch to its `remote` layout, open the
+mini visualization, and ProjectM runs in the 144×125 box. Nothing in `Sources/` changed.
+
+B23a was filed on the belief that BLAKK "reaches a visualization holder in its player" that we leave
+empty. We never left it empty — BB9 mounts the host engine over every `{0000000A}` holder
+unconditionally, and `WinampModernVisualizationHolder`'s routing makes this box eligible on both
+counts: 144×125 is 1.15:1, well under the 3:1 letterbox ratio that sends a holder to the analyzer,
+and it is the skin's only holder so "the engine goes to the largest eligible box" picks it. The box
+was only ever empty in the **probe's** view of it.
+
+**The real defect was in the instrument, and it was one line of the wrong kind.** `componentHolders()`
+filters on the visible scene. BLAKK parks its whole mini-AVS group at `x="161"` in a 160-wide layout
+under a `visible="0"` group and slides it in from `minivis.maki`, so the holder is off-canvas and
+hidden at load:
+
+```
+GEOM group#blakk.remote-avsgroup.group  frame=(161.0, 0.0, 0.0, 0.0)   clip=(0,0,160,280)
+GEOM group#blakk.component.vis          frame=(169.0, 34.0, 0.0, 0.0)  visible=0
+GEOM   child component#vis              frame=(169.0, 34.0, 144.0, 125.0)
+```
+
+Closed by giving the render dump the hidden-holder pass that `VIDEO holder` and `PLAYLIST holder`
+each already had — `VIS holder <container>/<layout>: <id> hidden`, no frame, because an object
+outside the scene has no resolved geometry. Test harness only; `swift test` 1505 pass, 0 failures.
+
+**The item's own diagnosis was wrong, and that is the lesson.** It insisted the cause was "a layout
+the probe never selects" and warned at length that B16's fix would not cover it. The dump activates
+every layout and had been printing BLAKK's `VIS box main/remote` from the same pass all along. It was
+plain visibility — the third instance of the identical blind spot. **Check visibility before layout
+selection when a holder seems missing.**
+
+**Re-measured reach, and it is not what the backlog said.** B23a was ranked "1 skin / 1 player
+holder". Sweeping the 16 skins that name the GUID: **6 embed a holder in the player** (2222-cPro__Bento,
+both Big Bento Modern editions, BLAKK, winampmodern566, Defix Hi-END 200). The corpus table in
+`reference/components/visualization.md` read "8 of the 31 installed skins… none embeds the component
+in the player" — wrong in both halves, and stale independently of the hidden pass: Shield_Amp and
+Nullsoft.Winamp.2000.SP4.Lite are plainly *visible* holders it also missed, and the Love is War Miku
+boxes had moved (390×234, not 190×84) since the declared-minimum clamp. The corrected roster is in
+that file.
+
+## BB3 — light-overlay bitmap precedence — closed 2026-08-30, not a defect
+
+Filed from a 2026-08-23 note that had the mechanism backwards. Re-measured 2026-08-30 against both
+Light editions; **no code changed**, because nothing was wrong.
+
+The claim was that a `<bitmap file="window/frames.png">` declared in **base** XML resolves relative
+to that XML and so loads the *base's* artwork, leaving the overlay's ~30 light replacements unused.
+That is not what happens. The base ships no `xml/window/` directory, so the relative attempt misses,
+`resolveSkinResource`'s `@SKINPATH@` fallback fires, and `@SKINPATH@` is the **loaded** skin — the
+overlay. Each Light edition shares 83 image paths with its base and ships a different file for 81 of
+them; all 81 already load from the overlay.
+
+The measurement did surface the mirror case — 54 base resources the overlay does not ship, which
+resolve to nothing — and that is not a defect either:
+
+- **48 are `window/color_themes/*.png`**, thumbnails declared by the base's `player-elements.xml`
+  for the base's own themes. An overlay replaces the theme list wholesale: both skins declare 77
+  gammasets and share only 30, so every missing thumbnail belongs to one of the 47 themes the Light
+  edition does not offer. `Windows 10 - Dark mode`, `WhatsApp Dark`, `Brighter - Green` and
+  `Default Modern - Black` all answer 0 gammasets in the Light `color-presets.xml`. Resolving them
+  would load 48 images for themes the picker never lists.
+- **5 are WACUP-only album-art placeholders** (`sc_alb_art_wacup.png`, `sc_alb_art2_wacup.png`,
+  `sc_alb_art_cf_wacup.png`, `no_alb_art_shade_wacup.png`, `no_alb_art_shade_radio_wacup.png`). None
+  appears in any drawn layout's `BITMAPS … missing=` list, so nothing in the scene reads them.
+- **1 is a font** the skin itself never ships: Light's `system-colors.xml:173` names
+  `fonts/swis721ltcn_bt.ttf`, and the base's `fonts/` holds no such file. The skin's own bug; it
+  degrades to a warning, which is the correct outcome.
+
+The durable half — how to re-measure this, and why a `resourceMissing` warning naming a *base* XML
+path with an overlay-rooted `@SKINPATH@` is the expected shape rather than a resolver bug — is in
+[the skin's own page](../../skills/winamp-modern-skin-guide/skins/big-bento-modern.md), replacing the
+note that was wrong. The standing warning still holds: do not flip `resolveSkinResource`'s
+relative-first order, which exists for authored subfolders.
+
 ## B14 — `<Wasabi:TabSheet>` — closed 2026-08-29 (Phase 85)
 
 The third widget of the shape a standard frame's `content=` and a `<Wasabi:TitleBox>` already taught:
@@ -345,6 +475,8 @@ so that is a layer-sizing question, not a placement one.
 
 ## B66 — the Wasabi standard form widgets are inert shells — closed 2026-08-29 (Phase 81)
 
+**Reach measured by** (was `M20` in `TASKS.md`): `rg -i -o '<[[:space:]]*Wasabi:(Text|CheckBox|HSlider|RadioGroup|EditBox|CustomDropDownList)[[:space:]]' "$corpus" --glob '*.xml'`
+
 Closed together with B67; the two were one change, because B67 is what made B66 visible on impulse
 and B66 is what made B67's boxes worth having on Styx.
 
@@ -403,6 +535,8 @@ The original entry, verbatim:
 
 ## B67 — a `<Wasabi:TitleBox>` with no declared height was invisible — closed 2026-08-29 (Phase 81)
 
+**Reach measured by** (was `M21` in `TASKS.md`): `rg -i -o '<[[:space:]]*Wasabi:TitleBox[^>]*>' "$corpus" --glob '*.xml'`, then keep only the matches with no `h=` attribute.
+
 The height is now **measured, not guessed** — the entry's own instruction. It is the body's content
 height plus the inset the body already sits in (`WasabiTitleBox.contentInset`, 18 above and 6 below),
 where the content height comes from `autoheightsource` when the group names one and otherwise from the
@@ -426,6 +560,8 @@ The original entry, verbatim:
       already `getAutoHeight`/`autowidthsource` machinery) or leave it. One skin, four declarations.
 
 ## B41 (implementation) — `getMonitorWidth` / `getMonitorHeight` answer the player's own display — shipped 2026-08-26
+
+**Reach measured by** (was `M7` in `TASKS.md`): `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
 
 Moved out of `TASKS.md`, where it had been sitting as a closed `- [x]` item under an otherwise open
 entry. **B41 itself remains open** for its manual two-display check; only this half is done.
@@ -693,6 +829,8 @@ in [`TASKS.md`](../../TASKS.md).
 
 ## BB5 — Substitute `@HAVE_LIBRARY@` across markup — closed 2026-08-27
 
+**Reach measured by** (was `M8` in `TASKS.md`): `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
+
 ### BB5
 
 - [x] **BB5. `@HAVE_LIBRARY@`** — carried over from B36's follow-up because it is not Bento-only.
@@ -761,6 +899,8 @@ Reach command: `rg -i -o 'wasabi\.(panel|objectframe\.group)' "$corpus" --glob '
 ---
 
 ## BB10 — Typed Skin Settings fallback widgets — closed 2026-08-27
+
+**Reach measured by** (was `M3` in `TASKS.md`): `rg -a -i -o 'newAttribute' "$corpus"`
 
 ### BB10
 

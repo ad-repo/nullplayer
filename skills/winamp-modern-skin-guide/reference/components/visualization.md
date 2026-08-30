@@ -266,25 +266,60 @@ half exists to stop a window being *shrunk* and has no business enlarging one it
 
 ### The corpus, measured (`VIS holder` in the render dump)
 
-**8 of the 31 installed skins.** Every one is a separate container; none embeds the component in the
-player.
+**16 skins declare a `{0000000A}` surface; 6 of them embed one in the player.** Re-measured
+2026-08-30 (B23a), replacing a table that read "8 of the 31 installed skins… every one is a separate
+container; none embeds the component in the player." Both halves of that were wrong, and the reason
+is in the next paragraph.
+
+Embedded in the player's own container — the engine mounts here, in the player window:
+
+| Skin | Container | Holder(s) |
+|---|---|---|
+| 2222-cPro__Bento | `main` | `centro.windowholder.visualization` + 2 unnamed |
+| Big Bento Modern | `main` | `vis` ×2 (Multi Content View), `wdh.vis.object` (SUI tab) |
+| Big Bento Modern Windows 10 edition | `main` | same three |
+| BLAKK | `main` | `vis` — 144×125, in the `remote` layout |
+| winampmodern566 | `main` | `myviswnd` (*and* a separate `AVS` container) |
+| Defix Hi-END 200 | `SUI` | `wdh.vis.object` (*and* the separate `VISCON`) |
+
+In a container of their own:
 
 | Skin | Container | Box (skin px) |
 |---|---|---|
 | hatsune_miku_5 | `avs` | 479×326 |
 | winampmodern566 | `AVS` | 342×232 |
+| Defix Hi-END 200 | `VISCON` | 372×272 |
 | multipass | `avs_window` | 298×134 |
+| Shield_Amp | `AVS` | 285×104 |
 | Itemskin | `AVS_window` | 277×71 |
-| Styx | `AVS` | 220×200 |
-| Anaheim_Player_01 | `avs_window` | 100×200 |
-| Love is War Miku | `avs` | 190×84 |
-| Love Is War Miku V2 | `avs` | 190×90 |
+| Love is War Miku | `avs` | 390×234 |
+| Love Is War Miku V2 | `avs` | 390×240 |
+| Styx | `AVS` | 320×200 |
+| Anaheim_Player_01 | `avs_window` | 160×200 |
+| Nullsoft.Winamp.2000.SP4.Lite | `AVS` | 88×2 |
 
-The other 23 declare no visualization container, and NullPlayer's own window serves them exactly as
-before.
+Ebonite_2_1 names the GUID but declares no holder (it is a `cfgattrib`). The remaining 20 skins
+declare no visualization surface at all, and NullPlayer's own window serves them exactly as before.
 
-**This count is a floor, not a census.** It is what the render dump prints, and the dump does not
-enumerate Defix's `VISCON` (see the `hold` section above) — a real, openable visualization container
-with a real `{0000000A}` box in it. Treat the table as "at least these", and measure a specific skin
+**Why the old table was wrong, and the trap it is.** `componentHolders()` filters on the visible
+scene, and a skin routinely parks its visualization group off-screen: BLAKK puts the whole mini-AVS
+group at `x="161"` in a 160-wide `remote` layout under a `visible="0"` group and slides it in from
+`minivis.maki`. So every player-embedded holder in the corpus measured as absent, and the table
+recorded that absence as "none embeds the component in the player" — the same blind spot
+`VIDEO holder … hidden` and `PLAYLIST holder … hidden` each already needed a pass for. The dump now
+has the third pass, and prints `VIS holder <container>/<layout>: <id> hidden` with no frame (an
+object outside the scene has no resolved geometry).
+
+It is **not** "a layout the probe never selects" — the dump activates every layout, and printed
+BLAKK's `VIS box main/remote` from the same pass all along. Whenever a holder seems missing, check
+visibility before layout selection.
+
+Two skins in the *separate container* table above (Shield_Amp, Nullsoft.Winamp.2000.SP4.Lite) are
+plainly visible holders that the old table also missed, so it was stale independently of the hidden
+pass. The Love is War Miku boxes moved too (390×234, not the recorded 190×84) — those numbers
+predate the declared-minimum clamp described earlier on this page. **Re-measure rather than trusting
+any of these numbers after an engine-wide change**; the sweep is one `swift test --filter
+WinampModernRenderDumpTests` per skin with `WINAMP_MODERN_WAL` set, grepping `^VIS holder`.
+
 in the app before concluding it has none.
 

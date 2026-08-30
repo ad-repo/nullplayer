@@ -17,6 +17,22 @@ final class WinampModernRenderDumpTests: XCTestCase {
         guard let walPath = env["WINAMP_MODERN_WAL"] else {
             throw XCTSkip("Set WINAMP_MODERN_WAL and WINAMP_MODERN_RENDER_DUMP (and WINAMP_MODERN_ENGINE for cPro).")
         }
+        // B72: `WINAMP_MODERN_WAL` takes a **directory** as well as a single archive, the way
+        // `WINAMP_MODERN_DRAG_PROBE` already did. The corpus sweep — the regression proof every
+        // engine-wide change needs — was a shell loop paying one test-binary startup per skin, and
+        // the startups were nearly all of its ~25 minutes. Worse, a sweep is a build: an edit to
+        // `Sources/` or `Tests/` mid-loop silently wrote *empty* captures that then diffed as
+        // "everything changed". One invocation cannot be invalidated halfway.
+        let walRoot = URL(fileURLWithPath: walPath)
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: walPath, isDirectory: &isDirectory)
+        let wals: [URL] = isDirectory.boolValue
+            ? ((try? FileManager.default.contentsOfDirectory(at: walRoot, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension.lowercased() == "wal" }
+                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            : [walRoot]
+        guard !wals.isEmpty else { throw XCTSkip("No .wal archives under \(walPath).") }
+
         // A probe-only run needs no PNGs. `WINAMP_MODERN_RENDER_THEMES` is asked of all sixteen
         // installed skins in one loop, and requiring a dump directory for each of them buys nothing
         // but sixteen directories of images nobody looks at.
@@ -29,6 +45,8 @@ final class WinampModernRenderDumpTests: XCTestCase {
         let dumpDirectory = URL(fileURLWithPath: dumpPath, isDirectory: true)
         try FileManager.default.createDirectory(at: dumpDirectory, withIntermediateDirectories: true)
 
+        // Imported once, not per skin: it unpacks an executable, and every cPro skin in a sweep
+        // wants the same engine.
         var store: ClassicProEngineStore?
         if let enginePath = env["WINAMP_MODERN_ENGINE"] {
             let directory = FileManager.default.temporaryDirectory
@@ -41,6 +59,37 @@ final class WinampModernRenderDumpTests: XCTestCase {
             store = engineStore
         }
 
+        for wal in wals {
+            // The sweep's own frame. Every other line the harness prints is keyed by
+            // `<container>/<layout>`, which is not unique across skins, so without this a directory
+            // run is an unattributable wall of text. Printed for a single archive too, so one skin's
+            // capture and its row in a sweep stay byte-identical and diff cleanly.
+            print("SKIN \(wal.lastPathComponent)")
+            // Each skin gets its own subdirectory in a sweep, so 36 skins' PNGs cannot collide on a
+            // shared container name. A single archive keeps writing straight into the directory it
+            // was given — every existing invocation and every documented path stays as it was.
+            let skinDump = wals.count > 1
+                ? dumpDirectory.appendingPathComponent(wal.deletingPathExtension().lastPathComponent,
+                                                       isDirectory: true)
+                : dumpDirectory
+            try FileManager.default.createDirectory(at: skinDump, withIntermediateDirectories: true)
+            do {
+                try render(wal: wal, dumpDirectory: skinDump, store: store, env: env)
+            } catch {
+                // One unloadable skin must not abandon the other 35 — the sweep's whole value is
+                // that it is comparable end to end. The failure is printed where the diff will see it.
+                print("SKIN \(wal.lastPathComponent) FAILED \(error)")
+            }
+        }
+    }
+
+    /// Everything the harness does for one archive. Split out of the test body for B72's directory
+    /// mode; the body itself is unchanged.
+    private func render(wal: URL,
+                        dumpDirectory: URL,
+                        store: ClassicProEngineStore?,
+                        env: [String: String]) throws {
+        let walPath = wal.path
         // With no WINAMP_MODERN_ENGINE the already-installed engine store is used, so a cPro skin
         // renders from the engine the app itself imported instead of failing on `load.xml`.
         let loaded = try WinampModernSkinLoader(engineStore: store ?? .shared)
@@ -1171,6 +1220,25 @@ final class WinampModernRenderDumpTests: XCTestCase {
                     // the skins bind no button to it (Phase 48).
                     print("VIS holder \(info.id)/\(layoutID): \(holder.object.xmlID ?? "-")"
                           + "\(holder.frame) name=\(info.object.attributes["name"] ?? "-")"
+                          + " nomenu=\(info.object.attributes["nomenu"] ?? "-")")
+                }
+                // …and the ones the visible-scene pass cannot see (B23a), the same blind spot the
+                // video and playlist holders each already needed a pass for. BLAKK parks its whole
+                // mini-AVS group off the right edge of the `remote` layout
+                // (`blakk-remote.xml:140`, `x="161"` in a 160-wide window) under a `visible="0"`
+                // group, and slides it in from `minivis.maki` — so the only skin in the corpus that
+                // embeds a `{0000000A}` holder **in its player** measured as a skin with no
+                // visualization holder at all, and the corpus table in
+                // `reference/components/visualization.md` recorded that as fact.
+                // It is not "a layout the probe never selects": the dump activates every layout and
+                // prints this skin's `VIS box main/remote` from the same pass. It is visibility,
+                // exactly as it was for `VIDEO holder … hidden`.
+                // No frame, for the reason the video pass gives: an object outside the scene has no
+                // resolved geometry, and inventing one would be a lie.
+                for object in Self.hiddenComponentHolders(kind: .visualization, in: info.object)
+                where !holders.contains(where: { $0.object === object }) {
+                    print("VIS holder \(info.id)/\(layoutID): \(object.xmlID ?? "-") hidden"
+                          + " name=\(info.object.attributes["name"] ?? "-")"
                           + " nomenu=\(info.object.attributes["nomenu"] ?? "-")")
                 }
                 // The playlist holder and the metrics NullPlayer draws its rows at. The rows are the

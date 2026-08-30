@@ -18,13 +18,10 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| BB3 | Light-overlay bitmap precedence | 2 skins / 83 shared artwork paths each ([M13]) | M | Measured |
-| B23a | Player-embedded visualization holder | 1 skin / 1 player holder ([M16]) | L | Measured |
 | B45 | Container declared without a reachable renderable layout | 1 skin / 1 container ([M17]) | M | Measured |
 | BB13 | `setClipboardText()` | 1 skin / 1 MAKI program symbol; the program contains three calls ([M18]) | S | Measured |
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
-| B72 | Give the render dump the corpus directory mode the drag probe already has | — · harness, not a skin capability | S | Measured |
 
 ### Live-reported draw defects
 
@@ -54,18 +51,17 @@ All commands use the 36 directories extracted with `7zz` from
 `~/Library/Application Support/NullPlayer/WinampModernSkins/` (excluding
 `ClassicProEngine`). Set `corpus=/path/to/the/extracted/root`.
 
+**A command lives here only while the item that cites it is open.** Closing an item moves its
+command into that item's archive entry, in the same change — otherwise the entry is left behind
+citing nothing, which is how five of these went stale before being pruned 2026-08-30 (M3, M7, M8,
+M20, M21 — now recorded under BB10, B41, BB5, B66 and B67 respectively). Every `[M##]` below must
+resolve to a live citation above.
+
 - <a id="m19"></a>**M19:** `WINAMP_MODERN_DRAG_PROBE="$corpus_wal" swift test --filter WinampModernDragProbe` over the 36 installed `.wal` files, where `$corpus_wal` is `~/Library/Application Support/NullPlayer/WinampModernSkins`. Reports each container's draggable share; add `WINAMP_MODERN_DRAG_MAP=1` for the face map. See `skills/winamp-modern-skin-guide/reference/harness.md`.
-- <a id="m3"></a>**M3:** `rg -a -i -o 'newAttribute' "$corpus"`
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
-- <a id="m7"></a>**M7:** `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
-- <a id="m8"></a>**M8:** `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
-- <a id="m13"></a>**M13:** for each Light skin, `comm -12 <(cd "$corpus/$base" && find . -type f | sort) <(cd "$corpus/$light" && find . -type f | sort) | rg -i '\.(png|jpg|jpeg|gif|bmp)$'`
-- <a id="m16"></a>**M16:** `rg -i -o 'hold="guid:\{0000000A-000C-0010-FF7B-01014263450C\}"' "$corpus/BLAKK/xml/blakk-remote.xml"`
 - <a id="m17"></a>**M17:** `rg -i -o '<container[^>]*id="Pledit"' "$corpus/Shield_Amp/xml/pledit.xml"`, then verify that file contains no `<layout>`.
 - <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
-- <a id="m20"></a>**M20:** `rg -i -o '<[[:space:]]*Wasabi:(Text|CheckBox|HSlider|RadioGroup|EditBox|CustomDropDownList)[[:space:]]' "$corpus" --glob '*.xml'`
-- <a id="m21"></a>**M21:** `rg -i -o '<[[:space:]]*Wasabi:TitleBox[^>]*>' "$corpus" --glob '*.xml'`, then keep only the matches with no `h="` attribute.
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
 number of matched declarations or MAKI program symbols. A compiled MAKI method name is a program
@@ -123,39 +119,6 @@ The implementation and its automated coverage shipped; that record is in
 
 ---
 
-### BB3
-
-- [ ] **BB3. Bitmap overrides in the two Light overlays do not win.** Measured 2026-08-23 and
-      recorded as a trap in the skill, never filed here. The Light editions ship light versions of
-      ~30 of the *same* `window/*.png` the base declares (`frames.png`, `equalizer.png`,
-      `no_alb_art_*.png`), but a `<bitmap file="window/frames.png">` declared in **base** XML
-      resolves relative to that XML first, so it loads the **base's** artwork; only the `@SKINPATH@`
-      fallback would reach the overlay's copy. The editions still read as light because their
-      palette comes from `color-presets.xml` / `system-colors.xml` and the gamma model, so this is
-      cosmetic today. **Do not** fix it by flipping `resolveSkinResource`'s order without a full
-      corpus sweep — the relative-first order exists for authored subfolders.
-
----
-
-### B72
-
-- [ ] **B72. `WinampModernRenderDumpTests` should accept a directory, the way `WinampModernDragProbe`
-      already does.** The render dump takes one `WINAMP_MODERN_WAL` and exits, so the corpus sweep —
-      the regression proof every engine-wide change needs — is a shell loop paying **36 test-binary
-      startups, ~25 minutes a pass, two passes**. `WinampModernDragProbe` solved this already:
-      `WINAMP_MODERN_DRAG_PROBE=<directory>` enumerates the archives and loops inside a single
-      invocation. The same treatment here turns each pass into about a minute and makes the sweep
-      something to run casually rather than something to schedule around.
-      Measured 2026-08-29 while proving B16/B70: the loop's own overhead is nearly all of the cost, and
-      its fragility is the real argument — a sweep is a build, so an edit to `Sources/` or `Tests/`
-      mid-run silently writes **empty** captures, which then diff as "everything changed". That cost
-      one baseline pass this session. One invocation cannot be invalidated halfway.
-      The sweep itself, its invariants and both traps are in
-      **[reference/harness.md](skills/winamp-modern-skin-guide/reference/harness.md)** → *The corpus
-      render sweep*.
-
----
-
 ### B71
 
 - [ ] **B71. A layout's own script loads before the standard frame beside it has a client area, so
@@ -183,29 +146,6 @@ The implementation and its automated coverage shipped; that record is in
       **Do not treat "Reattach does nothing" as the whole item** — the *other* buttons on that bar were
       dead for an unrelated reason (B70, closed), and fixing that one made three of them work without moving
       this at all.
-
----
-
-### B23a
-
-- [ ] **B23a. `.visualization` embedded in a player (BLAKK).** Carried over from the deleted
-      `open-items.md`, which is the only place it was ever tracked. BLAKK reaches a visualization
-      holder **in its player** and declares no AVS container, so its engine could live in that box
-      instead of our own window. Deliberately left alone by B23 — no report, no measurement of what
-      the box should show. Still true as of 2026-08-23: `BLAKK/xml/blakk-remote.xml:88` declares
-      `<groupdef id="blakk.component.vis"><component id="vis" w="144" h="125" …
-      hold="guid:{0000000A-000C-0010-FF7B-01014263450C}"/></groupdef>`, placed at `x="8" y="34"`
-      inside `blakk.remote-avsgroup.group` with its own `VIS_Menu` / `VIS_Prev` / random-preset
-      controls alongside.
-      **Do not be reassured by the corpus table.** `reference/components.md:664` reads "8 of the 31
-      installed skins… none embeds the component in the player," and BLAKK is absent from it — that
-      is a probe blind spot, not a contradiction. The holder lives in the `remote` layout
-      (`blakk-remote.xml:113`), not the default `boombox` one, so a visibility-filtered `VIS holder`
-      sweep never sees it. Identical to the failure mode B23 already recorded for
-      `VIDEO holder … hidden`, and to the one B16 turned out to be — a container the dump listed only
-      while a script had not yet hidden it, closed 2026-08-29. **B16's fix does not cover this one**:
-      that was a *container* dropped by visibility, this is a *layout* the probe never selects, so
-      printing a holder in a non-default layout is still the first step.
 
 ---
 
@@ -431,7 +371,6 @@ These are verification state, not implementation priorities.
 | Id | Verification | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | B56a | Window tiling: classic-fallback playlist, Classic regression pass, live UI-Size change | — · verification only | S | Verification |
-| B23 | Embedded-holder harness output | — · verification only | S | Verification |
 | B24 | cPro-Bento library/playlist remount cycle | — · verification only | S | Verification |
 | B26 | Lobe and Ebonite container behavior | — · verification only | S | Verification |
 | B28 | Component frame sizing on Lobe and cPro-Bento | — · verification only | S | Verification |
@@ -447,8 +386,6 @@ These are verification state, not implementation priorities.
       which resizes every window and is the one input the sweep does not re-run for. Expect that last
       one to need `arrangeWindows()` called again, the same way launch does.
 
-- [ ] **B23 harness:** `VIDEO holder` line should print for an embedded holder too (it prints per
-      container/layout today and the tab's group is hidden at load)
 - [ ] **B24 verify:** Live on cPro-Bento: Media Library → Playlist → Media Library → Playlist, and
       the Video tab
 - [ ] **B26 verify on Lobe:** the `CT` button opens the window, the picker lists 43, Switch applies one

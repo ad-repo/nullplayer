@@ -207,14 +207,27 @@ Two things to know before touching this area again:
   edition's markup wins.
 - **The base's 159 `@SKINSPATH@\Big Bento Modern\…` references are *self*-references.** They resolve
   through the mount the skin already has and must never reach the sibling resolver.
-- **Bitmap overrides do not currently win** (measured 2026-08-23, follow-up filed). The Light
-  editions ship light versions of the *same* `window/*.png` the base declares (`frames.png`,
-  `equalizer.png`, `no_alb_art_*.png`, 30-odd files), but a `<bitmap file="window/frames.png">`
-  declared in base XML resolves relative to that XML first, so it loads the **base's** artwork; only
-  the `@SKINPATH@` fallback would reach the overlay's copy. The Light editions still read as light
-  because their palette comes from `color-presets.xml` / `system-colors.xml` and the gamma model.
-  Do not "fix" this by flipping `resolveSkinResource`'s order without a full corpus sweep — the
-  relative-first order exists for authored subfolders.
+- **Bitmap overrides already win, and the artwork the overlay *drops* is unreachable — both are
+  correct.** Re-measured 2026-08-30, correcting a 2026-08-23 note that had this backwards (BB3).
+  Each Light edition shares 83 image paths with its base and ships a different file for 81 of them.
+  A `<bitmap file="window/frames.png">` declared in **base** XML tries relative-to-that-XML first —
+  which misses, because the base ships no `xml/window/` directory — and then falls back to
+  `@SKINPATH@`, the **loaded** skin. So the overlay's copy is what loads. There is nothing to fix
+  here, and in particular do not flip `resolveSkinResource`'s order to "fix" it: the relative-first
+  order exists for authored subfolders, and the outcome is already right.
+  The mirror case is 54 base resources the overlay does not ship, which resolve to nothing (the run
+  reports them as `resourceMissing` warnings against `Big Bento Modern/xml/player-elements.xml`).
+  **That is also not a defect**: 48 are `window/color_themes/*.png` thumbnails for the base's own
+  themes, and an overlay replaces the theme list wholesale — both skins declare 77 gammasets sharing
+  only 30, so every missing thumbnail belongs to a theme the Light edition does not offer. The other
+  5 are WACUP-only album-art placeholders (`sc_alb_art*_wacup.png`, `no_alb_art_shade*_wacup.png`)
+  that no drawn layout references. Reaching any of them would load images nothing displays.
+  The Light editions read as light because of `color-presets.xml` / `system-colors.xml` and the
+  gamma model, not because of artwork precedence.
+  To re-measure: `WINAMP_MODERN_WAL=<Light>.wal WINAMP_MODERN_RENDER_DUMP=<dir>
+  WINAMP_MODERN_RENDER_BITMAPS=1 swift test --filter WinampModernRenderDumpTests`, then read the
+  `resourceMissing` warnings against a *base* XML path — a warning naming the base's XML but an
+  overlay-rooted `@SKINPATH@` path is this shape, not a resolver bug.
 - **The compatibility level is about MAKI, not loading.** Until BB7 the level read `unsupported`
   purely because `instantiate` was recorded as an error; the skin loaded and drew regardless. It is
   `degraded` now, on warnings alone.

@@ -29,6 +29,9 @@ WINAMP_MODERN_RENDER_DUMP=/tmp/render \
   swift test --filter WinampModernRenderDumpTests
 ```
 
+`WINAMP_MODERN_WAL` also accepts a **directory**, which renders every `.wal` in it inside one
+invocation — the corpus sweep, 36 skins in about a minute. See *The corpus render sweep* below.
+
 Optional env switches, all off by default:
 
 | Variable | Effect |
@@ -63,7 +66,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]` | stand a synthetic queue up behind the component seam **before** the scripts start — the only way a skin's `PlEdit` API can be observed headlessly, since the dump harness sets no component host and every script that walks the queue otherwise takes its empty branch. It also fills the drawn playlist panel, which has always come out as an empty box for exactly that reason. Prints `PLAYLIST before:` / `PLAYLIST after:` so an edit a script made (`removeTrack`, `moveTo`, `clear`) is visible, and `PLAYLIST reveal row=<n>` for a `showTrack`. Pair with `WINAMP_MODERN_CALL_TRACE=1` to see each call and its result. Phase 42's addition |
 | `WINAMP_MODERN_RENDER_KEY=<accelerator>[,<accelerator>]` | press keys at the skin the way the window does — `System.onKeyDown("alt+g")` — and print the handlers each one reached (`KEY handler alt+g -> skin.xml`) plus `KEY <accel>: handlers=<n> consumed=<0/1>`, where `consumed` is whether any handler ran MAKI's `complete;` (what tells the view to swallow the key). Accelerators are Winamp's own lowercase strings: `alt+g`, `ctrl+w`, `esc`. Without it the harness has no keyboard at all and every `onKeyDown` in the corpus measures as an unreached handler. Note the harness answers `isActive()` **true** for every object (no windows, so no focus), where the app answers per window — a `ctrl+w` that measures `consumed=1` here is still gated by focus in the app. Phase 43's addition |
 | *(always on, with `RENDER_DUMP`)* | **`VIDEO holder <container>/<layout>: <id><frame> cmdbar=<0/1>`** — the video box a skin declares, and the two things the window layer needs from it: the frame the picture is parked at, and whether the holder asked for Winamp's command bar (`noshowcmdbar=`). A `video=declared:…` catalog entry whose container turns out to hold no `<component>` prints no line at all, which is exactly the Hoop_Life_WA3 / Media_Whore case where the skin routes but has no box and the host's own window takes the video. B20's addition. A holder that is in the graph but **not in the scene** prints `<id> hidden` with no frame (B23) — an SUI skin keeps its video in a tab, so at load every visibility-filtered probe answered "this skin declares no video box" while cPro-Bento's Video tab sat empty and the film opened a window of its own |
-| *(always on, with `RENDER_DUMP`)* | **`VIS holder <container>/<layout>: <id><frame>`** — the skin's AVS/visualization **component** box, the one the host's own engine fills, and **`VIS box <container>/<layout>: <id><frame> mode=<n>(<name>)`** — every `<vis>` in the layout with the mode it asks for. The two are different surfaces (plugin vs. built-in analyzer) and telling them apart is the whole routing question, so both print. 8 of the 31 installed skins print a `VIS holder`. B20a's addition |
+| *(always on, with `RENDER_DUMP`)* | **`VIS holder <container>/<layout>: <id><frame>`** — the skin's AVS/visualization **component** box, the one the host's own engine fills, and **`VIS box <container>/<layout>: <id><frame> mode=<n>(<name>)`** — every `<vis>` in the layout with the mode it asks for. The two are different surfaces (plugin vs. built-in analyzer) and telling them apart is the whole routing question, so both print. A holder in the graph but **not in the scene** prints `<id> hidden` with no frame, the same pass `VIDEO holder` and `PLAYLIST holder` each already needed (B23a, 2026-08-30). Without it every **player-embedded** holder in the corpus measured as absent — a skin parks its visualization group off-canvas under a `visible="0"` group and slides it in from a script (BLAKK: `x="161"` in a 160-wide `remote` layout, moved by `minivis.maki`) — and the corpus table recorded that absence as "none embeds the component in the player" for as long as it stood. **16 skins declare a `{0000000A}` surface and 6 embed one in the player**; the roster is in [components/visualization.md](components/visualization.md) → *The corpus, measured*. Note the failure was **visibility, not layout selection**: the dump activates every layout and printed BLAKK's `VIS box main/remote` throughout. B20a's addition |
 | *(always on, with `RENDER_DUMP`)* | **`PLAYLIST holder <container>/<layout>: <id><frame> text=<n>px row=<n>px scale=<auto(n%)|set(n%)>`** — the embedded playlist box and the metrics NullPlayer draws its rows at. The rows are the *host's*, not the skin's (a `<windowholder hold="guid:{45F3F7C1-…}">` is filled by the player, so there is no `fontsize` on it to read), and the harness sets no component host, so the drawn panel is empty and nothing else in a dump shows the size. `text=` is the **Text Size** setting resolved against this window's canvas and `scale=` says whether it came from `auto` or from a user's choice — the answer to "the playlist font is tiny in this skin". The rule is `clamp(canvasHeight/48, 11, 18)` and is keyed on the **window**, not on the skin's fonts, so a probe that changes only the pane around the holder will not move it (`reference/components.md` → *How large NullPlayer draws its own text*). A holder in the graph but not in the scene prints `<id> hidden` with the same metrics, which is the only way to measure an SUI skin (every Big Bento variant keeps its playlist in a closed tab). Measured on Auto, 2026-08-26: Big Bento `main/normal` **18** (at the cap) and its own `main/shade` **11** — the same skin, two layouts, because the rule follows the canvas; Defix `pledit` **11** (a 355px window), and cPro-Bento, mmd3, micro and stock Winamp Modern **11** (the Wasabi default). **micro moved 13 → 11 with this rule** and that is the intended correction: 13 came from its own declared fonts inside a 152×96 window |
 | `WINAMP_MODERN_RENDER_VU=<level>` | inject a program level per channel (0…1) for `getLeftVUMeter`/`getRightVUMeter`; `sweep` oscillates 0…1 at 0.5 Hz. The harness has no audio, so without it every meter reads silence and a needle's travel cannot be measured. It also **scales the injected spectrum**, because meters that read `getVisBand` rather than the VU (Defix's speaker cones) sit on one frame against the harness's otherwise-constant ramp and measure as dead at every level |
 | `WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[\|…]` | write skin configuration **before** the scripts start — where the app reads it from, since the value is persisted. How a stored option the skin reads at load (a background id, a page index) is set without a GUI. Note it *stays* set for later runs. **It cannot select a display style**: Defix reads its own private copy (`CurVuVis`) at load and only writes it from `onDataChanged`, so a value seeded here is simply ignored — that is what `RENDER_SET` is for |
@@ -244,41 +247,51 @@ behaviour are only exercised by a string that does not fit.
 ### The corpus render sweep — the regression proof for any engine-wide change
 
 A change to loading, initialization, script startup or hit testing reaches every skin, so the proof
-that it broke none of them is a **before/after capture across all 36 installed archives**. There is no
-batch mode: `WinampModernRenderDumpTests` takes one `WINAMP_MODERN_WAL`, so the sweep is a shell loop
-paying 36 test-binary startups — budget **~25 minutes per pass, two passes**.
+that it broke none of them is a **before/after capture across all 36 installed archives**.
+`WINAMP_MODERN_WAL` takes a **directory** as well as a single archive (B72, 2026-08-30) and loops the
+corpus inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has. Measured: **36 skins in
+64 seconds**, against ~25 minutes for the shell loop this replaces.
 
 ```sh
 sweep() {  # $1 = output directory
-  for f in ~/Library/Application\ Support/NullPlayer/WinampModernSkins/*.wal \
-           ~/Library/Application\ Support/NullPlayer/WinampModernSkins/*.WAL; do
-    WINAMP_MODERN_WAL="$f" WINAMP_MODERN_RENDER_DUMP="$1/png" WINAMP_MODERN_RENDER_BITMAPS=1 \
-      swift test --filter WinampModernRenderDumpTests 2>&1 \
-      | grep -E "^(RENDER-DUMP (containers|catalog|skin windows|arrangement)|RENDER-DUMP [^ ]+/[^ ]+:|HOLDERS|VIS holder|VIDEO holder|PLAYLIST holder|BITMAPS)" \
-      > "$1/$(basename "$f").txt"
-  done
+  WINAMP_MODERN_WAL=~/Library/Application\ Support/NullPlayer/WinampModernSkins \
+  WINAMP_MODERN_RENDER_DUMP="$1/png" WINAMP_MODERN_RENDER_BITMAPS=1 \
+    swift test --filter WinampModernRenderDumpTests 2>&1 \
+    | grep -E "^(SKIN |RENDER-DUMP (containers|catalog|skin windows|arrangement)|RENDER-DUMP [^ ]+/[^ ]+:|HOLDERS|VIS holder|VIDEO holder|PLAYLIST holder|BITMAPS)" \
+    > "$1/invariants.txt"
 }
-git stash && sweep base; git stash pop && sweep curr
-diff -rq base curr
+sweep curr   # after your change
+git stash -u && sweep base && git stash pop
+diff base/invariants.txt curr/invariants.txt
 ```
+
+Every archive prints **`SKIN <file.wal>`** first, which is what makes one flat capture readable: every
+other line is keyed by `<container>/<layout>`, and those are not unique across skins. A skin that
+fails to load prints `SKIN <file.wal> FAILED <error>` and the sweep carries on — one broken archive
+must not abandon the other 35, and the failure lands in the diff where you will see it.
 
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
-resolved/missing bitmap counts. A clean run is *byte-identical* per skin.
+resolved/missing bitmap counts. **A clean run is byte-identical**, verified by running the sweep twice
+over an unchanged tree. One caveat when diffing: XCTest's own `Test Case … passed` banner runs into
+the final line, which carries no trailing newline — strip it, or ignore a one-line tail difference.
 
-**Two traps, both of which have already cost a pass:**
+In a directory run each skin gets **its own subdirectory** of PNGs, named for the archive, so 36 skins
+cannot collide on a shared container name. A single `.wal` still writes straight into the directory it
+was given, so every existing invocation in this document is unchanged.
+
+**The two traps that made this worth building, and one that survives:**
 
 - **A sweep is a build. Freeze the tree.** Editing anything under `Sources/` or `Tests/` mid-run
-  invalidates every remaining item — and it fails *silently*: a run whose binary will not compile
-  writes an **empty** capture, and an empty capture diffs as "everything changed." Adding one new test
-  file during a baseline pass emptied 15 of 36 captures that way (2026-08-29). Check
-  `find <dir> -name '*.txt' -empty` before believing any diff.
+  invalidates the pass — and with the old shell loop it failed *silently*: a run whose binary would
+  not compile wrote an **empty** capture, and an empty capture diffs as "everything changed." Adding
+  one new test file during a baseline pass emptied 15 of 36 captures that way (2026-08-29). One
+  invocation cannot be invalidated halfway, which is the real argument for directory mode — but the
+  rule still holds for the *pair* of passes, since the stash/build sits between them.
 - **`git stash` does not stash untracked files.** A new test file stays in the tree across the
-  baseline pass, which is exactly how the above happened. Move it aside, or `git stash -u`.
-
-Worth fixing at the source: `WinampModernDragProbe` already accepts a **directory** and loops the
-whole corpus inside one invocation (see `WINAMP_MODERN_DRAG_PROBE` in the table above). Giving the
-render dump the same directory mode would turn each pass from ~25 minutes into about one.
+  baseline pass, which is exactly how the above happened. Use `git stash -u`.
+- **Still true: check for an empty capture** before believing any diff. It is one file now rather than
+  36, so `wc -l base/invariants.txt curr/invariants.txt` is the whole check — expect ~720 lines.
 
 ### The golden images
 
