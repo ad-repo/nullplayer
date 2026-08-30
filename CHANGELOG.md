@@ -28,6 +28,9 @@
   and out — was making NullPlayer rebuild every object and rescale every image in the skin on frames
   where nothing had actually changed size, and the visualization was the one thing on screen moving
   fast enough to show it. The oscilloscope, Cava and vis_classic were never affected by any of this.
+  The bars also glide to each new height in both directions now instead of only on the way up, and
+  each reading is taken from the freshest audio in the buffer, so the picture tracks the music more
+  closely as well as more smoothly.
 
 
 - **Winamp Modern skins: Big Bento Modern's Visualization tab no longer goes black** — turning on the

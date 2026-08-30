@@ -3208,7 +3208,17 @@ final class WasabiSceneRenderer {
     /// `peakFalloffSteps` — the skin menus' Slower / Slow / Moderate / Fast / Faster. The decay used
     /// to be a fixed 0.015 *per draw*, which is not a rate at all: this box repainted about once a
     /// second (the clock never had it), so the caps hung.
-    private static let analyzerBarFalloffStep = 4
+    ///
+    /// **The bar rate is `Moderate`, not `Faster`, and that is about the input.** A `{0000000A}`
+    /// holder has no `<vis>` to take `falloff` from, so unlike the `<vis>` analyzer this is *ours*
+    /// to choose. At `Faster` (10/s) a bar falls 0.33 of the box in one 30 Hz frame, which is more
+    /// than a step of the input ever is — so every downward move landed whole, in a single frame,
+    /// and the row stepped at the rate the bands arrive (ten times a second) while the rise glided
+    /// over three frames. Half-smoothed motion reads worse than either. `Moderate` (4/s, 0.13 a
+    /// frame) spends a fall over about the same three frames the rise takes, so the row moves
+    /// continuously in both directions. Peaks stay at `Faster`: a cap is *meant* to be the thing
+    /// that drops away, and it starts from the bar it was left behind by rather than from a band.
+    private static let analyzerBarFalloffStep = 2
     private static let analyzerPeakFalloffStep = 4
 
 

@@ -334,13 +334,22 @@ final class WinampModernAnalyzerTap {
         let available = max(left.count, right.count)
         guard available > 0 else { return nil }
 
-        // Mono sum, zero-padded when a source hands over a short buffer (the streaming player
-        // forwards whatever its decoder produced). Padding is why the window is applied afterwards:
-        // it must taper the *analysis frame*, not the audio inside it.
+        // **The newest `fftSize` frames of the buffer, not the oldest.** The tap does not hand over
+        // 2048 frames — it hands over 4410 every 100 ms (`WINAMP_MODERN_VIS_GAPS=1`) — so the window
+        // taken from it is a choice, and taking it from the front meant every spectrum described
+        // audio that was already up to 54 ms old before it was drawn. That is half the interval
+        // between two spectra, spent for nothing. It does not change how *often* the bars are fed
+        // (see the open item in `rendering/vis.md`), only how late.
+        //
+        // Mono sum, zero-padded when a source hands over a buffer shorter than the window (the
+        // streaming player forwards whatever its decoder produced). Padding is why the window is
+        // applied afterwards: it must taper the *analysis frame*, not the audio inside it.
+        let offset = max(0, available - Self.fftSize)
         let n = min(available, Self.fftSize)
         for index in 0..<n {
-            let l = index < left.count ? left[index] : 0
-            let r = index < right.count ? right[index] : l
+            let source = offset + index
+            let l = source < left.count ? left[source] : 0
+            let r = source < right.count ? right[source] : l
             windowed[index] = (l + r) * 0.5
         }
         if n < Self.fftSize {

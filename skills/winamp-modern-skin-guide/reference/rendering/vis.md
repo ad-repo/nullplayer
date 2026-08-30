@@ -210,6 +210,12 @@ the scope sees all of the audio. The analyzer's tap is deliberately latest-value
 premise that a spectrum "barely moves across one 46 ms buffer" — the premise is about a 46 ms buffer
 that does not exist here, and 100 ms is a fifth of a bar at 120 bpm.
 
+**The buffer size cannot be asked down — measured, not assumed.** An isolated harness (a player
+node into `mainMixerNode`, a tap on the mixer, exactly the app's shape) requesting 512, 1024, 2048
+and 4096 gets **4800-frame buffers, 10 a second, in all four cases**: `installTap(bufferSize:)` is a
+hint this device ignores completely. So the cadence is a property of AVAudioEngine's tap, not
+something a smaller request can fix, and 4410 in the app is the same 100 ms at 44.1 kHz.
+
 **One fix was attempted and reverted.** Publishing the whole buffer on a notification of its own,
 windowing it at 50% overlap, and playing the resulting spectra out on the waveform tap's clock was
 worse on screen, not better — the playout adds up to a buffer of latency, its interval landed on
@@ -217,6 +223,21 @@ almost exactly the 30 Hz read rate so it alternated between repeating and skippi
 an empty `current` before the first advance makes `bands` answer `[]`, which stops the analyzer
 drawing at all (Big Bento's butterfly disappeared). Anything attempted here should be judged on
 screen before it is kept, and the latency is as visible as the steppiness.
+
+**What is done instead: nothing is faked, the motion is carried.** Two changes, neither of which
+adds a millisecond of latency, and together they are what makes a 10 Hz input read as continuous at
+30 Hz:
+
+- The window is taken from the **newest** `fftSize` frames of the buffer rather than the oldest, so
+  a spectrum is no longer up to 54 ms stale before it is drawn — half the interval between two
+  spectra, previously spent for nothing.
+- The `{0000000A}` holder's bar falloff is **`Moderate` (4/s), not `Faster` (10/s)**. At 10/s a bar
+  falls 0.33 of the box in one 30 Hz frame — more than a step of the input ever is — so every
+  downward move landed whole in a single frame and the row stepped at the input's rate on the way
+  down while the rise glided over three. Half-smoothed motion reads worse than either.
+
+The bands still change ten times a second; what changed is that the bars no longer arrive at each
+new value in one frame.
 
 #### The white line across the bar tops (B54)
 
