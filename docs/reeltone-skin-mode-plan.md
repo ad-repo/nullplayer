@@ -1,6 +1,6 @@
 # Reeltone Skin Mode Implementation Plan
 
-- Status: Phase 2 implemented; exit verification pending
+- Status: Phase 3 implemented; exit verification pending
 - Baseline: `origin/main` at `56c198ec44131158c0a500a4c947c5ad281b1644`
 - Planning branch: `plan/reeltone-mode`
 - Reference skin: `aqua-glass.reeltone` (`formatVersion: 2`)
@@ -12,7 +12,8 @@
 | Phase 0 | Not recorded on this branch | The plan is present; the remaining Phase 0 artifacts must be audited separately. |
 | Phase 1 | In progress | Mode shell is implemented; automated verification and manual live-switch acceptance are tracked against the Phase 1 exit criteria. |
 | Phase 2 | Implemented; exit verification pending | Loader/store security tests pass. Aqua Glass acceptance remains pending because the archive is not present in this worktree. |
-| Phase 3+ | Not started | Theme adaptation and dynamic surfaces remain out of scope. |
+| Phase 3 | Implemented; exit verification pending | v1 palette adaptation, fallback Original-window styling, import/discovery/selection, live switching, and restart restoration are implemented. `swift test` passes (459 tests, 2026-08-29); manual readability acceptance remains pending. |
+| Phase 4+ | Not started | Dynamic surfaces remain out of scope. |
 
 Update this table at each phase boundary. Do not mark a phase complete until its automated checks
 and manual exit criteria have both been recorded.

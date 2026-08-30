@@ -11,6 +11,8 @@ final class ReeltoneSkinEngine {
 
     private(set) var currentInstallation: ReeltoneInstalledSkin?
     private(set) var currentSkin: ReeltoneLoadedSkin?
+    private(set) var currentTheme = ReeltoneThemeAdapter(manifest: nil)
+    private(set) var preferredSkinLoadDiagnostic: ReeltoneDiagnostic?
 
     private let store: ReeltoneSkinStore
     private let defaults: UserDefaults
@@ -37,6 +39,31 @@ final class ReeltoneSkinEngine {
         let loaded = try store.load(preferred)
         replaceCurrent(with: loaded, installation: preferred)
         return loaded
+    }
+
+    /// Restore the preferred installation when possible and deterministically fall back to the
+    /// built-in Reeltone palette when the preference is missing, stale, or no longer valid.
+    @discardableResult
+    func activatePreferredTheme() -> ReeltoneThemeAdapter {
+        preferredSkinLoadDiagnostic = nil
+        do {
+            _ = try loadPreferredSkin()
+        } catch let diagnostic as ReeltoneDiagnostic {
+            preferredSkinLoadDiagnostic = diagnostic
+            replaceCurrent(with: nil, installation: nil)
+        } catch {
+            preferredSkinLoadDiagnostic = ReeltoneDiagnostic(
+                code: .storeFailure,
+                message: "The preferred Reeltone skin could not be loaded: \(error.localizedDescription)"
+            )
+            replaceCurrent(with: nil, installation: nil)
+        }
+        return currentTheme
+    }
+
+    func selectDefaultTheme() {
+        store.selectPreferred(nil, in: defaults)
+        replaceCurrent(with: nil, installation: nil)
     }
 
     @discardableResult
@@ -69,6 +96,7 @@ final class ReeltoneSkinEngine {
         currentSkin?.close()
         currentSkin = skin
         currentInstallation = installation
+        currentTheme = ReeltoneThemeAdapter(manifest: skin?.manifest)
         notificationCenter.post(name: .reeltoneSkinDidChange, object: self)
     }
 }

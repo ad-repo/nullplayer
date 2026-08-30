@@ -41,4 +41,28 @@ final class ReeltoneSkinEngineTests: XCTestCase {
         XCTAssertNil(ReeltoneSkinState.selectedSkinIdentity(in: defaults))
         XCTAssertEqual(notificationCount, 2)
     }
+
+    func testInvalidPreferredIdentityFallsBackWithoutChangingOriginalPreference() throws {
+        let temporaryRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReeltoneEngineFallbackTests-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let suiteName = "ReeltoneEngineFallbackTests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("Original Fixture", forKey: ModernSkinFamily.modern.skinNameKey)
+        defaults.set(UUID().uuidString.lowercased(), forKey: ReeltoneSkinState.selectedSkinIdentityKey)
+        let engine = ReeltoneSkinEngine(
+            store: ReeltoneSkinStore(rootURL: temporaryRoot.appendingPathComponent("store")),
+            defaults: defaults,
+            notificationCenter: NotificationCenter()
+        )
+
+        let theme = engine.activatePreferredTheme()
+
+        XCTAssertNil(engine.currentSkin)
+        XCTAssertNil(engine.currentInstallation)
+        XCTAssertEqual(theme.name, "Default Reeltone")
+        XCTAssertEqual(theme.palette, ReeltoneThemeAdapter.defaultPalette)
+        XCTAssertEqual(defaults.string(forKey: ModernSkinFamily.modern.skinNameKey), "Original Fixture")
+    }
 }

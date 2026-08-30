@@ -70,6 +70,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize the shared modern-family skin engine when Modern or Metal is enabled.
         if let family = windowManager.uiMode.modernSkinFamily {
             ModernSkinEngine.shared.loadPreferredSkin(for: family)
+        } else if windowManager.uiMode == .reeltone {
+            ReeltoneThemeRuntime.prepare()
         }
         
         // Restore settings state (skin, volume, EQ, windows). Compact Mode must be

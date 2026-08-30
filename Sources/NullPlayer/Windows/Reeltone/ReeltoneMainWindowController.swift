@@ -1,6 +1,6 @@
 import AppKit
 
-/// Phase-1 Reeltone main-window shell.
+/// Reeltone v1 main window, using themed Original content until manifest-driven surfaces arrive.
 ///
 /// Reeltone owns a distinct controller from the first phase, while temporarily hosting the
 /// standard Original main content until manifest-driven surfaces arrive.
@@ -8,8 +8,6 @@ final class ReeltoneMainWindowController: NSWindowController, MainWindowProvidin
     private var content: ModernMainWindowView!
 
     convenience init() {
-        ReeltonePlaceholderRuntime.prepare()
-
         let size = ModernSkinElements.mainWindowSize
         let window = BorderlessWindow(
             contentRect: NSRect(origin: .zero, size: size),

@@ -199,6 +199,16 @@ class ModernSkinEngine {
         }
     }
 
+    /// Present content owned by another exact UI mode with Original renderers without changing
+    /// either Original-family skin preference. Reeltone owns the adapter and its lifecycle.
+    func activateTransientSkin(_ skin: ModernSkin, named name: String) {
+        currentSkin = skin
+        currentSkinName = name
+        currentFamily = .modern
+        configureSkinDependencies(preservePersistedProfiles: true)
+        notifySkinChanged()
+    }
+
     /// Import a `.nsz` skin bundle into the user's ModernSkins directory.
     /// Returns the imported skin name (derived from filename without extension).
     ///

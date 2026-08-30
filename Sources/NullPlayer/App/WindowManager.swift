@@ -6105,7 +6105,10 @@ class WindowManager {
     /// defaults when entering classic. The classic `currentSkin` is loaded once at init and
     /// survives across switches, so no classic skin reload is needed here.
     private func prepareUIRuntime(for targetMode: PlayerUIMode) {
-        if let family = targetMode.modernSkinFamily {
+        if targetMode == .reeltone {
+            ModernSkinElements.sizeMultiplier = uiScaleLevel.scaleFactor
+            ReeltoneThemeRuntime.prepare()
+        } else if let family = targetMode.modernSkinFamily {
             // Modern window sizes are derived from this global multiplier, so pin it to the
             // current UI Size state before any modern controller is created — otherwise a
             // stale value left over from a previous modern session would create the windows

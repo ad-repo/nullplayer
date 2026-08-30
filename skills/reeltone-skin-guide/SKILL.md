@@ -62,3 +62,18 @@ coverage for every existing mode affected by the seam.
   than exposing them as selectable skins.
 - Version 1 accepts sprite mode `fill` as documented by the format guide. Version 2 additionally
   follows the frozen schema vocabulary while ignoring unknown additive object fields.
+
+## Phase 3 theme boundary
+
+- `ReeltoneThemeAdapter` maps v1 `screen`, `ink`, `inkDim`, `panel`, and `panelText` values into a
+  transient programmatic Original skin. It normalizes `#RRGGBBAA` to the RGB channels supported by
+  the Original palette and substitutes a readable built-in value for malformed or missing colors.
+- `ModernSkinEngine.activateTransientSkin` is the sole shared rendering seam. It must not write
+  `modernSkinName` or `metalSkinName`; returning to either Original family reloads that family's
+  independently persisted selection.
+- The Reeltone runtime activates the adapter before creating its main or fallback auxiliary
+  controllers. Playlist, Equalizer, Library, and Spectrum therefore share one coherent palette.
+- The menu discovers only store-validated installations. Import and selection go through
+  `ReeltoneSkinEngine`; no menu action extracts an archive directly.
+- A missing or invalid preferred installation renders the built-in Reeltone theme and never
+  changes either Original-family preference.
