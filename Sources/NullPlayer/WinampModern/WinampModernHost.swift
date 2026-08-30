@@ -122,6 +122,15 @@ protocol WinampModernHost: AnyObject {
     /// actually draws an analyzer. Idempotent.
     func setAnalyzerNeeded(_ needed: Bool)
 
+    /// The playing track's whole-track envelope, for a skin's seeker strip (BB18) — 0…65535 per
+    /// bucket, empty when there is nothing decoded. Not the oscilloscope: see
+    /// `WinampModernSeekerWaveform`.
+    var seekerWaveform: (samples: [UInt16], isLoading: Bool) { get }
+
+    /// Whether a claimed seeker holder is on screen, on the same terms as `setWaveformNeeded`: the
+    /// envelope costs a file decode, so it stays off unless a skin actually draws one. Idempotent.
+    func setSeekerWaveformNeeded(_ needed: Bool)
+
     func play()
     func pause()
     func stop()
@@ -165,6 +174,8 @@ extension WinampModernHost {
     func setWaveformNeeded(_ needed: Bool) {}
     func analyzerBands(count: Int) -> [CGFloat] { [] }
     func setAnalyzerNeeded(_ needed: Bool) {}
+    var seekerWaveform: (samples: [UInt16], isLoading: Bool) { ([], false) }
+    func setSeekerWaveformNeeded(_ needed: Bool) {}
     var trackArtist: String { "" }
     var trackAlbum: String { "" }
     var trackMetadata: WinampModernTrackMetadata { .empty }
@@ -334,6 +345,34 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         guard needed != isAnalyzerNeeded else { return }
         isAnalyzerNeeded = needed
         if needed { analyzerTap.start() } else { analyzerTap.stop() }
+    }
+
+    /// The seeker strip's envelope. Lazy and demand-gated like the two taps above, and for a
+    /// stronger reason than either: this one decodes a file rather than tapping the mixer, so a skin
+    /// that declares no seeker holder must never start it. `setSeekerWaveformNeeded` is what turns
+    /// it on, from the surface reconciliation that found a claimed holder.
+    private lazy var seekerWaveformModel = WinampModernSeekerWaveform { [weak self] in
+        self?.engine.currentTrack
+    }
+    private var isSeekerWaveformNeeded = false
+    var seekerWaveform: (samples: [UInt16], isLoading: Bool) {
+        isSeekerWaveformNeeded ? (seekerWaveformModel.samples, seekerWaveformModel.isLoading)
+            : ([], false)
+    }
+
+    func setSeekerWaveformNeeded(_ needed: Bool) {
+        guard needed != isSeekerWaveformNeeded else { return }
+        isSeekerWaveformNeeded = needed
+        if needed {
+            // The envelope arrives a moment after the track does, off a decode. Everything else in
+            // the strip moves with the playback tick, which already repaints; this one arrival does
+            // not, so without a nudge the waveform for a track appears only at the next tick.
+            seekerWaveformModel.onChange = { WindowManager.shared.refreshWinampModernSurfaces() }
+            seekerWaveformModel.start()
+        } else {
+            seekerWaveformModel.onChange = nil
+            seekerWaveformModel.stop()
+        }
     }
 
     /// What the skin's window installs to hear that the audio went quiet — the one clock that can

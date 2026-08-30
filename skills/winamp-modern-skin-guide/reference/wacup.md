@@ -65,15 +65,30 @@ driven by its own user setting, not by `Is Wacup`:
 (`wdh.waveseeker`, `waveseeker.rounder`, `waveseeker.rounder.bg`). So hosting a real waveform seeker
 there would need **no dialect concept at all** — it is the ordinary hosted-surface path.
 
-**But it is unreachable today, and the blocker is the skin.** `WINAMP_MODERN_RENDER_SETTINGS=1` on a
-non-WACUP host shows that setting is **not registered at all**: `wacup_checker.maki` only creates the
-option when the koopa.ini probe succeeds. So the user cannot switch it on, `cbuttons.maki` never
-reveals the holder, and a surface hosted there would be inert. Making it reachable means answering the
-probe affirmatively — which the section above rules out.
+**The setting really is unregistered — and it is not what gates the surface.** That distinction cost
+BB18 most of its life as a backlog item, so it is worth stating precisely. `WINAMP_MODERN_RENDER_SETTINGS=1`
+on a non-WACUP host confirms the option is absent: `wacup_checker.maki` creates it only when the
+koopa.ini probe succeeds, and that probe must keep failing. All true. But the layout's own `onTimer`
+(`WINAMP_MODERN_RENDER_DISASM=@player-normal-group`) gates the strip on something else entirely:
 
-Anyone picking this up needs a design for offering the capability *without* impersonating WACUP.
-NullPlayer already has the engine for it (`Waveform/WaveformCacheService.swift`, `BaseWaveformView`,
-`Windows/ModernWaveform/`).
+```
+System.isNamedWindowVisible("{E124F4D6-AA3E-4f3d-A813-C2A8CD6501E5}")
+  && wdh.waveseeker.getXmlParam("hold") == "{E124F4D6-…}"
+```
+
+Nothing in the skin ever writes `hold`. The holder ships `<windowholder … autoopen="0" hold="none"
+autoavailable="1"/>`, and `autoavailable="1"` is Wasabi's **component-discovery** handshake: the host
+may claim the box, stamping the component's GUID into `hold`. So the capability needed no dialect
+concept, no setting, and no impersonation — only a component to offer.
+
+**Implemented in Phase 87 (BB18).** `WinampModernAvailableComponents` claims the holder before the
+scripts start, `System.onLookForComponent(guid)` tells the skin (which arms the timer that re-reads
+`hold`), `isNamedWindowVisible` answers from what was actually claimed, and the strip is filled from
+`Waveform/WaveformCacheService`. See [components.md](components.md) → *Available components* and
+*Deferred host components*.
+
+**Read the lesson, not just the outcome:** a skin's stated user-facing switch is not necessarily its
+gate. The setting is real, is unregistered, and is a red herring; the bytecode is the authority.
 
 ## What a WACUP-era skin leaves behind on a non-WACUP host
 

@@ -18,9 +18,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| BB11 | List accessors | 3 skins / 9 MAKI program symbols ([M12]) | M | Measured |
 | BB3 | Light-overlay bitmap precedence | 2 skins / 83 shared artwork paths each ([M13]) | M | Measured |
-| BB18 | Host a waveform seeker at `wdh.waveseeker` | 2 skins / 2 declarations ([M14]) | L | Measured |
 | B23a | Player-embedded visualization holder | 1 skin / 1 player holder ([M16]) | L | Measured |
 | B45 | Container declared without a reachable renderable layout | 1 skin / 1 container ([M17]) | M | Measured |
 | BB13 | `setClipboardText()` | 1 skin / 1 MAKI program symbol; the program contains three calls ([M18]) | S | Measured |
@@ -62,9 +60,7 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m7"></a>**M7:** `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
 - <a id="m8"></a>**M8:** `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
-- <a id="m12"></a>**M12:** `rg -a -i -o 'getItemLabel|getItemFocused|setSubItem' "$corpus"`
 - <a id="m13"></a>**M13:** for each Light skin, `comm -12 <(cd "$corpus/$base" && find . -type f | sort) <(cd "$corpus/$light" && find . -type f | sort) | rg -i '\.(png|jpg|jpeg|gif|bmp)$'`
-- <a id="m14"></a>**M14:** `rg -i -o 'wdh\.waveseeker' "$corpus" --glob '*.xml'`
 - <a id="m16"></a>**M16:** `rg -i -o 'hold="guid:\{0000000A-000C-0010-FF7B-01014263450C\}"' "$corpus/BLAKK/xml/blakk-remote.xml"`
 - <a id="m17"></a>**M17:** `rg -i -o '<container[^>]*id="Pledit"' "$corpus/Shield_Amp/xml/pledit.xml"`, then verify that file contains no `<layout>`.
 - <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
@@ -127,15 +123,6 @@ The implementation and its automated coverage shipped; that record is in
 
 ---
 
-### BB11
-
-- [ ] **BB11. List accessors: `getItemLabel(i)`, `getItemFocused()`, `setSubItem()`.** All absent from
-      the runtime. Called from `reader/main.m` (the skin's own news reader) and `playlistpro.m`.
-      Scope which of those lists are actually reachable in our host before implementing any of it —
-      the reader may not be.
-
----
-
 ### BB3
 
 - [ ] **BB3. Bitmap overrides in the two Light overlays do not win.** Measured 2026-08-23 and
@@ -147,17 +134,6 @@ The implementation and its automated coverage shipped; that record is in
       palette comes from `color-presets.xml` / `system-colors.xml` and the gamma model, so this is
       cosmetic today. **Do not** fix it by flipping `resolveSkinResource`'s order without a full
       corpus sweep — the relative-first order exists for authored subfolders.
-
----
-
-### BB18
-
-- [ ] **BB18. Host a real waveform seeker at `wdh.waveseeker`.** Blocked by the skin, not by us:
-      `Use integrated Waveform Seeker` is never registered on a non-WACUP host, so a surface hosted
-      there is inert. Needs a design for offering the capability without impersonating WACUP.
-      Detail — the setting, the driving script, the measurement, and what NullPlayer already has to
-      host it — in **[reference/wacup.md](skills/winamp-modern-skin-guide/reference/wacup.md)** →
-      *The trap*.
 
 ---
 

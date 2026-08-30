@@ -98,6 +98,10 @@ final class WinampModernSkinLoader {
                                                 maximumObjectCount: xmlLimits.maximumExpandedNodeCount)
             .initialize(document: document)
         for diagnostic in inventory.diagnostics { runtime.record(diagnostic) }
+        // Claim the holders the skin left open for a host component, before any script can read
+        // `hold` (BB18). This is the whole of what makes Big Bento's waveform-seeker strip reachable
+        // — the skin's own gate is that param.
+        WinampModernAvailableComponents.claim(in: runtime.graph)
         // Before anything can read it: a skin's scripts lay its windows out from these values inside
         // `onScriptLoaded`, so a first-run seed applied afterwards would arrive a whole layout late.
         let configuration = WinampModernConfiguration(namespace: mountName)

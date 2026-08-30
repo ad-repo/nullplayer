@@ -104,6 +104,30 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private(set) var scriptFailures: [WalDiagnostic] = []
     private static let maximumRecordedScriptFailures = 512
 
+    /// The component kinds a holder in this skin is actually carrying, for `isNamedWindowVisible`.
+    ///
+    /// Derived from the graph rather than plumbed in: the claim is a `hold` write on the holder
+    /// (`WinampModernAvailableComponents`), and reading it back keeps one source of truth for "what
+    /// is in this box". Computed once — the claim runs before the scripts start, and a skin cannot
+    /// stamp a holder for itself.
+    private lazy var claimedComponentKinds: Set<WinampModernComponentKind> = {
+        var kinds: Set<WinampModernComponentKind> = []
+        for object in loadedSkin.runtime.graph.allObjectsUnordered
+        where WinampModernComponentRegistry.isHolderElement(object.typeName) {
+            guard let hold = object.attributes["hold"],
+                  let kind = WinampModernComponentRegistry.kind(for: hold),
+                  WinampModernAvailableComponents.offered.contains(kind) else { continue }
+            kinds.insert(kind)
+        }
+        return kinds
+    }()
+
+    /// Whether a holder in this skin is carrying that component — the window layer's read of the
+    /// same claim `isNamedWindowVisible` answers from.
+    func hasClaimedComponent(_ kind: WinampModernComponentKind) -> Bool {
+        claimedComponentKinds.contains(kind)
+    }
+
     var graphDidMutate: (() -> Void)?
     /// A repaint, and nothing more — no re-layout, no surface reconciliation. Layer FX drives this
     /// 30 times a second per warped layer, and `graphDidMutate` is far too heavy for that path (it
@@ -2938,8 +2962,18 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // The argument names an item, but every call site in the corpus passes the *current* one, and
         // the host only knows what it is decoding now — so the answer is about the playing track.
         case "getdecodername": return .string(host.decoderName)
-        case "isvideo", "isvideofullscreen", "iskeydown", "isminimized", "isnamedwindowvisible":
+        case "isvideo", "isvideofullscreen", "iskeydown", "isminimized":
             return .boolean(false)
+        // A *component's* window, addressed by GUID. Winamp answers for the plugin windows it has
+        // loaded; the only ones we have are the components we put in a holder, so the question is
+        // "did anything claim a holder for this GUID". A skin pairs it with the holder's own `hold`
+        // param — Big Bento gates its waveform-seeker strip on both — so answering a blanket false
+        // kept the strip hidden however the holder was stamped (BB18).
+        case "isnamedwindowvisible":
+            guard let kind = WinampModernComponentRegistry.kind(for: arguments[0].stringValue) else {
+                return .boolean(false)
+            }
+            return .boolean(claimedComponentKinds.contains(kind))
         // Not in the group above on purpose — see the signature. Under the headless harness there is
         // no `NSApplication` at all, and "the app the skin is running in is in front" is then the
         // honest answer: the alternative reports every probe run as a background app and takes the

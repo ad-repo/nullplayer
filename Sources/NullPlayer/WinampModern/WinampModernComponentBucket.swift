@@ -56,7 +56,9 @@ enum WinampModernComponentBucketCatalog {
         case .library: drawLibrary(in: box, line: line, context: context)
         case .visualization: drawVisualization(in: box, context: context)
         case .video: drawVideo(in: box, line: line, context: context)
-        case .other: break
+        // No bucket icon: the waveform seeker is a strip a skin places itself, never an entry in
+        // a component bucket's picker.
+        case .waveformSeeker, .other: break
         }
         context.restoreGState()
     }

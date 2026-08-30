@@ -340,7 +340,9 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         // The skin declares no visualization window of its own: NullPlayer's is the fallback, the
         // same window the Visualizations menu opens.
         case .visualization: WindowManager.shared.toggleProjectM()
-        case .video, .other: break
+        // No standalone window to fall back to: the seeker exists only as a strip inside a
+        // skin's own layout.
+        case .video, .waveformSeeker, .other: break
         }
     }
 }

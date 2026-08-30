@@ -1159,6 +1159,13 @@ final class WinampModernMainView: NSView {
                 // a live engine is this view's to answer — and there is nothing to answer with. A
                 // right click gets the controls, in `rightMouseDown`.
                 return
+            // The seeker seeks. A whole-track waveform is a position bar the user reads as one, so
+            // a click lands where it is pointing — the same conversion the `action="SEEK"` slider
+            // makes, and the only interaction the strip has (BB18).
+            case .waveformSeeker:
+                let fraction = (point.x - holder.frame.minX) / max(1, holder.frame.width)
+                host.seek(to: host.duration * Double(min(max(fraction, 0), 1)))
+                return
             case .library, .other:
                 return
             }

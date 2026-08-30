@@ -315,6 +315,59 @@ reveal, not only after a click. The line that named the bug was a holder list co
 `library#wdh.ml2` **and** `playlist#wdh.playlist` at once; the fix is confirmed by the same line
 containing exactly one content page.
 
+#### Available components — a holder the host may claim
+
+`autoavailable="1"` on a holder is the other half of `hold="none"`: the skin is saying *this box is
+empty, and the host may fill it*. Wasabi's handshake is that the host stamps the component's GUID
+into `hold`, then announces it with `System.onLookForComponent(guid)`; the skin re-reads `hold` and
+decides what to do with the space. `WinampModernAvailableComponents` is that claim.
+
+Three rules, and each is load-bearing:
+
+- **Both halves, or no claim.** `autoavailable="1"` *and* an empty/`none` `hold`. A holder that says
+  only `hold="none"` is a skin reserving space for itself; one that already names a component has
+  made its own decision and outranks ours. Across the 36 installed skins exactly **two** holders pass
+  both tests, and both are `wdh.waveseeker` (Big Bento Modern and its Windows 10 edition) — every
+  other `autoavailable="1"` holder in the corpus already carries a `hold="guid:…"`.
+- **We claim only what we can draw.** `offered` is a set of one. Widening it to the components that
+  *do* have surfaces (playlist, library, video, visualization) would let the fuzzy holder-id rule
+  place a second copy of a surface the skin has already positioned.
+- **The claim runs before the scripts start**, in `WinampModernSkinLoader`, because a skin reads
+  `hold` from `onScriptLoaded` onwards. The announcement runs *after* `setSceneVisible(true)`,
+  because the handler a skin arms there does its work from a timer that asks whether the layout is up.
+
+**Stamping without announcing is invisible.** The `hold` write is what a skin's *condition* reads, but
+nothing re-evaluates that condition on its own — Big Bento arms a timer from `onLookForComponent`, and
+it is that timer that compares `hold` against the GUID. `isNamedWindowVisible` must answer from what
+was actually claimed for the same reason: the skin pairs the two, so a blanket `false` kept the strip
+hidden however the holder was stamped.
+
+#### Deferred host components — a skin may back the box with its own artwork
+
+**A claimed component is drawn after the whole scene walk, not at the holder's declared z-position**
+(`drawDeferredHostComponents`). Winamp gives a plugin-hosted surface a real child window, which floats
+above every layer the skin draws; ours is painted inline, and for most components that is the same
+thing because nothing is declared over a playlist or a video box.
+
+The seeker is the exception, and **the skin makes it one by accepting the component**. Big Bento backs
+its strip with
+
+```xml
+<layer id="waveseeker.rounder.bg" image="songticker.background.center2"
+       x="5" y="88" w="0" h="35" relatw="1" ghost="1" visible="0"/>
+```
+
+— declared *after* the holder, and shown by the skin's own timer precisely *because* the handshake
+succeeded. In Winamp that layer lands behind the plugin's window. Inline, it landed on top, and a
+full-width dark panel over the strip is indistinguishable from a strip that never drew.
+
+**That symptom is worth recognising by name**, because it burned a long diagnosis: the box measured a
+*uniform* colour (`rgb(40,42,48)`, which is `songticker.background.center2`), the draw call ran 60×/sec
+with the right frame, and even an opaque debug fill produced no pixels. A uniform fill over a
+component box means something painted over it — and the covering object may be one the skin only
+reveals *in response to* the component being accepted, so a draw-order dump taken at startup will not
+show it. Take that dump late, or after the skin's timers have run at least once.
+
 #### Where a surface lives
 
 `WinampModernSurfaceCoordinator` is the single answer, for menus, skin buttons, and restore alike:
@@ -618,6 +671,15 @@ is the host's, exactly as the playlist panel is.
   wrote. `deleteAllItems` / `addItem` / `getNumItems` / `getItemLabel(item, column)` /
   `getFirstItemSelected` / `getNextItemSelected(after)` / `scrollToItem`, plus wheel scrolling, click
   to select and `onDoubleClick(item)` — one argument, the row.
+**The accessor set is complete against the corpus (re-measured 2026-08-29).** Every list accessor any
+installed skin calls is implemented: `getItemLabel` (7 program symbols) and `setSubItem` (2) across
+Big Bento Modern, its Windows 10 edition and Defix Hi-END 200 — which is the whole of [M12]'s "9
+symbols". `getItemFocused` and `getAttributeName` are **not** implemented and have **zero** hits in
+the 36-skin corpus, so their absence is not a gap; they were carried in the backlog as BB11 until the
+re-measurement showed the demand was entirely in the half already built. Only add them behind a real
+call site — re-run `rg -a -i -o 'getItemLabel|getItemFocused|setSubItem|getAttributeName' "$corpus"`
+before believing any list method is missing.
+
 - **Row height is the em plus 3px of leading, floored** — *not* the `fontsize` cell, which is a GDI
   height with a smaller em inside it. A skin sizes its window from its own expectation of this
   number, so getting it wrong crops the last row of every result.

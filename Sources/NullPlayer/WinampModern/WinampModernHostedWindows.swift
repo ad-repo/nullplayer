@@ -51,6 +51,7 @@ enum WinampModernSurfaceID: Hashable, CustomStringConvertible {
             case .visualization: return "visualization"
             case .video: return "video"
             case .equalizer: return "equalizer"
+            case .waveformSeeker: return "waveseeker"
             case .other: return "other"
             }
         case .hostWindow(let id):

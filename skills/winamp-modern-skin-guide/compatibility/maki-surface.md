@@ -531,8 +531,8 @@ opens under its tab, measured with `RENDER_CLICK`, which prints the point the me
 | `enqueueFile` | 5 | the skin adding files to the queue |
 | ~~`getTextWidth`~~ | 4 | implemented in B38 — a script measuring a string itself rather than through `getAutoWidth` |
 | `playTrack` / `clear` | 3 / 3 | script-driven playlist control |
-| `getItemLabel` / `getAttributeName` | 3 / 3 | Guilist accessors — the skin's own list widgets draw empty |
-| `getItemFocused` / `setSubItem` | 2 / 2 | the same |
+| ~~`getItemLabel`~~ / `getAttributeName` | 3 / 3 | `getItemLabel` implemented with the guilist; `getAttributeName` has no corpus call site |
+| `getItemFocused` / ~~`setSubItem`~~ | 2 / 2 | `setSubItem` implemented with the guilist; `getItemFocused` has no corpus call site — see the `<list>` note in [reference/components.md](../reference/components.md) |
 | ~~`getMonitorWidth` / `getMonitorHeight`~~ | 2 / 2 | implemented in B41; player-window display bounds in logical screen points; live multi-display QA pending |
 | `getComponentName` | 2 | naming a hosted component |
 | ~~`getDecoderName`~~ / `deleteByPos` | 1 / 1 | `getDecoderName` implemented in B38; `deleteByPos` minor |

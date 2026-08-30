@@ -1013,6 +1013,7 @@ final class WasabiSceneRenderer {
                 draw(node, in: context, pressed: pressed, hovered: hovered)
             }
         }
+        drawDeferredHostComponents(in: context)
         context.restoreGState()
         loadedSkin.runtime.markFirstPaintComplete()
     }
@@ -2949,19 +2950,27 @@ final class WasabiSceneRenderer {
         let analyzerNeeded = boxes.contains {
             renderer.needsAnalyzerBands(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
         } || (hasVisualizationHolder && holderRenderer.needsAnalyzerBands(forMode: holderMode))
+        // The seeker strip's whole-track envelope (BB18), on the same whole-graph terms and for the
+        // same reason. Its cost is a file decode rather than an audio consumer, which makes the
+        // demand gate matter more here than for either tap above, not less.
+        let seekerNeeded = loadedSkin.runtime.graph.allObjectsUnordered.contains {
+            Self.componentKind(of: $0) == .waveformSeeker
+        }
         let changed = waveformDemand?.needed != needed
         let analyzerChanged = waveformDemand?.analyzer != analyzerNeeded
-        waveformDemand = (generation, needed, analyzerNeeded)
-        // Pushed only on a change, though both setters are idempotent regardless.
+        let seekerChanged = waveformDemand?.seeker != seekerNeeded
+        waveformDemand = (generation, needed, analyzerNeeded, seekerNeeded)
+        // Pushed only on a change, though all three setters are idempotent regardless.
         if changed { host.setWaveformNeeded(needed) }
         if analyzerChanged { host.setAnalyzerNeeded(analyzerNeeded) }
+        if seekerChanged { host.setSeekerWaveformNeeded(seekerNeeded) }
     }
 
     /// Whether any box in this skin is a PCM-fed visualization, as of the last `refreshWaveformDemand`
     /// — the window reads it to decide how fast its visualization clock has to run.
     var visualizationNeedsWaveform: Bool { waveformDemand?.needed ?? false }
 
-    private var waveformDemand: (generation: UInt64, needed: Bool, analyzer: Bool)?
+    private var waveformDemand: (generation: UInt64, needed: Bool, analyzer: Bool, seeker: Bool)?
     /// The waveform every `<vis>` in *this* frame draws from. See `draw(in:)`.
     private var frameWaveform: (left: [UInt8], right: [UInt8])?
 
@@ -3670,10 +3679,86 @@ final class WasabiSceneRenderer {
             // letterbox margins around the hosted picture (B20).
             context.setFillColor(NSColor.black.cgColor)
             context.fill(frame)
+        // Deferred to the overlay pass below — see `deferredHostComponents`.
+        case .waveformSeeker: deferredHostComponents.append((kind, frame))
         case .library, .other:
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(frame)
         }
+    }
+
+    /// The seeker strip a WACUP-era skin reserves and the host fills (BB18).
+    ///
+    /// The whole-track envelope, mirrored about the centre line, with everything already played
+    /// drawn in the skin's "current row" colour and the rest in its list colour — the two roles a
+    /// `.wal` palette always resolves, so the strip belongs to whatever skin it lands in rather than
+    /// carrying colours of its own.
+    ///
+    /// **No background fill.** The skin has already drawn this rect — Big Bento shows
+    /// `waveseeker.rounder.bg` under it in the same frame — and painting over it is what made the
+    /// unrecognized-holder path put a slab over the seek bar (BB12).
+    /// Host components the skin backs with its **own** artwork, drawn after the whole scene.
+    ///
+    /// Winamp gives a plugin-hosted surface a real child window, which floats above every layer the
+    /// skin draws. Ours is painted inline at the holder's declared z-position, and for most
+    /// components that is the same thing — nothing is declared over a playlist or a video box.
+    ///
+    /// The seeker is the exception, and it is the skin that makes it one. Big Bento backs its strip
+    /// with `<layer id="waveseeker.rounder.bg" image="songticker.background.center2" … visible="0">`,
+    /// declared *after* the holder and shown by the skin's own timer **because** the component was
+    /// accepted. In Winamp that layer lands behind the plugin's window; here it landed on top, and a
+    /// full-width dark panel over the strip is indistinguishable from a strip that never drew — which
+    /// is exactly how BB18 presented, right down to the box measuring a uniform `rgb(40,42,48)`.
+    ///
+    /// So a claimed component is drawn last. The frames are collected during the walk (with the
+    /// scene's transform already established) and replayed here inside the same `saveGState`, so the
+    /// coordinates are the ones the walk computed.
+    private func drawDeferredHostComponents(in context: CGContext) {
+        let pending = deferredHostComponents
+        deferredHostComponents.removeAll(keepingCapacity: true)
+        for (kind, frame) in pending where kind == .waveformSeeker {
+            drawWaveformSeeker(frame: frame, context: context)
+        }
+    }
+
+    /// Collected during the scene walk, drained by `drawDeferredHostComponents` in the same frame.
+    private var deferredHostComponents: [(kind: WinampModernComponentKind, frame: CGRect)] = []
+
+    private func drawWaveformSeeker(frame: CGRect, context: CGContext) {
+        let (samples, isLoading) = host.seekerWaveform
+        let played = host.duration > 0
+            ? CGFloat(min(max(host.currentTime / host.duration, 0), 1)) : 0
+        let playedX = frame.minX + frame.width * played
+        // Nothing decoded yet: a centre line, so the strip reads as a seek bar with no envelope
+        // rather than as a hole. Same line while a decode is in flight — the wait is the message.
+        guard !samples.isEmpty else {
+            let midY = frame.midY
+            let line = CGRect(x: frame.minX, y: midY - 0.5, width: frame.width, height: 1)
+            context.setFillColor(palette.listText.withAlphaComponent(isLoading ? 0.5 : 0.25).cgColor)
+            context.fill(line)
+            return
+        }
+        let columns = max(1, Int(frame.width.rounded()))
+        let half = frame.height / 2
+        let midY = frame.midY
+        context.saveGState()
+        context.clip(to: frame)
+        for column in 0..<columns {
+            let x = frame.minX + CGFloat(column)
+            // Buckets per column rather than one sample per column: the envelope's resolution is the
+            // decoder's, not the strip's, so a 34px-tall box 500px wide must not show every 40th
+            // sample and call it a waveform.
+            let lower = samples.count * column / columns
+            let upper = max(lower + 1, samples.count * (column + 1) / columns)
+            var peak: UInt16 = 0
+            for index in lower..<min(upper, samples.count) { peak = max(peak, samples[index]) }
+            let amplitude = half * CGFloat(peak) / CGFloat(UInt16.max)
+            guard amplitude > 0 else { continue }
+            let color = x < playedX ? palette.currentText : palette.listText
+            context.setFillColor(color.cgColor)
+            context.fill(CGRect(x: x, y: midY - amplitude, width: 1, height: amplitude * 2))
+        }
+        context.restoreGState()
     }
 
     /// The font NullPlayer's own surfaces draw with inside this skin.

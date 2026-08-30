@@ -12,6 +12,11 @@ enum WinampModernComponentKind: String, CaseIterable {
     case visualization
     case video
     case equalizer
+    /// The waveform seeker a skin reserves a strip for and never fills itself. Winamp has no such
+    /// component; WACUP's plugin does, and a WACUP-era skin declares the holder for it as an
+    /// *available* one (`hold="none" autoavailable="1"`) for the host to claim. NullPlayer claims
+    /// it with its own whole-track waveform — see `WinampModernAvailableComponents`.
+    case waveformSeeker
     case other
 }
 
@@ -25,6 +30,10 @@ enum WinampModernComponentRegistry {
         "6b0edf80c9a511d39f2600c04f39ffc6": .library,
         "0000000a000c0010ff7b01014263450c": .visualization,
         "f0816d7bfffc434380f2e8199aa15cc3": .video,
+        // WACUP's integrated waveform seeker. Not a Winamp GUID — it is read off Big Bento Modern's
+        // own bytecode, where the layout script gates its whole 6px shuffle on
+        // `wdh.waveseeker.getXmlParam("hold") == "{E124F4D6-…}"` (BB18).
+        "e124f4d6aa3e4f3da813c2a8cd6501e5": .waveformSeeker,
     ]
 
     /// Short tokens used in `TOGGLE guid:pl` / `sendaction` and in some holder `hold` values.
@@ -34,6 +43,7 @@ enum WinampModernComponentRegistry {
         "vis": .visualization, "avs": .visualization, "visualization": .visualization,
         "vid": .video, "video": .video,
         "eq": .equalizer, "equalizer": .equalizer,
+        "waveseeker": .waveformSeeker, "waveformseeker": .waveformSeeker,
     ]
 
     /// The element types that can host a component surface. `<component>` is the form real skins use
@@ -74,6 +84,7 @@ enum WinampModernComponentRegistry {
         case .library: return "{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"
         case .visualization: return "{0000000A-000C-0010-FF7B-01014263450C}"
         case .video: return "{F0816D7B-FFFC-4343-80F2-E8199AA15CC3}"
+        case .waveformSeeker: return "{E124F4D6-AA3E-4F3D-A813-C2A8CD6501E5}"
         case .equalizer, .other: return nil
         }
     }
@@ -94,6 +105,7 @@ enum WinampModernComponentRegistry {
         ("medialibrary", .library), ("library", .library),
         ("visualization", .visualization), ("playlist", .playlist), ("equalizer", .equalizer),
         ("video", .video), ("avs", .visualization),
+        ("waveseeker", .waveformSeeker),
     ]
 
     private static func normalize(_ guid: String) -> String {

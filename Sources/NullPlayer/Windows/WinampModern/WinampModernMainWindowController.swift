@@ -244,6 +244,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // `onSetVisible` (Defix's cassette reels) needs to be told.
             view.setSceneVisible(true)
             auxiliaryContainers.forEach { $0.view.setSceneVisible($0.window.isVisible) }
+            announceClaimedComponents(scripts: scripts)
             // …and then the windows the skin says open *with* it. After `scriptsDidStart`, so a
             // window that opens at launch is told `onSetVisible` with its geometry already dispatched.
             applyDefaultContainerVisibility()
@@ -936,6 +937,30 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         coordinator.showSurface(.library, allowEmbeddedAutoOpenFallback: false)
         skinView?.needsLayout = true
         skinView?.needsDisplay = true
+    }
+
+    /// Tell the skin about every holder the host claimed (BB18).
+    ///
+    /// The claim itself is a `hold` write on the graph (`WinampModernAvailableComponents`), which is
+    /// what a skin's *condition* reads — but nothing re-evaluates that condition on its own. Wasabi's
+    /// announcement is `System.onLookForComponent(guid)`, and a skin hangs the re-evaluation off it:
+    /// Big Bento's layout script starts a timer there, and it is that timer's handler that compares
+    /// `hold` against the GUID and shifts its transport row down for the strip. Stamping the holder
+    /// and never announcing it therefore left the claim invisible — the box was ours and the skin
+    /// never found out.
+    ///
+    /// After `setSceneVisible(true)`: the handler a skin arms here does its work from a timer that
+    /// asks whether the layout is up.
+    private func announceClaimedComponents(scripts: WinampModernScriptRuntime) {
+        for kind in WinampModernAvailableComponents.offered.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard scripts.hasClaimedComponent(kind),
+                  let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else { continue }
+            let handled = (try? scripts.dispatchSystem(event: "onlookforcomponent",
+                                                       arguments: [.string(guid)])) ?? 0
+            #if DEBUG
+            NSLog("WinampModern claimed %@ guid=%@ handlers=%d", kind.rawValue, guid, handled)
+            #endif
+        }
     }
 
     /// Ask the skin to bring an embedded surface to the front, the way Winamp does.
