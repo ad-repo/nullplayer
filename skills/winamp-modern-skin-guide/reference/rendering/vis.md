@@ -143,6 +143,81 @@ state, it differs between the renderers of one skin, and they all push to a sing
 refcount. Erring towards running the tap is the safe side — the cost is one consumer in
 `processAudioBuffer`, not a wrong picture.
 
+#### The low end is narrower than the analysis (2026-08-30)
+
+At 21.5 Hz bins a log-spaced band below ~500 Hz is **narrower than one FFT bin**, and the original
+mapping snapped each band to integer bin indices — `Int(lowHz / binWidth)` to
+`Int(highHz / binWidth) + 1`. So several neighbouring bass bars read the *identical* bin while the
+one band that happened to step across a boundary jumped the whole difference between two bins in a
+single bar. A bass note drew as a flat plateau with a cliff beside it: the aggressive jaggedness
+that only ever showed in the low end, because that is the only part of the row where a band is
+narrower than the analysis.
+
+A band now takes the spectrum **interpolated at its two edge frequencies**, peak-held with every bin
+it fully contains. Adjacent bands share an edge and therefore share that value, so the row is
+continuous by construction; a band wider than a bin — everything above ~500 Hz — is still the
+peak-hold it always was, which is what keeps the top of the row Winamp's.
+
+**The rise is smoothed as well as the fall — but a bar does one or the other, never both.** The
+fall was fixed first (`falloff`, per second) and the rise was left assigning the band outright, so a
+bar jumped the whole box between two frames and the row read as *frantic* rather than fast.
+`WasabiVisStyle.risen` is a one-pole approach with `barAttackSeconds` = 30 ms, engine-wide like the
+falloff tables and used by **both** analyzer sites. Short on purpose: two thirds of a jump lands in
+the first frame, ~96% by the third, and anything long enough to see as smoothing is long enough to
+see as lag.
+
+> **The mistake worth keeping.** The first version subtracted `barStep` and *then* smoothed back up
+> toward the band, every frame. Applying both rates at once breaks the invariant the original
+> `max(level, bars - barStep)` had — **a bar is never below its own band** — and leaves the two
+> settling at an equilibrium the band cannot reach. Measured with `WINAMP_MODERN_VIS_FRAMES=30` at
+> the `{0000000A}` site, whose falloff is 10/s: `level=0.752 bar=0.615`, and a band pinned at
+> `level=1.000` drew at **0.837** of the box for ever. On screen that is not smoothing, it is a row
+> hunting a target it never reaches — reported as jumpy and staggered, and worse than no smoothing
+> at all. The shape is `level > previous ? risen(…) : max(level, previous - barStep)`: the fall is
+> byte-for-byte what it always was, and only the rise is new.
+
+#### A no-op resize is not free — and the analyzer is where you see it
+
+`WasabiSceneRenderer.resize(to:)` marks **every object in the skin** dirty (1,727 on Big Bento) and
+drops the warped and pre-scaled bitmap caches with them, so the next frame re-scales the skin's
+whole artwork. It used to do all of that even when the clamped size equalled the size the canvas
+already had — and a skin's *own* container animation proposes an unchanged size on most of its
+ticks: Big Bento's track notifier slides in and out by writing container geometry from
+`tickTargetAnimation`. Every container in one skin shares one object graph, so the cost landed on
+the **player's** scene, and the spectrum analyzer stuttered every few seconds while the oscilloscope
+and the NullPlayer engines — which repeat their last frame rather than decaying against wall-clock
+elapsed — did not show it nearly as clearly.
+
+`resize(to:)` now returns early on an unchanged canvas, and `applyCanvasResize` asks the renderer
+*first* so an unchanged tick also skips `invalidateRectCaches` (a full window repaint plus a palette
+push to every hosted surface) and `dispatchResize` (`onResize` through the interpreter for every
+object in the container). Measured with `WINAMP_MODERN_RESIZE_TRACE=1` + `MUTATION_TRACE`: one
+no-op tick cost `writes=5797 writers=1727`; afterwards `WINAMP_MODERN_VIS_STALL=120` reports **no**
+late tick at all across 50 s of settled playback.
+
+#### Open: the analyzer's input arrives ten times a second (2026-08-30)
+
+**Unfixed, and measured.** `AudioEngine` installs its mixer tap with `bufferSize: fftSize` (2048),
+but that is a *request*: this mixer delivers **4410 frames every 100 ms**
+(`WINAMP_MODERN_VIS_GAPS=1` → `buffers=11 rate=10/s frames=[4410x11]`). The full-stereo post keeps
+the first 2048 frames and discards the other 2362, so the analyzer gets one spectrum per 100 ms,
+computed from 46 ms of it — **10 updates a second against a 30 Hz repaint, and 54% of the audio
+never analysed at all.** Between updates the bars only fall, so the row holds, falls, and jumps.
+
+This is also why the **oscilloscope has never had the problem**: `processAudioBuffer` posts *every*
+576-sample chunk of the same buffer and `WinampModernWaveformTap` queues them and plays them out, so
+the scope sees all of the audio. The analyzer's tap is deliberately latest-value on the stated
+premise that a spectrum "barely moves across one 46 ms buffer" — the premise is about a 46 ms buffer
+that does not exist here, and 100 ms is a fifth of a bar at 120 bpm.
+
+**One fix was attempted and reverted.** Publishing the whole buffer on a notification of its own,
+windowing it at 50% overlap, and playing the resulting spectra out on the waveform tap's clock was
+worse on screen, not better — the playout adds up to a buffer of latency, its interval landed on
+almost exactly the 30 Hz read rate so it alternated between repeating and skipping a spectrum, and
+an empty `current` before the first advance makes `bands` answer `[]`, which stops the analyzer
+drawing at all (Big Bento's butterfly disappeared). Anything attempted here should be judged on
+screen before it is kept, and the latency is as visible as the steppiness.
+
 #### The white line across the bar tops (B54)
 
 Reported live on Big Bento Modern, worse at `bandwidth="thin"`, and **two** causes stacked under one

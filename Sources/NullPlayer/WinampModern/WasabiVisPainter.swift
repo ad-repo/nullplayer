@@ -49,6 +49,36 @@ struct WasabiVisStyle {
     static let peakFalloffSteps: [CGFloat] = [0.35, 0.55, 0.9, 1.5, 2.4]
     static let falloffStepCount = 5
 
+    /// **How fast a bar rises**, as the time constant of a one-pole approach to the band it is
+    /// chasing, in seconds. There is no attribute for this — Winamp gives a skin `falloff` and
+    /// `peakfalloff` and nothing for the attack — so it is one engine-wide constant, shared by the
+    /// `<vis>` analyzer and the `{0000000A}` holder like the falloffs above.
+    ///
+    /// It exists because the *fall* was smoothed and the *rise* was not: a bar was assigned its band
+    /// outright, so it jumped the full height of the box between two frames. The bands arrive **ten
+    /// times a second** — measured, see *the analyzer's input arrives ten times a second* in
+    /// `rendering/vis.md` — against a 30 Hz repaint, so that snap landed on two frames in three and
+    /// the row read as frantic rather than as fast; worse since B73, whose unclipped input gave the
+    /// bands real range to jump across.
+    ///
+    /// It is **not** a fix for that input rate and must not be stretched into one: smoothing wide
+    /// enough to hide a 100 ms step is wide enough to lag the music by one.
+    ///
+    /// 30 ms is short on purpose. At the 30 Hz clock a bar covers two thirds of a jump in the first
+    /// frame and ~96% by the third, so a transient still arrives on the beat; anything long enough
+    /// to see as smoothing is long enough to see as lag, and a visualization that lags the music is
+    /// a worse defect than a twitchy one.
+    static let barAttackSeconds: CFTimeInterval = 0.03
+
+    /// One frame of that rise: `bar` moved toward `level` over `elapsed`. Falls are **not** routed
+    /// through here — those are the skin's own `falloff`, a straight rate per second.
+    static func risen(from bar: CGFloat, toward level: CGFloat,
+                      elapsed: CFTimeInterval) -> CGFloat {
+        // No elapsed time is the first draw of a box, which has nothing to rise *from*.
+        guard elapsed > 0, barAttackSeconds > 0 else { return level }
+        return level - (level - bar) * CGFloat(exp(-elapsed / barAttackSeconds))
+    }
+
     static func falloffStep(_ raw: String?) -> Int {
         guard let value = raw.flatMap({ Int($0.trimmingCharacters(in: .whitespaces)) }) else { return 2 }
         return max(0, min(falloffStepCount - 1, value))
@@ -288,6 +318,12 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
         }
 
         var state = boxes[input.objectID] ?? BoxState()
+        #if DEBUG
+        if !state.bars.isEmpty, state.bars.count != count {
+            WinampModernAnalyzerTap.traceGap("bandcount vis \(state.bars.count)->\(count) "
+                                             + "width=\(frame.width)")
+        }
+        #endif
         if state.bars.count != count { state.bars = Array(repeating: 0, count: count) }
         if state.peaks.count != count { state.peaks = Array(repeating: 0, count: count) }
         let now = CACurrentMediaTime()
@@ -299,10 +335,20 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
 
         for index in 0..<count {
             let level = bandFraction(index)
-            // The bar rises instantly and falls at `falloff` — the fall did not exist at all before,
-            // so bars snapped straight down, which is a large part of why the analyzer read twitchier
-            // than Winamp's.
-            let bar = max(level, state.bars[index] - barStep)
+            // The bar falls at the skin's `falloff` and **rises over `barAttackSeconds`** rather
+            // than being assigned its band outright: assigned, it jumped the whole box in one frame
+            // (`WasabiVisStyle.risen`).
+            //
+            // **Rise or fall, never both.** The fall is the skin's `falloff` and is clamped at the
+            // band, exactly as it always was; the rise is `barAttackSeconds`. Applying both every
+            // frame — subtracting `barStep` and *then* smoothing back toward the band — was wrong
+            // twice over: it put the bar **below** its own band, and the two rates settled at an
+            // equilibrium the band could never reach, so a full-scale band drew at 0.837 of the box
+            // and the row hunted instead of tracking. Measured with `WINAMP_MODERN_VIS_FRAMES`.
+            let previous = state.bars[index]
+            let bar = level > previous
+                ? WasabiVisStyle.risen(from: previous, toward: level, elapsed: elapsed)
+                : max(level, previous - barStep)
             state.bars[index] = bar
             state.peaks[index] = max(bar, state.peaks[index] - peakStep)
             context.setFillColor(style.barColor(index: index, count: count, level: bar))
@@ -326,6 +372,14 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
             context.fill(CGRect(x: x, y: capY, width: barWidth, height: capHeight))
         }
         boxes[input.objectID] = state
+        #if DEBUG
+        if let probe = WasabiSceneRenderer.visFrameProbe, probe < count {
+            NSLog("%@", "WM-VIS-FRAME vis t=\(String(format: "%.3f", now)) "
+                  + "elapsed=\(Int(elapsed * 1_000))ms band=\(probe) "
+                  + "level=\(String(format: "%.3f", bandFraction(probe))) "
+                  + "bar=\(String(format: "%.3f", state.bars[probe]))")
+        }
+        #endif
         WasabiSceneRenderer.traceVisInput(bands, site: style.isThin ? "vis/thin" : "vis/wide",
                                           peaks: state.peaks)
     }

@@ -17,6 +17,19 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: the built-in spectrum analyzer is smoother, and its bass is readable** —
+  three separate faults in the analyzer Big Bento Modern and other `.wal` skins draw. Its low end was
+  a comb of plateaus and cliffs: below about 500 Hz a bar is narrower than the analysis can resolve,
+  and several neighbouring bars were reading the identical value while the occasional one jumped the
+  whole gap, so a bass note drew as a flat block with a step beside it. Bars also snapped to their
+  new height in a single frame, which read as frantic rather than fast; they now rise over a short
+  glide while falling exactly as the skin's own falloff setting says. And the whole picture stuttered
+  every few seconds: a skin animating one of its own windows — Big Bento's track notifier sliding in
+  and out — was making NullPlayer rebuild every object and rescale every image in the skin on frames
+  where nothing had actually changed size, and the visualization was the one thing on screen moving
+  fast enough to show it. The oscilloscope, Cava and vis_classic were never affected by any of this.
+
+
 - **Winamp Modern skins: Big Bento Modern's Visualization tab no longer goes black** — turning on the
   small visualization pane in the Multi Content View settings used to break the big Visualization tab:
   it opened black and stayed that way until you reloaded the skin, and in some cases showed the small

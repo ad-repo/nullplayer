@@ -61,6 +61,12 @@ final class WinampModernAnalyzerTap {
     private var pending: (left: [Float], right: [Float], sampleRate: Double)?
     private var analyzing = false
     /// The published half-spectrum: linear magnitudes, one per FFT bin, 0 dBFS at 1.0.
+    ///
+    /// **Latest-value, not a queue** — the opposite of `WinampModernWaveformTap`, and for a reason
+    /// specific to what each one draws. A scope draws the *waveform itself*, so a discarded chunk is
+    /// audio the user can see missing. An analyzer draws a spectrum, which barely moves across one
+    /// 46 ms buffer; showing the newest is showing the music, and holding a backlog would only make
+    /// the bars lag the sound.
     private var spectrum: [Float] = []
     private var spectrumSampleRate: Double = 44_100
     /// Bumped every time `spectrum` is replaced — the key the main thread's band cache hangs on.
@@ -158,6 +164,9 @@ final class WinampModernAnalyzerTap {
 
         guard let arrival else { return [] }
         guard now - arrival < Self.silenceTimeout else {
+            #if DEBUG
+            Self.traceGap("silence age=\(Int((now - arrival) * 1_000))ms count=\(count)")
+            #endif
             return [CGFloat](repeating: 0, count: count)
         }
         if isNew {
@@ -197,16 +206,41 @@ final class WinampModernAnalyzerTap {
             return [CGFloat](repeating: 0, count: count)
         }
         let ratio = top / Self.lowestBandHz
+        // The magnitude at an arbitrary frequency, read linearly between the two bins either side
+        // of it. Bin `i` is centred on `i * binWidth`, and bin 0 is never read: `vDSP_fft_zrip`
+        // packs DC and Nyquist together there, so it is not a magnitude at all.
+        func interpolated(_ hz: Float) -> Float {
+            let position = min(Float(bins - 1), max(1, hz / binWidth))
+            let lower = Int(position)
+            let upper = min(bins - 1, lower + 1)
+            let fraction = position - Float(lower)
+            return mappedSpectrum[lower]
+                + (mappedSpectrum[upper] - mappedSpectrum[lower]) * fraction
+        }
         var result = [CGFloat](repeating: 0, count: count)
         for band in 0..<count {
             let lowHz = Self.lowestBandHz * powf(ratio, Float(band) / Float(count))
             let highHz = Self.lowestBandHz * powf(ratio, Float(band + 1) / Float(count))
-            // At 21.5 Hz bins the lowest bands are narrower than one bin, so several of them read
-            // the same bin — which is correct, and is what Winamp's own low end does.
-            let firstBin = max(1, min(bins - 1, Int(lowHz / binWidth)))
-            let lastBin = max(firstBin + 1, min(bins, Int(highHz / binWidth) + 1))
-            var peak: Float = 0
-            for bin in firstBin..<lastBin { peak = max(peak, mappedSpectrum[bin]) }
+            // **The low bands are narrower than one FFT bin, and snapping them to integer bin
+            // indices is what made the bass a comb.** At 21.5 Hz bins the first six bands of a
+            // 19-band row all fall inside bins 1–3: with a truncated `Int(lowHz / binWidth)`
+            // several neighbouring bars read the *identical* bin, and the one band that happens to
+            // step across a bin boundary jumps the entire difference between two bins in one bar.
+            // A bass note therefore drew as a flat plateau with a cliff beside it — the aggressive
+            // jaggedness that only ever showed in the low end, because that is the only part of the
+            // row where a band is narrower than the analysis.
+            //
+            // So a band takes the spectrum **interpolated at its two edges**, peak-held with every
+            // bin it fully contains. Adjacent bands share an edge frequency and therefore share
+            // that value, which makes the row continuous by construction; a band wider than a bin
+            // — everything above ~500 Hz — is still the peak-hold it always was, which is what
+            // keeps the top of the row reading like Winamp's.
+            var peak = max(interpolated(lowHz), interpolated(highHz))
+            let firstWhole = max(1, Int(ceilf(lowHz / binWidth)))
+            let lastWhole = min(bins - 1, Int(floorf(highHz / binWidth)))
+            if firstWhole <= lastWhole {
+                for bin in firstWhole...lastWhole { peak = max(peak, mappedSpectrum[bin]) }
+            }
             guard peak > 0 else { continue }
             let centreHz = sqrtf(lowHz * highHz)
             let weighting = Self.weightingDBPerOctave
@@ -242,6 +276,19 @@ final class WinampModernAnalyzerTap {
     /// Store one arriving buffer and wake the processing queue if it is idle. Runs on the **posting
     /// thread** — the real-time audio tap — so it is a lock, three stores and an unlock.
     func receive(left: [Float], right: [Float], sampleRate: Double?, at now: TimeInterval) {
+        #if DEBUG
+        // The posting cadence itself. A buffer that does not arrive is invisible everywhere else:
+        // past `silenceTimeout` the read answers all-zero bands, every bar starts falling, and the
+        // row re-rises when the audio comes back — which reads as the analyzer "tensing up" rather
+        // than as anything missing.
+        if Self.tracesGaps {
+            let previous = lock.withLock { lastArrival }
+            if let previous, now - previous > 0.1 {
+                Self.traceGap("arrival gap=\(Int((now - previous) * 1_000))ms "
+                              + "frames=\(max(left.count, right.count))")
+            }
+        }
+        #endif
         lock.lock()
         pending = (left, right.isEmpty ? left : right,
                    (sampleRate.map { $0 > 0 ? $0 : spectrumSampleRate }) ?? spectrumSampleRate)
@@ -322,6 +369,16 @@ final class WinampModernAnalyzerTap {
         vDSP_vsmul(magnitudes, 1, &scale, &magnitudes, 1, vDSP_Length(half))
         return magnitudes
     }
+
+    #if DEBUG
+    /// `WINAMP_MODERN_VIS_GAPS=1` — every break in the analyzer's input, on the two paths that can
+    /// produce one: a buffer that never arrived, and the silence timeout it trips.
+    static let tracesGaps = ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_GAPS"] != nil
+    static func traceGap(_ message: String) {
+        guard tracesGaps else { return }
+        NSLog("%@", "WM-VIS-GAP \(message)")
+    }
+    #endif
 
     func stop() {
         guard running else { return }

@@ -270,8 +270,16 @@ final class WinampModernMainView: NSView {
 
     /// Resize this view's canvas (clamped by the active layout) and its window with it.
     func applyCanvasResize(_ proposed: CGSize) {
+        // The renderer first, so a tick that proposes the size the canvas already has can stop here
+        // rather than paying for the rest. `invalidateRectCaches` repaints the whole window and
+        // re-pushes the palette to every hosted surface, and `dispatchResize` runs `onResize`
+        // through the interpreter for every object in the container — neither is something to do 30
+        // times a second for a size that did not move. A skin's own container animation proposes an
+        // unchanged size on most of its ticks; see the guard in `WasabiSceneRenderer.resize(to:)`.
+        let previous = renderer.canvasSize
+        let accepted = renderer.resize(to: proposed)
+        guard accepted != previous || frame.size != scaledCanvasSize else { return }
         invalidateRectCaches()
-        _ = renderer.resize(to: proposed)
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
         dispatchResize(seeding: false)
@@ -1763,6 +1771,22 @@ final class WinampModernMainView: NSView {
 
     private func visualizationTick() {
         guard !isTornDown else { return }
+        #if DEBUG
+        // **The one clock whose stalls the user can see.** A dropped frame anywhere on the main
+        // thread shows up here first, because the visualization is usually the only thing on screen
+        // moving fast enough for a gap to read as a stutter. `WINAMP_MODERN_VIS_STALL=<ms>` reports
+        // every tick later than that, which is what turns "it hitches every few seconds" into a
+        // cadence and a stack to look for.
+        if let threshold = ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_STALL"]
+            .flatMap({ Double($0) }) {
+            let now = CACurrentMediaTime()
+            let gap = (now - lastVisualizationTick) * 1_000
+            if lastVisualizationTick > 0, gap > threshold {
+                NSLog("%@", "WM-VIS-STALL gap=\(Int(gap))ms expected=\(Int(visualizationClockInterval * 1_000))ms")
+            }
+            lastVisualizationTick = now
+        }
+        #endif
         let rects = visualizationRects()
         guard !rects.isEmpty else { return stopVisualizationClock() }
         // A skin can switch modes under the clock (its own menu, `VIS_NEXT`, a script), and the rate
@@ -1824,6 +1848,10 @@ final class WinampModernMainView: NSView {
     /// the scope's flat line is certain to have been painted at least once.
     private static let visualizationIdleTimeout: CFTimeInterval = 0.5
     private var visualizationClock: Timer?
+    #if DEBUG
+    /// When `visualizationTick` last ran, for `WINAMP_MODERN_VIS_STALL` only.
+    private var lastVisualizationTick: CFTimeInterval = 0
+    #endif
     private var lastSpectrumArrival: CFTimeInterval = 0
 
     /// The boxes of every `<vis>`/`<eqvis>` in this scene, cached with the other animation rects.

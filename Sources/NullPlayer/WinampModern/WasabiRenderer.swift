@@ -856,8 +856,30 @@ final class WasabiSceneRenderer {
     func resize(to proposedSize: CGSize) -> CGSize {
         let minimum = layoutMinimumSize
         let maximum = layoutMaximumSize
-        canvasSize = CGSize(width: max(minimum.width, min(maximum.width, proposedSize.width)),
-                            height: max(minimum.height, min(maximum.height, proposedSize.height)))
+        let clamped = CGSize(width: max(minimum.width, min(maximum.width, proposedSize.width)),
+                             height: max(minimum.height, min(maximum.height, proposedSize.height)))
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_TRACE"] != nil {
+            NSLog("%@", "WM-RESIZE proposed=\(proposedSize) clamped=\(clamped) "
+                  + "current=\(canvasSize) noop=\(clamped == canvasSize)\n"
+                  + Thread.callStackSymbols.dropFirst().prefix(6).joined(separator: "\n"))
+        }
+        #endif
+        // **A resize to the size the canvas already has is free**, and it has to be: everything
+        // below is whole-skin work. `markAllDirty` writes every object in the graph — 1,727 of them
+        // on Big Bento Modern — and the two cache clears throw away every bitmap already scaled for
+        // the display, so the next frame re-scales the skin's entire artwork.
+        //
+        // A skin's *own* container animation proposes an unchanged size on most of its ticks: Big
+        // Bento's track notifier slides in and out by writing container geometry from
+        // `tickTargetAnimation`, and only the ticks that actually move it change a size. Measured
+        // with `WINAMP_MODERN_RESIZE_TRACE=1` beside `MUTATION_TRACE`, one of those no-op ticks cost
+        // `writes=5797 writers=1727` — and it landed on the **player's** scene, because every
+        // container in one skin shares one object graph. That is the stall that showed up in the
+        // spectrum analyzer and nowhere else: it was the only thing on screen moving fast enough for
+        // a dropped frame to read as one.
+        guard clamped != canvasSize else { return canvasSize }
+        canvasSize = clamped
         invalidateSceneCache()
         warpedImageCache.removeAll()
         // Every destination size in the pre-scaled cache is now a size nothing draws at.
@@ -4614,6 +4636,11 @@ final class WasabiSceneRenderer {
         return style
     }
 
+    #if DEBUG
+    static let visFrameProbe = ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_FRAMES"]
+        .flatMap { Int($0) }
+    #endif
+
     private func drawVisualizationBars(_ object: WasabiObject, frame: CGRect, context: CGContext) {
         guard frame.width > 0, frame.height > 0 else { return }
         // Band count comes from the box (~1 band per 6pt), and the tap is asked for exactly that
@@ -4630,6 +4657,12 @@ final class WasabiSceneRenderer {
         // held in this surface's own store, because a `<component>` holder and a `<vis>` are
         // different objects and one skin draws both.
         var state = analyzerBoxes[object.stableID] ?? ComponentAnalyzerState()
+        #if DEBUG
+        if !state.bars.isEmpty, state.bars.count != count {
+            WinampModernAnalyzerTap.traceGap("bandcount component \(state.bars.count)->\(count) "
+                                             + "width=\(frame.width)")
+        }
+        #endif
         if state.bars.count != count { state.bars = Array(repeating: 0, count: count) }
         if state.peaks.count != count { state.peaks = Array(repeating: 0, count: count) }
         let now = CACurrentMediaTime()
@@ -4664,9 +4697,20 @@ final class WasabiSceneRenderer {
             // squeezed its whole 0.1…1.0 range into the top third of the box; raw, the row simply
             // sat at the ceiling. B73 replaced the input rather than the curve.
             let level = max(0, min(1, levels[index] * gain))
-            // Rises instantly, falls at a rate per second. Drawn straight from `level`, the bar had
-            // no fall of its own and stepped at whatever rate the FFT happened to arrive.
-            let bar = max(level, state.bars[index] - barStep)
+            // Falls at a rate per second and **rises over `barAttackSeconds`** — the same two rates
+            // the `<vis>` analyzer uses, from the same place. Drawn straight from `level` the bar had
+            // neither, and stepped at whatever rate the FFT happened to arrive.
+            //
+            // **Rise or fall, never both.** The fall is the skin's `falloff` and is clamped at the
+            // band, exactly as it always was; the rise is `barAttackSeconds`. Applying both every
+            // frame — subtracting `barStep` and *then* smoothing back toward the band — was wrong
+            // twice over: it put the bar **below** its own band, and the two rates settled at an
+            // equilibrium the band could never reach, so a full-scale band drew at 0.837 of the box
+            // and the row hunted instead of tracking. Measured with `WINAMP_MODERN_VIS_FRAMES`.
+            let previous = state.bars[index]
+            let bar = level > previous
+                ? WasabiVisStyle.risen(from: previous, toward: level, elapsed: elapsed)
+                : max(level, previous - barStep)
             state.bars[index] = bar
             state.peaks[index] = max(bar, state.peaks[index] - peakStep)
             // Whole pixels, for the `<vis>` analyzer's reason: a fractional slot antialiases the 1px
@@ -4689,6 +4733,19 @@ final class WasabiSceneRenderer {
             caps.append(CGRect(x: x, y: capY, width: width, height: capHeight))
         }
         analyzerBoxes[object.stableID] = state
+        #if DEBUG
+        // `WINAMP_MODERN_VIS_FRAMES=<band>` — one line per draw for a single band: the clock gap the
+        // decay was computed against, the level the tap answered, and the height actually painted.
+        // The sequence is the whole question behind "jumpy and staggered": a level that repeats for
+        // three draws and then steps is an *input rate* problem, and a bar that snaps to its level in
+        // one draw while `elapsed` reads zero is a *smoothing* problem. Nothing else separates them.
+        if let probe = Self.visFrameProbe, probe < count {
+            NSLog("%@", "WM-VIS-FRAME t=\(String(format: "%.3f", now)) "
+                  + "elapsed=\(Int(elapsed * 1_000))ms band=\(probe) "
+                  + "level=\(String(format: "%.3f", levels[probe] * gain)) "
+                  + "bar=\(String(format: "%.3f", state.bars[probe]))")
+        }
+        #endif
         Self.traceVisInput(levels, site: "component", peaks: state.peaks)
 
         let bright = palette.listText
