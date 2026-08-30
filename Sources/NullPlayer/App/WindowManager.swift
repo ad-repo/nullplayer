@@ -342,6 +342,7 @@ class WindowManager {
     var isRunningModernUI: Bool {
         if let controller = mainWindowController {
             if controller is ModernMainWindowController { return true }
+            if controller is ReeltoneMainWindowController { return true }
             if controller is MainWindowController { return false }
         }
         return isModernUIEnabled
@@ -797,7 +798,9 @@ class WindowManager {
     func showMainWindow(reveal: Bool = true) {
         let isNew = mainWindowController == nil
         if isNew {
-            if isModernUIEnabled {
+            if uiMode.usesReeltoneSurfaces {
+                mainWindowController = ReeltoneMainWindowController()
+            } else if isModernUIEnabled {
                 let modern = ModernMainWindowController()
                 mainWindowController = modern
             } else {
@@ -5582,12 +5585,19 @@ class WindowManager {
     /// temporarily (Compact Window). Each sub-window returns only if it was visible, restored
     /// to its captured frame.
     private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot,
-                                             revealMainWindow: Bool = true) {
+                                             revealMainWindow: Bool = true,
+                                             useIncomingMainWindowSize: Bool = false) {
         showMainWindow(reveal: revealMainWindow)
-        if let main = snapshot.main {
-            if main.frame != .zero {
-                mainWindowController?.window?.setFrame(main.frame, display: true)
-            }
+        if let main = snapshot.main,
+           main.frame != .zero,
+           let mainWindow = mainWindowController?.window {
+            let targetFrame = useIncomingMainWindowSize
+                ? Self.mainFramePreservingTopLeft(
+                    outgoingFrame: main.frame,
+                    incomingSize: mainWindow.frame.size
+                )
+                : main.frame
+            mainWindow.setFrame(targetFrame, display: true)
         }
 
         if let playlist = snapshot.playlist, playlist.visible {
@@ -5865,6 +5875,28 @@ class WindowManager {
         return frame
     }
 
+    /// Preserve the user's visual anchor while allowing each UI mode to keep its native size.
+    /// AppKit frames use a bottom-left origin, so retaining the top-left point requires adjusting
+    /// the incoming origin by its own height rather than copying the outgoing frame wholesale.
+    static func mainFramePreservingTopLeft(
+        outgoingFrame: NSRect,
+        incomingSize: NSSize
+    ) -> NSRect {
+        NSRect(
+            x: outgoingFrame.minX,
+            y: outgoingFrame.maxY - incomingSize.height,
+            width: incomingSize.width,
+            height: incomingSize.height
+        )
+    }
+
+    static func usesIncomingMainWindowSizeForSwitch(
+        from outgoingMode: PlayerUIMode,
+        to incomingMode: PlayerUIMode
+    ) -> Bool {
+        outgoingMode == .reeltone || incomingMode == .reeltone
+    }
+
     static func isDetachedForSkinSwitch(
         isMainWindowVisible: Bool,
         isConnectedToMainWindow: Bool
@@ -6027,6 +6059,10 @@ class WindowManager {
                                  restoreScaleLevel: UIScaleLevel,
                                  preservedDetachedFrames: DetachedWindowFrames) {
         let t0 = CACurrentMediaTime()
+        let useIncomingMainWindowSize = Self.usesIncomingMainWindowSizeForSwitch(
+            from: uiMode,
+            to: targetMode
+        )
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
 
@@ -6037,7 +6073,11 @@ class WindowManager {
         audioEngine.applyEQLayout(forModernUI: targetMode.usesModernEQLayout)
         (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
 
-        recreateModeDependentLayout(snapshot, revealMainWindow: !reenterCompactWindow)
+        recreateModeDependentLayout(
+            snapshot,
+            revealMainWindow: !reenterCompactWindow,
+            useIncomingMainWindowSize: useIncomingMainWindowSize
+        )
 
         // Re-apply UI size (collapsed to 1x in reloadUI before the switch) now that the target-mode
         // windows exist. This must happen *before* enterCompactMode() so the compact capture records
@@ -6078,7 +6118,7 @@ class WindowManager {
             // "Purple Neon" into a modern skin). Launch/session-restore paths keep the
             // default preserve=true.
             ModernSkinEngine.shared.loadPreferredSkin(for: family, preservePersistedProfiles: false)
-        } else {
+        } else if targetMode == .classic {
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
             // Entering classic is also a skin change: re-apply classic's own vis_classic

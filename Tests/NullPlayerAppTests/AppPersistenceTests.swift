@@ -6,6 +6,7 @@ final class AppPersistenceTests: XCTestCase {
     func testSkinFamilyDisplayNamesUseOriginalBranding() {
         XCTAssertEqual(PlayerUIMode.modern.displayName, "Original")
         XCTAssertEqual(PlayerUIMode.metal.displayName, "Original-Metal")
+        XCTAssertEqual(PlayerUIMode.reeltone.displayName, "Reeltone")
         XCTAssertEqual(ModernSkinFamily.modern.displayName, "Original")
         XCTAssertEqual(ModernSkinFamily.metal.displayName, "Original-Metal")
     }
@@ -13,6 +14,7 @@ final class AppPersistenceTests: XCTestCase {
     func testOriginalBrandingPreservesCompatibilityIdentifiers() {
         XCTAssertEqual(PlayerUIMode.modern.rawValue, "modern")
         XCTAssertEqual(PlayerUIMode.metal.rawValue, "metal")
+        XCTAssertEqual(PlayerUIMode.reeltone.rawValue, "reeltone")
         XCTAssertEqual(ModernSkinFamily.modern.skinNameKey, "modernSkinName")
         XCTAssertEqual(ModernSkinFamily.metal.skinNameKey, "metalSkinName")
     }
@@ -91,6 +93,8 @@ final class AppPersistenceTests: XCTestCase {
         XCTAssertTrue(PlayerUIMode.allowsAssignment(.metal, forcedMode: .metal))
         XCTAssertFalse(PlayerUIMode.allowsAssignment(.modern, forcedMode: .metal))
         XCTAssertFalse(PlayerUIMode.allowsAssignment(.classic, forcedMode: .metal))
+        XCTAssertFalse(PlayerUIMode.allowsAssignment(.reeltone, forcedMode: .metal))
+        XCTAssertTrue(PlayerUIMode.allowsAssignment(.reeltone, forcedMode: .reeltone))
         XCTAssertTrue(PlayerUIMode.allowsAssignment(.classic, forcedMode: nil))
     }
 
@@ -104,6 +108,22 @@ final class AppPersistenceTests: XCTestCase {
             XCTAssertTrue(resolved.usesModernEQLayout)
             XCTAssertFalse(PlayerUIMode.classic.usesModernEQLayout)
             XCTAssertTrue(PlayerUIMode.metal.usesModernEQLayout)
+            XCTAssertTrue(PlayerUIMode.reeltone.usesModernEQLayout)
+            XCTAssertTrue(PlayerUIMode.reeltone.usesModernControllers)
+            XCTAssertTrue(PlayerUIMode.reeltone.usesReeltoneSurfaces)
+            XCTAssertNil(PlayerUIMode.reeltone.modernSkinFamily)
+        }
+    }
+
+    func testReeltoneModeRoundTripsThroughPersistence() {
+        withDefaults { defaults in
+            PlayerUIMode.reeltone.persist(in: defaults, forcedMode: nil)
+
+            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .reeltone)
+            XCTAssertTrue(
+                defaults.bool(forKey: "modernUIEnabled"),
+                "Legacy builds should fall back to Original rather than Classic for Reeltone"
+            )
         }
     }
 

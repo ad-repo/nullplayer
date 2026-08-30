@@ -15,6 +15,35 @@ final class WindowRestoreGeometryTests: XCTestCase {
         XCTAssertEqual(preserved, floatingFrame)
     }
 
+    func testSkinSwitchPreservesMainTopLeftWhileUsingIncomingSize() {
+        let outgoing = NSRect(x: 320, y: 410, width: 550, height: 232)
+        let incomingSize = NSSize(width: 275, height: 116)
+
+        let incoming = WindowManager.mainFramePreservingTopLeft(
+            outgoingFrame: outgoing,
+            incomingSize: incomingSize
+        )
+
+        XCTAssertEqual(incoming.size, incomingSize)
+        XCTAssertEqual(incoming.minX, outgoing.minX)
+        XCTAssertEqual(incoming.maxY, outgoing.maxY)
+    }
+
+    func testNativeMainSizeGeometryIsLimitedToReeltoneSwitches() {
+        XCTAssertTrue(
+            WindowManager.usesIncomingMainWindowSizeForSwitch(from: .classic, to: .reeltone)
+        )
+        XCTAssertTrue(
+            WindowManager.usesIncomingMainWindowSizeForSwitch(from: .reeltone, to: .metal)
+        )
+        XCTAssertFalse(
+            WindowManager.usesIncomingMainWindowSizeForSwitch(from: .classic, to: .modern)
+        )
+        XCTAssertFalse(
+            WindowManager.usesIncomingMainWindowSizeForSwitch(from: .modern, to: .metal)
+        )
+    }
+
     func testSkinSwitchLetsDockedOrHiddenWindowsUseTargetLayout() {
         let frame = NSRect(x: 100, y: 300, width: 275, height: 116)
 
@@ -65,6 +94,9 @@ final class WindowRestoreGeometryTests: XCTestCase {
         XCTAssertTrue(
             AppStateManager.shouldRestoreGeometry(savedMode: .metal, runningMode: .metal)
         )
+        XCTAssertTrue(
+            AppStateManager.shouldRestoreGeometry(savedMode: .reeltone, runningMode: .reeltone)
+        )
         XCTAssertFalse(
             AppStateManager.shouldRestoreGeometry(savedMode: .classic, runningMode: .modern)
         )
@@ -73,6 +105,12 @@ final class WindowRestoreGeometryTests: XCTestCase {
         )
         XCTAssertFalse(
             AppStateManager.shouldRestoreGeometry(savedMode: .metal, runningMode: .modern)
+        )
+        XCTAssertFalse(
+            AppStateManager.shouldRestoreGeometry(savedMode: .modern, runningMode: .reeltone)
+        )
+        XCTAssertFalse(
+            AppStateManager.shouldRestoreGeometry(savedMode: .reeltone, runningMode: .modern)
         )
     }
 

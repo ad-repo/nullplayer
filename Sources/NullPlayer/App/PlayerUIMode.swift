@@ -4,6 +4,7 @@ enum PlayerUIMode: String, CaseIterable {
     case classic
     case modern
     case metal
+    case reeltone
 
     static let userDefaultsKey = "uiMode"
     private static let legacyModernEnabledKey = "modernUIEnabled"
@@ -13,13 +14,14 @@ enum PlayerUIMode: String, CaseIterable {
         case .classic: return "Classic"
         case .modern: return ModernSkinFamily.modern.displayName
         case .metal: return ModernSkinFamily.metal.displayName
+        case .reeltone: return "Reeltone"
         }
     }
 
     var usesModernControllers: Bool {
         switch self {
         case .classic: return false
-        case .modern, .metal: return true
+        case .modern, .metal, .reeltone: return true
         }
     }
 
@@ -28,12 +30,22 @@ enum PlayerUIMode: String, CaseIterable {
     /// This matches the controller family in NullPlayer, but remains a distinct policy
     /// because downstream modes may use custom controllers while retaining the modern EQ.
     var usesModernEQLayout: Bool {
-        usesModernControllers
+        switch self {
+        case .classic: return false
+        case .modern, .metal, .reeltone: return true
+        }
+    }
+
+    /// Whether the main window is owned by the Reeltone surface subsystem.
+    /// Auxiliary windows continue to use Original controllers until a skin declares
+    /// its own hosted surface for them in a later implementation phase.
+    var usesReeltoneSurfaces: Bool {
+        self == .reeltone
     }
 
     var modernSkinFamily: ModernSkinFamily? {
         switch self {
-        case .classic: return nil
+        case .classic, .reeltone: return nil
         case .modern: return .modern
         case .metal: return .metal
         }

@@ -814,6 +814,11 @@ class ContextMenuBuilder {
         metalItem.submenu = metalMenu
         if AppCapabilities.supports(.metalMode) { uiMenu.addItem(metalItem) }
 
+        // Reeltone owns its menu content; this shared seam only inserts the mode entry.
+        if PlayerUIMode.allowsAssignment(.reeltone) {
+            uiMenu.addItem(ReeltoneMenuBuilder.buildModeMenuItem(activeMode: activeMode))
+        }
+
         return uiMenu
     }
     
