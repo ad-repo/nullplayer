@@ -939,6 +939,40 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         skinView?.needsDisplay = true
     }
 
+    // MARK: - Host components the user can decline
+
+    /// Whether this skin declares a seeker holder at all — what gates the menu entry. Two skins in
+    /// the corpus do; an item that changes nothing on the other 34 is worse than no item.
+    var declaresWaveformSeeker: Bool {
+        guard let graph = loadedSkin?.runtime.graph else { return false }
+        return WinampModernAvailableComponents.declaresClaimableHolder(.waveformSeeker, in: graph)
+    }
+
+    var waveformSeekerEnabled: Bool {
+        guard let configuration = loadedSkin?.configuration else { return true }
+        return WinampModernSkinState.waveformSeekerEnabled(in: configuration)
+    }
+
+    /// Turn the seeker on or off for this skin, live.
+    ///
+    /// **No reload.** The skin's own gate is re-read from a timer, so stamping or clearing `hold` is
+    /// enough: the skin then rebuilds its layout around the answer, hiding or showing its backing
+    /// layer and moving its transport row, which is the half we must not attempt ourselves. Turning
+    /// it *on* also re-announces, because the announcement is what arms that timer in the first place.
+    func setWaveformSeekerEnabled(_ enabled: Bool) {
+        guard let loaded = loadedSkin, let scripts = skinView?.scripts else { return }
+        WinampModernSkinState.setWaveformSeekerEnabled(enabled, in: loaded.configuration)
+        if enabled {
+            WinampModernAvailableComponents.claim(in: loaded.runtime.graph) { $0 == .waveformSeeker }
+            announceClaimedComponents(scripts: scripts)
+        } else {
+            WinampModernAvailableComponents.release(.waveformSeeker, in: loaded.runtime.graph)
+        }
+        scripts.invalidateClaimedComponents()
+        skinView?.needsDisplay = true
+        for container in auxiliaryContainers { container.view.needsDisplay = true }
+    }
+
     /// Tell the skin about every holder the host claimed (BB18).
     ///
     /// The claim itself is a `hold` write on the graph (`WinampModernAvailableComponents`), which is

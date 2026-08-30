@@ -14,6 +14,7 @@ import Foundation
 /// | Which layout a container is on (shade) | `@nullplayer.layouts` | `container-id` |
 /// | Whether one of the skin's windows is open | `@nullplayer.windows` | `container-id` |
 /// | How large the host draws its own text (Text Size) | `@nullplayer.text` | `size` |
+/// | Whether the host fills a claimable holder (Waveform Seeker) | `@nullplayer.components` | `waveseeker` |
 ///
 /// Text Size is the one entry that is not object-graph state — it is a plain per-skin preference —
 /// but it belongs here for the same reason: it is the *host's* setting about a skin, so nothing the
@@ -54,6 +55,9 @@ enum WinampModernSkinState {
     /// unhosted plugin pane has no markup of its own, so the host is the only thing that can remember
     /// what the user put in it.
     static let holderModeKey = "mode.holder"
+    /// Host components the user can decline. See `waveformSeekerEnabled`.
+    static let componentsSection = "@nullplayer.components"
+    static let waveformSeekerKey = "waveseeker"
 
     // MARK: - A splitter's divider offset
 
@@ -121,6 +125,23 @@ enum WinampModernSkinState {
     static func setTextScale(_ scale: WinampModernTextScale,
                              in configuration: WinampModernConfiguration) {
         configuration.setInteger(Int32(scale.storedValue), section: textSection, key: textSizeKey)
+    }
+
+    // MARK: - Host components the user can decline
+
+    /// Whether the host may fill this skin's claimable seeker holder, defaulting to **yes** — the
+    /// strip is empty without us, so the interesting state is the one that needs no decision.
+    ///
+    /// Per skin, like Text Size and for the same reason: a user who does not want Big Bento's strip
+    /// filled has said nothing about a different skin that gains one later.
+    static func waveformSeekerEnabled(in configuration: WinampModernConfiguration) -> Bool {
+        configuration.integer(section: componentsSection, key: waveformSeekerKey,
+                              default: 1) != 0
+    }
+
+    static func setWaveformSeekerEnabled(_ enabled: Bool,
+                                         in configuration: WinampModernConfiguration) {
+        configuration.setInteger(enabled ? 1 : 0, section: componentsSection, key: waveformSeekerKey)
     }
 
     // MARK: - What paints a visualization box

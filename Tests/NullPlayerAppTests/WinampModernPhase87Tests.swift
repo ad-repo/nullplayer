@@ -109,6 +109,67 @@ final class WinampModernPhase87Tests: XCTestCase {
         XCTAssertNil(object.attributes["hold"])
     }
 
+    // MARK: - Declining the component
+
+    /// The user's per-skin choice is applied at the claim, so declining leaves the holder in exactly
+    /// the state every skin loaded in before any of this existed.
+    func testAClaimTheUserDeclinedLeavesTheHolderAlone() {
+        let object = waveseekerHolder()
+
+        let claimed = WinampModernAvailableComponents.claim(in: graph) { _ in false }
+
+        XCTAssertTrue(claimed.isEmpty)
+        XCTAssertEqual(object.attributes["hold"], "none")
+    }
+
+    /// Releasing hands the box back. We undo **only our own stamp** — the skin's backing layer and
+    /// its shifted transport row are restored by the skin itself, off the same timer that reads
+    /// `hold`, because that arithmetic belongs to the code that wrote it.
+    func testReleasingReturnsTheHolderToNone() {
+        let object = waveseekerHolder()
+        WinampModernAvailableComponents.claim(in: graph)
+
+        let released = WinampModernAvailableComponents.release(.waveformSeeker, in: graph)
+
+        XCTAssertEqual(released, 1)
+        XCTAssertEqual(object.attributes["hold"], "none")
+    }
+
+    /// Release must not strip a holder the skin itself pointed at the same component, only ones
+    /// carrying our stamp — and a skin's own `guid:`-prefixed spelling is not our stamp.
+    func testReleasingLeavesAHolderTheSkinNamedItself() {
+        let object = holder("wdh.other", attributes: [
+            "hold": "guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}",
+        ])
+
+        XCTAssertEqual(WinampModernAvailableComponents.release(.waveformSeeker, in: graph), 0)
+        XCTAssertEqual(object.attributes["hold"], "guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}")
+    }
+
+    /// **The menu entry must not vanish once the feature starts working.** A claimed holder carries
+    /// our GUID rather than `none`, so it no longer looks *available* — asking only that question
+    /// would show the toggle exactly until the user could benefit from it.
+    func testTheSkinStillCountsAsDeclaringASeekerAfterItIsClaimed() {
+        _ = waveseekerHolder()
+        XCTAssertTrue(WinampModernAvailableComponents.declaresClaimableHolder(.waveformSeeker,
+                                                                             in: graph))
+
+        WinampModernAvailableComponents.claim(in: graph)
+
+        XCTAssertTrue(WinampModernAvailableComponents.declaresClaimableHolder(.waveformSeeker,
+                                                                             in: graph))
+    }
+
+    /// A skin with no such holder never offers the choice — 34 of the 36 installed skins.
+    func testASkinWithNoSeekerHolderDeclaresNone() {
+        _ = holder("wdh.playlist", attributes: [
+            "autoavailable": "1", "hold": "guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}",
+        ])
+
+        XCTAssertFalse(WinampModernAvailableComponents.declaresClaimableHolder(.waveformSeeker,
+                                                                              in: graph))
+    }
+
     // MARK: - The GUID
 
     /// Not a Winamp component GUID — read off Big Bento's bytecode. Both spellings a skin can write

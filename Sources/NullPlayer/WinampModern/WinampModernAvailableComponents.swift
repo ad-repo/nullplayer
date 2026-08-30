@@ -41,16 +41,61 @@ enum WinampModernAvailableComponents {
     /// Runs on the initialized graph **before the scripts start**, because a skin reads `hold` from
     /// `onScriptLoaded` onwards and a claim applied later would arrive a whole layout after the
     /// decision it feeds.
+    ///
+    /// `enabled` is the user's per-skin choice. Declining is not a special case anywhere else in the
+    /// engine: an unclaimed holder keeps `hold="none"`, which is the state every skin was loaded in
+    /// before this existed.
     @discardableResult
-    static func claim(in graph: WasabiObjectGraph) -> [WasabiObjectID: WinampModernComponentKind] {
+    static func claim(in graph: WasabiObjectGraph,
+                      enabled: (WinampModernComponentKind) -> Bool = { _ in true })
+        -> [WasabiObjectID: WinampModernComponentKind] {
         var claimed: [WasabiObjectID: WinampModernComponentKind] = [:]
         for object in graph.allObjectsUnordered {
-            guard let kind = offerableKind(for: object),
+            guard let kind = claimableKind(for: object), enabled(kind),
                   let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else { continue }
             object.setAttribute("hold", value: guid)
             claimed[object.stableID] = kind
         }
         return claimed
+    }
+
+    /// Hand a claimed holder back, so the skin can restore the layout it built around the component.
+    ///
+    /// **We only undo our own stamp; the skin undoes everything else, and it does so by itself.** Big
+    /// Bento's gate is re-evaluated on a timer, so a holder returned to `hold="none"` fails that gate
+    /// on the next tick and the skin hides its own backing layer and shifts the transport row back up
+    /// — the exact inverse of what it did on accepting, performed by the code that knows the layout.
+    /// Trying to reverse those moves from here would be guessing at another skin's arithmetic.
+    @discardableResult
+    static func release(_ kind: WinampModernComponentKind, in graph: WasabiObjectGraph) -> Int {
+        guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else { return 0 }
+        var released = 0
+        for object in graph.allObjectsUnordered
+        where WinampModernComponentRegistry.isHolderElement(object.typeName)
+            && object.attributes["hold"] == guid {
+            object.setAttribute("hold", value: "none")
+            released += 1
+        }
+        return released
+    }
+
+    /// The kind an *unclaimed* holder is asking for, ignoring the user's preference — what a menu
+    /// asks to decide whether the choice is worth offering at all.
+    static func claimableKind(for object: WasabiObject) -> WinampModernComponentKind? {
+        offerableKind(for: object)
+    }
+
+    /// Whether this skin declares a holder the host could fill, claimed or not. A holder we have
+    /// already claimed carries our GUID rather than `none`, so it no longer looks available — both
+    /// states have to count, or the menu entry vanishes the moment it starts working.
+    static func declaresClaimableHolder(_ kind: WinampModernComponentKind,
+                                        in graph: WasabiObjectGraph) -> Bool {
+        let guid = WinampModernComponentRegistry.canonicalGUID(for: kind)
+        return graph.allObjectsUnordered.contains { object in
+            if claimableKind(for: object) == kind { return true }
+            return WinampModernComponentRegistry.isHolderElement(object.typeName)
+                && object.attributes["hold"] == guid
+        }
     }
 
     /// What this object is asking for, or `nil` if it is not an available holder or we have nothing

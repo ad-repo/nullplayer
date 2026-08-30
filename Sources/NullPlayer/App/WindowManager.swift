@@ -976,6 +976,22 @@ class WindowManager {
         (mainWindowController as? WinampModernMainWindowController)?.setTextScale(scale)
     }
 
+    /// Whether the loaded skin reserves a box the host can fill with the waveform seeker, and
+    /// whether the user has it switched on (BB18). Safe defaults in every other mode, per CLAUDE.md's
+    /// rule that a mode-specific feature is guarded at all three layers.
+    var winampModernWaveformSeeker: (declared: Bool, enabled: Bool) {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return (false, false) }
+        return (controller.declaresWaveformSeeker, controller.waveformSeekerEnabled)
+    }
+
+    func setWinampModernWaveformSeekerEnabled(_ enabled: Bool) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?
+            .setWaveformSeekerEnabled(enabled)
+    }
+
     /// What paints the loaded `.wal` skin's `<vis>` boxes — Winamp's own analyzer and oscilloscope,
     /// or one of NullPlayer's (B53). Safe default in every other mode, per CLAUDE.md's rule that a
     /// mode-specific feature is guarded at all three layers.

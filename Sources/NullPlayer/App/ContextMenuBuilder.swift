@@ -979,6 +979,19 @@ class ContextMenuBuilder {
                 skinSpecific.append(buildWinampModernSpectrumAnalyzerMenuItem(wm: wm))
             }
 
+            // The waveform seeker the host fills a reserved strip with (BB18) — only for a skin that
+            // reserves one. Two skins in the corpus do, so this is absent for almost every skin, on
+            // the same rule as the analyzer picker above.
+            let seeker = wm.winampModernWaveformSeeker
+            if seeker.declared {
+                let item = NSMenuItem(title: "Waveform Seeker",
+                                      action: #selector(MenuActions.toggleWinampModernWaveformSeeker),
+                                      keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.state = seeker.enabled ? .on : .off
+                skinSpecific.append(item)
+            }
+
             // The skin's colour themes (Phase 32). A secondary route where the skin ships its own
             // picker, and the *only* route on the six measured skins that define themes and ship
             // none — in Winamp those live in its preferences dialog. Gated on more than one theme:
@@ -4347,6 +4360,13 @@ class MenuActions: NSObject {
 
     @objc func showWinampModernSkinSettings() {
         WindowManager.shared.showWinampModernSkinSettings()
+    }
+
+    /// Turn the skin's host-filled waveform seeker on or off. Takes effect live: the skin's own gate
+    /// is re-read from a timer, so it rebuilds its layout around the answer by itself.
+    @objc func toggleWinampModernWaveformSeeker() {
+        let current = WindowManager.shared.winampModernWaveformSeeker.enabled
+        WindowManager.shared.setWinampModernWaveformSeekerEnabled(!current)
     }
 
     @objc func setWinampModernTextScale(_ sender: NSMenuItem) {

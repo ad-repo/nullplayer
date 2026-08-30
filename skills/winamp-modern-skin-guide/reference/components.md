@@ -336,6 +336,23 @@ Three rules, and each is load-bearing:
   `hold` from `onScriptLoaded` onwards. The announcement runs *after* `setSceneVisible(true)`,
   because the handler a skin arms there does its work from a timer that asks whether the layout is up.
 
+**The user can decline.** `Skins → Modern → Waveform Seeker` is a per-skin checkbox, default **on**
+(the strip is empty without us, so the state needing no decision is the interesting one), stored in
+`WinampModernSkinState` under `@nullplayer.components` / `waveseeker`. It is built **only for a skin
+that declares a claimable holder** — two of the 36 — on the same rule as the analyzer picker: an item
+that changes nothing on the other 34 is worse than no item. `declaresClaimableHolder` deliberately
+counts a holder that is *already claimed* as well as an available one; asking only "is this available"
+would hide the toggle the moment it started working.
+
+**Turning it off is `release`, and nothing more.** We return `hold` to `none` and stop there. The
+skin's gate is re-read from its own timer, so on the next tick it hides its backing layer and shifts
+its transport row back up — the exact inverse of what it did on accepting, performed by the code that
+owns that arithmetic. Reversing those moves from the host would be guessing at another skin's layout.
+That is also why the toggle needs no skin reload. Turning it back **on** re-claims *and* re-announces,
+because the announcement is what arms the timer in the first place, and
+`invalidateClaimedComponents()` drops the runtime's cached set so `isNamedWindowVisible` cannot
+disagree with the `hold` it is paired with.
+
 **Stamping without announcing is invisible.** The `hold` write is what a skin's *condition* reads, but
 nothing re-evaluates that condition on its own — Big Bento arms a timer from `onLookForComponent`, and
 it is that timer that compares `hold` against the GUID. `isNamedWindowVisible` must answer from what

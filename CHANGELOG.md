@@ -9,7 +9,9 @@
   always sat blank. NullPlayer now fills it with the whole track's waveform: you can see the shape of
   the song, the part already played is drawn in the skin's own highlight colour, and clicking anywhere
   in the strip jumps to that point. It uses the same waveform the Waveform window draws, so a track
-  you have already opened there appears instantly.
+  you have already opened there appears instantly. If you prefer the skin's plain seek bar, turn it
+  off under **Skins → Modern → Waveform Seeker** — the setting is per skin and takes effect
+  immediately, and the skin puts its own layout back the way it was.
 - **Cover Flow in the Library browser** — a new **FLOW** toggle in the source bar turns the current library list into a 3D, horizontally-scrolling wall of artwork, available in all three skin families (Original, Original-Metal, Classic) and across music, Movies, and TV Shows. It's a visual lens over whatever you're browsing: scroll or use the arrow keys to flip through covers, the centered item's name stays directly beneath the carousel, and a wider window fans out more covers. Clicking a **container** enters it and shows its contents, with a **‹ Back** cover to step out — folder/subfolder, artist→album, and show→season→episode navigation all work to any depth. Clicking an **album** plays the whole album; clicking a **track**, **movie**, or **episode** plays it. In Original/Original-Metal the covers float above the Library window's Cava/art backdrop, honoring whatever backdrop mode you've set.
 - **Compact window can now show the playlist** — a Library | Playlist toggle at the bottom of the Compact window switches its content between the library browser and the current playlist, so you can view and edit what's playing without opening the full Playlist window. Double-click a track to play it; selection, scrolling, and live now-playing highlight all work in place. The choice is remembered across launches and is available in all three skin families (Original, Original-Metal, Classic). In Original/Original-Metal the playlist is translucent so the Cava/art backdrop shows through it just like the library list.
 

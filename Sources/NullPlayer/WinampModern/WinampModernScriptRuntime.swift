@@ -110,7 +110,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// (`WinampModernAvailableComponents`), and reading it back keeps one source of truth for "what
     /// is in this box". Computed once — the claim runs before the scripts start, and a skin cannot
     /// stamp a holder for itself.
-    private lazy var claimedComponentKinds: Set<WinampModernComponentKind> = {
+    private var cachedClaimedComponentKinds: Set<WinampModernComponentKind>?
+    private var claimedComponentKinds: Set<WinampModernComponentKind> {
+        if let cachedClaimedComponentKinds { return cachedClaimedComponentKinds }
         var kinds: Set<WinampModernComponentKind> = []
         for object in loadedSkin.runtime.graph.allObjectsUnordered
         where WinampModernComponentRegistry.isHolderElement(object.typeName) {
@@ -119,13 +121,22 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                   WinampModernAvailableComponents.offered.contains(kind) else { continue }
             kinds.insert(kind)
         }
+        cachedClaimedComponentKinds = kinds
         return kinds
-    }()
+    }
 
     /// Whether a holder in this skin is carrying that component — the window layer's read of the
     /// same claim `isNamedWindowVisible` answers from.
     func hasClaimedComponent(_ kind: WinampModernComponentKind) -> Bool {
         claimedComponentKinds.contains(kind)
+    }
+
+    /// Drop the cached set after a claim changed mid-session (the user's per-skin toggle). Without
+    /// this the skin's gate would keep reading the answer from load time, and `isNamedWindowVisible`
+    /// would disagree with the `hold` param it is paired with — which is exactly the split that kept
+    /// the strip hidden before either half existed.
+    func invalidateClaimedComponents() {
+        cachedClaimedComponentKinds = nil
     }
 
     var graphDidMutate: (() -> Void)?
