@@ -2,6 +2,43 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B45 — Shield_Amp's playlist container had no layout — closed 2026-08-30
+
+The container was never empty. `xml/pledit.xml` is a `<container id="Pledit">` whose only child is
+`<include file="pledit-normal.xml"/>`, and that file does declare `<layout id="normal">`. Two
+defects stacked, and the second hid the first:
+
+**A root-relative path resolved outside the skin.** `xml/pledit-normal.xml:3` is
+`<include file="/standardframe/standardframe.xml"/>`. In Winamp the skin *is* the filesystem it
+names, so a leading separator means the skin directory; here the skin is one mount inside a larger
+VFS and the literal reading landed beside the mount. `WalVirtualFileSystem.resolve` now tries the
+literal reading first and re-bases on `@SKINPATH@` only when nothing exists there — so entry paths,
+other mounts and every `@SKINPATH@`/`@SKINSPATH@` expansion (already absolute, and which re-basing
+would nest inside itself) resolve exactly as before, and a failure still names the literal path.
+**1 site in the 36-skin corpus.**
+
+**The missing-include tolerance covered the recursion, not just its own node.** `WalXML.expand`
+wrapped both the resolve and the `loadFile` beneath it in one `do`, so every depth was attributed to
+the outermost include: the nested failure above discarded the whole of `pledit-normal.xml` under
+`pledit.xml`'s name, and the container was built empty. The sweep could only report
+`RENDER-DUMP dropped container: Pledit (no layout)`, which is why the item was filed as the skin
+shipping an empty container. Only the node's own resolve is tolerated now. That also restores the
+one failure the skin-mount scope exists to keep fatal — a ClassicPro engine include nested under an
+ordinary in-skin one was being judged by the *outer* path and laundered into a warning.
+
+`Pledit/normal` now renders 322×200, 67 nodes, playlist holder at `(19, 35, 285, 110)`, with the
+skin's frame, title and all five buttons. **Confirmed live 2026-08-30.** Corpus render sweep before
+and after: one line changed, the dropped container; no other skin moved. `swift test`: two new cases
+in `WinampModernPhase2Tests`.
+
+Reach command retired with the item — **M17** was
+`rg -i -o '<container[^>]*id="Pledit"' "$corpus/Shield_Amp/xml/pledit.xml"`, then verify that file
+contains no `<layout>`. It measured the symptom, not the cause; the id is now reused for B76's
+region measurement.
+
+**Filed from this work: B76** — `sysregion` layers never shape the window, so every
+`Wasabi:StandardFrame:*` window keeps the square corners `component.bg` paints.
+
 ## B72 — the render dump takes a corpus directory — closed 2026-08-30
 
 `WINAMP_MODERN_WAL` now accepts a **directory** as well as a single archive and loops the corpus

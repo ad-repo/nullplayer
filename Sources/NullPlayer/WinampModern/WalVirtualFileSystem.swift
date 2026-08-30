@@ -115,8 +115,26 @@ final class WalVirtualFileSystem {
         guard !Self.looksLikeHostPath(substituted) else {
             throw WalFailure(WalDiagnostic(.resourceEscapesVFS, "Host path '\(rawPath)' is not allowed.", location: location))
         }
-        let base = Self.directory(of: sourcePath)
-        let canonical = try Self.canonicalize(substituted, relativeToDirectory: base, location: location)
+        let canonical = try Self.canonicalize(substituted, relativeToDirectory: Self.directory(of: sourcePath),
+                                              location: location)
+        // A path written in skin markup that starts at the root — `<include
+        // file="/standardframe/standardframe.xml"/>` — means the *skin's* root, because in Winamp the
+        // skin is the filesystem it names. Here the skin is one mount inside a larger VFS, so `/`
+        // alone lands beside the mount rather than inside it (B45: Shield_Amp's whole playlist layout
+        // came in through one such include, so its `Pledit` container was built empty and the PL
+        // button opened nothing). Tried second, and only when the literal reading finds nothing, so
+        // every genuinely VFS-absolute path — this loader's own entry paths, and anything produced by
+        // `@SKINPATH@`/`@SKINSPATH@` substitution — keeps resolving exactly as before.
+        if Self.startsAtRoot(rawPath), substituted == rawPath, let skinRoot,
+           resolvedExisting(canonical) == nil {
+            // The leading separator comes off with it: `canonicalize` reads one as "already absolute"
+            // and ignores the base entirely.
+            let underSkin = try Self.canonicalize(String(substituted.drop(while: { $0 == "/" || $0 == "\\" })),
+                                                  relativeToDirectory: skinRoot, location: location)
+            if let existing = resolvedExisting(underSkin) {
+                return WalResolvedResource(logicalPath: existing)
+            }
+        }
         guard mustExist else { return WalResolvedResource(logicalPath: canonical) }
         return WalResolvedResource(logicalPath: try canonicalExistingPath(canonical, location: location))
     }
@@ -271,6 +289,16 @@ final class WalVirtualFileSystem {
             throw WalFailure(WalDiagnostic(.unsafePath, "Unsafe VFS mount name '\(value)'."))
         }
         return value
+    }
+
+    /// The canonical spelling of `path` if some mount actually holds it, else nil.
+    private func resolvedExisting(_ path: String) -> String? {
+        try? canonicalExistingPath(path, location: nil)
+    }
+
+    /// Whether the path as written begins at the filesystem root, in either slash.
+    private static func startsAtRoot(_ value: String) -> Bool {
+        value.hasPrefix("/") || value.hasPrefix("\\")
     }
 
     private static func looksLikeHostPath(_ value: String) -> Bool {

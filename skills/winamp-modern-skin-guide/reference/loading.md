@@ -29,6 +29,17 @@ macro on a Media Library container's `default_visible`, while Defix also passes 
 Cross-mount climbs work, which is how cPro-Bento reaches its engine:
 `@COLORTHEMESPATH@\..\..\Plugins\classicPro\engine\load.xml`.
 
+**A path a skin writes starting at the root means the *skin's* root** (B45). In Winamp the skin is
+the filesystem it names, so `<include file="/standardframe/standardframe.xml"/>` reads from the skin
+directory; here the skin is one mount inside a larger VFS, and taking that `/` literally lands
+beside the mount rather than inside it. `WalVirtualFileSystem.resolve` therefore tries the literal
+reading **first** and re-bases on `@SKINPATH@` only when nothing exists there — so this loader's own
+entry paths, another mount, and every `@SKINPATH@`/`@SKINSPATH@` expansion (already absolute, and
+which would nest the skin root inside itself if re-based) all keep resolving exactly as before. Only
+paths written *raw* with a leading separator are re-based, and the fallback is what a failure still
+names when neither reading exists. **1 site in the 36-skin corpus**
+(`rg -o 'file="[/\\][^"]*"' "$corpus"`) — Shield_Amp's `xml/pledit-normal.xml:3`.
+
 **A missing `<include>` is a warning, not a failure** (Phase 35) — Winamp warns and carries on, and
 two shipped skins (`Itemskin`: `xml/eq.xml`, `Overdrive_2`: `xml/pledit-elements.xml`) name a file
 their archive does not contain. The expander skips it, records `resourceMissing` at `.warning`, and
@@ -38,6 +49,16 @@ resolves inside `@SKINPATH@`. An include that climbs into another mount — the 
 above — still fails the load, because that one means *the engine is not installed*, and a skin that
 loads and draws almost nothing is worse than a named error. Cycles, depth, expansion limits, path
 escapes and unresolved variables are all unchanged: still hard errors.
+
+**The tolerance covers the include that names the missing file, and nothing deeper** (B45). It used
+to wrap the recursion as well, which attributed every depth to the outermost node: one unfound
+include discarded everything its *parent* file contained, silently, and under the parent's name.
+Shield_Amp's `xml/pledit.xml` is a `<container id="Pledit">` whose only child is
+`<include file="pledit-normal.xml"/>`; that file's own root-relative include failed, the whole of
+`pledit-normal.xml` was dropped, and the container was built **empty** — a playlist window the PL
+button could never open, reported by the render sweep only as `dropped container: Pledit (no
+layout)`. It also laundered the one failure the skin-mount scope exists to keep fatal, since a
+ClassicPro engine include nested under an ordinary in-skin one was judged by the *outer* path.
 
 ### What the XML parser tolerates, and what it still rejects
 

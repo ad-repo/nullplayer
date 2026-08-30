@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B45 | Container declared without a reachable renderable layout | 1 skin / 1 container ([M17]) | M | Measured |
 | BB13 | `setClipboardText()` | 1 skin / 1 MAKI program symbol; the program contains three calls ([M18]) | S | Measured |
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
@@ -27,6 +26,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
+| B76 | `sysregion` layers never shape the window, so standard-frame windows keep square corners | 28 skins declare region layers ([M17]) | L | Live-reported |
 | BB28 | Stretched visualization overlaps file info after restart | — · seen on Windows 10 edition Light (2026-08-25) | M | Live-reported |
 | BB26 | File-info rating row draws dots rather than stars | — · seen on base and Light variants (2026-08-25) | S | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
@@ -60,7 +60,7 @@ resolve to a live citation above.
 - <a id="m19"></a>**M19:** `WINAMP_MODERN_DRAG_PROBE="$corpus_wal" swift test --filter WinampModernDragProbe` over the 36 installed `.wal` files, where `$corpus_wal` is `~/Library/Application Support/NullPlayer/WinampModernSkins`. Reports each container's draggable share; add `WINAMP_MODERN_DRAG_MAP=1` for the face map. See `skills/winamp-modern-skin-guide/reference/harness.md`.
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
-- <a id="m17"></a>**M17:** `rg -i -o '<container[^>]*id="Pledit"' "$corpus/Shield_Amp/xml/pledit.xml"`, then verify that file contains no `<layout>`.
+- <a id="m17"></a>**M17:** `rg -i -l 'sysregion="-' "$corpus" --glob '*.xml' --glob '*.xui' | cut -d/ -f1 | sort -u | wc -l` — skins declaring at least one region-only layer. Corner alpha per rendered window: `WINAMP_MODERN_WAL="$corpus_wal" WINAMP_MODERN_RENDER_DUMP=/tmp/sweep swift test --filter WinampModernRenderDumpTests`, then read the four corner pixels of each PNG.
 - <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
@@ -149,16 +149,34 @@ The implementation and its automated coverage shipped; that record is in
 
 ---
 
-### B45
+### B76
 
-- [ ] **B45. Shield_Amp's playlist container has no layout.** `RENDER-DUMP dropped container: Pledit
-      (no layout)` — the skin declares `Pledit` (and the catalog routes `playlist=declared:Pledit` to
-      it), but nothing renderable is inside, so its `PL` button most likely opens nothing. Surfaced by
-      B33's sweep, which is the first time this skin has ever loaded far enough to be measured.
-      Unclear yet whether this is the skin shipping an empty container, an `<include>` we skip, or a
-      layout named something other than `normal` — LOBE's B26 was the last of those and the container
-      was being dropped silently, so check that first. Nothing else about this skin has been measured
-      beyond the render sweep and one live launch
+- [ ] **B76. `sysregion` layers never shape the window.** Reported live 2026-08-30 as "why is the EQ
+      the only window with rounded corners". The EQ is not special: `main` and `equalizer` are
+      hand-drawn layouts whose own PNG artwork carries the rounded alpha. Every window built from a
+      `Wasabi:StandardFrame:*` is rectangular by design — Shield_Amp's
+      `standardframe.xml:82` is `<groupdef id="wasabi.frame.layout" background="component.bg">`, a
+      full-bleed rect — and the corners are meant to be cut away afterwards by eight
+      `sysregion="-2"` layers over a `region.png` silhouette (the skin's own comment: *"These are
+      used to trim the corners"*).
+
+      **We implement exactly half of `sysregion`.** `WasabiSceneRenderer.isRegionOnly`
+      (`Sources/NullPlayer/WinampModern/WasabiRenderer.swift`) reads a negative value and skips
+      *painting* the layer, which is right and is what stopped Ujola Cat's magenta mask drawing as
+      artwork. Nothing then consumes those layers as a region — `rg sysregion Sources/` returns that
+      one site plus the script runtime's attribute list — so the silhouette is discarded instead of
+      subtracted and `component.bg` keeps the corners.
+
+      Measured on Shield_Amp's render dump, corner-pixel alpha: `main`, `main/stick` and
+      `equalizer` **0**; `Pledit`, `MLibrary`, `AVS` and `Video` **255**, a flat
+      `rgb(95,110,127)` — `component.bg`. **28 of the 36 corpus skins declare `sysregion="-N"`
+      layers** ([M17]).
+
+      Effort **L**: building the region from those layers' bitmap alpha is the easy half. It has to
+      reach the *window* — a mask on the hosted and auxiliary `NSWindow`s — and the scene render, or
+      the dump cannot show it, and it has to follow a resize, since the region layers are
+      `relatw`/`relath` and re-lay out with the frame. Do not start by clipping only in the
+      renderer: an opaque window corner is still opaque to the compositor and to hit testing.
 
 ---
 

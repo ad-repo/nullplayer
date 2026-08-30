@@ -338,11 +338,18 @@ final class WalXMLDocumentLoader {
                 guard let file = node.attribute("file"), !file.isEmpty else {
                     throw WalFailure(WalDiagnostic(.malformedXML, "<\(node.name)> requires a non-empty file attribute.", location: node.location))
                 }
+                let targets: [WalResolvedResource]
                 do {
-                    let targets = try vfs.expand(file, relativeTo: sourcePath, location: node.location)
-                    for target in targets {
-                        result.append(contentsOf: try loadFile(target.logicalPath, includeStack: includeStack, depth: depth + 1))
-                    }
+                    // Only *this* node's own resolution is covered by the tolerance below. A failure
+                    // raised while loading a file that was found — a missing include nested inside
+                    // it — is that file's business and is already tolerated, or deliberately fatal,
+                    // at its own level. Wrapping the recursion here attributed every depth to this
+                    // node instead: one unfound include three files down discarded everything the
+                    // outer file contained, silently and under the outer file's name, which is how
+                    // Shield_Amp's playlist layout vanished (B45). It also laundered the one failure
+                    // `isInsideSkin` exists to keep fatal — a ClassicPro engine include — into a
+                    // warning, because the *outer* path was inside the skin.
+                    targets = try vfs.expand(file, relativeTo: sourcePath, location: node.location)
                 } catch let failure as WalFailure
                     where failure.diagnostics.allSatisfy({ $0.code == .resourceMissing })
                         && isInsideSkin(file, relativeTo: sourcePath) {
@@ -358,6 +365,10 @@ final class WalXMLDocumentLoader {
                         "<\(node.name) file=\"\(file)\"> was not found; the include was skipped.",
                         severity: .warning,
                         location: node.location))
+                    continue
+                }
+                for target in targets {
+                    result.append(contentsOf: try loadFile(target.logicalPath, includeStack: includeStack, depth: depth + 1))
                 }
                 continue
             }

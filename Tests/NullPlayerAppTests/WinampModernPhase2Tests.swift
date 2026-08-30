@@ -213,6 +213,69 @@ final class WinampModernPhase2Tests: XCTestCase {
         }, .xmlDepthExceeded)
     }
 
+    /// A path a skin writes starting at the root means the *skin's* root, because in Winamp the skin
+    /// is the filesystem it names. Shield_Amp's `pledit-normal.xml` opens with
+    /// `<include file="/standardframe/standardframe.xml"/>` (B45).
+    func testARootRelativeSkinPathResolvesInsideTheSkinWithoutDisturbingVFSAbsoluteOnes() throws {
+        let skin = try WalMemoryResourceProvider(resources: [
+            "skin.xml": Data(),
+            "xml/pledit.xml": Data(),
+            "standardframe/standardframe.xml": Data("<elements/>".utf8)
+        ])
+        let vfs = try WalVirtualFileSystem(skinName: "Test", skin: skin)
+        let engine = try WalMemoryResourceProvider(resources: ["load.xml": Data()])
+        try vfs.mount(engine, at: "/Plugins/classicPro")
+
+        XCTAssertEqual(try vfs.resolve("/standardframe/standardframe.xml",
+                                       relativeTo: "/Skins/Test/xml/pledit.xml").logicalPath,
+                       "/Skins/Test/standardframe/standardframe.xml")
+        // The skin root is only the *fallback*. Anything that already names a real VFS path — this
+        // loader's own entry paths, another mount, and every `@SKINPATH@`/`@SKINSPATH@` expansion —
+        // keeps resolving literally, or the skin root would be nested inside itself.
+        XCTAssertEqual(try vfs.resolve("/Skins/Test/skin.xml", relativeTo: "/").logicalPath,
+                       "/Skins/Test/skin.xml")
+        XCTAssertEqual(try vfs.resolve("/Plugins/classicPro/load.xml",
+                                       relativeTo: "/Skins/Test/skin.xml").logicalPath,
+                       "/Plugins/classicPro/load.xml")
+        XCTAssertEqual(try vfs.resolve("@SKINPATH@/skin.xml", relativeTo: "/").logicalPath,
+                       "/Skins/Test/skin.xml")
+        // Neither reading exists, so the literal one is still what the failure names.
+        XCTAssertEqual(errorCode {
+            try vfs.resolve("/nowhere.xml", relativeTo: "/Skins/Test/skin.xml")
+        }, .resourceMissing)
+    }
+
+    /// The missing-include tolerance covers the include that names the missing file, and nothing
+    /// deeper. Wrapping the recursion attributed every depth to the outermost node, so one unfound
+    /// include discarded everything its *parent* file contained — silently, and under the parent's
+    /// name. That is how Shield_Amp's playlist layout vanished and left an empty `Pledit` container
+    /// (B45).
+    func testANestedMissingIncludeDoesNotDiscardTheFileThatContainsIt() throws {
+        let skin = try WalMemoryResourceProvider(resources: [
+            "skin.xml": Data("<container id=\"Pledit\"><include file=\"xml/pledit.xml\"/></container>".utf8),
+            "xml/pledit.xml": Data("<include file=\"gone.xml\"/><layout id=\"normal\"/>".utf8)
+        ])
+        let vfs = try WalVirtualFileSystem(skinName: "Test", skin: skin)
+        let document = try WalXMLDocumentLoader(vfs: vfs).load(entryPath: "/Skins/Test/skin.xml")
+
+        XCTAssertEqual(document.roots.first?.children.map { $0.name.lowercased() }, ["layout"])
+        XCTAssertEqual(document.diagnostics.map(\.code), [.resourceMissing])
+        // Named where the file is actually missing, not where the outermost include was written.
+        XCTAssertEqual(document.diagnostics.first?.location?.path, "/Skins/Test/xml/pledit.xml")
+
+        // And the one failure `isInsideSkin` exists to keep fatal stays fatal at any depth: an
+        // include climbing into a mount that is not installed is a ClassicPro skin without its
+        // engine, which must not be laundered into a warning by the inside-the-skin path above it.
+        let escaping = try WalMemoryResourceProvider(resources: [
+            "skin.xml": Data("<include file=\"xml/load.xml\"/>".utf8),
+            "xml/load.xml": Data("<include file=\"@SKINPATH@/../../Plugins/classicPro/engine.xml\"/>".utf8)
+        ])
+        let escapingVFS = try WalVirtualFileSystem(skinName: "Test", skin: escaping)
+        XCTAssertEqual(errorCode {
+            try WalXMLDocumentLoader(vfs: escapingVFS).load(entryPath: "/Skins/Test/skin.xml")
+        }, .resourceMissing)
+    }
+
     // MARK: - `@SKINSPATH@` and sibling skin mounts
 
     func testSkinsPathResolvesThroughTheSkinsOwnMountWithoutConsultingTheResolver() throws {
