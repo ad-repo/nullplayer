@@ -653,7 +653,41 @@ Two more things measured while landing it, both worth not re-deriving:
 the pane is *black*. `WINAMP-MODERN-VIS: resume … visible=0 … rendering=0` is the last word — the
 surface asks to render while the window is still not visible and nothing asks it again, which is the
 shape of *The engine will not start in a window nobody has shown yet* but for a holder in the **main**
-window, where `setSceneVisible(true)` was supposed to cover it. Filed as **BB34**.
+window, where `setSceneVisible(true)` was supposed to cover it. Filed as **BB34** — but re-measure it
+before working on it: **BB35** below was a second, independent way this pane went black, and its fix
+also gave a detached surface a route back, which BB34's symptom may have been all along.
+
+## BB35 — ticking the mini pane turned the Visualization tab black
+
+Reported live 2026-08-30 and reproduced twice: with the Multi Content View **mini** pane ticked, the
+SUI **Visualization tab** draws black. Fixed the same day in
+`WinampModernMainView.reconcileHostedSurfaces()`; verified live by the reporter.
+
+**Ticking the mini pane is what arms it.** It adds a second *eligible* `{0000000A}` holder to the
+player, and opening the tab then flips `WinampModernVisualizationHolder.engineHolder(among:)` from the
+mini pane to the larger tab holder. That flip was the bug — nothing about the tab itself.
+
+The reconcile ran its **mount** pass before its **unmount** pass, and `makeVisualizationSurface()`
+vends a cached singleton, so the holder being moved *to* and the holder being moved *from* handed back
+the same object:
+
+1. mount: `visualizationSurfaces[tab] == nil` → the bridge returns the instance already at
+   `[mini]`; `addSubview`, `resumeRendering()`.
+2. unmount: `mini ∉ liveVis` → `unmountFromHolder()` on **that same object** → `stopRendering()` and
+   `removeFromSuperview()`, undoing step 1.
+3. `[tab]` keeps the detached, stopped instance, and every later pass skipped it as already mounted.
+
+Two things this predicts, and both are how it presented: **black rather than analyzer bars**, because
+the holder is still in `renderer.hostedVisualizationHolders` and that suppresses
+`drawVisualizationHolder`; and **permanent for the session**, with no recovery short of reloading the
+skin. The reporter's other variant — the tiny render stretched into the large box — is the same window
+seen through `layoutHostedSubviews`: while one object sat under two ids, the holder that iterated last
+won `surface.view.frame`.
+
+Fixed by unmounting before mounting, and by attaching **every** pass rather than only on creation, so
+a surface that has left the hierarchy has something to put it back. See
+[reference/components/visualization.md](../reference/components/visualization.md) → *One surface, two
+holders*.
 
 ## B36/B37 — why five separate symptoms had one cause
 

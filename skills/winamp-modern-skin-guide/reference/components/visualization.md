@@ -214,6 +214,41 @@ the video surface's attach. In DEBUG it logs `WINAMP-MODERN-VIS: resume window=�
 engine=… rendering=…`, which is the one line that separates "no surface", "wrong box" and "refused to
 start" without a GUI session.
 
+### One surface, two holders — unmount before you mount (BB35, 2026-08-30)
+
+`makeVisualizationSurface()` vends **one** surface per skin, and `engineHolder(among:)` moves it
+between holders as the eligible set changes. So the holder the engine moves *to* and the holder it
+moves *from* hand back **the same object**, and the order of the two passes in
+`WinampModernMainView.reconcileHostedSurfaces()` is load-bearing.
+
+It mounted first and unmounted second. On an election flip that registered one object under both ids,
+and the unmount pass then ran `unmountFromHolder()` — `stopRendering()` and `removeFromSuperview()` —
+on the instance the mount pass had just added. The new id kept a **detached, stopped** surface, and
+because the mount pass was guarded on `visualizationSurfaces[id] == nil`, every later pass skipped it
+as already mounted. Nothing could put it back.
+
+**Black is the tell, and it is louder than it looks.** A holder that has lost its surface this way is
+still in `renderer.hostedVisualizationHolders`, which suppresses `drawVisualizationHolder` — so the box
+does not fall back to the analyzer the way an unelected holder does. It draws nothing at all, for the
+rest of the session. Reported as Big Bento Modern's Visualization tab going black once the Multi
+Content View mini pane is ticked: ticking the pane adds the second eligible holder, opening the tab
+flips the election.
+
+Two rules follow, and both are now in the reconcile:
+
+- **Unmount before mounting**, so a move cannot strip the surface it has just placed.
+- **Attach every pass, not only on creation.** "Create it, add it, resume it once" can only ever start
+  the engine on the pass that made the surface; anything that leaves the hierarchy afterwards needs a
+  route back. A surface already attached is left alone, so this costs no per-layout engine churn.
+
+The same shape is why `unmountFromHolder()` is deliberately non-terminal (the bridge caches one engine
+per skin and the box coming back is a tab switch, not a stop) — the cache is what makes the aliasing
+possible in the first place.
+
+`WINAMP_MODERN_SURFACE_TRACE=1` prints each mount/unmount with its object pointer, which is the only
+way to see the aliasing; the headless harness makes no surfaces at all. See
+[harness.md](../harness.md).
+
 ### One visualization window at a time
 
 Ours and the skin's are mutually exclusive, and each is asked before the other is shown:

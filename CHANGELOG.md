@@ -17,6 +17,13 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: Big Bento Modern's Visualization tab no longer goes black** — turning on the
+  small visualization pane in the Multi Content View settings used to break the big Visualization tab:
+  it opened black and stayed that way until you reloaded the skin, and in some cases showed the small
+  pane's picture shrunk into the corner of the large one. The skin has several places a visualization
+  can appear and NullPlayer moves one engine between them; handing it from one to the next dropped it
+  on the floor. Both panes now behave: the tab shows the visualization, the small pane shows its
+  spectrum, and switching between them works as often as you like.
 - **Winamp Modern skins: windows can be resized from their whole border again** — grabbing the edge
   of a playlist, library, visualization or video window used to mean hitting a strip about a pixel
   wide, which made stretching one a matter of luck (reported on Shield_Amp). These skins draw their

@@ -719,6 +719,11 @@ final class WinampModernMainView: NSView {
         context.restoreGState()
     }
 
+    /// `WINAMP_MODERN_SURFACE_TRACE=1` — the hosted-surface reconcile, in the running app. The
+    /// headless harness installs no component host, so no surface is ever made there and this whole
+    /// path is invisible to every other probe.
+    static let surfaceTrace = ProcessInfo.processInfo.environment["WINAMP_MODERN_SURFACE_TRACE"] == "1"
+
     /// Create a live surface for each library holder the scene now has, and **unmount** the ones whose
     /// holder has gone (a layout switch, a script hiding the tab).
     ///
@@ -765,24 +770,71 @@ final class WinampModernMainView: NSView {
         // the bridge vends one surface per skin, so a second holder asking for it stole the picture
         // from the first. Everything not named here falls through to the renderer's analyzer (BB9).
         let engineHolderID = WinampModernVisualizationHolder.engineHolder(among: holders)
-        var liveVis: Set<WasabiObjectID> = []
+        let liveVis: Set<WasabiObjectID> = engineHolderID.map { [$0] } ?? []
+        if Self.surfaceTrace {
+            let boxes = holders.filter { $0.kind == .visualization }.map {
+                "\($0.object.xmlID ?? "-")#\($0.object.stableID)\(NSStringFromRect($0.frame))"
+            }
+            let line = "[surf/vis] reconcile engine="
+                + (engineHolderID.map(String.init(describing:)) ?? "none")
+                + " holders=" + boxes.joined(separator: " ")
+            NSLog("%@", line)
+        }
+        // **Unmount first, then mount.** The bridge vends one surface per skin, so the holder the
+        // engine moves *to* and the holder it moves *from* hand back the same object. With the mount
+        // pass first, that object was registered under both ids at once and the unmount pass then ran
+        // `unmountFromHolder()` on the instance the mount pass had just added — stopping the engine
+        // and pulling the view straight back out of the hierarchy. `[B]` kept the detached, stopped
+        // surface, and every later reconcile skipped it as already mounted, so the box stayed black
+        // for the rest of the session. That is Big Bento Modern's Visualization tab going black once
+        // the Multi Content View mini pane is ticked: ticking it adds a second eligible holder, and
+        // opening the tab flips the election from the mini pane to the tab (BB35).
+        for (id, surface) in visualizationSurfaces where !liveVis.contains(id) {
+            if Self.surfaceTrace {
+                let line = "[surf/vis] unmount #\(id)"
+                    + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
+                NSLog("%@", line)
+            }
+            surface.unmountFromHolder()
+            visualizationSurfaces[id] = nil
+        }
         for holder in holders where holder.kind == .visualization {
             guard holder.object.stableID == engineHolderID else { continue }
-            liveVis.insert(holder.object.stableID)
-            guard visualizationSurfaces[holder.object.stableID] == nil,
-                  let surface = componentHost?.makeVisualizationSurface() else { continue }
-            visualizationSurfaces[holder.object.stableID] = surface
-            surface.applySkinScale(skinScale)
-            surface.applyPalette(renderer.palette)
+            let surface: WinampModernVisualizationSurface
+            if let existing = visualizationSurfaces[holder.object.stableID] {
+                surface = existing
+            } else if let made = componentHost?.makeVisualizationSurface() {
+                visualizationSurfaces[holder.object.stableID] = made
+                made.applySkinScale(skinScale)
+                made.applyPalette(renderer.palette)
+                surface = made
+            } else {
+                continue
+            }
+            // **Attach every pass, not only on creation.** A surface is detached by an unmount above
+            // — the move this pass is completing — and the old "create it, add it, resume it once"
+            // shape could only ever start the engine on the pass that made it. Anything that left the
+            // view hierarchy afterwards had nothing to put it back (BB35).
+            guard surface.view.superview !== self else {
+                if Self.surfaceTrace {
+                    let line = "[surf/vis] attached \(holder.object.xmlID ?? "-")"
+                        + "#\(holder.object.stableID)"
+                        + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
+                    NSLog("%@", line)
+                }
+                continue
+            }
             addSubview(surface.view)
+            if Self.surfaceTrace {
+                let line = "[surf/vis] mount \(holder.object.xmlID ?? "-")"
+                    + "#\(holder.object.stableID)"
+                    + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
+                NSLog("%@", line)
+            }
             // A surface the bridge handed back was stopped when its holder went away, and the only
             // other thing that starts an engine is a window becoming visible — which has already
             // happened for a holder that lives in a window that is on screen.
             surface.resumeRendering()
-        }
-        for (id, surface) in visualizationSurfaces where !liveVis.contains(id) {
-            surface.unmountFromHolder()
-            visualizationSurfaces[id] = nil
         }
         // What the renderer paints in the box behind them: bars are the skin's analyzer, and drawing
         // one under a live engine is a second visualization nobody can see costing a repaint a frame.
@@ -956,6 +1008,13 @@ final class WinampModernMainView: NSView {
         for holder in holders where holder.kind == .visualization {
             guard let surface = visualizationSurfaces[holder.object.stableID] else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
+            if Self.surfaceTrace {
+                let line = "[surf/vis] layout \(holder.object.xmlID ?? "-")"
+                    + "#\(holder.object.stableID)"
+                    + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
+                    + " frame=\(NSStringFromRect(surface.view.frame))"
+                NSLog("%@", line)
+            }
         }
         for holder in holders where holder.kind == .video {
             guard let surface = videoSurfaces[holder.object.stableID] else { continue }

@@ -88,9 +88,13 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
       shown yet* ([reference/components/visualization.md](skills/winamp-modern-skin-guide/reference/components/visualization.md)),
       which `resumeRendering()` was added to fix — but for a holder in the **main** window, where
       `WinampModernMainView.setSceneVisible(true)` was supposed to cover it. Found while landing BB9's
-      side-by-side layout, 2026-08-29; the layout itself is correct and confirmed live. Corpus reach
-      unmeasured — the seven other skins with a `{0000000A}` holder all keep it in an auxiliary
-      window, so this may be specific to a pane embedded in the player.
+      side-by-side layout, 2026-08-29; the layout itself is correct and confirmed live.
+      **Re-measure before doing any work on it (2026-08-30).** Two things the entry predates: BB35 was
+      a second, independent way this same pane went black — an election flip leaving its surface
+      detached and stopped — and its fix gives a detached surface a route back, so BB34's symptom may
+      already be gone. And the reach note here is wrong: B23a measured **6** corpus skins embedding a
+      holder in the player, not one, so "specific to a pane embedded in the player" is not the narrow
+      case it reads as.
 
 ---
 

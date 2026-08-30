@@ -190,6 +190,47 @@ VIDEO holder SUI/normal:  wdh hidden cmdbar=1                          (Defix Hi
 
 Found while closing B23a, which needed the same pass for `.visualization` and did not have it.
 
+## BB35 — ticking the mini pane turned the Visualization tab black — closed 2026-08-30
+
+Reported live: with Big Bento Modern's Multi Content View **mini** visualization pane ticked, the SUI
+**Visualization tab** draws black. Reproduced twice by the reporter, and verified fixed by them.
+
+**The mini pane is not the thing that breaks; it is what arms the break.** Ticking it adds a second
+*eligible* `{0000000A}` holder to the player, and opening the tab then flips
+`WinampModernVisualizationHolder.engineHolder(among:)` from the mini pane to the larger tab holder.
+
+`reconcileHostedSurfaces()` ran its **mount** pass before its **unmount** pass, and
+`makeVisualizationSurface()` vends a cached singleton — so on that flip the same object was registered
+under both ids, and the unmount pass ran `unmountFromHolder()` on the instance the mount pass had just
+added. The new id kept a detached, stopped surface, and the mount guard (`… == nil`) skipped it as
+already mounted on every later pass.
+
+Two consequences, both of which are how it presented:
+
+- **Black, not analyzer bars.** The holder stays in `renderer.hostedVisualizationHolders`, which
+  suppresses `drawVisualizationHolder` — so it does not fall back the way an *unelected* holder does.
+- **Permanent for the session**, with no recovery short of reloading the skin.
+
+The reporter's second variant — the tiny render stretched into the large box — is the same window seen
+through `layoutHostedSubviews`: while one object sat under two ids, the holder that iterated last won
+`surface.view.frame`.
+
+Fixed by unmounting before mounting, and by attaching every pass rather than only on creation, so a
+surface that has left the hierarchy has a route back. `swift test` 1525 pass, 0 failures.
+
+**The diagnosis came from reading, and the two live repros bought nothing.** Both were spent before
+any capture was running: the probe was off unless its env var was set, and the retroactive unified-log
+read came back empty. **Own the launch before asking anyone to reproduce** — the standing rule, and it
+was not followed here. The instrument that was missing is now
+`WINAMP_MODERN_SURFACE_TRACE=1` ([reference/harness.md](../../skills/winamp-modern-skin-guide/reference/harness.md)):
+the headless harness installs no component host, makes no surfaces, and so could never have seen this
+path at all — a `VIS holder` line proves the box, never the surface in it.
+
+**Left open: BB34 may be this same bug.** It records the mini pane itself drawing black with the tab
+closed, and blames the `resumeRendering()` refusal. An election flip during the skin's 700 ms
+`mcvcore` settle would black it out by this route instead, and the fix gives a detached surface a way
+back. Re-measure BB34 before doing any work on it.
+
 ## B23a — `.visualization` embedded in a player (BLAKK) — closed 2026-08-30, no product change
 
 **It already worked.** Confirmed live 2026-08-30: load BLAKK, switch to its `remote` layout, open the
