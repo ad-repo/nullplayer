@@ -72,6 +72,15 @@ final class WinampModernMainView: NSView {
     private var hoveredObject: WasabiObject?
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    /// A drag on a `resize="…"` handle: which window edges it moves, and the frame and screen
+    /// pointer the drag started from. Measured from the start rather than accumulated per delta, so a
+    /// drag that runs into the layout's minimum and comes back out again lands where the pointer is.
+    private var activeResizeEdges: WasabiResizeEdges?
+    private var resizeStartFrame: NSRect = .zero
+    private var resizeStartMouse: NSPoint = .zero
+    /// Whether this view is the one currently showing a resize cursor, so leaving a handle puts the
+    /// arrow back without stomping on a cursor somebody else set.
+    private var showsResizeCursor = false
     private var lastPlaybackState: PlaybackState = .stopped
     /// Last volume the scripts were told about, 0…255. −1 until the first update.
     private var lastPostedVolume: Int32 = -1
@@ -1038,6 +1047,18 @@ final class WinampModernMainView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        // The border's cursor is set from the same hit test the press uses, not from a cursor rect:
+        // a rect could only describe the handle's *box*, and the skin's exceptions to it — the
+        // interior disabler, a close button on the top strip — are expressed by what lies over that
+        // box. Promising a resize cursor where the press does something else is precisely the defect
+        // BB21 was filed for.
+        if let edges = renderer.resizeEdges(at: point) {
+            Self.cursor(for: edges).set()
+            showsResizeCursor = true
+        } else if showsResizeCursor {
+            NSCursor.arrow.set()
+            showsResizeCursor = false
+        }
         // The thinger's caption names whichever icon the pointer is over, which is Winamp's own
         // behaviour and the only way a one-icon-wide bucket (Lobe's is 40×25) can be read at all.
         // Before the identity guard below: moving between two icons of the same bucket never changes
@@ -1052,6 +1073,10 @@ final class WinampModernMainView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        if showsResizeCursor {
+            NSCursor.arrow.set()
+            showsResizeCursor = false
+        }
         if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
         hoveredObject = nil
         needsDisplay = true
@@ -1132,6 +1157,21 @@ final class WinampModernMainView: NSView {
         if renderer.objectOverridingDivider(at: point) == nil,
            let divider = renderer.frameDivider(at: point) {
             draggedDivider = divider
+            return
+        }
+        // A `resize="…"` handle — the skin's own window border, and on a borderless window the only
+        // resize affordance there is. Before everything below: a border layer is a plain `<layer>`
+        // with no action, so `shouldDragWindow` would otherwise *move* the window off the very strip
+        // the user grabbed to stretch it, which is what the border is declared for.
+        // Only on the *first* click: 25 of the corpus's 393 handles also carry a command on the
+        // second one — a titlebar corner's `dblClickAction="SWITCH;shade"` is the common shape — and
+        // claiming the press unconditionally would take shade mode away from every skin that shades
+        // by double-clicking its own border (winampmodern566, Styx, Itemskin, mmd3). Dragging
+        // resizes, double-clicking still acts, which is the division Winamp makes.
+        if event.clickCount < 2, let edges = renderer.resizeEdges(at: point), let window {
+            activeResizeEdges = edges
+            resizeStartFrame = window.frame
+            resizeStartMouse = NSEvent.mouseLocation
             return
         }
         if let holder = renderer.componentHolder(at: point) {
@@ -1239,8 +1279,68 @@ final class WinampModernMainView: NSView {
         }
     }
 
+    /// Stretch this view's window from the handle the press landed on.
+    ///
+    /// The scene itself is not resized here: `windowDidResize` already owns that for every `.wal`
+    /// window, whatever moved it.
+    private func resizeWindow(edges: WasabiResizeEdges) {
+        guard let window else { return }
+        let mouse = NSEvent.mouseLocation
+        let frame = Self.resizedFrame(from: resizeStartFrame, edges: edges,
+                                      deltaX: mouse.x - resizeStartMouse.x,
+                                      deltaY: mouse.y - resizeStartMouse.y,
+                                      minimum: window.contentMinSize,
+                                      maximum: window.contentMaxSize)
+        guard frame != window.frame else { return }
+        window.setFrame(frame, display: true)
+    }
+
+    /// Pure form of the resize rule, so it can be tested without a window or a mouse.
+    ///
+    /// The skin names its edges the way it draws them — `top` is the visual top — while an AppKit
+    /// frame is measured from its bottom-left, so each edge names both a size change and the corner
+    /// that has to stay still. The size is clamped to the layout's own limits **before** the origin
+    /// is derived from that fixed corner: clamping the frame afterwards instead lets a window that
+    /// has hit its minimum walk across the desktop as the pointer keeps going. `contentMinSize` /
+    /// `contentMaxSize` are the layout's declared range (`applyLayoutConstraints`), and on a
+    /// borderless window content and frame are the same box.
+    ///
+    /// The deltas are measured from where the press landed rather than accumulated per drag event,
+    /// so a drag that runs into the minimum and comes back out again lands under the pointer instead
+    /// of trailing it by however far it overshot.
+    static func resizedFrame(from start: NSRect, edges: WasabiResizeEdges,
+                             deltaX: CGFloat, deltaY: CGFloat,
+                             minimum: NSSize, maximum: NSSize) -> NSRect {
+        var size = start.size
+        if edges.contains(.right) { size.width += deltaX }
+        if edges.contains(.left) { size.width -= deltaX }
+        if edges.contains(.top) { size.height += deltaY }
+        if edges.contains(.bottom) { size.height -= deltaY }
+        size.width = min(max(size.width, minimum.width), maximum.width)
+        size.height = min(max(size.height, minimum.height), maximum.height)
+        var origin = start.origin
+        // The opposite corner is the anchor: dragging the left edge leaves the right one where it is.
+        if edges.contains(.left) { origin.x = start.maxX - size.width }
+        if edges.contains(.bottom) { origin.y = start.maxY - size.height }
+        return NSRect(origin: origin, size: size)
+    }
+
+    /// macOS ships no diagonal resize cursor, so a corner gets the crosshair — the same substitution
+    /// `BorderlessWindow` makes for the other window families.
+    private static func cursor(for edges: WasabiResizeEdges) -> NSCursor {
+        switch (edges.isHorizontal, edges.isVertical) {
+        case (true, true): return .crosshair
+        case (true, false): return .resizeLeftRight
+        default: return .resizeUpDown
+        }
+    }
+
     override func mouseDragged(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if let activeResizeEdges {
+            resizeWindow(edges: activeResizeEdges)
+            return
+        }
         if let draggedDivider {
             guard renderer.dragFrameDivider(draggedDivider, to: point) else { return }
             // The panes moved, so anything hosted inside one (the embedded library) has to follow,
@@ -1272,6 +1372,10 @@ final class WinampModernMainView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if activeResizeEdges != nil {
+            activeResizeEdges = nil
+            return
+        }
         if let draggedDivider {
             // Where the user let go is the position that outlives the session (B44).
             renderer.persistFramePosition(of: draggedDivider)

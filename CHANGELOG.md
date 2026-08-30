@@ -17,6 +17,16 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: windows can be resized from their whole border again** — grabbing the edge
+  of a playlist, library, visualization or video window used to mean hitting a strip about a pixel
+  wide, which made stretching one a matter of luck (reported on Shield_Amp). These skins draw their
+  own window frames and mark which parts of them are handles, and NullPlayer was ignoring that: the
+  entire 30-odd-pixel border and both corner grips are now live, with the pointer changing shape over
+  them, so a window stretches from wherever it looks like it should. The skins' own exceptions are
+  honoured too — buttons sitting on the frame still act, the inside of the window still drags it, and
+  double-clicking a titlebar corner still toggles windowshade. 32 of the 36 bundled skins mark their
+  frames this way and all of them benefit; a window a skin fixed at one size (Shield_Amp's player) is
+  still fixed, as it is in Winamp.
 - **Winamp Modern skins: Shield_Amp's playlist window opens** — its `PL` button used to do nothing, because the whole layout of the window was skipped while the skin was being read. The skin points at one of its own files in a way NullPlayer read as pointing outside the skin, and a single unfound file was quietly throwing away everything else in the file that referenced it. Both are fixed, so the playlist window now appears with the skin's own frame, title and Add/Rem/Sel/Misc/List buttons.
 - **Winamp Modern skins: buttons a skin drives from its own script now respond** — a `<Wasabi:Button>` whose whole behaviour comes from the skin's script, rather than from a label or a built-in action, was never under the mouse: every click fell straight through it. T800's five memory slots on the robot's head were dead for this reason. They now record the playing track (hold one for about two seconds) and play it back on a click.
 - **Winamp Modern skins: T800's jaw animation works** — the button under the mouth opens the jaw to reveal the song ticker and timer. Its script asked whether the animation was stopped before starting it, and that question was unanswered, so the whole handler gave up before anything moved.

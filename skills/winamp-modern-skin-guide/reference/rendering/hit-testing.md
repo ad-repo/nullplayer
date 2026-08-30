@@ -129,6 +129,56 @@ object the hit test returned:
 that the markup-only hit test rejects. It is not expected to be empty — several objects legitimately
 share a rect and only the topmost can win — but a control the user can see should never be in it.
 
+#### Resizing the window (Phase 89, B77)
+
+A `.wal` window is borderless, so **the skin nominates its own resize handles**: `resize="left"`,
+`"topright"`, `"bottomleft"` and the rest, hung on the layers that draw the border.
+`WasabiSceneRenderer.resizeEdges(at:)` reads it, `WinampModernMainView` drags it, and
+`WinampModernMainView.resizedFrame(...)` is the pure geometry form.
+
+**597 handles in 32 of the 36 corpus skins, every one of them on a `<layer>`** — winampmodern566 83,
+S7Reflex 43, Nullsoft SP4 Lite 35, Styx and Itemskin 30 each, Shield_Amp 26. Most come from the
+shared `standardframe` include, which is why one implementation reaches nearly the whole corpus; the
+four that declare none (cPro-Bento, Overdrive_2, both Big Bento *Light* variants) resize through the
+`<Wasabi:Frame>` splitter or not at all. Reach:
+`rg -i -o 'resize="(topleft|topright|bottomleft|bottomright|top|bottom|left|right)"' "$corpus" --glob '*.xml' --glob '*.xui'`
+— which answers 599, two of them commented out in Nullsoft SP4 Lite.
+
+Four rules, and the first is what makes the other three cheap:
+
+- **Topmost wins, with no special pleading.** The skins express every exception by declaration order,
+  so the ordinary `object(at:)` already answers them. `standardframe.xml` lays a bare
+  `<layer id="window.resize.disabler" x="10" y="15" w="-20" h="-24">` over the interior *after* the
+  border layers — its own comment says *"prevents it from covering Buttons"* — declares the two corner
+  grips after that again, and puts the close button on the top strip above all of them. None of those
+  names appears in the implementation. (Nullsoft SP4 Lite is the same lesson from the other side: its
+  author commented a full-width `resize="top"` strip out, *"causes some huge area to appear right
+  around the switch button"*.)
+- **The press claims only the first click.** 12 handles in 4 skins (winampmodern566, Nullsoft SP4
+  Lite, mmd3, BLAKK) also carry a command on the second one, always a titlebar corner's
+  `dblClickAction="SWITCH;shade"`. Claiming every press would take shade mode away from them:
+  dragging resizes, double-clicking still acts. No handle in the corpus carries a plain `action=`.
+- **The handle outranks the drag.** A border layer is a plain `<layer>` with no action, so
+  `shouldDragWindow` accepts it — checked second, the window *moves* off the very strip the user
+  grabbed to stretch it. 16 handles say `move="1"` outright (both Big Bentos, Ujola Cat, mmd3); the
+  border is still a border, and each of those skins keeps a titlebar to drag by.
+- **A fixed layout has no handles**, whatever its borders declare — the same rule `userResizeLimits`
+  applies to the window's limits (see `compatibility/limits-and-policy.md`). Shield_Amp is the case:
+  its player declares no `minimum_*`/`maximum_*` while inheriting border layers that do declare
+  handles, and Winamp gives that window no affordance either.
+
+The cursor comes from the same hit test, set in `mouseMoved` rather than from a cursor rect: a rect
+can only describe the handle's *box*, and the exceptions above live in what covers that box. Promising
+a resize cursor where the press does something else is precisely the BB21 defect. Corners get the
+crosshair — macOS ships no diagonal resize cursor, the same substitution `BorderlessWindow` makes.
+
+The size is clamped to the layout's range **before** the origin is derived from the anchored corner.
+Clamping the finished frame instead leaves the origin where the unclamped drag put it, and a window
+sitting at its minimum then walks across the desktop while the pointer keeps pushing.
+
+Before this the only affordance was AppKit's own borderless edge band, about a pixel of it, which is
+what a live report on Shield_Amp's playlist window described as impossible to grab.
+
 #### `sysregion` is signed, and it shapes the window (Phase 34, B76)
 
 A layer can contribute its bitmap to the **window region** instead of to the picture. The attribute

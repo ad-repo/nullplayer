@@ -2,6 +2,48 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B77 — `resize="…"` handles were never read, so a window could barely be grabbed — closed 2026-08-30
+
+Reported live 2026-08-30 as "the area to enlarge windows is so small that it is hard to grab the
+window and stretch", on Shield_Amp. Never an open row: found, fixed and confirmed in one pass.
+
+Wasabi's resize model is **markup-driven**. A `.wal` window is borderless, so there is no chrome the
+window server would stretch it by; the skin nominates the handles itself by hanging
+`resize="topleft"`…`"bottomright"` on the layers that draw its border. The attribute was read by
+nothing — `rg resize= Sources/` returned only the MAKI `resize()` method — so the only affordance
+left was AppKit's own borderless edge band, about a pixel of it.
+
+`WasabiResizeEdges` (`Sources/NullPlayer/WinampModern/WasabiResizeHandles.swift`) parses the
+attribute, `WasabiSceneRenderer.resizeEdges(at:)` hit-tests it, and `WinampModernMainView` owns the
+drag, with `resizedFrame(...)` as the pure geometry form. The rules and their evidence are in
+`skills/winamp-modern-skin-guide/reference/rendering/hit-testing.md` → *Resizing the window*.
+
+**597 handles in 32 of the 36 corpus skins, every one on a `<layer>`** — winampmodern566 83,
+S7Reflex 43, Nullsoft SP4 Lite 35, Styx and Itemskin 30 each, Shield_Amp 26 — mostly from the shared
+`standardframe` include, so one implementation reaches nearly the whole corpus. Four skins declare
+none: cPro-Bento, Overdrive_2 and the two Big Bento *Light* variants.
+
+Three things the corpus decided, none of which needed a skin's name in the code:
+
+- **Topmost wins.** Every exception is expressed by declaration order: a bare
+  `<layer id="window.resize.disabler">` over the interior (*"prevents it from covering Buttons"*),
+  the corner grips after it, the close button on the top strip above both. The ordinary
+  `object(at:)` answers all three.
+- **Only the first click is claimed.** 12 handles in 4 skins also carry
+  `dblClickAction="SWITCH;shade"` on a titlebar corner; claiming every press would have taken shade
+  mode away from winampmodern566, Nullsoft SP4 Lite, mmd3 and BLAKK. No handle carries a plain
+  `action=`.
+- **The handle outranks the window drag.** A border layer is a plain `<layer>`, so `shouldDragWindow`
+  accepts it and the window moved off the strip the user grabbed. 16 handles say `move="1"` outright
+  (both Big Bentos, Ujola Cat, mmd3) — the border is still a border, and each keeps a titlebar.
+
+A layout that declares no resize range has no handles whatever its borders say, which is why
+Shield_Amp's *player* is still fixed while its playlist, library, AVS and video windows now stretch
+from anywhere on their 30-odd-pixel frames. Confirmed live on Shield_Amp 2026-08-30. `swift test`:
+eleven cases in `WinampModernPhase89Tests`. Reach command, retired with the item:
+`rg -i -o 'resize="(topleft|topright|bottomleft|bottomright|top|bottom|left|right)"' "$corpus" --glob '*.xml' --glob '*.xui'`
+(599 raw, two commented out in Nullsoft SP4 Lite).
+
 ## B76 — `sysregion` layers never shape the window — closed 2026-08-30
 
 We implemented exactly half of `sysregion`. `WasabiSceneRenderer.isRegionOnly` read a negative value
