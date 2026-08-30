@@ -346,6 +346,13 @@ By area:
 - **`System.navigateUrlBrowser(url)`** — the player's own browser: the scene's `<browser>`, a visible
   one preferred over one in a closed tab, and the external route as a last resort for a skin that
   ships none. Both global forms go through `WinampModernWebNavigationPolicy` (HTTP/HTTPS, real host).
+- **`System.setClipboardText(text)`** — writes the string to the system pasteboard as **plain text
+  only**, after `clearContents()`, bounded to 64 KB. There is deliberately no read: Winamp declares
+  no matching getter, and a skin that could read the pasteboard would be reading what the user last
+  copied in another application. The corpus callers are copy commands on a skin's own right-click
+  menus (Defix's playlist, the ClassicPro engine's file-info, shade-info and album-art menus), and
+  they sit *inside* the handler that builds the rest of the menu — so while it was missing, the
+  fail-closed dispatch took those menus' other entries down with the copy (BB13).
 - **`System.urlEncode(term)`** — RFC 3986 unreserved set, everything else escaped; stricter than
   `.urlQueryAllowed` because the argument is one term being pasted into a query the skin assembles.
   It sits *inside* the expression that builds a URL, so while it was missing the whole handler
@@ -538,8 +545,8 @@ opens under its tab, measured with `RENDER_CLICK`, which prints the point the me
 | ~~`getDecoderName`~~ / `deleteByPos` | 1 / 1 | `getDecoderName` implemented in B38; `deleteByPos` minor |
 
 Across the whole engine (every container, not just the main window) the list also carries the
-`Winamp:Browser` events, `setClipboardText` (8) and `shutdown` (1). The `fx_*` family was on this list
-until Phase 28 implemented it.
+`Winamp:Browser` events, ~~`setClipboardText`~~ (8) and `shutdown` (1). `setClipboardText` was
+implemented in BB13; the `fx_*` family was on this list until Phase 28 implemented it.
 
 Phase 12 emptied the queue a second time, after `Wasabi:Frame` let the SUI's own scripts run for the
 first time: `additem`, `getnumchildren`, `getgroup`, `getcurrenttrackrating`, `oneqfreqchanged` (a

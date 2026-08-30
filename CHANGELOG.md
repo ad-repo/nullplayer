@@ -17,6 +17,12 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: a skin's own "Copy to clipboard" menu items now work** — some `.wal` skins
+  put copy commands on their right-click menus (Defix's playlist offers to copy the title or the file
+  path; the ClassicPro engine's file-info and album-art menus do the same). Picking one did nothing,
+  and worse, the failure stopped the menu being built where it stood, so the entries below the copy
+  commands were missing too. The copy now lands on the clipboard as plain text and the rest of the
+  menu comes back with it.
 - **Winamp Modern skins: the built-in spectrum analyzer is smoother, and its bass is readable** —
   three separate faults in the analyzer Big Bento Modern and other `.wal` skins draw. Its low end was
   a comb of plateaus and cliffs: below about 500 Hz a bar is narrower than the analysis can resolve,

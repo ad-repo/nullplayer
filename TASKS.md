@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| BB13 | `setClipboardText()` | 1 skin / 1 MAKI program symbol; the program contains three calls ([M18]) | S | Measured |
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
 
@@ -59,7 +58,6 @@ resolve to a live citation above.
 - <a id="m19"></a>**M19:** `WINAMP_MODERN_DRAG_PROBE="$corpus_wal" swift test --filter WinampModernDragProbe` over the 36 installed `.wal` files, where `$corpus_wal` is `~/Library/Application Support/NullPlayer/WinampModernSkins`. Reports each container's draggable share; add `WINAMP_MODERN_DRAG_MAP=1` for the face map. See `skills/winamp-modern-skin-guide/reference/harness.md`.
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
-- <a id="m18"></a>**M18:** `rg -a -i -o 'setClipboardText' "$corpus"`
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
 number of matched declarations or MAKI program symbols. A compiled MAKI method name is a program
@@ -148,13 +146,6 @@ The implementation and its automated coverage shipped; that record is in
       **Do not treat "Reattach does nothing" as the whole item** — the *other* buttons on that bar were
       dead for an unrelated reason (B70, closed), and fixing that one made three of them work without moving
       this at all.
-
----
-
-### BB13
-
-- [ ] **BB13. `setClipboardText()`** — absent, so copy-title and copy-path from the skin's own menus
-      are inert. Three call sites.
 
 ---
 

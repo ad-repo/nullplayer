@@ -256,7 +256,9 @@ The skin is **untrusted input**. Three rules hold everywhere and must not be rel
    skin input is a bug — the fuzz tests in `WinampModernPhase7Tests` exist to catch exactly that.
 
 Scripts cannot launch executables, open modal UI, reach arbitrary host paths, or make general host
-network requests, and `messagebox` remains denied.
+network requests, and `messagebox` remains denied. The pasteboard is **write-only** and plain text
+only (`System.setClipboardText`, BB13): a skin's copy commands work, and nothing lets one read what
+the user last copied elsewhere.
 
 **Navigation is the one narrow exception, and it is typed rather than free** (B40). Every address a
 skin authors — from `<browser>.navigateUrl`, from `System.navigateUrl` /

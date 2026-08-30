@@ -146,6 +146,12 @@ protocol WinampModernHost: AnyObject {
     /// launch executables, or reach arbitrary paths.
     func revealInFinder(_ path: String)
     func openExternally(_ path: String)
+
+    /// `System.setClipboardText(text)` — the skin's own copy commands (Defix's playlist "Copy … to
+    /// clipboard" items, the ClassicPro engine's file-info and album-art menus). Plain text only:
+    /// nothing here writes a file, URL or promise type, so a skin cannot dress an arbitrary string
+    /// up as something the receiving app will open.
+    func setClipboardText(_ text: String)
 }
 
 extension WinampModernHost {
@@ -193,6 +199,9 @@ extension WinampModernHost {
     var trackPath: String { "" }
     func revealInFinder(_ path: String) {}
     func openExternally(_ path: String) {}
+    // A host with no pasteboard to write (the render harness, a test double) swallows it, the way
+    // `revealInFinder` does — a corpus sweep must not leave the user's clipboard rewritten.
+    func setClipboardText(_ text: String) {}
 
     /// `System.getPlayItemMetaDataString(key)` — one field of the playing item, as a string.
     ///
@@ -643,6 +652,25 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         guard let url = Self.existingFileURL(for: path) else { return }
         NSWorkspace.shared.open(url)
     }
+
+    /// Plain text, and bounded: the strings the corpus copies are a title, a path or a tag line, so a
+    /// skin that hands over a script-built megabyte is truncated rather than allowed to fill the
+    /// pasteboard. `clearContents()` first — an `NSPasteboard` keeps the previous owner's other
+    /// representations otherwise, and a stale file promise beside our text is exactly the kind of
+    /// mixed item the plain-text-only rule exists to prevent.
+    func setClipboardText(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(Self.boundedClipboardText(text), forType: .string)
+    }
+
+    /// Separated from the write so the bound can be tested without a pasteboard — the only way to
+    /// exercise it otherwise is to overwrite the clipboard of whoever is running the suite.
+    static func boundedClipboardText(_ text: String) -> String {
+        text.count > clipboardTextLimit ? String(text.prefix(clipboardTextLimit)) : text
+    }
+
+    private static let clipboardTextLimit = 64 * 1_024
 
     private static func existingFileURL(for path: String) -> URL? {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)

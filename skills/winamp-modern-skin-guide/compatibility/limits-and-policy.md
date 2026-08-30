@@ -51,6 +51,7 @@ All enforced; exceeding one produces a typed `WalDiagnostic`, never a crash or a
 | Active timers | 256 |
 | Timer period | ≥ 8 ms, ≤ 120 Hz |
 | Embedded browser VFS response | 16 MiB |
+| `System.setClipboardText` text | 64 KB, truncated |
 
 ## Verification status
 

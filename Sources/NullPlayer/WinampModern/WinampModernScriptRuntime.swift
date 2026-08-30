@@ -2514,6 +2514,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "isnamedwindowvisible": .init(argumentCount: 1, returnKind: .boolean),
             "navigateurl": .init(argumentCount: 1, returnKind: .null),
             "navigateurlbrowser": .init(argumentCount: 1, returnKind: .null),
+            "setclipboardtext": .init(argumentCount: 1, returnKind: .null),
             // Internet Explorer's own error page, which a `<browser>` asks Winamp to suppress so it
             // can show its own. There is no IE here — the surface is WebKit — so the preference is
             // recorded and nothing else; refusing it aborted the handler that sets it, which on Big
@@ -3021,6 +3022,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "navigateurlbrowser":
             globalNavigationRequested?(.internalBrowser, arguments[0].stringValue)
+            return .null
+        // The skin's own copy commands — Defix's playlist "Copy … to clipboard" items, the
+        // ClassicPro engine's file-info and album-art menus. The string is whatever the script
+        // built, so the host writes it as plain text and nothing else; it is an *outbound* seam
+        // only, since Winamp has no matching read and a skin that could read the pasteboard would
+        // be reading the user's other applications. Refusing it aborted the whole handler, which on
+        // Defix is the one that builds the rest of that popup menu (BB13).
+        case "setclipboardtext":
+            host.setClipboardText(arguments[0].stringValue)
             return .null
         case "newgroup":
             // Wasabi creates the group as a child of the calling script's own group; the script then

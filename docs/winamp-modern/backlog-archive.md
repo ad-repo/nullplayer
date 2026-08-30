@@ -2,6 +2,41 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## BB13 — `setClipboardText()` was missing, and took its menu down with it — closed 2026-08-30
+
+`System.setClipboardText` was absent from the System dispatch, so it fell to `default:` and threw
+`unsupported`. Dispatch is fail-closed, so the loss was never just the copy: the method is called
+from *inside* the handler that builds a skin's right-click menu, and the abort took the rest of that
+menu's entries with it — the same shape as `urlEncode` before B38.
+
+Corpus reach, `rg -a -i -o 'setClipboardText' "$corpus"` over the 36 extracted skins: **one skin**,
+Defix Hi-END 200 (`SCRIPTS/PLAYLIST_LAYOUT_SCRIPT.maki`, one program symbol, beside the menu's own
+*Copy* / *to clipboard* strings). The ClassicPro engine adds eight more sites outside the measured
+corpus — `fileinfo.m`, `info-text.m`, `shade-info.m`, `beat.m`, `albumart.m`, `AlbumArt.m` and both
+`CentroSUI` versions — so the one implementation reaches the engine's file-info and album-art menus
+as well.
+
+`WinampModernHost.setClipboardText(_:)` with a default no-op in the protocol extension, the way
+`revealInFinder`/`openExternally` are: the render harness and every test double swallow it, so a
+36-skin sweep cannot leave the user's clipboard holding whatever the last skin's startup copied.
+`WinampModernAudioEngineHost` performs the real write.
+
+**Write-only, plain text, bounded.** `clearContents()` then `setString(_:forType: .string)` — no
+file, URL or promise type, so a skin cannot dress an arbitrary string up as something the receiving
+app will open, and no stale representation from the previous owner survives beside our text. Bounded
+to 64 KB (`boundedClipboardText`, split out so the bound is testable without a pasteboard). There is
+deliberately **no getter**: Winamp declares none, and a skin that could read the pasteboard would be
+reading what the user last copied in another application.
+
+The signature table entry (`argumentCount: 1`) is not optional bookkeeping — an unknown arity
+desynchronises the interpreter's stack, which corrupts the rest of the program rather than failing
+at the call.
+
+Verified live on Defix Hi-END 200: right-click a playlist row → **Copy title to clipboard** → the
+title pastes. `Tests/NullPlayerAppTests/WinampModernPhase90Tests.swift` covers the call reaching the
+host, the handler continuing past it (the regression the item was actually about), the arity, the
+default host accepting the call, and the bound.
+
 ## B77 — `resize="…"` handles were never read, so a window could barely be grabbed — closed 2026-08-30
 
 Reported live 2026-08-30 as "the area to enlarge windows is so small that it is hard to grab the
