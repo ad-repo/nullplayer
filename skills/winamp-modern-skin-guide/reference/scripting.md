@@ -645,14 +645,54 @@ row and then a running counter, its *to bottom* passes `getNumTracks() - 1`. Cou
 between the receiver and the call — the compiler emits the receiver first, then one push per argument
 in **reverse**, so `arguments[0]` is the first declared argument.
 
-**What is deliberately left out.** `PlEdit.enqueueFile(path)` (cPro-Bento) and `System.playFile(path)`
-(T800) take a **filesystem path from the skin**, which is a sandbox policy question rather than an
-arity one, so they stay out of `signature(for:)` and their demand keeps being recorded. `clear()` is
-implemented and they are not, which would be a hazard if anything reached both — cPro-Bento's
-`extendedbuttons.m` is the only caller and it early-returns on `ClassicProFile.findFiles`'s bounded
-`-1` long before the `clear()`.
+**Skin-supplied paths: `enqueueFile` / `playFile`.** These two are the only methods on this seam
+that take a value the *skin* chose rather than one the host handed out, so they were a sandbox policy
+question rather than an arity one (B21). The policy grants **ingest, not enumeration**: `findFiles`
+still answers `-1` and `getFileSize` still `0`, so a script has no way to *discover* a path — only to
+hand back one it was given (`PlEdit.getFileName`, `System.getPlayItemMetaDataString("filename")`, or
+one it saved into a private string), or one the skin's author or the user typed. Both real callers
+are exactly that: T800's five memory slots save the playing item and play it back, and Big Bento's
+programmable buttons play a path the user enters in the skin's own `query.pathurl` box.
+
+`skinSuppliedMediaURL` accepts an `http`/`https` URL unchanged — the host's existing stream ingest,
+no filesystem involved — or an **absolute POSIX path to an existing regular file** (not a directory,
+not a fifo or device node) whose extension the player already supports. Everything else is a **silent
+no-op**: both methods are void, Winamp ignores a path it cannot play, and raising would abandon the
+rest of the caller's handler over one bad string. Refusals print their reason under
+`WINAMP_MODERN_CALL_TRACE=1` and are deliberately not counted as unsupported-method demand.
+
+ClassicPro's `clear()` + `enqueueFile` pairing is unaffected: `findFiles`'s bounded `-1` early-returns
+before the `PlEdit.clear()`, so that caller still never runs.
+
+Note the reach originally filed for these was wrong. `playFile` is Big Bento Modern, its Windows 10
+variant and T800; `enqueueFile`'s only caller is the shared **ClassicPro engine**, which the corpus
+command excludes. cPro-Bento carries neither.
 
 Drive it headlessly with `WINAMP_MODERN_RENDER_PLAYLIST` — see [harness.md](harness.md).
+
+#### `MLPlaylists` — the Media Library's saved playlists
+
+A **third** system-flagged global beside `System` and `ColorMgr`, and the same carve-out story as
+`PlEdit`: until it was added to `MakiClassGUID.runtimeBound` the parser seeded it with the System
+object, every call on it reported the method unsupported, and the handler died there. Big Bento's
+programmable-button right-click menu built three whole submenus and then aborted on the first call
+into this one, so the button read as dead — the failure shape this document records twice already.
+
+| Method | Arity | Answers |
+|---|---|---|
+| `getNumItems()` | 0 | how many saved playlists the library holds |
+| `getItemName(i)` | 1 | that playlist's display name, in the library's own sort order |
+| `playItem(i)` | 1 | replace the queue with it and start playing |
+
+Distinct from `PlEdit`, which is the **play queue**; this is the list of *saved* playlists. Answered
+from `MediaLibrary.playlistsSnapshot` through the component seam, so a skin's menu lists the same
+names the Media Library window does. Nothing here throws: every measured caller guards the feature on
+the global being non-null and on `getNumItems()` being greater than zero (Big Bento draws
+"no playlist found"), and an out-of-range index from a menu built off an earlier snapshot is a no-op.
+
+**Finding a host singleton's GUID:** `WINAMP_MODERN_RENDER_GLOBALS=1` prints every system-flagged
+global with its canonical class GUID and what the runtime bound it to. That is the dump this section
+used to only describe — see [harness.md](harness.md).
 
 #### The equalizer tells the skin it moved
 

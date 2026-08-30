@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B21 | `enqueueFile` / `playFile` | 3 skins / 3 MAKI program symbols ([M11]) | M | Measured |
 | BB11 | List accessors | 3 skins / 9 MAKI program symbols ([M12]) | M | Measured |
 | BB3 | Light-overlay bitmap precedence | 2 skins / 83 shared artwork paths each ([M13]) | M | Measured |
 | BB18 | Host a waveform seeker at `wdh.waveseeker` | 2 skins / 2 declarations ([M14]) | L | Measured |
@@ -41,6 +40,8 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
 | B71 | A layout script loads before the frame beside it has a client area | — · seen on Defix's detached visualizer (2026-08-29); corpus reach unmeasured | L | Live-reported |
 | BB34 | An embedded visualization pane's engine never starts | — · seen on Big Bento Modern's Multi Content View mini pane (2026-08-29) | M | Live-reported |
+| B74 | T800's five memory slots share one storage key | 1 skin / 5 buttons collapsing to 1 slot ([M22]) | L | Live-reported |
+| B75 | A skin that includes the same script twice runs every handler twice | 1 skin measured (T800); corpus reach unmeasured | M | Live-reported |
 
 ### Awaiting manual QA
 
@@ -60,7 +61,7 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m7"></a>**M7:** `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
 - <a id="m8"></a>**M8:** `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
-- <a id="m11"></a>**M11:** `rg -a -i -o 'enqueueFile|playFile' "$corpus"`
+- <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
 - <a id="m12"></a>**M12:** `rg -a -i -o 'getItemLabel|getItemFocused|setSubItem' "$corpus"`
 - <a id="m13"></a>**M13:** for each Light skin, `comm -12 <(cd "$corpus/$base" && find . -type f | sort) <(cd "$corpus/$light" && find . -type f | sort) | rg -i '\.(png|jpg|jpeg|gif|bmp)$'`
 - <a id="m14"></a>**M14:** `rg -i -o 'wdh\.waveseeker' "$corpus" --glob '*.xml'`
@@ -123,18 +124,6 @@ The implementation and its automated coverage shipped; that record is in
   to a warning and that one placeholder draws nothing, which is the correct outcome.
 - The wide-window pane split (B38.5). `from="left"` anchors the divider to the left edge and the right
   pane absorbs the extra width — see B38 below.
-
----
-
-### B21
-
-- [ ] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest.** `PlEdit.enqueueFile(path)`
-      (cPro-Bento) and `System.playFile(path)` (T800) hand the host a filesystem path the *skin*
-      chose. Deliberately left out of B8: it is a sandbox policy decision (what may a script add to
-      the queue, and from where), not an arity question. Note `clear()` **is** implemented and these
-      are not — safe today only because cPro-Bento's one caller early-returns on
-      `ClassicProFile.findFiles`'s bounded `-1` long before its `PlEdit.clear()`. Decide the policy
-      before implementing either, and check that pairing again
 
 ---
 
@@ -413,6 +402,51 @@ The implementation and its automated coverage shipped; that record is in
       where the skin means star glyphs. Cause unmeasured — do not guess one; note only that its parent
       `infodisplay.line.rating` is declared `visible="0"` at `:396`, so "should this row be on screen
       at all" is part of the question, not settled before it.
+
+### B74
+
+- [ ] **B74. T800's five memory slots all write one storage key.** Fixed and verified 2026-08-29:
+      the slots were unreachable (a script-bound `<Wasabi:Button>` was not interactive) and
+      `System.playFile` was unimplemented; both are closed and the record/recall cycle works. What
+      remains is that **Mem1…Mem5 are one slot**. `quicksongpick.maki` keys each slot on
+      `getParent().getID()`, and all five buttons are declared directly in `groupdef
+      player.main.cms`, so every one of them reads and writes
+      `winampModern.config.T800.T800.player_main_cms` — recording on Mem2 overwrites Mem1. The
+      skin's own confirmation proves the intent: it prints **`Song recorded: player.main.cms`**
+      where it should print `Song recorded: Mem3`.
+
+      **Likely cause, unconfirmed.** `wasabi.button` is registered as an identifier-only shell
+      (`WasabiSkinInitializer.swift`), so `<Wasabi:Button id="Mem3">` is one flat object whose
+      parent is the enclosing groupdef. In Wasabi the tag is a standard-library **group**, and if
+      the script's receiver is a control *inside* it then `getParent()` is `Mem3` and the key is
+      per-slot. Making the tag a real group is the fix that follows from that reading, but it
+      touches all 32 `<Wasabi:Button>` declarations in the corpus and the B14/B66 form widgets that
+      are verified against the flat shape — so confirm the object model before changing it.
+
+      Two usability notes that are **not** defects and were mistaken for one during QA: recording
+      needs a hold of **~2 s** (measured: 300/900/1500 ms record nothing, 2500 ms records), and the
+      "Song recorded" confirmation is written to `text#songticker.text`, which lives **inside the
+      jaw** — with the mouth shut a successful record looks like nothing happened.
+
+---
+
+### B75
+
+- [ ] **B75. A skin that includes the same script twice runs every handler twice.** T800 declares
+      `<script file="scripts/quicksongpick.maki"/>` in **both** `skin.xml:27` and
+      `xml/player-normal.xml:302`. Two programs are parsed, both bind the same five buttons, and
+      every press runs both — so one click on a memory slot calls `System.playFile` twice and
+      enqueues the track twice (live: `playTrack: index 16` immediately followed by `index 17`).
+      Both bodies are byte-identical (`body=88323` in `RENDER_SCRIPTS=bindings`).
+
+      The dispatcher already drops a handler whose **body is a byte-for-byte repeat** of an earlier
+      one, but only *within one program*; two programs from the same source are a different case.
+      Winamp probably doubles this too, so this may be the skin's own bug rather than ours — decide
+      that before adding a cross-program rule. Note the counter-example already recorded in
+      `MakiProgram`: Big Bento's `mcvcore` declares `System.onScriptLoaded` twice with **different**
+      bodies on purpose, and a rule that keeps only one broke it.
+
+---
 
 ## Pending live verification
 

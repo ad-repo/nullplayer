@@ -2591,3 +2591,50 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
       of that row's four controls are still dead: `Browser.back()`/`forward()` are unimplemented and
       Refresh aborts on `getColor`. Flipping it today would trade working host chrome for a toolbar
       with one live control. `swift test`: 1430 passed.
+
+- [x] **B21. `enqueueFile` / `playFile` — skin-supplied path ingest. Fixed 2026-08-29.**
+      The reach in the ranked row was wrong. Re-measured over the 36 installed `.wal` files:
+      **`playFile` is Big Bento Modern, its Windows 10 variant (`progbutton.maki`) and T800
+      (`quicksongpick.maki`)**; `enqueueFile`'s only caller is the shared **ClassicPro engine**
+      (`extendedbuttons.m`), which `M11` excluded from the corpus. cPro-Bento — the skin the row
+      named — carries no such call at all.
+
+      Arities were measured, not ported: `enqueueFile(path)` is pinned by ClassicPro shipping its
+      own `.m` source, and `playFile(path)` by `RENDER_DISASM=playFile` (T800 emits
+      `op1(v0) op1(v44) op112(playfile)` — receiver plus one net push; Big Bento the same shape with
+      the path built by a subroutine).
+
+      **The policy grants ingest, not enumeration.** `findFiles` still answers `-1` and
+      `getFileSize` still `0`, so a script cannot *discover* a path — only hand back one the host
+      gave it, or one the skin's author or the user typed, which is exactly what the two real
+      callers do. `skinSuppliedMediaURL` accepts an `http`/`https` URL straight through (the host's
+      existing stream ingest) or an **absolute POSIX path to an existing regular file** — not a
+      directory, not a fifo — whose extension the player already supports. Anything else is a silent
+      no-op: both methods are void and raising would abandon the rest of the caller's handler over
+      one bad string. Refusals log their reason under `WINAMP_MODERN_CALL_TRACE=1` and are
+      deliberately **not** counted as unsupported-method demand.
+
+      ClassicPro's `clear()` + `enqueueFile` pairing is unchanged: `findFiles`'s bounded `-1` still
+      early-returns before the `PlEdit.clear()`, so that caller never runs.
+
+      **Three unrelated defects had to be fixed before either method could be exercised at all**,
+      and each one made the others invisible:
+      `<Wasabi:Button>` was not interactive unless it carried a label or an `action=`, so T800's
+      five memory slots were unreachable (`isInteractive`; the fix belongs there and **not** in
+      `hasOwnCommand` beside it, which shares three identical lines — putting it there stops Styx's
+      `move="1"` title strip dragging its window).
+      Winamp's Media Library **playlist manager** global was never carved out of
+      `MakiClassGUID.runtimeBound`, so it was seeded with the System object and Big Bento's
+      programmable-button menu aborted on `getNumItems()` after building three submenus — a
+      right-click looked like a dead button. It is now bound by class with
+      `getNumItems`/`getItemName`/`playItem` answered from NullPlayer's own saved playlists.
+      `AnimatedLayer.isStopped()` was missing while `isPlaying` beside it was implemented, so T800's
+      jaw animation aborted every time the button under the mouth was pressed.
+
+      Found the playlist-manager GUID with **`WINAMP_MODERN_RENDER_GLOBALS=1`**, added here:
+      `reference/scripting.md` already prescribed that dump and there was no way to run it.
+
+      Verified live on Big Bento (a `PATH` programmable button) and T800 (record a slot, click to
+      play it back). `swift test`: 1491 passed. Two follow-ups filed: **B74** (T800's five slots
+      share one storage key) and **B75** (T800 includes the same script twice, so every handler runs
+      twice).

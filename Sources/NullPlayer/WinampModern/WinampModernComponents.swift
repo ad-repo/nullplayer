@@ -229,6 +229,23 @@ protocol WinampModernComponentHost: AnyObject {
     func playlistMove(row: Int, to destination: Int)
     /// `PlEdit.clear()` — empty the queue.
     func playlistClear()
+    /// `PlEdit.enqueueFile(path)` and `System.playFile(path)` — the **only** route by which a path
+    /// the *skin* named enters the queue, and the one place this seam accepts a value it did not
+    /// hand out. The runtime has already applied its sandbox policy to the string, so what arrives
+    /// here is an existing regular file in a format the player supports, or an http(s) stream; a
+    /// path that failed the policy never reaches the host at all. `play` starts the track as well
+    /// as appending it, which is the difference between the two MAKI methods.
+    func playlistAppend(mediaAt url: URL, play: Bool)
+
+    // Saved playlists — Winamp's `MLPlaylists`, the Media Library's stored playlists rather than the
+    // play queue above. A skin lists them in its own menus and plays one by index; the two calls
+    // share an ordering, so both read the same snapshot.
+    /// `MLPlaylists.getNumItems()` / `getItemName(i)` — the saved playlists' display names, in the
+    /// order the library sorts them.
+    func savedPlaylistNames() -> [String]
+    /// `MLPlaylists.playItem(i)` — replace the queue with that saved playlist and start it. Out of
+    /// range is a no-op: the index comes from a menu the skin built off an earlier snapshot.
+    func playSavedPlaylist(at index: Int)
 
     // Equalizer (classic10)
     func equalizerSnapshot() -> WinampModernEQSnapshot
@@ -283,6 +300,13 @@ extension WinampModernComponentHost {
     /// move with a remove and an insert, which would lose the track.
     func playlistMove(row: Int, to destination: Int) {}
     func playlistClear() { playlistRemoveRows(Set(0..<playlistSnapshot().rows.count)) }
+    /// A host with no queue of its own drops the request rather than inventing one. The skin's
+    /// handler carries on either way — neither MAKI method answers a value.
+    func playlistAppend(mediaAt url: URL, play: Bool) {}
+    /// A host with no library of its own reports none. Skins guard on the count — Big Bento draws
+    /// "no playlist found" — so an empty list is a state they already handle.
+    func savedPlaylistNames() -> [String] { [] }
+    func playSavedPlaylist(at index: Int) {}
 }
 
 /// A live library browser embedded in a `.wal` skin's holder.

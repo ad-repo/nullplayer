@@ -9,6 +9,10 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: buttons a skin drives from its own script now respond** — a `<Wasabi:Button>` whose whole behaviour comes from the skin's script, rather than from a label or a built-in action, was never under the mouse: every click fell straight through it. T800's five memory slots on the robot's head were dead for this reason. They now record the playing track (hold one for about two seconds) and play it back on a click.
+- **Winamp Modern skins: T800's jaw animation works** — the button under the mouth opens the jaw to reveal the song ticker and timer. Its script asked whether the animation was stopped before starting it, and that question was unanswered, so the whole handler gave up before anything moved.
+- **Winamp Modern skins: Big Bento Modern's programmable buttons now open their menu** — right-clicking one of the nine tool buttons in Multi Content View builds a menu of EQ presets, internet searches and your saved playlists. It was reaching the playlist list and stopping there, so the menu was assembled and then thrown away and the button looked dead. Your Media Library playlists now appear in it, and picking one plays it.
+- **Winamp Modern skins: a skin can hand the player a file to play** — programmable buttons set to a folder or URL, and skins with their own "saved song" slots, can now queue and play what they point at. Paths are checked before anything is opened: only a real audio file the player already supports, or an ordinary web stream, is accepted, and skins still have no way to browse or search your disk.
 - **Modern skins: the big visualization pane can now be an oscilloscope, Cava or vis_classic** — a
   Winamp 5.x skin draws its visualization in two different kinds of box, and only one of them had a
   choice. The skin's own `<vis>` boxes (Big Bento Modern's butterfly beside the transport) could

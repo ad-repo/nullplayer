@@ -426,6 +426,44 @@ final class WinampModernRenderDumpTests: XCTestCase {
             }
             walk(loaded.runtime.graph.roots)
         }
+        // WINAMP_MODERN_RENDER_GLOBALS lists every system-flagged global a program declares with the
+        // canonical class GUID the runtime would match on, and what it is bound to right now.
+        //
+        // `reference/scripting.md` already prescribes this dump — "dump `program.classes` and the
+        // `isSystem`/`isGlobal` variables of a program that calls the method" — and there was no way
+        // to run it. The class table is binary, so `strings` on a `.maki` shows the method names and
+        // never the GUIDs, which leaves a host singleton we have not bound looking exactly like a
+        // missing method: every call on it lands on the System object and reports the method
+        // unsupported. That is how Big Bento's `getNumItems` read for as long as it did.
+        if env["WINAMP_MODERN_RENDER_GLOBALS"] != nil {
+            var seen: Set<String> = []
+            for program in runtime.programs {
+                for (index, variable) in program.variables.enumerated()
+                where variable.isSystem && variable.declaredKind == .object {
+                    let raw = variable.classGUID ?? "-"
+                    let canonical = variable.classGUID.map(MakiClassGUID.canonical) ?? "-"
+                    var bound = "null"
+                    if case .object(let reference) = variable.value {
+                        switch reference.kind {
+                        case .system: bound = "System"
+                        case .playlistEditor: bound = "PlEdit"
+                        case .colorManager: bound = "ColorMgr"
+                        case .playlistManager: bound = "MLPlaylists"
+                        case .gui: bound = "gui"
+                        case .popupMenu: bound = "PopupMenu"
+                        case .dynamic: bound = "dynamic"
+                        }
+                    }
+                    // One line per distinct (class, binding), not per program: every program in a skin
+                    // declares the same handful of globals, and 60 copies of `System` buries the one
+                    // row that is new.
+                    let key = "\(canonical)/\(bound)/\((program.source.path as NSString).lastPathComponent)"
+                    guard seen.insert(key).inserted else { continue }
+                    print("GLOBAL v\(index) class=\(canonical) raw=\(raw) bound=\(bound) "
+                          + "[\((program.source.path as NSString).lastPathComponent)]")
+                }
+            }
+        }
         // WINAMP_MODERN_RENDER_SCRIPTS answers the question `WINAMP_MODERN_RENDER_XUI` cannot: for
         // every parsed program, who owns it, whether its `onScriptLoaded` actually *ran* (or failed and
         // with what), and where the objects it hooks ended up. `hasBinding` reads the bytecode's
@@ -458,6 +496,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             bound = "\(object?.typeName ?? "?")#\(object?.xmlID ?? "-")"
                         case .playlistEditor: bound = "PlEdit"
                         case .colorManager: bound = "ColorMgr"
+                        case .playlistManager: bound = "MLPlaylists"
                         case .popupMenu: bound = "PopupMenu"
                         case .dynamic: bound = "dynamic"
                         }

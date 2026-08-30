@@ -4555,6 +4555,18 @@ final class WasabiSceneRenderer {
         if type == "button" || type == "togglebutton" || type == "nstatesbutton" || type == "slider" {
             return true
         }
+        // `<Wasabi:Button>` is a button — the standard library's, but a button, and Wasabi hit-tests
+        // it as one. It reached here only through `isTextButton` (a *label* it has to draw) or an
+        // `action=`, so a button whose whole behaviour is a script binding was never under the mouse
+        // at all: T800's five `Mem1…Mem5` song slots are `rectrgn="1"` 4x3 boxes driven entirely from
+        // `quicksongpick.maki`, and every click fell past them onto the layout. Big Bento's
+        // `query.pathurl` dialog has the same shape from the other direction — its `Ok` is
+        // artwork-backed with `text=""`, so the label test rejected it too.
+        //
+        // Contained by what a `<Wasabi:Button>` *is*: all 32 in the corpus are either an explicit
+        // click target (`rectrgn="1"`), artwork-backed, or labelled, so none of them becomes an
+        // invisible box that swallows a click meant for something behind it.
+        if type == "wasabi:button" { return true }
         if object.attributes["action"] != nil { return true }
         // A command on the *second* click or the right button is still a command, and it is the only
         // one some objects carry: a `<text>` song title with `dblclickaction="TRACKINFO"` is not one

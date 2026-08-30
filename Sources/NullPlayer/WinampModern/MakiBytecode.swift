@@ -39,11 +39,21 @@ enum MakiClassGUID {
     /// this arity. Measured across the installed corpus it appears on this class alone.
     static let gammaSet = "0d024db942d09574b526c7b887f9f153"
 
+    /// Winamp's Media Library playlist manager — the *saved* playlists, not the play queue
+    /// (`PlEdit` is the queue). A third system-flagged global beside `System` and `ColorMgr`, and the
+    /// receiver of `getNumItems()` / `getItemName(i)` / `playItem(i)`.
+    ///
+    /// Found by `WINAMP_MODERN_RENDER_GLOBALS=1` on Big Bento Modern, whose programmable-button
+    /// right-click menu lists every saved playlist as a submenu. Winamp added it in 5.51, which the
+    /// skin knows: the whole submenu is guarded by `if (manager)` and falls back to a
+    /// "feature requires WA 5.51+" entry, so a **null** here is a supported state and not a defect.
+    static let playlistManager = "61a7abad41f67d7980e1d0b1f4a40386"
+
     /// Host singletons the **runtime** binds by class, and which the parser must therefore leave
     /// alone. Deliberately a carve-out rather than an allow-list of one: a system-flagged global of
     /// any other class keeps the System object it has always been given, so nothing that worked
     /// before this became a null receiver.
-    static let runtimeBound: Set<String> = [playlistEditor, colorManager]
+    static let runtimeBound: Set<String> = [playlistEditor, colorManager, playlistManager]
 
     static func canonical(_ raw: String) -> String {
         guard raw.count == 32 else { return raw.lowercased() }
@@ -71,6 +81,10 @@ final class MakiObjectReference: Hashable {
         /// Bento Modern's 77-theme picker and Ebonite's own switcher both reach the catalog through
         /// it.
         case colorManager
+        /// Winamp's Media Library playlist manager, seeded the same way `PlEdit` and `ColorMgr` are.
+        /// Distinct from `playlistEditor`: that one is the **play queue**, this one is the list of
+        /// *saved* playlists the library holds.
+        case playlistManager
         case gui(WasabiObjectID)
         case popupMenu(UInt64)
         case dynamic(UInt64)

@@ -131,6 +131,56 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         selectedRows = []
     }
 
+    /// `PlEdit.enqueueFile(path)` / `System.playFile(path)`. The runtime has already decided the URL
+    /// is admissible; this only appends it and, for `playFile`, starts it.
+    ///
+    /// `AudioEngine.appendFiles` is deliberately not the route: it raises a modal alert for anything
+    /// it rejects, and a skin's script is not a place a user asked a question from. The engine's own
+    /// full validation still runs at playback time, so a file that passed the extension check and
+    /// then turns out to be unplayable fails exactly where any other queued track would.
+    func playlistAppend(mediaAt url: URL, play: Bool) {
+        let row = engine.playlist.count
+        engine.appendTracks([Track(lightweightURL: url)])
+        guard play, row < engine.playlist.count else { return }
+        selectedRow = row
+        selectedRows = [row]
+        engine.playTrack(at: row)
+    }
+
+    // MARK: - Saved playlists (`MLPlaylists`)
+
+    /// The library's saved playlists, in its own sort order. Read fresh rather than cached: a skin
+    /// builds its menu at the moment of the click, and a scan may have landed since the last one.
+    func savedPlaylistNames() -> [String] {
+        MediaLibrary.shared.playlistsSnapshot.map(\.title)
+    }
+
+    /// `MLPlaylists.playItem(i)` — the same thing the Media Library window's *Play Playlist* does.
+    /// Parsing is off the main thread because a playlist file is disk I/O and this runs inside a
+    /// menu pick; the queue swap goes back to the main actor.
+    func playSavedPlaylist(at index: Int) {
+        let playlists = MediaLibrary.shared.playlistsSnapshot
+        guard playlists.indices.contains(index) else { return }
+        let url = playlists[index].url
+        Task.detached {
+            let parsed: Playlist?
+            switch url.pathExtension.lowercased() {
+            case "m3u", "m3u8": parsed = try? Playlist.fromM3U(url: url)
+            case "pls": parsed = try? Playlist.fromPLS(url: url)
+            default: parsed = nil
+            }
+            guard let parsed, !parsed.trackURLs.isEmpty else { return }
+            let tracks = parsed.trackURLs.map { trackURL in
+                MediaLibrary.shared.findTrack(byURL: trackURL)?.toTrack() ?? Track(lightweightURL: trackURL)
+            }
+            await MainActor.run { [weak self] in
+                self?.engine.playNow(tracks)
+                self?.selectedRow = 0
+                self?.selectedRows = [0]
+            }
+        }
+    }
+
     func playlistRemove(row: Int) {
         guard row >= 0, row < engine.playlist.count else { return }
         engine.removeTrack(at: row)

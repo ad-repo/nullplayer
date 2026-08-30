@@ -2042,6 +2042,23 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "moveto": .init(argumentCount: 2, returnKind: .null),
         "showcurrentlyplayingtrack": .init(argumentCount: 0, returnKind: .null),
         "clear": .init(argumentCount: 0, returnKind: .null),
+        // Arity pinned by ClassicPro's own `extendedbuttons.m`, which ships its source beside the
+        // compiled program: `PlEdit.enqueueFile(enqFile)`, one string.
+        "enqueuefile": .init(argumentCount: 1, returnKind: .null),
+    ]
+
+    /// `MLPlaylists`, the Media Library's saved-playlist manager. Gated by class for the same reason
+    /// `PlEdit`'s table is: `getNumItems` is **already** registered globally for a MAKI `List` and
+    /// `getItemName` is the sort of short verb any list-like class could declare, so binding either
+    /// by name would hand its arity to every one of them.
+    ///
+    /// Arities read off Big Bento's own call sites (`RENDER_DISASM=@player-normal-mcv`): the menu
+    /// loop is `for (i = 0; i < manager.getNumItems(); i++) addCommand(manager.getItemName(i), …)`
+    /// — one push for the receiver at `getnumitems`, two at `getitemname` and `playitem`.
+    private static let playlistManagerSignatures: [String: MakiMethodSignature] = [
+        "getnumitems": .init(argumentCount: 0, returnKind: .integer),
+        "getitemname": .init(argumentCount: 1, returnKind: .string),
+        "playitem": .init(argumentCount: 1, returnKind: .null),
     ]
 
     func signature(for method: String, classGUID: String?) -> MakiMethodSignature? {
@@ -2053,6 +2070,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // it does not reach this. None of the measured corpus's PlEdit callers are in that form.
         if classGUID.map(Self.canonicalGUID) == MakiClassGUID.playlistEditor,
            let signature = Self.playlistEditorSignatures[method.lowercased()] {
+            return signature
+        }
+        if classGUID.map(Self.canonicalGUID) == MakiClassGUID.playlistManager,
+           let signature = Self.playlistManagerSignatures[method.lowercased()] {
             return signature
         }
         // The colour-theme pair, both gated by their **declaring** class — which is what the
@@ -2174,6 +2195,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // call — the play/pause morph never ran and the buttons were never swapped.
             "setautoreplay": .init(argumentCount: 1, returnKind: .null),
             "isplaying": .init(argumentCount: 0, returnKind: .boolean),
+            // `isStopped()` is the **`AnimatedLayer`'s**, not the player's — the same receiver
+            // `play()` and `stop()` take, pinned by the call sites (`RENDER_DISASM=isStopped`:
+            // `op1(v3) op24(isstopped)` where `v3` is also the receiver of `play`). It reads like a
+            // transport question, and that resemblance is the trap: `isPlaying` beside it was already
+            // implemented for animated layers, so the pair looked complete while T800's jaw animation
+            // — `Noname2.maki`, behind the `animationbutton` under the mouth — aborted on the missing
+            // half every time it was pressed.
+            "isstopped": .init(argumentCount: 0, returnKind: .boolean),
             "setalternatetext": .init(argumentCount: 1, returnKind: .null),
             "setfontsize": .init(argumentCount: 1, returnKind: .null),
             // `setFocus()` — the keyboard, asked for by the object that wants it. Big Bento's
@@ -2529,6 +2558,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "explorefile": .init(argumentCount: 1, returnKind: .null),
             "openfile": .init(argumentCount: 2, returnKind: .null),
             "findfiles": .init(argumentCount: 3, returnKind: .integer),
+            // Arity settled off the call sites (`RENDER_DISASM=playFile`): T800's
+            // `quicksongpick.maki` emits `op1(v0) op1(v44) op112(playfile)` — receiver, one push —
+            // and Big Bento's `progbutton.maki` the same shape with the path built by a subroutine.
+            // The name is unique across the installed corpus and belongs to `System` at both sites.
+            "playfile": .init(argumentCount: 1, returnKind: .null),
         ]
         let name = method.lowercased()
         if let signature = signatures[name] { return signature }
@@ -2579,6 +2613,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return invokePlaylistEditor(method: method, arguments: arguments)
         case .colorManager:
             return try invokeColorManager(method: method, arguments: arguments, program: program)
+        case .playlistManager:
+            return invokePlaylistManager(method: method, arguments: arguments)
         case .gui(let objectID):
             guard let object = loadedSkin.runtime.graph.object(withID: objectID) else { return .null }
             return try invokeGUI(method: method, object: object, arguments: arguments, program: program)
@@ -2604,7 +2640,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             dynamicObjects.removeValue(forKey: id)
         case .popupMenu(let id):
             popupCommands.removeValue(forKey: id)
-        case .system, .playlistEditor, .colorManager, .gui:
+        case .system, .playlistEditor, .colorManager, .playlistManager, .gui:
             break // Not script-owned; a skin cannot delete the graph out from under the renderer.
         }
     }
@@ -3003,6 +3039,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "getdate": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970)))
         case "getdatedoy":
             return .integer(Int32(Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
+        case "playfile":
+            if let url = skinSuppliedMediaURL(arguments[0].stringValue, method: method) {
+                componentHost?.playlistAppend(mediaAt: url, play: true)
+            }
+            return .null
         case "getfilesize":
             // Bounded no-op, for the same reason `findFiles` is one: a script that can stat any path
             // it names has a filesystem-probe capability, which this runtime does not grant. The
@@ -3032,6 +3073,85 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             if let value = classicProFileMethod(method, arguments: arguments) { return value }
             throw unsupported(method, program: program)
         }
+    }
+
+    /// `MLPlaylists` — Winamp's Media Library playlist manager, the *saved* playlists rather than
+    /// the play queue. Answered from the host's own library, so a skin's playlist submenu lists the
+    /// same names the Media Library window does.
+    ///
+    /// Never throws. Every measured caller guards the whole feature on the global being non-null and
+    /// on `getNumItems()` being greater than zero (Big Bento's menu builds a "no playlist found"
+    /// entry for the empty case), so an empty library is a state the skins already draw — where an
+    /// abort would take the rest of the menu with it.
+    private func invokePlaylistManager(method: String, arguments: [MakiValue]) -> MakiValue {
+        let names = componentHost?.savedPlaylistNames() ?? []
+        switch method {
+        case "getnumitems":
+            return .integer(Int32(clamping: names.count))
+        case "getitemname":
+            let index = Int(arguments[0].integerValue)
+            return .string(names.indices.contains(index) ? names[index] : "")
+        case "playitem":
+            componentHost?.playSavedPlaylist(at: Int(arguments[0].integerValue))
+            return .null
+        default:
+            // Unreachable while `playlistManagerSignatures` and this switch stay in step; recorded
+            // rather than silently null so a name added to one and not the other is visible.
+            unsupportedMethodCalls[method, default: 0] += 1
+            return .null
+        }
+    }
+
+    /// The sandbox policy for the one kind of value a skin hands *us*: a filesystem path it chose,
+    /// through `PlEdit.enqueueFile` and `System.playFile`.
+    ///
+    /// Everything else on this seam is a path the host gave out first, so those two are the only
+    /// methods that could widen what a script can reach. They are deliberately narrow, and narrow in
+    /// the same direction the rest of this file already is: `findFiles` answers `-1` and
+    /// `getFileSize` answers `0` precisely so a script has no way to *discover* a path. The only
+    /// strings it can hold are ones we handed it (`PlEdit.getFileName`,
+    /// `System.getPlayItemMetaDataString("filename")`, or one it saved into its own private string
+    /// earlier), plus whatever the skin's author or the user typed — which is exactly what the two
+    /// real callers do: T800's five `Mem1…Mem5` song slots save the playing file and play it back,
+    /// and Big Bento's programmable buttons play a path the *user* enters in the skin's own box.
+    ///
+    /// So the policy grants **ingest**, not enumeration:
+    ///
+    /// - an `http`/`https` URL passes straight through — that is the host's existing stream ingest
+    ///   and involves no filesystem at all;
+    /// - a filesystem path must be absolute, must resolve to an **existing regular file** (not a
+    ///   directory, not a fifo or device node that would wedge the audio engine), and must carry an
+    ///   extension the player already supports.
+    ///
+    /// Anything else answers `nil` and the call becomes a silent no-op. It must **not** raise: both
+    /// methods are void, Winamp ignores a path it cannot play, and throwing would abandon the rest of
+    /// the caller's handler over one bad string — the failure mode `reference/scripting.md` records.
+    private func skinSuppliedMediaURL(_ rawPath: String, method: String) -> URL? {
+        func refuse(_ reason: String) -> URL? {
+            if Self.tracesEveryCall {
+                NSLog("WinampModern %@ refused %@: %@", method, rawPath, reason)
+            }
+            return nil
+        }
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return refuse("empty path") }
+        if let url = URL(string: path), let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            return url
+        }
+        // Absolute POSIX only. A relative path has no defined base here (the script's notion of
+        // "current directory" is Winamp's, not ours) and a `C:\…` path is a Windows skin's literal
+        // that never described this machine.
+        guard path.hasPrefix("/") else { return refuse("not an absolute POSIX path") }
+        let url = URL(fileURLWithPath: path)
+        guard AudioFileValidator.supportedExtensions.contains(url.pathExtension.lowercased()) else {
+            return refuse("unsupported format")
+        }
+        guard let isRegularFile = try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile,
+              isRegularFile else {
+            return refuse("not an existing regular file")
+        }
+        return url
     }
 
     /// The complete native surface ClassicPro's MAKI invokes (P0B §1): three `ClassicProFile`
@@ -3139,6 +3259,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .null
         case "clear":
             componentHost?.playlistClear()
+            return .null
+        case "enqueuefile":
+            if let url = skinSuppliedMediaURL(arguments[0].stringValue, method: method) {
+                componentHost?.playlistAppend(mediaAt: url, play: false)
+            }
             return .null
         case "showtrack":
             playlistRevealRowRequested?(Int(arguments[0].integerValue))
@@ -3563,6 +3688,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "isplaying":
             return .boolean(WasabiAnimation.state(of: object,
                                                   frameCount: animationFrameCount(of: object)).isPlaying)
+        // Wasabi has no third state for a layer, so this is exactly `!isPlaying` and is written from
+        // the same reading rather than a second one that could drift from it.
+        case "isstopped":
+            return .boolean(!WasabiAnimation.state(of: object,
+                                                   frameCount: animationFrameCount(of: object)).isPlaying)
         // The `<list>` control. Its rows live on the object (`WasabiGuiList`), so the renderer draws
         // what the script just wrote with no second copy in between.
         case "deleteallitems" where WasabiGuiList.isList(object):
@@ -4858,6 +4988,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 variable.value = .object(MakiObjectReference(.playlistEditor))
             case MakiClassGUID.colorManager:
                 variable.value = .object(MakiObjectReference(.colorManager))
+            case MakiClassGUID.playlistManager:
+                variable.value = .object(MakiObjectReference(.playlistManager))
             default:
                 continue
             }
