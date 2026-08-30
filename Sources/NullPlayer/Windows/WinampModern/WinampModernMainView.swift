@@ -1200,6 +1200,16 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
+        // A `<Wasabi:TabSheet>` tab: clicking it shows that page and hides the rest (B14). Answered
+        // here, like the bucket icons above, because the widget is Winamp's — the skin declares the
+        // pages and the artwork and hangs no `action=` on the sheet for `performAction` to route.
+        if let tab = renderer.tabSheetTab(at: point) {
+            if WasabiTabSheet.select(index: tab.index, on: tab.object) {
+                needsLayout = true
+                needsDisplay = true
+            }
+            return
+        }
         guard let object = renderer.object(at: point) else { return }
         pressedObject = object
         dispatch(object: object, event: "onleftbuttondown", point: point)

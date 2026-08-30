@@ -2082,6 +2082,8 @@ final class WasabiSceneRenderer {
                            pressed: pressed == object.stableID)
         } else if WasabiTitleBox.isTitleBox(object) {
             drawTitleBox(object, frame: node.frame, context: context)
+        } else if WasabiTabSheet.isHosted(object) {
+            drawTabSheet(object, frame: node.frame, context: context)
         }
         context.restoreGState()
     }
@@ -3354,8 +3356,23 @@ final class WasabiSceneRenderer {
         let topLeft = part("topleft"), top = part("top"), topRight = part("topright")
         let left = part("left"), middle = part("middle"), right = part("right")
         let bottomLeft = part("bottomleft"), bottom = part("bottom"), bottomRight = part("bottomright")
-        let parts = [topLeft, top, topRight, left, middle, right, bottomLeft, bottom, bottomRight]
+        drawNineSlice([topLeft, top, topRight, left, middle, right, bottomLeft, bottom, bottomRight],
+                      in: frame, tile: object.attributes["tile"] == "1", context: context)
+    }
+
+    /// The nine-slice itself, given its parts row-major and already resolved.
+    ///
+    /// Split out of `drawGrid` so a widget whose slices are *conventional ids* rather than an
+    /// object's attributes can draw the same way — a `<Wasabi:TabSheet>` tab is cut from
+    /// `wasabi.tabsheet.button.*` and is a three-slice with no bottom row, which is a case this
+    /// already handles.
+    private func drawNineSlice(_ parts: [WasabiBitmap?], in frame: CGRect, tile: Bool,
+                               context: CGContext) {
+        guard frame.width > 0, frame.height > 0 else { return }
         guard parts.contains(where: { $0 != nil }) else { return }
+        let topLeft = parts[0], top = parts[1], topRight = parts[2]
+        let left = parts[3], middle = parts[4], right = parts[5]
+        let bottomLeft = parts[6], bottom = parts[7], bottomRight = parts[8]
 
         // Which of the three columns and rows the skin actually declared. A grid that declares one
         // row is a **three-slice**, and its row takes the whole height: cPro's tab pills carry only
@@ -3393,7 +3410,7 @@ final class WasabiSceneRenderer {
         let columns = extents(total: frame.width, declared: declaredColumns) { widest(columnArt[$0]) }
         let rows = extents(total: frame.height, declared: declaredRows) { tallest(rowArt[$0]) }
 
-        let tiles = object.attributes["tile"] == "1"
+        let tiles = tile
         context.saveGState()
         var y = frame.minY
         for (row, rowHeight) in rows.enumerated() {
@@ -3689,6 +3706,20 @@ final class WasabiSceneRenderer {
         drawFlippedText(text, in: rect, font: font, color: color, alignment: alignment, context: context)
     }
 
+    /// How wide `drawSurfaceText` will draw a string. Resolves the font by the same two branches, so
+    /// a caller that sizes a box from this gets the box the text actually needs — a tab measured in
+    /// one font and drawn in another is a tab whose label runs past its own edge.
+    private func surfaceTextWidth(_ text: String, pointSize: CGFloat) -> CGFloat {
+        if let definition = surfaceFont, definition.kind == "bitmapfont" {
+            let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
+            let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
+            return CGFloat(text.count * max(1, charWidth + spacing))
+        }
+        let font = resources.font(identifier: surfaceFont?.identifier, size: pointSize)
+            ?? NSFont.systemFont(ofSize: pointSize)
+        return (text as NSString).size(withAttributes: [.font: font]).width
+    }
+
     /// A row colour that can be read on the bar behind it, for the lists **this renderer** draws
     /// itself — the skin's own playlist panel and colour-theme picker.
     ///
@@ -3830,6 +3861,129 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
+    /// A `<Wasabi:TabSheet>`'s strip: one tab per page, the selected one standing proud (B14).
+    ///
+    /// The pages themselves are ordinary objects the initializer put under the sheet, and only one is
+    /// visible, so nothing here draws a page — this is the strip above them and nothing else.
+    ///
+    /// Winamp cuts each tab from conventional `wasabi.tabsheet.button.*` artwork, which Shield_Amp
+    /// and mmd3 both ship (Bio-Nid's replacement groupdefs are the measured description of how). That
+    /// is the same relationship the standard slider has with `wasabi.slider.horizontal.*`, so it gets
+    /// the same treatment: the skin's own nine-slice when it has one, and a drawn strip in the
+    /// object's own `color=` when it does not — Anexa and Enkera ship neither, and a settings window
+    /// whose tabs are invisible is the empty slab this item exists to fix.
+    private func drawTabSheet(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+        let rects = tabSheetTabRects(of: object, frame: frame)
+        guard !rects.isEmpty else { return }
+        let pages = WasabiTabSheet.pages(of: object)
+        let selected = WasabiTabSheet.selectedIndex(of: object)
+        let color = object.attributes["color"].flatMap(resolvedColor) ?? palette.listText
+        func art(_ identifier: String) -> WasabiBitmap? { resources.bitmap(identifier: identifier) }
+        let selectedArt = WasabiTabSheet.selectedArtwork
+        let unselectedArt = WasabiTabSheet.unselectedArtwork
+        let hasArtwork = art(selectedArt.top) != nil || art(unselectedArt.top) != nil
+
+        context.saveGState()
+        defer { context.restoreGState() }
+        for (index, rect) in rects.enumerated() where index < pages.count {
+            let isSelected = index == selected
+            // An unselected tab sits `unselectedInset` lower, which is what leaves the selected one
+            // standing above the row in both the artwork and the drawn fallback.
+            let box = isSelected
+                ? rect
+                : CGRect(x: rect.minX, y: rect.minY + WasabiTabSheet.unselectedInset,
+                         width: rect.width,
+                         height: max(0, rect.height - WasabiTabSheet.unselectedInset))
+            if hasArtwork {
+                if isSelected {
+                    drawNineSlice([art(selectedArt.topLeft), art(selectedArt.top), art(selectedArt.topRight),
+                                   art(selectedArt.left), nil, art(selectedArt.right),
+                                   nil, nil, nil],
+                                  in: box, tile: true, context: context)
+                } else {
+                    drawNineSlice([art(unselectedArt.topLeft), art(unselectedArt.top), art(unselectedArt.topRight),
+                                   art(unselectedArt.left), art(unselectedArt.middle), art(unselectedArt.right),
+                                   nil, nil, nil],
+                                  in: box, tile: true, context: context)
+                    if let bottom = art(WasabiTabSheet.unselectedBottom) {
+                        let height = min(CGFloat(bottom.height), box.height)
+                        drawImage(bottom.image,
+                                  in: CGRect(x: box.minX, y: box.maxY - height,
+                                             width: box.width, height: height),
+                                  context: context)
+                    }
+                }
+            } else {
+                context.setFillColor(color.withAlphaComponent(isSelected ? 0.22 : 0.08).cgColor)
+                context.fill(box)
+                context.setStrokeColor(color.withAlphaComponent(0.55).cgColor)
+                context.setLineWidth(1)
+                // Open along the bottom for the selected tab, so the strip reads as continuous with
+                // the page under it rather than as a row of separate boxes.
+                context.beginPath()
+                context.move(to: CGPoint(x: box.minX + 0.5, y: box.maxY))
+                context.addLine(to: CGPoint(x: box.minX + 0.5, y: box.minY + 0.5))
+                context.addLine(to: CGPoint(x: box.maxX - 0.5, y: box.minY + 0.5))
+                context.addLine(to: CGPoint(x: box.maxX - 0.5, y: box.maxY))
+                if !isSelected {
+                    context.addLine(to: CGPoint(x: box.minX + 0.5, y: box.maxY))
+                }
+                context.strokePath()
+            }
+            let label = WasabiTabSheet.label(of: pages[index])
+            guard !label.isEmpty, box.width > WasabiTabSheet.labelLeading else { continue }
+            drawSurfaceText(label,
+                            in: CGRect(x: box.minX + WasabiTabSheet.labelLeading,
+                                       y: box.midY - tabSheetLabelPointSize,
+                                       width: max(0, box.width - WasabiTabSheet.labelLeading
+                                                  - WasabiTabSheet.labelTrailing),
+                                       height: tabSheetLabelPointSize * 2),
+                            color: color.withAlphaComponent(isSelected ? 1 : 0.63),
+                            alignment: .left, pointSize: tabSheetLabelPointSize, context: context)
+        }
+    }
+
+    /// The point size a tab label draws at — the one `drawTitleBox` and the form widgets use, so all
+    /// of this engine's clean-room chrome reads as one typeface at one size.
+    private let tabSheetLabelPointSize: CGFloat = 9
+
+    /// Where each of a tab sheet's tabs sits, in skin coordinates.
+    ///
+    /// The single answer for both the draw and the hit test: a strip whose tabs are measured twice
+    /// is a strip where the label the user reads and the tab the click lands on can disagree. Not
+    /// private for the same reason — a test that invents its own widths is a third measurement.
+    func tabSheetTabRects(of object: WasabiObject, frame: CGRect) -> [CGRect] {
+        let pages = WasabiTabSheet.pages(of: object)
+        guard !pages.isEmpty, frame.height > 0 else { return [] }
+        let widths = pages.map {
+            surfaceTextWidth(WasabiTabSheet.label(of: $0), pointSize: tabSheetLabelPointSize)
+        }
+        return WasabiTabSheet.tabRects(in: frame, labelWidths: widths)
+    }
+
+    /// Every `<Wasabi:TabSheet>` on screen in this window, with its box in skin coordinates.
+    func tabSheets() -> [(object: WasabiObject, frame: CGRect)] {
+        sceneNodes().compactMap { node in
+            WasabiTabSheet.isHosted(node.object) ? (object: node.object, frame: node.frame) : nil
+        }
+    }
+
+    /// The tab under a point, as the sheet it belongs to and the page index it selects.
+    ///
+    /// Answered here rather than through `performAction` for the same reason the component bucket's
+    /// icons are: the widget is Winamp's, so there is no `action=` on it to route — the skin ships
+    /// only the pages and the artwork. Reversed, so a sheet nested inside another (Enkera declares
+    /// exactly that) answers before the one it sits in.
+    func tabSheetTab(at point: CGPoint) -> (object: WasabiObject, index: Int)? {
+        for sheet in tabSheets().reversed() {
+            let rects = tabSheetTabRects(of: sheet.object, frame: sheet.frame)
+            if let index = rects.firstIndex(where: { $0.contains(point) }) {
+                return (sheet.object, index)
+            }
+        }
+        return nil
+    }
+
     /// A Wasabi standard form widget's chrome (B66).
     ///
     /// The same deliberate exception to the identifier-only-shell rule as `drawTextButton` and
@@ -3920,7 +4074,10 @@ final class WasabiSceneRenderer {
         let side = min(WasabiFormWidgets.checkBoxGlyph, frame.height)
         let box = CGRect(x: frame.minX, y: frame.midY - side / 2, width: side, height: side)
         let radio = WasabiFormWidgets.radioIdentifier(of: object) != nil
-        let on = configStateProvider?(object) ?? (object.attributes["activated"] == "1")
+        // The provider is installed in the app and nil in the harness, so the old
+        // `provider?(object) ?? activated` only ever consulted `activated` headlessly — see
+        // `WasabiFormWidgets.isOn(_:boundState:)` for what that cost and why this is an `||`.
+        let on = WasabiFormWidgets.isOn(object, boundState: configStateProvider?(object))
         context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
         context.setFillColor(color.cgColor)
         context.setLineWidth(1)

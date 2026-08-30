@@ -216,14 +216,22 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   skin supplies conventional artwork ids, so each shell expands to a tiled nine-slice `<grid>`:
   `wasabi.panel.*` with `wasabi.panel.tint` in the middle, or `wasabi.objectframe.*` with
   `wasabi.objectframe.center`. Missing parts remain empty and a skin's own groupdef still wins. B15
+- `<Wasabi:TabSheet children="a;b;c">` — the pages are instantiated as ordinary groups inset below a
+  20px strip, one visible at a time, and a tab is labelled with its page groupdef's own `name`. The
+  tab is cut from the conventional `wasabi.tabsheet.button.*` nine-slice when the skin ships it
+  (Shield_Amp, mmd3) and drawn when it does not (Anexa, Enkera). Tabs take their natural label width
+  and share the row equally when that would overflow. B14
 
 **Not supported / degraded**
 
 - Most remaining **`wasabi.*` shells are structure-free**, so a widget that has no body of its own
-  draws nothing, and an unresolved conventional *tag* becomes an inert node the same way. The two that
-  still matter are `<Wasabi:TabSheet>` (B14; it is what leaves Shield_Amp's Configuration an empty
-  slab, and mmd3's winshade sidecar) and `<Wasabi:RadioGroup>` (9 declarations — a bare grouping id
-  with no geometry, which is correctly inert: the members name it with `radioid`).
+  draws nothing, and an unresolved conventional *tag* becomes an inert node the same way. The one
+  that still matters is `<Wasabi:RadioGroup>` (9 declarations — a bare grouping id with no geometry,
+  which is correctly inert: the members name it with `radioid`).
+- A `<Wasabi:TabSheet>`'s `type=` and `windowtype=` are **not** read. mmd3's winshade sidecar
+  (`windowtype="plsc"`) hosts a *window* rather than a set of page groups and names no `children`, so
+  it stays inert; `type="2"` (Enkera's inner sheet, mmd3) selects a tab variant nothing in the corpus
+  describes, so every sheet gets the top strip.
 - A base group outside the curated set warns and is dropped.
 - A missing **optional** bitmap or cursor is a warning, not an error (Winamp-compatible).
 - `file="$solid"` / `file="$gradient"` predefined bitmaps generate no **pixels**, so a layer that

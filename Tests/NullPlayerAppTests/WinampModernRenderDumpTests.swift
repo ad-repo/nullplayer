@@ -970,10 +970,21 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 print("CLICK   \(event) -> \(handled)")
                             }
                         }
+                        // A `radioid` check box is a **radio**, and the view answers it *before* the
+                        // toggle below and returns — so a probe that only toggled was reporting the
+                        // wrong route for every radio in the corpus, and reported one that works
+                        // (B14 live QA, 2026-08-29). Mirrors `performAction(for:)`'s order exactly.
+                        var claimedByRadio = false
+                        if let target, runtime.selectRadioMember(target) {
+                            claimedByRadio = true
+                            print("CLICK radio \(target.xmlID ?? "-") "
+                                  + "set=\(WasabiFormWidgets.radioIdentifier(of: target) ?? "-") "
+                                  + "activated=\(target.attributes["activated"] ?? "0")")
+                        }
                         // A togglebutton's own state change is the view's job too, and a skin can put
                         // its whole drawer behind the `onToggle` that follows it. Mirrored here for
                         // the same reason the `cfgattrib` step below is.
-                        if let target, runtime.toggleActivation(of: target) {
+                        if let target, !claimedByRadio, runtime.toggleActivation(of: target) {
                             print("CLICK toggled \(target.xmlID ?? "-") "
                                   + "activated=\(target.attributes["activated"] ?? "0")")
                         }

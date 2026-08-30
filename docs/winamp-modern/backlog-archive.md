@@ -2,6 +2,71 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B14 — `<Wasabi:TabSheet>` — closed 2026-08-29 (Phase 85)
+
+The third widget of the shape a standard frame's `content=` and a `<Wasabi:TitleBox>` already taught:
+it **names its pages by group id** rather than nesting them, and the object that instantiates them,
+draws a tab each and shows one at a time lives in Winamp. Nothing was instantiated, so both reachable
+declarations were empty slabs over pages that already worked — Shield_Amp's Configuration (three
+groups of implemented form widgets) and Anexa's colour window.
+
+Closed by `WasabiTabSheet` plus three seams that already existed for the widgets beside it: the
+initializer expands one `<group>` per page (`WasabiSkinInitializer`, next to the title box's
+`content=`), `drawTabSheet` paints the strip, and `WinampModernMainView.mouseDown` answers a tab click
+before the generic hit test, the way a `<componentbucket>` icon is answered.
+
+Four things worth keeping:
+
+- **Visibility is the whole mechanism.** Pages are ordinary objects inset below the 20px strip, all
+  but one `visible="0"`. An invisible object leaves the scene with its subtree, so a hidden page
+  neither draws nor answers the pointer, and nothing downstream needs a concept of a page.
+- **The label is the page groupdef's own `name`.** All four declaring skins spell it that way and
+  nothing else in the markup names a tab.
+- **Bio-Nid is the measured description of the artwork.** It replaces the widget wholesale, and its
+  `wasabi.tabsheet.button.selected.group` / `.unselected.group` give the nine-slice, the `.shade.*`
+  set, the `.bottom` lip, `h="20"` and `autowidthsource="text"`. Shield_Amp and mmd3 ship those bitmap
+  ids without the groupdefs, so the strip reads them like the standard slider reads
+  `wasabi.slider.horizontal.*` — skin artwork when there is any, a drawn strip when there is not.
+  `drawGrid`'s body was split out as `drawNineSlice` so both callers draw identically.
+- **The containment had to be an explicit stamp.** The form widgets get theirs free — a resolved
+  definition means the substitution is never reached — but a tab sheet keeps its own type name either
+  way, so a skin shipping `<groupdef xuitag="Wasabi:TabSheet">` would get its own body *and* a strip
+  over it. `nullplayer.tabsheet="1"` is stamped only when the tag resolved to our artwork-less shell.
+
+**Reach, re-measured at close.** 4 skins / 5 declarations, of which **two are reachable**: Anexa and
+Shield_Amp. Enkera's two live in an `xml/config.xml` its own `skin.xml` never `<include>`s — dead
+markup in the skin. mmd3's winshade sidecar names no `children` at all
+(`windowtype="plsc" type="2"`); it hosts a *window*, a different attachment path, and is deliberately
+left as inert as it was rather than guessed at. `type=` is unread for the same reason: nothing in the
+corpus describes what its variants look like.
+
+**One defect came out of the live QA rather than the design, and it was not this item's.** With the
+pages finally visible enough to click, every radio in Shield_Amp's and Styx's settings was dead:
+`drawCheckBox` asked `configStateProvider?(object) ?? activated`, and the provider answers `false`
+both for a bound `cfgattrib` that is off and for an object naming no attribute at all. It is installed
+in the app and nil in the harness, so `activated` was consulted *only headlessly* — every test and
+every render dump agreed the box worked. Every radio in the corpus is unbound, so all of them drew
+permanently empty however completely `selectRadioMember` flipped them, while a bound check box beside
+them (Styx's *Always on top*) worked; that asymmetry is what gave it away. The rule is now
+`WasabiFormWidgets.isOn(_:boundState:)`, an `||` rather than a `??` — B66's, recorded here because
+this is where it was found. The **instrument** was blind to it too and is fixed with it:
+`WINAMP_MODERN_RENDER_CLICK` only ever called `toggleActivation`, never the `selectRadioMember` the
+view runs first and returns on, so it printed a working toggle for a radio nothing in the app was
+flipping. It now mirrors `performAction(for:)`'s order and prints `CLICK radio <id> set=… activated=…`.
+
+Confirmed live 2026-08-29 on both reachable skins — Shield_Amp's Configuration switching between
+notifier preferences / Themes / Changelog on its own artwork, and Anexa's between Colour Themes /
+Alarm Settings / About on the drawn fallback; then Shield_Amp's Effects and Album Cover radios and
+check boxes, including set exclusivity, after the fix above. `WinampModernPhase85Tests` (15 tests);
+`swift test` 1478 pass. Rules in
+[`reference/rendering.md`](../../skills/winamp-modern-skin-guide/reference/rendering.md) → *A tab
+sheet names its pages, and one of them is showing*.
+
+The entry as it stood when it closed:
+
+- **B14. `<Wasabi:TabSheet>`** (mmd3's winshade sidecar) — a real widget, not a shell, so it needs
+  a body rather than a synthesis rule. One measured skin
+
 ## BB9a — an engine picker over the unhosted `{0000000A}` panes — closed 2026-08-29
 
 Live request against Big Bento Modern's top-right Multi Content View pane: the same right-click choice its `<vis>` butterfly already has. BB9 had settled that an unhosted plugin pane draws the spectrum analyzer, and that was the only thing it could ever be — `VisualizationEngineType` covers ProjectM/Geiss/Tripex, so the pane was unreachable by construction rather than by a setting nobody had found.

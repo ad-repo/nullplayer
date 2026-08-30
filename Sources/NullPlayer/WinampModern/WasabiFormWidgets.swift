@@ -118,6 +118,19 @@ enum WasabiFormWidgets {
         return raw.lowercased()
     }
 
+    /// Whether a check box or radio draws **on**, given what its `cfgattrib` binding says.
+    ///
+    /// A binding can turn a box on; its absence must not turn one off. `boundState` is `false` both
+    /// for a bound attribute that is off *and* for an object that names no attribute at all, and the
+    /// two are not the same answer — so reading it as the state (`boundState ?? activated`) meant
+    /// every **unbound** box drew from the binding's "no". Every radio in the corpus is unbound, so
+    /// all of them drew permanently empty however completely `selectRadioMember` flipped them, while
+    /// a bound check box beside them worked. Live on Shield_Amp and Styx, found in B14's QA
+    /// 2026-08-29; the same `||` `resolvedBitmapID` already uses to pick an `activeimage`.
+    static func isOn(_ object: WasabiObject, boundState: Bool?) -> Bool {
+        object.attributes["activated"] == "1" || boundState == true
+    }
+
     /// The items a drop-down offers, in declaration order. Winamp separates them with `;`.
     static func items(of object: WasabiObject) -> [String] {
         (object.attributes["items"] ?? "")

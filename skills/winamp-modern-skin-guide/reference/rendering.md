@@ -461,8 +461,59 @@ Four things worth keeping:
   from `default`, so a visible one would print the selection twice.
 
 What still does not draw: `<Wasabi:RadioGroup>` (9 declarations) is a bare grouping id with no
-geometry and is correctly inert; `<Wasabi:TabSheet>` is B14 and is why Shield_Amp's Configuration is
-still an empty slab.
+geometry and is correctly inert.
+
+#### A tab sheet names its pages, and one of them is showing
+
+`<Wasabi:TabSheet children="config.stuff;themes.stuff;changelog.stuff">` is the third widget of this
+shape, after a standard frame's `content=` and a title box's: it **names its body by group id** and
+the object that instantiates it lives in Winamp. Nothing was instantiated, so Shield_Amp's
+Configuration and Anexa's colour window were empty slabs over three working pages each (B14).
+
+Four things it is worth knowing the reason for:
+
+- **The pages are ordinary objects, and visibility is the whole mechanism.** `WasabiTabSheet` expands
+  one `<group>` per page, inset below the 20px strip, and marks all but one `visible="0"`. An
+  invisible object leaves the scene with its subtree, so a hidden page neither draws nor answers the
+  pointer — the renderer needs no concept of a page beyond that, and neither does the hit test.
+- **A tab's label is its page groupdef's own `name`.** All four declaring skins spell it that way and
+  nothing else in the markup names a tab; the attribute survives onto the instance because a
+  groupdef's defaults merge onto it.
+- **The artwork is conventional and Bio-Nid describes it.** Bio-Nid replaces the widget wholesale, and
+  its `wasabi.tabsheet.button.selected.group` / `.unselected.group` are the closest thing the corpus
+  has to Winamp's own definition: a nine-slice of `wasabi.tabsheet.button.*` for the selected tab, the
+  `.shade.*` set plus a `.bottom` lip for an unselected one pushed 3px down, `h="20"`, and
+  `autowidthsource="text"` on the label. Shield_Amp and mmd3 ship those bitmaps without the groupdefs,
+  so the strip reads them the way the standard slider reads `wasabi.slider.horizontal.*` — the skin's
+  own artwork when it has any, a drawn strip when it does not.
+- **The containment is an explicit stamp, not the `else` above.** A tab sheet keeps its own type name
+  whether or not a definition claimed the tag, so a skin shipping `<groupdef xuitag="Wasabi:TabSheet">`
+  would get its own body *and* a strip drawn over it. The initializer stamps
+  `nullplayer.tabsheet="1"` only when the tag resolved to our own artwork-less shell, and the drawing,
+  the hit test and the click all key off that stamp.
+
+#### A binding can turn a box on; its absence must not turn one off
+
+`drawCheckBox` asked `configStateProvider?(object) ?? activated`. The provider answers `false` for
+**two different questions** — a bound `cfgattrib` that is off, and an object that names no attribute
+at all — and the `??` only falls through when the whole provider is nil. It is installed in the app
+and nil in the harness, so `activated` was consulted *only headlessly*: every test and every render
+dump agreed the box worked, and in the app every **unbound** box drew from the binding's "no".
+
+Every radio in the corpus is unbound, so all of them drew permanently empty however completely
+`selectRadioMember` flipped them — while a bound check box beside them (Styx's *Always on top*)
+worked, which is the asymmetry that gives it away. The rule is now
+`WasabiFormWidgets.isOn(_:boundState:)` — the same `||` `resolvedBitmapID` already uses to pick an
+`activeimage` — and it is one function so the draw cannot drift from it again. B66, found in B14's
+live QA on Shield_Amp and Styx (2026-08-29).
+
+The instrument was blind to it too, and that is the reusable half: `WINAMP_MODERN_RENDER_CLICK` only
+ever called `toggleActivation`, never the `selectRadioMember` the view runs **first** and returns on,
+so it reported `CLICK toggled … activated=1` for a radio nothing in the app was flipping. It now
+mirrors `performAction(for:)`'s order and prints `CLICK radio <id> set=<radioid> activated=<0/1>`.
+
+`type=` and `windowtype=` are not read — see
+[../compatibility/wasabi-surface.md](../compatibility/wasabi-surface.md).
 
 #### Animated layers are played as a range
 

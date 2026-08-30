@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B14 | `<Wasabi:TabSheet>` | 4 skins / 5 declarations ([M10]); contradicts the old “one measured skin” note | L | Measured |
 | B21 | `enqueueFile` / `playFile` | 3 skins / 3 MAKI program symbols ([M11]) | M | Measured |
 | BB11 | List accessors | 3 skins / 9 MAKI program symbols ([M12]) | M | Measured |
 | BB3 | Light-overlay bitmap precedence | 2 skins / 83 shared artwork paths each ([M13]) | M | Measured |
@@ -48,7 +47,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Remaining check |
 |---|---|---|
 | B41 | `getMonitorWidth` / `getMonitorHeight` | Move Big Bento Modern between displays and verify its side-playlist sizing follows the display containing the player |
-| B66 | The Wasabi standard form widgets | The **drawing** half is verified in the render sweep across the corpus. The **interaction** half has no headless route: on Styx's Config, click a radio in each of the four sets (the set changes, the live member does not turn itself off), tick the two `cfgattrib` check boxes, and open the `Position` drop-down — then reopen the window and confirm the pick survived, which is the skin's own `onTextChanged` persisting it |
+| B66 | The Wasabi standard form widgets | The **drawing** half is verified in the render sweep across the corpus. Radios and check boxes are **done** — a click on either was found dead in the app 2026-08-29 (B14's QA, on Shield_Amp and Styx: an unbound box drew from its `cfgattrib` provider's "no" instead of its own `activated`) and both are now confirmed live, including set exclusivity. What is left is the **drop-down's persistence**: on Styx's Config open the `Position` drop-down, pick an entry, then reopen the window and confirm the pick survived — which is the skin's own `onTextChanged` persisting it |
 
 ## Reproducible reach commands
 
@@ -61,7 +60,6 @@ All commands use the 36 directories extracted with `7zz` from
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m7"></a>**M7:** `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
 - <a id="m8"></a>**M8:** `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
-- <a id="m10"></a>**M10:** `rg -i -o '<[[:space:]]*Wasabi:TabSheet' "$corpus" --glob '*.xml'`
 - <a id="m11"></a>**M11:** `rg -a -i -o 'enqueueFile|playFile' "$corpus"`
 - <a id="m12"></a>**M12:** `rg -a -i -o 'getItemLabel|getItemFocused|setSubItem' "$corpus"`
 - <a id="m13"></a>**M13:** for each Light skin, `comm -12 <(cd "$corpus/$base" && find . -type f | sort) <(cd "$corpus/$light" && find . -type f | sort) | rg -i '\.(png|jpg|jpeg|gif|bmp)$'`
@@ -125,15 +123,6 @@ The implementation and its automated coverage shipped; that record is in
   to a warning and that one placeholder draws nothing, which is the correct outcome.
 - The wide-window pane split (B38.5). `from="left"` anchors the divider to the left edge and the right
   pane absorbs the extra width — see B38 below.
-
----
-
----
-
-### B14
-
-- [ ] **B14. `<Wasabi:TabSheet>`** (mmd3's winshade sidecar) — a real widget, not a shell, so it needs
-      a body rather than a synthesis rule. One measured skin
 
 ---
 

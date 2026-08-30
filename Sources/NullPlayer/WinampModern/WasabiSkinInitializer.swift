@@ -880,6 +880,7 @@ final class WasabiSkinInitializer {
     static let wasabiStandardLibraryXUITags: [(tag: String, identifier: String)] = [
         ("Wasabi:TitleBar", "wasabi.titlebar"),
         (WasabiTitleBox.xuiTag, WasabiTitleBox.groupIdentifier),
+        (WasabiTabSheet.xuiTag, WasabiTabSheet.groupIdentifier),
     ]
 
     /// The standard-library shells that can be reconstructed from conventional skin resources.
@@ -1025,6 +1026,10 @@ final class WasabiSkinInitializer {
             var nextDefinitionStack = definitionStack
             var typeName = node.name
             var formWidget: WasabiFormWidgets.Substitution?
+            /// Whether the tag resolved to a definition the **skin** wrote, as opposed to one of our
+            /// own artwork-less shells. A widget whose body a skin supplies is that skin's, and this
+            /// is what keeps a hosted `<Wasabi:TabSheet>` from being drawn over a replacement.
+            var claimedBySkin = false
             // A node the document itself contains is stamped with its own position; a template child
             // — expanded here, but written elsewhere — instantiates at the position of the reference
             // that brought it in, which is when Winamp would have read it.
@@ -1051,6 +1056,7 @@ final class WasabiSkinInitializer {
                 templateChildren = resolved.templateChildren
                 embeddedXUITag = resolved.embeddedXUITag
                 nextDefinitionStack.append(key)
+                claimedBySkin = definition.source.path != Self.wasabiStandardLibrarySource.path
             } else if let substitution = WasabiFormWidgets.substitution(forTypeName: node.name) {
                 // A Wasabi standard **form widget** nothing else claims. Winamp's own definition of
                 // each is a thin wrapper around a primitive this engine already has, so the tag
@@ -1176,6 +1182,23 @@ final class WasabiSkinInitializer {
                                   definitionStack: nextDefinitionStack,
                                   createdCount: &createdCount,
                                   documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            }
+            // A `<Wasabi:TabSheet>` names its pages by group id the same way, and the object that
+            // shows one of them at a time lives in Winamp rather than in the skin. Without this not
+            // one page enters the graph: Shield_Amp's Configuration is a single tab sheet over three
+            // groups whose form widgets are all implemented, and it drew as an empty slab (B14).
+            if WasabiTabSheet.isTabSheet(object), !claimedBySkin {
+                let pages = WasabiTabSheet.pageNodes(for: object, location: node.location)
+                if !pages.isEmpty {
+                    _ = object.setAttribute(WasabiTabSheet.hostedAttribute, value: "1")
+                    try createObjects(from: pages, parent: object, graph: graph, types: types,
+                                      pendingScripts: &pendingScripts,
+                                      pendingMetaCommands: &pendingMetaCommands,
+                                      definitionStack: nextDefinitionStack,
+                                      createdCount: &createdCount,
+                                      documentOrder: documentOrder, enclosingOrder: nodeOrder)
+                    WasabiTabSheet.select(index: WasabiTabSheet.selectedIndex(of: object), on: object)
+                }
             }
             // Winamp's drop-down carries a label object inside itself, and a skin's script reaches
             // for it by name: Styx's and Shield_Amp's `customdropdownlist.maki` are the same script,
