@@ -45,10 +45,11 @@ the right tab opens volume/balance and four window buttons.
 - **The `<vis>` analyzer** (Phase 34) — 120×37, `gammagroup="Energy"`, all 22 colours declared inline.
   It now follows the colour themes (lime green under `:: Default`, red under *Liyue - Hu Tao*), draws
   Winamp's bands on a decibel scale, and paints its `colorbandpeak` caps.
-- **The framed windows** (Phase 34) — playlist, video and the synthesized library no longer paint
-  `window-regions.png`, the magenta-and-white silhouette five `sysregion="-2"` layers in
-  `xml/standardframe.xml` carry. The green and orange title strips and the bottom transport bar are
-  the real artwork and are unchanged.
+- **The framed windows** (Phase 34, B76) — playlist, video and the synthesized library no longer
+  paint `window-regions.png`, the magenta-and-white silhouette five `sysregion="-2"` layers in
+  `xml/standardframe.xml` carry, and since B76 that silhouette is *subtracted* from the window: four
+  of the skin's six layouts change shape, 8512 px in all. The green and orange title strips and the
+  bottom transport bar are the real artwork and are unchanged.
 - Double-clicking the song ticker is `trackinfo`; the scrubber seeks; shuffle / repeat / crossfade are
   the three round buttons under it.
 

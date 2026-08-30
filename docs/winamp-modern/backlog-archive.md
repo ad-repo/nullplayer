@@ -2,6 +2,61 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B76 — `sysregion` layers never shape the window — closed 2026-08-30
+
+We implemented exactly half of `sysregion`. `WasabiSceneRenderer.isRegionOnly` read a negative value
+and skipped *painting* the layer, which is right and is what stopped Ujola Cat's magenta mask drawing
+as artwork. Nothing then consumed those layers as a region, so the silhouette was discarded instead
+of subtracted and `component.bg` kept the corners square on every `Wasabi:StandardFrame:*` window.
+Reported live 2026-08-30 as "why is the EQ the only window with rounded corners" — the EQ is not
+special; `main` and `equalizer` are hand-drawn layouts whose own PNG artwork carries the alpha.
+
+`regionCuts()` / `buildWindowRegion` now compose the shape and `draw` takes it out of the finished
+scene; `containsRegionPixel` gates `object(at:)` so a trimmed corner takes no click either. No
+`NSWindow` work was needed: all three `.wal` window paths (player, auxiliary containers, hosted-window
+materializer) already set `isOpaque = false`, a clear `backgroundColor` and `hasShadow = false`.
+
+Three things the corpus taught, in the order it taught them, each of which was a visible regression
+in the version before it:
+
+- **It composites once, over the finished scene** (`.destinationOut` after the last node), not as a
+  `CGContext` clip mask. A clip mask is consulted by every drawing operation, so fractional coverage
+  accumulates across overlapping draws: **8451 px** of winampmodern566's stacked player artwork moved
+  that the region never meant to touch, and Ebonite's whole playlist window sat at alpha 76.
+- **Order decides the shape** — a positive `sysregion` adds back what a negative one took. S7Reflex
+  lays its config drawer *behind* the player in `main/normal` and follows it with `player.main`'s
+  `sysregion="1"`, so subtracting every negative layer cut away the left third of the window
+  (**31,289 px, 16.6%**). Composing in scene order leaves it at 34 px.
+- **The cut is binary, at half coverage.** Ebonite cuts its frame strips with a crop of the window's
+  own background texture at alpha 179; as coverage that left the border of every framed window at 30%
+  opacity. A region is a shape, not a translucency.
+
+And one deliberate divergence: **a window is never shrunk by additions alone.** Winamp builds the
+region up from nothing; this starts from the window's own rect, so a layout with no negative
+`sysregion` keeps the rectangle it had. 672 of the corpus's 926 declarations are positive and most
+are ordinary painted artwork; composing purely from those would decide the shape of every skin that
+uses the attribute at all. Every framed window in the corpus opens with a full-bleed positive anyway,
+so the seeded rect gives the same answer wherever a skin does say.
+
+**Corpus render sweep, before and after: 108 of 312 layouts change shape, in 22 of the 36 skins** —
+every one of them an alpha 255→0 change, no colour moved and no layout resized. Mostly a 1px border
+and 25px corners (BLAKK 8 layouts/944 px, Lobe 8/408, winampmodern566 8/398, Anaheim_Player_01 7/336,
+Anexa 7/224); larger where the skin's frame region trims more than a corner — Ebonite_2_1 4/39,440,
+Sony_Walkman 4/9,615, Ujola Cat 4/8,512, Shield_Amp 5/7,696, Styx 6/14,785,
+The_Nokia_5220_XpressMusic 2/2,786. Fourteen skins are untouched, Big Bento Modern's four among them.
+Shield_Amp confirmed live 2026-08-30. `swift test`: seven new cases in `WinampModernPhase88Tests`.
+
+> Sweep note: `Anexa/main-shade` is **not** byte-reproducible between two runs of the same binary
+> (162 px of ±5 RGB drift in one 29×29 patch, alpha unchanged). Pre-existing and unrelated to this
+> work — Anexa declares no negative `sysregion` — but it is the one line that spoils "byte-identical
+> across two consecutive runs" as the sweep's pass condition.
+
+Reach command retired with the item — **M17** was
+`rg -i -l 'sysregion="-' "$corpus" --glob '*.xml' --glob '*.xui' | cut -d/ -f1 | sort -u | wc -l`,
+the skins declaring at least one region-only layer, plus the four-corner-pixel read of every dumped
+PNG. The corner read is worth keeping as a spot check; it is recorded in
+`reference/rendering/hit-testing.md`.
+
 ## B45 — Shield_Amp's playlist container had no layout — closed 2026-08-30
 
 The container was never empty. `xml/pledit.xml` is a `<container id="Pledit">` whose only child is

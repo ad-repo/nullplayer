@@ -64,7 +64,5 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   left of the hosted library surface, and the group's background tints the rest of it. Its two layers
   are `stretch="-2"` / `sysregion="-2"` with `w="0"`, so this is a layer-sizing question, not a
   placement one. Open; found during B69's live QA, 2026-08-29.
-- Window *regions* are not applied (the `sysregion="-2"` masks describe a hole the chrome window does
-  not actually have), which is the same gap Ujola Cat records.
 - Nothing beyond the render sweep and B66/B69's live launches has been measured. No
   `/wal-skin-report` run yet.

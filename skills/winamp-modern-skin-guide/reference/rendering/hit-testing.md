@@ -129,21 +129,71 @@ object the hit test returned:
 that the markup-only hit test rejects. It is not expected to be empty — several objects legitimately
 share a rect and only the topmost can win — but a control the user can see should never be in it.
 
-#### `sysregion` is signed, and a **negative** one means "do not paint" (Phase 34)
+#### `sysregion` is signed, and it shapes the window (Phase 34, B76)
 
 A layer can contribute its bitmap to the **window region** instead of to the picture. The attribute
-is a signed combining mode, and only the sign matters to the renderer: a negative value is
-*region only*. The bitmap behind such a layer is a silhouette, not artwork — Ujola Cat's
-`window-regions.png` is a magenta-and-white mask — and painting it puts a coloured slab across the
-window. `standardframe.xml` is where this bites: its `wasabi.frame.layout` carries five
-`sysregion="-2"` layers and is inherited by every `Wasabi:StandardFrame:*` flavour, so the mask landed
-on the playlist window, on the synthesized library window, and on anything else framed the same way —
-reported as "layered full backgrounds in different colours" and "multiple top menubars".
+is a signed combining mode against the region built so far, and only the sign is read: a negative
+value is *region only* — it paints nothing and **subtracts** its silhouette from the window; a
+positive one paints as usual and **adds** its own shape back.
 
-`sysregion="-2"` appears in **11 of the 18 installed skins** (winampmodern566 alone uses it 24
-times), so this is a corpus-wide rule, not one skin's quirk. Absent, `0`, a positive value (Ujola's
-own console art is `sysregion="1"` over real bitmaps) and the non-numeric forms skins write (`"AND"`,
-which Anexa uses 15 times) all paint exactly as before. The region itself is still not *applied* —
-the windows are rectangular — so what changes is only that the mask stops being drawn: the corners of
-winampmodern566's framed windows go from opaque black to transparent.
+The bitmap behind a negative layer is a silhouette, not artwork — Ujola Cat's `window-regions.png` is
+a magenta-and-white mask — and painting it puts a coloured slab across the window.
+`standardframe.xml` is where this bites: its `wasabi.frame.layout` carries five `sysregion="-2"`
+layers and is inherited by every `Wasabi:StandardFrame:*` flavour, so the mask landed on the playlist
+window, on the synthesized library window, and on anything else framed the same way — reported as
+"layered full backgrounds in different colours" and "multiple top menubars".
 
+Absent, `0` and the non-numeric forms skins write (`"AND"`, which Anexa uses 15 times) paint as
+before and shape nothing. Both negative magnitudes in the corpus are cut-aways: `-2` on the corner
+and edge silhouettes of 28 skins, `-1` on winampmodern566's and S7Reflex's config drawer.
+
+`WasabiSceneRenderer.isRegionOnly` answers the paint half; `regionCuts` / `buildWindowRegion` answer
+the shape half, and `containsRegionPixel` gates `object(at:)` so a trimmed corner takes no click
+either. **Measured: 108 of 312 corpus layouts change shape, across 22 of the 36 skins** — mostly a
+1px border and 25px corners, up to 18% on skins whose frame region trims more than a corner (Ebonite,
+Sony_Walkman, Styx, Ujola Cat).
+
+Four properties of the composition are load-bearing, and each was found by a skin rather than
+reasoned out.
+
+**It composites once, over the finished scene.** The cut is a `.destinationOut` draw of the
+silhouette image after the last node, *not* a `CGContext` clip mask. A clip mask is consulted by
+every drawing operation, so fractional coverage is applied once per overlapping draw and accumulates:
+two opaque layers through a 50% mask leave 75% alpha with their colours blended. Across
+winampmodern566's stacked player artwork that moved **8451 pixels** the region never meant to touch,
+and left Ebonite's whole playlist window at alpha 76.
+
+**Order decides the shape.** A positive `sysregion` adds back what a negative one took, so the scene
+order *is* the semantic and a set of "the negative ones" cannot express it. S7Reflex lays its config
+drawer *behind* the player in `main/normal`, and the drawer's two 350 and 251 px silhouettes are
+followed by the `player.main` group's `sysregion="1"` — subtracting every negative layer cut away
+the left third of the window (**31,289 px, 16.6%** of the layout).
+
+**The cut is binary, at half coverage.** A region is a shape, not a translucency — Win32's own is —
+and a skin is entitled to hand over a silhouette that is neither opaque nor clear. Ebonite cuts its
+four frame strips with `wasabi.frame.dummybg`, a crop of the window's own *background texture* at
+alpha 179; as coverage that left the border of every framed window at 30% opacity, which reads as a
+rendering fault rather than as a shape. Half coverage is also the midpoint of an anti-aliased edge,
+so a rounded corner lands where the artwork draws it.
+
+**A window is never shrunk by additions alone.** Winamp builds the region up from nothing; here it
+starts as the window's own rect and a layout that declares no negative `sysregion` keeps the
+rectangle it has always had. 672 of the corpus's 926 declarations are positive and most are ordinary
+painted artwork saying "I am part of the window" — composing a shape purely from those would decide
+the shape of every skin that uses the attribute at all, on the strength of whichever layers its
+author happened to mark, and take a window away wherever the union fell short. Every framed window in
+the corpus opens its composition with a full-bleed positive anyway (`wasabi.standardframe.*` and
+`Wasabi:MainFrame:*` all carry `sysregion="1"` on the group that fills the window), so the seeded
+rect gives the same answer wherever a skin does say.
+
+The shape reaches the **window** without any `NSWindow` work: all three `.wal` window paths — the
+player, auxiliary containers, and the hosted-window materializer — already set `isOpaque = false`,
+a clear `backgroundColor` and `hasShadow = false`, so an erased corner is genuinely transparent. It
+is cached against the region objects' own boxes and bitmaps rather than the graph's mutation counter,
+which moves for anything a script writes; a canvas-sized rebuild per frame is not affordable on a
+1526×868 window.
+
+> **The corner-alpha check.** `main`, `main/stick` and `equalizer` in Shield_Amp were always alpha 0
+> — hand-drawn layouts carry the rounded alpha in their own PNGs — while `Pledit`, `MLibrary`, `AVS`
+> and `Video` were a flat opaque `rgb(95,110,127)`, `component.bg` through a square corner. Sampling
+> the four corner pixels of every dump is the cheapest test that this still works.
