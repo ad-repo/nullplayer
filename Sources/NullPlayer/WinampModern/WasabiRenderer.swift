@@ -4958,6 +4958,12 @@ final class WasabiSceneRenderer {
         // click target (`rectrgn="1"`), artwork-backed, or labelled, so none of them becomes an
         // invisible box that swallows a click meant for something behind it.
         if type == "wasabi:button" { return true }
+        // A `<Menu>` is a hit region and nothing else — it draws no artwork and carries no `action`,
+        // so without naming it here the pointer never reached a single entry of a skin's own menu
+        // bar. Its box is explicit (`w="0" relatw="1" h="21"`) and `object(at:)` skips the alpha test
+        // for an object with no bitmap, so the whole declared rect is live, which is what a menu
+        // entry needs.
+        if WasabiMenuBar.isMenu(object) { return true }
         if object.attributes["action"] != nil { return true }
         // A command on the *second* click or the right button is still a command, and it is the only
         // one some objects carry: a `<text>` song title with `dblclickaction="TRACKINFO"` is not one

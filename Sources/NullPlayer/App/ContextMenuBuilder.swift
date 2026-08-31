@@ -86,6 +86,59 @@ class ContextMenuBuilder {
         return menu
     }
 
+    // MARK: - Winamp Modern skin menu bar
+
+    /// The host menu a `.wal` skin's own `<Menu menu="WA5:…">` entry opens.
+    ///
+    /// Winamp's menu bar is drawn by the skin and *filled by the host*: the entry names one of
+    /// Winamp's five standing menus and the player supplies its contents. ClassicPro's titlebar is
+    /// five of them (`WA5:File`, `WA5:Play`, `WA5:Options`, `WA5:Windows`, `WA5:Help`), and so is
+    /// stock Winamp Modern's, so this is the whole identifier set the corpus asks for. An unknown
+    /// identifier answers `nil` and the entry opens nothing, rather than opening the wrong menu.
+    ///
+    /// **Gated on `.winampModern`.** Nothing here changes what Classic or Original show — the
+    /// `guard` is the enforcement, not an argument that the caller could only be one mode.
+    static func winampModernMenuBarMenu(for identifier: String) -> NSMenu? {
+        guard WindowManager.shared.uiMode.controllerFamily == .winampModern else { return nil }
+        switch identifier.lowercased() {
+        case "wa5:file":    return buildWinampModernFileMenu()
+        case "wa5:play":    return buildMenuBarPlaybackMenu()
+        case "wa5:options": return buildMenuBarUIMenu()
+        case "wa5:windows": return buildMenuBarWindowsMenu()
+        case "wa5:help":    return buildWinampModernHelpMenu()
+        default:            return nil
+        }
+    }
+
+    /// Winamp's File menu is its "get something to play" entry point, which here is the two openers
+    /// `MenuActions` already owns plus the URL ripper, and Exit at the foot where Winamp puts it.
+    private static func buildWinampModernFileMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for (title, selector) in [("Play File…", #selector(MenuActions.openFile)),
+                                  ("Play Folder…", #selector(MenuActions.openFolder)),
+                                  ("Play URL…", #selector(MenuActions.ripURL))] {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+            item.target = MenuActions.shared
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let exit = NSMenuItem(title: "Exit", action: #selector(MenuActions.exit), keyEquivalent: "")
+        exit.target = MenuActions.shared
+        menu.addItem(exit)
+        return menu
+    }
+
+    private static func buildWinampModernHelpMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let about = NSMenuItem(title: "About nullPlayer", action: Selector(("showAbout")),
+                               keyEquivalent: "")
+        about.target = NSApp.delegate
+        menu.addItem(about)
+        return menu
+    }
+
     // MARK: - Menu Bar Builders
 
     /// Builds the top-level "Windows" menu content for the macOS menu bar.

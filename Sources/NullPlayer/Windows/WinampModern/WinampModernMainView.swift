@@ -1134,8 +1134,18 @@ final class WinampModernMainView: NSView {
         let next = renderer.object(at: point)
         guard next !== hoveredObject else { return }
         if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
+        // A `<Menu>` entry lights up under the pointer by swapping which of its three sibling objects
+        // is visible — the whole of what the object draws. Done here rather than from a script binding
+        // because a menu entry has none: `normal`/`hover`/`down` are markup, and the state machine
+        // over them is Winamp's, not the skin's.
+        if let previous = hoveredObject, WasabiMenuBar.isMenu(previous), previous !== openMenuObject {
+            WasabiMenuBar.apply(.normal, to: previous)
+        }
         hoveredObject = next
         if let next { _ = try? scripts.dispatch(object: next, event: "onenterarea") }
+        if let next, WasabiMenuBar.isMenu(next), next !== openMenuObject {
+            WasabiMenuBar.apply(.hover, to: next)
+        }
         needsDisplay = true
     }
 
@@ -1145,6 +1155,9 @@ final class WinampModernMainView: NSView {
             showsResizeCursor = false
         }
         if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
+        if let previous = hoveredObject, WasabiMenuBar.isMenu(previous), previous !== openMenuObject {
+            WasabiMenuBar.apply(.normal, to: previous)
+        }
         hoveredObject = nil
         needsDisplay = true
     }
@@ -1215,6 +1228,16 @@ final class WinampModernMainView: NSView {
         // what `autoclose="1"` means and the only way a chromeless one can be dismissed.
         didClickInWindow?(containerID)
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        // A menu-bar entry opens on the **press**, before the divider, the resize border and the
+        // window-drag fall-through below it. It has to outrank all three: a skin's menu bar lives on
+        // its titlebar, which is also a `move="1"` drag surface *and* — measured on ClassicPro — a
+        // strip covered by the window's own top `resize=` handle, so with the entries checked after
+        // those a click on File was answered by the resizer and the menu never opened. The entries
+        // are a 172x20 island in the middle of the bar, so the corners and edges stay grabbable.
+        if let menu = renderer.object(at: point), WasabiMenuBar.isMenu(menu) {
+            presentSkinMenuBarEntry(menu)
+            return
+        }
         // A splitter's grab strip spans the full height of its frame, which means it crosses whatever
         // the skin has laid over that column — cPro's tab strip runs straight through the 8px seam.
         // So the divider only claims the click when nothing that outranks it is under it: a control
@@ -1997,6 +2020,74 @@ final class WinampModernMainView: NSView {
     /// expects. The menu is built from the resolved tree, so submenus nest.
     /// `point` is `popAtXY`'s: window-client space, top-left origin, unscaled — the inverse of
     /// `skinPoint`. `nil` is `popAtMouse`.
+    /// The `<Menu>` entry whose menu is on screen right now, so hover does not steal its `down`
+    /// state back while it is open.
+    private var openMenuObject: WasabiObject?
+
+    /// Open the host menu a skin's own menu-bar entry names, under the entry.
+    ///
+    /// The entry wears `down` for as long as the menu is up — `popUp` runs its own tracking loop and
+    /// returns when the menu closes, so the two lines around it are the whole state machine. On the
+    /// way out it goes back to `hover` or `normal` depending on where the pointer ended up, which is
+    /// what stops an entry the user rolled off during tracking from staying lit.
+    ///
+    /// An identifier the host does not serve opens nothing and leaves the entry alone. That is the
+    /// honest answer for a `WA5:` menu NullPlayer has no equivalent of, and it keeps the entry from
+    /// flashing `down` on a click that does nothing.
+    private func presentSkinMenuBarEntry(_ menu: WasabiObject) {
+        guard let identifier = WasabiMenuBar.hostMenuIdentifier(of: menu) else { return }
+        // A playlist-editor menu is one the app already builds for the `PE_*` toolbar buttons, and
+        // the rule in `WinampModernHostActionMenus` is that three routes to a feature must not drift
+        // apart — so a `<Menu menu="WA5:PE_File">` opens *that* menu rather than a second thinner one
+        // written here. Big Bento Modern declares three of them on its playlist header.
+        if let action = Self.playlistEditorMenuAction(for: identifier) {
+            withMenuEntryPressed(menu) { performHostAction(action, object: menu) }
+            return
+        }
+        guard let hostMenu = ContextMenuBuilder.winampModernMenuBarMenu(for: identifier),
+              hostMenu.numberOfItems > 0, let frame = renderer.frame(of: menu) else { return }
+        withMenuEntryPressed(menu) {
+            // Winamp drops its menus from the bottom-left of the entry, which is also where the
+            // skin's own `popAtXY` puts the drawer menu.
+            hostMenu.popUp(positioning: nil,
+                           at: NSPoint(x: frame.minX * skinScale,
+                                       y: bounds.height - frame.maxY * skinScale),
+                           in: self)
+        }
+    }
+
+    /// Hold the entry in its `down` state for as long as `present` is on screen. Every menu route
+    /// here runs AppKit's own tracking loop, which returns when the menu closes, so this is the whole
+    /// state machine. On the way out the entry goes back to `hover` or `normal` depending on where
+    /// the pointer actually ended up — otherwise an entry the user rolled off during tracking stays
+    /// lit with nothing under the mouse.
+    private func withMenuEntryPressed(_ menu: WasabiObject, present: () -> Void) {
+        openMenuObject = menu
+        WasabiMenuBar.apply(.down, to: menu)
+        needsDisplay = true
+        present()
+        openMenuObject = nil
+        let pointer = window.map { skinPoint(convert($0.mouseLocationOutsideOfEventStream, from: nil)) }
+        let stillInside = pointer.map { renderer.object(at: $0) === menu } ?? false
+        WasabiMenuBar.apply(stillInside ? .hover : .normal, to: menu)
+        needsDisplay = true
+    }
+
+    /// The `WA5:PE_*` identifiers the corpus declares on a `<Menu>`, mapped to the host action that
+    /// already owns each menu. Anything else is `nil` and goes to `ContextMenuBuilder`'s five.
+    private static func playlistEditorMenuAction(for identifier: String) -> WinampModernHostAction? {
+        switch identifier.lowercased() {
+        // Winamp's playlist File menu is New / Load / Save, which is exactly `PE_LIST`'s.
+        case "wa5:pe_file", "wa5:pe_playlist": return .playlistList
+        // `PE_MISC` is where the app keeps its Sort submenu.
+        case "wa5:pe_sort": return .playlistMisc
+        case "wa5:pe_add": return .playlistAdd
+        case "wa5:pe_rem": return .playlistRemove
+        case "wa5:pe_sel": return .playlistSelect
+        default: return nil
+        }
+    }
+
     private func presentScriptPopup(_ items: [WinampModernPopupMenuItem], at point: CGPoint?) -> Int32 {
         let target = ScriptPopupTarget()
         let menu = build(popupMenu: items, target: target)
