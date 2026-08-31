@@ -503,14 +503,59 @@ dump agreed the box worked, and in the app every **unbound** box drew from the b
 Every radio in the corpus is unbound, so all of them drew permanently empty however completely
 `selectRadioMember` flipped them — while a bound check box beside them (Styx's *Always on top*)
 worked, which is the asymmetry that gives it away. The rule is now
-`WasabiFormWidgets.isOn(_:boundState:)` — the same `||` `resolvedBitmapID` already uses to pick an
+`WasabiFormWidgets.isOn(_:boundState:)` — the same `||` `resolvedBitmapID` uses to pick an
 `activeimage` — and it is one function so the draw cannot drift from it again. B66, found in B14's
-live QA on Shield_Amp and Styx (2026-08-29).
+live QA on Shield_Amp and Styx (2026-08-29). The button half of that `||` was **not** actually
+there until BB26 put it there; see below.
 
 The instrument was blind to it too, and that is the reusable half: `WINAMP_MODERN_RENDER_CLICK` only
 ever called `toggleActivation`, never the `selectRadioMember` the view runs **first** and returns on,
 so it reported `CLICK toggled … activated=1` for a radio nothing in the app was flipping. It now
 mirrors `performAction(for:)`'s order and prints `CLICK radio <id> set=<radioid> activated=<0/1>`.
+
+#### A button's own `activated` is the fourth source of an `activeimage`
+
+`resolvedBitmapID` decided a button was active from three places, all of them **external** to the
+object: a hard-coded `shuffle`/`repeat` `xmlID`, an `EQ_TOGGLE`/`EQ_AUTO` `action`, and a `cfgattrib`
+binding through `configStateProvider`. The button's own `activated` attribute — what
+`setActivated`/`setActivatedNoCallback` write from MAKI, and what `toggleActivation` writes on a
+click — was never read, though `setActivated`'s own doc comment said *"`activated` is what
+`getActivated()` and a togglebutton's `activeimage` read."* The runtime and the renderer disagreed
+about that, and the renderer is the one the user sees.
+
+So a button that only a **script** activates could never light, and neither could a plain
+`<togglebutton>` flipped by an ordinary click: `toggleActivation` wrote the attribute, dispatched
+`onToggle` and `onActivate`, and returned true — every observable except the artwork.
+
+**Reported as a rating row, which is what makes it worth reading twice.** Big Bento's file-info row
+"draws five dots, not stars" (BB26). The dots are not the defect: `window/rating.png` is a four-cell
+strip — filled star, grey star, **dot**, red X — and `infocomp.rating.empty` *is* the dot, so an
+unrated row is drawn correctly. `fileinfo.maki` fills the row by calling `setActivated` on
+`rate.1…5`, and that was the unreachable case. The rating itself round-tripped to the server the
+whole time (`PlexServerClient: Rated item 656141 with rating 8`), so the symptom pointed at storage
+and the defect was in the draw. Measure which half is broken before believing the report's framing.
+
+**Reach:** 1618 `<button>`/`<togglebutton>` declarations in the corpus carry an `activeimage`; 864
+are named by one of the three external sources and **754, across 39 of the 53 skin trees, are not**
+(Bento 98, T800 27, ZDL Reel-To-Reel 25, Bio-Nid 23, BLAKK 21, Rika 21).
+
+**Nothing moved at rest**, and that is checkable rather than hoped for: **no** corpus skin declares
+`activated="1"` in its markup, so no skin's launch appearance changes and a render sweep is
+byte-identical. The artwork only moves once a script or a click writes the attribute — which is
+exactly the state the sweep cannot reach, and why this survived every static dump. `RENDER_CLICK`
+prints `CLICK toggled <id> activated=<0/1>` and reported that flip correctly all along; it reports
+the *attribute*, not the bitmap the flip resolves to. BB26, live on Big Bento Modern (2026-08-31).
+
+**What this exposed, and did not fix (BB36, open).** For a `<togglebutton action="TOGGLE"
+param="guid:pl">` the `activeimage` is a claim about a *window* — and `activated` is a click counter
+`toggleActivation` maintains beside the action, reconciled with nothing. So those lamps read
+backwards whenever the window does not start closed, which at launch is common. That state was
+already wrong; giving `activated` the power to draw is what made it visible. The rule it violates is
+the one two sections up — a control must keep no second copy of a state something else owns — and the
+fix is to derive the lamp from the target window's visibility, resolved through the same
+component-vs-container-id split `TOGGLE` itself uses. 194 declarations across 31 skins. **Do not read
+the fix as "stop honouring `activated`"**: that is BB26's case, and a skin's own `onToggle` may read
+the attribute.
 
 `type=` and `windowtype=` are not read — see
 [../compatibility/wasabi-surface.md](../compatibility/wasabi-surface.md).

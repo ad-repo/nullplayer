@@ -2,6 +2,69 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## BB26 — the file-info rating row drew dots, not stars — closed 2026-08-31
+
+Reported live 2026-08-25 on Big Bento Modern's base and Light variants: `infodisplay.line.rating.stars`
+(`xml/player-normal-mcv.xml:256`) paints five small faint dots where the skin means star glyphs.
+Re-reported 2026-08-31 with the sharper question — *does the rating get recorded in the source at
+all?*
+
+**The dots were never the defect.** `window/rating.png` is a 108x20 four-cell strip — filled star,
+grey star, **dot**, red X — cut as `infocomp.rating.star` / `.hover` / `.empty` / `.remove`
+(`xml/player-elements.xml:860-863`). `infocomp.rating.empty` *is* the dot, so an unrated row drawing
+five dots is the skin's own art rendered correctly.
+
+**Nor was the storage.** Verified live on Plex 2026-08-31: a click on the fourth star logged
+`PlexServerClient: Rated item 656141 with rating 8` — `host.currentTrackRating` →
+`TrackRatingService.setRating` → `PlexServerClient.rateItem`, with the 4-stars → 8/10 conversion
+`TrackRatingService` owns. One caveat worth keeping: `setRating` has no branch for a **local file
+that is not in the library**, so such a write is silently dropped. That is the documented intent
+("Writing is a no-op for a source with nowhere to store it") and not part of this item.
+
+**The defect was the draw.** `WasabiRenderer.resolvedBitmapID` decided a button was active from three
+sources, all external to the object — a hard-coded `shuffle`/`repeat` `xmlID`, an
+`EQ_TOGGLE`/`EQ_AUTO` `action`, and a `cfgattrib` binding through `configStateProvider` (which
+returns `false` outright for an unbound object). The button's own `activated` attribute, written by
+`setActivated`/`setActivatedNoCallback` from MAKI and by `toggleActivation` on a click, was not in
+that `||` — although `setActivated`'s own doc comment claimed `activated` "is what `getActivated()`
+and a togglebutton's `activeimage` read". Bento's `fileinfo.maki` fills the row with `setActivated`
+on `rate.1…5`, so the stars could never appear. A plain `<togglebutton>` flipped by an ordinary click
+was the same case: the attribute moved, `onToggle` and `onActivate` fired, and the artwork did not.
+
+This is the button half of the rule B66 established for check boxes in
+`WasabiFormWidgets.isOn(_:boundState:)` — *a binding can turn a control on; its absence must not turn
+one off.* The fix adds the missing term.
+
+**Reach ([M28]): 754 of 1618 `activeimage` declarations, across 39 of the 53 skin trees** — Bento 98,
+T800 27, ZDL Reel-To-Reel 25, Bio-Nid 23, BLAKK 21, Rika 21. The other 864 are named by one of the
+three external sources and were already lighting.
+
+**Nothing changed at rest, and that is measured rather than assumed:** no skin in the corpus declares
+`activated="1"` in its markup, so no skin's launch appearance moves and a static render sweep is
+byte-identical. That is also why this survived every dump — the artwork only moves once a script or a
+click writes the attribute, which is a state the sweep does not reach. `RENDER_CLICK` prints
+`CLICK toggled <id> activated=<0/1>` and had been reporting the flip correctly the whole time; it
+reports the *attribute*, not the bitmap the attribute resolves to.
+
+**It also exposed BB36**, which is filed and open: a `<togglebutton action="TOGGLE" param="guid:pl">`
+lights from the click counter `toggleActivation` maintains, not from whether that window is open, so
+these lamps are inverted whenever the window does not start closed. That state was already wrong
+before this change — it simply had no way to draw itself while every such button was dark.
+
+Covered by `WinampModernBB26Tests` (script activation, click activation, the unchanged rest state,
+and press/hover still outranking activation — for which `WasabiRenderer.bitmapIDForTesting` exposes
+`resolvedBitmapID` under a pointer state `sceneNodes()` cannot be put into). Verified live on Big
+Bento Modern 2026-08-31: dots became stars. Detail in
+[`skills/winamp-modern-skin-guide/reference/rendering.md`](../../skills/winamp-modern-skin-guide/reference/rendering.md).
+
+- <a id="m28"></a>**M28:** for each extracted `.wal` tree, match `<button>` and `<togglebutton>`
+  declarations across newlines and keep those carrying an `activeimage`; a declaration is *already
+  covered* if it names a `cfgattrib`, an `id` of `shuffle`/`repeat`, or an `action` of
+  `EQ_TOGGLE`/`EQ_AUTO`, and *uncovered* otherwise. Measured 2026-08-31 over the 53 trees extracted
+  with `7zz` from `~/Library/Application Support/NullPlayer/WinampModernSkins/`: 1618 total, 864
+  covered, 754 uncovered in 39 skins. Re-running the same match for `activated="1"` in the markup
+  returns **0**, which is the no-regression-at-rest claim.
+
 ## B81 — Snap To Default could not recover a `.wal` window — closed 2026-08-31
 
 `WindowManager.snapToDefaultPositions()` contained no Winamp Modern handling at all — it repositioned

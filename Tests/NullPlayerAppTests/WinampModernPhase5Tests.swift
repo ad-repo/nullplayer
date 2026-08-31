@@ -145,9 +145,19 @@ final class WinampModernPhase5Tests: XCTestCase {
         XCTAssertFalse(engine.isEQEnabled())
         bridge.equalizerSetEnabled(true)
 
+        // Only the bands the bridge *has*. `WinampModernComponentBridge` is pinned to `classic10` —
+        // a `.wal` skin's equalizer is a ten-band surface — while `EQPreset` sizes itself from
+        // `PlayerUIMode.stored()`, which is **persisted developer state**: under Original or
+        // Original-Metal `activeLayout` is the 21-band modern one, so `preset.bands` comes back with
+        // 21 entries and this loop asked the engine for eleven bands the bridge never writes. The
+        // test then passed or failed on which skin mode the machine was last left in — it fails with
+        // `uiMode=modern` stored and passes with `classic` or `winampModern`. Not a product defect:
+        // in Winamp Modern mode `usesModernEQLayout` is false, so the two layouts agree in the app.
         let preset = EQPreset.imYoung
         bridge.equalizerApplyPreset(named: preset.name)
-        for (band, gain) in preset.bands.enumerated() {
+        let bridgedBands = bridge.equalizerSnapshot().bandGainsDB.count
+        XCTAssertEqual(bridgedBands, 10, "the bridge is a ten-band surface whatever the stored mode")
+        for (band, gain) in preset.bands.prefix(bridgedBands).enumerated() {
             XCTAssertEqual(engine.getEQBand(band), gain, accuracy: 0.001)
         }
     }

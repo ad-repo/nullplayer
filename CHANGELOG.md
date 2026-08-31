@@ -17,6 +17,14 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: buttons a skin lights up now actually light up** — a `.wal` skin can give a
+  button a second piece of artwork for its "on" state, and skins use it for anything that has a state
+  to show: indicator lamps, memory slots, mode switches, and Big Bento Modern's file-info **star
+  rating** row. Only a handful of those ever changed — the ones NullPlayer recognised by name, such as
+  shuffle and repeat. Every other one stayed on its "off" artwork no matter what the skin did, so
+  rating a track left the row showing five empty dots even after you rated it. The stars now appear.
+  The rating itself was being saved the whole time, including to Plex, Jellyfin, Emby and Subsonic —
+  only the artwork was missing.
 - **Winamp Modern skins: Snap To Default can bring a skin's windows back** — a `.wal` skin's
   playlist, media library, equalizer or any other window it owns could be dragged off the edge of the
   display and then had no way back: **Snap To Default** repositioned only the player, and a window

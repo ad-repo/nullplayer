@@ -1022,6 +1022,13 @@ final class WasabiSceneRenderer {
     /// `layoutNodes()` for the harness: the geometry probe has to see inside a closed tab.
     func layoutNodesForTesting() -> [WasabiSceneNode] { layoutNodes() }
 
+    /// `resolvedBitmapID` under a pointer the scene cannot be put into: `sceneNodes()` always asks
+    /// with `pressed: false, hovered: false`, so the ordering between press, hover and activation is
+    /// otherwise only observable by driving a real mouse (BB26).
+    func bitmapIDForTesting(_ object: WasabiObject, pressed: Bool, hovered: Bool) -> String? {
+        resolvedBitmapID(for: object, pressed: pressed, hovered: hovered)
+    }
+
     /// Cached on the same key `sceneNodes()` uses, and for a much sharper reason: `resolvedGeometry`
     /// goes through here, and that is what answers every `getWidth`/`getLeft`/`getGuiW` a script
     /// asks. Uncached, one script event walking its own layout a few dozen times walked the entire
@@ -4902,6 +4909,14 @@ final class WasabiSceneRenderer {
             // over the same rect, both naming the attribute, so without this every switch in its
             // settings window painted its "off" artwork whatever the stored value was.
             if let scripts = configStateProvider, scripts(object) { active = true }
+            // The button's own `activated` — what `setActivated` and `toggleActivation` write, and
+            // the term this `||` was missing. Without it the only buttons that could ever light were
+            // the ones the three sources above happen to name, so a button a *script* activates drew
+            // its rest artwork forever: Big Bento's file-info rating row is five `rate.N` buttons
+            // that `fileinfo.maki` fills with `setActivated`, and it stayed five empty dots however
+            // correctly the rating round-tripped. A click-toggled `togglebutton` was the same case.
+            // Symmetric with `WasabiFormWidgets.isOn`, which is the check-box half of one rule (B66).
+            if object.attributes["activated"] == "1" { active = true }
             if active, let image = object.attributes["activeimage"] { return image }
         }
         return object.attributes["image"]
