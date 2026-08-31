@@ -17,6 +17,16 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: the title strip drags the window again, and ⌘ drags it from anywhere** —
+  many `.wal` skins leave almost nothing to grab. ClassicPro is the clearest case: the full width of
+  its toolbar, right where you reach for a titlebar, is covered by a layer the skin uses only to catch
+  a double-click, and that was enough to make the strip refuse to move the window at all. A press on
+  such a layer now moves the window as soon as you actually drag, while a click on it stays a click,
+  so the skin's own double-click still works. And holding **⌘** while dragging moves the window
+  from anywhere in it — over the visualization, a slider, the transport buttons, the title strip —
+  whatever the skin claims that spot is for, which is the way out on the skins that leave no handle at
+  all.
+
 - **Winamp Modern skins: the playlist and library lamps now follow the window** — a `.wal` skin marks
   its playlist, media library, equalizer and visualization buttons with a lamp meaning *that window is
   open*. The lamp was counting your clicks instead of looking at the window, so if a window was

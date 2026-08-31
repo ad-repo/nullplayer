@@ -72,6 +72,13 @@ final class WinampModernMainView: NSView {
     private var hoveredObject: WasabiObject?
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    /// A press on a layer that acts on the button *up* and has nothing to do on the down: the drag is
+    /// primed here and only becomes real once the pointer has travelled, so the layer keeps its click
+    /// (B59). Nil whenever no such press is open.
+    private var primedDragWindow: NSWindow?
+    /// Whether the open press has already moved the window, so the release drops the click it would
+    /// otherwise have performed.
+    private var pressMovedWindow = false
     /// A drag on a `resize="…"` handle: which window edges it moves, and the frame and screen
     /// pointer the drag started from. Measured from the start rather than accumulated per delta, so a
     /// drag that runs into the layout's minimum and comes back out again lands where the pointer is.
@@ -682,12 +689,32 @@ final class WinampModernMainView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         // Live host subviews (e.g. the embedded library) handle their own region.
         for sub in subviews.reversed() {
-            if let hit = sub.hitTest(point) { return hit }
+            if let hit = sub.hitTest(point) {
+                traceHitTest(point, verdict: "subview \(type(of: hit))")
+                return hit
+            }
         }
-        guard bounds.contains(point) else { return nil }
+        guard bounds.contains(point) else {
+            traceHitTest(point, verdict: "outside bounds \(bounds)")
+            return nil
+        }
         let skin = skinPoint(point)
-        if renderer.componentHolder(at: skin) != nil { return self }
-        return renderer.containsVisiblePixel(at: skin) ? self : nil
+        if renderer.componentHolder(at: skin) != nil {
+            traceHitTest(point, verdict: "self (holder)")
+            return self
+        }
+        let visible = renderer.containsVisiblePixel(at: skin)
+        traceHitTest(point, verdict: visible ? "self (pixel)" : "nil (no visible pixel)")
+        return visible ? self : nil
+    }
+
+    private func traceHitTest(_ point: NSPoint, verdict: String) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_TRACE"] != nil else { return }
+        guard NSEvent.pressedMouseButtons != 0 else { return }
+        NSLog("%@", "WINAMP-MODERN-DRAG: hitTest container=\(containerID) view=\(point) "
+              + "skin=\(skinPoint(point)) -> \(verdict)")
+        #endif
     }
 
     /// Called at the top of every layout pass, before surfaces reconcile. The controller uses it to
@@ -1247,6 +1274,28 @@ final class WinampModernMainView: NSView {
         // what `autoclose="1"` means and the only way a chromeless one can be dismissed.
         didClickInWindow?(containerID)
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_TRACE"] != nil {
+            let object = renderer.object(at: point)
+            let drags = object.map { shouldDragWindow(from: $0) } ?? false
+            NSLog("%@", "WINAMP-MODERN-DRAG: down container=\(containerID) point=\(point) "
+                  + "cmd=\(event.modifierFlags.contains(.command)) "
+                  + "object=\(object?.typeName ?? "nil")#\(object?.xmlID ?? "-") drags=\(drags)")
+        }
+        #endif
+        // ⌘-drag moves the window from anywhere in it, whatever the skin claims that pixel is for
+        // (B59). Measured with `WINAMP_MODERN_DRAG_PROBE`: Defix's player is **33%** draggable and
+        // corneramp_redux **49%**, and every top blocker is the skin's own `move="0"` layer, its
+        // script-bound layer or a control — honouring those is B38.1's policy working correctly, so
+        // no change to `shouldDragWindow` can reach it. This is the host's escape hatch instead, and
+        // it outranks everything below because the point is to be reachable where nothing else is:
+        // over the menu bar, the resize border, a component holder, a slider, all of it.
+        // ⌘ is otherwise unused in this view's whole mouse path, and the press returns here without
+        // being dispatched, so no skin script sees an event it would otherwise have had.
+        if event.modifierFlags.contains(.command), let window {
+            beginWindowDrag(window, from: event)
+            return
+        }
         // A menu-bar entry opens on the **press**, before the divider, the resize border and the
         // window-drag fall-through below it. It has to outrank all three: a skin's menu bar lives on
         // its titlebar, which is also a `move="1"` drag surface *and* — measured on ClassicPro — a
@@ -1382,10 +1431,46 @@ final class WinampModernMainView: NSView {
         needsDisplay = true
 
         if shouldDragWindow(from: object), let window {
-            isDraggingWindow = true
+            beginWindowDrag(window, from: event)
+        } else if shouldPrimeWindowDrag(from: object), let window {
+            primedDragWindow = window
             windowDragStartPoint = event.locationInWindow
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
         }
+    }
+
+    /// Whether a press the drag policy refuses should nonetheless *prime* a drag, to be committed
+    /// only once the pointer has travelled `Self.dragThreshold` (B59).
+    ///
+    /// The case this exists for is measured: ClassicPro's toolbar is
+    /// `<layer id="doubleclick" x="0" y="0" w="0" h="27" relatw="1">` — the full width of the player,
+    /// pinned to the top, exactly where a person reaches for a titlebar — and `shouldDragWindow`
+    /// refuses it under "a layer a script hooks the mouse on is a control, not a handle". But the
+    /// only event that layer binds is **`onleftbuttonup`**; it exists to catch a double-click, and it
+    /// has nothing whatever to do on the press. Refusing the press to protect its click protects
+    /// nothing, and it costs the four cPro skins their entire title strip: measured `top24=0%`
+    /// draggable on a 500x500 player.
+    ///
+    /// So the deferral is deliberately narrow — a layer with **no `onleftbuttondown` binding**. That
+    /// is what makes it safe where B59 rated the general form risky: a layer that does bind the press
+    /// still gets it, on the press, exactly as before, and the threshold changes nothing for it.
+    /// `move="0"` and `action=` are still refusals, because there the skin has said what it wants.
+    func shouldPrimeWindowDrag(from object: WasabiObject) -> Bool {
+        guard !shouldDragWindow(from: object) else { return false }
+        guard object.typeName.lowercased() == "layer" else { return false }
+        guard object.attributes["move"] != "0", object.attributes["action"] == nil else { return false }
+        guard !scripts.hasBinding(for: object, event: "onleftbuttondown") else { return false }
+        return Self.mouseEvents.contains { scripts.hasBinding(for: object, event: $0) }
+    }
+
+    /// How far the pointer travels before a primed press becomes a drag — the same 3pt
+    /// `WinampModernHostedWindowDrag` uses, so the two feel like one gesture.
+    private static let dragThreshold: CGFloat = 3
+
+    /// Open a window-drag session for a press this view has decided is a handle.
+    private func beginWindowDrag(_ window: NSWindow, from event: NSEvent) {
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+        WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
     }
 
     /// Stretch this view's window from the handle the press landed on.
@@ -1469,6 +1554,17 @@ final class WinampModernMainView: NSView {
             dispatch(object: pressedObject, event: "onmousemove", point: point)
             updateSlider(pressedObject, point: point)
         }
+        if let primed = primedDragWindow {
+            let current = event.locationInWindow
+            let travel = hypot(current.x - windowDragStartPoint.x, current.y - windowDragStartPoint.y)
+            if travel >= Self.dragThreshold {
+                primedDragWindow = nil
+                pressMovedWindow = true
+                isDraggingWindow = true
+                windowDragStartPoint = current
+                WindowManager.shared.windowWillStartDragging(primed, fromTitleBar: true)
+            }
+        }
         if isDraggingWindow, let window {
             let current = event.locationInWindow
             var origin = window.frame.origin
@@ -1499,7 +1595,12 @@ final class WinampModernMainView: NSView {
         // docking code a window that moved under it.
         if isDraggingWindow, let window { WindowManager.shared.windowDidFinishDragging(window) }
         isDraggingWindow = false
-        if let pressedObject {
+        primedDragWindow = nil
+        // A press that moved the window is a drag, not a click — releasing it must not also fire the
+        // handler the layer carries, or every drag of cPro's toolbar ends in its double-click trap.
+        let moved = pressMovedWindow
+        pressMovedWindow = false
+        if let pressedObject, !moved {
             dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
             if releasedOver === pressedObject {
                 _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")

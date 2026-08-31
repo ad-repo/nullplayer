@@ -2,6 +2,58 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B59 — Skins whose own player leaves almost no drag handle — closed 2026-08-31
+
+Both fixes landed and were verified with synthetic events on ClassicPro, debug build, 2026-08-31: a
+plain drag on its 27px toolbar moves the window (40px posted, 33px moved — the 3pt threshold), a
+stationary press there does not move it, and `button#player.button.switch` in the same strip is still
+a button. ⌘-drag moved the window from four points across that toolbar including over that button.
+
+The rules and the measurements behind them are documented in
+[`reference/components.md`](../../skills/winamp-modern-skin-guide/reference/components.md) →
+*A press that only acts on the button up is still a drag handle*, and the live instrument is
+`WINAMP_MODERN_DRAG_TRACE=1` in
+[`reference/harness.md`](../../skills/winamp-modern-skin-guide/reference/harness.md).
+
+**Two things left open, deliberately, for whoever picks up drag work next:**
+
+- A press that resolves to **no object** returns before the drag branch — Ujola Cat 64% of the face,
+  meridian 66%. Never checked against the region mask, so whether any of it is inside the window is
+  unknown.
+- **The corpus percentages below are a pre-B59 baseline.** `WINAMP_MODERN_DRAG_PROBE` samples
+  `shouldDragWindow` alone and models neither the deferred drag nor the ⌘ hatch, so it still reports
+  cPro's toolbar as 0% draggable. Re-run it, and teach it both rules, before trusting any of these
+  numbers: `WINAMP_MODERN_DRAG_PROBE="$corpus_wal" swift test --filter WinampModernDragProbe` over the
+  36 installed `.wal` files, where `$corpus_wal` is
+  `~/Library/Application Support/NullPlayer/WinampModernSkins`. Reports each container's draggable
+  share; add `WINAMP_MODERN_DRAG_MAP=1` for the face map.
+
+Baseline measured 2026-08-31 before the fixes: median **72%** draggable across 120 containers, with
+**29** of them under 25% on the top 24px — the strip a person reaches for. Ujola Cat's player 24%,
+meridian 25%, S7Reflex 41%, corneramp_redux 49%, and all four cPro skins at `top24=0%`.
+
+The original entry, verbatim:
+
+The two fixes below shipped; only the manual verdict above keeps B59 open. The measurements that
+drove them are recorded in
+[`reference/components.md`](skills/winamp-modern-skin-guide/reference/components.md) →
+*A press that only acts on the button up is still a drag handle*.
+
+- [x] **A deferred drag on a layer that does not bind the press.** `shouldPrimeWindowDrag` primes the
+      press where `shouldDragWindow` refuses it and commits after 3pt of travel. Scoped to layers with
+      **no `onleftbuttondown` binding**, which is what makes it narrow: cPro's toolbar layer binds only
+      `onleftbuttonup` (it catches a double-click), so refusing the press protected nothing and cost
+      the four cPro skins their whole title strip.
+- [x] **A ⌘ escape hatch.** ⌘-drag moves the window from anywhere, ahead of every other branch in
+      `mouseDown`. For the 29 of 120 containers whose top strip is under 25% draggable and whose
+      blockers are all the skin's own declarations.
+- [ ] **Still open, and left alone deliberately:** a press that resolves to **no object** returns
+      before the drag branch (Ujola Cat 64% of the face, meridian 66%). Not checked against the region
+      mask, so whether any of it is inside the window is unknown.
+- [ ] **`WINAMP_MODERN_DRAG_PROBE`'s corpus numbers are now a pre-B59 baseline** — it samples
+      `shouldDragWindow` alone and models neither new rule, so it still reports cPro's toolbar as 0%
+      draggable. Re-run it, and teach it both rules, before any further drag work.
+
 ## BB28 — The stretched visualization draws with the file info on top of it — closed 2026-08-31, already fixed
 
 **Closed without a code change: BB9 had already fixed it, and the entry outlived the fix.**

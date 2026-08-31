@@ -629,9 +629,45 @@ Two things follow for any new hosted surface:
 
 Not covered by B57, and still open: `WinampModernVisualizationSurfaceView` swallows single clicks the
 same way but sits inside the skin's *own* window, so its drag has to route through the parent's skin
-hit test rather than a `hostedContext` (B58); the hosted library and video surfaces (B60); and skins
-whose own markup leaves the *player* nearly undraggable, which no host-side surface change can reach
-(B59).
+hit test rather than a `hostedContext` (B58); and the hosted library and video surfaces (B60).
+
+#### A press that only acts on the button up is still a drag handle (B59)
+
+The skin's *own* window has the same problem in a different place, and two rules answer it.
+
+**A layer with no `onleftbuttondown` binding primes a drag instead of refusing one.**
+`shouldPrimeWindowDrag` runs where `shouldDragWindow` has said no: the press is primed, and becomes a
+drag only once the pointer has travelled 3pt — B57's threshold, so the two gestures feel like one.
+Under the threshold the press is still a click and the layer's handler fires normally; over it, the
+window moves and the release drops the click it would otherwise have performed.
+
+ClassicPro is the measured case. Its toolbar is
+`<layer id="doubleclick" x="0" y="0" w="0" h="27" relatw="1" wantfocus="1"/>` — the full width of the
+player, pinned to the top, exactly where a person reaches for a titlebar — and the general rule
+refuses it because a script hooks the mouse on it. But the only event it binds is **`onleftbuttonup`**:
+it exists to catch a double-click and has nothing to do on the press, so refusing the press protected
+nothing while costing four skins their entire title strip (`top24=0%` on a 500x500 player). This is
+why the deferral is scoped to layers that do **not** bind the press: one that does still receives it
+on the press, unchanged, which is what makes this narrow where B59 rated the general form risky.
+`move="0"` and `action=` remain refusals — there the skin has said what it wants.
+
+**⌘-drag moves the window from anywhere**, ahead of the menu bar, the divider, the resize border, every
+holder and every control. The corpus is why: median draggable share is **72%** across 120 containers,
+but **29 of them** have a top-24px strip under 25% draggable — Ujola Cat's player is 24%, meridian's
+25%, and every blocker is the skin's own declaration, so no policy change can reach them. ⌘ is unused
+everywhere else in `WinampModernMainView`'s mouse path and the press returns without being dispatched,
+so no script sees an event it would otherwise have had.
+
+**The corpus drag numbers above are a pre-B59 baseline.** They were measured with
+`WINAMP_MODERN_DRAG_PROBE` before the deferral existed, and the probe samples `shouldDragWindow` only
+— it models neither the deferred drag nor the ⌘ hatch, so it still reports cPro's toolbar as 0%.
+**Re-run it, and teach it both rules, before treating any of these percentages as current** — which is
+the first step of any further drag work, not an optional check.
+
+One thing measured and deliberately left alone: on some skins a large share of the face resolves to
+**no object at all** (Ujola Cat 64%, meridian 66%) and returns at `guard let object = renderer.object(at:)`
+before the drag branch ever runs. Whether that area is inside the shaped window or outside it has not
+been checked against the region mask.
 
 Materialized hosted windows join `WindowManager`'s managed-window graph for snapping, docking,
 always-on-top, ordering, Compact Mode, state capture, and orphan checks. Unopened route descriptors

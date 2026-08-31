@@ -27,7 +27,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 |---|---|---:|:---:|---|
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
-| B59 | Skins whose own player leaves almost no drag handle | 2 skins measured under 50% ([M19]) | M | Live-reported |
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
 | B71 | A layout script loads before the frame beside it has a client area | — · seen on Defix's detached visualizer (2026-08-29); corpus reach unmeasured | L | Live-reported |
 | BB34 | An embedded visualization pane's engine never starts | — · seen on Big Bento Modern's Multi Content View mini pane (2026-08-29) | M | Live-reported |
@@ -59,7 +58,6 @@ citing nothing, which is how five of these went stale before being pruned 2026-0
 M20, M21 — now recorded under BB10, B41, BB5, B66 and B67 respectively). Every `[M##]` below must
 resolve to a live citation above.
 
-- <a id="m19"></a>**M19:** `WINAMP_MODERN_DRAG_PROBE="$corpus_wal" swift test --filter WinampModernDragProbe` over the 36 installed `.wal` files, where `$corpus_wal` is `~/Library/Application Support/NullPlayer/WinampModernSkins`. Reports each container's draggable share; add `WINAMP_MODERN_DRAG_MAP=1` for the face map. See `skills/winamp-modern-skin-guide/reference/harness.md`.
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases — and 50, 100, 150, 200, 250, 300 are integral. To check a *full* draw at either, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests` renders the scene the way the view does; count rows whose alpha is strictly between transparent and opaque to find partial-coverage seams objectively rather than by eye. The harness has no partial-repaint mode, which is why it cannot reproduce the live defect — adding one is most of this task.
 - <a id="m24"></a>**M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: **The_Nokia_5220_XpressMusic 12 of 12** and **winampmodern566 12 of 18**; no other skin in the 53 points one at a bitmap. Both are Menu-bar skins, which is why the symptom shows up there first.
@@ -173,34 +171,6 @@ The implementation and its automated coverage shipped; that record is in
       `hostedContext`, so the drag would have to route through the parent `WinampModernMainView`'s
       skin hit test, and what `shouldDragWindow` answers for the holder underneath it is the open
       question. Do not copy `WinampModernHostedWindowDrag` in without checking that.
-
----
-
-### B59
-
-- [ ] **B59. Skins whose own player leaves almost no drag handle.** Measured 2026-08-28 with
-      `WINAMP_MODERN_DRAG_PROBE` ([M19]): **Defix 33%** draggable and **corneramp_redux 49%**,
-      against a corpus median of ~84% (Big Bento 90%, Lobe 97%, Core-X5 99%). On Defix the handle is
-      a ~15px picture frame around the edge plus two thin strips. **This is not a hit-test bug** —
-      every top blocker is the skin's own declaration: a `move="0"` layer covering 17% of the face,
-      a script-bound `CASBODY` layer 13%, `Slider#seeker.ghost` 6%, the transport buttons. Honouring
-      those is B38.1's policy working correctly, so no policy change can reach it.
-      Two candidates, neither started. **A host escape hatch** — ⌘-drag moves the window from
-      anywhere regardless of what the object claims; a handful of lines in
-      `WinampModernMainView.mouseDown`, ⌘ is otherwise unused in that view's mouse path, and no skin
-      sees the event. It is the only one that actually fixes Defix. **A deferred drag** on
-      script-bound layers — the exclusion comment at `WinampModernMainView.swift:1683` already names
-      Winamp's press-and-hold distinction and admits the hit test does not model it; a travel
-      threshold would recover `CASBODY` (13%) and corneramp's `main1` (28%) without eating their
-      clicks, and B57's `WinampModernHostedWindowDrag` is the shape to copy. It is the riskier of
-      the two (it changes when every skin's `onleftbuttondown` fires) and it only takes Defix to
-      ~46%, so it is not what makes that skin usable.
-      Also measured, unexplained: a press where `renderer.object(at:)` finds **nothing** returns at
-      `WinampModernMainView.swift:1141` before the drag branch, so it does not drag either. Large
-      `none=` shares — Ujola Cat 64%, multipass 62%, Love is War Miku 55%, S7Reflex 53%,
-      winampmodern566 41% — are presumably outside the shaped region, but that has not been checked
-      against the region mask, and if any of it is inside the window it is dead area for one line's
-      reason.
 
 ---
 
