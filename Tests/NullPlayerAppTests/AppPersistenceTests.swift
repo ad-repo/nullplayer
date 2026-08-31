@@ -6,6 +6,7 @@ final class AppPersistenceTests: XCTestCase {
     func testSkinFamilyDisplayNamesUseOriginalBranding() {
         XCTAssertEqual(PlayerUIMode.modern.displayName, "Original")
         XCTAssertEqual(PlayerUIMode.metal.displayName, "Original-Metal")
+        XCTAssertEqual(PlayerUIMode.wmp.displayName, "Windows Media Player")
         XCTAssertEqual(ModernSkinFamily.modern.displayName, "Original")
         XCTAssertEqual(ModernSkinFamily.metal.displayName, "Original-Metal")
     }
@@ -13,8 +14,19 @@ final class AppPersistenceTests: XCTestCase {
     func testOriginalBrandingPreservesCompatibilityIdentifiers() {
         XCTAssertEqual(PlayerUIMode.modern.rawValue, "modern")
         XCTAssertEqual(PlayerUIMode.metal.rawValue, "metal")
+        XCTAssertEqual(PlayerUIMode.wmp.rawValue, "wmp")
         XCTAssertEqual(ModernSkinFamily.modern.skinNameKey, "modernSkinName")
         XCTAssertEqual(ModernSkinFamily.metal.skinNameKey, "metalSkinName")
+    }
+
+    func testControllerFamiliesAndEQLayoutsAreExplicit() {
+        XCTAssertEqual(PlayerUIMode.classic.controllerFamily, .classic)
+        XCTAssertEqual(PlayerUIMode.modern.controllerFamily, .nullPlayerModern)
+        XCTAssertEqual(PlayerUIMode.metal.controllerFamily, .nullPlayerModern)
+        XCTAssertEqual(PlayerUIMode.wmp.controllerFamily, .wmp)
+        XCTAssertFalse(PlayerUIMode.wmp.usesModernControllers)
+        XCTAssertFalse(PlayerUIMode.wmp.usesModernEQLayout)
+        XCTAssertNil(PlayerUIMode.wmp.modernSkinFamily)
     }
 
     func testFullEditionUsesExistingKeysAndHasNoForcedMode() {

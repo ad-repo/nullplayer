@@ -405,8 +405,10 @@ At Phase 8 public exposure it also becomes the application's fresh-install playe
 persisted mode and the user has not downloaded/imported any skin, launch `.wmp` on this unskinned
 surface. Never bootstrap a fresh profile by selecting or rendering an Original skin.
 
-Do not reuse a classic/Original controller as the WMP main window.
-Auxiliary provider fallbacks must be explicit and WMP-gated.
+Do not reuse a classic/Original controller as the WMP main window. Phase 3 must not instantiate
+Classic, Original, or Winamp Modern auxiliary windows in WMP mode either. Disable those window
+actions until WMP-hosted native-window chrome exists; a cross-family visual fallback is not an
+acceptable implementation of WMP mode.
 
 Tests cover mode persistence, old-state decoding, exact-mode geometry, capability/menu visibility,
 import atomicity, factory routing, teardown, and unskinned routing for fresh state, empty install,
@@ -529,6 +531,15 @@ Suggested independently tested slices:
 7. `VIDEO`/`WMPVIDEO` as documented placeholder or existing safe NullPlayer surface.
 8. Multiple views and `theme.currentViewID`, including `viewTiny`, size-range changes,
    accessibility replacement, and frame persistence per skin/view identity.
+
+All NullPlayer-owned native windows exposed in WMP mode must use the active `.wmz` skin's look and
+feel, matching the other skin systems: WMP-derived borders/chrome, title and window controls,
+colors, metrics, resize affordances, and docking treatment wrap the existing NullPlayer content.
+Implement this through a WMP-owned hosted-window registry/style snapshot rather than importing or
+subclassing Classic, Original, or Winamp Modern chrome. When a skin does not supply a required chrome
+asset/property, use a documented app-authored WMP-neutral fallback; never borrow another skin
+family's artwork or presentation. Until a given native window has this WMP host, keep its action
+hidden or disabled.
 
 View switching is a controlled transaction: cancel input capture, stop outgoing timers, resolve the
 incoming view, preserve safe top-left, apply size limits, swap scene/accessibility tree, then deliver

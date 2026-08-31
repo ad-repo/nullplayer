@@ -283,6 +283,8 @@ class AppStateManager {
         // Modern-family skin names
         var modernSkinName: String?
         var metalSkinName: String?
+        var wmpSkinName: String?
+        var wmpViewID: String?
         
         // Audio output device
         var selectedOutputDeviceUID: String?
@@ -295,7 +297,7 @@ class AppStateManager {
         var savedInModernMode: Bool = false
         
         // Version for future compatibility
-        var stateVersion: Int = 3
+        var stateVersion: Int = 4
         
         // MARK: - Custom Decoding for Backward Compatibility
         
@@ -310,7 +312,7 @@ class AppStateManager {
             case customSkinPath
             case projectMPresetIndex
             // v2 fields
-            case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, selectedOutputDeviceUID
+            case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, wmpSkinName, wmpViewID, selectedOutputDeviceUID
             case browserBrowseMode, uiMode, savedInModernMode
             case stateVersion
         }
@@ -405,6 +407,8 @@ class AppStateManager {
             isDoubleSize = decodedScaleLevel != .p100
             modernSkinName = try container.decodeIfPresent(String.self, forKey: .modernSkinName)
             metalSkinName = try container.decodeIfPresent(String.self, forKey: .metalSkinName)
+            wmpSkinName = try container.decodeIfPresent(String.self, forKey: .wmpSkinName)
+            wmpViewID = try container.decodeIfPresent(String.self, forKey: .wmpViewID)
             selectedOutputDeviceUID = try container.decodeIfPresent(String.self, forKey: .selectedOutputDeviceUID)
             browserBrowseMode = try container.decodeIfPresent(Int.self, forKey: .browserBrowseMode)
             uiMode = try container.decodeIfPresent(String.self, forKey: .uiMode)
@@ -462,11 +466,13 @@ class AppStateManager {
             isDoubleSize: Bool = false,
             modernSkinName: String? = nil,
             metalSkinName: String? = nil,
+            wmpSkinName: String? = nil,
+            wmpViewID: String? = nil,
             selectedOutputDeviceUID: String? = nil,
             browserBrowseMode: Int? = nil,
             uiMode: String? = nil,
             savedInModernMode: Bool = false,
-            stateVersion: Int = 3
+            stateVersion: Int = 4
         ) {
             self.isPlaylistVisible = isPlaylistVisible
             self.isEqualizerVisible = isEqualizerVisible
@@ -516,6 +522,8 @@ class AppStateManager {
             self.isDoubleSize = effectiveScaleLevel != .p100
             self.modernSkinName = modernSkinName
             self.metalSkinName = metalSkinName
+            self.wmpSkinName = wmpSkinName
+            self.wmpViewID = wmpViewID
             self.selectedOutputDeviceUID = selectedOutputDeviceUID
             self.browserBrowseMode = browserBrowseMode
             self.uiMode = uiMode
@@ -644,6 +652,10 @@ class AppStateManager {
             isDoubleSize: wm.isDoubleSize,
             modernSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey),
             metalSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.metal.skinNameKey),
+            wmpSkinName: wm.uiMode == .wmp
+                ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedSkinNameKey) : nil,
+            wmpViewID: wm.uiMode == .wmp
+                ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedViewIDKey) : nil,
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
             uiMode: wm.uiMode.rawValue,
@@ -753,7 +765,23 @@ class AppStateManager {
     /// Apply settings state (skin, volume, EQ, windows) - no playlist
     private func applySettingsState(_ state: AppState, completion: (() -> Void)? = nil) {
         let wm = WindowManager.shared
-        let restoredMode = state.restoredUIMode
+        // DEBUG command-line mode selection is an explicit launch override. Session restoration
+        // may restore state within that mode, but must not replace the requested controller family.
+        let restoredMode = PlayerUIMode.debugArgumentOverride ?? state.restoredUIMode
+
+        if restoredMode == .wmp, state.restoredUIMode == .wmp {
+            let importer = WMPSkinImporter()
+            if let name = state.wmpSkinName {
+                importer.defaults.set(name, forKey: WMPSkinImporter.selectedSkinNameKey)
+                if let viewID = state.wmpViewID {
+                    importer.defaults.set(viewID, forKey: WMPSkinImporter.selectedViewIDKey)
+                } else {
+                    importer.defaults.removeObject(forKey: WMPSkinImporter.selectedViewIDKey)
+                }
+            } else {
+                importer.resetSelection()
+            }
+        }
 
         // reloadUI(to:) can defer the actual mode swap until Compact Mode teardown completes.
         // The rest of the restore reads wm.uiMode / wm.isRunningModernFamilyUI and rebuilds
@@ -773,7 +801,6 @@ class AppStateManager {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
 
-        let runningModernMode = wm.isRunningModernFamilyUI
         let runningMode = wm.uiMode
         
         NSLog("AppStateManager: Restoring settings state - volume: %.2f", state.volume)
@@ -809,7 +836,7 @@ class AppStateManager {
         // Restore the classic skin only while running the classic UI. Loading it in
         // modern mode applies classic visualization defaults and couples the two
         // otherwise-independent skin systems.
-        if !runningModernMode, let skinPath = state.customSkinPath {
+        if runningMode.controllerFamily == .classic, let skinPath = state.customSkinPath {
             let skinURL = URL(fileURLWithPath: skinPath)
             if FileManager.default.fileExists(atPath: skinPath) {
                 wm.restoreClassicSkin(from: skinURL)
@@ -825,6 +852,11 @@ class AppStateManager {
         }
         if let family = runningMode.modernSkinFamily {
             ModernSkinEngine.shared.loadPreferredSkin(for: family)
+        }
+        if runningMode == .wmp {
+            // Selection preferences are restored before the mode swap. Reload here as well for
+            // the no-swap case, where the existing WMP controller may still hold the old archive.
+            (wm.mainWindowController as? WMPMainWindowController)?.reloadSelectedSkin()
         }
         
         // Restore audio output device
@@ -869,7 +901,7 @@ class AppStateManager {
             .flatMap(VisualizationType.init(rawValue:)) ?? .projectM
         let projectMFullscreen = state.isProjectMFullscreen
         let savedBrowseMode = state.browserBrowseMode
-        let savedScaleLevel = modeMatches ? state.uiScaleLevel : .p100
+        let savedScaleLevel = modeMatches && runningMode.controllerFamily != .wmp ? state.uiScaleLevel : .p100
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             // Restore UI size BEFORE showing sub-windows so applyDoubleSize
@@ -1127,7 +1159,11 @@ class AppStateManager {
         
         // Main window exists at this point, so we can restore its frame directly
         if let frameString = state.mainWindowFrame,
-           let window = wm.mainWindowController?.window {
+           let controller = wm.mainWindowController as? WMPMainWindowController {
+            controller.restoreFrame(NSRectFromString(frameString), skinName: state.wmpSkinName,
+                                    viewID: state.wmpViewID)
+        } else if let frameString = state.mainWindowFrame,
+                  let window = wm.mainWindowController?.window {
             let frame = NSRectFromString(frameString)
             if frame != .zero {
                 window.setFrame(frame, display: true)

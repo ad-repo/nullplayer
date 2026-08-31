@@ -1,9 +1,16 @@
 import Foundation
 
+enum PlayerUIControllerFamily: String, CaseIterable {
+    case classic
+    case nullPlayerModern
+    case wmp
+}
+
 enum PlayerUIMode: String, CaseIterable {
     case classic
     case modern
     case metal
+    case wmp
 
     static let userDefaultsKey = "uiMode"
     private static let legacyModernEnabledKey = "modernUIEnabled"
@@ -13,12 +20,21 @@ enum PlayerUIMode: String, CaseIterable {
         case .classic: return "Classic"
         case .modern: return ModernSkinFamily.modern.displayName
         case .metal: return ModernSkinFamily.metal.displayName
+        case .wmp: return "Windows Media Player"
+        }
+    }
+
+    var controllerFamily: PlayerUIControllerFamily {
+        switch self {
+        case .classic: return .classic
+        case .modern, .metal: return .nullPlayerModern
+        case .wmp: return .wmp
         }
     }
 
     var usesModernControllers: Bool {
         switch self {
-        case .classic: return false
+        case .classic, .wmp: return false
         case .modern, .metal: return true
         }
     }
@@ -28,12 +44,12 @@ enum PlayerUIMode: String, CaseIterable {
     /// This matches the controller family in NullPlayer, but remains a distinct policy
     /// because downstream modes may use custom controllers while retaining the modern EQ.
     var usesModernEQLayout: Bool {
-        usesModernControllers
+        controllerFamily == .nullPlayerModern
     }
 
     var modernSkinFamily: ModernSkinFamily? {
         switch self {
-        case .classic: return nil
+        case .classic, .wmp: return nil
         case .modern: return .modern
         case .metal: return .metal
         }
@@ -67,5 +83,21 @@ enum PlayerUIMode: String, CaseIterable {
         forcedMode: PlayerUIMode? = AppPersistence.forcedUIMode
     ) -> Bool {
         forcedMode == nil || forcedMode == requestedMode
+    }
+
+    static var debugArgumentOverride: PlayerUIMode? {
+        #if DEBUG
+        return debugArgumentOverride(
+            from: UserDefaults.standard.volatileDomain(forName: "NSArgumentDomain"))
+        #else
+        return nil
+        #endif
+    }
+
+    static func debugArgumentOverride(from arguments: [String: Any]) -> PlayerUIMode? {
+        guard let rawValue = arguments[userDefaultsKey] as? String,
+              let mode = PlayerUIMode(rawValue: rawValue),
+              mode != .wmp || AppCapabilities.supports(.wmpSkinMode) else { return nil }
+        return mode
     }
 }

@@ -57,10 +57,12 @@ selected by Phase 0 and must repeat its hard-stop/restart security gate before p
 
 ## Static scene and image contracts
 
-- `WMPSceneBuilder` resolves only literal geometry. An expression-sized container remains
-  unresolved and unpainted, but descendants with a known literal origin may still contribute their
-  independently literal geometry; the private zero-delta alignment baseline is never emitted as a
-  fallback frame or expression result.
+- `WMPSceneBuilder` resolves literal geometry plus the bounded static initial-layout grammar in
+  `WMPInitialLayoutExpression`: finite numbers, parentheses, arithmetic, and geometry reads from
+  deterministic IDs. `wmpprop:` is accepted only as an alias for that same geometry grammar.
+  Calls, assignments, statements, script globals, ambiguous/unknown IDs, cycles, and excessive
+  dependency depth remain unresolved diagnostics; never route them through in-process JScript or
+  invent fallback geometry.
 - Scene coordinates remain top-left throughout layout, clipping, dirty bounds, hit metadata, and
   paint commands. Core Graphics conversion happens once in `WMPRenderer`; images and text each use
   an explicit counter-transform so pixels and glyphs remain upright.
@@ -71,6 +73,26 @@ selected by Phase 0 and must repeat its hard-stop/restart security gate before p
   alpha of every non-matching pixel.
 - The opt-in render dump writes one untracked PNG per view plus a JSON report. Corpus paths and
   output directories are local inputs/artifacts and must never be staged.
+
+## Phase 3 app integration contracts
+
+- WMP maps to its own `PlayerUIControllerFamily.wmp`; it is neither Classic nor a
+  `ModernSkinFamily`. Keep capability and menu exposure DEBUG-only until the public-exposure phase.
+- `WMPSkinImporter` owns `Application Support/NullPlayer/WMPSkins`, complete pre-commit validation,
+  same-directory atomic replacement, installed enumeration, and the `wmpSkinName` / view selection
+  keys. A failed replacement must leave both the installed archive and selection usable.
+- `WMPMainWindowController` must first present `WMPUnskinnedMainView`, then swap in only a completed
+  static WMP scene. Missing/corrupt selections stay in WMP with an actionable diagnostic. Main-window
+  fallback must never instantiate or consult Classic, Original, or Winamp Modern skin machinery.
+- Persist WMP skin/view identity separately. Restore WMP geometry only when the exact mode, skin,
+  and view match; preserve top-left position safely and do not apply shared UI scaling.
+- Teardown is synchronous and idempotent: cancel WMP tasks, clear callbacks and images, then release
+  scene, archive, and image-store ownership before the controller is discarded.
+- NullPlayer-owned native windows exposed in WMP mode must be hosted in WMP-owned chrome derived
+  from the active `.wmz`: borders, colors, title/window controls, metrics, resize affordances, and
+  docking treatment. Never fall back to another skin family's controller or chrome. Until a window
+  has a WMP host, hide or disable it; missing skin chrome uses only an app-authored WMP-neutral
+  fallback.
 
 ## Verification
 

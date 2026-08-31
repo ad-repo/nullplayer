@@ -8,6 +8,10 @@ class ContextMenuBuilder {
     /// Keeps menu targets alive when their browser window has not been created yet.
     private static let compactBackdropFallbackPresenter = CavaPresenter(scope: .compactWindow)
     private static let libraryBackdropFallbackPresenter = CavaPresenter(scope: .libraryWindow)
+
+    static func supportsSkinnedAuxiliaryWindows(for mode: PlayerUIMode) -> Bool {
+        mode.controllerFamily != .wmp
+    }
     
     // MARK: - Main Menu Builder
     
@@ -46,15 +50,17 @@ class ContextMenuBuilder {
 
         // Compact Mode works in both classic and modern UI. Set apart on its own, above the
         // display toggles.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
-        let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
-        compactWindow.target = MenuActions.shared
-        compactWindow.state = wm.compactWindowEnabled ? .on : .off
-        menu.addItem(compactWindow)
-        menu.addItem(NSMenuItem.separator())
+        if wm.uiMode.controllerFamily != .wmp {
+            let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+            compactMode.target = MenuActions.shared
+            compactMode.state = wm.compactModeEnabled ? .on : .off
+            menu.addItem(compactMode)
+            let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
+            compactWindow.target = MenuActions.shared
+            compactWindow.state = wm.compactWindowEnabled ? .on : .off
+            menu.addItem(compactWindow)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         // Display toggles
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
@@ -62,7 +68,7 @@ class ContextMenuBuilder {
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
 
-        menu.addItem(buildUISizeMenuItem(wm: wm))
+        if wm.uiMode.controllerFamily != .wmp { menu.addItem(buildUISizeMenuItem(wm: wm)) }
 
         menu.addItem(buildWindowLockMenuItem())
         menu.addItem(NSMenuItem.separator())
@@ -92,22 +98,23 @@ class ContextMenuBuilder {
     static func buildMenuBarWindowsMenu() -> NSMenu {
         let menu = NSMenu()
         let wm = WindowManager.shared
+        let supportsSkinnedAuxiliaryWindows = supportsSkinnedAuxiliaryWindows(for: wm.uiMode)
 
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
-        menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
-        menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
-        menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum)))
-        menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis)))
-        menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter)))
-        menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor)))
-        menu.addItem(buildWindowItem("Cava", visible: wm.isCavaVisible, action: #selector(MenuActions.toggleCava)))
-        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
-        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Cava", visible: wm.isCavaVisible, action: #selector(MenuActions.toggleCava), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser), enabled: supportsSkinnedAuxiliaryWindows))
         if wm.isRunningModernUI {
             menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
                                          action: #selector(MenuActions.toggleLibraryHistory)))
         }
-        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
+        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Video Player", visible: wm.isVideoPlayerVisible,
                                      action: #selector(MenuActions.toggleVideoPlayer),
                                      enabled: wm.currentVideoPlayerController != nil))
@@ -123,15 +130,17 @@ class ContextMenuBuilder {
 
         // Compact Mode works in both classic and modern UI. Set apart on its own, above the
         // display toggles.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
-        let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
-        compactWindow.target = MenuActions.shared
-        compactWindow.state = wm.compactWindowEnabled ? .on : .off
-        menu.addItem(compactWindow)
-        menu.addItem(NSMenuItem.separator())
+        if wm.uiMode.controllerFamily != .wmp {
+            let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+            compactMode.target = MenuActions.shared
+            compactMode.state = wm.compactModeEnabled ? .on : .off
+            menu.addItem(compactMode)
+            let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
+            compactWindow.target = MenuActions.shared
+            compactWindow.state = wm.compactWindowEnabled ? .on : .off
+            menu.addItem(compactWindow)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
         alwaysOnTop.target = MenuActions.shared
@@ -145,7 +154,7 @@ class ContextMenuBuilder {
             menu.addItem(hideTitleBars)
         }
 
-        menu.addItem(buildUISizeMenuItem(wm: wm))
+        if wm.uiMode.controllerFamily != .wmp { menu.addItem(buildUISizeMenuItem(wm: wm)) }
 
         menu.addItem(buildWindowLockMenuItem())
 
@@ -813,6 +822,58 @@ class ContextMenuBuilder {
         if activeMode == .metal { metalItem.state = .on }
         metalItem.submenu = metalMenu
         if AppCapabilities.supports(.metalMode) { uiMenu.addItem(metalItem) }
+
+        // --- Windows Media Player submenu (experimental/DEBUG capability) ---
+        if AppCapabilities.supports(.wmpSkinMode) {
+            let wmpItem = NSMenuItem(title: PlayerUIMode.wmp.displayName, action: nil, keyEquivalent: "")
+            let wmpMenu = NSMenu()
+            wmpMenu.autoenablesItems = false
+            let importer = WMPSkinImporter()
+
+            if activeMode != .wmp {
+                let switchItem = NSMenuItem(title: "Switch to Windows Media Player",
+                                            action: #selector(MenuActions.setWMPMode), keyEquivalent: "")
+                switchItem.target = MenuActions.shared
+                wmpMenu.addItem(switchItem)
+                wmpMenu.addItem(.separator())
+            }
+            let load = NSMenuItem(title: "Load WMZ Skin…",
+                                  action: #selector(MenuActions.loadWMPSkinFromFile), keyEquivalent: "")
+            load.target = MenuActions.shared
+            wmpMenu.addItem(load)
+            let unskinned = NSMenuItem(title: "Unskinned Default Player",
+                                       action: #selector(MenuActions.useUnskinnedWMPPlayer), keyEquivalent: "")
+            unskinned.target = MenuActions.shared
+            unskinned.state = activeMode == .wmp && importer.selectedSkinName == nil ? .on : .off
+            wmpMenu.addItem(unskinned)
+            wmpMenu.addItem(.separator())
+
+            let installed = importer.installedSkins()
+            if installed.isEmpty {
+                let empty = NSMenuItem(title: "No WMP skins installed", action: nil, keyEquivalent: "")
+                empty.isEnabled = false
+                wmpMenu.addItem(empty)
+            } else {
+                for skin in installed {
+                    let item = NSMenuItem(title: skin.name, action: #selector(MenuActions.selectWMPSkin(_:)), keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skin.name
+                    if activeMode == .wmp,
+                       importer.selectedSkinName?.caseInsensitiveCompare(skin.name) == .orderedSame {
+                        item.state = .on
+                    }
+                    wmpMenu.addItem(item)
+                }
+            }
+            wmpMenu.addItem(.separator())
+            let open = NSMenuItem(title: "Open WMP Skins Folder…",
+                                  action: #selector(MenuActions.openWMPSkinsFolder), keyEquivalent: "")
+            open.target = MenuActions.shared
+            wmpMenu.addItem(open)
+            if activeMode == .wmp { wmpItem.state = .on }
+            wmpItem.submenu = wmpMenu
+            uiMenu.addItem(wmpItem)
+        }
 
         return uiMenu
     }
@@ -4206,6 +4267,74 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
         guard wm.uiMode != .metal else { return }
         wm.reloadUI(to: .metal)
+    }
+
+    @objc func setWMPMode() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        let wm = WindowManager.shared
+        guard wm.uiMode != .wmp else { return }
+        wm.reloadUI(to: .wmp)
+    }
+
+    @objc func loadWMPSkinFromFile() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        if let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController {
+            controller.importSkinFromPanel()
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.init(filenameExtension: "wmz")!]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                _ = try await WMPSkinImporter().importSkin(from: url)
+                await MainActor.run { WindowManager.shared.reloadUI(to: .wmp) }
+            } catch {
+                await MainActor.run {
+                    let alert = NSAlert(error: error)
+                    alert.messageText = "Failed to Import WMP Skin"
+                    alert.runModal()
+                }
+            }
+        }
+    }
+
+    @objc func selectWMPSkin(_ sender: NSMenuItem) {
+        guard AppCapabilities.supports(.wmpSkinMode),
+              let name = sender.representedObject as? String else { return }
+        let wm = WindowManager.shared
+        if let controller = wm.mainWindowController as? WMPMainWindowController {
+            controller.selectInstalledSkin(named: name)
+        } else if let skin = WMPSkinImporter().installedSkins().first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }) {
+            WMPSkinImporter().select(skin)
+            wm.reloadUI(to: .wmp)
+        }
+    }
+
+    @objc func useUnskinnedWMPPlayer() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        let wm = WindowManager.shared
+        WMPSkinImporter().resetSelection()
+        if let controller = wm.mainWindowController as? WMPMainWindowController {
+            controller.resetToUnskinned()
+        } else {
+            wm.reloadUI(to: .wmp)
+        }
+    }
+
+    @objc func openWMPSkinsFolder() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        let importer = WMPSkinImporter()
+        do {
+            try importer.ensureDirectoryExists()
+            NSWorkspace.shared.open(importer.directoryURL)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
     }
 
     /// Reset the active modern/metal skin to its shipped defaults, discarding

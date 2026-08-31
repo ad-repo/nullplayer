@@ -127,6 +127,13 @@ private enum CompactModeState {
     case exiting
 }
 
+private enum AuxiliaryControllerStyle {
+    case classic
+    case nullPlayerModern
+    /// WMP-hosted auxiliary chrome is a later phase. Never substitute another skin family's UI.
+    case wmpUnavailable
+}
+
 enum BrowserBackdropMode: Int, CaseIterable {
     case off = 0
     case art = 1
@@ -333,7 +340,7 @@ class WindowManager {
     /// Whether the modern-family UI is enabled. Kept as a compatibility mirror for
     /// call sites that only need to choose classic vs. modern-family controllers.
     var isModernUIEnabled: Bool {
-        get { uiMode.usesModernControllers }
+        get { uiMode.controllerFamily == .nullPlayerModern }
         set { uiMode = newValue ? .modern : .classic }
     }
 
@@ -343,8 +350,22 @@ class WindowManager {
         if let controller = mainWindowController {
             if controller is ModernMainWindowController { return true }
             if controller is MainWindowController { return false }
+            if controller is WMPMainWindowController { return false }
         }
         return isModernUIEnabled
+    }
+
+    var isRunningWMPUI: Bool {
+        if mainWindowController is WMPMainWindowController { return true }
+        return mainWindowController == nil && uiMode.controllerFamily == .wmp
+    }
+
+    private var auxiliaryControllerStyle: AuxiliaryControllerStyle {
+        switch uiMode.controllerFamily {
+        case .classic: return .classic
+        case .nullPlayerModern: return .nullPlayerModern
+        case .wmp: return .wmpUnavailable
+        }
     }
 
     var isRunningModernFamilyUI: Bool {
@@ -714,6 +735,10 @@ class WindowManager {
     // MARK: - Initialization
     
     private init() {
+        if storedUIMode == .wmp, !AppCapabilities.supports(.wmpSkinMode) {
+            storedUIMode = .classic
+            storedUIMode.persist()
+        }
         // Register and load preferences
         if let persistentDomainName = Bundle.main.bundleIdentifier {
             BrowserBackdropMode.migrateLegacyArtworkPreference(
@@ -724,8 +749,10 @@ class WindowManager {
         registerPreferenceDefaults()
         loadPreferences()
 
-        // Load default skin
-        loadDefaultSkin()
+        // WMP owns an app-authored unskinned fallback and must not consult another skin engine.
+        if storedUIMode.controllerFamily != .wmp {
+            loadDefaultSkin()
+        }
 
         // Clean up drag state if a window closes mid-drag
         NotificationCenter.default.addObserver(
@@ -797,12 +824,7 @@ class WindowManager {
     func showMainWindow(reveal: Bool = true) {
         let isNew = mainWindowController == nil
         if isNew {
-            if isModernUIEnabled {
-                let modern = ModernMainWindowController()
-                mainWindowController = modern
-            } else {
-                mainWindowController = MainWindowController()
-            }
+            mainWindowController = Self.makeMainWindowController(for: uiMode)
         }
         markModeDependentWindow(mainWindowController?.window)
         // Enforce HT compact height on both first show and subsequent re-shows.
@@ -814,6 +836,14 @@ class WindowManager {
         }
         applyAlwaysOnTopToWindow(mainWindowController?.window)
         mainWindowController?.windowVisibilityDidChange()
+    }
+
+    static func makeMainWindowController(for mode: PlayerUIMode) -> MainWindowProviding {
+        switch mode.controllerFamily {
+        case .classic: return MainWindowController()
+        case .nullPlayerModern: return ModernMainWindowController()
+        case .wmp: return WMPMainWindowController()
+        }
     }
     
     func toggleMainWindow() {
@@ -830,12 +860,15 @@ class WindowManager {
     }
     
     func showPlaylist(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
-            if isModernUIEnabled {
+            switch auxiliaryControllerStyle {
+            case .nullPlayerModern:
                 playlistWindowController = ModernPlaylistWindowController()
-            } else {
+            case .classic:
                 playlistWindowController = PlaylistWindowController()
+            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(playlistWindowController?.window)
@@ -850,7 +883,7 @@ class WindowManager {
                 // This keeps the window snapped below main whenever the user opens it fresh,
                 // even if it was previously resized. Stretch state is intentionally not persisted
                 // across hide/show toggles.
-                if isModernUIEnabled {
+                if auxiliaryControllerStyle == .nullPlayerModern {
                     applyDefaultCenterStackFrameForCurrentHT(playlistWindow, kind: .playlist)
                 } else {
                     (playlistWindowController as? PlaylistWindowController)?.resetToDefaultFrame()
@@ -888,12 +921,15 @@ class WindowManager {
     }
     
     func showEqualizer(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let isNewWindow = equalizerWindowController == nil
         if isNewWindow {
-            if isModernUIEnabled {
+            switch auxiliaryControllerStyle {
+            case .nullPlayerModern:
                 equalizerWindowController = ModernEQWindowController()
-            } else {
+            case .classic:
                 equalizerWindowController = EQWindowController()
+            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(equalizerWindowController?.window)
@@ -1072,6 +1108,7 @@ class WindowManager {
     // MARK: - Plex Browser Window
     
     func showPlexBrowser(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let isNewWindow = plexBrowserWindowController == nil
         if isNewWindow {
             createPlexBrowserWindowController()
@@ -1094,7 +1131,7 @@ class WindowManager {
                 }
             } else {
                 // Scale width for double-size mode
-                let sideWidth = window.frame.width * (isModernUIEnabled ? ModernSkinElements.sizeMultiplier : 1.0)
+                let sideWidth = window.frame.width * (auxiliaryControllerStyle == .nullPlayerModern ? ModernSkinElements.sizeMultiplier : 1.0)
                 if let newFrame = rightDockedSideFrame(for: window, width: sideWidth) {
                     window.setFrame(newFrame, display: true)
                 }
@@ -1105,10 +1142,13 @@ class WindowManager {
     }
 
     private func createPlexBrowserWindowController() {
-        if isModernUIEnabled {
+        switch auxiliaryControllerStyle {
+        case .nullPlayerModern:
             plexBrowserWindowController = ModernLibraryBrowserWindowController()
-        } else {
+        case .classic:
             plexBrowserWindowController = PlexBrowserWindowController()
+        case .wmpUnavailable:
+            return
         }
         markModeDependentWindow(plexBrowserWindowController?.window)
     }
@@ -1205,6 +1245,7 @@ class WindowManager {
 
     /// Toggle the menu-bar Compact Mode (works in both classic and modern UI). Live — no restart.
     func toggleCompactMode() {
+        guard uiMode.controllerFamily != .wmp else { return }
         if compactModeEnabled {
             exitCompactMode()
         } else {
@@ -1215,6 +1256,7 @@ class WindowManager {
     /// Toggle the free-floating Compact Window. This reuses the compact mini-player surface
     /// without changing activation policy or hiding any secondary windows.
     func toggleCompactWindow() {
+        guard uiMode.controllerFamily != .wmp else { return }
         if compactWindowEnabled {
             exitCompactWindow()
         } else {
@@ -1227,6 +1269,7 @@ class WindowManager {
     /// - Parameter treatMainAsVisible: Used at launch restore when the main window was created
     ///   hidden only to avoid flash. Exiting Compact Window should still bring it back.
     func enterCompactWindow(treatMainAsVisible: Bool = false) {
+        guard uiMode.controllerFamily != .wmp else { return }
         if compactModeState != .regular {
             exitCompactMode { [weak self] in
                 self?.enterCompactWindow(treatMainAsVisible: treatMainAsVisible)
@@ -1288,6 +1331,7 @@ class WindowManager {
     ///   regular layout, so this matches the live-toggle behavior. Defaults to `false` so the
     ///   live menu toggle keeps recording the main window's actual visibility.
     func enterCompactMode(revealWindow: Bool = true, treatMainAsVisible: Bool = false) {
+        guard uiMode.controllerFamily != .wmp else { return }
         let compactWindowMainWasVisible = compactWindowEnabled && mainWasVisibleBeforeCompactWindow
         if compactWindowEnabled {
             exitCompactWindow(restoreMainWindow: false)
@@ -2431,12 +2475,15 @@ class WindowManager {
     // MARK: - ProjectM Visualization Window
     
     func showProjectM(at restoredFrame: NSRect? = nil, restoringPresetIndex presetIndex: Int? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let isNewWindow = projectMWindowController == nil
         if isNewWindow {
-            if isModernUIEnabled {
+            switch auxiliaryControllerStyle {
+            case .nullPlayerModern:
                 projectMWindowController = ModernProjectMWindowController()
-            } else {
+            case .classic:
                 projectMWindowController = ProjectMWindowController()
+            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(projectMWindowController?.window)
@@ -2504,12 +2551,15 @@ class WindowManager {
     // MARK: - Spectrum Analyzer Window
     
     func showSpectrum(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let isNewWindow = spectrumWindowController == nil
         if isNewWindow {
-            if isModernUIEnabled {
+            switch auxiliaryControllerStyle {
+            case .nullPlayerModern:
                 spectrumWindowController = ModernSpectrumWindowController()
-            } else {
+            case .classic:
                 spectrumWindowController = SpectrumWindowController()
+            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(spectrumWindowController?.window)
@@ -2522,7 +2572,7 @@ class WindowManager {
             } else {
                 // By design: always reset to default when showing without a saved frame.
                 // Same rationale as showPlaylist — stretch state is not persisted across toggles.
-                if isModernUIEnabled {
+                if auxiliaryControllerStyle == .nullPlayerModern {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .spectrum)
                 } else {
                     (spectrumWindowController as? SpectrumWindowController)?.resetToDefaultFrame()
@@ -2572,6 +2622,7 @@ class WindowManager {
     // MARK: - Audio Analysis Window
 
     func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let runningModernMode = isRunningModernUI
         if audioAnalysisWindowController == nil {
             if runningModernMode {
@@ -2635,6 +2686,7 @@ class WindowManager {
     // MARK: - PeppyMeter Window
 
     func showPeppyMeter(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let runningModernMode = isRunningModernUI
         if peppyMeterWindowController == nil {
             if runningModernMode {
@@ -2713,6 +2765,7 @@ class WindowManager {
     // MARK: - Network Monitor Window
 
     func showNetworkMonitor(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let runningModernMode = isRunningModernUI
         if networkMonitorWindowController == nil {
             if runningModernMode {
@@ -2775,6 +2828,7 @@ class WindowManager {
     // MARK: - Cava Window
 
     func showCava(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let runningModernMode = isRunningModernUI
         if cavaWindowController == nil {
             if runningModernMode {
@@ -2837,12 +2891,15 @@ class WindowManager {
     // MARK: - Waveform Window
 
     func showWaveform(at restoredFrame: NSRect? = nil) {
+        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         let isNewWindow = waveformWindowController == nil
         if isNewWindow {
-            if isModernUIEnabled {
+            switch auxiliaryControllerStyle {
+            case .nullPlayerModern:
                 waveformWindowController = ModernWaveformWindowController()
-            } else {
+            case .classic:
                 waveformWindowController = WaveformWindowController()
+            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(waveformWindowController?.window)
@@ -2854,7 +2911,7 @@ class WindowManager {
                 classicController?.clearPendingFrameReset()
                 applyRestoredCenterStackFrame(frame, to: window, kind: .waveform)
             } else {
-                if isModernUIEnabled {
+                if auxiliaryControllerStyle == .nullPlayerModern {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .waveform)
                 } else {
                     // Classic waveform should only reset after explicit close + reopen.
@@ -4251,8 +4308,13 @@ class WindowManager {
         let screenFrame = screen.frame
         
         // Use current main window size (preserves user scaling)
-        let mainSize = mainWindowController?.window?.frame.size ??
-            (isModernUIEnabled ? ModernSkinElements.mainWindowSize : Skin.mainWindowSize)
+        let fallbackMainSize: NSSize
+        switch uiMode.controllerFamily {
+        case .classic: fallbackMainSize = Skin.mainWindowSize
+        case .nullPlayerModern: fallbackMainSize = ModernSkinElements.mainWindowSize
+        case .wmp: fallbackMainSize = WMPMainWindowController.unskinnedSize
+        }
+        let mainSize = mainWindowController?.window?.frame.size ?? fallbackMainSize
         let mainFrame = NSRect(
             x: screenFrame.midX - mainSize.width / 2,
             y: screenFrame.midY - mainSize.height / 2,
@@ -5149,7 +5211,7 @@ class WindowManager {
     /// Compute joined edge intervals in window-local coordinates for modern seamless border rendering.
     /// Uses a per-notification-cycle cache so multiple observers share one computation.
     func computeEdgeOcclusionSegments(for window: NSWindow) -> EdgeOcclusionSegments {
-        guard isModernUIEnabled else { return .empty }
+        guard uiMode.controllerFamily == .nullPlayerModern else { return .empty }
         let key = ObjectIdentifier(window)
         if let cached = edgeOcclusionSegmentsCache[key] { return cached }
         let result = _computeEdgeOcclusionSegmentsImpl(for: window)
@@ -5160,7 +5222,7 @@ class WindowManager {
     /// Compute which edges of a window are adjacent to another visible managed window.
     /// Uses a per-notification-cycle cache so multiple observers share one computation.
     func computeAdjacentEdges(for window: NSWindow) -> AdjacentEdges {
-        guard isModernUIEnabled else { return [] }
+        guard uiMode.controllerFamily == .nullPlayerModern else { return [] }
         let key = ObjectIdentifier(window)
         if let cached = adjacencyCache[key] { return cached }
         let segments = computeEdgeOcclusionSegments(for: window)
@@ -5293,7 +5355,7 @@ class WindowManager {
     /// because an adjacent window actually reaches/covers that corner.
     /// Uses a per-notification-cycle cache so multiple observers share one computation.
     func computeSharpCorners(for window: NSWindow) -> CACornerMask {
-        guard isModernUIEnabled else { return [] }
+        guard uiMode.controllerFamily == .nullPlayerModern else { return [] }
         let key = ObjectIdentifier(window)
         if let cached = sharpCornersCache[key] { return cached }
         let result = _computeSharpCornersImpl(for: window)
@@ -5745,8 +5807,7 @@ class WindowManager {
     /// by the DEBUG recreate action, with mode-change semantics layered on:
     ///   1. snapshot which mode-dependent windows are open (+ frames) and the Compact-Mode state;
     ///   2. `teardownModeDependentWindows()` — synchronous; its completion gates recreation;
-    ///   3. flip `isModernUIEnabled` — the `show*()` paths read it to pick classic vs. modern
-    ///      controllers, so it must change *between* teardown and recreate;
+    ///   3. persist the explicit target controller family between teardown and recreation;
     ///   4. `prepareUIRuntime(forModernUI:)` — target-mode runtime prep before any controller exists;
     ///   5. reprogram both EQ nodes to the target layout via canonical per-layout gains;
     ///   6. rebuild the menu bar (mode-dependent items);
@@ -5767,6 +5828,11 @@ class WindowManager {
     /// `completion` — it runs after `performReloadUI`, on the main thread, in both the
     /// synchronous and deferred paths. It also fires when no switch is needed.
     func reloadUI(to targetMode: PlayerUIMode, completion: (() -> Void)? = nil) {
+        guard targetMode != .wmp || AppCapabilities.supports(.wmpSkinMode) else {
+            NSLog("WindowManager: Ignoring switch to unavailable Windows Media Player UI")
+            completion?()
+            return
+        }
         guard PlayerUIMode.allowsAssignment(targetMode) else {
             NSLog("WindowManager: Ignoring switch to %@ UI because this edition is forced to %@",
                   targetMode.displayName,
@@ -6043,7 +6109,7 @@ class WindowManager {
         // windows exist. This must happen *before* enterCompactMode() so the compact capture records
         // the enlarged regular layout, not a 1x one. Then restore every auxiliary that was outside
         // the active main-window cluster; this also covers Compact Window, where main is hidden.
-        if restoreScaleLevel != .p100 {
+        if restoreScaleLevel != .p100, targetMode.controllerFamily != .wmp {
             uiScaleLevel = restoreScaleLevel
         }
         restoreDetachedWindowFrames(preservedDetachedFrames)
@@ -6065,6 +6131,11 @@ class WindowManager {
     /// defaults when entering classic. The classic `currentSkin` is loaded once at init and
     /// survives across switches, so no classic skin reload is needed here.
     private func prepareUIRuntime(for targetMode: PlayerUIMode) {
+        if targetMode.controllerFamily == .wmp {
+            // WMP runtime state is loaded by its dedicated controller. Do not consult or mutate
+            // Classic/Original skin engines, modern engines, or their appearance bridges here.
+            return
+        }
         if let family = targetMode.modernSkinFamily {
             // Modern window sizes are derived from this global multiplier, so pin it to the
             // current UI Size state before any modern controller is created — otherwise a
@@ -6078,7 +6149,8 @@ class WindowManager {
             // "Purple Neon" into a modern skin). Launch/session-restore paths keep the
             // default preserve=true.
             ModernSkinEngine.shared.loadPreferredSkin(for: family, preservePersistedProfiles: false)
-        } else {
+        } else if targetMode.controllerFamily == .classic {
+            if currentSkin == nil { loadDefaultSkin() }
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
             // Entering classic is also a skin change: re-apply classic's own vis_classic
