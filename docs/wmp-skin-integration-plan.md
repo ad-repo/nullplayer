@@ -27,6 +27,9 @@ or Original-Metal behavior.
   fallback.
 - Give WMP its own importer, installed-skin store, preference keys, diagnostics, and `WMPSkins/`
   support directory.
+- WMP always owns an app-authored **unskinned default player**. A WMP launch with no usable selected
+  `.wmz` must show that player; it must never substitute an Original, Original-Metal, Classic, or
+  Winamp Modern skin/controller.
 - Reuse Original window/provider conventions as patterns only. Do not express `.wms` as `skin.json`.
 - Build the bounded archive, retained graph, renderer, host bridge, reporting, and teardown as
   independent WMP types. Do not plan against subsystems that are absent from remote main.
@@ -38,6 +41,36 @@ or Original-Metal behavior.
 The spike's JavaScript watchdog proposal needs a new proof. The current macOS 26.2 SDK headers do
 not expose `JSContextGroupSetExecutionTimeLimit`; a main-process `JSContext` therefore cannot be
 accepted for untrusted scripts merely because it runs on another thread.
+
+### 1.1 WMP-local change boundary
+
+WMP support is isolated skin work, not a reason to refactor or widen global application behavior.
+The default and required location for every implementation change is one of:
+
+- `Sources/NullPlayer/WMPSkin/` for headless engine/model code;
+- `Sources/NullPlayer/Windows/WMPSkin/` for WMP AppKit code;
+- `Tests/NullPlayerAppTests/WMP*` and `Tests/NullPlayerAppTests/Fixtures/WMPSkin/` for tests;
+- `docs/wmp-skin/` and `skills/wmp-skin-guide/` for WMP-owned documentation.
+
+A shared or global file may change only when there is no workable WMP-owned seam. Before making
+such a change, the phase handoff must name the WMP-local alternatives considered and explain why
+they cannot satisfy the requirement. The shared edit must then be the smallest possible integration
+seam, explicitly gated by `uiMode.controllerFamily == .wmp` (or an equally narrow WMP discriminator),
+with regression tests proving Classic, Original, Original-Metal, and Winamp Modern retain their
+existing behavior. Convenience, deduplication, cleanup, and anticipated future reuse are not
+sufficient reasons to change shared code. No existing skin engine is widened to recognize WMP tags,
+attributes, resources, state, or lifecycle.
+
+WMP input work must never occupy or synchronously rendezvous with the main thread. Archive opening,
+central-directory validation, CRC/inflation, text and XML decoding, graph construction, compatibility
+analysis, image metadata/decode/cache work, expression evaluation, and script/helper communication
+run on a WMP-owned background executor. Do not use `DispatchQueue.main.sync` or perform a heavy WMP
+callback on `MainActor`. The main actor receives only completed immutable snapshots and typed host
+commands, then performs the minimum AppKit/window mutation required to present them. Tests must prove
+the production loader entry point does its work off-main even when invoked by a main-actor caller.
+
+At each phase end, audit the changed-path list. Any path outside the WMP-owned locations above must
+be called out individually in `phase-N-handoff.md` with its necessity, gate, and regression evidence.
 
 ## 2. Worktree and branch discipline
 
@@ -62,6 +95,29 @@ git branch --show-current
 git status --short
 git rev-parse HEAD
 ```
+
+This is a hard preflight, not a reporting suggestion. Before the first write or generated build
+artifact in every implementation session, run:
+
+```bash
+test "$(pwd -P)" = "/Users/ad/Projects/nullplayer-wmp-skin-support"
+test "$(git branch --show-current)" = "feat/wmp-skin-support"
+git status --short
+```
+
+Abort immediately if either `test` fails. A tool's inherited `cwd`, the location of the plan being
+read, and the repository shown in conversation context are not proof of the active implementation
+worktree. Pass `/Users/ad/Projects/nullplayer-wmp-skin-support` explicitly as the working directory
+for every implementation command and file operation. Never create, copy, stage, build, test, or
+generate WMP implementation files under `/Users/ad/Projects/nullplayer` or
+`/Users/ad/Projects/nullplayer-wmp-skin-integration`; the canonical plan itself is the only WMP file
+edited in the planning worktree.
+
+Before each phase commit, run `git status --short` in all three worktrees and verify that WMP
+implementation changes exist only in `/Users/ad/Projects/nullplayer-wmp-skin-support` (apart from an
+intentional canonical-plan edit in the planning worktree). If a WMP implementation file is
+accidentally written elsewhere, stop, move only the newly created WMP work, remove the mistaken copy
+without disturbing pre-existing changes, and record the correction in the handoff.
 
 Each phase ends in a reviewable commit and `docs/wmp-skin/phase-N-handoff.md`. If the base branch
 changes shared mode plumbing, rebase in the dedicated worktree and rerun the complete mode/lifecycle
@@ -92,6 +148,8 @@ isolated script realm <---- bounded bridge <--------+----> bindings/events
 Key contracts:
 
 - Archive/XML/image work is headless and independent of an app mode.
+- All untrusted or potentially blocking WMP work runs off the main thread; only immutable-result
+  handoff and AppKit presentation cross to `MainActor`.
 - Layout produces an immutable scene snapshot. AppKit drawing does not own the source graph.
 - Scripts exchange plain bounded values and typed commands, never Swift objects, selectors,
   filesystem URLs, network handles, or `AudioEngine`.
@@ -324,7 +382,8 @@ reset/recovery path when a selected skin fails.
 
 ### Window/controller
 
-Add `WMPMainWindowController.swift` and `WMPMainView.swift`:
+Add `WMPMainWindowController.swift`, `WMPMainView.swift`, and a dedicated
+`WMPUnskinnedMainView.swift`:
 
 - borderless window sized/ranged by the active WMP view;
 - shared top-left render and hit-coordinate conversion;
@@ -332,11 +391,23 @@ Add `WMPMainWindowController.swift` and `WMPMainView.swift`:
 - safe close/minimize actions;
 - synchronous idempotent teardown and a static error/fallback view.
 
+The app-authored unskinned view is the WMP family's default launch surface. It contains no bundled
+`.wmz`, `.wms`, Original `skin.json`, or borrowed artwork. Use it on first WMP launch, when no skin is
+selected or installed, when a remembered archive is missing/deleted, and when validation/load/restore
+fails. Stay in `.wmp`, preserve mode-independent audio/playlist state, show the actionable load
+diagnostic, and offer import/recovery from this surface; do not silently switch controller families.
+Once Phase 4 lands, the unskinned view exposes the same narrow typed transport host as skinned WMP.
+At Phase 8 public exposure it also becomes the application's fresh-install player: when there is no
+persisted mode and the user has not downloaded/imported any skin, launch `.wmp` on this unskinned
+surface. Never bootstrap a fresh profile by selecting or rendering an Original skin.
+
 Do not reuse a classic/Original controller as the WMP main window.
 Auxiliary provider fallbacks must be explicit and WMP-gated.
 
 Tests cover mode persistence, old-state decoding, exact-mode geometry, capability/menu visibility,
-import atomicity, factory routing, and teardown. Run at least 20 cycles of
+import atomicity, factory routing, teardown, and unskinned routing for fresh state, empty install,
+missing/deleted selection, corrupt archive, and failed restore. Each unskinned case asserts that no
+Original/Classic/Winamp Modern controller, skin engine, preference, or artwork was consulted. Run at least 20 cycles of
 `classic → modern → metal → wmp → classic`, including failed load. Launch the sample,
 resize, switch, quit/relaunch, and measure final frames through Accessibility. Smoke Compact Mode and
 Compact Window; hide/disable them in WMP if unsupported rather than entering broken state.
@@ -500,17 +571,24 @@ Release-candidate gate:
 Only after Phase 7:
 
 - enable `AppCapabilities.wmpSkinMode` in the full edition;
+- change only the **no persisted mode** default to `.wmp` and launch `WMPUnskinnedMainView` when the
+  user has not downloaded/imported a skin. This is the necessary shared first-launch seam authorized
+  by the product requirement; do not overwrite an existing user's stored Classic, Original,
+  Original-Metal, Winamp Modern, or WMP choice;
 - remove DEBUG-only menu exposure but keep the CLI path as a diagnostic hook;
 - document import/select/remove, supported versions, reset/recovery, view switching, and reports;
 - add `skills/wmp-skin-guide/SKILL.md` as the technical router and update AGENTS routing;
 - update release notes, packaging, support diagnostics, and third-party notices if concrete reference
   material was derived;
 - document user-supplied skins and unsupported ActiveX/registry/shell/DLL/plugin behavior;
-- test install/upgrade from the previous release, old state decoding, and missing/invalid selected skin.
+- test clean first launch before any skin download, install/upgrade from the previous release, old
+  state decoding, and missing/invalid selected skin. The clean-first-launch test asserts the active
+  controller/view are WMP-owned and unskinned and that Original assets/preferences were not read.
 
 Public Definition of Done:
 
-1. A fresh user imports/selects a valid `.wmz` without terminal work.
+1. A fresh user with no downloaded skins launches into the WMP-owned unskinned player, never an
+   Original skin, and can then import/select a valid `.wmz` without terminal work.
 2. Full and tiny sample views render, resize, accept input, and follow playback.
 3. Skin controls drive local files, streams/radio, playlist, volume/balance, shuffle/repeat, seek, and
    10-band EQ where exposed.
