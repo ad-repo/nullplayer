@@ -5115,11 +5115,105 @@ class WindowManager {
         return true
     }
     
+    /// The saved per-window frames, dropped so windows open relative to the main window again.
+    /// Shared by both Snap To Default routines; the key set is unchanged from when it lived inline.
+    private func clearSavedWindowFramePositions() {
+        let defaults = UserDefaults.standard
+        // Clear any saved positions (windows will be positioned relative to main on open)
+        defaults.removeObject(forKey: AppPersistence.key("MainWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("EqualizerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PlaylistWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PlexBrowserWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("ProjectMWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("VideoPlayerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("ArtVisualizerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("SpectrumWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("WaveformWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PeppyMeterWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("NetworkMonitorWindowFrame"))
+    }
+
+    /// Where the player lands when Snap To Default re-centres it: centred on `region`, at its own
+    /// size, shrunk to fit when the skin is larger than the display. The clamp is what makes this a
+    /// recovery rather than a re-strand — a 900pt-tall player on an 800pt screen must still come
+    /// back with its top-left visible.
+    static func recenteredPlayerFrame(size: NSSize, in region: NSRect) -> NSRect {
+        let fitted = NSSize(width: min(size.width, region.width),
+                            height: min(size.height, region.height))
+        return NSRect(x: region.midX - fitted.width / 2,
+                      y: region.midY - fitted.height / 2,
+                      width: fitted.width,
+                      height: fitted.height)
+    }
+
+    /// Snap To Default for Winamp Modern (B81).
+    ///
+    /// The classic routine stacks visible windows read off the per-feature controllers, which in this
+    /// mode are almost all nil: a skin's own auxiliary containers and the lazily materialized hosted
+    /// windows are reached through `winampModernHostedController` and the managed-window graph. So
+    /// this re-runs the arrangement instead of building a stack — the same deterministic tiling
+    /// launch runs (`WinampModernTiler`), which is what "default positions" means here.
+    ///
+    /// Unlike the launch sweep, the player is *moved*: it is re-centred first. There the player's
+    /// frame is restored user state and the anchor; here the user has explicitly asked for a reset,
+    /// and a player dragged off the display is one of the states this has to recover — the same
+    /// re-centring Classic does with its own main window.
+    private func snapWinampModernToDefaultPositions() {
+        guard let playerWindow = mainWindowController?.window else { return }
+        guard let region = (playerWindow.screen ?? NSScreen.main)?.visibleFrame else { return }
+
+        clearSavedWindowFramePositions()
+
+        isSnappingWindow = true
+        defer { isSnappingWindow = false }
+
+        playerWindow.setFrame(Self.recenteredPlayerFrame(size: playerWindow.frame.size, in: region),
+                              display: true, animate: false)
+
+        // The generated arrangement: the skin's own containers, then the hosted windows.
+        winampModernHostedController?.arrangeWindows()
+
+        // Anything that sweep does not own — a classic-fallback playlist or library window, the
+        // standalone video window — joins the same tiling in the first free slot, exactly the way a
+        // window opened after the arrangement does.
+        var arranged = Set<ObjectIdentifier>([ObjectIdentifier(playerWindow)])
+        if let controller = winampModernHostedController {
+            for window in controller.materializedAuxiliaryWindows {
+                arranged.insert(ObjectIdentifier(window))
+            }
+        }
+        for window in winampModernHostedWindowsForArrangement() {
+            arranged.insert(ObjectIdentifier(window))
+        }
+
+        var leftovers = snapTargetWindows()
+        if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
+            leftovers.append(videoWindow)
+        }
+        for window in leftovers where !arranged.contains(ObjectIdentifier(window)) {
+            arranged.insert(ObjectIdentifier(window))
+            guard let origin = tiledOrigin(for: window.frame.size,
+                                           avoiding: occupiedWindowFrames(excluding: window))
+            else { continue }
+            window.setFrameOrigin(origin)
+        }
+
+        postLayoutChangeNotification()
+    }
+
     /// Reset all windows to their default positions
     /// Only stacks currently visible windows with no gaps, preserving their current sizes
     func snapToDefaultPositions() {
-        let defaults = UserDefaults.standard
-        
+        // Winamp Modern has no center stack for the sweep below to build, and none of its windows
+        // hang off the per-feature controllers it walks — a skin's auxiliary containers and the
+        // hosted windows both live in the managed-window graph instead. Left to fall through, the
+        // command moved only the player and a `.wal` window stranded off-screen had no way back
+        // (B81). The modern arrangement is generated, not stacked, so it gets its own routine.
+        if uiMode.controllerFamily == .winampModern {
+            snapWinampModernToDefaultPositions()
+            return
+        }
+
         // Get screen for positioning - use the screen the main window is on, or fall back to main screen
         // Use full screen frame (not visibleFrame) so windows aren't constrained by menu bar/dock
         guard let screen = mainWindowController?.window?.screen ?? NSScreen.main else { return }
@@ -5224,18 +5318,7 @@ class WindowManager {
             projectMFrame = NSRect(x: mainFrame.minX - w, y: stackBottomY, width: w, height: stackHeight)
         }
         
-        // Clear any saved positions (windows will be positioned relative to main on open)
-        defaults.removeObject(forKey: AppPersistence.key("MainWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("EqualizerWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("PlaylistWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("PlexBrowserWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("ProjectMWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("VideoPlayerWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("ArtVisualizerWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("SpectrumWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("WaveformWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("PeppyMeterWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("NetworkMonitorWindowFrame"))
+        clearSavedWindowFramePositions()
         
         // Disable snapping during programmatic frame changes to prevent interference
         isSnappingWindow = true

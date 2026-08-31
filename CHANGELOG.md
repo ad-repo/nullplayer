@@ -17,6 +17,12 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: Snap To Default can bring a skin's windows back** — a `.wal` skin's
+  playlist, media library, equalizer or any other window it owns could be dragged off the edge of the
+  display and then had no way back: **Snap To Default** repositioned only the player, and a window
+  with no titlebar left on screen cannot be dragged either. It now re-lays out every window the skin
+  and the player own — the same arrangement they get at launch — and re-centres the player itself, so
+  one menu pick recovers the whole layout. Classic and Original skins keep the stack they always had.
 - **Winamp Modern skins: a skin's own "Copy to clipboard" menu items now work** — some `.wal` skins
   put copy commands on their right-click menus (Defix's playlist offers to copy the title or the file
   path; the ClassicPro engine's file-info and album-art menus do the same). Picking one did nothing,

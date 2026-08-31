@@ -236,6 +236,26 @@ part of this section:
 - **The notifier is not part of the arrangement.** A corner toast is host-driven and transient, and
   keeps its corner.
 
+**Snap To Default re-runs the arrangement (B81).** The command has one routine per family, split on
+`uiMode.controllerFamily` in `WindowManager.snapToDefaultPositions()`. Classic builds a stack from the
+per-feature controllers; in this mode those are almost all nil, so left to fall through the command
+moved the player and nothing else, and a skin-owned window dragged off the display had **no recovery
+path at all** — a borderless `.wal` window with its titlebar off-screen cannot be dragged back
+either. `snapWinampModernToDefaultPositions()` re-centres the player and then calls the same
+`arrangeWindows()` sweep launch runs, so "default positions" means one thing in this mode rather than
+two. Three details are load-bearing:
+
+- **The player is moved here, and only here.** In the launch sweep its frame is restored user state
+  and the anchor. This is an explicit reset, and a player stranded off the display is one of the
+  states it has to recover, so it is re-centred first — `recenteredPlayerFrame(size:in:)`, which
+  clamps the size into the visible frame so a skin larger than the display still lands with its
+  top-left on screen.
+- **The sweep does not own everything.** A classic-fallback playlist or library window and the
+  standalone video window hang off their own controllers, not off `winampModernHostedController`.
+  They join afterwards through `tiledOrigin(for:avoiding:)` — the first free slot in the same
+  sequence, exactly the way a window opened after the arrangement does.
+- **The notifier is excluded for free**, because `arrangeWindows()` already claims it and skips it.
+
 Verify in the running app, never on paper: `WINAMP_MODERN_PLACE_TRACE=1` prints every placement
 decision ([harness.md](harness.md)), and the finished layout is read back through the accessibility
 API rather than judged by eye. Every claim above is a measurement; four earlier claims that were not

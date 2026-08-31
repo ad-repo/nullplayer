@@ -2,6 +2,47 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B81 — Snap To Default could not recover a `.wal` window — closed 2026-08-31
+
+`WindowManager.snapToDefaultPositions()` contained no Winamp Modern handling at all — it repositioned
+the classic/original stack through the old per-feature controllers (`equalizerWindowController`,
+`playlistWindowController`, …), so a skin-owned auxiliary or hosted window that ended up off-screen
+had **no recovery path**; the main window was covered only because it happens to be
+`mainWindowController`. A borderless `.wal` window with its titlebar off the display cannot be
+dragged back either. Reported 2026-08-31 via Ebonite's media library.
+
+Reach: **53 of 53 skins; 285 non-main containers.** Measured with
+`WINAMP_MODERN_WAL="$corpus_wal" WINAMP_MODERN_RENDER_DUMP=/tmp/c swift test --filter WinampModernRenderDumpTests`,
+counting the `main=false` entries on each `RENDER-DUMP containers: [...]` line. Every skin declares at
+least one non-main container. Not all are windows the user can open, so that is an upper bound on
+exposure, not a count of stranded windows.
+
+The fix splits the command on `uiMode.controllerFamily`, leaving the classic routine byte-for-byte
+what it was. `snapWinampModernToDefaultPositions()` re-centres the player and re-runs
+`arrangeWindows()` — the same deterministic `WinampModernTiler` sweep launch runs, so "default
+positions" means one thing in this mode rather than two. Windows that sweep does not own (a
+classic-fallback playlist or library, the standalone video window) join afterwards through
+`tiledOrigin(for:avoiding:)`, the first free slot in the same sequence. The notifier is excluded for
+free, because `arrangeWindows()` already skips it.
+
+The player is moved **here and only here**: the launch sweep treats its frame as restored user state
+and as the tiling anchor, but this is an explicit reset and a stranded player is one of the states it
+has to recover. `recenteredPlayerFrame(size:in:)` clamps the size into the visible frame first, so a
+skin larger than the display still lands with its top-left on screen.
+
+Verified live on Ebonite_2_1, 2026-08-31, frames read back through the accessibility API rather than
+judged by eye. Player stranded at (3500,−400), Pledit at (−900,1400), media library at (4000,1500);
+after the snap, player centred at (861,407), Pledit flush at (861,704), equalizer (861,954), library
+in the next column at (1111,30). Repeated with a hosted Spectrum Analyzer stranded at (4200,1300):
+everything returned, the spectrum flush beneath the library at (1205,430). Classic regression pass on
+Rush_-_Moving_Pictures gave the unchanged centred stack — main (788,468), EQ (788,613), playlist
+(788,758).
+
+`WinampModernSnapToDefaultTests` pins the pure halves: the re-centring, its clamp, and that tiling
+from a re-centred player brings the reported set back onto the display without overlaps. The
+behaviour is documented in `skills/winamp-modern-skin-guide/reference/components.md` under *Where a
+skin's windows go — the tiling*.
+
 ## BB13 — `setClipboardText()` was missing, and took its menu down with it — closed 2026-08-30
 
 `System.setClipboardText` was absent from the System dispatch, so it fell to `default:` and threw
