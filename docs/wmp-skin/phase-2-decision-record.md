@@ -2,10 +2,16 @@
 
 ## Decision
 
-**NO-GO for Phase 3.** The static engine is safe and deterministic enough to retain, but the
-required `vPlayer` investment gate is not visually recognizable with expressions and scripts
-disabled. Do not add the WMP app mode until the plan is amended with a bounded approach to the
-layout-expression dependency demonstrated here.
+**GO for Phase 3 after bounded remediation.** The original literal-only run below was a NO-GO. A
+post-handoff corpus measurement showed that the missing initial layout uses a small arithmetic and
+geometry-reference language, not general JScript. `WMPInitialLayoutExpression` now evaluates only
+finite numeric literals, parentheses, `+ - * /`, and `id.left/top/width/height` reads (including the
+geometry-only `wmpprop:` spelling). It rejects calls, assignments, statements, unknown/ambiguous
+IDs, cycles, invalid sizes, and dependencies beyond `WMPPhase0Limits.expressionDependencyDepth`.
+
+The remediated `vPlayer` is a recognizable WMP 9 player with complete outer chrome and its principal
+player regions in the authored positions. This supersedes the original NO-GO without enabling skin
+scripts or weakening unresolved diagnostics.
 
 This does not reverse Phase 0's separate GO decision for the killable helper architecture. It says
 only that product integration cannot proceed before static layout can place enough of a real player
@@ -38,7 +44,7 @@ view to justify the remaining investment.
   cover upright BMP pixels, crops, color keys, nested offsets, stretch, clipping, z-order, text
   placement, and 1x/2x backing scales.
 
-## `9SeriesDefault.wmz` evidence
+## Original literal-only `9SeriesDefault.wmz` evidence
 
 The loader and renderer reported no fatal diagnostics. Both views produced PNGs.
 
@@ -60,7 +66,7 @@ their dependent containers; it also includes `wmpprop:` layout values. The rende
 warnings for unsupported `res://` resources, optional missing cursor resources, and duplicate IDs.
 None was fatal.
 
-## Gate assessment
+## Original gate assessment
 
 | Required gate | Result |
 |---|---|
@@ -76,11 +82,26 @@ mostly empty canvas. Although those resolved pixels are upright and correctly ke
 not recognizable as the authored player. `viewTiny` produces a more substantial outer chrome frame,
 but the locked decision gate names `vPlayer`; it cannot substitute for that failure.
 
-## Required re-estimation before product integration
+## Completed remediation and repeated gate
 
-Do not add sample-specific coordinates or weaken the unresolved diagnostics. Before Phase 3, amend
-the plan with a bounded, tested layout-expression slice. At minimum, quantify the expression grammar
-and dependency graph needed for initial geometry, decide whether that slice belongs in a custom
-non-script evaluator or the killable helper, and repeat this Phase 2 visual gate with strict
-dependency-depth/pass/time/message bounds. Phase 3 remains blocked until a revised gate passes or the
-product scope is explicitly changed.
+No sample-specific coordinates were added. The custom static evaluator is intentionally separate
+from the Phase 5 killable script helper: it has no script globals, host access, property mutation,
+calls, timers, or control flow. Synthetic tests cover aliases, forward reads, dependency chains,
+cycles, and rejected function calls.
+
+Repeated opt-in render evidence is disposable under
+`/private/tmp/wmp-phase2-remediation.4zRMeh/`:
+
+| Metric | `vPlayer` | `viewTiny` |
+|---|---:|---:|
+| Authored canvas | 859×468 | 596×468 |
+| Resolved nodes | 47 | 7 |
+| Unresolved nodes | 31 | 2 |
+| Visible bounds | x=250, y=0, 346×344 | x=250, y=0, 346×266 |
+| Peak cache bytes | 419,632 | 858,420 cumulative |
+| Render time | 20.47 ms | 4.68 ms |
+
+Both views rendered without a fatal diagnostic. Human review of `vPlayer@1x.png` recognized the
+skin's own player view, while unsupported function calls and dynamic widget geometry remained named
+unresolved diagnostics. The bounded-memory/time and visual-recognition gates therefore pass and
+Phase 3 may proceed.

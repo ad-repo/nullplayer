@@ -89,10 +89,10 @@ deployment-version warnings.
 
 ## Next work
 
-Do not start Phase 3. First amend/re-estimate the plan with a bounded initial-layout expression
-slice, quantify the real corpus grammar/dependencies, decide whether evaluation belongs in a custom
-dependency evaluator or the killable helper, and repeat the Phase 2 `vPlayer` visual gate. No
-sample-specific coordinates or uninterruptible in-process JavaScript are acceptable.
+This original handoff recorded a NO-GO. It is superseded by the bounded post-handoff remediation in
+`phase-2-decision-record.md`: the custom arithmetic/geometry dependency evaluator raised `vPlayer`
+from 15 to 47 resolved nodes, the repeated image is recognizable, and Phase 3 is now GO. No
+sample-specific coordinates or in-process JavaScript were introduced.
 
 ## Repository state at phase end
 

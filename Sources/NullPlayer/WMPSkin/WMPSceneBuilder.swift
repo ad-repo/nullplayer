@@ -47,9 +47,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
         var unresolved: [WMPUnresolvedGeometry] = []
         var diagnostics = loadedSkin.diagnostics
         var unresolvedNodes = Set<Int>()
+        var unresolvedAttributes = Set<String>()
         var resolvedNodes = Set<Int>()
+        var layoutResolver = WMPInitialLayoutResolver(graph: loadedSkin.graph, view: view, canvas: canvas)
 
         func recordUnresolved(_ node: WMPNode, attribute: String, value: String) {
+            let key = "\(node.stableID):\(attribute.lowercased())"
+            guard unresolvedAttributes.insert(key).inserted else { return }
             unresolved.append(WMPUnresolvedGeometry(stableID: node.stableID, nodeID: node.xmlID,
                                                     attribute: attribute, authoredValue: value))
             unresolvedNodes.insert(node.stableID)
@@ -59,12 +63,14 @@ struct WMPSceneBuilder: @unchecked Sendable {
         }
 
         func parseDimension(_ node: WMPNode, _ name: String) -> CGFloat? {
-            guard let attribute = node.attribute(named: name) else { return nil }
-            let folded = name.lowercased()
-            let mustBeNonnegative = folded.contains("width") || folded.contains("height")
-            if let value = WMPNumber.literal(attribute), !mustBeNonnegative || value >= 0 { return value }
-            recordUnresolved(node, attribute: name, value: attribute.rawValue)
-            return nil
+            guard let property = WMPInitialLayoutResolver.Property(rawValue: name.lowercased()) else { return nil }
+            switch layoutResolver.resolve(node, property: property) {
+            case let .value(value): return value
+            case let .unresolved(reason):
+                guard let attribute = node.attribute(named: name) else { return nil }
+                recordUnresolved(node, attribute: name, value: "\(attribute.rawValue) [\(reason)]")
+                return nil
+            }
         }
 
         func resource(_ node: WMPNode, names: [String]) throws -> (String, String)? {
@@ -196,8 +202,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
 
             let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
-            let authoredSize = WMPSize(width: parseDimension(node, "width") ?? frame.width,
-                                       height: parseDimension(node, "height") ?? frame.height)
+            let authoredSize = isRoot
+                ? WMPSize(width: authoredWidth, height: authoredHeight)
+                : WMPSize(width: parseDimension(node, "width") ?? frame.width,
+                          height: parseDimension(node, "height") ?? frame.height)
             for child in node.children.sorted(by: nodeOrder) {
                 try walk(child, parentFrame: frame, parentAuthoredSize: authoredSize,
                          inheritedClip: childClip)

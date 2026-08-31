@@ -32,9 +32,40 @@ final class WMPGeometryTests: XCTestCase {
                        WMPRect(x: 15, y: 16, width: 35, height: 24))
         XCTAssertEqual(scene.geometries[byID["right"]!]?.absoluteFrame.x, 90)
         XCTAssertEqual(scene.geometries[byID["stretch"]!]?.absoluteFrame.width, 100)
-        XCTAssertEqual(scene.unresolved.map(\.attribute), ["width"])
-        XCTAssertEqual(scene.diagnostics.last?.code, .unresolvedGeometry)
+        XCTAssertEqual(scene.geometries[byID["dynamic"]!]?.absoluteFrame,
+                       WMPRect(x: 0, y: 0, width: 116, height: 5))
+        XCTAssertTrue(scene.unresolved.isEmpty)
         XCTAssertEqual(scene.metrics.visibleBounds, WMPRect(x: 4, y: 2, width: 106, height: 73))
+    }
+
+    func testInitialLayoutExpressionsResolveReferencesAliasesForwardReadsAndRejectCode() async throws {
+        let xml = """
+        <THEME><VIEW id="main" width="100" height="80">
+          <SUBVIEW id="forward" left="JScript:tail.left-tail.width;" top="(height-4)/2"
+                   width="wmpprop:tail.width" height="4" backgroundColor="#110000"/>
+          <SUBVIEW id="tail" left="90" top="0" width="10" height="8"/>
+          <SUBVIEW id="code" left="JScript:danger();" top="0" width="5" height="5"/>
+          <SUBVIEW id="cycleA" left="JScript:cycleB.left" top="0" width="1" height="1"/>
+          <SUBVIEW id="cycleB" left="JScript:cycleA.left" top="0" width="1" height="1"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let byID = Dictionary(uniqueKeysWithValues: skin.graph.allNodes.compactMap { node in
+            node.xmlID.map { ($0, node.stableID) }
+        })
+
+        XCTAssertEqual(scene.geometries[byID["forward"]!]?.absoluteFrame,
+                       WMPRect(x: 80, y: 0, width: 10, height: 4))
+        XCTAssertNil(scene.geometries[byID["code"]!])
+        XCTAssertNil(scene.geometries[byID["cycleA"]!])
+        XCTAssertEqual(Set(scene.unresolved.compactMap(\.nodeID)), Set(["code", "cycleA", "cycleB"]))
+        XCTAssertTrue(scene.unresolved.contains {
+            $0.nodeID == "code" && ($0.authoredValue.contains("unexpected trailing input")
+                || $0.authoredValue.contains("unsupported token"))
+        })
+        XCTAssertTrue(scene.unresolved.contains { $0.authoredValue.contains("cyclic geometry dependency") })
     }
 
     func testSiblingZIndexControlsDrawOrderWithoutFlatteningHierarchy() async throws {
