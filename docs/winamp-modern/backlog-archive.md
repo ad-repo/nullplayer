@@ -2,6 +2,96 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## BB28 — The stretched visualization draws with the file info on top of it — closed 2026-08-31, already fixed
+
+**Closed without a code change: BB9 had already fixed it, and the entry outlived the fix.**
+
+Re-verified 2026-08-31 on the reported skin (*Big Bento Modern Windows 10 edition Light*), debug
+build, with the `{6A619628}` page radio stored as *Visualization* — the state the entry names as
+required. The panel draws **`cover | spectrum`, side by side, with no file-info text over the
+bars**, confirmed on pixels and with audio playing. The reported symptom is gone.
+
+`WasabiRenderer.isVisible` asks
+[`WinampModernBentoMultiContentView.forcedVisibility`](../../Sources/NullPlayer/WinampModern/WinampModernBentoMultiContentView.swift),
+which returns `false` for `info.component.infodisplay` and `info.component.songinfodisplay` for as
+long as `info.component.vis.full` is shown. That is the exact displacement BB28 was looking for an
+engine rule to perform, and BB9 landed it as a scoped override on the five ids under this one
+holder — which is why sibling-exclusivity never needed to be reached for.
+
+**One half of the report is now the design, not a defect.** BB28 lists "and the cover" among the
+things showing through the analyzer. Under BB9 the cover is drawn beside the spectrum deliberately
+(`coverEnabled: true`): the side-by-side row has space for both, so `cover | viz | spectrum` is the
+intended layout of this page. Anyone re-reading the original screenshot should expect to see the
+cover there and should not treat it as the bug.
+
+**The trap this entry set, worth keeping.** `WINAMP_MODERN_TRACE_MAKI=1` still logs the whole
+original sequence unchanged — `mcvcore @909` shows `info.component.vis.full`, then a later routine
+`@3237` / `@7600` / `@7788` sets `infodisplay`, `albumbg.container`, `cover` and `songinfodisplay`
+back to `1`, and nothing ever hides the stretched pane. **Those lines are the script writing the
+`visible` attribute, not what is drawn.** With `forcedVisibility` overriding at render time, a fixed
+panel and a broken one produce byte-identical traces. This was misread as a live reproduction during
+the 2026-08-31 triage before the pixels were checked. Verify this family on pixels; the MAKI trace
+cannot answer it. (The observed delay to the File Info activation was also ~15 s here, not the 700 ms
+one-shot the entry recorded, so that timing is not a reliable marker either.)
+
+The policy question the entry ended on — whether the page radio should be honoured at launch at all
+— **is moot and should not be implemented.** It would have changed launch behaviour for all four
+Bento variants to displace panes that are already displaced.
+
+Original entry:
+
+- [x] **BB28. The stretched visualization draws with the file info on top of it.** Reported live
+      2026-08-25 on *Windows 10 edition Light*, with a screenshot: the analyzer spans the Multi
+      Content View while the bitrate line, title, artist, album and the cover all show through it.
+      **Reproduces only after a restart, and only once playback starts** (a 7.3:1 letterbox takes the
+      renderer's analyzer, which is blank without audio — see `WinampModernVisualizationHolder`, BB9).
+
+      **The sequence, measured in the running app** (`WINAMP_MODERN_DEBUG_HOLDERS=1` +
+      `WINAMP_MODERN_TRACE_MAKI=1`, which is what made this legible at all):
+
+      ```
+      t=0     mcvcore @909 (onscriptloaded): page = Visualization ({6A619628};Visualization = 1)
+              → hides infodisplay/songinfodisplay/cover/coverflow, shows info.component.vis.full  ✅
+              → arms a 50 ms transition lock (v170; the page routines guard on its isRunning())
+      t=0     a second player-normal-mcv script @3160 (onscriptloaded), gated only by a
+              getRuntimeVersion() range check (2…65535 — we answer 5, so it passes):
+              → arms a 700 ms one-shot (v171)
+      t=700   @3237 (ontimer v171) → call 2416 → v171.stop()
+              routine 2416 = "activate File Info": writes Component3="File Info", then **only calls
+              show()**. It contains no hide at all, so it cannot displace the visualization page.
+      ```
+
+      **No engine defect was found behind it.** Each of these was proposed and then killed by
+      measurement, and they are listed so nobody re-runs them: `openHolders` forcing (it never runs
+      for `visualization`); the private `Visualizer Mode`; a stale `Component3` (setting it to
+      `"Visualization"` changes nothing); `getGuiX` (`vis.prv -> 51`, correct and parent-relative);
+      handler shadowing (zero shadowed bindings); config-attribute **dispatch order** (sorting by
+      creation order changes nothing); missing visualization-surface detection (that log line is about
+      a dedicated vis *window*, which Bento does not declare); target-animation completion
+      (`onTargetReached` on `info.component.cover` fires *after* the page is already back); the
+      `Cycle File Info` setting (the page returns with it off — an earlier "confirmed" reading here
+      was a grep taken before the 5 s mark and is wrong); and the `v2` disable flag (set only on the
+      version check's failure branch, which a supported runtime never takes).
+
+      **Two fixes were written for it and reverted**, both unproven: cancelling a hidden object's
+      target animation, and ordering the `ondatachanged` dispatch. Neither changed the outcome.
+
+      **What is left is a policy question, not a defect.** These four MCV pages are *not* the
+      `visible`-tagged sibling tabs `closeDisplacedPages` knows how to arbitrate: only
+      `info.component.vis.full` declares `visible="0"`, while `cover`, `infodisplay` and
+      `songinfodisplay` declare none and are meant to be on screen *together* — they are the File
+      Info page. So sibling-exclusivity is the wrong rule here and must not be reached for.
+      The open question is whether the `{6A619628}` page radio should be honoured at launch at all,
+      given the skin's own startup activates File Info unconditionally 700 ms later. Winamp evidently
+      never collides, which suggests it does not restore the visualization *into the panel* at start.
+      Deciding that changes launch behaviour for all four variants and wants its own live QA.
+
+      **Workaround today:** set the panel's page to anything but Visualization; the overlap needs that
+      page stored to happen. Turning on *Open in Multi Content View (stretched)* does **not** set the
+      page — verified — so the two settings are independent and the page is the one that matters.
+
+---
+
 ## BB36 — A window indicator lamp is a click counter, not a window — closed 2026-08-31
 
 Original entry, and the two open questions it left, both now decided:

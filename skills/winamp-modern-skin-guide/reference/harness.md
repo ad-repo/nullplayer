@@ -533,7 +533,7 @@ The probe table above is the canonical command reference.
 
 ### Reading a probe without fooling yourself (BB28, 2026-08-25)
 
-Three of these turned a working instrument into a wrong finding, each of which then grew its own
+Four of these turned a working instrument into a wrong finding, each of which then grew its own
 hypothesis. They are properties of the probes, not of any skin.
 
 - **`RENDER_SET` prints its `SET [...] = ... handlers=n` line *after* the write returns.** Filtering
@@ -547,10 +547,18 @@ hypothesis. They are properties of the probes, not of any skin.
 - **`RENDER_SCRIPTS`' `ran=` only records events dispatched at a program's *owner object*.** An event
   delivered to a **dynamic** object — every `ondatachanged` on a config attribute — never appears
   there, so a handler that runs on every write measures as one that never runs.
+- **`TRACE_MAKI`'s `SETVISIBLE` line is the script's *write*, not what gets drawn.** `isVisible`
+  consults `WinampModernBentoMultiContentView.forcedVisibility` before it reads the `visible`
+  attribute, so a pane the host overrides is logged as shown and drawn as hidden. A fixed panel and
+  a broken one emit byte-identical traces. This closed BB28 as already-fixed in 2026-08-31's triage,
+  but only after the same trace had first been misread as a live reproduction — the log was
+  unchanged because the fix was never in the log's reach. Any question of the form *is this on
+  screen* is a **pixel** question; `SETVISIBLE` answers only *who asked for it*.
 
 The general negative-result rule lives in
 [the skill router](../SKILL.md#rules-for-extending-this-subsystem). `WINAMP_MODERN_TRACE_MAKI`
-remains the tiebreaker here because it records handler entry whether or not the body does anything.
+remains the tiebreaker for **did this handler run** — it records handler entry whether or not the
+body does anything — but never for **is this on screen**, which only pixels answer.
 
 ### A measured value written into a doc goes stale silently (B50, 2026-08-26)
 
