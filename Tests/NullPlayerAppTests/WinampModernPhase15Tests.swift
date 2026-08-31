@@ -5,30 +5,44 @@ import ZIPFoundation
 /// Phase 15 — the protective window minimum (R1's remaining half) and splitter dragging (12.5).
 ///
 /// A skin's declared `minimum_w`/`minimum_h` is written for Winamp, where a group clips its children.
-/// We clip only on `clipchildren="1"`, so below a certain size a child that no longer fits paints
-/// *over* its siblings rather than being cut off — cPro-Bento at 376×182, comfortably above its
-/// declared 317×168, overlaps its tab strip onto the transport. Rather than change clipping globally
-/// (which would change what every skin draws), the window simply refuses to go that small.
+/// We clip a group only when it says `clipchildren="1"` or declares its own box, so below a certain
+/// size a child that no longer fits can paint *over* its siblings rather than being cut off. Rather
+/// than change clipping globally (which would change what every skin draws), the window simply
+/// refuses to go that small.
 ///
 /// The probe calibrates against the skin's *own* default size: at the size its author chose the scene
 /// is by definition correct, so overhang that exists there is deliberate and only overflow that
 /// appears after shrinking raises the floor.
+///
+/// **Painting over something is the whole of it (B89).** An object a parent clips, one that has left
+/// the window, and one that has left the scene are all cut off rather than painting over anything, so
+/// none of them raises the floor. Counting them made the floor cPro's own default size — "not
+/// resizable at all" — for a skin declaring `minimum_w="317"` and shipping promo sheets of that
+/// compact player.
 final class WinampModernPhase15Tests: XCTestCase {
 
     // MARK: - The floor is raised only when shrinking actually breaks the layout
 
     func testMinimumRisesToWhereTheLayoutStillFits() throws {
-        // The inner box is 200 wide at a fixed x=100: it fits inside a 300-wide canvas and escapes
-        // any narrower one. The declared minimum says 50, which Winamp would survive by clipping.
-        let renderer = try makeRenderer(layout: """
-        <layout id="normal" w="300" h="120" default_w="300" default_h="120" minimum_w="50" minimum_h="20">
-          <text id="inner" text="x" x="100" y="0" w="200" h="100"/>
-        </layout>
-        """)
+        let renderer = try makeRenderer(layout: Self.overflowsOntoItsSiblings)
         XCTAssertEqual(renderer.layoutMinimumSize.width, 300,
-                       "below 300 the inner group hangs outside its parent with nothing to clip it")
+                       "below 300 `inner` hangs out of the panel, onto the window beside it")
         XCTAssertLessThanOrEqual(renderer.layoutMinimumSize.height, 120)
     }
+
+    /// The one shape that raises the floor: a child escaping a parent that does **not** clip it, with
+    /// the escaping part still inside the window — which is to say, painting over something.
+    ///
+    /// `panel` is a `<layer>`, so it clips nothing, and it is 100px narrower than the canvas, so what
+    /// leaves it lands on the window rather than off the edge of it. `inner` reaches x=200 at every
+    /// size; the panel is 200 wide at the skin's own 300 and narrower at anything less.
+    private static let overflowsOntoItsSiblings = """
+    <layout id="normal" w="300" h="120" default_w="300" default_h="120" minimum_w="50" minimum_h="20">
+      <layer id="panel" x="0" y="0" w="-100" h="100" relatw="1">
+        <text id="inner" text="x" x="100" y="0" w="100" h="40"/>
+      </layer>
+    </layout>
+    """
 
     func testDeclaredMinimumIsKeptWhenTheLayoutGenuinelyFits() throws {
         // Everything is relative, so the scene fits at every size: the skin's own number stands and
@@ -53,16 +67,32 @@ final class WinampModernPhase15Tests: XCTestCase {
         XCTAssertEqual(renderer.layoutMinimumSize, CGSize(width: 60, height: 30))
     }
 
-    func testAnAlreadyOverhangingObjectStillMayNotVanish() throws {
-        // The two failure kinds are tracked separately on purpose: an object allowed to overhang is
-        // not thereby allowed to leave the scene. This one sits at a fixed x=290 and is culled
-        // entirely — art the author put on screen would silently disappear — below 291.
+    func testAnObjectLeavingTheWindowDoesNotRaiseTheFloor() throws {
+        // B89's second half. This one sits at a fixed x=290 and is culled entirely below 291 — but a
+        // culled object paints over nothing, and Winamp culls it too, so it is not evidence that the
+        // window has become too small. Counting it is what set cPro's floor: every size below
+        // 317×296 was rejected by objects going missing, with zero overflow, at sizes that render
+        // correctly.
         let renderer = try makeRenderer(layout: """
         <layout id="normal" w="300" h="120" default_w="300" default_h="120" minimum_w="60" minimum_h="30">
           <text id="overhang" text="x" x="290" y="0" w="60" h="60"/>
         </layout>
         """)
-        XCTAssertEqual(renderer.layoutMinimumSize.width, 291)
+        XCTAssertEqual(renderer.layoutMinimumSize, CGSize(width: 60, height: 30))
+    }
+
+    func testAChildItsParentClipsDoesNotRaiseTheFloor() throws {
+        // B89's first half, in the shape the ClassicPro engine ships it: `<group id="beatvis" x="200"
+        // w="300"/>` flush against the right edge of a 500-wide sized group. The group clips, exactly
+        // as Winamp does, so the overflow is a crop and not a collision.
+        let renderer = try makeRenderer(layout: """
+        <layout id="normal" w="500" h="120" default_w="500" default_h="120" minimum_w="100" minimum_h="40">
+          <group id="screen" x="0" y="0" w="0" h="100" relatw="1">
+            <group id="beatvis" x="200" y="0" w="300" h="45"/>
+          </group>
+        </layout>
+        """)
+        XCTAssertEqual(renderer.layoutMinimumSize, CGSize(width: 100, height: 40))
     }
 
     func testMinimumNeverExceedsTheSkinsOwnDefaultSize() throws {
@@ -83,10 +113,7 @@ final class WinampModernPhase15Tests: XCTestCase {
     func testEachLayoutCarriesItsOwnFloor() throws {
         // A shade layout is a different scene: switching to it must re-derive the minimum, or the
         // player's floor would pin a 23px-tall shade window open at full height.
-        let renderer = try makeRenderer(layout: """
-        <layout id="normal" w="300" h="120" default_w="300" default_h="120" minimum_w="50" minimum_h="20">
-          <text id="inner" text="x" x="100" y="0" w="200" h="100"/>
-        </layout>
+        let renderer = try makeRenderer(layout: Self.overflowsOntoItsSiblings + """
         <layout id="shade" w="300" h="24" default_w="300" default_h="24" minimum_w="100" minimum_h="24">
           <text id="shade.inner" text="x" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
         </layout>
@@ -99,11 +126,7 @@ final class WinampModernPhase15Tests: XCTestCase {
     func testResizeIsClampedToTheProtectiveFloor() throws {
         // A script resizing below the floor (cPro's `gotoGlobal` restores a saved width verbatim)
         // is clamped up, exactly as one resizing below the declared minimum always was.
-        let renderer = try makeRenderer(layout: """
-        <layout id="normal" w="300" h="120" default_w="300" default_h="120" minimum_w="50" minimum_h="20">
-          <text id="inner" text="x" x="100" y="0" w="200" h="100"/>
-        </layout>
-        """)
+        let renderer = try makeRenderer(layout: Self.overflowsOntoItsSiblings)
         XCTAssertEqual(renderer.resize(to: CGSize(width: 120, height: 120)).width, 300)
     }
 

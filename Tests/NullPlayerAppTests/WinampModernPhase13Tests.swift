@@ -61,8 +61,14 @@ final class WinampModernPhase13Tests: XCTestCase {
     /// The R1 case end to end. cPro-Bento's declared minimum is *itself* degenerate: at 168px the
     /// SUI area (`h="-168" relath="1"`) is zero-tall, so its contents go negative. A shrunk window
     /// must cramp — every remaining node inside the canvas — never stack flipped boxes over the
-    /// chrome. Since Phase 15 `resize` clamps to the *protective* minimum, which is the smallest size
-    /// at which nothing has gone negative in the first place (here 84, not the declared 80).
+    /// chrome.
+    ///
+    /// The floor is the declared 80 rather than 84 since B89: at 80 the body is zero-tall and its
+    /// 4px-inset fill goes negative and is dropped, and an object that is *not drawn* paints over
+    /// nothing. That is what Winamp does with it too, and it is the price of letting a skin reach the
+    /// compact size its author declared — cPro's floor was set entirely by objects disappearing this
+    /// way. The invariant below is the one that matters and it still holds: whatever survives is
+    /// inside the canvas, the right way up.
     func testShrinkingToTheLayoutMinimumNeverPaintsOutsideTheCanvas() throws {
         let renderer = try makeRenderer(layout: """
         <layer id="header" x="0" y="0" w="0" h="80" relatw="1"/>
@@ -74,12 +80,12 @@ final class WinampModernPhase13Tests: XCTestCase {
             .isSuperset(of: ["header", "body", "body.fill"]))
 
         let clamped = renderer.resize(to: CGSize(width: 10, height: 10))
-        XCTAssertEqual(clamped, CGSize(width: 120, height: 84), "resize clamps to the protective minimum")
+        XCTAssertEqual(clamped, CGSize(width: 120, height: 80), "resize clamps to the declared minimum")
         let nodes = renderer.sceneNodes()
         let ids = Set(nodes.compactMap(\.object.xmlID))
         XCTAssertTrue(ids.contains("header"), "the header is still a valid 80px box")
-        XCTAssertTrue(ids.contains("body.fill"),
-                      "the floor stops one pixel above where 4px of margin goes negative (it is 0 tall here)")
+        XCTAssertFalse(ids.contains("body.fill"),
+                       "4px of margin in a zero-tall body is negative, so it is dropped rather than flipped")
         let canvas = CGRect(origin: .zero, size: clamped)
         for node in nodes where !node.frame.isEmpty {
             XCTAssertTrue(canvas.intersects(node.frame),

@@ -20,8 +20,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 |---|---|---:|:---:|---|
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
-| B86 | **`parser_addCallback` path matching is too strict — 5 of the corpus's 6 callback patterns never fire** | 5 cPro skins + 2 Big Bento; 6 distinct patterns, only Big Bento's matches today ([M26]) | S | Measured |
-| B88 | **`<images>` element unimplemented — a value-indexed filmstrip draws nothing** | 1 declaration (ClassicPro engine's volume bar), reaching all 5 cPro skins ([M27]) | S | Measured |
 
 ### Live-reported draw defects
 
@@ -29,7 +27,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 |---|---|---:|:---:|---|
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
 | B87 | **cPro's 3-letter tab labels are clipped by a few pixels** (`LIB`→`LIE`, `VID`→`VII`, `BPR`→`BPF`, `NOW`→`NOV`) | 5 cPro skins × 7 tabs ([M28]) | S | Live-reported |
-| B89 | **cPro cannot be resized to the compact player its promo sheets show** — floors at 500x290 against a declared 317x168 | 5 cPro skins ([M28]) | M | Live-reported |
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
 | B71 | A layout script loads before the frame beside it has a client area | — · seen on Defix's detached visualizer (2026-08-29); corpus reach unmeasured | L | Live-reported |
@@ -66,17 +63,6 @@ resolve to a live citation above.
 - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases — and 50, 100, 150, 200, 250, 300 are integral. To check a *full* draw at either, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests` renders the scene the way the view does; count rows whose alpha is strictly between transparent and opaque to find partial-coverage seams objectively rather than by eye. The harness has no partial-repaint mode, which is why it cannot reproduce the live defect — adding one is most of this task.
 - <a id="m24"></a>**M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: **The_Nokia_5220_XpressMusic 12 of 12** and **winampmodern566 12 of 18**; no other skin in the 53 points one at a bitmap. Both are Menu-bar skins, which is why the symptom shows up there first.
 - <a id="m23"></a>**M23:** `WINAMP_MODERN_WAL="$corpus_wal" WINAMP_MODERN_RENDER_DUMP=/tmp/holders swift test --filter WinampModernRenderDumpTests`, then read the `PLAYLIST holder <container>/<layout>: <id>(x, y, w, h)` lines — one per skin, smallest first, ignoring the `hidden` ones. The holder is the box the skin allots; the question is whether NullPlayer's own surface fits inside it. Ebonite_2_1 is the reported case at **227x172**; the smallest in the corpus is micro at 140x69, and 27 of the 44 skins that expose one are under 260x180. The holder lines are unconditional, so no extra switch is needed. The same question applies to the `library@` and `video@` holders the `HOLDERS` line reports beside them.
-- <a id="m26"></a>**M26:** the patterns are string literals inside compiled `.maki`, so grep the bytecode:
-  `for f in $(grep -rla 'parser_addCallback' "$corpus"); do strings "$f" | grep -E '^[A-Za-z][A-Za-z0-9_:.]*(/[A-Za-z0-9_*:.]+)+$'; done | sort -u`
-  (trailing bytes are bytecode noise — trim them). Measured 2026-08-31, six distinct patterns:
-  `BeatVis/*` and `ClassicPro/Visualization/BeatVis*` (`beat.maki`, both engine families),
-  `ClassicPro/TextSettings*` (`player.maki`, `shade.maki`), `ClassicPro/About:Skin*` (`about.maki`)
-  and `WasabiXML/BrowserPro/*` (Big Bento's `main.maki`). Only the last has the same component count
-  as the element it targets, which is why it is the only one that works today.
-- <a id="m27"></a>**M27:** `grep -rhoaE '<[[:space:]]*images[[:space:]][^>]*>' "$corpus" --include='*.xml'`.
-  Exactly **one** declaration across the 53 skins plus the engine — `engine/one/xml/player-normal.xml:98`,
-  `source="volume"`. A low declaration count with high user reach: it is the volume bar of every skin
-  that mounts the ClassicPro engine.
 - <a id="m28"></a>**M28:** `WINAMP_MODERN_ENGINE=<ClassicPro.exe> WINAMP_MODERN_WAL=<cPro skin>
   WINAMP_MODERN_RENDER_MINIMUM=1 WINAMP_MODERN_RENDER_DUMP=/tmp/m swift test --filter WinampModernRenderDumpTests`,
   then read `main/normal` and the `MINIMUM` line under it. Measured 2026-08-31 across all five cPro
@@ -91,62 +77,6 @@ number of matched declarations or MAKI program symbols. A compiled MAKI method n
 symbol, not necessarily a call-site count; rows say so where that distinction matters.
 
 ## Item detail
-
----
-
-### B86
-
-- [x] **B86. `parser_addCallback` path matching is too strict.** `parserPath`
-      (`Sources/NullPlayer/WinampModern/WinampModernScriptRuntime.swift:4600`) requires the pattern
-      and the element path to have the **same component count** and treats `*` as exactly one whole
-      component:
-      ```swift
-      guard wanted.count == components.count else { return false }
-      return zip(wanted, components).allSatisfy { $0 == "*" || $0.caseInsensitiveCompare($1) == .orderedSame }
-      ```
-      That shape was pinned to Big Bento's `WasabiXML/BrowserPro/*`, which happens to be exactly as
-      deep as the `<sourceitem>`s it targets. **Five of the corpus's six patterns are not that
-      shape** ([M26]) and none of them fires:
-      - `BeatVis/*` — 2 components against the 4-component
-        `ClassicPro/Visualization/BeatVis/customvis`. A **relative/suffix** pattern.
-      - `ClassicPro/Visualization/BeatVis*` — 3 against 4, **and** `BeatVis*` is a trailing *prefix*
-        wildcard inside a component, which we compare literally.
-      - `ClassicPro/TextSettings*` — 2 against `ClassicPro/TextSettings/Style`.
-      - `ClassicPro/About:Skin*` — same shape.
-
-      Three user-visible consequences, all on cPro skins: the **7 custom beat-vis animations** never
-      load (`cusbeat_names` stays empty, `customvis=false`, and the beat-vis right-click menu builds
-      one item instead of eight — measured on T2T as `CLICK menu: Show Beat vis#1`); the
-      **songticker antialias** setting in `ClassicPro.xml` is never read; and the **About box** never
-      gets its skin info. Found via `/wal-skin-report cPro_T2T-by-MAC.wal`, 2026-08-31.
-
-      **Not an `enumitem` problem** — `List.enumItem` is implemented (`:4382`) and `parserStart`
-      (`:4554`) hands the callback two populated lists. The `enumitem ×2` in cPro diagnostics comes
-      from `widgets-manager.xml` on a different receiver and is unrelated.
-
-      Settle the wildcard semantics against Big Bento's working pattern before changing it — whatever
-      is written must keep `WasabiXML/BrowserPro/*` matching exactly the nodes it matches now.
-
-      **Fixed 2026-08-31 — and it was two faults, not one.** The matcher was necessary but not
-      sufficient: with it fixed the menu was still one item, because `myDoc.load()` never resolved
-      the document at all. `@SKINPATH@` was `/Skins/<name>` with **no trailing separator**, while
-      ClassicPro builds the path by bare concatenation (`getParam() + "ClassicPro.xml"`), producing
-      `/Skins/cPro_T2T-by-MACclassicpro.xml`. Winamp's `@SKINPATH@` carries the separator; ours lost
-      it in `setVariable`, which canonicalizes the value and so silently dropped a trailing `/` even
-      when one was passed in. Fixed by a `trailingSeparator:` flag on `setVariable`, with the
-      `skinRoot` accessor trimming it back off so every internal consumer is unchanged.
-      **Nothing reported either fault** — the scripts are written to branch on a missing file, so a
-      failed load and an absent feature are the same silent no-op. That is the same blind-instrument
-      shape as the `RENDER_SCRIPTS` row in `reference/harness.md`.
-
-      Verified: `CLICK menu: *Show Beat vis#1, --, *T2T-01#100, T2T-02#101, … T2T-07#106` (was
-      `Show Beat vis#1` alone), and `ClassicPro/TextSettings/Style` now fires for the songticker.
-      Corpus sweep of all 53 skins is byte-identical before/after except `Anexa/main-shade.png`,
-      which differs run-to-run on an unchanged build (self-diff confirms). Confirmed live by the
-      reporter 2026-08-31: all seven beat-vis varieties present, Big Bento's BrowserPro provider list
-      (the only previously-working consumer of this matcher) unaffected, other skins and the
-      songticker fine. Pinned by `Tests/NullPlayerAppTests/WinampModernB86B88Tests.swift`, which
-      encodes all six corpus patterns as the specification.
 
 ---
 
@@ -173,63 +103,6 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
       does the app. `reference/harness.md` already says "**`onresize` first** for any ClassicPro
       skin"; the dump was read without it. A blind instrument reported a *working* feature as broken,
       which is the mirror of the table in that file — worth adding there as a row.
-
----
-
-### B88
-
-- [x] **B88. `<images>` is unimplemented — the cPro volume bar never fills.** The fill is not a
-      slider fill; it is a **filmstrip indexed by a host value**:
-      ```xml
-      <bitmap id="volume.bg2" file="volume_ani.png" x="0" y="0" w="97"/>   <!-- 97x288 = 18 frames -->
-      <images id="volume.images" source="volume" images="volume.bg2" imagesspacing="16"
-              x="-109" y="82" w="97" h="15" relatx="1" visible="0"/>
-      ```
-      (`engine/one/xml/player-normal.xml:98`, `player-elements.xml:239`.) Nothing in `Sources/`
-      reads the `images` element type, the `images=` attribute, `imagesspacing`, or a `source=`
-      binding — all four greps are empty. The node is parsed and laid out
-      (`PROBE images id=volume.images frame=(391,82,97,15)`) but reaches the renderer through
-      `resolvedBitmapID(for:)` (`WasabiRenderer.swift:2166`), which only reads `image=`, resolves
-      nothing, and draws nothing.
-
-      One declaration in the corpus ([M27]) but it is the volume bar of all five cPro skins. The
-      **readout** ("Volume: 39%") is a separate, working mechanism — do not conflate them.
-      `source="volume"` is the only source value the corpus uses; implement that one and leave the
-      rest of the source vocabulary unmeasured rather than guessed.
-
-      **Fixed 2026-08-31.** `filmstripFrameImage` / `filmstripValue` in `WasabiRenderer.swift`, with
-      a branch ahead of the plain-bitmap one (the sheet is named by `images=`, so `resolvedBitmapID`
-      answers nil and the object never reached a bitmap at all). `imagesspacing` is the **pitch**
-      between frame tops and the object's own `h` is how much of each frame shows — 16 and 15 here,
-      one blank row between frames — so the two must not be conflated. An unknown `source=` draws
-      nothing rather than a guessed frame, the same rule an unrecognized `<vis mode>` follows.
-      Verified in the harness (bar fills to 39%, matching `host.volume`) and live in the app, where
-      it also tracks a change. Corpus sweep: only `cPro_T2T-by-MAC/main-normal.png` changed, plus the
-      known `Anexa/main-shade.png` run-to-run flake. Confirmed live by the reporter 2026-08-31
-      (volume fills on T2T and the other four cPro skins). Pinned by
-      `Tests/NullPlayerAppTests/WinampModernB86B88Tests.swift` — the arithmetic lives in
-      `WasabiFilmstrip` so pitch-vs-height and the ends of the range can be tested without a skin.
-
----
-
-### B89
-
-- [ ] **B89. cPro cannot be resized down to the compact player its promo sheets show.** Every cPro
-      skin declares `main/normal` at **317x168** and the app refuses to go below **500x290**
-      (measured live 2026-08-31 by driving the window size through System Events; the harness's
-      `MINIMUM` line says 495x324, so the two instruments disagree and the *app* is the one that
-      matters). The promo sheets for T2T and Bento both show that compact form — top band, seek,
-      transport, no tab strip and no library — as a first-class way to run the skin, and it is
-      unreachable.
-
-      Split out of B87 (2026-08-31) once the tab strip turned out to be working: the two are not the
-      same fault. **The oversized-tabs theory for the floor is dead** — the tabs are 32px in the app
-      and the floor is still 500x290. `cpro-das-skin-prev` was already evidence against it, naming
-      `slider#eq10` at 483 rather than the tab objects ([M28]).
-
-      Unknown, and the first thing to measure: *what* imposes 500x290 — the protective minimum, a
-      window-layer clamp, or the SUI content refusing to collapse. The harness and the app give
-      different numbers, so start by reconciling them rather than by trusting either.
 
 ---
 

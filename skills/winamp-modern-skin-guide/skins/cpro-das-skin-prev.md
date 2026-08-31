@@ -24,7 +24,8 @@ bitmaps main/normal: missing=beatvis.overlay
 
 - Structurally the closest to Insomnis v2: one missing bitmap, colour themes present.
 - 14,410 pixels of its 332x198 `buttons.png` are template filler.
-- Its protective minimum is 483x324 rather than the 495x324 the other three settle on.
+- Its protective minimum was 483x324 rather than the 495x324 the other three settled on. Since
+  B89 (2026-08-31) all five reach **317x174**, against a declared 317x168.
 
 ### The trap this skin sets
 

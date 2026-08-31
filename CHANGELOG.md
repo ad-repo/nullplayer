@@ -17,6 +17,17 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: ClassicPro skins can be shrunk to the compact player again** — the five cPro
+  skins (Bento, Insomnis, Insomnis v2, T2T, das-skin-prev) ship promo sheets showing a small
+  classic-player form — top band, seek bar, transport, no tab strip and no library — and declare it as
+  their minimum size, but the window refused to go anywhere near it. A safety rule meant to stop a
+  shrinking window from stacking one part of a skin over another was counting artwork that is simply
+  cropped, or scrolled out of the window entirely, as if it were overlapping something; on these skins
+  a single decorative panel sitting flush against the right edge tripped it, which pinned the window
+  at the size it opens at. It now counts only artwork that would actually be drawn on top of something
+  else, so every skin can be dragged down to the size its author declared. cPro now reaches 317×174
+  where it stopped at 500×290, and nothing else in the skin corpus draws differently.
+
 - **Winamp Modern skins: the title strip drags the window again, and ⌘ drags it from anywhere** —
   many `.wal` skins leave almost nothing to grab. ClassicPro is the clearest case: the full width of
   its toolbar, right where you reach for a titlebar, is covered by a layer the skin uses only to catch

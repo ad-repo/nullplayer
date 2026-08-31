@@ -819,10 +819,13 @@ final class WasabiSceneRenderer {
     /// The smallest canvas at which the scene still lays itself out the way its author drew it.
     ///
     /// R1's second half: a skin's declared `minimum_w`/`minimum_h` is written for Winamp, where a
-    /// group clips its children; we clip only on `clipchildren="1"`, so below a certain size a child
-    /// that no longer fits paints *over* its siblings instead of being cut off (cPro-Bento at
-    /// 376×182 — above its declared 317×168 — overlaps its tab strip onto the transport). Rather
-    /// than change clipping globally, we refuse to go small enough for it to happen.
+    /// group clips its children; we clip a group only when it says `clipchildren="1"` or declares its
+    /// own box, so below a certain size a child that no longer fits can paint *over* its siblings
+    /// instead of being cut off. Rather than change clipping globally, we refuse to go small enough
+    /// for it to happen. What counts as "small enough" is `fitFailures` below, and it is narrow: an
+    /// object a parent clips, one that has left the window, and one that has left the scene are all
+    /// cut off rather than painting over anything, so none of them is evidence the window is too
+    /// small (B89).
     ///
     /// The skin's own default size is the reference: at the size its author chose, the scene is by
     /// definition correct, so any object already escaping its parent there is deliberate (a slider
@@ -841,66 +844,113 @@ final class WasabiSceneRenderer {
         let declared = declaredMinimumSize
         let ceiling = defaultSize(for: layout)
         guard ceiling.width > declared.width || ceiling.height > declared.height else { return declared }
-        let reference = Set(sceneNodes(canvas: ceiling).map(\.object.stableID))
-        let baseline = fitFailures(atCanvas: ceiling, reference: reference)
+        let baseline = fitFailures(atCanvas: ceiling)
         let width = Self.smallestSatisfying(from: declared.width, to: ceiling.width) { candidate in
-            fitFailures(atCanvas: CGSize(width: candidate, height: ceiling.height), reference: reference)
+            fitFailures(atCanvas: CGSize(width: candidate, height: ceiling.height))
                 .isNoWorse(than: baseline)
         }
         let height = Self.smallestSatisfying(from: declared.height, to: ceiling.height) { candidate in
-            fitFailures(atCanvas: CGSize(width: width, height: candidate), reference: reference)
+            fitFailures(atCanvas: CGSize(width: width, height: candidate))
                 .isNoWorse(than: baseline)
         }
         return CGSize(width: width, height: height)
     }
 
-    /// How a scene fails to place itself at a hypothetical canvas size. The two kinds are kept apart
-    /// deliberately: an object that already overhangs at the skin's own size is allowed to keep
-    /// overhanging, but it is never allowed to *disappear*.
+    /// How a scene fails to place itself at a hypothetical canvas size.
+    ///
+    /// One kind of failure, and it is the only one the protective minimum exists to prevent: an
+    /// object that **paints over** something it should not. An object that is merely cut off, or that
+    /// leaves the window entirely, paints over nothing and is not a failure — Winamp does the same to
+    /// it.
     struct WasabiFitFailures {
         var overflowing: Set<WasabiObjectID> = []
-        var missing: Set<WasabiObjectID> = []
 
         /// No worse than `baseline` — the failures of the scene at the size its author drew it.
         func isNoWorse(than baseline: WasabiFitFailures) -> Bool {
-            overflowing.isSubset(of: baseline.overflowing) && missing.isSubset(of: baseline.missing)
+            overflowing.isSubset(of: baseline.overflowing)
         }
     }
 
-    /// Objects the scene fails to place at a hypothetical canvas size — escaping the box they
-    /// resolved against, or gone entirely (`append` drops a node that lands wholly outside its
-    /// parent, so a shrinking window makes objects *vanish* as well as overlap; count only the first
-    /// and the search loses its monotonicity, because a wildly overflowing object stops being
-    /// counted once it leaves the parent completely). `canvasSize` is untouched — the probe runs off
-    /// to the side of the live scene.
-    func fitFailures(atCanvas size: CGSize, reference: Set<WasabiObjectID>) -> WasabiFitFailures {
-        var present: Set<WasabiObjectID> = []
+    /// Objects that escape the box they resolved against **and paint outside it** at a hypothetical
+    /// canvas size. `canvasSize` is untouched — the probe runs off to the side of the live scene.
+    ///
+    /// Three things are not failures, and each of them used to be:
+    ///
+    /// - **A child its parent clips.** The clip cuts it exactly where Winamp cuts it, so it cannot
+    ///   reach a sibling however far past the box it resolves. Counting it is what pinned cPro at its
+    ///   own default size (B89): the ClassicPro engine's `<group id="beatvis" x="200" w="300"/>` sits
+    ///   flush against the right edge of a 500-wide `cpro.screen`, so it overflowed the instant the
+    ///   canvas narrowed by one pixel — for a skin declaring `minimum_w="317"` and shipping promo
+    ///   sheets of that compact player.
+    /// - **An object that has left the window.** It is behind the window's own clip and paints
+    ///   nothing at all.
+    /// - **An object that is gone from the scene.** `append` drops a node that lands wholly outside
+    ///   its parent, and a vanished object is not painting over anything either. It was counted for
+    ///   the search's monotonicity — an object overflowing wildly stops being counted once it leaves
+    ///   its parent completely — and that is the price paid here: the search may now step over a
+    ///   band of sizes that are worse than the one it settles on. Every case it steps over is one
+    ///   where the offending object is off-canvas, so the cost is a transient while a drag passes
+    ///   through, against a floor that was otherwise unreachable by design (B89: cPro's floor was set
+    ///   entirely by objects going missing, with zero overflow, at sizes that render correctly).
+    func fitFailures(atCanvas size: CGSize) -> WasabiFitFailures {
+        let canvas = CGRect(origin: .zero, size: size)
         var result = WasabiFitFailures()
         for node in sceneNodes(canvas: size) {
-            present.insert(node.object.stableID)
+            guard !node.frame.isEmpty, !isClippedByItsParent(node.object) else { continue }
             // A half-pixel slack: geometry resolves in Double, and a box that lands exactly on its
             // parent's edge is flush, not overflowing.
-            guard !node.frame.isEmpty,
-                  !node.parentFrame.insetBy(dx: -0.5, dy: -0.5).contains(node.frame) else { continue }
+            let box = node.parentFrame.insetBy(dx: -0.5, dy: -0.5)
+            guard !box.contains(node.frame), node.frame.intersects(canvas) else { continue }
+            // Only the part that escapes matters, and only where the window still shows it.
+            guard !box.contains(node.frame.intersection(canvas)) else { continue }
             result.overflowing.insert(node.object.stableID)
         }
-        result.missing = reference.subtracting(present)
         return result
     }
 
-    /// Smallest whole pixel in `from...to` satisfying `predicate`, assuming it is monotone (a scene
-    /// that fits at a size fits at every larger one). ~10 probes; the result is cached per layout.
+    /// Whether this object's parent cuts it to its own box.
+    private func isClippedByItsParent(_ object: WasabiObject) -> Bool {
+        guard let parent = object.parent else { return false }
+        return clipsChildren(parent) || isFramePane(parent)
+    }
+
+    /// The smallest whole pixel in `from...to` that satisfies `predicate`, searched **downwards from
+    /// `to`** — the largest size that fails, plus one.
+    ///
+    /// The direction is the whole of it, and it changed with B89. A scene that fits at one size does
+    /// not reliably fit at every larger one: shrink far enough and the offending object stops being
+    /// counted, because it has gone negative, left the window, or left the scene altogether. A search
+    /// that probes the *bottom* of the range first therefore accepts it — and since a layout's
+    /// declared minimum is usually degenerate in exactly that way, the probe answered "the declared
+    /// minimum is fine" for almost every skin in the corpus.
+    ///
+    /// So walk down from the size the author drew, where the scene is by definition well formed:
+    /// double the step until a size fails, then bisect the last interval, which is bounded above by a
+    /// size known to fit. ~2·log₂(range) probes, cached per layout.
     private static func smallestSatisfying(from: CGFloat, to: CGFloat,
                                            predicate: (CGFloat) -> Bool) -> CGFloat {
-        var low = max(1, from.rounded(.up))
-        var high = max(low, to.rounded(.up))
-        if predicate(low) { return low }
-        guard predicate(high) else { return high }
-        while high - low > 1 {
-            let middle = ((low + high) / 2).rounded()   // whole pixels: this becomes a window's minSize
-            if predicate(middle) { high = middle } else { low = middle }
+        let floor = max(1, from.rounded(.up))
+        let ceiling = max(floor, to.rounded(.up))
+        guard predicate(ceiling) else { return ceiling }
+        var good = ceiling                  // fits
+        var bad = floor                     // assumed to fail until proven otherwise
+        var step: CGFloat = 1
+        while true {
+            let candidate = good - step
+            guard candidate > floor else {
+                if predicate(floor) { return floor }
+                break
+            }
+            if !predicate(candidate) { bad = candidate; break }
+            good = candidate
+            step *= 2
         }
-        return high
+        // Everything in (bad, good) is unprobed; bisect it, bounded above by a size known to fit.
+        while good - bad > 1 {
+            let middle = ((bad + good) / 2).rounded()   // whole pixels: this becomes a window's minSize
+            if predicate(middle) { good = middle } else { bad = middle }
+        }
+        return good
     }
 
     /// The active layout's `maximum_w`/`maximum_h`, defaulting to the renderer's own 16384 ceiling.

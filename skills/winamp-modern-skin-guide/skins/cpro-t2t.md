@@ -73,21 +73,23 @@ report (§5); the short form:
    runs and four of seven tabs were unreachable. In the **app** all seven are present and abbreviated
    (LIB PLE VID VIS BRO BPR NOW). The pass hangs off `onResize`, which the app seeds and the render
    dump does not — `RENDER_EVENTS=onresize` reproduces the app. `reference/harness.md` already says
-   "**`onresize` first** for any ClassicPro skin". Two real, smaller things survive: **B87**, the
-   3-letter labels lose the right edge of their last glyph (`LIB`→`LIE`); and **B89**, the window
-   floors at **500x290** (measured live, not the dump's 495x324) against a declared 317x168, so the
-   compact classic-player form the promo sheet shows is still unreachable. The oversized-tabs theory
-   for that floor is **dead** — the tabs are 32px in the app and the floor is unchanged. Tabs lay out at full label width (~567px inside a 234px
+   "**`onresize` first** for any ClassicPro skin". One real, smaller thing survives: **B87**, the
+   3-letter labels lose the right edge of their last glyph (`LIB`→`LIE`). **B89 is fixed
+   (2026-08-31)**: the window floored at **500x290** (measured live, not the dump's 495x324) against
+   a declared 317x168, so the compact classic-player form the promo sheet shows was unreachable. The
+   oversized-tabs theory for that floor was **dead** — the tabs are 32px in the app and the floor was
+   unchanged — and the live culprit was `group#beatvis`, which the protective minimum counted even
+   though its parent clips it. All five cPro skins now reach **317x174**; see
+   `compatibility/limits-and-policy.md` → *The protective minimum*. Tabs lay out at full label width (~567px inside a 234px
    `Cpro:Tabs`): tab 4 is clipped to 6px (`clip=(234,104,6,29)`) and BPR/BRO/NOW are off-strip.
    The abbreviating pass works — any resize proves it, turning the labels into the promo's
    `LIB PLE VIS VID BPR BRO NOW` and each tab into `w=32` — but it hangs off `onresize`, which
    initial layout never fires. `RENDER_SETTLE` does **not** cover this: settling pumps timers, not
    resizes.
-   **Same fault, second symptom:** the protective minimum is computed from current object extents,
-   so the oversized tabs set it — `MINIMUM main/normal below=494: grid#cpro.tab.grid text#l text#r
-   togglebutton#cpro.tab.button`, giving 495x324 against a **declared 317x168**. That floor is what
-   blocks the compact classic-player window the promo shows at the bottom of the sheet. Fix the fit
-   pass, then re-read `MINIMUM` — do not assume the floor falls out on its own.
+   **The `MINIMUM` line measures the dump's scene, not the app's.** It named the tab objects
+   (`MINIMUM main/normal below=494: grid#cpro.tab.grid text#l text#r togglebutton#cpro.tab.button`),
+   giving 495x324, because the dump had not fired `onresize`. In the running app the culprit was
+   `group#beatvis` and the floor was 500x290. Two instruments, two scenes — measure the app (B89).
 3. **[FIXED B86] `parser_addCallback` path matching was too strict — the skin's 7 custom beat-vis
    animations never loaded.** It was **two** faults: the matcher, *and* `@SKINPATH@` carrying no
    trailing separator, so `getParam() + "ClassicPro.xml"` never resolved and every `myDoc.exists()`

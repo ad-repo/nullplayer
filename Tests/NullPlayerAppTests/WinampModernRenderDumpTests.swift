@@ -947,11 +947,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 // what it is: those overflowing one pixel below it but not at the skin's own size.
                 if env["WINAMP_MODERN_RENDER_MINIMUM"] != nil {
                     let below = CGSize(width: max(1, minimum.width - 1), height: minimum.height)
-                    let reference = Set(renderer.sceneNodes().map(\.object.stableID))
-                    let failures = renderer.fitFailures(atCanvas: below, reference: reference)
-                    let baseline = renderer.fitFailures(atCanvas: size, reference: reference)
-                    let culprits = failures.overflowing.union(failures.missing)
-                        .subtracting(baseline.overflowing.union(baseline.missing))
+                    let failures = renderer.fitFailures(atCanvas: below)
+                    let baseline = renderer.fitFailures(atCanvas: size)
+                    let culprits = failures.overflowing.subtracting(baseline.overflowing)
                     let named = renderer.sceneNodes().filter { culprits.contains($0.object.stableID) }
                     print("MINIMUM \(info.id)/\(layoutID) below=\(Int(below.width)): "
                           + named.map { "\($0.object.typeName)#\($0.object.xmlID ?? "-")" }

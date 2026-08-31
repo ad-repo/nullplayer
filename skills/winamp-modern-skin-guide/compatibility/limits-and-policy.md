@@ -132,24 +132,48 @@ T800, ZDL Reel-To-Reel and mmd3's shade layouts become fixed. A *script* may sti
 layout — `WasabiSceneRenderer.resize(to:)` keeps its own clamp; only `userResizeLimits`, which the
 window's `contentMinSize`/`contentMaxSize` and the restore clamp read, is pinned.
 
-**The protective minimum** (Phase 15). A skin's declared `minimum_w`/`minimum_h` is written for
-Winamp, where *every* group clips its children; we clip only on `clipchildren="1"`, so below a
-certain size a child that no longer fits paints over its siblings instead of being cut off —
-cPro-Bento at 376×182, comfortably above its declared 317×168, overlaps its tab strip
-(`cpro.tab`) onto the transport. Rather than change clipping globally (which would change what every
-skin draws), `WasabiSceneRenderer.layoutMinimumSize` raises the floor to the smallest size at which
-the scene still lays out the way its author drew it, and every window, script `resize`, and restored
-frame is clamped to it.
+**The protective minimum** (Phase 15, narrowed by B89). A skin's declared `minimum_w`/`minimum_h` is
+written for Winamp, where *every* group clips its children; we clip a group only when it says
+`clipchildren="1"` or declares its own box, so below a certain size a child that no longer fits can
+paint over its siblings instead of being cut off. Rather than change clipping globally (which would
+change what every skin draws), `WasabiSceneRenderer.layoutMinimumSize` raises the floor to the
+smallest size at which nothing does that, and every window, script `resize`, and restored frame is
+clamped to it.
 
 The probe calibrates against the layout's **own default size**: at the size its author ships, the
 scene is by definition correct, so overhang already present there is deliberate (a slider centres its
-thumb on its track) and only failures that appear *after* shrinking count. Two failure kinds are
-tracked separately — an object escaping the box it resolved against, and an object disappearing from
-the scene entirely (`append` culls a node that lands wholly outside its parent) — so an object
-allowed to overhang is still never allowed to vanish. ~20 scene builds per layout, binary-searched
-per axis and cached; the result never exceeds the layout's default size. Measured floors: cPro-Bento
-`main/normal` 317×168 → **477×203**, mmd3 `Pledit` 275×116 → 310×116, `ctsbig` → 310×133, Winamp
-Modern unchanged everywhere (its declared minima already dominate).
+thumb on its track) and only failures that appear *after* shrinking count.
+
+**Painting over something is the whole of the test, and that is narrower than it sounds.** Three
+things are *not* failures, and each of them used to be:
+
+| Not a failure | Why |
+|---|---|
+| A child its parent **clips** | The clip cuts it exactly where Winamp cuts it; it cannot reach a sibling however far past the box it resolves |
+| An object that has **left the window** | It is behind the window's own clip and paints nothing |
+| An object that has **left the scene** | `append` culls a node landing wholly outside its parent, and a node that is not drawn paints over nothing either |
+
+Counting them made the floor **cPro's own default size** — "not resizable at all" — for a family of
+skins declaring `minimum_w="317"` and shipping promo sheets of that compact player (B89). The
+ClassicPro engine's `<group id="beatvis" x="200" w="300"/>` sits flush against the right edge of a
+500-wide `cpro.screen`, so it overflowed the instant the canvas narrowed by a single pixel; and
+below that, every rejected size was rejected by objects *disappearing*, with zero overflow, at sizes
+that render correctly.
+
+Dropping the "disappeared" kind costs the search its monotonicity, so **the search runs downwards**:
+from the size the author drew, where the scene is by definition well formed, doubling the step until
+a size fails and then bisecting the last interval. A search that probed the *bottom* of the range
+first would accept it — a layout's declared minimum is usually degenerate in exactly the way that
+stops the offending object being counted — and answered "the declared minimum is fine" for almost
+every skin in the corpus. ~2·log₂(range) scene builds per axis, cached per layout; the result never
+exceeds the layout's default size.
+
+Measured across the installed corpus (2026-08-31, 36 skins / 306 layouts): **169 layouts lowered,
+none raised**, every one of them to its own declared minimum. All five cPro skins go 495×324
+(das-skin-prev 483×324) → **317×174** against a declared 317×168; Big Bento Modern `main/normal`
+1186×667 → its declared 814×530. The corpus render sweep is byte-identical apart from the known
+`Anexa/main-shade.png` run-to-run flake — the floor is a *limit*, so nothing draws differently at
+the sizes skins already open at.
 
 **Not fuzzed**: `NSISArchive` and `LZMA1Decoder`. They are validated byte-for-byte against the real
 installer (309/309 engine files match a reference oracle), but a bounded fuzz over them remains
