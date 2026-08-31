@@ -58,5 +58,4 @@ hidden" turned out to be.
 - The magenta filler above — per-skin artwork, won't-do.
 - **B78** the embedded playlist surface may overflow a small holder; **B82** a widget brought up
   mid-session is not told the current track, so Now Playing's three text lines stay blank until the
-  next track change; **B83** `isVisible()` answers true for the closed Widgets Manager, so its menu
-  row shows ticked.
+  next track change.

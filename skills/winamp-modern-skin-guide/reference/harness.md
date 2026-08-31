@@ -102,6 +102,32 @@ before `swift test` fails silently when the output is piped to `grep`, and the h
 configuration persists in the **xctest** UserDefaults domain between runs
 (`defaults delete com.apple.dt.xctest.tool` resets it).
 
+### What the probe models about windows
+
+The harness owns no windows, so everything a script can ask about one is answered by a model
+(`WinampModernRenderDumpTests.render`), and it is deliberately the *app's* model:
+
+- every **auxiliary** container gets a window at load and starts **closed**, unless the skin opens it
+  (`default_visible="1"`, minus the suppressed cases) or the run asks for it with
+  `WINAMP_MODERN_RENDER_SHOW`;
+- `show()` / `hide()` / `toggle()` from a script move it, so a second `isVisible()` in the same run —
+  including one after a driven `RENDER_CLICK` — answers what the first call left behind;
+- the **main player** is not an auxiliary, so it answers `nil` and falls back to the graph attribute,
+  exactly as `WinampModernMainWindowController.containerVisibilityQuery` does.
+
+**Why it is not simply left uninstalled.** It was, until 2026-08-31, and that is what B83 turned out
+to be: with no `containerVisibilityQuery` the runtime falls back to the object's `visible` attribute,
+a `<layout>` almost never declares one, and so **every closed window measured as open**. ClassicPro's
+drawer menu asks exactly that question about its Widgets Manager
+(`getContainer("widgets.manager").getLayout("normal").isvisible()`), and the probe reported the row
+ticked with the window shut on all five cPro skins — a defect that only ever existed in the
+instrument. The app, which installs the query, had always answered it correctly, confirmed live.
+
+The general form is worth carrying to the next callback: **an uninstalled host callback does not
+measure "no host" — it measures whatever the fallback says**, and a fallback that reads a
+usually-absent attribute answers the same way for every skin in the corpus. When you add a probe that
+depends on one, install the model too.
+
 Use the probe to answer "is it missing art, bad geometry, or a script that never ran" before changing
 renderer code — `BITMAPS … missing=` distinguishes an unresolved resource from one that draws wrongly.
 

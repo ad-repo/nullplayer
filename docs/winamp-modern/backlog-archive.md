@@ -2,6 +2,39 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B83 — `Layout.isVisible()` answers true for a window that is not on screen — closed 2026-08-31
+
+Original entry: ClassicPro's drawer menu builds its *Widgets Manager* row as
+`addCommand("Widgets Manager", -3, getContainer("widgets.manager").getLayout("normal").isvisible(), 0)`
+(`engine/one/scripts/drawer.m:200`, and three more sites), and the row came back **ticked** with the
+window closed — measured in `RENDER_CLICK` on all five cPro skins (`*Widgets Manager#-3`). The same
+query drives the menu item's toggle branch, so the first pick could hide a window that was never
+shown.
+
+**The app was never wrong — the instrument was.** Verified live 2026-08-31 (debug build, cPro-Bento,
+a temporary trace on `WinampModernMainView.presentScriptPopup`): with the Widgets Manager closed the
+real drawer menu built `Widgets Manager id=-3 checked=0`, so `isvisible()` answered *false* and
+`drawer.m:213` would take the *show* branch, which is correct.
+
+The runtime asks the host for a container's window state and only falls back to the graph attribute
+when the host answers `nil` (`WinampModernScriptRuntime.effectiveVisibility`). The app installs that
+query (`WinampModernMainWindowController.containerVisibilityQuery`) and answers it from the auxiliary
+window, which exists from load and starts ordered out. **`WinampModernRenderDumpTests` never installed
+one at all**, so in the harness every container answered `nil`, and the fallback read a `visible`
+attribute that `widgets-manager.xml:132` — like most `<layout>`s — does not declare: every closed
+window measured as *open*.
+
+The fix is harness-side. The probe now keeps the window state the app keeps: every auxiliary
+container starts closed unless the skin opens it (`default_visible="1"`) or the run asks for it
+(`WINAMP_MODERN_RENDER_SHOW`), `show()`/`hide()` from a script move it, and the main player answers
+`nil` exactly as the controller's query does. Re-measured on all five cPro skins: `Widgets Manager#-3`
+with the window shut, `*Widgets Manager#-3` under `WINAMP_MODERN_RENDER_SHOW=widgets.manager`.
+
+The general lesson is the one B22/BB31 already paid for from the other side, and it belongs to the
+instrument: **a probe that leaves a host callback uninstalled does not measure "no host" — it measures
+whatever the fallback says**, and a fallback that reads a usually-absent attribute answers the same
+way for every skin in the corpus. See `reference/harness.md` → *What the probe models about windows*.
+
 ## BB26 — the file-info rating row drew dots, not stars — closed 2026-08-31
 
 Reported live 2026-08-25 on Big Bento Modern's base and Light variants: `infodisplay.line.rating.stars`

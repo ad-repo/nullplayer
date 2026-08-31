@@ -188,6 +188,52 @@ final class WinampModernRenderDumpTests: XCTestCase {
             return nil
         }
 
+        // `WINAMP_MODERN_RENDER_SHOW=<container>[,<container>]` opens auxiliary windows the way the
+        // user does from the Skin Windows menu. Without it the harness can only ever see the windows
+        // a skin opens by default, and a defect confined to one that starts hidden — Defix's speaker
+        // cabinets, whose `getVisBand` timer starts from `onSetVisible` — is invisible to every probe.
+        let shownContainers = Set((env["WINAMP_MODERN_RENDER_SHOW"] ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty })
+
+        // The window state `isVisible()` and `toggle()` are answered from, modelled on the app's
+        // `containerVisibilityQuery` (B83). Every auxiliary container gets a window at load and starts
+        // **closed**, unless the skin opens it (`default_visible="1"`) or the run asked for it
+        // (`WINAMP_MODERN_RENDER_SHOW`); the main player is not one of them, so — exactly as in the
+        // controller, whose query only searches the auxiliaries — it answers `nil` and falls back to
+        // the graph attribute.
+        //
+        // Without this the query was never installed at all, so *every* id answered `nil`, and the
+        // runtime fell back to a `visible` attribute that a `<layout>` usually does not declare:
+        // every closed window read as open. ClassicPro's drawer menu builds its row as
+        // `addCommand("Widgets Manager", -3, getContainer("widgets.manager").getLayout("normal")
+        // .isvisible(), 0)`, and the probe reported it **ticked with the window shut** on all five
+        // cPro skins — a defect (B83) that existed only in the instrument: the app, which does install
+        // the query, has always answered it correctly.
+        let auxiliaryWindowContainers = WinampModernContainerTopology
+            .windowContainers(graph: loaded.runtime.graph)
+            .filter { !$0.isMainPlayer }
+        let auxiliaryWindowIDs = Set(auxiliaryWindowContainers.map { $0.id.lowercased() })
+        let defaultVisibleContainers = auxiliaryWindowContainers.filter { $0.opensByDefault }
+        let defaultVisible = Set(defaultVisibleContainers
+            .filter { WinampModernContainerTopology.defaultVisibilitySuppression(of: $0) == nil }
+            .map { $0.id.lowercased() })
+        var openContainers = defaultVisible.union(shownContainers)
+        runtime.containerVisibilityQuery = { id in
+            let key = id.lowercased()
+            guard auxiliaryWindowIDs.contains(key) else { return nil }
+            return openContainers.contains(key)
+        }
+        // A script that shows or hides one of its own windows moves the model with it, so a second
+        // `isVisible()` in the same run answers what the first call left behind.
+        let noteContainerVisibility: (String, Bool) -> Void = { id, visible in
+            guard auxiliaryWindowIDs.contains(id.lowercased()) else { return }
+            if visible { openContainers.insert(id.lowercased()) }
+            else { openContainers.remove(id.lowercased()) }
+        }
+        runtime.containerVisibilityRequested = { noteContainerVisibility($0, $1) }
+
         try runtime.start()
 
         if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
@@ -329,31 +375,16 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // its animation from `onSetVisible` (Defix's cassette reels turn their Layer FX on there), so
         // without this nothing in the skin is warped at all. Before any `RENDER_CONFIG` write, since
         // a style switched *while the window is up* is what the app does.
-        // `WINAMP_MODERN_RENDER_SHOW=<container>[,<container>]` opens auxiliary windows the way the
-        // user does from the Skin Windows menu. Without it the harness can only ever see the windows
-        // a skin opens by default, and a defect confined to one that starts hidden — Defix's speaker
-        // cabinets, whose `getVisBand` timer starts from `onSetVisible` — is invisible to every probe.
-        let shownContainers = Set((env["WINAMP_MODERN_RENDER_SHOW"] ?? "")
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-            .filter { !$0.isEmpty })
         if env["WINAMP_MODERN_RENDER_FX"] != nil || !shownContainers.isEmpty {
             // `default_visible="1"` opens a window with the skin in the app (B6), so the harness sees
             // the same set: a probe that measured Defix's configurator as closed was measuring a
-            // state the app no longer starts in.
-            // `windowContainers`, not `analyze`: the app only opens containers that are real
-            // windows, so a collapsed SUI stub that declares the attribute is not one of them.
-            let defaultVisibleContainers = WinampModernContainerTopology
-                .windowContainers(graph: loaded.runtime.graph)
-                .filter { $0.opensByDefault && !$0.isMainPlayer }
+            // state the app no longer starts in. Both sets are the ones the visibility model above was
+            // seeded from, so what the windows do and what `isVisible()` answers cannot drift apart.
             for info in defaultVisibleContainers {
                 guard let suppression = WinampModernContainerTopology
                     .defaultVisibilitySuppression(of: info) else { continue }
                 print("DEFAULT-VISIBLE \(info.id) suppressed: \(suppression.reason)")
             }
-            let defaultVisible = Set(defaultVisibleContainers
-                .filter { WinampModernContainerTopology.defaultVisibilitySuppression(of: $0) == nil }
-                .map { $0.id.lowercased() })
             for container in loaded.runtime.graph.roots
             where container.typeName.caseInsensitiveCompare("container") == .orderedSame {
                 let identifier = container.xmlID ?? ""
@@ -992,8 +1023,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         // is the only place it can be seen.
                         runtime.containerVisibilityRequested = { id, visible in
                             print("CLICK window: \(id) visible=\(visible)")
+                            noteContainerVisibility(id, visible)
                         }
-                        defer { runtime.containerVisibilityRequested = nil }
+                        // Back to the model, not to `nil`: a click that opens a window is the reason
+                        // the *next* `isVisible()` in the run answers differently.
+                        defer {
+                            runtime.containerVisibilityRequested = { noteContainerVisibility($0, $1) }
+                        }
                         var chain: [String] = []
                         runtime.dispatchObserver = { event, program, failure in
                             chain.append("\((program.source.path as NSString).lastPathComponent)."
