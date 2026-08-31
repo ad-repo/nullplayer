@@ -1036,8 +1036,14 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 let local = CGPoint(x: point.x - parent.minX, y: point.y - parent.minY)
                                 let arguments: [MakiValue] = ["onleftclick", "onrightclick"].contains(event) ? []
                                     : [.integer(Int32(local.x)), .integer(Int32(local.y))]
-                                if event.hasPrefix("onright") {
-                                    // No view here to show a menu, so record what the skin built.
+                                // No view here to show a menu, so record what the skin built.
+                                // Installed for **every** event, not just the right-button pair: a
+                                // menu is not the right button's property. ClassicPro's drawer hangs
+                                // its whole page list off `drawer.menulist`'s `onLeftClick`, and while
+                                // this was `if event.hasPrefix("onright")` that menu — the one probe
+                                // that answers "does the drawer menu build at all" — printed nothing
+                                // and read exactly like a menu that was never built.
+                                do {
                                     runtime.popupPresenter = { items, point in
                                         let where_ = point.map { " at \(Int($0.x)),\(Int($0.y))" } ?? ""
                                         print("CLICK menu\(where_): " + Self.describe(items))
@@ -1320,12 +1326,23 @@ final class WinampModernRenderDumpTests: XCTestCase {
                     print("BITMAPS \(info.id)/\(layoutID): resolved=\(resolved) "
                           + "missing=\(missing.sorted().joined(separator: " "))")
                 }
-                guard size.width >= 1, size.height >= 1,
-                      let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height),
+                // WINAMP_MODERN_RENDER_SCALE=<factor> draws the scene the way the *view* does —
+                // `context.scaleBy(skinScale)` over the whole scene — instead of at the canvas's own
+                // 1:1. Without it the harness can only ever see the one scale nothing is wrong at:
+                // every seam, shimmer and half-covered edge in this subsystem is a property of a
+                // **fractional** device scale (UI Size 105% on a Retina panel is 2.1), and at 1.0 the
+                // dump is clean while the app is not. Pass the app's UI Size, not the backing factor.
+                let drawScale = env["WINAMP_MODERN_RENDER_SCALE"].flatMap(Double.init) ?? 1
+                let pixelSize = CGSize(width: (size.width * drawScale).rounded(),
+                                       height: (size.height * drawScale).rounded())
+                guard pixelSize.width >= 1, pixelSize.height >= 1,
+                      let context = CGContext(data: nil, width: Int(pixelSize.width),
+                                              height: Int(pixelSize.height),
                                               bitsPerComponent: 8, bytesPerRow: 0,
                                               space: CGColorSpaceCreateDeviceRGB(),
                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
                 else { continue }
+                if drawScale != 1 { context.scaleBy(x: drawScale, y: drawScale) }
                 // `drawText` ends in `NSString.draw(in:withAttributes:)`, which renders into the
                 // *current NSGraphicsContext* — not the CGContext it was handed. Without this the
                 // harness silently drops every TrueType/system-font string while the real app (which
