@@ -35,6 +35,10 @@ or Original-Metal behavior.
   independent WMP types. Do not plan against subsystems that are absent from remote main.
 - Real Microsoft/community skins remain user-supplied and untracked. Commit only small original
   synthetic fixtures generated or authored for NullPlayer tests.
+- The implementation worktree has an opt-in reference corpus at
+  `/Users/ad/Projects/nullplayer-wmp-skin-support/skins/`. Its `.wmz` files are user-supplied test
+  inputs only: never stage or commit that directory, copied artwork, screenshots, render dumps, or
+  other derived visual artifacts. Tests must skip cleanly when the local directory is absent.
 - WMP video/effect elements initially host a safe NullPlayer surface or a documented placeholder.
   Never load WMP plug-ins, ActiveX, registry data, DLL resources, or shell integrations.
 
@@ -536,12 +540,14 @@ survives a hidden view or teardown.
 
 ## 13. Phase 7 — corpus, security, performance, regression hardening
 
-Build an opt-in user-supplied corpus across WMP versions/styles. A report harness emits archive
+Use the opt-in user-supplied corpus at
+`/Users/ad/Projects/nullplayer-wmp-skin-support/skins/` across WMP versions/styles, while allowing an
+equivalent externally supplied path when that local directory is absent. A report harness emits archive
 facts, tag/attribute/member/event demand, unknowns, diagnostics, render metrics, and confidence.
 Prioritize cross-skin capabilities. A skin is a test case, not a milestone.
 
-Never commit corpus archives or third-party screenshots. Keep local reports outside the repository
-unless explicitly approved; durable engine facts belong in compatibility docs.
+Never commit corpus archives, third-party screenshots, or derived render dumps. Keep local reports
+outside the repository unless explicitly approved; durable engine facts belong in compatibility docs.
 
 Required work:
 
