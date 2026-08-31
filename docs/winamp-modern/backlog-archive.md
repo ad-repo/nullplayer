@@ -2,6 +2,82 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## BB36 — A window indicator lamp is a click counter, not a window — closed 2026-08-31
+
+Original entry, and the two open questions it left, both now decided:
+
+- [x] **BB36. A window indicator lamp is a click counter, not a window.** A skin marks its playlist /
+      media-library / EQ / AVS buttons with an `activeimage` meaning *"that window is open"*.
+      `WasabiRenderer.resolvedBitmapID` draws that from the object's `activated` attribute, and the
+      only thing that writes it is `WinampModernScriptRuntime.toggleActivation`, which
+      `WinampModernMainView.performAction` calls on every click **alongside** the `TOGGLE` action.
+      So the lamp counts clicks and the window does something else, and nothing reconciles the two.
+
+      **Reported live 2026-08-31**, and the report is the sharpest statement of it: *"across all skins
+      the way the window lights seem to work is that they are reflective of the start state. If the
+      window launches at launch then the toggle gets reversed."* A window already open at launch
+      starts with `activated` unset — dark — so the first click closes the window and lights the lamp,
+      and it stays inverted from then on. Closing a window by its own close button, or by a menu, is
+      the same desync arriving by a different route.
+
+      **Exposed by BB26, not caused by it.** Before that fix `resolvedBitmapID` ignored `activated`
+      entirely and every one of these lamps was uniformly dark, so the inversion had nothing to show
+      it in. The state was already wrong; it just had no way to draw itself.
+
+      **The fix has a precedent in this same function and should follow it.** `shuffle` and `repeat`
+      light from `host.shuffleEnabled` / `host.repeatEnabled`, and a `cfgattrib` control reads its
+      binding — in both cases the control keeps *no second copy* of a state something else owns, which
+      is exactly the rule that was violated here (see *A bound control keeps no state of its own* in
+      `reference/rendering.md`). A `TOGGLE` button's lamp should ask whether its target window is
+      visible. **The parameter resolution is the work**, not the query: `TOGGLE` splits into a
+      component (`WinampModernComponentRegistry.kind(for:)` → `routeComponentToggle`, which itself
+      tries a hosted surface, then an in-player holder, then a window) and one of the skin's own
+      container ids (`containerWindowToggleRequested`), and roughly half the corpus declarations take
+      each road ([M27]). A lamp that answers for only one of them replaces an inverted indicator with
+      an arbitrary one.
+
+      Two things to settle before writing it, neither measured: whether `toggleActivation` should stop
+      writing `activated` for these buttons at all — a skin's own `onToggle` handler may read it, and
+      multipass's drawer hangs off that event — and what an in-player holder means for the question,
+      since `routeComponentToggle` returns early when the component is a holder in the player rather
+      than a window, and "is it open" may have no answer there.
+
+**Fixed and verified 2026-08-31.** The lamp is derived from the target window through
+`WasabiSceneRenderer.toggleTargetVisibleProvider`, installed by `WinampModernMainView` on its own
+renderer, gated to `action="TOGGLE"`, and routed by `toggleTargetIsVisible(parameter:)` along the
+same three roads `routeComponentToggle` takes, in its order. When it answers, that answer *is* the
+lamp and `activated` is not consulted; it answers nil for an embedded surface, the theme/About GUIDs,
+and an unknown container, where the button keeps its own `activated`. The controller supplies both
+halves — the component query mirrors the coordinator, the auxiliary containers, and finally
+NullPlayer's own `isPlaylistVisible`/`isEqualizerVisible`/`isPlexBrowserVisible`/`isProjectMVisible`;
+the container query mirrors `containerWindowToggleRequested`, hosted-window materializer included.
+`refreshToggleLamps()` repaints every container on a visibility change, because the lamp is usually
+in a different window from the one that moved.
+
+**The two open questions, decided.** `toggleActivation` **keeps** writing `activated` — a skin's own
+`onToggle` reads it with `getActivated()` and multipass's drawer opens from nothing else; the renderer
+simply prefers the authoritative answer. An in-player holder and an embedded surface answer **nil**,
+not "visible": `routeComponentToggle` returns early for both so the click does nothing either, and a
+permanently lit lamp is a different wrong answer than an inverted one.
+
+**One crash on the way, worth keeping.** The first version asked
+`renderer.componentHolders()` whether the kind was an in-player holder. That builds `sceneNodes()`,
+and the scene walk is what asks the lamp question — the app died at skin load in a 4500-frame stack
+overflow (`EXC_BAD_ACCESS`, thread-stack exceeded). The catalog answers the same question
+declaratively, and a re-entrancy guard on `toggleTargetIsVisible` makes a repeat of the mistake a dark
+lamp instead of a crash.
+
+Covered by `WinampModernBB36Tests` (7 cases: both parameter roads, the nil fallback, a non-`TOGGLE`
+button, a renderer with no window layer, and press/hover still outranking the window). Manual QA
+2026-08-31: all button/window states pass. Written up in `reference/rendering.md` → *A `TOGGLE`
+button's lamp is its window's state, not the button's*.
+
+Reach command, live only while this was open:
+
+- <a id="m27"></a>**M27:** over the extracted corpus, match `<button>`/`<togglebutton>` declarations across newlines and keep those carrying **both** an `activeimage` and `action="TOGGLE"` — the buttons whose lit state is a claim about a window. Measured 2026-08-31: **194 across 31 skins** (ZDL Reel-To-Reel 20, jvc.tape 17, Bio-Nid 14, BLAKK 14, Ebonite_2_1 12, T800 10, Rika 10). By `param`: `guid:ml` 48, `guid:pl` 48, `eq` 17, `guid:avs` 13, then per-skin container ids. The `param` split matters to the fix: roughly half name a **component** (`WinampModernComponentRegistry.kind(for:)`) and the rest name **one of the skin's own container ids**, and the visibility query has to answer for both.
+
+---
+
 ## B83 — `Layout.isVisible()` answers true for a window that is not on screen — closed 2026-08-31
 
 Original entry: ClassicPro's drawer menu builds its *Widgets Manager* row as

@@ -475,6 +475,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Surface routing for this skin: menus, skin buttons, and restoration all resolve through it.
     private(set) var surfaceCoordinator: WinampModernSurfaceCoordinator?
 
+    /// The two visibility queries a `TOGGLE` button's lamp reads (BB36), kept so a hosted window
+    /// that materializes *after* `makeSurfaceCoordinator` — which is every one of them — gets the
+    /// same pair its `surfaceToggleRequested` already gets.
+    private var toggleLampQueries: (surface: (WinampModernComponentKind) -> Bool?,
+                                    container: (String) -> Bool?)?
+
     // MARK: - Skin settings (Phase 27.3)
 
     private var skinSettingsController: WinampModernSkinSettingsWindowController?
@@ -648,13 +654,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 instance.view.webNavigationRequested = { [weak self] target, address in
                     self?.routeWebNavigation(target, address: address)
                 }
+                instance.view.surfaceVisibilityQuery = { [weak self] in
+                    self?.toggleLampQueries?.surface($0) ?? nil
+                }
+                instance.view.containerWindowVisibilityQuery = { [weak self] in
+                    self?.toggleLampQueries?.container($0) ?? nil
+                }
             },
             instanceWillTeardown: { [weak self] instance in
                 self?.viewsByContainer.removeValue(forKey: instance.view.containerID)
             },
-            visibilityDidChange: { id, visible, frame in
+            visibilityDidChange: { [weak self] id, visible, frame in
                 WindowManager.shared.hostedWindowVisibilityDidChange(
                     id: id, visible: visible, transitionFrame: frame)
+                self?.refreshToggleLamps()
             }
         )
     }
@@ -770,6 +783,49 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         skinView?.containerWindowToggleRequested = toggleContainer
         auxiliaryContainers.forEach { $0.view.containerWindowToggleRequested = toggleContainer }
+        // And the read side of both, for the lamp on the button that does the toggling (BB36). Each
+        // is the exact question its `toggle*` counterpart above acts on, so the two cannot drift.
+        let surfaceVisible: (WinampModernComponentKind) -> Bool? = { [weak self] kind in
+            guard let self else { return nil }
+            // The same three roads `routeComponentToggle` walks, in its order.
+            if let coordinator = surfaceCoordinator, coordinator.handles(kind) {
+                // An embedded surface has no window of its own: it is as visible as the player,
+                // which would pin the lamp on. Not an answer — the button keeps its `activated`.
+                guard !coordinator.isEmbedded(kind) else { return nil }
+                return coordinator.isSurfaceVisible(kind)
+            }
+            if let container = auxiliaryContainers.first(where: { $0.kind == kind }) {
+                return container.window.isVisible
+            }
+            // NullPlayer's own window, for a skin that declares none — the last leg of
+            // `toggleClassicWindow(for:)`. These accessors consult the coordinator first, which has
+            // already declined above, so each answers for the classic window it falls back to.
+            switch kind {
+            case .playlist: return WindowManager.shared.isPlaylistVisible
+            case .equalizer: return WindowManager.shared.isEqualizerVisible
+            case .library: return WindowManager.shared.isPlexBrowserVisible
+            case .visualization: return WindowManager.shared.isProjectMVisible
+            // `toggleClassicWindow` does nothing for these, so there is nothing to report.
+            case .video, .waveformSeeker, .other: return nil
+            }
+        }
+        let containerVisible: (String) -> Bool? = { [weak self] id in
+            guard let self else { return nil }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
+                return hostedWindowMaterializer?.isVisible(hostedID)
+            }
+            guard let matchedID = Self.matchingContainerID(id,
+                                                           in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+            else { return nil }
+            return container.window.isVisible
+        }
+        for view in [skinView].compactMap({ $0 }) + auxiliaryContainers.map(\.view) {
+            view.surfaceVisibilityQuery = surfaceVisible
+            view.containerWindowVisibilityQuery = containerVisible
+        }
+        toggleLampQueries = (surfaceVisible, containerVisible)
         // `getContainer("SUI").show()` — a skin opening one of its own windows from script rather
         // than from markup. Defix's four round buttons reach their targets only this way, and the
         // request is idempotent on purpose: the skin also calls `show()` from timers, and acting on
@@ -1461,6 +1517,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         container.view.setSceneVisible(visible)
         if record { rememberContainerVisibility(id: id, visible: visible) }
+        refreshToggleLamps()
+    }
+
+    /// A window went up or down, so every `TOGGLE` lamp that names it is now drawing a stale answer
+    /// (BB36). The lamps live in other windows than the one that moved — a player button opens the
+    /// playlist — so this repaints every container's scene rather than only the one that changed.
+    private func refreshToggleLamps() {
+        for view in viewsByContainer.values { view.needsDisplay = true }
     }
 
     // MARK: - `default_visible` (Phase 40, B6)
@@ -1867,6 +1931,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         container.view.setSceneVisible(container.window.isVisible)
         rememberContainerVisibility(id: container.containerID, visible: container.window.isVisible)
+        refreshToggleLamps()
         return true
     }
 
@@ -1918,6 +1983,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         container.view.setSceneVisible(container.window.isVisible)
         rememberContainerVisibility(id: container.containerID, visible: container.window.isVisible)
+        refreshToggleLamps()
         return true
     }
 

@@ -542,6 +542,21 @@ final class WasabiSceneRenderer {
     /// carry. Big Bento Modern's side-by-side Multi Content View reads its two *File Info
     /// Components* check boxes through it (BB9). Nil in a renderer built without a script runtime.
     var settingStateProvider: ((String, String) -> Bool?)?
+    /// Whether the window a `TOGGLE` button addresses is on screen (BB36).
+    ///
+    /// An `action="TOGGLE"` button's `activeimage` is a claim about *that window*, not about the
+    /// button: 194 of them across 31 skins mark the playlist, media library, EQ or AVS. Drawing it
+    /// from the button's own `activated` made the lamp a click counter, so a window that was already
+    /// open at launch read dark, the first click closed it and lit the lamp, and the two stayed
+    /// inverted from then on. Same rule as `shuffle`/`repeat` and a `cfgattrib` binding above: a
+    /// bound control keeps no second copy of state something else owns.
+    ///
+    /// Answers nil when the parameter has no window behind it — an embedded surface or an in-player
+    /// holder is as visible as the player and has no open/closed of its own, and a GUID that opens a
+    /// menu is not a window at all. The button's own `activated` stays the fallback there, because
+    /// that is still what a skin's `onToggle` reads. Supplied by the view layer, which owns the same
+    /// routing `TOGGLE` itself takes; nil in a renderer built without one (the pixel tests).
+    var toggleTargetVisibleProvider: ((WasabiObject) -> Bool?)?
     /// Visualization holders the view layer has put a live engine into (B20a). The renderer paints
     /// their boxes black and leaves the drawing to it.
     var hostedVisualizationHolders: Set<WasabiObjectID> = []
@@ -4909,6 +4924,14 @@ final class WasabiSceneRenderer {
             // over the same rect, both naming the attribute, so without this every switch in its
             // settings window painted its "off" artwork whatever the stored value was.
             if let scripts = configStateProvider, scripts(object) { active = true }
+            // A `TOGGLE` button's lamp is a window's state, and the window is the only thing that
+            // knows it — see `toggleTargetVisibleProvider` (BB36). When it answers, it *is* the
+            // answer: `activated` below must not add a second, drifting copy on top of it.
+            if let visible = toggleTargetVisibleProvider?(object) {
+                return visible
+                    ? (object.attributes["activeimage"] ?? object.attributes["image"])
+                    : object.attributes["image"]
+            }
             // The button's own `activated` — what `setActivated` and `toggleActivation` write, and
             // the term this `||` was missing. Without it the only buttons that could ever light were
             // the ones the three sources above happen to name, so a button a *script* activates drew

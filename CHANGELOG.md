@@ -17,6 +17,13 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: the playlist and library lamps now follow the window** — a `.wal` skin marks
+  its playlist, media library, equalizer and visualization buttons with a lamp meaning *that window is
+  open*. The lamp was counting your clicks instead of looking at the window, so if a window was
+  already open when the skin loaded, the lamp read dark, your first click closed the window and lit
+  the lamp, and the two stayed backwards from then on. Closing the window by its own close button or
+  from a menu had the same effect. Each lamp now reads the window it names — whether that window
+  belongs to the skin or is one of NullPlayer's own — and follows it however you open or close it.
 - **Winamp Modern skins: buttons a skin lights up now actually light up** — a `.wal` skin can give a
   button a second piece of artwork for its "on" state, and skins use it for anything that has a state
   to show: indicator lamps, memory slots, mode switches, and Big Bento Modern's file-info **star

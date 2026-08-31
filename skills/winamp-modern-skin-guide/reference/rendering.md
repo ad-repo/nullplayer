@@ -546,16 +546,53 @@ exactly the state the sweep cannot reach, and why this survived every static dum
 prints `CLICK toggled <id> activated=<0/1>` and reported that flip correctly all along; it reports
 the *attribute*, not the bitmap the flip resolves to. BB26, live on Big Bento Modern (2026-08-31).
 
-**What this exposed, and did not fix (BB36, open).** For a `<togglebutton action="TOGGLE"
-param="guid:pl">` the `activeimage` is a claim about a *window* — and `activated` is a click counter
-`toggleActivation` maintains beside the action, reconciled with nothing. So those lamps read
-backwards whenever the window does not start closed, which at launch is common. That state was
-already wrong; giving `activated` the power to draw is what made it visible. The rule it violates is
-the one two sections up — a control must keep no second copy of a state something else owns — and the
-fix is to derive the lamp from the target window's visibility, resolved through the same
-component-vs-container-id split `TOGGLE` itself uses. 194 declarations across 31 skins. **Do not read
-the fix as "stop honouring `activated`"**: that is BB26's case, and a skin's own `onToggle` may read
-the attribute.
+#### A `TOGGLE` button's lamp is its **window's** state, not the button's
+
+For a `<togglebutton action="TOGGLE" param="guid:pl">` the `activeimage` is a claim about a *window*.
+`activated` is a click counter `toggleActivation` maintains beside the action, reconciled with
+nothing, so once BB26 gave the attribute the power to draw, those lamps read backwards whenever the
+window does not start closed — which at launch is common. Reported as *"they are reflective of the
+start state; if the window launches at launch then the toggle gets reversed"*. Closing the window by
+its own close button or from a menu is the same desync arriving by another road. 194 declarations
+across 31 skins; roughly half name a component and half one of the skin's own container ids.
+
+The lamp now asks, through `WasabiSceneRenderer.toggleTargetVisibleProvider`, and the answer wins
+outright — `activated` is not consulted when there is one, or the second copy simply returns. The
+provider is installed by `WinampModernMainView` on its own renderer and gated to `action="TOGGLE"`;
+`toggleTargetIsVisible(parameter:)` walks the **same three roads `routeComponentToggle` walks, in its
+order**, which is the point: a lamp resolving differently from the click beneath it is the defect in
+another costume.
+
+| The parameter is… | The lamp reads |
+|---|---|
+| the colour-theme or About GUID | nothing — a menu is not a window |
+| a component the surface coordinator handles | `isSurfaceVisible`, unless the surface is **embedded** |
+| a component with an auxiliary container of its own | that container's window |
+| a component with neither | NullPlayer's own window (`isPlaylistVisible` and its three siblings) |
+| one of the skin's container ids | the hosted-window materializer, then the auxiliary containers |
+| anything else | nothing |
+
+Three things this cost, each worth keeping:
+
+- **Nil is a real answer, and the common one.** An embedded surface is as visible as the player and
+  has no open/closed of its own — answering `isMainWindowVisible()` there would pin the lamp lit,
+  which is a different wrong answer. `routeComponentToggle` returns early for those too, so the click
+  does nothing either, and `activated` at least tracks the clicks.
+- **Nothing in that query may walk the scene.** The first version asked
+  `renderer.componentHolders()` whether the kind was an in-player holder; that builds `sceneNodes()`,
+  the scene walk is what asks the lamp question, and the app died in a 4500-frame stack overflow at
+  skin load. Ask the surface *catalog*, which is declarative. A re-entrancy guard on
+  `toggleTargetIsVisible` makes the next such mistake a dark lamp instead of a crash.
+- **A lamp lives in a different window from the one that moved**, so
+  `WinampModernMainWindowController.refreshToggleLamps()` marks every container's view for display on
+  a visibility change — `setAuxiliaryWindow`, `toggleAuxiliaryWindow`, and the materializer's
+  `visibilityDidChange`.
+
+**`toggleActivation` still writes `activated`**, and must: a skin's own `onToggle` reads it back with
+`getActivated()`, and multipass's bottom drawer opens from nothing else. The renderer simply prefers
+the authoritative answer. Do not read this as "stop honouring `activated`" — that is BB26's case.
+BB36, live on the corpus (2026-08-31); manual QA covered both parameter roads and all four
+open/closed transitions.
 
 `type=` and `windowtype=` are not read — see
 [../compatibility/wasabi-surface.md](../compatibility/wasabi-surface.md).

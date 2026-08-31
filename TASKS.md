@@ -26,7 +26,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | BB28 | Stretched visualization overlaps file info after restart | — · seen on Windows 10 edition Light (2026-08-25) | M | Live-reported |
-| BB36 | Window indicator lamps read a click counter, not the window, so they invert | 194 declarations across 31 skins ([M27]) | M | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
 | B59 | Skins whose own player leaves almost no drag handle | 2 skins measured under 50% ([M19]) | M | Live-reported |
@@ -61,7 +60,6 @@ citing nothing, which is how five of these went stale before being pruned 2026-0
 M20, M21 — now recorded under BB10, B41, BB5, B66 and B67 respectively). Every `[M##]` below must
 resolve to a live citation above.
 
-- <a id="m27"></a>**M27:** over the extracted corpus, match `<button>`/`<togglebutton>` declarations across newlines and keep those carrying **both** an `activeimage` and `action="TOGGLE"` — the buttons whose lit state is a claim about a window. Measured 2026-08-31: **194 across 31 skins** (ZDL Reel-To-Reel 20, jvc.tape 17, Bio-Nid 14, BLAKK 14, Ebonite_2_1 12, T800 10, Rika 10). By `param`: `guid:ml` 48, `guid:pl` 48, `eq` 17, `guid:avs` 13, then per-skin container ids. The `param` split matters to the fix: roughly half name a **component** (`WinampModernComponentRegistry.kind(for:)`) and the rest name **one of the skin's own container ids**, and the visibility query has to answer for both.
 - <a id="m19"></a>**M19:** `WINAMP_MODERN_DRAG_PROBE="$corpus_wal" swift test --filter WinampModernDragProbe` over the 36 installed `.wal` files, where `$corpus_wal` is `~/Library/Application Support/NullPlayer/WinampModernSkins`. Reports each container's draggable share; add `WINAMP_MODERN_DRAG_MAP=1` for the face map. See `skills/winamp-modern-skin-guide/reference/harness.md`.
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases — and 50, 100, 150, 200, 250, 300 are integral. To check a *full* draw at either, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests` renders the scene the way the view does; count rows whose alpha is strictly between transparent and opaque to find partial-coverage seams objectively rather than by eye. The harness has no partial-repaint mode, which is why it cannot reproduce the live defect — adding one is most of this task.
@@ -297,46 +295,6 @@ The implementation and its automated coverage shipped; that record is in
       **Workaround today:** set the panel's page to anything but Visualization; the overlap needs that
       page stored to happen. Turning on *Open in Multi Content View (stretched)* does **not** set the
       page — verified — so the two settings are independent and the page is the one that matters.
-
----
-
-### BB36
-
-- [ ] **BB36. A window indicator lamp is a click counter, not a window.** A skin marks its playlist /
-      media-library / EQ / AVS buttons with an `activeimage` meaning *"that window is open"*.
-      `WasabiRenderer.resolvedBitmapID` draws that from the object's `activated` attribute, and the
-      only thing that writes it is `WinampModernScriptRuntime.toggleActivation`, which
-      `WinampModernMainView.performAction` calls on every click **alongside** the `TOGGLE` action.
-      So the lamp counts clicks and the window does something else, and nothing reconciles the two.
-
-      **Reported live 2026-08-31**, and the report is the sharpest statement of it: *"across all skins
-      the way the window lights seem to work is that they are reflective of the start state. If the
-      window launches at launch then the toggle gets reversed."* A window already open at launch
-      starts with `activated` unset — dark — so the first click closes the window and lights the lamp,
-      and it stays inverted from then on. Closing a window by its own close button, or by a menu, is
-      the same desync arriving by a different route.
-
-      **Exposed by BB26, not caused by it.** Before that fix `resolvedBitmapID` ignored `activated`
-      entirely and every one of these lamps was uniformly dark, so the inversion had nothing to show
-      it in. The state was already wrong; it just had no way to draw itself.
-
-      **The fix has a precedent in this same function and should follow it.** `shuffle` and `repeat`
-      light from `host.shuffleEnabled` / `host.repeatEnabled`, and a `cfgattrib` control reads its
-      binding — in both cases the control keeps *no second copy* of a state something else owns, which
-      is exactly the rule that was violated here (see *A bound control keeps no state of its own* in
-      `reference/rendering.md`). A `TOGGLE` button's lamp should ask whether its target window is
-      visible. **The parameter resolution is the work**, not the query: `TOGGLE` splits into a
-      component (`WinampModernComponentRegistry.kind(for:)` → `routeComponentToggle`, which itself
-      tries a hosted surface, then an in-player holder, then a window) and one of the skin's own
-      container ids (`containerWindowToggleRequested`), and roughly half the corpus declarations take
-      each road ([M27]). A lamp that answers for only one of them replaces an inverted indicator with
-      an arbitrary one.
-
-      Two things to settle before writing it, neither measured: whether `toggleActivation` should stop
-      writing `activated` for these buttons at all — a skin's own `onToggle` handler may read it, and
-      multipass's drawer hangs off that event — and what an in-player holder means for the question,
-      since `routeComponentToggle` returns early when the component is a holder in the player rather
-      than a window, and "is it open" may have no answer there.
 
 ---
 

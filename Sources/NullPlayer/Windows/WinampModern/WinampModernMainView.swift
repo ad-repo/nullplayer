@@ -108,6 +108,18 @@ final class WinampModernMainView: NSView {
     /// skin button and a menu item can never resolve differently. Returns false before the
     /// coordinator exists (during `scripts.start()`), where the older direct routing still applies.
     var surfaceToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// Whether a surface a `TOGGLE` addresses is on screen, for the lamp on the button that
+    /// toggles it (BB36). Nil means "no window to answer for" — an embedded surface, or a kind the
+    /// coordinator does not handle — and the button falls back to its own `activated`. The write
+    /// side is `surfaceToggleRequested`; the two must resolve through the same catalog, which is why
+    /// both are supplied by the same owner.
+    var surfaceVisibilityQuery: ((WinampModernComponentKind) -> Bool?)?
+    /// The container-id half of the same question: is the skin's own window named by this `TOGGLE`
+    /// parameter on screen? Nil when no window of that name exists. Matches
+    /// `containerWindowToggleRequested`'s routing, hosted windows included.
+    var containerWindowVisibilityQuery: ((String) -> Bool?)?
+    /// Re-entrancy guard for `toggleTargetIsVisible(parameter:)`.
+    private var isResolvingToggleLamp = false
     /// The window commands a skin draws on its titlebar, routed to whoever owns the window layer.
     ///
     /// They cannot be answered from here with the obvious AppKit calls. `performClose(_:)` *simulates
@@ -145,6 +157,13 @@ final class WinampModernMainView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityLabel("Winamp Modern skin player")
         if drivesScripts { wireScriptCallbacks() } else { wireAuxiliaryRepaint() }
+        // A `TOGGLE` button's lamp asks the same routing its click takes (BB36). Installed here
+        // rather than beside the other providers in the controller because the answer is
+        // container-scoped — `componentHolders()` is this scene's, not the skin's.
+        renderer.toggleTargetVisibleProvider = { [weak self] object in
+            guard let self, object.attributes["action"]?.uppercased() == "TOGGLE" else { return nil }
+            return toggleTargetIsVisible(parameter: object.attributes["param"])
+        }
         // Every `.wal` window repaints on a colour-theme switch, whichever window triggered it, and
         // so does any AppKit content it hosts.
         renderer.themeCoordinator.addObserver(self) { [weak self] in
@@ -1924,6 +1943,9 @@ final class WinampModernMainView: NSView {
         renderer.teardown()
         canvasSizeDidChange = nil
         componentWindowToggleRequested = nil
+        surfaceVisibilityQuery = nil
+        containerWindowVisibilityQuery = nil
+        renderer.toggleTargetVisibleProvider = nil
         containerWindowToggleRequested = nil
         surfaceToggleRequested = nil
         webNavigationRequested = nil
@@ -2632,5 +2654,34 @@ final class WinampModernMainView: NSView {
         if renderer.componentHolders().contains(where: { $0.kind == kind }) { return }
         if componentWindowToggleRequested?(kind) == true { return }
         componentHost?.toggleClassicWindow(for: kind)
+    }
+
+    /// The read side of `performAction`'s `TOGGLE`, walking the same three roads its parameter can
+    /// take, so a button's lamp and the button's own click can never disagree (BB36).
+    ///
+    /// Nil is a real answer and the common one: it means the parameter names no window — a GUID that
+    /// opens a menu or the About panel, a surface this skin draws *inside* a window it already owns,
+    /// or a container it never declared. The renderer falls back to the button's own `activated`
+    /// there, which is also what a skin's `onToggle` handler still reads.
+    private func toggleTargetIsVisible(parameter: String?) -> Bool? {
+        guard let parameter, !parameter.isEmpty else { return nil }
+        // Nothing this asks may walk the scene — the scene walk is the caller. The guard is here so
+        // a future query that does costs a dark lamp rather than a stack overflow.
+        guard !isResolvingToggleLamp else { return nil }
+        isResolvingToggleLamp = true
+        defer { isResolvingToggleLamp = false }
+        let upper = parameter.uppercased()
+        // Neither of these is a window: one opens the colour-theme popup, the other the About panel.
+        guard !upper.contains(Self.colorThemePreferencesGUID),
+              !upper.contains(Self.aboutWinampGUID) else { return nil }
+        if let kind = WinampModernComponentRegistry.kind(for: parameter) {
+            // A surface this skin draws *inside* a window it already owns has no open/closed of its
+            // own, and `routeComponentToggle` returns early for it — the query answers nil there.
+            // It is asked declaratively, from the surface catalog, and **never** from
+            // `renderer.componentHolders()`: that walks the scene, and the scene walk is what asks
+            // this question, so reading it here recursed until the stack ran out.
+            return surfaceVisibilityQuery?(kind)
+        }
+        return containerWindowVisibilityQuery?(parameter)
     }
 }
