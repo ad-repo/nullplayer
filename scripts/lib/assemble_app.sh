@@ -10,6 +10,7 @@ assemble_app() {
     # Derive subdirectories from the bundle path
     local CONTENTS_DIR="$APP_BUNDLE/Contents"
     local MACOS_DIR="$CONTENTS_DIR/MacOS"
+    local HELPERS_DIR="$CONTENTS_DIR/Helpers"
     local FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
     local RESOURCES_DIR="$CONTENTS_DIR/Resources"
     local HOMEBREW_REF_PATTERN='^(/opt/homebrew|/usr/local)/'
@@ -39,12 +40,19 @@ assemble_app() {
     log_info "Creating app bundle structure..."
     rm -rf "$APP_BUNDLE"
     mkdir -p "$MACOS_DIR"
+    mkdir -p "$HELPERS_DIR"
     mkdir -p "$FRAMEWORKS_DIR"
     mkdir -p "$RESOURCES_DIR"
 
     # Step 4: Copy executable and write PkgInfo
     log_info "Copying executable..."
     cp "$BUILD_DIR/NullPlayer" "$MACOS_DIR/"
+    if [[ ! -x "$BUILD_DIR/WMPScriptIsolationHelper" ]]; then
+        log_error "WMP script isolation helper missing at $BUILD_DIR/WMPScriptIsolationHelper"
+        exit 1
+    fi
+    cp "$BUILD_DIR/WMPScriptIsolationHelper" "$HELPERS_DIR/"
+    chmod 755 "$HELPERS_DIR/WMPScriptIsolationHelper"
     printf 'APPL????' > "$CONTENTS_DIR/PkgInfo"
 
     # Step 5: Copy frameworks

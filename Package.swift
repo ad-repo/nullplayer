@@ -10,7 +10,8 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "NullPlayer", targets: ["NullPlayer"])
+        .executable(name: "NullPlayer", targets: ["NullPlayer"]),
+        .executable(name: "WMPScriptIsolationHelper", targets: ["WMPScriptIsolationHelper"])
     ],
     dependencies: [
         // ZIP extraction for .wsz skin files
@@ -176,6 +177,15 @@ let package = Package(
                 ]),
             ]
         ),
+        .executableTarget(
+            name: "WMPScriptIsolationHelper",
+            dependencies: [],
+            path: "Sources/WMPScriptIsolationHelper",
+            exclude: ["WMPScriptIsolationHelper.entitlements"],
+            linkerSettings: [
+                .linkedFramework("JavaScriptCore")
+            ]
+        ),
         .testTarget(
             name: "NullPlayerCoreTests",
             dependencies: [
@@ -186,9 +196,12 @@ let package = Package(
         .testTarget(
             name: "NullPlayerAppTests",
             dependencies: [
-                "NullPlayer"
+                "NullPlayer",
+                "ZIPFoundation",
+                "WMPScriptIsolationHelper"
             ],
-            path: "Tests/NullPlayerAppTests"
+            path: "Tests/NullPlayerAppTests",
+            exclude: ["Fixtures"]
         ),
     ],
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors

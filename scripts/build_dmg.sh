@@ -39,6 +39,7 @@ CONTENTS_DIR="$APP_BUNDLE/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+WMP_HELPER="$CONTENTS_DIR/Helpers/WMPScriptIsolationHelper"
 
 # Parse arguments
 SKIP_BUILD=false
@@ -81,6 +82,10 @@ for dylib in "$FRAMEWORKS_DIR/"*.dylib; do
         codesign --force --sign - "$dylib" 2>/dev/null || true
     fi
 done
+
+codesign --force --sign - \
+    --entitlements "$REPO_ROOT/Sources/WMPScriptIsolationHelper/WMPScriptIsolationHelper.entitlements" \
+    "$WMP_HELPER"
 
 # Sign the main executable and app bundle last
 codesign --force --sign - "$APP_BUNDLE"

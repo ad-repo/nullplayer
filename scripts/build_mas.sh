@@ -158,8 +158,15 @@ assemble_app "$APP_BUNDLE"
 # Copy provisioning profile to the bundle (BEFORE signing)
 log_info "Embedding provisioning profile..."
 FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
+WMP_HELPER="$APP_BUNDLE/Contents/Helpers/WMPScriptIsolationHelper"
 cp "$MAS_PROVISION_PROFILE" "$APP_BUNDLE/Contents/embedded.provisionprofile"
 log_success "Provisioning profile embedded"
+
+log_info "Code signing WMP script isolation helper..."
+codesign --force --sign "$MAS_APP_IDENTITY" --timestamp \
+    --entitlements "$REPO_ROOT/Sources/WMPScriptIsolationHelper/WMPScriptIsolationHelper.entitlements" \
+    "$WMP_HELPER"
+log_success "WMP script isolation helper signed"
 
 # Sign frameworks and dylibs (inside-out order)
 log_info "Code signing frameworks and dylibs..."
