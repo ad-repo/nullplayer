@@ -1,4 +1,7 @@
 import Foundation
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 import ZIPFoundation
 @testable import NullPlayer
 
@@ -59,6 +62,44 @@ enum WMPSkinTestSupport {
         do { _ = try await body(); return nil }
         catch let failure as WMPFailure { return failure.diagnostics.first?.code }
         catch { return nil }
+    }
+
+    static func encodedImage(width: Int, height: Int, rgba: [UInt8], type: UTType = .png) throws -> Data {
+        precondition(rgba.count == width * height * 4)
+        let provider = CGDataProvider(data: Data(rgba) as CFData)!
+        let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.last.rawValue), provider: provider,
+            decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, type.identifier as CFString, 1, nil) else {
+            throw NSError(domain: "WMPSkinTestSupport", code: 1)
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw NSError(domain: "WMPSkinTestSupport", code: 2)
+        }
+        return output as Data
+    }
+
+    static func rgba(_ image: CGImage, x: Int, yFromTop: Int) -> [UInt8] {
+        let width = image.width, height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        bytes.withUnsafeMutableBytes { buffer in
+            let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        let offset = (yFromTop * width + x) * 4
+        let alpha = bytes[offset + 3]
+        guard alpha > 0, alpha < 255 else { return Array(bytes[offset..<(offset + 4)]) }
+        func straight(_ value: UInt8) -> UInt8 {
+            UInt8(min(255, (Int(value) * 255 + Int(alpha) / 2) / Int(alpha)))
+        }
+        return [straight(bytes[offset]), straight(bytes[offset + 1]), straight(bytes[offset + 2]), alpha]
     }
 }
 

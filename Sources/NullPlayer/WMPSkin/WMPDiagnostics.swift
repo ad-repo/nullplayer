@@ -52,6 +52,10 @@ enum WMPDiagnosticCode: String, Codable {
     case duplicateIdentifier = "WMP0028"
     case unsupportedResource = "WMP0029"
     case unsupportedAttributeValue = "WMP0030"
+    case unresolvedGeometry = "WMP0031"
+    case invalidGeometry = "WMP0032"
+    case imageDecodeFailed = "WMP0033"
+    case renderFailed = "WMP0035"
 }
 
 struct WMPDiagnostic: Hashable, Codable, CustomStringConvertible {

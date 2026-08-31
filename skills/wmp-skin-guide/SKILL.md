@@ -55,6 +55,23 @@ fallback. Existing users keep their persisted mode.
 Skin JScript must never run in the app process. Phase 5 uses the killable helper-process architecture
 selected by Phase 0 and must repeat its hard-stop/restart security gate before product exposure.
 
+## Static scene and image contracts
+
+- `WMPSceneBuilder` resolves only literal geometry. An expression-sized container remains
+  unresolved and unpainted, but descendants with a known literal origin may still contribute their
+  independently literal geometry; the private zero-delta alignment baseline is never emitted as a
+  fallback frame or expression result.
+- Scene coordinates remain top-left throughout layout, clipping, dirty bounds, hit metadata, and
+  paint commands. Core Graphics conversion happens once in `WMPRenderer`; images and text each use
+  an explicit counter-transform so pixels and glyphs remain upright.
+- The immutable scene owns no `CGImage` or cache state. `WMPImageStore` performs bounded ImageIO
+  metadata/decode off-main, supports BMP/GIF/JPEG/PNG, and uses a byte-bounded LRU keyed by canonical
+  resource path plus color key.
+- Color keys compare exact un-premultiplied RGB and clear only matching pixels. Preserve the source
+  alpha of every non-matching pixel.
+- The opt-in render dump writes one untracked PNG per view plus a JSON report. Corpus paths and
+  output directories are local inputs/artifacts and must never be staged.
+
 ## Verification
 
 Use the committed original fixtures in `Tests/NullPlayerAppTests/Fixtures/WMPSkin/`. Run focused WMP
