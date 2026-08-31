@@ -3,8 +3,12 @@
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
 - **File:** `cPro_T2T-by-MAC.wal` · 686183 B · SHA-256 `e28a9e423f0389e6…`
-- **Measured:** 2026-08-31 (B77) · engine: ClassicPro, family `one`
-- **Grade: B (confidence: medium)** — every surface routes and draws; what is left is this skin's own uncut artwork and two engine-wide backlog items, not anything specific to it.
+- **Measured:** 2026-08-31 (B77; re-measured same day against the author's promo sheet) · engine: ClassicPro, family `one`
+- **Grade: C (confidence: high)** — *downgraded from B.* B77 measured the skin at rest and against
+  the engine, and graded it on that. The distributed archive folder ships
+  `cPro-T2T-by_MAC-PROMO.jpg` (1185x853) **outside the `.wal`** — a full annotated reference sheet —
+  and against it three declared user-facing features are dead. Every surface still routes and draws;
+  the faults are all engine-level, so the other cPro skins are very likely to share them.
 
 **Read [cpro-bento.md](cpro-bento.md) first.** These four skins are almost content-free — `skin.xml`
 is a `<skininfo>` block plus `<include …/Plugins/classicPro/engine/load.xml"/>` — so everything
@@ -53,9 +57,71 @@ drawer's `▤` button switches page. Its open/closed state is a **per-skin persi
 so a profile that has never opened it sees no equalizer anywhere — which is what "the equalizer is
 hidden" turned out to be.
 
+### The three faults the promo sheet exposed
+
+All three are **engine-level capability gaps**, not this skin's artwork. Full evidence in the
+report (§5); the short form:
+
+1. **[FIXED B88] `<images>` was not implemented at all — the volume bar never filled.** The fill is a filmstrip
+   picked by value, not a slider fill: `<images id="volume.images" source="volume"
+   images="volume.bg2" imagesspacing="16"/>` over an 18-frame `volume_ani.png`
+   (`engine/one/xml/player-normal.xml:98`). Nothing in `Sources/` reads the `images` element type,
+   `images=`, `imagesspacing`, or a `source=` binding; the node lays out and draws nothing
+   (`PROBE images#volume.images … bitmap=-`). The *readout* ("Volume: 39%") is fine — do not
+   confuse the two.
+2. **[WITHDRAWN — was a harness artifact] The tab strip is fine.** This said the fit pass never
+   runs and four of seven tabs were unreachable. In the **app** all seven are present and abbreviated
+   (LIB PLE VID VIS BRO BPR NOW). The pass hangs off `onResize`, which the app seeds and the render
+   dump does not — `RENDER_EVENTS=onresize` reproduces the app. `reference/harness.md` already says
+   "**`onresize` first** for any ClassicPro skin". Two real, smaller things survive: **B87**, the
+   3-letter labels lose the right edge of their last glyph (`LIB`→`LIE`); and **B89**, the window
+   floors at **500x290** (measured live, not the dump's 495x324) against a declared 317x168, so the
+   compact classic-player form the promo sheet shows is still unreachable. The oversized-tabs theory
+   for that floor is **dead** — the tabs are 32px in the app and the floor is unchanged. Tabs lay out at full label width (~567px inside a 234px
+   `Cpro:Tabs`): tab 4 is clipped to 6px (`clip=(234,104,6,29)`) and BPR/BRO/NOW are off-strip.
+   The abbreviating pass works — any resize proves it, turning the labels into the promo's
+   `LIB PLE VIS VID BPR BRO NOW` and each tab into `w=32` — but it hangs off `onresize`, which
+   initial layout never fires. `RENDER_SETTLE` does **not** cover this: settling pumps timers, not
+   resizes.
+   **Same fault, second symptom:** the protective minimum is computed from current object extents,
+   so the oversized tabs set it — `MINIMUM main/normal below=494: grid#cpro.tab.grid text#l text#r
+   togglebutton#cpro.tab.button`, giving 495x324 against a **declared 317x168**. That floor is what
+   blocks the compact classic-player window the promo shows at the bottom of the sheet. Fix the fit
+   pass, then re-read `MINIMUM` — do not assume the floor falls out on its own.
+3. **[FIXED B86] `parser_addCallback` path matching was too strict — the skin's 7 custom beat-vis
+   animations never loaded.** It was **two** faults: the matcher, *and* `@SKINPATH@` carrying no
+   trailing separator, so `getParam() + "ClassicPro.xml"` never resolved and every `myDoc.exists()`
+   guard took its false branch. Fixing only the matcher changed nothing visible. `ClassicPro.xml` declares `<customvis name="T2T-01"/>` … `T2T-07`, backed by
+   `beat_right2…7.png`. `beat.m` reads them with `parser_addCallback("BeatVis/*")` and
+   `("ClassicPro/Visualization/BeatVis*")`; the real path is the **four**-component
+   `ClassicPro/Visualization/BeatVis/customvis`, and our matcher
+   (`WinampModernScriptRuntime.swift:4600`) requires an exact component count and treats `*` as
+   exactly one whole component. Both patterns miss — one is a relative/suffix pattern, the other a
+   trailing *prefix* wildcard inside a component. So `cusbeat_names` is empty, `customvis=false`,
+   `setCustomVis()` never runs, and the right-click menu builds as `CLICK menu: Show Beat vis#1` —
+   one item where the promo's "7 BEATVIS" panel wants eight.
+
+   **Not the `enumitem` finding.** `List.enumItem` *is* implemented (`:4382`) and `parserStart`
+   (`:4554`) hands the callback two populated lists. The diagnostics' `enumitem ×2` comes from
+   `widgets-manager.xml` on a different receiver and is a separate, unchased question.
+
+### The trap the *reference* sets
+
+`screenshot.png` inside the `.wal` is a 178x75 **logo**, not a UI shot — which is why B77 recorded
+that it had no reference and graded on the engine alone. The real reference ships beside the `.wal`
+in the distributed folder (`cPro-T2T-by_MAC-PROMO.jpg`). Look outside the archive before concluding
+a skin is unfalsifiable.
+
 ### Knowingly left
 
 - The magenta filler above — per-skin artwork, won't-do.
+- `WA5:Prefs` (Winamp's preferences dialog at a page number) — no host equivalent; both
+  declarations are `dblclickaction` on status text, so the visible cost is low. Of the 24 distinct
+  markup actions in `main/normal`, this is the *only* one reaching the action switch's `default:`.
+- Whether the beat vis animates under playback is **not measured**: it is `autoplay=0` driven by a
+  10ms timer off `getLeftVuMeter`/`getRightVuMeter` (both implemented), and every headless render
+  shows the promo logo instead because `refreshView()` does that whenever the transport is stopped.
+  Needs a live playing pass.
 - **B78** the embedded playlist surface may overflow a small holder; **B82** a widget brought up
   mid-session is not told the current track, so Now Playing's three text lines stay blank until the
   next track change.

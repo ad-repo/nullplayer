@@ -82,8 +82,10 @@ final class WalVirtualFileSystem {
         let safeName = try Self.safeMountComponent(skinName)
         let skinRoot = "/Skins/\(safeName)"
         try mount(skin, at: skinRoot)
-        setVariable("SKINPATH", to: skinRoot)
-        setVariable("COLORTHEMESPATH", to: skinRoot)
+        // Trailing separator: what Winamp's own `@SKINPATH@` carries, and what ClassicPro's
+        // `getParam() + "ClassicPro.xml"` concatenations depend on. See `skinRoot`.
+        setVariable("SKINPATH", to: skinRoot, trailingSeparator: true)
+        setVariable("COLORTHEMESPATH", to: skinRoot, trailingSeparator: true)
     }
 
     func mount(_ provider: WalResourceProvider, at logicalRoot: String) throws {
@@ -99,10 +101,14 @@ final class WalVirtualFileSystem {
         mounts.sort { $0.root.count > $1.root.count }
     }
 
-    func setVariable(_ name: String, to logicalPath: String) {
+    /// `trailingSeparator` survives the canonicalization, which otherwise drops it — `canonicalize`
+    /// rebuilds the path by joining components, so a trailing `/` handed in here disappears silently.
+    /// Only `@SKINPATH@`/`@COLORTHEMESPATH@` ask for one, and they need it because scripts
+    /// concatenate a filename straight onto them (see `skinRoot`).
+    func setVariable(_ name: String, to logicalPath: String, trailingSeparator: Bool = false) {
         let key = name.trimmingCharacters(in: CharacterSet(charactersIn: "@")).uppercased()
         guard let path = try? Self.canonicalize(logicalPath, relativeToDirectory: "/") else { return }
-        variables[key] = path
+        variables[key] = trailingSeparator && !path.hasSuffix("/") ? path + "/" : path
     }
 
     func resolve(
@@ -139,10 +145,27 @@ final class WalVirtualFileSystem {
         return WalResolvedResource(logicalPath: try canonicalExistingPath(canonical, location: location))
     }
 
-    /// Where the skin archive is mounted. An include that resolves outside it is reaching for
-    /// another mount — the ClassicPro engine — and its absence is a different kind of failure than
-    /// a file the skin forgot to ship.
-    var skinRoot: String? { variables["SKINPATH"] }
+    /// Where the skin archive is mounted, **without** a trailing separator — the form every internal
+    /// consumer wants, and the form this was before B86.
+    ///
+    /// The stored variable keeps its trailing `/` because that is what a *script* has to see. Winamp
+    /// hands `@SKINPATH@` out with one, and ClassicPro relies on it: five of its scripts build the
+    /// path to the skin's own `ClassicPro.xml` by bare concatenation —
+    /// `getParam() + "ClassicPro.xml"` in `player.m`, `shade.m`, `drawer.m`, `about.m` and
+    /// `read-classicpro.m` — with no separator of their own. Without the trailing `/` that produced
+    /// `/Skins/cPro_T2T-by-MACclassicpro.xml`, which resolves to nothing, so every one of those
+    /// `myDoc.exists()` guards took its false branch and the whole feature behind it silently
+    /// vanished: the custom beat-vis list, the songticker's antialias setting, the About box's skin
+    /// info. No diagnostic fires for this — the scripts are *written* to branch on a missing file.
+    ///
+    /// Paths that already carry their own separator are unaffected: the doubled slash in
+    /// `@COLORTHEMESPATH@\..\..\Plugins\…` is dropped by `canonicalize`, which splits on `/`
+    /// omitting empty subsequences, so that include resolves to exactly what it did before.
+    var skinRoot: String? {
+        variables["SKINPATH"].map { root in
+            root.count > 1 && root.hasSuffix("/") ? String(root.dropLast()) : root
+        }
+    }
 
     func expand(
         _ rawPath: String,

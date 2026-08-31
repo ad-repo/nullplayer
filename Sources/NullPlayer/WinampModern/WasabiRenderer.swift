@@ -2163,6 +2163,10 @@ final class WasabiSceneRenderer {
         } else if WinampModernComponentRegistry.isHolderElement(type),
                   let kind = Self.componentKind(of: object) {
             drawComponent(kind: kind, object: object, frame: node.frame, context: context)
+        } else if type == "images", let image = filmstripFrameImage(object) {
+            // Before the plain-bitmap branch: an `<images>` names its sheet with `images=`, not
+            // `image=`, so `resolvedBitmapID` answers nil for it and the object drew nothing at all.
+            drawImage(image, in: node.frame, context: context)
         } else if let imageID = resolvedBitmapID(for: object,
                                                   pressed: pressed == object.stableID,
                                                   hovered: hovered == object.stableID),
@@ -3068,6 +3072,44 @@ final class WasabiSceneRenderer {
             if strongest > Self.regionAlphaFloor { break }
         }
         return strongest
+    }
+
+    /// `<images>` — a filmstrip whose frame is chosen by a **host value**, not by a play head.
+    ///
+    /// ```xml
+    /// <bitmap id="volume.bg2" file="volume_ani.png" x="0" y="0" w="97"/>   <!-- 97x288 -->
+    /// <images id="volume.images" source="volume" images="volume.bg2" imagesspacing="16"
+    ///         x="-109" y="82" w="97" h="15" relatx="1"/>
+    /// ```
+    ///
+    /// `images=` is the sheet (**not** `image=`, which is why nothing drew before B88 — the object
+    /// never reached a bitmap at all), `imagesspacing` is the **pitch** between frame tops, and the
+    /// object's own `h` is how much of each frame is shown. They differ here on purpose: 16px pitch,
+    /// 15px tall, one blank row between frames. Frames run down the sheet, so the count is the
+    /// sheet's height over the pitch — 18 for the volume bar.
+    ///
+    /// Only `source="volume"` is answered. That is the entire corpus: one declaration, in the
+    /// ClassicPro engine, reaching all five cPro skins (B88's [M27]). The rest of the `source`
+    /// vocabulary is unmeasured, and a guessed binding would draw a confidently wrong frame rather
+    /// than nothing — so an unknown source draws nothing, exactly as an unknown `<vis mode>` does.
+    private func filmstripFrameImage(_ object: WasabiObject) -> CGImage? {
+        guard let sheetID = object.attributes["images"],
+              let bitmap = resources.bitmap(identifier: sheetID),
+              let normalized = filmstripValue(of: object) else { return nil }
+        guard let crop = WasabiFilmstrip.crop(
+            sheetWidth: bitmap.width, sheetHeight: bitmap.height,
+            pitch: Int(object.attributes["imagesspacing"] ?? "") ?? 0,
+            frameHeight: Int(object.attributes["h"] ?? ""),
+            normalized: normalized) else { return nil }
+        return cropped(bitmap.image, to: crop)
+    }
+
+    /// What an `<images source="…">` stands at, 0…1. Deliberately narrow — see `filmstripFrameImage`.
+    private func filmstripValue(of object: WasabiObject) -> CGFloat? {
+        switch object.attributes["source"]?.lowercased() {
+        case "volume": return CGFloat(host.volume)
+        default: return nil
+        }
     }
 
     private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
