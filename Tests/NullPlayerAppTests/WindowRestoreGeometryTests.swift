@@ -367,4 +367,73 @@ final class WindowRestoreGeometryTests: XCTestCase {
             saved
         )
     }
+
+    // MARK: - Restoring onto a screen that is not the one it was saved on
+
+    private let screen = NSRect(x: 0, y: 0, width: 1440, height: 850)
+
+    /// The whole session comes back as a unit. Clamping each window on its own is what would destroy
+    /// the docking: two windows flush against each other, clamped independently against the same
+    /// edge, come back overlapping instead of touching.
+    func testAClusterSavedOffTheScreenComesBackWithDockingIntact() {
+        let saved: [String: NSRect] = [
+            "main": NSRect(x: 2200, y: 900, width: 275, height: 116),
+            "equalizer": NSRect(x: 2200, y: 784, width: 275, height: 116),
+            "playlist": NSRect(x: 2200, y: 552, width: 275, height: 232)
+        ]
+
+        let corrected = AppStateManager.correctedRestoredFrames(saved, screens: [screen], force: false)
+
+        for (key, frame) in corrected {
+            XCTAssertTrue(WindowPlacement.isReachable(frame, screens: [screen]),
+                          "\(key) came back unreachable at \(NSStringFromRect(frame))")
+            XCTAssertEqual(frame.size, saved[key]!.size, "restore never resizes")
+        }
+        XCTAssertEqual(corrected["main"]!.minY, corrected["equalizer"]!.maxY, "still docked")
+        XCTAssertEqual(corrected["equalizer"]!.minY, corrected["playlist"]!.maxY, "still docked")
+        XCTAssertEqual(corrected["main"]!.minX, corrected["playlist"]!.minX, "still left-aligned")
+    }
+
+    /// A window deliberately parked mostly past the bottom edge is a *placement*, not a strand. Its
+    /// top-left corner is on screen, so it is left exactly where the user put it.
+    func testAPartlyParkedWindowIsLeftAlone() {
+        let saved: [String: NSRect] = [
+            "main": NSRect(x: 100, y: 400, width: 275, height: 116),
+            "playlist": NSRect(x: 100, y: -180, width: 275, height: 232)
+        ]
+        XCTAssertEqual(AppStateManager.correctedRestoredFrames(saved, screens: [screen], force: false),
+                       saved)
+    }
+
+    /// The session is suspect, not provably stranded: the screen it was saved on is gone, so the
+    /// correction runs anyway rather than trusting coordinates measured on a desktop that no longer
+    /// exists.
+    func testAMissingSavedScreenForcesTheCorrection() {
+        let gone = NSRect(x: 0, y: 0, width: 2560, height: 1400)
+        XCTAssertTrue(AppStateManager.savedScreenIsMissing(NSStringFromRect(gone), screens: [screen]))
+        XCTAssertFalse(AppStateManager.savedScreenIsMissing(NSStringFromRect(screen),
+                                                            screens: [screen]))
+    }
+
+    /// An old saved state never recorded a screen. Unknown is not the same as changed — those
+    /// sessions keep the old behaviour of being trusted until a frame is provably off screen.
+    func testAStateWithNoRecordedScreenIsNotTreatedAsChanged() {
+        XCTAssertFalse(AppStateManager.savedScreenIsMissing(nil, screens: [screen]))
+    }
+
+    /// A cluster taller than the display cannot be saved by one offset. It anchors to the visible
+    /// top — where the title bars are — and whatever is still outside is moved on its own, accepting
+    /// overlap, because overlapping windows are preferable to hidden ones.
+    func testAClusterTallerThanTheScreenStillEndsUpAllReachable() {
+        let saved: [String: NSRect] = [
+            "main": NSRect(x: 3000, y: 800, width: 275, height: 232),
+            "playlist": NSRect(x: 3000, y: 200, width: 275, height: 600),
+            "equalizer": NSRect(x: 3000, y: -200, width: 275, height: 400)
+        ]
+        let corrected = AppStateManager.correctedRestoredFrames(saved, screens: [screen], force: false)
+        for (key, frame) in corrected {
+            XCTAssertTrue(WindowPlacement.isReachable(frame, screens: [screen]),
+                          "\(key) is still unreachable at \(NSStringFromRect(frame))")
+        }
+    }
 }

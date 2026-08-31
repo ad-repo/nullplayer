@@ -4391,6 +4391,7 @@ class MenuActions: NSObject {
             if WindowManager.shared.uiMode == .winampModern {
                 (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
                     .loadSkin(at: imported.archiveURL)
+                WindowManager.shared.ensureAllWindowsOnScreen()
             }
         } catch {
             let alert = NSAlert()
@@ -4448,6 +4449,7 @@ class MenuActions: NSObject {
                let selected = WinampModernSkinImporter.shared.selectedSkin() {
                 (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
                     .loadSkin(at: selected.archiveURL)
+                WindowManager.shared.ensureAllWindowsOnScreen()
             }
         } catch {
             let alert = NSAlert()
@@ -4472,6 +4474,9 @@ class MenuActions: NSObject {
         if WindowManager.shared.uiMode == .winampModern {
             (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
                 .loadSkin(at: url)
+            // A `.wal` window's size *is* the skin, so switching to a larger one grows every window
+            // in place around its top-left — off the display, for a skin wide or tall enough.
+            WindowManager.shared.ensureAllWindowsOnScreen()
         }
     }
 

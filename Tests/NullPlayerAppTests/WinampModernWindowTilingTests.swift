@@ -61,8 +61,10 @@ final class WinampModernWindowTilingTests: XCTestCase {
 
     // MARK: - The property that matters
 
-    /// The whole point: whatever the sizes, no two slots may overlap, and none may cover the player.
-    func testNoSlotEverOverlapsAnotherOrThePlayer() {
+    /// The whole point, and the one that was reversed: whatever the sizes, **every** slot lands on
+    /// the screen. Defix's real set does not fit a 1600pt region, and the tiler used to answer that
+    /// by running the media library 92pt off the right edge, where nothing could reach it.
+    func testNoSlotEverLeavesTheRegion() {
         var tiler = makeTiler()
         // Defix's real set, at the sizes it settles on: playlist, VISCON, media library, two speaker
         // cabinets, then a hosted equalizer and spectrum.
@@ -72,10 +74,22 @@ final class WinampModernWindowTilingTests: XCTestCase {
             NSSize(width: 299, height: 373), NSSize(width: 426, height: 122),
             NSSize(width: 360, height: 152)
         ]
-        var placed: [NSRect] = [player]
         for size in sizes {
             let slot = tiler.nextSlot(for: size)
             XCTAssertEqual(slot.size, size, "a slot never resizes the window it is for")
+            XCTAssertTrue(region.contains(slot), "\(NSStringFromRect(slot)) left the region")
+        }
+    }
+
+    /// While there is room, the tiling still packs without overlapping — the clamp only ever engages
+    /// once a column would run off the right edge, so an arrangement that fits is unchanged.
+    func testSlotsThatFitDoNotOverlap() {
+        var tiler = makeTiler()
+        let sizes = [NSSize(width: 400, height: 300), NSSize(width: 400, height: 300),
+                     NSSize(width: 300, height: 400), NSSize(width: 300, height: 400)]
+        var placed: [NSRect] = [player]
+        for size in sizes {
+            let slot = tiler.nextSlot(for: size)
             for other in placed {
                 XCTAssertFalse(slot.intersects(other),
                                "\(NSStringFromRect(slot)) overlaps \(NSStringFromRect(other))")
@@ -97,21 +111,38 @@ final class WinampModernWindowTilingTests: XCTestCase {
 
     // MARK: - Edges
 
-    /// The screen runs out before the windows do. Columns keep marching right rather than being
-    /// clamped back on screen: a clamp can only pull a column *left*, into the one already there,
-    /// which is a real overlap traded for a cosmetic one. Non-overlap is the invariant here.
-    func testAFullScreenMarchesRightRatherThanOverlapping() {
+    /// The screen runs out before the windows do, and the ranking that resolves it was **reversed**:
+    /// a clamp can only pull a column *left*, into the one already there, and that overlap is the
+    /// better outcome. Unclamped, a skin wider than half the display put column 2 entirely past
+    /// `region.maxX`, so every window after the first was invisible and — having no title bar on
+    /// screen — ungrabbable. Overlapping windows are preferable to hidden ones.
+    func testAFullScreenOverlapsRatherThanEscaping() {
         var tiler = makeTiler()
-        var placed: [NSRect] = [player]
         for _ in 0..<14 {
             let slot = tiler.nextSlot(for: NSSize(width: 500, height: 900))
-            for other in placed {
-                XCTAssertFalse(slot.intersects(other),
-                               "\(NSStringFromRect(slot)) overlaps \(NSStringFromRect(other))")
-            }
-            XCTAssertGreaterThanOrEqual(slot.minX, placed.last!.minX, "a column never moves left")
-            placed.append(slot)
+            XCTAssertTrue(region.contains(slot),
+                          "\(NSStringFromRect(slot)) left the region")
         }
+    }
+
+    /// The case that made the app unusable: a skin so wide that column 2 begins past the right edge.
+    func testASkinWiderThanHalfTheScreenStillTilesOnScreen() {
+        let wide = NSRect(x: 0, y: 122, width: 1000, height: 878)
+        var tiler = WindowManager.WinampModernTiler(playerFrame: wide, region: region)
+        for size in [NSSize(width: 700, height: 500), NSSize(width: 700, height: 500),
+                     NSSize(width: 900, height: 400)] {
+            let slot = tiler.nextSlot(for: size)
+            XCTAssertTrue(WindowPlacement.isReachable(slot, screens: [region]),
+                          "\(NSStringFromRect(slot)) is unreachable")
+        }
+    }
+
+    /// A window wider than the whole region cannot be made to fit, so it aligns to the left edge —
+    /// where the controls are — rather than hanging off the right.
+    func testAWindowWiderThanTheRegionAlignsToItsLeftEdge() {
+        var tiler = makeTiler()
+        let slot = tiler.nextSlot(for: NSSize(width: 2000, height: 300))
+        XCTAssertEqual(slot.minX, region.minX)
     }
 
     /// A window taller than the room beneath the player still gets a whole column of its own rather

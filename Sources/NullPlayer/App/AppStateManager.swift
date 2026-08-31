@@ -234,6 +234,21 @@ class AppStateManager {
         /// ends of an empty window. Only the size is skin-specific; the position is the user's and
         /// restores either way.
         var winampModernSkinName: String?
+        /// The `visibleFrame` of the screen the main window was on at save time, as
+        /// `NSStringFromRect`.
+        ///
+        /// The frames above are absolute desktop coordinates and mean nothing without the desktop
+        /// they were measured on. A resolution change, a resized Dock, or an unplugged monitor
+        /// leaves them pointing at space that no longer exists — and the old restore path, which
+        /// validated only against the skin's min/max size, applied them anyway and stranded the
+        /// whole session. Recording the screen turns "the frames are fine" from an assumption into
+        /// something checkable: if no present screen has this visible frame, every restored frame is
+        /// treated as suspect and corrected rather than trusted.
+        ///
+        /// Optional, so states written before this key existed decode unchanged — they simply do not
+        /// know, which falls back to the old behaviour of trusting the frames until one is provably
+        /// off screen.
+        var mainScreenVisibleFrame: String?
         var playlistWindowFrame: String?
         var equalizerWindowFrame: String?
         var plexBrowserWindowFrame: String?
@@ -323,6 +338,7 @@ class AppStateManager {
             case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, selectedOutputDeviceUID
             case browserBrowseMode, uiMode, savedInModernMode
             case winampModernSkinName
+            case mainScreenVisibleFrame
             case stateVersion
         }
 
@@ -354,6 +370,7 @@ class AppStateManager {
             // which skin that frame came from" — the safe answer, since it makes the size fall back
             // to the skin's own.
             winampModernSkinName = try container.decodeIfPresent(String.self, forKey: .winampModernSkinName)
+            mainScreenVisibleFrame = try container.decodeIfPresent(String.self, forKey: .mainScreenVisibleFrame)
             playlistWindowFrame = try container.decodeIfPresent(String.self, forKey: .playlistWindowFrame)
             equalizerWindowFrame = try container.decodeIfPresent(String.self, forKey: .equalizerWindowFrame)
             plexBrowserWindowFrame = try container.decodeIfPresent(String.self, forKey: .plexBrowserWindowFrame)
@@ -442,6 +459,7 @@ class AppStateManager {
             isCavaVisible: Bool = false,
             isWaveformVisible: Bool = false,
             mainWindowFrame: String?,
+            mainScreenVisibleFrame: String? = nil,
             playlistWindowFrame: String?,
             equalizerWindowFrame: String?,
             plexBrowserWindowFrame: String?,
@@ -495,6 +513,7 @@ class AppStateManager {
             self.isCavaVisible = isCavaVisible
             self.isWaveformVisible = isWaveformVisible
             self.mainWindowFrame = mainWindowFrame
+            self.mainScreenVisibleFrame = mainScreenVisibleFrame
             self.winampModernSkinName = winampModernSkinName
             self.playlistWindowFrame = playlistWindowFrame
             self.equalizerWindowFrame = equalizerWindowFrame
@@ -605,6 +624,8 @@ class AppStateManager {
             
             // Window frames
             mainWindowFrame: wm.mainWindowController?.window.map { NSStringFromRect($0.frame) },
+            mainScreenVisibleFrame: (wm.mainWindowController?.window?.screen ?? NSScreen.main)
+                .map { NSStringFromRect($0.visibleFrame) },
             playlistWindowFrame: wm.playlistWindowController?.window.map { NSStringFromRect($0.frame) },
             equalizerWindowFrame: wm.equalizerWindowController?.window.map { NSStringFromRect($0.frame) },
             plexBrowserWindowFrame: wm.plexBrowserFrameForPersistence.map { NSStringFromRect($0) },
@@ -868,24 +889,61 @@ class AppStateManager {
                   runningMode.displayName)
         }
         
+        // Every saved frame is decoded here, before any of it is applied, because the correction
+        // below has to see the main window and all of its sub-windows *together*: the session was
+        // docked as a unit and only a single shared offset brings it back as one. Only pass saved
+        // frames if the UI mode matches; otherwise use nil (default positions).
+        var savedFrames: [String: NSRect] = [:]
+        if modeMatches {
+            let sources: [(String, String?)] = [
+                ("main", state.mainWindowFrame),
+                ("playlist", state.playlistWindowFrame),
+                ("equalizer", state.equalizerWindowFrame),
+                ("browser", state.plexBrowserWindowFrame),
+                ("projectM", state.projectMWindowFrame),
+                ("spectrum", state.spectrumWindowFrame),
+                ("audioAnalysis", state.audioAnalysisWindowFrame),
+                ("peppyMeter", state.peppyMeterWindowFrame),
+                ("networkMonitor", state.networkMonitorWindowFrame),
+                ("cava", state.cavaWindowFrame),
+                ("waveform", state.waveformWindowFrame)
+            ]
+            for (key, string) in sources {
+                guard let rect = string.flatMap({ NSRectFromString($0) }), rect != .zero else { continue }
+                savedFrames[key] = rect
+            }
+        }
+
+        // A session saved on a screen that is not here any more is suspect even when its frames
+        // happen to land on a present one, so the correction runs unconditionally in that case.
+        let screenContextChanged = Self.savedScreenIsMissing(state.mainScreenVisibleFrame,
+                                                             screens: Self.currentScreenFrames())
+        let restoredFrames = Self.correctedRestoredFrames(savedFrames,
+                                                          screens: Self.currentScreenFrames(),
+                                                          force: screenContextChanged)
+        if restoredFrames != savedFrames {
+            NSLog("AppStateManager: restored session was off screen — corrected %d frame(s)%@",
+                  restoredFrames.filter { savedFrames[$0.key] != $0.value }.count,
+                  screenContextChanged ? " (saved screen is gone)" : "")
+        }
+
         // Restore window frames (only if mode matches)
         if modeMatches {
-            restoreWindowFrames(state)
+            restoreWindowFrames(state, correctedMainFrame: restoredFrames["main"])
         }
         
         // Restore window visibility (after a short delay to ensure proper positioning)
         // Parse frames before the closure to avoid capturing state
-        // Only pass saved frames if the UI mode matches; otherwise use nil (default positions)
-        let playlistFrame = modeMatches ? state.playlistWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let equalizerFrame = modeMatches ? state.equalizerWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let browserFrame = modeMatches ? state.plexBrowserWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let projectMFrame = modeMatches ? state.projectMWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let spectrumFrame = modeMatches ? state.spectrumWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let audioAnalysisFrame = modeMatches ? state.audioAnalysisWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let peppyMeterFrame = modeMatches ? state.peppyMeterWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let networkMonitorFrame = modeMatches ? state.networkMonitorWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let cavaFrame = modeMatches ? state.cavaWindowFrame.flatMap({ NSRectFromString($0) }) : nil
-        let waveformFrame = modeMatches ? state.waveformWindowFrame.flatMap({ NSRectFromString($0) }) : nil
+        let playlistFrame = restoredFrames["playlist"]
+        let equalizerFrame = restoredFrames["equalizer"]
+        let browserFrame = restoredFrames["browser"]
+        let projectMFrame = restoredFrames["projectM"]
+        let spectrumFrame = restoredFrames["spectrum"]
+        let audioAnalysisFrame = restoredFrames["audioAnalysis"]
+        let peppyMeterFrame = restoredFrames["peppyMeter"]
+        let networkMonitorFrame = restoredFrames["networkMonitor"]
+        let cavaFrame = restoredFrames["cava"]
+        let waveformFrame = restoredFrames["waveform"]
         let projectMPresetIndex = state.projectMPresetIndex
         let visualizationEngineType = UserDefaults.standard.string(forKey: "visualizationEngineType")
             .flatMap(VisualizationType.init(rawValue:)) ?? .projectM
@@ -965,6 +1023,13 @@ class AppStateManager {
             // One-time self-heal for classic sessions affected by cross-mode frame contamination.
             self.repairClassicDockedStackWidthsIfNeeded()
             completion?()
+
+            // Launch has settled: the player is at its restored frame, every sub-window the session
+            // had open is up at its final size, and for `.wal` the completion above has run the
+            // arrangement. This is the first and last moment the whole layout can be checked at
+            // once — anything the frame correction could not anticipate (a skin clamping its own
+            // size after the fact, a stack that grew when UI Size was restored) is caught here.
+            wm.ensureAllWindowsOnScreen()
         }
         
         NSLog("AppStateManager: Settings state restored (eqAutoEnabled: %d, doubleSize: %d)", state.eqAutoEnabled ? 1 : 0, state.isDoubleSize ? 1 : 0)
@@ -1164,18 +1229,81 @@ class AppStateManager {
                       width: ownSize.width, height: ownSize.height)
     }
 
+    /// Every attached screen's visible frame, in the coordinate space saved frames are in.
+    static func currentScreenFrames() -> [NSRect] {
+        NSScreen.screens.map(\.visibleFrame)
+    }
+
+    /// Is the screen this session was saved on absent from the ones present now?
+    ///
+    /// A resolution change, a Dock resize, or an unplugged monitor all show up here as a visible
+    /// frame that no current screen matches, which is the signal that the saved coordinates cannot be
+    /// trusted even where they happen to land somewhere plausible. An old state that never recorded
+    /// a screen answers `false` — unknown is not the same as changed, and those sessions keep the
+    /// behaviour of being trusted until a frame is provably off screen.
+    static func savedScreenIsMissing(_ saved: String?, screens: [NSRect]) -> Bool {
+        guard let saved, !screens.isEmpty else { return false }
+        let savedFrame = NSRectFromString(saved)
+        guard savedFrame != .zero else { return false }
+        return !screens.contains { $0 == savedFrame }
+    }
+
+    /// Bring a whole restored session back onto the screen it is being restored onto.
+    ///
+    /// Restore used to validate a saved frame against the *skin's* min/max size and against nothing
+    /// else. A resolution change, a resized Dock, or an unplugged monitor therefore stranded the
+    /// entire session at coordinates that no longer exist, with no visible way back.
+    ///
+    /// The correction is computed over every frame **together**, and applied as one offset, because
+    /// clamping window by window is what would destroy the docking: two windows flush against each
+    /// other, clamped independently against the same edge, come back overlapping instead of touching.
+    /// Only what one offset cannot save is then rescued on its own, accepting overlap.
+    ///
+    /// `force` is for the case where the frames are suspect rather than provably stranded — the
+    /// screen they were saved on is not among the ones present now.
+    static func correctedRestoredFrames(_ frames: [String: NSRect],
+                                        screens: [NSRect],
+                                        force: Bool) -> [String: NSRect] {
+        guard !screens.isEmpty, !frames.isEmpty else { return frames }
+
+        let stranded = frames.values.contains { !WindowPlacement.isReachable($0, screens: screens) }
+        guard force || stranded else { return frames }
+
+        var union = frames.values.first!
+        for frame in frames.values.dropFirst() { union = union.union(frame) }
+
+        var corrected = frames
+        if let host = WindowPlacement.hostScreen(for: union, screens: screens) {
+            let offset = WindowPlacement.groupOffset(union: union, into: host)
+            if offset != .zero {
+                corrected = corrected.mapValues { $0.offsetBy(dx: offset.x, dy: offset.y) }
+            }
+        }
+
+        // A cluster wider or taller than the screen cannot be saved by one offset — its far members
+        // are still outside. Those, and only those, are moved individually.
+        for (key, frame) in corrected where !WindowPlacement.isReachable(frame, screens: screens) {
+            guard let host = WindowPlacement.hostScreen(for: frame, screens: screens) else { continue }
+            corrected[key] = WindowPlacement.rescued(frame, into: host)
+        }
+
+        return corrected
+    }
+
     /// Restore window frames from saved state
     /// Note: Only the main window frame is restored here since it exists at restore time.
     /// Playlist, EQ, Browser, and ProjectM frames are passed to their show methods
     /// in applyState() since those windows are created lazily.
-    private func restoreWindowFrames(_ state: AppState) {
+    private func restoreWindowFrames(_ state: AppState, correctedMainFrame: NSRect? = nil) {
         let wm = WindowManager.shared
         
         // Main window exists at this point, so we can restore its frame directly
         if let frameString = state.mainWindowFrame,
            let controller = wm.mainWindowController,
            let window = controller.window {
-            let stored = NSRectFromString(frameString)
+            // `correctedMainFrame` is the saved rect after the whole-session on-screen correction;
+            // it differs only in position, and only when the session came back stranded.
+            let stored = correctedMainFrame ?? NSRectFromString(frameString)
             if stored != .zero {
                 let loadedSkin = UserDefaults.standard
                     .string(forKey: WinampModernSkinImporter.selectedSkinNameKey)

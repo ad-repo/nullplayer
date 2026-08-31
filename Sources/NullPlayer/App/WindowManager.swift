@@ -763,6 +763,8 @@ class WindowManager {
 
     /// Windows currently in miniaturize animation; suppress drag/group movement for these.
     private var miniaturizingWindowIds = Set<ObjectIdentifier>()
+    /// Coalesces the burst of `didChangeScreenParameters` a display reconfiguration produces.
+    private var isScreenParameterSweepScheduled = false
     
     // MARK: - Initialization
     
@@ -799,6 +801,27 @@ class WindowManager {
             name: NSWindow.didMiniaturizeNotification,
             object: nil
         )
+        // Nothing watched the display configuration for the player's windows — only Compact Mode and
+        // two GL views did — so unplugging a monitor or changing resolution left every window on it
+        // at coordinates that no longer exist.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleScreenParametersDidChange(_:)),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    /// macOS posts this repeatedly while a display reconfigures, and the frames are not settled until
+    /// it stops, so the sweep is coalesced onto the next runloop pass rather than run per notification.
+    @objc private func handleScreenParametersDidChange(_ notification: Notification) {
+        guard !isScreenParameterSweepScheduled else { return }
+        isScreenParameterSweepScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isScreenParameterSweepScheduled = false
+            self.ensureAllWindowsOnScreen()
+        }
     }
     
     /// Register default preference values
@@ -1443,13 +1466,23 @@ class WindowManager {
                 columnWidth = 0
                 cursorY = region.maxY
             }
-            // No right-edge clamp, deliberately. Pulling a column back onto the screen can only ever
-            // move it *left*, into the column already there — on a 1600pt region it dragged the media
-            // library from x=852 to x=760 and straight through its neighbour. When the screen is full
-            // the honest answer is a window hanging off the right, not one on top of another;
-            // non-overlap is the invariant, staying on screen is the preference.
-            let slot = NSRect(x: columnX, y: cursorY - size.height,
+            var slot = NSRect(x: columnX, y: cursorY - size.height,
                               width: size.width, height: size.height)
+            // The ranking here used to be the other way round — non-overlap the invariant, staying on
+            // screen only the preference — on the reasoning that pulling a column back can only move
+            // it *left*, into the column already there. That is true, and it is the wrong trade. A
+            // window hanging off the right edge has no title bar to grab and no visible way back; a
+            // window on top of another is a nuisance the user fixes with one drag. With a skin wider
+            // than half the display (EPS, Big Bento, cPro-Bento) column 2 starts past `region.maxX`,
+            // so *every* window after the first column was placed entirely off screen and the app was
+            // unusable for anyone who did not know Snap To Default exists. So: overlapping windows are
+            // preferable to hidden ones, and the slot comes back onto the region on both axes.
+            if slot.maxX > region.maxX {
+                slot.origin.x = max(region.minX, region.maxX - size.width)
+            }
+            if slot.minY < region.minY {
+                slot.origin.y = region.minY
+            }
             cursorY = slot.minY
             columnWidth = max(columnWidth, size.width)
             return slot
@@ -1472,20 +1505,46 @@ class WindowManager {
         }
     }
 
+    /// Every screen's visible frame, in the coordinate space window frames are already in.
+    func visibleScreenFrames() -> [NSRect] {
+        NSScreen.screens.map(\.visibleFrame)
+    }
+
+    /// Where `window` has to move to be reachable, or `nil` if it already is.
+    ///
+    /// The fallback for every path that would otherwise leave a window at whatever origin it happens
+    /// to have — which, when that path is running at all, is usually an origin off the display.
+    func rescuedOrigin(for window: NSWindow) -> NSPoint? {
+        let screens = visibleScreenFrames()
+        guard !WindowPlacement.isReachable(window.frame, screens: screens) else { return nil }
+        guard let host = WindowPlacement.hostScreen(for: window.frame, screens: screens)
+                ?? (window.screen ?? NSScreen.main)?.visibleFrame
+        else { return nil }
+        return WindowPlacement.rescued(window.frame, into: host).origin
+    }
+
     /// The first tiling slot that is clear of `occupied` — how a window opened *after* the initial
     /// arrangement joins it without disturbing anything already placed. Walks the same slot sequence
     /// `arrangeWinampModernWindows` uses, so a window opened later lands where the arrangement would
     /// have put it.
+    ///
+    /// Never answers `nil` for want of a free slot. Both call sites treat `nil` as "leave the window
+    /// where it is", and where it is may be off screen — that is the state this whole path exists to
+    /// prevent. When the walk finds no clear slot the last one is rescued onto the region and
+    /// returned: an overlapping window the user can drag apart, rather than an invisible one.
     func tiledOrigin(for size: NSSize, avoiding occupied: [NSRect]) -> NSPoint? {
         guard var tiler = winampModernTiler() else { return nil }
+        var lastSlot: NSRect?
         for _ in 0..<64 {
             let slot = tiler.nextSlot(for: size)
+            lastSlot = slot
             if !occupied.contains(where: { $0.intersects(slot) }) { return slot.origin }
             if slot.minX + size.width >= tiler.region.maxX && slot.minY <= tiler.region.minY {
                 break
             }
         }
-        return nil
+        guard let lastSlot else { return nil }
+        return WindowPlacement.rescued(lastSlot, into: tiler.region).origin
     }
 
     /// The materialized hosted windows, for the arrangement sweep to lay out alongside the skin's own.
@@ -1516,8 +1575,12 @@ class WindowManager {
         // column and are any size — so a hosted window joins the tiling instead. Everything below is
         // the Classic/Original stack, untouched.
         if uiMode.controllerFamily == .winampModern {
+            // `tiledOrigin` now only declines when there is no player window or screen to tile
+            // against at all; the reachability fallback covers that, so no path here can leave a
+            // window at an off-screen origin.
             if let origin = tiledOrigin(for: window.frame.size,
-                                        avoiding: occupiedWindowFrames(excluding: window)) {
+                                        avoiding: occupiedWindowFrames(excluding: window))
+                ?? rescuedOrigin(for: window) {
                 isSnappingWindow = true
                 window.setFrameOrigin(origin)
                 isSnappingWindow = false
@@ -4222,6 +4285,11 @@ class WindowManager {
             appliedUIScaleLevel = targetLevel
             NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
         } while pendingUIScaleLevel != nil && uiScaleLevel != appliedUIScaleLevel
+
+        // Growing the UI is the most reliable way to push the bottom of a stack, or the right of a
+        // wide skin, past the edge of the display — every window is re-sized around the main window
+        // as an anchor and nothing was checking where they landed.
+        ensureAllWindowsOnScreen()
     }
 
     /// Apply UI scaling to all windows.
@@ -5194,11 +5262,116 @@ class WindowManager {
             arranged.insert(ObjectIdentifier(window))
             guard let origin = tiledOrigin(for: window.frame.size,
                                            avoiding: occupiedWindowFrames(excluding: window))
+                    ?? rescuedOrigin(for: window)
             else { continue }
             window.setFrameOrigin(origin)
         }
 
+        // The contract this command has to keep is that **one** press recovers everything. It used to
+        // take several — and sometimes never worked — because it re-ran the same unclamped tiler and
+        // so reproduced the same off-screen layout, appearing to improve only because more windows
+        // had materialized between presses and the occupancy set differed each time. The clamped
+        // tiler above fixes the cause; this pass makes the guarantee unconditional, and makes a
+        // second press a no-op.
+        let screens = visibleScreenFrames()
+        for window in allWindows() where !WindowPlacement.isReachable(window.frame, screens: screens) {
+            guard let origin = rescuedOrigin(for: window) else { continue }
+            window.setFrameOrigin(origin)
+        }
+
         postLayoutChangeNotification()
+    }
+
+    /// The safety net: no window this app manages is left where the user cannot reach it.
+    ///
+    /// Every placement path is now supposed to keep its own output on screen, but placement is not
+    /// the only way a window ends up off it — a display can be unplugged, a resolution can change,
+    /// the Dock can be resized, and a saved session can be restored onto a desktop that is smaller
+    /// than the one it was saved on. This runs after the moments that produce those states rather
+    /// than trying to anticipate them.
+    ///
+    /// A stranded window is moved with its whole docked cluster, by one shared offset, so docking
+    /// survives the rescue; only what that offset cannot save is then moved on its own, accepting
+    /// overlap with its neighbours. Overlapping windows are preferable to hidden ones.
+    ///
+    /// Per `CLAUDE.md` this runs in all three modes **deliberately**: an unreachable window is
+    /// equally unusable in Classic, Original/Modern and Winamp Modern, and the rule it applies —
+    /// reachable means the top-left corner is on some screen — is mode-independent. It is verified
+    /// separately in each.
+    func ensureAllWindowsOnScreen() {
+        let screens = visibleScreenFrames()
+        guard !screens.isEmpty else { return }
+        // A full-screen visualizer legitimately fills a display and must not be "corrected" off it.
+        guard !isProjectMFullscreen else { return }
+
+        var moved = false
+        var handled = Set<ObjectIdentifier>()
+
+        isSnappingWindow = true
+        defer {
+            isSnappingWindow = false
+            if moved { postLayoutChangeNotification() }
+        }
+
+        for window in allWindows() {
+            let id = ObjectIdentifier(window)
+            if handled.contains(id) { continue }
+            // A window on its way to the Dock has no meaningful frame to correct.
+            if miniaturizingWindowIds.contains(id) || window.isMiniaturized { continue }
+            if WindowPlacement.isReachable(window.frame, screens: screens) { continue }
+
+            // The cluster this window belongs to, moved as one.
+            var cluster = [window]
+            for docked in findDockedWindows(to: window)
+            where !miniaturizingWindowIds.contains(ObjectIdentifier(docked)) && !docked.isMiniaturized {
+                cluster.append(docked)
+            }
+
+            var union = cluster[0].frame
+            for member in cluster.dropFirst() { union = union.union(member.frame) }
+
+            if let host = WindowPlacement.hostScreen(for: union, screens: screens) {
+                let offset = WindowPlacement.groupOffset(union: union, into: host)
+                if offset != .zero {
+                    for member in cluster {
+                        member.setFrameOrigin(NSPoint(x: member.frame.minX + offset.x,
+                                                      y: member.frame.minY + offset.y))
+                    }
+                    moved = true
+                }
+            }
+
+            // A cluster larger than the display cannot be saved by one offset; its far members are
+            // still outside, and those are rescued individually.
+            for member in cluster {
+                handled.insert(ObjectIdentifier(member))
+                guard let origin = rescuedOrigin(for: member) else { continue }
+                member.setFrameOrigin(origin)
+                moved = true
+            }
+        }
+
+        if moved {
+            NSLog("WindowManager: rescued off-screen window(s) back onto the display")
+        }
+    }
+
+    /// The combined height of the visible windows Snap To Default stacks beneath the main window.
+    ///
+    /// Measured up front so the routine knows whether the stack it is about to build fits before it
+    /// decides where the top of it goes. The membership and order here must match the stack the
+    /// routine actually builds below.
+    private func visibleCenterStackHeightBelowMain() -> CGFloat {
+        var height: CGFloat = 0
+        if let window = equalizerWindowController?.window, window.isVisible { height += window.frame.height }
+        if let window = playlistWindowController?.window, window.isVisible { height += window.frame.height }
+        if let window = spectrumWindow, window.isVisible { height += window.frame.height }
+        if let window = waveformWindow, window.isVisible { height += window.frame.height }
+        if let window = audioAnalysisWindow, window.isVisible { height += window.frame.height }
+        if let window = peppyMeterWindow, window.isVisible { height += window.frame.height }
+        if let window = networkMonitorWindow, window.isVisible { height += window.frame.height }
+        if let window = cavaWindow, window.isVisible { height += window.frame.height }
+        return height
     }
 
     /// Reset all windows to their default positions
@@ -5215,16 +5388,31 @@ class WindowManager {
         }
 
         // Get screen for positioning - use the screen the main window is on, or fall back to main screen
-        // Use full screen frame (not visibleFrame) so windows aren't constrained by menu bar/dock
+        //
+        // `visibleFrame`, not `frame`. Measuring against the full display was the reason a recovery
+        // could hand back a stack whose bottom sat under the Dock and whose top sat under the menu
+        // bar — off screen in the only sense that matters, on the command whose entire job is to
+        // bring windows back.
         guard let screen = mainWindowController?.window?.screen ?? NSScreen.main else { return }
-        let screenFrame = screen.frame
+        let screenFrame = screen.visibleFrame
         
         // Use current main window size (preserves user scaling)
         let mainSize = mainWindowController?.window?.frame.size ??
             (isModernUIEnabled ? ModernSkinElements.mainWindowSize : Skin.mainWindowSize)
+
+        // Measure the whole stack before placing its top. Centring the main window vertically and
+        // stacking downward with no bottom clamp is fine while the stack fits, and strands its lower
+        // half the moment it does not — five windows at a large UI Size overrun any laptop display.
+        // When that happens the main window anchors at the top instead, so the stack starts at the
+        // visible top edge and uses every point there is.
+        let stackHeightBelowMain = visibleCenterStackHeightBelowMain()
+        let centredMainOriginY = screenFrame.midY - mainSize.height / 2
+        let mainOriginY = centredMainOriginY - stackHeightBelowMain < screenFrame.minY
+            ? screenFrame.maxY - mainSize.height
+            : centredMainOriginY
         let mainFrame = NSRect(
             x: screenFrame.midX - mainSize.width / 2,
-            y: screenFrame.midY - mainSize.height / 2,
+            y: mainOriginY,
             width: mainSize.width,
             height: mainSize.height
         )
@@ -5308,14 +5496,21 @@ class WindowManager {
         var browserFrame: NSRect?
         var projectMFrame: NSRect?
         
+        // Both side windows are placed by arithmetic that can leave the visible frame: the browser
+        // sits at the stack's right edge, which a wide skin at a large UI Size pushes past `maxX`,
+        // and the visualizer sits a full window-width to the *left* of it, which for anything wider
+        // than the left margin lands at a negative x. Clamped here rather than left to the rescue
+        // pass so the width the caller asked for survives.
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
             let w = plexWindow.frame.width
-            browserFrame = NSRect(x: mainFrame.maxX, y: stackBottomY, width: w, height: stackHeight)
+            let x = min(mainFrame.maxX, max(screenFrame.minX, screenFrame.maxX - w))
+            browserFrame = NSRect(x: x, y: stackBottomY, width: w, height: stackHeight)
         }
         
         if let projectMWindow = projectMWindowController?.window, projectMWindow.isVisible {
             let w = projectMWindow.frame.width
-            projectMFrame = NSRect(x: mainFrame.minX - w, y: stackBottomY, width: w, height: stackHeight)
+            let x = max(mainFrame.minX - w, screenFrame.minX)
+            projectMFrame = NSRect(x: x, y: stackBottomY, width: w, height: stackHeight)
         }
         
         clearSavedWindowFramePositions()
@@ -5324,39 +5519,50 @@ class WindowManager {
         isSnappingWindow = true
         defer { isSnappingWindow = false }
         
+        // Last resort before anything is applied: a frame this routine produced that still is not
+        // reachable is moved onto the screen, accepting overlap. Nothing here should normally need
+        // it — the stack is measured and the side windows are clamped — but "normally" is what the
+        // old routine assumed too, and the cost of being wrong is a window with no way back.
+        let screens = visibleScreenFrames()
+        func applied(_ frame: NSRect) -> NSRect {
+            guard !WindowPlacement.isReachable(frame, screens: screens) else { return frame }
+            let host = WindowPlacement.hostScreen(for: frame, screens: screens) ?? screenFrame
+            return WindowPlacement.rescued(frame, into: host)
+        }
+
         // Apply positions to visible windows
         if let mainWindow = mainWindowController?.window {
-            mainWindow.setFrame(mainFrame, display: true, animate: false)
+            mainWindow.setFrame(applied(mainFrame), display: true, animate: false)
         }
         if let frame = eqFrame, let window = equalizerWindowController?.window {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = playlistFrame, let window = playlistWindowController?.window {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = spectrumFrame, let window = spectrumWindow {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = waveformFrame, let window = waveformWindow {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = audioAnalysisFrame, let window = audioAnalysisWindow {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = peppyMeterFrame, let window = peppyMeterWindow {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = networkMonitorFrame, let window = networkMonitorWindow {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = cavaFrame, let window = cavaWindow {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let frame = projectMFrame, let window = projectMWindowController?.window {
-            window.setFrame(frame, display: true, animate: false)
+            window.setFrame(applied(frame), display: true, animate: false)
         }
         if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
             videoWindow.center()
@@ -7159,43 +7365,49 @@ class WindowManager {
         }
     }
     
+    /// Re-apply the frames saved in `UserDefaults`.
+    ///
+    /// Every rect goes through `onScreen` on the way in. These are raw saved coordinates and nothing
+    /// else validates them: a session saved on a display that is no longer attached came back at
+    /// coordinates that do not exist any more, which is one of the ways a window ended up
+    /// unreachable at launch.
     func restoreWindowPositions() {
         let defaults = UserDefaults.standard
+        let screens = visibleScreenFrames()
+        func onScreen(_ frame: NSRect) -> NSRect {
+            guard !WindowPlacement.isReachable(frame, screens: screens),
+                  let host = WindowPlacement.hostScreen(for: frame, screens: screens)
+            else { return frame }
+            return WindowPlacement.rescued(frame, into: host)
+        }
         
         if let frameString = defaults.string(forKey: AppPersistence.key("MainWindowFrame")),
            let window = mainWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("PlaylistWindowFrame")),
            let window = playlistWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("EqualizerWindowFrame")),
            let window = equalizerWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("PlexBrowserWindowFrame")),
            let window = plexBrowserWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("VideoPlayerWindowFrame")),
            let window = videoPlayerWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("ProjectMWindowFrame")),
            let window = projectMWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("SpectrumWindowFrame")),
            let window = spectrumWindow {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
     }
 }

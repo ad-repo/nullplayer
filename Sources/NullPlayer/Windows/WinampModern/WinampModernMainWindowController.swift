@@ -1669,7 +1669,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
         let manager = WindowManager.shared
         let occupied = manager.occupiedWindowFrames(excluding: container.window)
-        guard let origin = manager.tiledOrigin(for: size, avoiding: occupied) else { return }
+        // No `nil` path may leave the window where it is: where it is has not been placed yet, and a
+        // skin whose window defaults sit past the display would strand it with no way back.
+        guard let origin = manager.tiledOrigin(for: size, avoiding: occupied)
+                ?? manager.rescuedOrigin(for: container.window)
+        else { return }
         if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
             NSLog("[place] %@ size=%@ -> %@ avoiding=%d", container.containerID,
                   NSStringFromSize(size), NSStringFromPoint(origin), occupied.count)

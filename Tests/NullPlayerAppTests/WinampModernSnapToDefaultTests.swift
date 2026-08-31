@@ -81,4 +81,53 @@ final class WinampModernSnapToDefaultTests: XCTestCase {
             placed.append(slot)
         }
     }
+
+    // MARK: - One press, and only one
+
+    /// The user-visible contract. The command used to need several presses and sometimes never
+    /// worked: it re-ran the *same unclamped tiler*, so it reproduced the same off-screen layout,
+    /// and only appeared to improve because more windows had materialized between presses and the
+    /// occupancy set differed each time. With the tiler clamped, one sweep leaves everything on
+    /// screen.
+    func testOnePressLeavesEveryWindowReachable() {
+        let player = WindowManager.recenteredPlayerFrame(size: NSSize(width: 1000, height: 878),
+                                                         in: region)
+        var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+        let sizes = [NSSize(width: 700, height: 500), NSSize(width: 700, height: 500),
+                     NSSize(width: 900, height: 400), NSSize(width: 426, height: 122)]
+        for size in sizes {
+            let slot = tiler.nextSlot(for: size)
+            XCTAssertTrue(WindowPlacement.isReachable(slot, screens: [region]),
+                          "\(NSStringFromRect(slot)) is unreachable after one press")
+        }
+    }
+
+    /// A second press must change nothing. The old routine was not idempotent, which is what made
+    /// "press it a few times" the folk remedy.
+    func testASecondPressIsANoOp() {
+        let size = NSSize(width: 1000, height: 878)
+        let first = WindowManager.recenteredPlayerFrame(size: size, in: region)
+        let second = WindowManager.recenteredPlayerFrame(size: first.size, in: region)
+        XCTAssertEqual(first, second)
+
+        func arrangement(from player: NSRect) -> [NSRect] {
+            var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+            return [NSSize(width: 700, height: 500), NSSize(width: 900, height: 400)]
+                .map { tiler.nextSlot(for: $0) }
+        }
+        XCTAssertEqual(arrangement(from: first), arrangement(from: second))
+    }
+
+    /// A window the arrangement does not own — a classic-fallback playlist, the standalone video
+    /// window — is rescued rather than left where it is. `nil` used to mean "leave it", and where it
+    /// was is exactly the problem.
+    func testAWindowTheArrangementDoesNotOwnIsStillBroughtBack() {
+        let stranded = NSRect(x: 4000, y: -900, width: 500, height: 400)
+        XCTAssertFalse(WindowPlacement.isReachable(stranded, screens: [region]))
+        let host = WindowPlacement.hostScreen(for: stranded, screens: [region])
+        XCTAssertNotNil(host)
+        let rescued = WindowPlacement.rescued(stranded, into: host!)
+        XCTAssertTrue(WindowPlacement.isReachable(rescued, screens: [region]))
+        XCTAssertEqual(rescued.size, stranded.size, "recovery never resizes")
+    }
 }
