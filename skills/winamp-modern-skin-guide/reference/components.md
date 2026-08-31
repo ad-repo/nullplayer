@@ -856,6 +856,65 @@ scene had merely *unmounted*, since the scene no longer holds one of those at al
 `WinampModernMainWindowController.prepareForUITeardown()` drives this before a mode controller is
 released.
 
+## `<componentbucket wndtype>` and `<CustomObject>` — the widget mechanism
+
+Two tags that look inert and are not. Together they are how ClassicPro's widgets — and any skin's
+pluggable panes — reach the screen.
+
+### A component bucket **collects** groupdefs
+
+`<componentbucket wndtype="X">` is not markup that draws. It is a collection point: the parser
+instantiates **every groupdef declaring `windowtype="X"`** as one of its children, and a script then
+walks them with `getNumChildren`/`enumChildren`.
+
+```xml
+<componentbucket id="widget.loader" x="0" y="0" h="20" w="20"
+                 wndtype="centro.widgets.main" visible="0"/>
+
+<groupdef id="centro.widgets.nowplaying.dummy.main" name="Now Playing"
+          userdata="centro.widgets.nowplaying;0" windowtype="centro.widgets.main">
+```
+
+Unimplemented, every bucket answers **0 children**, and everything downstream reads as "no widgets are
+installed" rather than as a missing capability — the Widgets Manager lists nothing however far the
+rest of the chain gets.
+
+Buckets are filled **before scripts are bound**, so a groupdef a bucket brings in has its own
+`<script>` collected into the same batch as the rest of the skin and comes up at load. A bucket
+naming a type nothing declares stays empty, which is correct and common: ClassicPro's drawer bucket is
+`wndtype="centro.widgets.drawer"` and the engine ships no widget for that place.
+
+Note this is a *different* `<componentbucket>` role from Winamp's **thinger** — the scrolling strip of
+installed-component icons the same tag draws when a skin uses it that way (B34). Both live on the tag;
+`wndtype` is what selects this one.
+
+### A custom object's content is named by an attribute
+
+`<CustomObject>` is a holder that is **empty until a script names a groupdef for it**, and it swaps
+that content whenever the name changes. Unlike `<group id="x">`, which instantiates `x` once at parse
+time, the choice is deferred and repeatable:
+
+```xml
+<CustomObject id="widget.holder" fitparent="1"/>
+```
+```maki
+widgetHolder.setXmlParam("groupid", ids);   // the pane *is* that widget now
+```
+
+That one line is the whole of "clicking a widget tab shows the widget". No skin in the corpus declares
+`groupid` in markup, so the runtime write is the only path.
+
+Two rules the measured case pinned:
+
+- **The old content is discarded, not hidden.** A custom object holds one thing at a time, and leaving
+  the previous widget in the tree keeps its scripts and timers running behind the one on screen.
+- **The instantiated child must *fill* the holder.** `instantiateGroup` builds a bare
+  `<group id="…">`, which declares no geometry and so resolves to **0×0**: measured,
+  `centro.widgets.nowplaying` laid out at `(8, 132, 0, 0)` inside a 280×176 holder, drawing nothing
+  at all while its script ran perfectly. `System.newGroup`'s path deliberately keeps the bare node —
+  there the script places the group itself with `init(parent)` — so the fill belongs to this path
+  only.
+
 ## Mode integration
 
 `PlayerUIMode` has four cases across three controller families

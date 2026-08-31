@@ -51,27 +51,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B85 | The Widgets Manager's three place buttons | On a cPro skin open the drawer menu -> *Widgets Manager*, then click **show in main / drawer / side** on a row. Each sends `show_widget` through `widgetsManager.maki` to CproTabs / CentroSUI / the drawer, and all three legs should now work given B77's `wndtype` buckets and `<CustomObject>`; none has been exercised. **Uninstall and support are expected to stay inert** — `ClassicProFile.openFile` refuses executables and `System.navigateUrl` is out of scope by sandbox policy, so a dead button there is correct, not a finding |
 | B66 | The Wasabi standard form widgets | The **drawing** half is verified in the render sweep across the corpus. Radios and check boxes are **done** — a click on either was found dead in the app 2026-08-29 (B14's QA, on Shield_Amp and Styx: an unbound box drew from its `cfgattrib` provider's "no" instead of its own `activated`) and both are now confirmed live, including set exclusivity. What is left is the **drop-down's persistence**: on Styx's Config open the `Position` drop-down, pick an entry, then reopen the window and confirm the pick survived — which is the skin's own `onTextChanged` persisting it |
 
-### Documentation debt
-
-Not capability work: durable knowledge from a closed phase that was never written down. Every row is
-knowledge that already cost the time to acquire, so the cost of losing it is paying that time twice.
-`skills/wal-skin-report` §6 is the process; the rule is that a lesson generalising beyond one skin
-belongs in the `reference/` file that owns the concept, never in `CLAUDE.md`.
-
-| Id | Item | Where it goes |
-|---|---|---|
-| D1 | Per-skin files for the ten skins installed 2026-08-30 — the four cPro (`cPro_Insomnis_by_zrco`, `cPro_Insomnis_v2_by_zrco`, `cPro_T2T-by-MAC`, `cpro-das-skin-prev`) plus `Enkera`, `meridian`, `4-drelictionreleasepic`, `Nullsoft.Winamp.2000.SP4.Lite`, `Core-X5`, `S7Reflex`. All six of the latter were measured on 2026-08-30 (dump + bitmaps + scripts: 28/123/88/50/109/36 programs, 0 failing except 4-dreliction's 3) and nothing was written. The four cPro files should be short and point at `cpro-bento.md` for the shared engine, recording only what differs — the uncut `(255,0,128)` menu artwork above all | `skills/winamp-modern-skin-guide/skins/` |
-| D2 | Rows in the index for those ten, plus the trap index | `skills/winamp-modern-skin-guide/skins.md` |
-| D3 | `<Menu>` — the object, its `normal`/`hover`/`down` state swap, `menugroup`/`next`/`prev` (read but not implemented for hover-traversal), and that **`normal` is painted at rest**, proven from stock Winamp Modern's `menu.button.normal` being an empty *visible* groupdef | `reference/rendering.md` |
-| D4 | `<componentbucket wndtype="…">` collects every groupdef declaring `windowtype="…"` as its children — the mechanism ClassicPro's widgets ride on, and the reason an unimplemented bucket answered 0 children | `reference/components.md` |
-| D5 | `<CustomObject>` — a holder whose content is named by a `groupid` attribute a script writes, swapped on every write, and whose instantiated child must **fill** it (`instantiateGroup` builds a bare `<group>` that resolves to 0x0) | `reference/components.md` |
-| D6 | **`Map.loadMap(id)` covers the bitmap's declared sub-rect, not the whole file.** Pixel (0,0) of the map is (x, y) of the sheet. Silent when wrong — it returns a plausible colour from a real image, and both known callers are self-checks a skin runs on its own artwork | `reference/scripting.md` |
-| D7 | `ColorMgr.getColor(id)` -> a `Color` with `getRed`/`getGreen`/`getBlue`, resolved through the renderer's own reference-following + gammagroup + theme path; and `System.onSetXuiParam` callable as a method, the same idiom already recorded for `onAction` and `onEqFreqChanged` | `reference/scripting.md` |
-| D8 | The layout content-fit: a layout declaring no `w`/`default_w`/`background` is sized from its laid-out content, with per-axis convergence (stop and step back when overflow stalls), and the result is a **minimum** as well as a default so restored state cannot land under it | `reference/loading.md` |
-| D9 | `relat*="2"` is a **percentage** of the parent span; every other non-zero value is additive. Supersedes Phase 56 — see `WinampModernPhase56Tests` for the full argument and why the original evidence did not reach the question | `reference/rendering.md` |
-| D10 | The `ColorMgr.onLoaded` -> `cProLoaded()` -> `widget_manager_register`/`_check`/`_done` chain, and that `new ColorMgr` is the singleton rather than a fresh object | `reference/classicpro.md` |
-| D11 | Two harness additions: `WINAMP_MODERN_RENDER_SCALE=<factor>` (draw the scene the way the view does, since every seam and shimmer is a property of a *fractional* device scale and the dump could only ever render at 1:1), and the popup presenter now installed for **every** click event rather than the right-button pair — a menu is not the right button's property, and ClassicPro's drawer menu hangs off `onLeftClick` | `reference/harness.md` |
-
 ## Reproducible reach commands
 
 All commands use the 36 directories extracted with `7zz` from

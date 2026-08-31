@@ -327,3 +327,53 @@ way `drawImage` re-flips its rect — restoring the graphics state would discard
 is built pre-flipped instead (`WasabiResourceCache.regionMask`, which reads its source buffer bottom
 row first). A mask built the wrong way up looks plausible on a symmetric control and is wrong on
 every other one.
+
+### A layout with no size of its own is sized by its content
+
+`w`/`h` are optional on a `<layout>`, and the fallback chain runs:
+
+1. `default_w`/`default_h`, then `w`/`h` — what the author declared;
+2. the `background` bitmap's size (ZDL's Reel-To-Reel declares every layout that way);
+3. **the laid-out content's extent** — this rule;
+4. the 275×116 classic default.
+
+Before this, a layout with neither a box nor a background fell through to its **`minimum_w`** — the
+floor it is *allowed to shrink to*, which is not a size anybody drew. ClassicPro's Widgets Manager is
+the case: `<layout id="normal" minimum_h="400" minimum_w="100" noparent="1" ontop="1" nodock="1">`
+and nothing else, so it opened **100×400** — a tall empty sliver — on all five cPro skins, including
+cPro-Bento. Its content group opens with a 305×57 header bitmap, clipped to 92 wide.
+
+Measured, never inferred: the layout is resolved at a candidate size, and any node escaping **its own
+parent's box** is content the canvas is too small to hold, so the canvas grows by the largest escape
+and the layout is resolved again. Relative children track the canvas and never overflow, so only
+intrinsic artwork moves the number and the loop reaches its fixed point in one or two passes. It is
+bounded to four regardless, and clamped by any `maximum_w`/`maximum_h`.
+
+**Overflow that does not shrink when the canvas grows is not content the window is too small for** —
+it is artwork drawn deliberately past its box, and no size will ever satisfy it. A stalled axis stops
+and steps **back one**, to the last size not chosen to chase the residual. Two measured cases, and
+the step-back serves both:
+
+- BLAKK's video window stretches `component.bottom.middle-video`, a 407px sheet, across a 204px frame
+  and reports the same 51px overhang at *every* canvas. It stalls on the first comparison, so the
+  step back is to its declared 204 — which is right, and is the window its author drew.
+- The Widgets Manager overflows by 213 (the header), then by a standing 3 from a list item's
+  artwork. It stalls on the second comparison, so the step back is to the 313 the header asked for
+  rather than all the way to the useless 100.
+
+**The fit runs once, on the first scene resolved after `runtime.start()`** — that is when the content
+exists, because a `Wasabi:StandardFrame`'s client group is instantiated by the skin's own
+`standardframe.maki`, not by the markup. Measured: the Widgets Manager is 19 nodes at `init` and 30
+after. A first attempt that fitted in `init` read an empty frame, left the window at 100×400 — its
+whole defect — and grew four *other* skins that happened to be complete by then. Reading `canvasSize`
+settles the fit, because the first thing anybody does with a renderer is ask how big its window
+should be, and that read comes before the first scene is resolved.
+
+**The result is a minimum as well as a default.** The fit only acts while the canvas is still the one
+it chose, so it cannot help a window whose size arrives from somewhere else first — restored state
+above all, which is how the Widgets Manager kept coming back at 100×400 every launch. Below 313 the
+header is genuinely clipped, so it is not a size anyone can have meant, and the existing
+`contentMinSize` plumbing carries it to the window. AppKit applies `contentMinSize` to the *next*
+resize and never retroactively, so `applyLayoutConstraints` also grows an already-too-small window —
+upward only, bounded by the same limits a drag obeys — and is called a second time after
+`scriptsDidStart()`, because the first call runs before any content exists.

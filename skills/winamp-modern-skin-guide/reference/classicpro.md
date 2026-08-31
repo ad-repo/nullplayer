@@ -31,3 +31,48 @@ render path. They are adapted under a strict policy: `exploreFile` reveals an ex
 feature instead of inferring semantics — `getARGBValue`'s BGRA channel order, `getDateYear`'s
 years-since-1900 scale, and the `isInvalid` probe idiom were all pinned that way rather than guessed.
 
+
+## The widget census: `ColorMgr.onLoaded` → `cProLoaded()`
+
+The engine's widgets — the Widgets Manager's list, and the SUI tabs a user widget adds — all hang off
+one event that is easy to miss:
+
+```maki
+Global ColorMgr StartupCallback;
+System.onScriptLoaded() { StartupCallback = new ColorMgr; … }
+StartupCallback.onLoaded() { cProLoaded(); }
+```
+
+`cProLoaded()` is the **only** caller of `widget_manager_register` / `_check` / `_done`, the three
+actions that fill `widgetsManager.maki`'s list, and three separate scripts declare one:
+`CproTabs` registers "Main Area", `one/scripts/drawer.m` "Drawer Area", `CentroSUI` "Side Area" —
+which is the 3 its `NUM_WIDGET_PLACES` counts, so all three must be dispatched, not just the one
+whose window is open.
+
+Two things had to be true before any of it ran:
+
+- **`new ColorMgr` is the singleton.** Winamp's colour manager is one object; a script saying `new`
+  is asking for *the* one. Answering with a generic dynamic shell made `onLoaded` unreachable —
+  dispatch matches on the value the variable holds — and sent `getColor`/`getGammaSet` to an object
+  that has neither.
+- **`onLoaded` is dispatched after every `onScriptLoaded` in the skin**, because the three
+  `cProLoaded()` bodies call actions on `widgetsManager.maki`, which is a *skin-level* script.
+  Dispatched earlier it reaches a manager whose own `onScriptLoaded` has not yet found its list.
+
+The drawer's own bucket is `wndtype="centro.widgets.drawer"` and the engine ships no widget declaring
+that `windowtype`, so **zero user widgets in the drawer is correct** and *"No widgets found for this
+view!"* is the right menu item. The widgets live in `centro.widgets.main`, whose bucket is in
+`xui/CentroSUI/_v{1,2}/CproTabs/CproTabs.xml`.
+
+## The `(255,0,128)` menu-bar filler is the engine's own decision
+
+Four of the installed cPro skins ship uncut template filler where the titlebar menu artwork should be
+cut, and `mainmenu.maki` detects exactly that and **hides its own menu bar**, showing `cpro.bg.title`
+instead where the skin declares one. So a magenta menu bar is never Winamp's behaviour and never the
+skin author's intent — it is a failed self-check. See
+[scripting.md](scripting.md) → *`Map.loadMap(id)` covers the bitmap's sub-rect*, which is what broke
+it.
+
+`(255,0,128)` is the ClassicPro **template's** "uncut area" marker, not a per-skin choice:
+cPro-Bento's own `buttons.png` carries 14,958 such pixels across the sheet, and its menu row is the
+part its author deliberately erased to transparent. Measured 2026-08-31.

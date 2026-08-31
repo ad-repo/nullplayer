@@ -836,3 +836,79 @@ the current alpha (defaulting to 255). The speed=0 snap path already handled thi
 scene tree during `append()`. The main `draw` method sets `context.setAlpha(alphaFraction *
 inheritedAlpha)` once; per-drawer methods must NOT override it with their own `setAlpha` call or the
 inheritance is lost.
+
+### `Map.loadMap(id)` covers the bitmap's **sub-rect**, not the whole file
+
+`loadMap` takes a declared bitmap id as readily as a path, and a `<bitmap>` is routinely a *slice* of
+a shared sheet:
+
+```xml
+<bitmap id="window.titlebar.menu.1" file="buttons.png" x="0" y="87" w="10" h="21"/>
+```
+
+A map of that id is 10×21 starting at (0, 87): **pixel (0, 0) of the map is pixel (0, 87) of the
+file**. `getWidth`/`getHeight` answer the slice's size for the same reason. The *path* form has no
+declaration behind it and stays the whole file, which is what ClassicPro's two width probes
+(`read.suiframe.png`, `installed.png`) ask for.
+
+**This one is silent when wrong, which is why it is worth a section.** Sampling the file's own origin
+does not fail or return zero — it hands back a plausible colour from a real image, so every caller
+reads a confident wrong answer. And both known callers are **self-checks a skin runs on its own
+artwork**, which is exactly the shape that fails invisibly:
+
+```maki
+Map temp = new Map;
+temp.loadMap("window.titlebar.menu.1");
+if (temp.getARGBValue(0,0,3) != 0)                        // not fully transparent
+  if (temp.getARGBValue(0,0,2)==255 && temp.getARGBValue(0,0,1)==0
+      && temp.getARGBValue(0,0,0)==128) {                 // the template's (255,0,128) filler
+    myGroup.hide(); disableMenu = true; bg_title.show();  // no menu bar for this skin
+  }
+```
+
+ClassicPro's `mainmenu.maki` anticipates a skin that never cut its menu artwork and hides its own
+menu bar for it. Reading (0, 0) of `buttons.png` gave it a transport button, the test never fired,
+and four cPro skins drew five magenta boxes across the titlebar that Winamp never shows. The channel
+index is BGRA (`getARGBValue(x, y, 0..3)` = B, G, R, A), pinned separately by `player.maki`.
+
+### A script may call its own `onSetXuiParam` as a method
+
+The same idiom already recorded for `onAction` and `onEqFreqChanged`: a XUI object's script hands
+*itself* a param it computed, rather than one the markup declared. ClassicPro's Now Playing widget
+resolves the skin's list background and feeds it to its own handler:
+
+```maki
+Color myColor = ColorMgr.getColor("wasabi.list.background");
+String temp = integerToString(myColor.getRed()) + "," + …;
+System.onSetXuiParam("bgcolor", temp);
+```
+
+Both halves of that were missing, and the failure mode is worth noting: an unsupported method aborts
+the *whole handler*, so the two lines above took the widget's entire `onScriptLoaded` with them —
+every Layer FX wire-up below them, its poll timer and its reflection height — and the widget drew as
+an empty pane while `RENDER_SCRIPTS` reported only the first missing name. Fixing one moved the abort
+to the next line rather than curing anything, which is the normal shape of this: **read `failed=` as
+the first casualty, not the only one.**
+
+`ColorMgr.getColor(id)` answers a `Color` with `getRed`/`getGreen`/`getBlue`, resolved through the
+renderer's own path — references followed, gammagroup and the active colour theme applied — so a
+widget that paints itself from the skin's palette cannot disagree with the palette.
+
+### A runtime `setXmlParam` is also an `onSetXuiParam`
+
+Wasabi delivers a param a *script* sets the same way it delivers one the markup declares, but scoped
+to the programs the written object owns. `deliverXUIParams` runs once at load and only for XUI tags;
+this is the other half.
+
+ClassicPro's Widgets Manager is the measured case: `widgetsManager.maki` instantiates a
+`widgets.manager.listitem` per widget and then *only* writes params on it —
+`g.setXmlParam("widgetname", …)`, `"widgetauthor"`, `"widgetversion"`, `"widgetpos_main"` and the
+rest — while `widgetManItem.maki`'s whole body is one `system.onSetXuiParam` switch. With the write
+silent, every row drew its groupdef's placeholder text and dead buttons.
+
+Two ordering traps come with it. `GroupList.instantiate` must start its subtree's scripts
+**immediately** rather than queueing them behind the dispatch — the queue exists for `newGroup`'s
+two-step create-then-`init(parent)` dance, where a script must not look around before it has been
+placed, and `instantiate` has no second step. Deferred, all eight `setXmlParam` calls landed before
+the handler was listening. And the object is configured the instant it is created, so the write and
+the handler have to be in the same turn.

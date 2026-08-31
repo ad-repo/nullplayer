@@ -108,6 +108,8 @@ The rule is now the first declared layout, Winamp's own.
 | Bio-Nid | Phase 80, 2026-08-28 | its **IMPORTANT** window has its contents back — the window is one `<Wasabi:TitleBox>`, a tag that drew nothing *and* kept its whole content group out of the graph, so the desktop-alpha toggle the window exists to show was absent rather than unpainted. This skin is the diagnosis for the capability (9 skins / 33 declarations). Its eight `Equalizer` menu entries are eight decorative **spider** windows, copies of its own equalizer container that kept `name="Equalizer"`; duplicate window names are now qualified by container id — [skins/bio-nid.md](skins/bio-nid.md) | the spiders are decorations and correctly do nothing. The `<Wasabi:Text>` inside the title box is still an inert shell (immaterial here — the skin's own default is four spaces). Nothing beyond the harness dump measured; **not** the same archive as `T800.wal`, which shares its author and its skininfo name |
 | impulse | B68 + B73, 2026-08-29 (**confirmed live**); B67, 2026-08-29 | **its Configuration window draws all five of its boxes, with every switch label complete.** Four boxes declare no `h` and no `relath`, so they resolved to no height and only `Color Themes` — the one that states a height — ever appeared (B67); each now measures its own body (`autoheightsource` naming the last row, plus the title box's inset), which lands on the 7–9px inter-box gap the skin's sized box has. Its nine `Impulse:Checkbox` labels then clipped by ~2 characters (`Animate Draw`, `Never Sh`) — the skin's `<groupdef … autowidthsource="checkbox.text">` holds a `<text x="13" w="-14" relatw="1">`, and the group was sized to the bare string (B68). **Its own Equalizer window opens** (B73): the skin draws EQ sliders in its player *and* ships a 198×158 `Equalizer` container, and the drawer won the catalog, so the window was routed to as the equalizer surface and could not be opened from anywhere | the playlist, library and video windows are unmeasured beyond the render sweep |
 | BLAKK | B66, 2026-08-29 | its **Configure** window draws: the `<Wasabi:Text>` blocks, and its `BLAKK:DropDownList` — a skin groupdef wrapping `<Wasabi:Dropdownlist>` — shows its current mode with an arrow | its own `BLAKK:Checkbox` rows draw a glyph with no label (their text arrives through the skin's script from `usetext=`); unmeasured beyond the render sweep |
+| cPro Insomnis · Insomnis v2 · T2T · das-skin-prev | B77, 2026-08-31 | all four run the shared ClassicPro engine, so everything cPro-Bento does they do: SUI tabs, drawer + page menu, embedded playlist/EQ/library/video, colour themes. **Their Widgets Manager lists BrowserPro and Now Playing and opens at 313x400** (was a 100x400 sliver), and the Now Playing widget draws its cover | **their titlebar menu bar is deliberately absent** — they ship the template's `(255,0,128)` filler instead of cut artwork and the engine hides the bar itself. Not a defect; see each file. Open against them: B78, B82, B83 |
+| Enkera · meridian · 4-dreliction · SP4 Lite · Core-X5 · S7Reflex | B77, 2026-08-31 | **structural first pass only** — dump + bitmaps + scripts, nothing driven under the mouse and nothing seen live. All load; script programs 28 / 123 / 88 / 50 / 109 / 36 with **only 4-dreliction failing at load** (3) | none is graded, and none should be quoted as working until someone runs `/wal-skin-report` properly. SP4 Lite is the only one declaring *every* surface, so it is the best routing control in the batch |
 | Formamp | B48, 2026-08-25 | renders as authored. Measured while chasing a *"black on black"* report and closed as **won't-do**: its window background `player/background.png` is `(0,0,0,206)` — **translucent by design**, alpha never above 234 anywhere — and its `<text>` objects declare their own colours (`songTitle` 80,80,80, `songArtist` 120,120,120, `timer` 100,100,100). Over a bright desktop the backdrop composites through and those greys vanish; over a dark one it reads as the author intended, which is also what Winamp does with a per-pixel-alpha skin | **do not "fix" this with the B48 guard.** That guard covers text *NullPlayer* draws; repainting text a skin spelled out for its own controls overrules the author, and would also hit Lobe and micro. Its palette is a single near-black family — `listText` 80,80,80 on `contentBackground` 20,19,19 — so **our** chrome in this skin does get guarded (2.16:1 → 3.94:1 on its own `wasabi.list.text.current`) |
 
 ---
@@ -128,9 +130,24 @@ One file per measured skin. A pointer that says "read `skins.md` for skin X" res
 | Big Bento Modern (all four variants) | [skins/big-bento-modern.md](skins/big-bento-modern.md) |
 | Bio-Nid | [skins/bio-nid.md](skins/bio-nid.md) |
 | Itemskin | [skins/itemskin.md](skins/itemskin.md) |
+| cPro Insomnis | [skins/cpro-insomnis.md](skins/cpro-insomnis.md) |
+| cPro Insomnis v2 | [skins/cpro-insomnis-v2.md](skins/cpro-insomnis-v2.md) |
+| cPro T2T (XPS) | [skins/cpro-t2t.md](skins/cpro-t2t.md) |
+| cPro das-skin-prev | [skins/cpro-das-skin-prev.md](skins/cpro-das-skin-prev.md) |
+| Enkera | [skins/enkera.md](skins/enkera.md) |
+| meridian | [skins/meridian.md](skins/meridian.md) |
+| 4-dreliction | [skins/dreliction.md](skins/dreliction.md) |
+| Nullsoft Winamp 2000 SP4 Lite | [skins/nullsoft-winamp-2000-sp4-lite.md](skins/nullsoft-winamp-2000-sp4-lite.md) |
+| Core-X5 | [skins/core-x5.md](skins/core-x5.md) |
+| S7Reflex | [skins/s7reflex.md](skins/s7reflex.md) |
 
 The other skins in the table above are rows only, and stay rows until one is measured with
 `/wal-skin-report`. When that happens, add `skins/<skin>.md` and a row here.
+
+The ten added on 2026-08-31 are **not** full reports. The four cPro files are deliberately short and
+defer to `cpro-bento.md` for the shared engine, recording only what differs; the six others are
+structural first passes whose *Not measured* section is the honest part — no click pass, no motion
+ladder, no live pass, no coverage figure. Do not read a missing finding in them as an absent defect.
 
 ### Trap index
 
@@ -145,6 +162,9 @@ section is the list; read it *before* changing engine code on that skin's behalf
   **an eleventh container (`VISCON`) its own startup script hides**
 - [Itemskin](skins/itemskin.md#traps-this-skin-sets) — two windows per component, cross-window
   `getLeft()`, the frame is the only draggable half
+- [the four cPro skins](skins/cpro-insomnis.md#the-trap-this-skin-sets) — an absent menu bar is the
+  engine's own decision about uncut artwork, not a missing feature; and T2T overrides the *system-menu*
+  button ids without overriding the *menu-bar* ones, so one override is not evidence of the other
 - [LOBE](skins/lobe.md#traps-this-skin-sets) — `degraded` inflated by legal double-includes,
   `CLICKABLE` under-reporting, `RENDER_CLICK` naming the fall-through and not the rejected control,
   ghost-dependent hover overlays, `skin windows` over-reporting (closed by B26)

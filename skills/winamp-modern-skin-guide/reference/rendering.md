@@ -523,3 +523,97 @@ mirrors `performAction(for:)`'s order and prints `CLICK radio <id> set=<radioid>
 play head a pure function of the elapsed time since `play()`, which is what keeps the renderer and the
 script runtime agreeing on the current frame without either owning a clock. `stop()` freezes the head
 where it actually is, and an explicit `playing` beats the XML's `autoplay`.
+
+#### `relat*="2"` is a **percentage**, every other non-zero value is additive
+
+`relatx`/`relaty`/`relatw`/`relath` read as `atoi(value)`, and the number matters:
+
+| value | meaning |
+|---|---|
+| `0`, absent, non-numeric (`"%"`) | absolute |
+| `2` | **percentage** of the parent's span — `span * value / 100` |
+| any other non-zero (`1`, `5`, `"1px"`) | additive — `value + span` |
+
+Corpus census (2026-08-31, 53 skins + the ClassicPro engine): `1` ×8197, `0` ×360, **`2` ×89**,
+`"%"` ×10, `5` ×2. Every value the 89 carry is in 0…100, where additive geometry here is
+overwhelmingly *negative* (`w="-14" relatw="1"` anchors from the right). A 0…100 distribution is a
+percentage's and nothing else's.
+
+**This corrects Phase 56, and the way it was wrong is the useful part.** Phase 56 found `relat="2"`
+being tested as `== 1`, failing, and falling through to *absolute* geometry — Big Bento Modern's
+dimmed album-art backdrop drew at a literal 99×100 box, "a small crisp second copy of the cover" —
+and fixed it by making any non-zero value relative. That is a real fix for a real defect, but it only
+ever discriminated **absolute from relative**: 99% of a large parent is a large backdrop too, so the
+percentage reading fixes the same symptom equally well. Additive-vs-percent was never measured.
+
+It also cited Ebonite_2_1's `<group w="0" h="0" relatw="2" relath="2"/>` as ruling the percentage
+out, reading it as the fill-the-parent idiom that 0% would collapse. That group carries **`alpha="0"`**
+— it is an invisible Layer FX holder and draws nothing under either reading, so it cannot settle
+anything. Its four neighbours in the same file are `x="3" y="0" w="85" h="93" relat*="2"`
+album-art/layerfx pairs: percentage insets, and the identical shape to ClassicPro's cover below.
+
+What settles it is an object the additive reading cannot place at **any** parent size. ClassicPro's
+Now Playing widget insets its cover in a jewel case:
+
+```xml
+<AlbumArt id="main.albumart" x="12" y="4" w="85" h="93"
+          relatx="2" relaty="2" relatw="2" relath="2" notfoundimage="cover.notfound"/>
+```
+
+Against its correctly-sized 80×74 case at (110, 211), additive resolves to **(202, 289, 165×167)** —
+the whole cover outside its own clip, drawn nowhere, and reported as "there is an empty box". Percent
+gives (119.6, 214, 68×68.8): a cover inset in a case, which is what the markup describes.
+
+Verified after the change: Big Bento's backdrop is 792×1100 inside its 800×1100 group — still
+oversized, so Phase 56's own symptom does not return. Corpus sweep over 53 skins moved one line.
+`WinampModernPhase56Tests` carries the full argument and both worked examples.
+
+#### `<Menu>` — one entry of a skin's own menu bar
+
+```xml
+<groupdef id="menugroup.file" autowidthsource="File.txt" h="16">
+  <menu:button_normal  id="File.up.btn"    x="0" y="0"/>
+  <menu:button_pressed id="File.down.btn"  x="0" y="0" visible="0"/>
+  <menu:button_hover   id="File.hover.btn" x="0" y="0" visible="0"/>
+  <layer id="File.txt" image="txt.menu.file" x="0" y="0"/>
+  <Menu id="File.menu" menugroup="main" next="Play.menu" prev="Help.menu"
+        x="0" y="0" h="16" w="0" relatw="1" menu="WA5:File"
+        normal="File.up.btn" hover="File.hover.btn" down="File.down.btn"/>
+</groupdef>
+```
+
+The object **draws nothing**. It is a hit region over three sibling objects it owns, swapping which
+of them is visible as the pointer arrives, presses and leaves; `menu=` names the **host's** menu to
+pop. The entry is a handle on one of Winamp's own menus, not a menu the skin builds.
+
+**`normal` is painted at rest.** The markup says so — `visible="1"` on the normal layer and
+`visible="0"` on the other two — and Nullsoft's own skin confirms it from the other direction: stock
+Winamp Modern's `menu.button.normal` groupdef is literally `<!-- Dummy -->`, an empty group, and it
+is the one of the three left visible. A `<Menu>` swaps states; it never hides the bar at rest. Worth
+recording because the alternative reading — that Winamp reveals `normal` only while the menugroup is
+active — would have been an engine-level way to hide the `(255,0,128)` filler four cPro skins ship in
+place of cut menu artwork, and it is not what Winamp does. That filler has its own answer; see
+[classicpro.md](classicpro.md).
+
+Hit testing: a `<Menu>` carries no artwork and no `action=`, so `isInteractive` names it explicitly.
+Its box is declared (`w="0" relatw="1" h="21"`) and `object(at:)` skips the alpha test for an object
+with no bitmap, so the whole rect is live — which is what a menu entry needs.
+
+The entry claims the **press**, before the divider, the resize border and the window-drag
+fall-through. It has to outrank all three: a menu bar lives on the titlebar, which is also a
+`move="1"` drag surface *and*, measured on ClassicPro, a strip covered by the window's own top
+`resize=` handle — so checked after those, a click on *File* was answered by the resizer and no menu
+opened. The entries are a 172×20 island in the middle of the bar, so corners and edges stay
+grabbable.
+
+`menugroup`/`next`/`prev` chain the entries for traversal and for "hover moves the open menu".
+NullPlayer opens each entry on its own click; the group is read but that traversal is **not**
+implemented.
+
+`WasabiMenuBar` owns the model; `ContextMenuBuilder.winampModernMenuBarMenu(for:)` owns the routing
+and is gated on `uiMode.controllerFamily == .winampModern`.
+
+**A group whose `autowidthsource` names a bitmap label sizes to nothing**, so its `<Menu>` inherits a
+zero box and cannot be clicked — `autoWidth` answers only for `<text>`, `<songticker>` and check
+boxes. winampmodern566 and The_Nokia_5220 are both affected (12 declarations each); ClassicPro is
+not, because it points `autowidthsource` at a `<text>`. Open as **B79**.
