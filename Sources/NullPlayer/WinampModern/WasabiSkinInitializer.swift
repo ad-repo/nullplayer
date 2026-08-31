@@ -195,6 +195,23 @@ final class WasabiTypeRegistry {
         resolvedCache.removeAll()
     }
 
+    /// Every groupdef declaring `windowtype="<type>"`, in the document order they were registered in.
+    ///
+    /// Winamp's **component bucket**: `<componentbucket wndtype="X">` is not markup that draws, it is
+    /// a *collection point* — the parser instantiates every groupdef declaring `windowtype="X"` as
+    /// one of its children, and a script then walks them with `getNumChildren`/`enumChildren`. That
+    /// is the whole mechanism ClassicPro's widgets ride on, and with it unimplemented every bucket
+    /// answered 0 children, so the Widgets Manager listed nothing however far the rest of the chain
+    /// got. Measured: `centro.widgets.{nowplaying,browserpro}.dummy.main` both declare
+    /// `windowtype="centro.widgets.main"`, and `CproTabs.xml`'s bucket asks for exactly that.
+    func identifiers(windowType: String) -> [String] {
+        let wanted = Self.fold(windowType)
+        return byIdentifier.values
+            .filter { $0.defaultAttributes["windowtype"].map(Self.fold) == wanted }
+            .sorted { $0.documentOrder < $1.documentOrder }
+            .map(\.identifier)
+    }
+
     /// Point an unclaimed XUI tag at a groupdef the skin already declares.
     ///
     /// Narrow on purpose: it applies only when the destination groupdef exists *and* nothing has
@@ -510,6 +527,13 @@ final class WasabiSkinInitializer {
                           definitionStack: [], createdCount: &createdCount,
                           documentOrder: documentOrder, enclosingOrder: nil)
         applyMetaCommands(pendingMetaCommands)
+        // Buckets are filled *before* scripts are bound, so a `<groupdef>` a bucket brings in has its
+        // own `<script>` collected into the same `pendingScripts` batch as the rest of the skin and
+        // comes up at load, not later. Anything else would leave a widget's script unbound.
+        try populateComponentBuckets(graph: graph, types: types,
+                                     pendingScripts: &pendingScripts,
+                                     pendingMetaCommands: &pendingMetaCommands,
+                                     createdCount: &createdCount, documentOrder: documentOrder)
         passes.append(.objectCreation)
 
         let bindings = try bindScripts(pendingScripts)
@@ -542,6 +566,41 @@ final class WasabiSkinInitializer {
             return root
         }
         return runtime
+    }
+
+    /// Instantiate each `<componentbucket wndtype="X">`'s members: every groupdef declaring
+    /// `windowtype="X"`. See `WasabiTypeRegistry.identifiers(windowType:)` for what the tag means.
+    ///
+    /// A bucket that names a type nothing declares stays empty, which is the correct answer and a
+    /// common one — ClassicPro's drawer bucket is `wndtype="centro.widgets.drawer"` and the engine
+    /// ships no widget for that place at all, which is why its menu reads *"No widgets found for
+    /// this view!"*.
+    private func populateComponentBuckets(graph: WasabiObjectGraph, types: WasabiTypeRegistry,
+                                          pendingScripts: inout [PendingScript],
+                                          pendingMetaCommands: inout [PendingMetaCommand],
+                                          createdCount: inout Int,
+                                          documentOrder: [ObjectIdentifier: Int]) throws {
+        var buckets: [WasabiObject] = []
+        func collect(_ object: WasabiObject) {
+            if object.typeName.caseInsensitiveCompare("componentbucket") == .orderedSame,
+               let type = object.attributes["wndtype"], !type.isEmpty {
+                buckets.append(object)
+            }
+            for child in object.children { collect(child) }
+        }
+        for root in graph.roots { collect(root) }
+        for bucket in buckets {
+            guard let type = bucket.attributes["wndtype"] else { continue }
+            for identifier in types.identifiers(windowType: type) {
+                let node = WalXMLNode(name: "group", attributes: ["id": identifier],
+                                      location: bucket.source)
+                try createObjects(from: [node], parent: bucket, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: [], createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nil)
+            }
+        }
     }
 
     private func instantiateHostedWindowAtRuntime(

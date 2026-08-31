@@ -5331,7 +5331,17 @@ final class WasabiSceneRenderer {
     }
 
     func resolvedColor(_ raw: String) -> NSColor {
-        guard let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: raw),
+        Self.resolvedColor(raw, resources: loadedSkin.runtime.resources, themes: themes)
+    }
+
+    /// The identifier → RGB resolution, without a renderer.
+    ///
+    /// Split out for `ColorMgr.getColor(name)`, which the script runtime answers and which has to
+    /// resolve exactly as the drawing does — same reference-following, same gammagroup, same theme —
+    /// or a widget that colours itself from the skin's palette disagrees with the palette.
+    static func resolvedColor(_ raw: String, resources: WalResourceRegistry,
+                              themes: WasabiColorThemeCatalog) -> NSColor {
+        guard let definition = resources.resolvedColorDefinition(identifier: raw),
               let declared = Self.declaredColor(of: definition) else { return Self.color(raw) }
         // A `<color>`'s value may name **another colour resource** rather than spell out a triple,
         // and Big Bento Modern writes nearly every one of its list colours that way
@@ -5342,7 +5352,7 @@ final class WasabiSceneRenderer {
         // channels are tinted once, by the group the id that was actually asked for names.
         let (base, gammaGroup) = Self.dereference(declared,
                                                   gammaGroup: definition.attributes["gammagroup"],
-                                                  resources: loadedSkin.runtime.resources)
+                                                  resources: resources)
         guard var values = Self.channels(of: base) else { return Self.unparseableColor }
         let gamma = themes.transform(group: gammaGroup) ?? .identity
         if gamma.grayscale {

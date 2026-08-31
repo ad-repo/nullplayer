@@ -38,6 +38,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         /// carrying only that name until `apply()` asks for it. Unlike `Map`/`Region`/`XmlDoc` this
         /// role is settled at *creation*, because the object never comes from a bare `new`.
         case gammaSet(name: String)
+        /// A `Color` — what `ColorMgr.getColor(name)` answers with, resolved once at creation.
+        /// Settled at creation for the same reason `gammaSet` is: it never comes from a bare `new`.
+        case color(red: Int32, green: Int32, blue: Int32)
     }
 
     private struct DynamicObjectState {
@@ -376,6 +379,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // ClassicPro's EQ script labels its bands by calling its own `System.onEqFreqChanged` handler
         // once at load with the value it read out of Winamp's config.
         "oneqfreqchanged": 1,
+        // Same idiom, one layer in: a XUI object's script hands itself a param it computed rather
+        // than one the markup declared. ClassicPro's Now Playing widget resolves the skin's list
+        // background through `ColorMgr` and then feeds it to its own handler as
+        // `System.onSetXuiParam("bgcolor", "r,g,b")` — which, unimplemented, aborted `onScriptLoaded`
+        // on the line after `getColor` and left the widget an empty pane.
+        "onsetxuiparam": 2,
         // Winamp fires this whenever the level moves, and a skin with no volume slider relies on it
         // for the only feedback it has: Love is War Miku's `+`/`-` buttons show "Volume: 40%" on the
         // song ticker from this handler and clear it a moment later.
@@ -534,6 +543,22 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         if !owned.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: owned) }
         deliverXUIParams(forSubtreeOf: loadedSkin.runtime.graph.roots)
         if !skinLevel.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: skinLevel) }
+        dispatchColorManagerLoaded()
+    }
+
+    /// `ColorMgr.onLoaded` — Winamp's "the skin has finished loading" callback, and the one event a
+    /// script can bind to that fires *after* every `onScriptLoaded` in the skin has run.
+    ///
+    /// It goes last for the reason ClassicPro needs it last: its three `cProLoaded()` bodies call
+    /// actions on `widgetsManager.maki`, which is a **skin-level** script, so anything dispatching
+    /// this earlier would reach a manager whose own `onScriptLoaded` had not yet found its list.
+    /// Three separate scripts register a widget place from here (`CproTabs` "Main Area",
+    /// `drawer` "Drawer Area", `CentroSUI` "Side Area"), which is the 3 its `NUM_WIDGET_PLACES`
+    /// counts — so all three have to be dispatched, not just the one whose window is open.
+    ///
+    /// A failure in one is already contained by `dispatch`, which records it and runs the rest.
+    private func dispatchColorManagerLoaded() {
+        _ = try? dispatch(target: MakiObjectReference(.colorManager), event: "onloaded", arguments: [])
     }
 
     /// Wasabi hands a XUI object's XML attributes to its script as `onSetXuiParam(name, value)`.
@@ -587,6 +612,62 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                   arguments: [.string(key), .string(value)], in: owned)
             }
         }
+    }
+
+    /// `<CustomObject groupid="…">` — a holder whose **content is named by an attribute**.
+    ///
+    /// Unlike a `<group id="x">`, which instantiates `x` once at parse time, a custom object is empty
+    /// until a script names a groupdef for it, and it swaps that content whenever the name changes.
+    /// ClassicPro's widget panes are the measured case: `<CustomObject id="widget.holder"
+    /// fitparent="1"/>` sits in the SUI's widget tab, and choosing a widget is one line —
+    /// `widgetHolder.setXmlParam("groupid", ids)` — after which the pane *is* that widget.
+    ///
+    /// No skin in the corpus declares `groupid` in markup, so this runtime write is the whole path.
+    ///
+    /// The old content is discarded rather than hidden: a custom object holds one thing at a time,
+    /// and leaving the previous widget in the tree keeps its scripts and timers running behind the
+    /// one on screen.
+    private func applyCustomObjectGroup(_ key: String, value: String, to object: WasabiObject) {
+        guard key.caseInsensitiveCompare("groupid") == .orderedSame,
+              (object.typeName.lowercased().components(separatedBy: ":").last ?? "") == "customobject"
+        else { return }
+        // `children` is a value-typed array, so the loop iterates the snapshot it took even though
+        // `discardSubtree` empties the property underneath it.
+        for child in object.children { loadedSkin.runtime.graph.discardSubtree(child) }
+        guard !value.isEmpty, let instantiate = loadedSkin.runtime.instantiateGroup,
+              let child = try? instantiate(value, object) else { return }
+        // A custom object's content **fills it** — the object is the box, the named group is what
+        // goes in it. `instantiateGroup` builds a bare `<group id="…">`, which declares no geometry
+        // and so resolves to 0x0 (measured: `centro.widgets.nowplaying` laid out at
+        // `frame=(8.0, 132.0, 0.0, 0.0)` inside a 280x176 holder, drawing nothing at all while its
+        // script ran perfectly). `System.newGroup`'s path deliberately keeps the bare node — there
+        // the script places the group itself with `init(parent)` — so the fill belongs here.
+        _ = child.setAttribute("fitparent", value: "1")
+        // Started now, for the reason `instantiate` starts its own: the group is already parented,
+        // and the caller's next move is to configure what it just put on screen.
+        try? startScripts(addedBeneath: child)
+        noteGeometryChange()
+        notifyGraphDidMutate()
+    }
+
+    /// A runtime `setXmlParam(key, value)` is also an `onSetXuiParam(key, value)` to the scripts the
+    /// written object owns — that is how Wasabi delivers a param a *script* sets, as opposed to one
+    /// the markup declares (`deliverXUIParams`, which runs once at load and only for XUI tags).
+    ///
+    /// Scoped to the target's own programs, exactly as the load-time delivery is, so an object with
+    /// no script of its own is untouched and nothing else in the skin hears it.
+    ///
+    /// ClassicPro's Widgets Manager is the measured case: `widgetsManager.maki` instantiates a
+    /// `widgets.manager.listitem` per widget and then *only* writes params on it —
+    /// `g.setXmlParam("widgetname", …)`, `"widgetauthor"`, `"widgetversion"`, `"widgetpos_main"` and
+    /// the rest — while `widgetManItem.maki`'s whole body is one `system.onSetXuiParam` switch. With
+    /// the write silent, every row drew with the groupdef's placeholder text and dead buttons.
+    private func deliverRuntimeXUIParam(_ key: String, value: String, to object: WasabiObject) {
+        guard !object.scriptBindings.isEmpty else { return }
+        let owned = programs.filter { $0.ownerID == object.stableID }
+        guard !owned.isEmpty else { return }
+        _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
+                          arguments: [.string(key), .string(value)], in: owned)
     }
 
     /// `getAutoWidth()` — the width an object wants to be. A group delegates to the object named by
@@ -2163,6 +2244,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         switch classGUID.map(Self.canonicalGUID) {
         case MakiClassGUID.colorManager where method.caseInsensitiveCompare("getgammaset") == .orderedSame:
             return .init(argumentCount: 1, returnKind: .object)
+        // Gated for the same reason `getGammaSet` is — "getColor" is exactly the sort of verb another
+        // class could declare with a different arity.
+        case MakiClassGUID.colorManager where method.caseInsensitiveCompare("getcolor") == .orderedSame:
+            return .init(argumentCount: 1, returnKind: .object)
         case MakiClassGUID.gammaSet where method.caseInsensitiveCompare("apply") == .orderedSame:
             return .init(argumentCount: 0, returnKind: .null)
         default:
@@ -2178,6 +2263,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getparam": .init(argumentCount: 0, returnKind: .string),
             "gettoken": .init(argumentCount: 3, returnKind: .string),
             "getid": .init(argumentCount: 0, returnKind: .string),
+            // `Color`'s channels. Global rather than class-gated: all three are zero-argument getters,
+            // so even a collision with another class's same-named verb cannot desynchronise the stack
+            // the way a wrong *count* would.
+            "getred": .init(argumentCount: 0, returnKind: .integer),
+            "getgreen": .init(argumentCount: 0, returnKind: .integer),
+            "getblue": .init(argumentCount: 0, returnKind: .integer),
             "getparent": .init(argumentCount: 0, returnKind: .object),
             "getparentlayout": .init(argumentCount: 0, returnKind: .object),
             "getcurlayout": .init(argumentCount: 0, returnKind: .object),
@@ -2725,6 +2816,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     }
 
     func makeObject(classGUID: String, program: MakiProgram) throws -> MakiObjectReference {
+        // `new ColorMgr` does not build anything — Winamp's colour manager is a singleton, and a
+        // script saying `new` is asking for *the* one. Answering with a generic `.dynamic` shell
+        // instead broke two things at once: its methods (`getColor`, `getGammaSet`) went to an object
+        // that has none, and — the measured defect — an `onLoaded` handler bound to that variable
+        // could never be reached, because dispatch matches on the value the variable holds.
+        //
+        // ClassicPro hangs its whole widget census off exactly that: `StartupCallback = new ColorMgr`
+        // then `StartupCallback.onLoaded() { cProLoaded(); }`, and `cProLoaded` is the *only* caller
+        // of the `widget_manager_register`/`_check`/`_done` actions that fill the Widgets Manager's
+        // list. With `onLoaded` unreachable the window drew an empty list, in every cPro skin.
+        if Self.canonicalGUID(classGUID) == MakiClassGUID.colorManager {
+            return MakiObjectReference(.colorManager)
+        }
         let id = nextPopupID
         nextPopupID &+= 1
         if Self.canonicalGUID(classGUID) == "f4787af44ef7b2bb4be7fb9c8da8bea9" {
@@ -3298,6 +3402,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         switch method {
         case "getgammaset":
             return dynamicValue(role: .gammaSet(name: arguments[0].stringValue))
+        // `ColorMgr.getColor(id)` — a declared colour, as three channels a script can read back.
+        // Resolved through the renderer's own path (references followed, gammagroup and the active
+        // colour theme applied), so a widget that paints itself from the skin's palette agrees with
+        // the palette. ClassicPro's Now Playing widget opens with
+        // `Color c = ColorMgr.getColor("wasabi.list.background")` and then feeds `c.getRed()`… into
+        // its own background; unimplemented, that call aborted `onScriptLoaded` before every Layer FX
+        // wire-up below it and the widget drew as an empty black pane.
+        case "getcolor":
+            let resolved = WasabiSceneRenderer.resolvedColor(arguments[0].stringValue,
+                                                             resources: loadedSkin.runtime.resources,
+                                                             themes: loadedSkin.themeCoordinator.catalog)
+            let rgb = resolved.usingColorSpace(.deviceRGB) ?? resolved
+            return dynamicValue(role: .color(red: Int32((rgb.redComponent * 255).rounded()),
+                                             green: Int32((rgb.greenComponent * 255).rounded()),
+                                             blue: Int32((rgb.blueComponent * 255).rounded())))
         default:
             return try invokeSystem(method: method, arguments: arguments, program: program)
         }
@@ -3445,8 +3564,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             for _ in 0..<count {
                 let child = try instantiate(identifier, object)
                 stackInGroupList(child, list: object)
-                // The subtree's scripts start on attachment, exactly as `newGroup`'s do.
-                pendingRuntimeGroups.append(child)
+                // Started **now**, not queued behind the dispatch like `newGroup`'s. The queue exists
+                // for Wasabi's two-step create-then-`init(parent)` dance, where a script must not look
+                // around before it has been put where it belongs; `instantiate` has no second step —
+                // the child is parented into the list on the line above. And the caller's very next
+                // move is to configure it: `widgetsManager.maki` does
+                // `g = grplst.instantiate("widgets.manager.listitem", 1)` and then eight
+                // `g.setXmlParam(…)` calls in a row, all of which the item's own
+                // `system.onSetXuiParam` has to hear. Deferred, every one of them landed before the
+                // handler was listening and each Widgets Manager row drew its groupdef placeholders.
+                try? startScripts(addedBeneath: child)
                 instantiated = child
             }
             if instantiated != nil {
@@ -3488,6 +3615,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             } else {
                 notifyObjectDidMutate(object)
             }
+            deliverRuntimeXUIParam(key, value: value, to: object)
+            applyCustomObjectGroup(key, value: value, to: object)
             return .null
         case "settext":
             // Through the `embed_xui` link, exactly as `setPosition`/`getPosition` are: the wrapper
@@ -4229,6 +4358,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case 3: return .integer(Int32(sample.alpha))
             default: return .integer(0)
             }
+        // `Color.getRed/getGreen/getBlue` — the channels `ColorMgr.getColor` resolved.
+        case "getred", "getgreen", "getblue":
+            guard case .color(let red, let green, let blue) = state.role else { return .integer(0) }
+            switch method {
+            case "getred": return .integer(red)
+            case "getgreen": return .integer(green)
+            default: return .integer(blue)
+            }
         case "getwidth", "getheight":
             // The map's own size, which for a sliced `<bitmap>` is the slice's, not the sheet's —
             // same reason as `mapCrop`. The path form has no definition and stays the whole file,
@@ -4373,6 +4510,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             case .xmlDocument(let path): return .string(path ?? "")
             case .configGroup(let section): return .string(section)
             case .gammaSet(let name): return .string(name)
+            case .color(let red, let green, let blue): return .string("\(red),\(green),\(blue)")
             case .generic: return .string("dynamic_\(id)")
             }
         case "init", "callme": return .null
