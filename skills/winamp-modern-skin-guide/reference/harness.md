@@ -732,7 +732,8 @@ order they were found in. Reuse it.
 
 ### A blind instrument reads as a working feature
 
-Three of this subsystem's probes were silently blind, and each one made a real defect look absent:
+Three of this subsystem's probes were silently blind, and each one made a real defect look absent —
+and the last row is the mirror of the same fault, an instrument reporting a feature that works as broken:
 
 | Blind spot | Symptom it produced | Fixed by |
 |---|---|---|
@@ -744,6 +745,7 @@ Three of this subsystem's probes were silently blind, and each one made a real d
 | No windows, so a doubled window **toggle** cancels invisibly | Defix's playlist button measured as one clean action while flashing open/shut in the app | `WINAMP_MODERN_DEBUG_CLICK` in the app |
 | `RENDER_SCRIPTS` prints `ran=`/`failed=` **before** `RENDER_EVENTS` drives anything | Big Bento Modern's `animbutton` reported `failed=-` while its `onPause` aborted on every pause (BB23) | `CALL_TRACE` + `RENDER_EVENTS`; read `failed=` as *load-time* only |
 | **A draw-order dump taken at startup cannot see a layer the skin reveals later** | BB18: the waveform-seeker strip was covered by `waveseeker.rounder.bg`, which Big Bento's own timer shows *because* the host claimed the component — so the dump, armed on the strip's first draw, listed only a slider thumb and a 5px end cap after it and read as "nothing overpaints this" | Arm the dump **late**, after the skin's timers have run at least once, whenever the object under investigation is one the skin reacts to. A uniform fill over a component box (`rgb(40,42,48)` there — `songticker.background.center2`) means something painted over it, however empty the startup order looks |
+| **The mirror: a dump read without the events the app seeds reports a *working* feature as broken** | B87 was first filed as "cPro's tab strip never runs its fit pass — tab 4 clipped to 6px, tabs 5-7 absent", straight off a `RENDER_DUMP`. The fit pass hangs off `onResize`, which `WinampModernMainView.scriptsDidStart()` seeds in the app and the dump does not; with `RENDER_EVENTS=onresize` all seven tabs are there at 32px, exactly as on screen. A whole entry was written against an artifact, and the real defect (the labels inside those tabs) had to be found again | `RENDER_EVENTS=onresize` **first** for any ClassicPro skin, per the row in the table above — and a defect reported at a window size needs `RENDER_SIZE` too, or the fit pass has nothing to fit |
 | **A handler that ran and took *no* branch looks exactly like a handler that worked** | Bento's tab strip: `ran=onscriptloaded failed=-` on all three tab scripts while none of them laid anything out, because its three-way mode `if` has no `else` and every member of the radio group read `"0"` (BB29) | `RENDER_SETTINGS=1` — a radio group sitting at `0 (default 0)` on *every* member is the tell, and it is one line. `RENDER_DISASM=@<xml>` is what then shows the missing `else` |
 
 The general visibility rule lives in

@@ -31,6 +31,39 @@ content's width.
 > `wasabi.titlebox.center.group` bodies are `x="0" w="0" relatw="1"` — so those are unchanged. Of 53
 > declarations in 13 corpus skins, 26 name an offset source and 27 do not.
 
+#### A `<text>`'s box bounds it vertically; horizontally its **group** does (B87)
+
+A skin sizes its own boxes from the very measurement this renderer draws with, and then routinely
+declares one *narrower* than the string it just measured. ClassicPro's SUI tab is the measured case
+and it does it twice, in two independent engine versions: v1's `updateTabWidth` is
+`label.getAutoWidth() + 14` around a `<text x="6" w="-15" relatw="1">`, so the label's box is always
+`measurement - 1`, and v2's is `getTextWidth() + 23` around `w="-26"`, three short. Scissor the string
+at its own rect and the last glyph is cut through the middle: the five cPro skins' tab strip read
+`LIE PLE VII VIS BRO BPF NOV` for `LIB PLE VID VIS BRO BPR NOW`.
+
+The group is what actually bounds it — the tab is 32 wide and hands its label only 17 of them — so a
+**non-scrolling** string is clipped to the ambient clip horizontally and to its own rect vertically.
+The vertical half is unchanged and load-bearing: BB27's auto-height still decides whether a line draws
+at all, and a skin that stacks readouts one box apart and shows one at a time by moving their alphas
+(Defix's Kbps / KHz / Channels) must not have them bleed onto each other. A **scrolling** ticker keeps
+its own box on both axes, because the motion is defined against that box and a marquee let loose in
+its parent would smear across the whole panel.
+
+> **Gotcha: there are two scissors, and moving one alone does nothing.** `NSString.draw(in:)` lays the
+> string out *inside* the rect it is given and cuts it there, so the context clip is only half the
+> story. Widening the clip and leaving `drawFrame` alone produced a byte-identical render. The draw
+> rect now gets the room the string measures, with the object's alignment applied to its **origin**
+> rather than left to the paragraph style inside an oversized rect, where it would move the string a
+> second time.
+
+This does not make text unclippable, and the difference matters for BB29 below: an `offsetx` that
+pushes a caption out of its *group* still swallows it, and the early return for a string starting in
+the clip's last pixel column reads `context.boundingBoxOfClipPath ∩ frame` before any of this.
+
+Reach, measured on the corpus render sweep (441 renders, 53 skins): 433 pixel-identical, four
+differing by a single antialiasing row, and Big Bento Modern's `query.pathurl` overflow caption
+showing one more glyph before stopping at its group's edge.
+
 #### How big the font is, and which one
 
 Three rules, all measured against Love is War Miku's shipped `screenshot.png` (a skin's own reference

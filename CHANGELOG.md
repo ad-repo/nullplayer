@@ -17,6 +17,15 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: cPro's tab labels are readable again** — on the five ClassicPro skins
+  (Bento, Insomnis, Insomnis v2, T2T, das-skin-prev), the seven tabs above the library shorten to
+  three letters when the window is too narrow to spell them out, and each one was losing the right
+  half of its last letter: `LIB PLE VID VIS BRO BPR NOW` read `LIE PLE VII VIS BRO BPF NOV`. Text was
+  being cut off at the edge of the invisible box a skin declares for it, rather than at the edge of
+  the button, panel or tab that box sits in — and skins routinely draw a label into a box a pixel or
+  two narrower than the words they put in it. Labels now run to the edge of whatever holds them, so
+  the tab strip spells its seven names. Scrolling song tickers are unchanged: those still stay inside
+  their own box, which is what the scrolling is measured against.
 - **Winamp Modern skins: ClassicPro skins can be shrunk to the compact player again** — the five cPro
   skins (Bento, Insomnis, Insomnis v2, T2T, das-skin-prev) ship promo sheets showing a small
   classic-player form — top band, seek bar, transport, no tab strip and no library — and declare it as

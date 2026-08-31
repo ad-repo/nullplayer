@@ -26,7 +26,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
-| B87 | **cPro's 3-letter tab labels are clipped by a few pixels** (`LIB`→`LIE`, `VID`→`VII`, `BPR`→`BPF`, `NOW`→`NOV`) | 5 cPro skins × 7 tabs ([M28]) | S | Live-reported |
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
 | B71 | A layout script loads before the frame beside it has a client area | — · seen on Defix's detached visualizer (2026-08-29); corpus reach unmeasured | L | Live-reported |
@@ -63,13 +62,6 @@ resolve to a live citation above.
 - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases — and 50, 100, 150, 200, 250, 300 are integral. To check a *full* draw at either, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests` renders the scene the way the view does; count rows whose alpha is strictly between transparent and opaque to find partial-coverage seams objectively rather than by eye. The harness has no partial-repaint mode, which is why it cannot reproduce the live defect — adding one is most of this task.
 - <a id="m24"></a>**M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: **The_Nokia_5220_XpressMusic 12 of 12** and **winampmodern566 12 of 18**; no other skin in the 53 points one at a bitmap. Both are Menu-bar skins, which is why the symptom shows up there first.
 - <a id="m23"></a>**M23:** `WINAMP_MODERN_WAL="$corpus_wal" WINAMP_MODERN_RENDER_DUMP=/tmp/holders swift test --filter WinampModernRenderDumpTests`, then read the `PLAYLIST holder <container>/<layout>: <id>(x, y, w, h)` lines — one per skin, smallest first, ignoring the `hidden` ones. The holder is the box the skin allots; the question is whether NullPlayer's own surface fits inside it. Ebonite_2_1 is the reported case at **227x172**; the smallest in the corpus is micro at 140x69, and 27 of the 44 skins that expose one are under 260x180. The holder lines are unconditional, so no extra switch is needed. The same question applies to the `library@` and `video@` holders the `HOLDERS` line reports beside them.
-- <a id="m28"></a>**M28:** `WINAMP_MODERN_ENGINE=<ClassicPro.exe> WINAMP_MODERN_WAL=<cPro skin>
-  WINAMP_MODERN_RENDER_MINIMUM=1 WINAMP_MODERN_RENDER_DUMP=/tmp/m swift test --filter WinampModernRenderDumpTests`,
-  then read `main/normal` and the `MINIMUM` line under it. Measured 2026-08-31 across all five cPro
-  skins: every one declares **317x168** and floors at **495x324** (das-skin-prev 483x324). Four name
-  `grid#cpro.tab.grid text#l text#r togglebutton#cpro.tab.button` as what sits below the floor;
-  **das-skin-prev names `slider#eq10` instead**, which is the evidence that the tab fit pass is not
-  the whole story for the compact size.
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
@@ -77,32 +69,6 @@ number of matched declarations or MAKI program symbols. A compiled MAKI method n
 symbol, not necessarily a call-site count; rows say so where that distinction matters.
 
 ## Item detail
-
----
-
-### B87
-
-- [ ] **B87. cPro's 3-letter tab labels are clipped by a few pixels.** In the running app the tab
-      strip is **correct**: all seven tabs are present and abbreviated (LIB PLE VID VIS BRO BPR NOW),
-      each 32px wide. But each label loses the right edge of its last glyph, so they read
-      `LIE PLE VII VIS BRO BPF NOV`. Confirmed live 2026-08-31 (debug build, T2T, 500x500).
-
-      The text object is the skin's own `<text id="cpro.tab.text" x="6" w="-15" font="cpro.tab.font"
-      bold="1" fontsize="14">` — 17px wide inside a 32px tab. `cpro.tab.font` is
-      `<truetypefont file="font.ttf">`, the skin's own, and it **is** being loaded
-      (`WasabiTextMetrics.font(identifier:size:traits:)` decodes it from the VFS; the fallback path
-      is not taken). So this is not a missing-font problem. Two candidates, unmeasured: `bold="1"`
-      applied as a *synthetic* bold trait on top of an already-bold face, which widens every glyph;
-      or Winamp not clipping `<text>` to its own box where we do.
-
-      **This entry replaces a wrong one (2026-08-31).** It was originally filed as "the tab strip
-      never runs its fit pass at initial layout — 4 of 7 tabs unreachable", from a `RENDER_DUMP` that
-      showed tab 4 clipped to 6px and tabs 5-7 absent. That was a **harness artifact**: the fit pass
-      hangs off `onResize`, the app seeds one in `WinampModernMainView.scriptsDidStart()`, and the
-      dump does not — `WINAMP_MODERN_RENDER_EVENTS=onresize` produces all seven 32px tabs, and so
-      does the app. `reference/harness.md` already says "**`onresize` first** for any ClassicPro
-      skin"; the dump was read without it. A blind instrument reported a *working* feature as broken,
-      which is the mirror of the table in that file — worth adding there as a row.
 
 ---
 

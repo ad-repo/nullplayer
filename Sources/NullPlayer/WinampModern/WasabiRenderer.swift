@@ -2810,7 +2810,30 @@ final class WasabiSceneRenderer {
         }
 
         context.saveGState()
-        context.clip(to: frame)
+        // A `<text>`'s box is a **layout anchor, not a scissor**, horizontally (B87). A skin sizes its
+        // own boxes from the very measurement this renderer draws with and then routinely declares one
+        // a pixel or two narrower than the string it just measured: ClassicPro's SUI tab is
+        // `label.getAutoWidth() + 14` around a `<text w="-15" relatw="1">`, so the label's box is
+        // always `measurement - 1`, and its v2 engine is `getTextWidth() + 23` around `w="-26"`, three
+        // short. Scissored at its own rect the last glyph is cut through its middle and the strip
+        // reads `LIE PLE VII` for `LIB PLE VID` — the shape of B87. The group is what actually bounds
+        // the string (the tab is 32 wide and hands its label only 17 of them), so clip horizontally to
+        // the ambient clip and keep the object's own rect for the vertical bound — BB27's auto-height
+        // still decides whether a line is drawn at all, and a string still cannot bleed onto the row
+        // above or below it.
+        //
+        // A **scrolling** ticker keeps its own box on both axes: the motion is defined by that box, and
+        // a marquee let loose in its parent would smear across the whole panel.
+        let clip: CGRect
+        if scroll == nil {
+            let ambient = context.boundingBoxOfClipPath
+            let minX = min(frame.minX, ambient.minX)
+            let maxX = max(frame.maxX, ambient.maxX)
+            clip = CGRect(x: minX, y: frame.minY, width: maxX - minX, height: frame.height)
+        } else {
+            clip = frame
+        }
+        context.clip(to: clip)
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -frame.midY)
@@ -2866,7 +2889,21 @@ final class WasabiSceneRenderer {
                 origin += width
             }
         } else {
-            (text as NSString).draw(in: drawFrame, withAttributes: attributes)
+            // `NSString.draw(in:)` lays the string out *inside* the rect and cuts it there, so the
+            // context clip above is not the only scissor — the rect is one too. Give it the room the
+            // string actually measures and let the clip decide what shows, which is what makes the
+            // widened clip above do anything at all. Identical to drawing in `drawFrame` while the
+            // string fits; when it does not, the object's own alignment is applied here rather than
+            // inside an oversized rect, where it would move the string a second time.
+            var textFrame = drawFrame
+            switch alignment {
+            case .right: textFrame.origin.x = drawFrame.maxX - measured
+            case .center: textFrame.origin.x = drawFrame.midX - measured / 2
+            default: break
+            }
+            textFrame.size.width = max(drawFrame.width, measured)
+            let leading = attributes.merging([.paragraphStyle: leadingParagraph]) { _, new in new }
+            (text as NSString).draw(in: textFrame, withAttributes: leading)
         }
         context.restoreGState()
     }

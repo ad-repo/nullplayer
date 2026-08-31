@@ -2,6 +2,83 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B87 — cPro's 3-letter tab labels are clipped by a few pixels — closed 2026-08-31
+
+- [x] **B87. cPro's 3-letter tab labels are clipped by a few pixels.** In the running app the tab
+      strip is **correct**: all seven tabs are present and abbreviated (LIB PLE VID VIS BRO BPR NOW),
+      each 32px wide. But each label loses the right edge of its last glyph, so they read
+      `LIE PLE VII VIS BRO BPF NOV`. Confirmed live 2026-08-31 (debug build, T2T, 500x500).
+
+      The text object is the skin's own `<text id="cpro.tab.text" x="6" w="-15" font="cpro.tab.font"
+      bold="1" fontsize="14">` — 17px wide inside a 32px tab.
+
+      **This entry replaced a wrong one (2026-08-31).** It was originally filed as "the tab strip
+      never runs its fit pass at initial layout — 4 of 7 tabs unreachable", from a `RENDER_DUMP` that
+      showed tab 4 clipped to 6px and tabs 5-7 absent. That was a **harness artifact**: the fit pass
+      hangs off `onResize`, the app seeds one in `WinampModernMainView.scriptsDidStart()`, and the
+      dump does not — `WINAMP_MODERN_RENDER_EVENTS=onresize` produces all seven 32px tabs, and so
+      does the app. `reference/harness.md` already says "**`onresize` first** for any ClassicPro
+      skin"; the dump was read without it. A blind instrument reported a *working* feature as broken,
+      which is the mirror of the table in that file, and it now has a row there.
+
+      **Fixed 2026-08-31 — and neither filed candidate was the cause.** The entry named two: a
+      *synthetic* `bold="1"` widening every glyph, and Winamp not clipping `<text>` to its own box.
+      Measured, the first is not even reachable — the font is **not** loaded, contrary to what this
+      entry claimed. No cPro skin ships `font.ttf` and neither does the ClassicPro engine tree, so
+      `cpro.tab.font` falls all the way through `WasabiTextMetrics.font(identifier:size:traits:)` to
+      the monospaced fallback, whose `bold` is a real Semibold face: the regular and bold measurements
+      of `LIB` are the same number to fifteen decimal places.
+
+      What is actually happening is the skin's own fit pass, and it needs `RENDER_SIZE=500x500` plus
+      `RENDER_EVENTS=onresize` to reproduce (at the corpus sweep's default size nothing is clipped at
+      all, which is why the sweep called this skin unchanged before and after the fix). The tab holder
+      `cprotabs.buttons` is 229px; each label measures 21px, so `updateTabWidth` wants `21 + 14 = 35`
+      per tab and 245 in total, and `alignByResize` scales every tab down to `(35 - 20) * 0.85 + 20`
+      = 32. The label inside is `w="-15" relatw="1"`, i.e. `32 - 15 = 17`, against a 21px string.
+
+      The second candidate was right, in a precise form: **a `<text>`'s box bounds it vertically, but
+      horizontally its group does.** The skin sizes its boxes from the very measurement the renderer
+      draws with and then declares one narrower than the string it just measured — v1 is
+      `getAutoWidth() + 14` around `w="-15"`, one short, and the v2 engine is `getTextWidth() + 23`
+      around `w="-26"`, three short — so a renderer scissoring at the text's own rect can never draw
+      what the skin measured. `WasabiSceneRenderer.drawText` now clips a non-scrolling string to the
+      **ambient** clip horizontally and keeps the object's own rect for the vertical bound. A
+      scrolling ticker keeps its own box on both axes: the motion is defined against that box, and a
+      marquee let loose in its parent would smear across the panel.
+
+      **Two scissors had to move together.** `NSString.draw(in:)` lays the string out inside the rect
+      and cuts it there, so the context clip is not the only one — the draw rect is the other. The
+      first render after widening only the clip was byte-identical to the one before it. The rect now
+      gets the room the string measures, with the object's alignment applied to the origin rather than
+      inside an oversized rect where it would move the string a second time.
+
+      Verified: all five cPro skins at 500x500 read `LIB PLE VID VIS BRO BPR NOW`. Corpus sweep of all
+      53 skins, 441 renders: **433 pixel-identical**; four differ by a single antialiasing row
+      (EPS/Itemskin notifier prefs, Ebonite config, jvc.tape EQ) and the four Big Bento variants'
+      `query.pathurl` overflow caption shows one more glyph before stopping at its group's edge, which
+      is the intended behaviour. Pinned by `Tests/NullPlayerAppTests/WinampModernB87Tests.swift` —
+      whose one positive assertion fails on the pre-fix renderer, while its four guards (the group
+      still cuts, a ticker keeps its box, the box still bounds vertically, alignment is unchanged for
+      a string that fits) pass both ways.
+
+**Reach row, verbatim:**
+
+| B87 | **cPro's 3-letter tab labels are clipped by a few pixels** (`LIB`→`LIE`, `VID`→`VII`, `BPR`→`BPF`, `NOW`→`NOV`) | 5 cPro skins × 7 tabs ([M28]) | S | Live-reported |
+
+**The reach command it cited, moved here with it:**
+
+- <a id="m28"></a>**M28:** `WINAMP_MODERN_ENGINE=<ClassicPro.exe> WINAMP_MODERN_WAL=<cPro skin>
+  WINAMP_MODERN_RENDER_MINIMUM=1 WINAMP_MODERN_RENDER_DUMP=/tmp/m swift test --filter WinampModernRenderDumpTests`,
+  then read `main/normal` and the `MINIMUM` line under it. Measured 2026-08-31 across all five cPro
+  skins: every one declares **317x168** and floors at **495x324** (das-skin-prev 483x324). Four name
+  `grid#cpro.tab.grid text#l text#r togglebutton#cpro.tab.button` as what sits below the floor;
+  **das-skin-prev names `slider#eq10` instead**, which is the evidence that the tab fit pass is not
+  the whole story for the compact size.
+
+  For B87 the reach is the same five skins by a different route: every cPro skin mounts the same
+  ClassicPro engine, so the single `cpro.tab.text` declaration in `CproTabButton.xml` is all seven
+  tabs in all five skins.
+
 ## B86 — `parser_addCallback` path matching is too strict — closed 2026-08-31
 
 - [x] **B86. `parser_addCallback` path matching is too strict.** `parserPath`
