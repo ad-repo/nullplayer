@@ -41,6 +41,31 @@ struct WasabiGeometrySpec: Equatable {
     var relativeY: Bool
     var relativeWidth: Bool
     var relativeHeight: Bool
+    /// `relat*="2"` — the value is a **percentage** of the parent dimension rather than an offset
+    /// added to it. Kept beside `relativeX` rather than replacing it so that flag keeps meaning
+    /// "relative at all", which is what `WasabiRenderer`'s title-box probe asks it.
+    ///
+    /// **This overturns Phase 56, whose evidence did not reach the question.** Phase 56 found
+    /// `relat="2"` being read as `== 1` and so falling through to *absolute* geometry — Big Bento
+    /// Modern's dimmed album-art backdrop came out as a literal 99×100 box, "a small crisp second
+    /// copy of the cover" — and fixed it by making any non-zero value relative. That fixes the
+    /// symptom, but so does this: 99% of a large parent is a large backdrop too. Absolute-vs-relative
+    /// was measured; additive-vs-percent was not.
+    ///
+    /// What settles it is an object additive cannot place at **any** parent size. ClassicPro's Now
+    /// Playing widget insets its cover in a jewel case with
+    /// `<AlbumArt x="12" y="4" w="85" h="93" relatx="2" relaty="2" relatw="2" relath="2"/>`. Against
+    /// its correctly-sized 80×74 case at (110, 211), additive resolves to (202, 289, 165×167) — the
+    /// whole cover outside its own clip, drawn nowhere, reported as "an empty box". Percent gives
+    /// (119.6, 214, 68×68.8): a cover inset in a case, which is the thing the markup describes.
+    ///
+    /// The corpus agrees. `relat*` is `1` 8197 times, `0` 360, and **`2` 89** — and every value those
+    /// 89 carry is in 0…100 (155 of 157 numbers). Additive geometry here is overwhelmingly *negative*
+    /// (`w="-14" relatw="1"`); a 0…100 distribution is a percentage's.
+    var percentX: Bool
+    var percentY: Bool
+    var percentWidth: Bool
+    var percentHeight: Bool
 
     init(attributes: [String: String]) {
         func number(_ key: String) -> Double? {
@@ -57,6 +82,11 @@ struct WasabiGeometrySpec: Equatable {
         relativeY = flag("relaty")
         relativeWidth = flag("relatw")
         relativeHeight = flag("relath")
+        func isPercent(_ key: String) -> Bool { Self.percentFlag(attributes[key.lowercased()]) }
+        percentX = isPercent("relatx")
+        percentY = isPercent("relaty")
+        percentWidth = isPercent("relatw")
+        percentHeight = isPercent("relath")
     }
 
     /// How much wider than its source a group with `autowidthsource` has to be for the source to
@@ -122,16 +152,26 @@ struct WasabiGeometrySpec: Equatable {
         return Int(digits) ?? 0
     }
 
+    /// `atoi == 2` — the percentage mode. Every other non-zero value stays additive, including the
+    /// `5` two of The_Nokia_5220's bars carry: nothing measured suggests a third meaning, and the
+    /// corpus holds no other value than 0, 1, 2, 5 and a non-numeric `%`.
+    static func percentFlag(_ value: String?) -> Bool {
+        guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return leadingInteger(raw) == 2
+    }
+
     func resolve(in parent: WasabiRect, intrinsicSize: WasabiSize = .zero) -> WasabiRect {
-        let resolvedX = parent.x + x + (relativeX ? parent.width : 0)
-        let resolvedY = parent.y + y + (relativeY ? parent.height : 0)
+        func resolved(_ value: Double, percent: Bool, relative: Bool, span: Double) -> Double {
+            if percent { return span * value / 100 }
+            return value + (relative ? span : 0)
+        }
         let rawWidth = width ?? intrinsicSize.width
         let rawHeight = height ?? intrinsicSize.height
         return WasabiRect(
-            x: resolvedX,
-            y: resolvedY,
-            width: rawWidth + (relativeWidth ? parent.width : 0),
-            height: rawHeight + (relativeHeight ? parent.height : 0)
+            x: parent.x + resolved(x, percent: percentX, relative: relativeX, span: parent.width),
+            y: parent.y + resolved(y, percent: percentY, relative: relativeY, span: parent.height),
+            width: resolved(rawWidth, percent: percentWidth, relative: relativeWidth, span: parent.width),
+            height: resolved(rawHeight, percent: percentHeight, relative: relativeHeight, span: parent.height)
         )
     }
 }
