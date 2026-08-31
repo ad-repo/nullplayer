@@ -40,6 +40,9 @@ class ModernPlaylistView: NSView {
     /// the host window is dragged by its own title bar.
     var isEmbedded = false
 
+    /// Optional row height supplied by an embedded host. Standalone windows leave this nil.
+    var embeddedRowHeightOverride: CGFloat?
+
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
@@ -76,7 +79,7 @@ class ModernPlaylistView: NSView {
     }
     private var bottomBarHeight: CGFloat { ModernSkinElements.playlistBottomBarHeight }
     private var borderWidth: CGFloat { ModernSkinElements.playlistBorderWidth }
-    private var itemHeight: CGFloat { ModernSkinElements.playlistItemHeight }
+    private var itemHeight: CGFloat { embeddedRowHeightOverride ?? ModernSkinElements.playlistItemHeight }
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
@@ -164,6 +167,18 @@ class ModernPlaylistView: NSView {
     deinit {
         artworkLoadTask?.cancel()
         NotificationCenter.default.removeObserver(self)
+    }
+
+    /// Lifecycle seam for content-only Reeltone hosting. Standalone windows retain their
+    /// notification-driven behavior because this is only called for `isEmbedded` views.
+    func setEmbeddedHostVisible(_ visible: Bool) {
+        guard isEmbedded else { return }
+        if visible {
+            trackMarqueeLayer?.resumeScrolling()
+            updateMarqueeLayerPosition()
+        } else {
+            trackMarqueeLayer?.pauseScrolling()
+        }
     }
     
     // MARK: - Marquee Layer

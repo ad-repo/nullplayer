@@ -21,6 +21,10 @@ class ModernEQView: NSView {
     // MARK: - Properties
     
     weak var controller: ModernEQWindowController?
+    private let preferences: UserDefaults
+
+    /// Content-only presentation used by manifest-owned Reeltone regions.
+    var isEmbedded = false
     
     /// The skin renderer
     private var renderer: ModernSkinRenderer!
@@ -94,7 +98,7 @@ class ModernEQView: NSView {
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat {
-        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window)
+        let hide = isEmbedded || WindowManager.shared.effectiveHideTitleBars(for: self.window)
         return hide ? borderWidth : ModernSkinElements.eqTitleBarHeight
     }
     private var borderWidth: CGFloat { ModernSkinElements.eqBorderWidth }
@@ -173,11 +177,19 @@ class ModernEQView: NSView {
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
+        preferences = .standard
+        super.init(frame: frameRect)
+        commonInit()
+    }
+
+    init(frame frameRect: NSRect, preferences: UserDefaults) {
+        self.preferences = preferences
         super.init(frame: frameRect)
         commonInit()
     }
     
     required init?(coder: NSCoder) {
+        preferences = .standard
         super.init(coder: coder)
         commonInit()
     }
@@ -234,7 +246,7 @@ class ModernEQView: NSView {
         
         // Load Auto EQ state from UserDefaults only if "Remember State" is enabled
         if AppStateManager.shared.isEnabled {
-            isAuto = UserDefaults.standard.bool(forKey: "EQAutoEnabled")
+            isAuto = preferences.bool(forKey: "EQAutoEnabled")
         } else {
             isAuto = false
         }
@@ -429,27 +441,31 @@ class ModernEQView: NSView {
         let mainOpacity = renderer.skin.resolvedOpacity(for: .mainWindow)
         
         // Draw window background
-        renderer.drawWindowBackground(
-            in: bounds,
-            context: context,
-            adjacentEdges: adjacentEdges,
-            sharpCorners: sharpCorners,
-            backgroundOpacity: mainOpacity.background
-        )
+        if !isEmbedded {
+            renderer.drawWindowBackground(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                backgroundOpacity: mainOpacity.background
+            )
+        }
 
         // Draw window border with glow (seamless docking suppresses adjacent edges)
-        renderer.drawWindowBorder(
-            in: bounds,
-            context: context,
-            adjacentEdges: adjacentEdges,
-            sharpCorners: sharpCorners,
-            occlusionSegments: edgeOcclusionSegments,
-            borderOpacity: mainOpacity.border
-        )
+        if !isEmbedded {
+            renderer.drawWindowBorder(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                occlusionSegments: edgeOcclusionSegments,
+                borderOpacity: mainOpacity.border
+            )
+        }
 
         // Draw title bar (unless hidden by docking)
         withContextAlpha(mainOpacity.content, context: context) {
-            if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+            if !isEmbedded && !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
                 renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER EQUALIZER", prefix: "eq_", context: context)
 
                 // Draw close button
@@ -1158,6 +1174,7 @@ class ModernEQView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if isEmbedded { return false }
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             return point.y >= bounds.height - 6  // invisible drag zone
         }
@@ -1167,6 +1184,7 @@ class ModernEQView: NSView {
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if isEmbedded { return false }
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let closeRect = NSRect(x: bounds.width - 16 * scale,
                                y: bounds.height - titleBarHeight + 2 * scale,
@@ -1237,7 +1255,7 @@ class ModernEQView: NSView {
             isAuto.toggle()
             
             if AppStateManager.shared.isEnabled {
-                UserDefaults.standard.set(isAuto, forKey: "EQAutoEnabled")
+                preferences.set(isAuto, forKey: "EQAutoEnabled")
             }
             
             if isAuto {
@@ -1309,6 +1327,8 @@ class ModernEQView: NSView {
             updateSliderFromPoint(point)
             return
         }
+
+        if isEmbedded { return }
         
         // Title bar -> window drag
         if hitTestTitleBar(at: point) {

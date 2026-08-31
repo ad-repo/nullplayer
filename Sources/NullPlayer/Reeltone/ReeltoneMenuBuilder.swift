@@ -71,6 +71,19 @@ enum ReeltoneMenuBuilder {
             menu.addItem(diagnostics)
         }
 
+        if let selected,
+           let selectedInstallation = result.installations.first(where: { $0.record.identity == selected }) {
+            menu.addItem(.separator())
+            let removeItem = NSMenuItem(
+                title: "Remove \(selectedInstallation.record.name)…",
+                action: #selector(ReeltoneMenuActions.removeSelectedSkin(_:)),
+                keyEquivalent: ""
+            )
+            removeItem.target = ReeltoneMenuActions.shared
+            removeItem.representedObject = selected
+            menu.addItem(removeItem)
+        }
+
         parent.state = activeMode == .reeltone ? .on : .off
         parent.submenu = menu
         return parent
@@ -113,6 +126,26 @@ final class ReeltoneMenuActions: NSObject {
     @objc func selectDefaultTheme() {
         ReeltoneSkinEngine.shared.selectDefaultTheme()
         applySelection()
+    }
+
+    @objc func removeSelectedSkin(_ sender: NSMenuItem) {
+        guard let identity = sender.representedObject as? String,
+              let installation = ReeltoneSkinEngine.shared.availableSkins.installations.first(where: {
+                  $0.record.identity == identity
+              }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "Remove Reeltone Skin?"
+        alert.informativeText = "\(installation.record.name) will be removed from NullPlayer. The original archive is not affected."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try ReeltoneSkinEngine.shared.remove(identity: identity)
+            applySelection()
+        } catch {
+            presentFailure(title: "Failed to Remove Reeltone Skin", error: error)
+        }
     }
 
     private func applySelection() {

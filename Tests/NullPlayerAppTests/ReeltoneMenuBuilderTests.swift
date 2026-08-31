@@ -56,5 +56,31 @@ final class ReeltoneMenuBuilderTests: XCTestCase {
         XCTAssertEqual(skinItem?.state, .on)
         XCTAssertEqual(skinItem?.representedObject as? String, identity)
         XCTAssertEqual(skinItem?.action, #selector(ReeltoneMenuActions.selectInstalledSkin(_:)))
+        let removeItem = item.submenu?.items.first { $0.title == "Remove Menu Fixture…" }
+        XCTAssertEqual(removeItem?.representedObject as? String, identity)
+        XCTAssertEqual(removeItem?.action, #selector(ReeltoneMenuActions.removeSelectedSkin(_:)))
+    }
+
+    func testReeltoneNeverInheritsCompactWindowVisualsMenu() {
+        XCTAssertFalse(ContextMenuBuilder.shouldIncludeCompactWindowVisuals(
+            isRunningModernUI: true,
+            mode: .reeltone,
+            capabilityEnabled: true
+        ))
+        XCTAssertTrue(ContextMenuBuilder.shouldIncludeCompactWindowVisuals(
+            isRunningModernUI: true,
+            mode: .modern,
+            capabilityEnabled: true
+        ))
+        XCTAssertTrue(ContextMenuBuilder.shouldIncludeCompactWindowVisuals(
+            isRunningModernUI: true,
+            mode: .metal,
+            capabilityEnabled: true
+        ))
+        XCTAssertFalse(ContextMenuBuilder.shouldIncludeCompactWindowVisuals(
+            isRunningModernUI: false,
+            mode: .classic,
+            capabilityEnabled: true
+        ))
     }
 }

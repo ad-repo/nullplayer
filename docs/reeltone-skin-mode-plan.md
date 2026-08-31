@@ -1,6 +1,6 @@
 # Reeltone Skin Mode Implementation Plan
 
-- Status: Phase 3 implemented; exit verification pending
+- Status: Implementation and automated verification complete; live-app manual release matrix pending
 - Baseline: `origin/main` at `56c198ec44131158c0a500a4c947c5ad281b1644`
 - Planning branch: `plan/reeltone-mode`
 - Reference skin: `aqua-glass.reeltone` (`formatVersion: 2`)
@@ -9,11 +9,17 @@
 
 | Phase | Status | Notes |
 |---|---|---|
-| Phase 0 | Not recorded on this branch | The plan is present; the remaining Phase 0 artifacts must be audited separately. |
-| Phase 1 | In progress | Mode shell is implemented; automated verification and manual live-switch acceptance are tracked against the Phase 1 exit criteria. |
-| Phase 2 | Implemented; exit verification pending | Loader/store security tests pass. Aqua Glass acceptance remains pending because the archive is not present in this worktree. |
-| Phase 3 | Implemented; exit verification pending | v1 palette adaptation, fallback Original-window styling, import/discovery/selection, live switching, and restart restoration are implemented. `swift test` passes (459 tests, 2026-08-29); manual readability acceptance remains pending. |
-| Phase 4+ | Not started | Dynamic surfaces remain out of scope. |
+| Phase 0 | Implemented | The dedicated worktree, architecture/scale decision, generated offline fixtures, owning skill, and Winamp Modern dependency audit are recorded. Official Aqua Glass provenance, CC0 metadata, archive SHA-256, and exact extracted-content match were verified on 2026-08-30; third-party art remains uncommitted. |
+| Phase 1 | Implemented; manual exit verification pending | Mode shell is implemented. An isolated real-WAV integration test passes the bidirectional Classic, Original, Original-Metal, and Reeltone switch sequence while preserving playlist, current track, seek, playing state, cast state, and the exact live visualization-consumer count; manual live-switch acceptance remains pending. |
+| Phase 2 | Implemented; live-app exit verification pending | Loader/store security tests pass, including repeated failure cleanup, packaged-font PostScript validation, and official Aqua Glass ZIP/load integrity. The third-party fixture is intentionally not committed. |
+| Phase 3 | Implemented; live-app exit verification pending | v1 palette/font adaptation, fallback Original-window styling, import/discovery/selection/removal, live switching, and restart restoration are implemented. Full automated suite passes; manual readability acceptance remains pending. |
+| Phase 4 | Implemented; live-app exit verification pending | Normalized surfaces, authored geometry, static rendering, clipping, dragging, every UI Size conversion, and a dedicated Reeltone defaults domain are implemented. Official Aqua Glass flattened acceptance renders pass at 960×384 (1×) and 1920×768 (2×). |
+| Phase 5 | Implemented; manual exit verification pending | Stateful controls, playback commands, continuous controls, metadata/artwork, multiple visualizers, animation drivers, and targeted invalidation are implemented. Control/art/animation tests pass; Aqua Glass playback acceptance remains pending. |
+| Phase 6 | Implemented; manual exit verification pending | Declared panel controllers, attachments, menus, topology lifecycle, and identity-scoped visibility/floating-frame restoration are implemented. Multi-panel topology, live scale, visibility, persistence, and six-cycle rebuild tests across skins with different sizes/panel sets pass with exact host teardown, zero remaining panel timers, and stable audio-consumer registrations; manual multi-panel acceptance remains pending. |
+| Phase 7 | Implemented; manual exit verification pending | Generic hosted-component seams, embedded Playlist/EQ/Library, menu fallback routing, singleton diagnostics/reconciliation, and keyboard/accessibility actions are implemented. Hosted routing, lifecycle, singleton, and accessibility tests pass; manual hosted-component acceptance remains pending. |
+| Phase 8 | Implemented; manual exit verification pending | Dynamic snapshots, identity-gated frame restoration, authored attachments, docking inventory, and synchronous teardown are implemented. Spectrum and ProjectM release observers, render loops, timers, and ref-counted audio consumers synchronously instead of relying on deferred AppKit deallocation. Per product direction, Reeltone is intentionally excluded from Compact Mode and Compact Window. Isolated integration coverage keeps Spectrum and ProjectM live while verifying both compact presentations exit into regular Reeltone, dispose their controller, restore `.regular` activation and mode-independent panels, preserve active playback, and retain an exact stable consumer count. |
+| Phase 9 | Implemented; live-app exit verification pending | Shared decoded-image caching, coalesced invalidation, effective-visibility lifecycle, alpha-aware hit testing, text/control accessibility, font fallback, marquee, and structured diagnostics are implemented. |
+| Phase 10 | Implemented; manual release verification pending | Published v1/v2 vocabulary is implemented or explicitly diagnosed, with architecture, compatibility, owning-skill, and user-guide documentation. Full `swift test` passes (490 tests, 2 opt-in integration/fixture tests skipped, 2026-08-30); both the real-playback mode/compact integration and official Aqua fixture tests separately pass when enabled. The live-app manual release matrix remains to be recorded. |
 
 Update this table at each phase boundary. Do not mark a phase complete until its automated checks
 and manual exit criteria have both been recorded.
@@ -68,7 +74,7 @@ The first complete milestone must make Aqua Glass usable for normal playback. La
 - Reuse of Original playlist, equalizer, library, artwork, and visualization components through explicit embedded-host interfaces.
 - Standard Original auxiliary-window fallbacks when a selected skin does not provide a region for a requested component.
 - Secure loading, installation, discovery, validation, diagnostics, and switching of `.reeltone` archives.
-- Exact-mode state restoration, UI Size behavior, Compact Mode integration, docking, minimization, and Always on Top.
+- Exact-mode state restoration, UI Size behavior, docking, minimization, Always on Top, and an explicit Reeltone exclusion from Compact Mode and Compact Window.
 - Unit, integration, UI, accessibility, malformed-package, 1x, and 2x coverage.
 
 ### Out of scope
@@ -222,6 +228,12 @@ Exact names may change during implementation, but the archive/model layer must r
 - Persist a stable manifest ID plus an installation identity. Duplicate manifest IDs must not silently overwrite one another.
 - Validate into a staging location before atomically moving a package into the store.
 - Scope selected-skin state, surface visibility, panel frames, and UI geometry to the exact `.reeltone` mode and skin identity.
+- Store all Reeltone-owned defaults in the dedicated `com.nullplayer.app.reeltone` UserDefaults
+  suite. Inject that suite into hosted and fallback Original component views so using Reeltone
+  cannot read or write Original, Metal, Classic, `.wal`, or standalone-spectrum presentation
+  preferences. Shared playback/library data models remain application state rather than skin state.
+- Migrate legacy Reeltone-prefixed keys out of the application defaults domain once, without
+  copying or removing any other skin family's keys.
 - Clamp restored windows to available screens only when presenting them; do not mutate authored geometry in the decoded model.
 
 ## 5. Phased Implementation
@@ -382,7 +394,7 @@ Exit criteria:
 - Removing or hiding a host does not lose playlist, EQ, or library model state.
 - Original standalone views behave exactly as before outside Reeltone mode.
 
-### Phase 8 — Restoration, docking, Compact Mode, and teardown
+### Phase 8 — Restoration, docking, compact exclusion, and teardown
 
 Implementation steps:
 
@@ -391,14 +403,14 @@ Implementation steps:
 3. Restore Reeltone main and panel frames only when the saved mode and skin identity match exactly.
 4. Extend snapping/docking inventory to dynamic surfaces without changing existing Classic or Original adjacency behavior.
 5. Preserve authored attachments until the user explicitly detaches a panel.
-6. Reuse the existing Original compact browser/player surface for Compact Mode and Compact Window, themed through the Reeltone adapter; the Reeltone schema has no compact-surface declaration.
-7. Preserve Reeltone regular-window state across Compact Mode entry, live mode switching while compact, and exit.
+6. Do not expose or restore Compact Mode or Compact Window while the exact active mode is Reeltone; the schema has no compact-surface declaration and Reeltone must not borrow an Original compact surface.
+7. When switching from another mode's active compact presentation into Reeltone, exit compact presentation and create the regular Reeltone surface topology.
 8. Verify teardown/rebuild repeatedly with the debug recreation path.
 
 Exit criteria:
 
 - Repeated mode switches and skin switches produce a stable controller/window/audio-consumer count.
-- Compact Mode, Compact Window, docking, UI Size, minimization, and Always on Top work with zero orphaned Reeltone surfaces.
+- Compact actions are unavailable in Reeltone, and transitions from another mode's compact presentation leave zero orphaned surfaces; docking, UI Size, minimization, and Always on Top work normally.
 - A geometry snapshot from any other mode or Reeltone skin is never applied as an exact match.
 
 ### Phase 9 — Hardening, performance, and accessibility
@@ -456,7 +468,7 @@ Exit criteria:
 - Load, install, select, switch, remove, and restore v1/v2 skins.
 - Switch Classic -> Reeltone -> Original -> Reeltone during active playback.
 - Switch between two Reeltone skins with different main sizes and panel sets.
-- Exercise compact entry/exit and UI Size changes with hosted and fallback components visible.
+- Verify Reeltone compact actions are absent/guarded, transitions from another mode's compact presentation create regular Reeltone surfaces, and UI Size changes work with hosted and fallback components visible.
 - Verify that old controllers cannot unregister newly created visualization consumers.
 
 ### UI and accessibility tests
@@ -472,13 +484,24 @@ Exit criteria:
 - v1, minimal v2, Aqua Glass, multi-panel, hosted-components, and malformed fixtures.
 - 1x and 2x displays; all supported UI Size values; multiple monitors; screen removal/reconnection.
 - Local files, media-server playback, radio, video, casting, seek, pause/resume, and track changes.
-- Docked and detached panels, minimization, Always on Top, Compact Mode, and Compact Window.
+- Docked and detached panels, minimization, Always on Top, and confirmation that Compact Mode and Compact Window are unavailable in Reeltone.
 - Live mode switch, live skin switch, quit/relaunch restore, and reset-state behavior.
 
 Minimum automated command at each phase gate:
 
 ```bash
 swift test
+```
+
+The opt-in live playback/mode/compact integration runs in a disposable preferences home. It keeps
+the standalone Spectrum and ProjectM windows active and asserts their aggregate audio-consumer
+registration count remains exact through every rebuild:
+
+```bash
+mkdir -p /private/tmp/reeltone-live-switch-home
+env CFFIXED_USER_HOME=/private/tmp/reeltone-live-switch-home \
+  NULLPLAYER_RUN_REELTONE_LIVE_SWITCH_TEST=1 \
+  swift test --filter ReeltoneModeSwitchIntegrationTests
 ```
 
 UI phases also require a debug build/run and targeted manual verification using the repository workflow.
@@ -489,7 +512,7 @@ UI phases also require a debug build/run and targeted manual verification using 
 - Keep the mode unavailable in release UI behind a narrowly scoped experimental capability through Phase 4.
 - Enable manual Aqua Glass testing after Phase 5.
 - Do not combine Original EQ/library extraction with unrelated Original visual changes.
-- Require before/after evidence for any shared `WindowManager`, persistence, docking, or Compact Mode change.
+- Require before/after evidence for any shared `WindowManager`, persistence, docking, or compact-capability change.
 - Merge tests and owning-skill documentation with the code that introduces each contract.
 
 Suggested milestones:
@@ -523,7 +546,7 @@ Reeltone support is complete when:
 - v1 themes and published v2 surfaces, panels, regions, states, controls, and animations are supported or explicitly diagnosed.
 - Main and panel windows are created from the skin manifest.
 - Original Playlist, EQ, Library, artwork, and visualization functionality can be hosted in regions, with standard Original auxiliary fallbacks when absent.
-- Mode/skin switching, restoration, UI Size, docking, Compact Mode, and teardown are deterministic and leak-free.
+- Mode/skin switching, restoration, UI Size, docking, compact exclusion, and teardown are deterministic and leak-free.
 - Untrusted archives are bounded and cannot escape their resource root.
 - Custom-drawn interactions are keyboard accessible and usable with VoiceOver.
 - `swift test` passes and the manual matrix shows no Classic, Original, Metal, playback, casting, or persistence regressions.

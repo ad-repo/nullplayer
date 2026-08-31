@@ -1,5 +1,3 @@
-import AppKit
-import CoreText
 import Foundation
 import ImageIO
 
@@ -28,25 +26,6 @@ struct ReeltoneResourceHandle: Hashable, Sendable {
         try Data(contentsOf: fileURL, options: [.mappedIfSafe])
     }
 
-    func image() throws -> NSImage {
-        guard let image = NSImage(contentsOf: fileURL) else {
-            throw ReeltoneDiagnostic(code: .invalidImage, message: "Image could not be decoded", resourcePath: relativePath)
-        }
-        return image
-    }
-
-    func registerFont(expectedPostScriptName: String) throws {
-        if NSFont(name: expectedPostScriptName, size: 12) != nil { return }
-        var unmanagedError: Unmanaged<CFError>?
-        guard CTFontManagerRegisterFontsForURL(fileURL as CFURL, .process, &unmanagedError) else {
-            let detail = unmanagedError?.takeRetainedValue().localizedDescription ?? "unknown CoreText error"
-            throw ReeltoneDiagnostic(code: .invalidFont, message: "Font registration failed: \(detail)", resourcePath: relativePath)
-        }
-        guard NSFont(name: expectedPostScriptName, size: 12) != nil else {
-            CTFontManagerUnregisterFontsForURL(fileURL as CFURL, .process, nil)
-            throw ReeltoneDiagnostic(code: .invalidFont, message: "Font does not provide PostScript name '\(expectedPostScriptName)'", resourcePath: relativePath)
-        }
-    }
 }
 
 enum ReeltoneImageValidator {

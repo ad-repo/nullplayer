@@ -11,6 +11,7 @@ final class AudioEngineConsumerGatingTests: XCTestCase {
 
         engine.addSpectrumConsumer("spectrum")
         XCTAssertTrue(engine.spectrumNeeded)
+        XCTAssertEqual(engine.spectrumConsumerRegistrationCount, 1)
         XCTAssertFalse(engine.waveformNeeded)
         XCTAssertFalse(engine.stereoNeeded)
 
@@ -26,6 +27,7 @@ final class AudioEngineConsumerGatingTests: XCTestCase {
 
         engine.removeSpectrumConsumer("spectrum")
         XCTAssertFalse(engine.spectrumNeeded)
+        XCTAssertEqual(engine.spectrumConsumerRegistrationCount, 0)
         XCTAssertTrue(engine.waveformNeeded)
         XCTAssertTrue(engine.stereoNeeded)
 
@@ -52,5 +54,18 @@ final class AudioEngineConsumerGatingTests: XCTestCase {
 
         engine.removeWaveformConsumer("replacement-safe")
         XCTAssertFalse(engine.waveformNeeded)
+    }
+
+    func testSpectrumRegistrationCountTracksReplacementSafeReferenceCounts() {
+        let engine = AudioEngine()
+
+        engine.addSpectrumConsumer("replacement-safe")
+        engine.addSpectrumConsumer("replacement-safe")
+        XCTAssertEqual(engine.spectrumConsumerRegistrationCount, 2)
+
+        engine.removeSpectrumConsumer("replacement-safe")
+        XCTAssertEqual(engine.spectrumConsumerRegistrationCount, 1)
+        engine.removeSpectrumConsumer("replacement-safe")
+        XCTAssertEqual(engine.spectrumConsumerRegistrationCount, 0)
     }
 }

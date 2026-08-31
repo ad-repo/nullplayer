@@ -355,6 +355,16 @@ class WindowManager {
     var isRunningMetalUI: Bool {
         isRunningModernFamilyUI && uiMode == .metal
     }
+
+    var reeltonePanelMenuEntries: [ReeltonePanelMenuEntry] {
+        guard uiMode == .reeltone else { return [] }
+        return (mainWindowController as? ReeltoneSurfaceProviding)?.reeltonePanelMenuEntries ?? []
+    }
+
+    func toggleReeltonePanel(named name: String) {
+        guard uiMode == .reeltone else { return }
+        (mainWindowController as? ReeltoneSurfaceProviding)?.toggleReeltonePanel(name)
+    }
     
     /// Whether title bars are hidden on all windows (only applies in modern UI mode)
     var hideTitleBars: Bool {
@@ -380,6 +390,10 @@ class WindowManager {
     private var compactStatusItem: NSStatusItem?
 
     private var compactWindowController: CompactModeWindowController?
+
+    /// Focused lifecycle seam for integration tests and diagnostics. Reeltone must never retain
+    /// an Original compact controller after entering its regular surface topology.
+    var hasCompactSurfaceController: Bool { compactWindowController != nil }
 
     /// Backdrop used by the modern/metal compact surface. Classic always resolves to Off.
     var compactBackdropMode: BrowserBackdropMode {
@@ -833,6 +847,11 @@ class WindowManager {
     }
     
     func showPlaylist(at restoredFrame: NSRect? = nil) {
+        if uiMode == .reeltone,
+           (mainWindowController as? ReeltoneSurfaceProviding)?.routeReeltoneComponent(.trackList) == true {
+            notifyMainWindowVisibilityChanged()
+            return
+        }
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
             if isModernUIEnabled {
@@ -875,6 +894,11 @@ class WindowManager {
     }
     
     func togglePlaylist() {
+        if uiMode == .reeltone,
+           (mainWindowController as? ReeltoneSurfaceProviding)?.routeReeltoneComponent(.trackList) == true {
+            notifyMainWindowVisibilityChanged()
+            return
+        }
         if let controller = playlistWindowController,
            let window = controller.window,
            window.isVisible {
@@ -891,10 +915,17 @@ class WindowManager {
     }
     
     func showEqualizer(at restoredFrame: NSRect? = nil) {
+        if uiMode == .reeltone,
+           (mainWindowController as? ReeltoneSurfaceProviding)?.routeReeltoneComponent(.equaliser) == true {
+            notifyMainWindowVisibilityChanged()
+            return
+        }
         let isNewWindow = equalizerWindowController == nil
         if isNewWindow {
             if isModernUIEnabled {
-                equalizerWindowController = ModernEQWindowController()
+                equalizerWindowController = uiMode == .reeltone
+                    ? ModernEQWindowController(preferences: ReeltoneDefaults.shared)
+                    : ModernEQWindowController()
             } else {
                 equalizerWindowController = EQWindowController()
             }
@@ -925,6 +956,11 @@ class WindowManager {
     }
     
     func toggleEqualizer() {
+        if uiMode == .reeltone,
+           (mainWindowController as? ReeltoneSurfaceProviding)?.routeReeltoneComponent(.equaliser) == true {
+            notifyMainWindowVisibilityChanged()
+            return
+        }
         if let controller = equalizerWindowController,
            let window = controller.window,
            window.isVisible {
@@ -1075,6 +1111,10 @@ class WindowManager {
     // MARK: - Plex Browser Window
     
     func showPlexBrowser(at restoredFrame: NSRect? = nil) {
+        if uiMode == .reeltone,
+           (mainWindowController as? ReeltoneSurfaceProviding)?.routeReeltoneComponent(.library) == true {
+            return
+        }
         let isNewWindow = plexBrowserWindowController == nil
         if isNewWindow {
             createPlexBrowserWindowController()
@@ -1109,7 +1149,9 @@ class WindowManager {
 
     private func createPlexBrowserWindowController() {
         if isModernUIEnabled {
-            plexBrowserWindowController = ModernLibraryBrowserWindowController()
+            plexBrowserWindowController = uiMode == .reeltone
+                ? ModernLibraryBrowserWindowController(preferences: ReeltoneDefaults.shared)
+                : ModernLibraryBrowserWindowController()
         } else {
             plexBrowserWindowController = PlexBrowserWindowController()
         }
@@ -1193,6 +1235,10 @@ class WindowManager {
     }
 
     func togglePlexBrowser() {
+        if uiMode == .reeltone,
+           (mainWindowController as? ReeltoneSurfaceProviding)?.routeReeltoneComponent(.library) == true {
+            return
+        }
         if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
             rememberPlexBrowserFrame()
             controller.window?.orderOut(nil)
@@ -1208,6 +1254,7 @@ class WindowManager {
 
     /// Toggle the menu-bar Compact Mode (works in both classic and modern UI). Live — no restart.
     func toggleCompactMode() {
+        guard uiMode.supportsCompactSurfaces else { return }
         if compactModeEnabled {
             exitCompactMode()
         } else {
@@ -1218,6 +1265,7 @@ class WindowManager {
     /// Toggle the free-floating Compact Window. This reuses the compact mini-player surface
     /// without changing activation policy or hiding any secondary windows.
     func toggleCompactWindow() {
+        guard uiMode.supportsCompactSurfaces else { return }
         if compactWindowEnabled {
             exitCompactWindow()
         } else {
@@ -1230,6 +1278,7 @@ class WindowManager {
     /// - Parameter treatMainAsVisible: Used at launch restore when the main window was created
     ///   hidden only to avoid flash. Exiting Compact Window should still bring it back.
     func enterCompactWindow(treatMainAsVisible: Bool = false) {
+        guard uiMode.supportsCompactSurfaces else { return }
         if compactModeState != .regular {
             exitCompactMode { [weak self] in
                 self?.enterCompactWindow(treatMainAsVisible: treatMainAsVisible)
@@ -1291,6 +1340,7 @@ class WindowManager {
     ///   regular layout, so this matches the live-toggle behavior. Defaults to `false` so the
     ///   live menu toggle keeps recording the main window's actual visibility.
     func enterCompactMode(revealWindow: Bool = true, treatMainAsVisible: Bool = false) {
+        guard uiMode.supportsCompactSurfaces else { return }
         let compactWindowMainWasVisible = compactWindowEnabled && mainWasVisibleBeforeCompactWindow
         if compactWindowEnabled {
             exitCompactWindow(restoreMainWindow: false)
@@ -1351,10 +1401,15 @@ class WindowManager {
     /// Pass `restoreRegularWindows: false` when the caller is about to tear down and rebuild the
     /// regular windows anyway (the live UI switch). The pre-compact windows are `.managed` and
     /// assigned to whatever Space they were created on; re-showing them here would activate the
-    /// app on *that* Space and yank the user away from the Space they're currently viewing. Skip
-    /// the restore and the dock/activation-policy churn so the rebuilt-fresh windows (and the
-    /// re-entered compact window) land on the current Space instead.
-    func exitCompactMode(restoreRegularWindows: Bool = true, completion: (() -> Void)? = nil) {
+    /// app on *that* Space and yank the user away from the Space they're currently viewing.
+    /// `restoreApplicationPresentation` is separate because a non-compact target such as Reeltone
+    /// must regain `.regular` activation without briefly showing those outgoing windows.
+    func exitCompactMode(
+        restoreRegularWindows: Bool = true,
+        restoreApplicationPresentation: Bool? = nil,
+        completion: (() -> Void)? = nil
+    ) {
+        let shouldRestoreApplicationPresentation = restoreApplicationPresentation ?? restoreRegularWindows
         guard compactModeState == .compactVisible ||
               compactModeState == .compactHidden ||
               compactModeState == .entering else {
@@ -1369,7 +1424,7 @@ class WindowManager {
         compactWindowController = nil
         removeCompactStatusItem()
 
-        if restoreRegularWindows {
+        if shouldRestoreApplicationPresentation {
             NSApp.setActivationPolicy(.regular)
             restoreDockIconImage()
         }
@@ -2507,10 +2562,17 @@ class WindowManager {
     // MARK: - Spectrum Analyzer Window
     
     func showSpectrum(at restoredFrame: NSRect? = nil) {
+        if uiMode == .reeltone,
+           (mainWindowController as? ReeltoneSurfaceProviding)?.routeReeltoneComponent(.visualiser) == true {
+            notifyMainWindowVisibilityChanged()
+            return
+        }
         let isNewWindow = spectrumWindowController == nil
         if isNewWindow {
             if isModernUIEnabled {
-                spectrumWindowController = ModernSpectrumWindowController()
+                spectrumWindowController = uiMode == .reeltone
+                    ? ModernSpectrumWindowController(preferences: ReeltoneDefaults.shared)
+                    : ModernSpectrumWindowController()
             } else {
                 spectrumWindowController = SpectrumWindowController()
             }
@@ -2555,6 +2617,11 @@ class WindowManager {
     }
     
     func toggleSpectrum() {
+        if uiMode == .reeltone,
+           (mainWindowController as? ReeltoneSurfaceProviding)?.routeReeltoneComponent(.visualiser) == true {
+            notifyMainWindowVisibilityChanged()
+            return
+        }
         if let controller = spectrumWindowController,
            let window = controller.window,
            window.isVisible {
@@ -3391,6 +3458,17 @@ class WindowManager {
         if runningModernMode {
             ModernSkinElements.sizeMultiplier = targetScale
         }
+
+        if uiMode == .reeltone,
+           let surfaces = mainWindowController as? ReeltoneSurfaceProviding {
+            surfaces.applyReeltoneScale(targetScale)
+            resizeReeltoneFallbackWindows(by: ratio)
+            for controller in [equalizerWindowController, playlistWindowController, spectrumWindowController,
+                               plexBrowserWindowController, projectMWindowController] {
+                controller?.window?.contentView?.markSubtreeForDisplayAndLayout()
+            }
+            return
+        }
         
         let scale = targetScale
         
@@ -3722,11 +3800,66 @@ class WindowManager {
         }
     }
 
+    /// Reeltone only: components omitted by a v2 manifest use the existing Original-mode
+    /// standalone windows. Keep those fallbacks live-scaled without entering the shared
+    /// classic/Original layout path above.
+    private func resizeReeltoneFallbackWindows(by ratio: CGFloat) {
+        guard ratio.isFinite, ratio > 0, ratio != 1 else { return }
+
+        func resize(_ window: NSWindow?, minSize: NSSize, fixed: Bool = false) {
+            guard let window else { return }
+            var frame = window.frame
+            let top = frame.maxY
+            frame.size = NSSize(width: frame.width * ratio, height: frame.height * ratio)
+            frame.origin.y = top - frame.height
+            window.minSize = minSize
+            if fixed { window.maxSize = frame.size }
+            window.setFrame(frame, display: true, animate: false)
+        }
+
+        resize(equalizerWindowController?.window, minSize: ModernSkinElements.eqMinSize, fixed: true)
+        resize(playlistWindowController?.window, minSize: ModernSkinElements.playlistMinSize)
+        resize(spectrumWindowController?.window, minSize: ModernSkinElements.spectrumMinSize)
+        resize(plexBrowserWindowController?.window, minSize: ModernSkinElements.libraryMinSize)
+    }
+
+    /// Close stale standalone fallbacks when a newly selected Reeltone skin claims their
+    /// singleton component. This guarantees a service has one live UI consumer at a time.
+    func reconcileReeltoneHostedFallbacks(with inventory: ReeltoneSurfaceInventory) {
+        guard uiMode == .reeltone else { return }
+
+        func retire(_ controller: ModeDependentWindow?) {
+            controller?.window?.orderOut(nil)
+            controller?.prepareForUITeardown()
+            controller?.window?.close()
+        }
+
+        if inventory.owner(of: .trackList) != nil {
+            retire(playlistWindowController)
+            playlistWindowController = nil
+        }
+        if inventory.owner(of: .equaliser) != nil {
+            retire(equalizerWindowController)
+            equalizerWindowController = nil
+        }
+        if inventory.owner(of: .library) != nil {
+            retire(plexBrowserWindowController)
+            plexBrowserWindowController = nil
+            lastPlexBrowserFrame = nil
+            lastPlexBrowserFrameWasDocked = false
+        }
+        if inventory.owner(of: .visualiser) != nil {
+            retire(spectrumWindowController)
+            spectrumWindowController = nil
+        }
+    }
+
     private func applyAlwaysOnTop() {
         let level: NSWindow.Level = isAlwaysOnTop ? .floating : .normal
         
         // Apply to all app windows
         mainWindowController?.window?.level = level
+        (mainWindowController as? ReeltoneSurfaceProviding)?.setReeltoneAlwaysOnTop(isAlwaysOnTop)
         equalizerWindowController?.window?.level = level
         playlistWindowController?.window?.level = level
         plexBrowserWindowController?.window?.level = level
@@ -5347,6 +5480,9 @@ class WindowManager {
     private func allWindows() -> [NSWindow] {
         var windows: [NSWindow] = []
         if let w = mainWindowController?.window, w.isVisible { windows.append(w) }
+        if let surfaces = mainWindowController as? ReeltoneSurfaceProviding {
+            windows.append(contentsOf: surfaces.reeltoneWindows.dropFirst().filter(\.isVisible))
+        }
         if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
@@ -5365,6 +5501,9 @@ class WindowManager {
     private func dockableWindows() -> [NSWindow] {
         var windows: [NSWindow] = []
         if let w = mainWindowController?.window, w.isVisible { windows.append(w) }
+        if let surfaces = mainWindowController as? ReeltoneSurfaceProviding {
+            windows.append(contentsOf: surfaces.reeltoneWindows.dropFirst().filter(\.isVisible))
+        }
         if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
@@ -5393,7 +5532,8 @@ class WindowManager {
     
     /// Check if a window participates in docking
     private func isDockableWindow(_ window: NSWindow) -> Bool {
-        return window === mainWindowController?.window ||
+        return (mainWindowController as? ReeltoneSurfaceProviding)?.reeltoneWindows.contains(where: { $0 === window }) == true ||
+               window === mainWindowController?.window ||
                window === playlistWindowController?.window ||
                window === equalizerWindowController?.window ||
                window === spectrumWindowController?.window ||
@@ -5540,6 +5680,7 @@ class WindowManager {
         var networkMonitor: UIWindowSnapshot?
         var cava: UIWindowSnapshot?
         var waveform: UIWindowSnapshot?
+        var reeltoneSurfaces: ReeltoneSurfaceLayoutSnapshot?
         /// Live ProjectM preset index, carried across the rebuild so the visualization stays on the
         /// exact preset the user was viewing rather than reverting to the saved startup default.
         var projectMPresetIndex: Int?
@@ -5567,6 +5708,7 @@ class WindowManager {
             networkMonitor: snap(networkMonitorWindowController),
             cava: snap(cavaWindowController),
             waveform: snap(waveformWindowController),
+            reeltoneSurfaces: (mainWindowController as? ReeltoneSurfaceProviding)?.captureReeltoneSurfaceLayout(),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
     }
@@ -5598,6 +5740,9 @@ class WindowManager {
                 )
                 : main.frame
             mainWindow.setFrame(targetFrame, display: true)
+        }
+        if let surfaces = snapshot.reeltoneSurfaces {
+            (mainWindowController as? ReeltoneSurfaceProviding)?.restoreReeltoneSurfaceLayout(surfaces)
         }
 
         if let playlist = snapshot.playlist, playlist.visible {
@@ -5790,9 +5935,10 @@ class WindowManager {
         }
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
 
-        let restoreCompactWindow = compactWindowEnabled
+        let wasCompactWindowEnabled = compactWindowEnabled
+        let restoreCompactWindow = wasCompactWindowEnabled && targetMode.supportsCompactSurfaces
         let compactWindowMainWasVisible = restoreCompactWindow && mainWasVisibleBeforeCompactWindow
-        if restoreCompactWindow {
+        if wasCompactWindowEnabled {
             exitCompactWindow(restoreMainWindow: false)
         }
 
@@ -5829,13 +5975,22 @@ class WindowManager {
             // their pre-switch state forward afterward. (The video player and debug console are
             // exempt from Compact Mode hiding and stay visible throughout.) See reapplyModeIndependentWindows(from:).
             let preSwitchSnapshot = regularWindowSnapshot
-            exitCompactMode(restoreRegularWindows: false) { [weak self] in
+            let reenterCompact = targetMode.supportsCompactSurfaces
+            exitCompactMode(
+                restoreRegularWindows: false,
+                restoreApplicationPresentation: !reenterCompact
+            ) { [weak self] in
                 guard let self else { return }
-                self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: true,
+                self.performReloadUI(to: targetMode, snapshot: snapshot, reenterCompact: reenterCompact,
                                      reenterCompactWindow: false,
                                      restoreScaleLevel: restoreScaleLevel,
                                      preservedDetachedFrames: preservedDetachedFrames)
-                self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
+                if reenterCompact {
+                    self.reapplyModeIndependentWindows(from: preSwitchSnapshot)
+                } else {
+                    self.restoreModeIndependentWindowsAfterCompactSwitch(from: preSwitchSnapshot)
+                    self.finishRegularPresentationAfterCompactSwitch()
+                }
                 completion?()
             }
         } else {
@@ -6005,6 +6160,35 @@ class WindowManager {
         regularWindowSnapshot?.additionalWindows = previous.additionalWindows
     }
 
+    /// A switch from Compact Mode to a mode that cannot re-enter compact presentation still has
+    /// to restore app-owned, mode-independent panels hidden at compact entry. Mode-dependent
+    /// player windows are rebuilt separately from the captured layout.
+    private func restoreModeIndependentWindowsAfterCompactSwitch(from previous: CompactWindowSnapshot?) {
+        guard let previous else {
+            regularWindowSnapshot = nil
+            return
+        }
+        for window in previous.additionalWindows where !isInNativeFullScreen(window) {
+            window.orderFront(nil)
+        }
+        regularWindowSnapshot = nil
+    }
+
+    /// Complete the `.accessory` -> `.regular` transition after the new non-compact mode has built
+    /// its windows. The policy bounce mirrors ordinary Compact Mode exit and makes AppKit re-own
+    /// the menu bar even when NullPlayer remained active throughout the switch.
+    private func finishRegularPresentationAfterCompactSwitch() {
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
+        (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+        reassertRegularActivation()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.compactModeState == .regular else { return }
+            (NSApp.delegate as? AppDelegate)?.rebuildMainMenu()
+            self.reassertRegularActivation()
+        }
+    }
+
     /// Build a mode-dependent layout snapshot from a Compact-Mode capture, so the live UI switch
     /// can rebuild the regular windows without first re-showing them. Falls back to a live capture
     /// if no Compact snapshot exists.
@@ -6047,6 +6231,7 @@ class WindowManager {
             networkMonitor: convScaled(snapshot.networkMonitor),
             cava: convScaled(snapshot.cava),
             waveform: convScaled(snapshot.waveform),
+            reeltoneSurfaces: nil,
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
     }

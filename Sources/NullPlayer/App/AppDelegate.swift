@@ -77,8 +77,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
         // entered only after the asynchronous window restoration has completed, so it
         // can capture and hide the actual restored window set.
-        let shouldRestoreCompactMode = UserDefaults.standard.bool(forKey: "compactModeEnabled")
+        let compactSurfacesSupported = windowManager.uiMode.supportsCompactSurfaces
+        let shouldRestoreCompactMode = compactSurfacesSupported
+            && UserDefaults.standard.bool(forKey: "compactModeEnabled")
         let shouldRestoreCompactWindow = !shouldRestoreCompactMode
+            && compactSurfacesSupported
             && UserDefaults.standard.bool(forKey: "compactWindowEnabled")
 
         // Create the main window, but only reveal it when we are NOT launching straight into
@@ -156,6 +159,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Don't load custom skins from environment in test mode
         if let family = windowManager.uiMode.modernSkinFamily {
             ModernSkinEngine.shared.loadDefaultSkin(for: family)
+        } else if windowManager.uiMode == .reeltone {
+            ReeltoneThemeRuntime.prepare()
         }
         
         // Show the main player window

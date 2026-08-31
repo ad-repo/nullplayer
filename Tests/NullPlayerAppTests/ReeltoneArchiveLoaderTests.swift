@@ -27,6 +27,8 @@ final class ReeltoneArchiveLoaderTests: XCTestCase {
         let extractedRoot = try XCTUnwrap(loaded?.rootURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: extractedRoot.path))
         XCTAssertEqual(loaded?.imageInfo["art.png"], ReeltoneImageInfo(width: 2, height: 3))
+        XCTAssertEqual(loaded?.diagnostics.map(\.code), [.unsupportedConstruct])
+        XCTAssertEqual(loaded?.diagnostics.first?.codingPath, ["sprites", "background"])
         loaded?.close()
         XCTAssertFalse(FileManager.default.fileExists(atPath: extractedRoot.path))
         loaded = nil
@@ -41,7 +43,41 @@ final class ReeltoneArchiveLoaderTests: XCTestCase {
         let loaded = try ReeltoneSkinLoader(temporaryDirectory: temporaryRoot).loadArchive(at: archiveURL)
         XCTAssertEqual(loaded.manifest.formatVersion, 2)
         XCTAssertEqual(loaded.manifest.window?.size, [8, 4])
+        let first = try loaded.image(for: "chassis.png")
+        let second = try loaded.image(for: "chassis.png")
+        XCTAssertTrue(first === second)
+        XCTAssertEqual(loaded.cachedDecodedImageBytes, 8 * 4 * 4)
         loaded.close()
+    }
+
+    func testReportsAcceptedButUnrenderedPublishedConstructs() throws {
+        let root = temporaryRoot.appendingPathComponent("warnings", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data(#"{"formatVersion":2,"id":"warnings","name":"Warnings","fonts":{"bodyBold":{"builtin":"Silkscreen-Bold"}},"sprites":{"background":{"file":"sprite.png","mode":"stretch"}},"window":{"size":[2,2],"art":{"normal":"main.png"}},"regions":[]}"#.utf8)
+            .write(to: root.appendingPathComponent("skin.json"))
+        try png(width: 2, height: 2).write(to: root.appendingPathComponent("main.png"))
+        try png(width: 2, height: 2).write(to: root.appendingPathComponent("sprite.png"))
+        let loaded = try ReeltoneSkinLoader().loadDirectory(at: root)
+        XCTAssertEqual(loaded.diagnostics.map(\.code), [.unsupportedConstruct, .unsupportedConstruct])
+        XCTAssertEqual(Set(loaded.diagnostics.map(\.codingPath)), Set([["sprites", "background"], ["fonts", "bodyBold"]]))
+    }
+
+    func testAlphaHitSamplingDistinguishesTransparentAndOpaquePixels() throws {
+        let archiveURL = temporaryRoot.appendingPathComponent("alpha.reeltone")
+        try makeArchive(at: archiveURL, files: [
+            "skin.json": Data(#"{"formatVersion":2,"id":"alpha","name":"Alpha","window":{"size":[2,1],"art":{"normal":"chassis.png"}},"regions":[]}"#.utf8),
+            "chassis.png": try alphaTestPNG()
+        ])
+        let loaded = try ReeltoneSkinLoader(temporaryDirectory: temporaryRoot).loadArchive(at: archiveURL)
+
+        XCTAssertFalse(try loaded.containsVisiblePixel(
+            in: "chassis.png",
+            normalizedTopLeftPoint: CGPoint(x: 0.25, y: 0.5)
+        ))
+        XCTAssertTrue(try loaded.containsVisiblePixel(
+            in: "chassis.png",
+            normalizedTopLeftPoint: CGPoint(x: 0.75, y: 0.5)
+        ))
     }
 
     func testRejectsCorruptArchive() throws {
@@ -105,6 +141,25 @@ final class ReeltoneArchiveLoaderTests: XCTestCase {
         {"formatVersion":2,"id":"x","name":"X","window":{"size":[1,1],"art":{"normal":"image0.png"}},"regions":[\(sprites)]}
         """.utf8)
         try assertArchive(files: files, code: .decodedImageMemoryLimit)
+    }
+
+    func testValidatesPackagedFontPostScriptNameBeforeUse() throws {
+        let font = try Data(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/NullPlayer/Resources/Fonts/DepartureMono-Regular.otf"))
+        let validURL = temporaryRoot.appendingPathComponent("font-valid.reeltone")
+        try makeArchive(at: validURL, files: [
+            "skin.json": Data(#"{"formatVersion":1,"id":"font","name":"Font","fonts":{"body":{"file":"font.otf","postScriptName":"DepartureMono-Regular"}}}"#.utf8),
+            "font.otf": font
+        ])
+        let loaded = try ReeltoneSkinLoader(temporaryDirectory: temporaryRoot).loadArchive(at: validURL)
+        XCTAssertNotNil(loaded.resources["font.otf"])
+
+        let invalidURL = temporaryRoot.appendingPathComponent("font-invalid.reeltone")
+        try makeArchive(at: invalidURL, files: [
+            "skin.json": Data(#"{"formatVersion":1,"id":"font","name":"Font","fonts":{"body":{"file":"font.otf","postScriptName":"Wrong-Name"}}}"#.utf8),
+            "font.otf": font
+        ])
+        try assertLoad(invalidURL, limits: .published, code: .invalidFont)
     }
 
     func testDirectoryLoaderRejectsSymlinkedResourceEscape() throws {
@@ -171,6 +226,35 @@ final class ReeltoneArchiveLoaderTests: XCTestCase {
             bytesPerRow: 0,
             bitsPerPixel: 0
         ), let data = representation.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return data
+    }
+
+
+    private func alphaTestPNG() throws -> Data {
+        guard let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 2,
+            pixelsHigh: 1,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { throw CocoaError(.fileWriteUnknown) }
+        guard let pixels = representation.bitmapData else { throw CocoaError(.fileWriteUnknown) }
+        pixels[0] = 0
+        pixels[1] = 0
+        pixels[2] = 0
+        pixels[3] = 0
+        pixels[4] = 255
+        pixels[5] = 255
+        pixels[6] = 255
+        pixels[7] = 255
+        guard let data = representation.representation(using: .png, properties: [:]) else {
             throw CocoaError(.fileWriteUnknown)
         }
         return data

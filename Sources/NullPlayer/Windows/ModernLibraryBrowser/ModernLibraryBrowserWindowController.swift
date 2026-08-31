@@ -10,10 +10,15 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     // MARK: - Properties
     
     private var browserView: ModernLibraryBrowserView!
+    private var preferences: UserDefaults = .standard
     
     // MARK: - Initialization
     
     convenience init() {
+        self.init(preferences: .standard)
+    }
+
+    convenience init(preferences: UserDefaults) {
         let windowSize = ModernSkinElements.libraryDefaultSize
         
         let window = BorderlessWindow(
@@ -28,6 +33,7 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         window.titleBarHeight = ModernSkinElements.titleBarBaseHeight * ModernSkinElements.scaleFactor
 
         self.init(window: window)
+        self.preferences = preferences
         
         setupWindow()
         setupView()
@@ -69,7 +75,10 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     }
     
     private func setupView() {
-        browserView = ModernLibraryBrowserView(frame: NSRect(origin: .zero, size: ModernSkinElements.libraryDefaultSize))
+        browserView = ModernLibraryBrowserView(
+            frame: NSRect(origin: .zero, size: ModernSkinElements.libraryDefaultSize),
+            preferences: preferences
+        )
         browserView.controller = self
         browserView.autoresizingMask = [.width, .height]
 

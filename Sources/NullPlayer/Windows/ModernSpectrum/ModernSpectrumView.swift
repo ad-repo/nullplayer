@@ -12,6 +12,7 @@ import AppKit
 
 /// Modern spectrum analyzer container view with full modern skin support
 class ModernSpectrumView: NSView {
+    private let preferences: UserDefaults
     
     // MARK: - Properties
     
@@ -35,6 +36,7 @@ class ModernSpectrumView: NSView {
     
     /// Observer for spectrum data notifications
     private var spectrumObserver: NSObjectProtocol?
+    private var isPreparedForUITeardown = false
     
     /// Scale factor for hit testing (computed to track double-size changes)
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
@@ -63,11 +65,19 @@ class ModernSpectrumView: NSView {
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
+        preferences = .standard
+        super.init(frame: frameRect)
+        commonInit()
+    }
+
+    init(frame frameRect: NSRect, preferences: UserDefaults) {
+        self.preferences = preferences
         super.init(frame: frameRect)
         commonInit()
     }
     
     required init?(coder: NSCoder) {
+        preferences = .standard
         super.init(coder: coder)
         commonInit()
     }
@@ -115,8 +125,19 @@ class ModernSpectrumView: NSView {
     }
     
     deinit {
+        prepareForUITeardown()
+    }
+
+    /// Release mode-scoped resources synchronously rather than waiting for
+    /// AppKit's autorelease pool to deallocate a closed window hierarchy.
+    func prepareForUITeardown() {
+        guard !isPreparedForUITeardown else { return }
+        isPreparedForUITeardown = true
+
+        stopRendering()
         if let observer = spectrumObserver {
             NotificationCenter.default.removeObserver(observer)
+            spectrumObserver = nil
         }
         NotificationCenter.default.removeObserver(self)
         WindowManager.shared.audioEngine.removeSpectrumConsumer("modernSpectrumView")
@@ -127,7 +148,12 @@ class ModernSpectrumView: NSView {
     private func setupSpectrumAnalyzerView() {
         let contentArea = calculateContentArea()
         
-        spectrumAnalyzerView = SpectrumAnalyzerView(frame: contentArea)
+        spectrumAnalyzerView = SpectrumAnalyzerView(
+            frame: contentArea,
+            preferences: preferences,
+            embedded: false,
+            normalizationUserDefaultsKey: "spectrumNormalizationMode"
+        )
         if let view = spectrumAnalyzerView {
             let barCount = ModernSkinElements.spectrumBarCount
             let spacing: CGFloat = 1.0
@@ -502,7 +528,7 @@ class ModernSpectrumView: NSView {
         }
         let newMode = modes[newIdx]
         view.qualityMode = newMode
-        UserDefaults.standard.set(newMode.rawValue, forKey: "spectrumQualityMode")
+        preferences.set(newMode.rawValue, forKey: "spectrumQualityMode")
     }
     
     private func cycleFlameStyle(forward: Bool) {
@@ -571,7 +597,7 @@ class ModernSpectrumView: NSView {
         // Normalization Mode submenu (not shown for Flame mode)
         if spectrumAnalyzerView?.qualityMode != .flame {
             let normMenu = NSMenu()
-            let currentNormMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
+            let currentNormMode = preferences.string(forKey: "spectrumNormalizationMode")
                 .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
             for mode in SpectrumNormalizationMode.allCases {
                 let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(setNormalizationMode(_:)), keyEquivalent: "")
@@ -767,7 +793,7 @@ class ModernSpectrumView: NSView {
     
     @objc private func setNormalizationMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
+        preferences.set(mode.rawValue, forKey: "spectrumNormalizationMode")
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     

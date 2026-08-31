@@ -111,6 +111,10 @@ final class AppPersistenceTests: XCTestCase {
             XCTAssertTrue(PlayerUIMode.reeltone.usesModernEQLayout)
             XCTAssertTrue(PlayerUIMode.reeltone.usesModernControllers)
             XCTAssertTrue(PlayerUIMode.reeltone.usesReeltoneSurfaces)
+            XCTAssertFalse(PlayerUIMode.reeltone.supportsCompactSurfaces)
+            XCTAssertTrue(PlayerUIMode.classic.supportsCompactSurfaces)
+            XCTAssertTrue(PlayerUIMode.modern.supportsCompactSurfaces)
+            XCTAssertTrue(PlayerUIMode.metal.supportsCompactSurfaces)
             XCTAssertNil(PlayerUIMode.reeltone.modernSkinFamily)
         }
     }

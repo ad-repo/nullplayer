@@ -561,6 +561,7 @@ class AudioEngine {
     }
 
     var spectrumNeeded: Bool { !spectrumConsumers.isEmpty }
+    var spectrumConsumerRegistrationCount: Int { spectrumConsumers.values.reduce(0, +) }
 
     func addWaveformConsumer(_ id: String) {
         waveformConsumers[id, default: 0] += 1

@@ -43,6 +43,11 @@ enum PlayerUIMode: String, CaseIterable {
         self == .reeltone
     }
 
+    /// Reeltone surfaces intentionally remain a regular-window-only UI.
+    var supportsCompactSurfaces: Bool {
+        self != .reeltone
+    }
+
     var modernSkinFamily: ModernSkinFamily? {
         switch self {
         case .classic, .reeltone: return nil

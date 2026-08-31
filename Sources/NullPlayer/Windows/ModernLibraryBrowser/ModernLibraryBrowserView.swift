@@ -100,13 +100,13 @@ enum ModernBrowserSource: Equatable, Codable {
     }
 
     private static let userDefaultsKey = "BrowserSource"
-    func save() {
+    func save(to defaults: UserDefaults = .standard) {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
+            defaults.set(data, forKey: Self.userDefaultsKey)
         }
     }
-    static func load() -> ModernBrowserSource? {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+    static func load(from defaults: UserDefaults = .standard) -> ModernBrowserSource? {
+        guard let data = defaults.data(forKey: userDefaultsKey),
               let source = try? JSONDecoder().decode(ModernBrowserSource.self, from: data) else { return nil }
         return source
     }
@@ -164,9 +164,9 @@ enum ModernBrowserSortOption: String, CaseIterable, Codable {
     }
     
     private static let userDefaultsKey = "BrowserSortOption"
-    func save() { UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey) }
-    static func load() -> ModernBrowserSortOption {
-        guard let raw = UserDefaults.standard.string(forKey: userDefaultsKey),
+    func save(to defaults: UserDefaults = .standard) { defaults.set(rawValue, forKey: Self.userDefaultsKey) }
+    static func load(from defaults: UserDefaults = .standard) -> ModernBrowserSortOption {
+        guard let raw = defaults.string(forKey: userDefaultsKey),
               let option = ModernBrowserSortOption(rawValue: raw) else { return .nameAsc }
         return option
     }
@@ -181,6 +181,10 @@ enum LibraryBrowserButtonType {
 // MARK: - Modern Library Browser View
 
 class ModernLibraryBrowserView: NSView {
+    private let preferences: UserDefaults
+    private let isolatesPresentationPreferences: Bool
+    /// Content-only presentation used by manifest-owned Reeltone regions.
+    var isEmbedded = false
     
     // MARK: - Properties
     
@@ -211,11 +215,15 @@ class ModernLibraryBrowserView: NSView {
         compactMode ? CompactPlayerBarView.preferredHeight(for: ModernSkinElements.sizeMultiplier) : 0
     }
 
+    private var titleBarHeight: CGFloat {
+        isEmbedded ? 0 : Layout.titleBarHeight
+    }
+
     /// Y coordinate of the bottom of the top chrome (title bar + optional compact player bar).
     /// All content below the title bar measures down from here, so inserting the player bar
     /// shifts the server bar / tabs / search / list down without resizing the window.
     private var topChromeBottomY: CGFloat {
-        bounds.height - Layout.titleBarHeight - compactPlayerBarHeight
+        bounds.height - titleBarHeight - compactPlayerBarHeight
     }
 
     /// Y coordinate of the bottom of the scrollable content region. Content measures up from
@@ -227,7 +235,7 @@ class ModernLibraryBrowserView: NSView {
     
     // Browse state
     private var currentSource: ModernBrowserSource = .local {
-        didSet { currentSource.save(); onSourceChanged() }
+        didSet { currentSource.save(to: preferences); onSourceChanged() }
     }
     private var pendingSourceRestore: ModernBrowserSource?
     private var browseMode: ModernBrowseMode = .artists {
@@ -274,7 +282,7 @@ class ModernLibraryBrowserView: NSView {
     
     private var currentSort: ModernBrowserSortOption = .nameAsc {
         didSet {
-            currentSort.save()
+            currentSort.save(to: preferences)
             localArtistPageOffset = 0; localAlbumPageOffset = 0
             localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
             rebuildCurrentModeItems()
@@ -291,7 +299,9 @@ class ModernLibraryBrowserView: NSView {
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
     
-    private var itemHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
+    /// Optional row height supplied by an embedded host. Standalone windows leave this nil.
+    var embeddedRowHeightOverride: CGFloat?
+    private var itemHeight: CGFloat { embeddedRowHeightOverride ?? (18 * ModernSkinElements.sizeMultiplier) }
     private var columnHeaderHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
     
     // Column state
@@ -397,9 +407,9 @@ class ModernLibraryBrowserView: NSView {
     enum CompactContentMode: Int { case library = 0, queue = 1 }
 
     private var compactContentMode: CompactContentMode {
-        get { CompactContentMode(rawValue: UserDefaults.standard.integer(forKey: "compactContentMode")) ?? .library }
+        get { CompactContentMode(rawValue: preferences.integer(forKey: "compactContentMode")) ?? .library }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "compactContentMode")
+            preferences.set(newValue.rawValue, forKey: "compactContentMode")
             updateCompactPlaylistFrame()   // show/hide + size the embedded queue
             // Hand keyboard focus to whichever view is now visible.
             window?.makeFirstResponder(newValue == .queue ? (compactPlaylistView ?? self) : self)
@@ -419,8 +429,8 @@ class ModernLibraryBrowserView: NSView {
 
     // Local Plists slot toggle state (switch between Plists and Folders)
     private var localPlistsSlotShowsFolders: Bool {
-        get { UserDefaults.standard.object(forKey: "LocalPlistsSlotShowsFolders") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "LocalPlistsSlotShowsFolders") }
+        get { preferences.object(forKey: "LocalPlistsSlotShowsFolders") as? Bool ?? true }
+        set { preferences.set(newValue, forKey: "LocalPlistsSlotShowsFolders") }
     }
 
     private var effectivePlistsSlotMode: ModernBrowseMode {
@@ -434,8 +444,8 @@ class ModernLibraryBrowserView: NSView {
     /// channels (YouTube source only), mirroring the Plists/Folders toggle.
     /// Defaults to showing channels so the YouTube source opens on "Channels".
     private var radioSlotShowsChannels: Bool {
-        get { UserDefaults.standard.object(forKey: "RadioSlotShowsChannels") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "RadioSlotShowsChannels") }
+        get { preferences.object(forKey: "RadioSlotShowsChannels") as? Bool ?? true }
+        set { preferences.set(newValue, forKey: "RadioSlotShowsChannels") }
     }
     /// Whether the Radio tab slot is currently displaying YouTube channels.
     private var radioSlotShowingChannels: Bool {
@@ -753,11 +763,22 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
+        preferences = .standard
+        isolatesPresentationPreferences = false
+        super.init(frame: frameRect)
+        commonInit()
+    }
+
+    init(frame frameRect: NSRect, preferences: UserDefaults) {
+        self.preferences = preferences
+        isolatesPresentationPreferences = true
         super.init(frame: frameRect)
         commonInit()
     }
     
     required init?(coder: NSCoder) {
+        preferences = .standard
+        isolatesPresentationPreferences = false
         super.init(coder: coder)
         commonInit()
     }
@@ -777,7 +798,7 @@ class ModernLibraryBrowserView: NSView {
         loadColumnSort()
         
         // Load saved source
-        if let savedSource = ModernBrowserSource.load() {
+        if let savedSource = ModernBrowserSource.load(from: preferences) {
             switch savedSource {
             case .local:
                 currentSource = .local
@@ -843,19 +864,19 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // Load saved sort option
-        currentSort = ModernBrowserSortOption.load()
+        currentSort = ModernBrowserSortOption.load(from: preferences)
         
         // Art-only mode always starts disabled
         isArtOnlyMode = false
         
         // Load saved visualizer preferences — default effect takes priority over last-used
-        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
-        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
+        let defaultEffectKey = preferences.string(forKey: "browserVisDefaultEffect")
+        let lastUsedKey = preferences.string(forKey: "browserVisEffect")
         if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
             currentVisEffect = effect
         }
-        if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
-            visEffectIntensity = CGFloat(UserDefaults.standard.double(forKey: "browserVisIntensity"))
+        if preferences.object(forKey: "browserVisIntensity") != nil {
+            visEffectIntensity = CGFloat(preferences.double(forKey: "browserVisIntensity"))
         }
         
         // Register notifications
@@ -995,6 +1016,49 @@ class ModernLibraryBrowserView: NSView {
         coverFlowSourceItems = []
     }
 
+    /// Content-host action used by a Reeltone `libraryBack` region.
+    func navigateBackFromEmbeddedHost() {
+        if isCoverFlowMode, !coverFlowFocusStack.isEmpty {
+            coverFlowNavigateBack()
+            return
+        }
+        guard let index = selectedIndices.first, index < displayItems.count else { return }
+        let item = displayItems[index]
+        if isExpanded(item) {
+            toggleExpand(item)
+        } else if item.indentLevel > 0 {
+            let parentLevel = item.indentLevel - 1
+            for candidateIndex in stride(from: index - 1, through: 0, by: -1) {
+                let candidate = displayItems[candidateIndex]
+                if case .header = candidate.type { continue }
+                if candidate.indentLevel == parentLevel {
+                    selectedIndices = [candidateIndex]
+                    ensureVisible(index: candidateIndex)
+                    loadArtworkForSelection()
+                    break
+                }
+            }
+        }
+        needsDisplay = true
+    }
+
+    /// Lifecycle seam for a hidden or revealed content-only Reeltone host.
+    func setEmbeddedHostVisible(_ visible: Bool) {
+        guard isEmbedded, !isPreparingForUITeardown else { return }
+        if visible {
+            startServerNameScroll()
+            if visualizerWasActiveBeforeHide && isVisualizingArt { startVisualizerTimer() }
+            visualizerWasActiveBeforeHide = false
+        } else {
+            stopServerNameScroll()
+            if visualizerTimer != nil {
+                visualizerWasActiveBeforeHide = isVisualizingArt
+                stopVisualizerTimer()
+            }
+        }
+        backdropView?.reload()
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         layer?.isOpaque = false
@@ -1032,7 +1096,8 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private var effectiveBackdropMode: BrowserBackdropMode {
-        compactMode
+        if isolatesPresentationPreferences { return .off }
+        return compactMode
             ? WindowManager.shared.compactBackdropMode
             : WindowManager.shared.libraryBackdropMode
     }
@@ -1372,22 +1437,24 @@ class ModernLibraryBrowserView: NSView {
 
         // Normal mode - bottom-left origin (no coordinate flipping)
         let renderer = ModernSkinRenderer(skin: skin)
-        renderer.drawWindowBackground(
-            in: bounds,
-            context: context,
-            adjacentEdges: adjacentEdges,
-            sharpCorners: sharpCorners,
-            backgroundOpacity: backgroundOpacity,
-            drawMetalAccentStrip: false
-        )
-        renderer.drawWindowBorder(
-            in: bounds,
-            context: context,
-            adjacentEdges: adjacentEdges,
-            sharpCorners: sharpCorners,
-            occlusionSegments: edgeOcclusionSegments,
-            borderOpacity: mainOpacity.border
-        )
+        if !isEmbedded {
+            renderer.drawWindowBackground(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                backgroundOpacity: backgroundOpacity,
+                drawMetalAccentStrip: false
+            )
+            renderer.drawWindowBorder(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                occlusionSegments: edgeOcclusionSegments,
+                borderOpacity: mainOpacity.border
+            )
+        }
 
         context.saveGState()
         context.setAlpha(mainOpacity.content)
@@ -1399,7 +1466,7 @@ class ModernLibraryBrowserView: NSView {
         let baseHeight = bounds.height / scale
         
         // Draw title bar
-        if !WindowManager.shared.hideTitleBars {
+        if !isEmbedded && !WindowManager.shared.hideTitleBars {
             // Title bar at TOP in base space
             let tbh = ModernSkinElements.titleBarBaseHeight
             let titleBarRect = NSRect(x: 0, y: baseHeight - tbh, width: baseWidth, height: tbh)
@@ -3417,11 +3484,11 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func saveColumnWidths() {
-        UserDefaults.standard.set(columnWidths, forKey: "BrowserColumnWidths")
+        preferences.set(columnWidths, forKey: "BrowserColumnWidths")
     }
     
     private func loadColumnWidths() {
-        if let saved = UserDefaults.standard.dictionary(forKey: "BrowserColumnWidths") as? [String: CGFloat] {
+        if let saved = preferences.dictionary(forKey: "BrowserColumnWidths") as? [String: CGFloat] {
             columnWidths = migrateColumnWidths(saved)
         }
     }
@@ -3442,35 +3509,35 @@ class ModernLibraryBrowserView: NSView {
     
     private func saveColumnSort() {
         if let id = columnSortId {
-            UserDefaults.standard.set(id, forKey: "BrowserColumnSortId")
-            UserDefaults.standard.set(columnSortAscending, forKey: "BrowserColumnSortAscending")
+            preferences.set(id, forKey: "BrowserColumnSortId")
+            preferences.set(columnSortAscending, forKey: "BrowserColumnSortAscending")
         } else {
-            UserDefaults.standard.removeObject(forKey: "BrowserColumnSortId")
+            preferences.removeObject(forKey: "BrowserColumnSortId")
         }
     }
     
     private func loadColumnSort() {
-        columnSortId = UserDefaults.standard.string(forKey: "BrowserColumnSortId")
-        columnSortAscending = UserDefaults.standard.bool(forKey: "BrowserColumnSortAscending")
-        if UserDefaults.standard.object(forKey: "BrowserColumnSortAscending") == nil {
+        columnSortId = preferences.string(forKey: "BrowserColumnSortId")
+        columnSortAscending = preferences.bool(forKey: "BrowserColumnSortAscending")
+        if preferences.object(forKey: "BrowserColumnSortAscending") == nil {
             columnSortAscending = true
         }
     }
     
     private func saveVisibleColumns() {
-        UserDefaults.standard.set(visibleTrackColumnIds, forKey: "BrowserVisibleTrackColumns")
-        UserDefaults.standard.set(visibleAlbumColumnIds, forKey: "BrowserVisibleAlbumColumns")
-        UserDefaults.standard.set(visibleArtistColumnIds, forKey: "BrowserVisibleArtistColumns")
+        preferences.set(visibleTrackColumnIds, forKey: "BrowserVisibleTrackColumns")
+        preferences.set(visibleAlbumColumnIds, forKey: "BrowserVisibleAlbumColumns")
+        preferences.set(visibleArtistColumnIds, forKey: "BrowserVisibleArtistColumns")
     }
     
     private func loadVisibleColumns() {
-        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleTrackColumns") {
+        if let saved = preferences.stringArray(forKey: "BrowserVisibleTrackColumns") {
             visibleTrackColumnIds = normalizedColumnIds(saved, allColumns: ModernBrowserColumn.allTrackColumns)
         }
-        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleAlbumColumns") {
+        if let saved = preferences.stringArray(forKey: "BrowserVisibleAlbumColumns") {
             visibleAlbumColumnIds = normalizedColumnIds(saved, allColumns: ModernBrowserColumn.allAlbumColumns)
         }
-        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleArtistColumns") {
+        if let saved = preferences.stringArray(forKey: "BrowserVisibleArtistColumns") {
             visibleArtistColumnIds = normalizedColumnIds(saved, allColumns: ModernBrowserColumn.allArtistColumns)
         }
     }
@@ -3798,14 +3865,16 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Hit Testing (Bottom-Left Origin)
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if isEmbedded { return false }
         let m = ModernSkinElements.sizeMultiplier
-        return point.y > bounds.height - Layout.titleBarHeight &&
+        return point.y > bounds.height - titleBarHeight &&
                point.x < bounds.width - 30 * m
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if isEmbedded { return false }
         let m = ModernSkinElements.sizeMultiplier
-        let closeRect = NSRect(x: bounds.width - 20 * m, y: bounds.height - Layout.titleBarHeight, width: 20 * m, height: Layout.titleBarHeight)
+        let closeRect = NSRect(x: bounds.width - 20 * m, y: bounds.height - titleBarHeight, width: 20 * m, height: titleBarHeight)
         return closeRect.contains(point)
     }
     
@@ -4076,7 +4145,7 @@ class ModernLibraryBrowserView: NSView {
 
         // When HT is on, record drag start point early so mouseDragged can move the window
         // from anywhere (title bar is hidden so there's no dedicated drag handle)
-        if WindowManager.shared.hideTitleBars {
+        if !isEmbedded && WindowManager.shared.hideTitleBars {
             windowDragStartPoint = event.locationInWindow
             if let window = window {
                 WindowManager.shared.windowWillPrimeDragging(window)
@@ -4085,7 +4154,7 @@ class ModernLibraryBrowserView: NSView {
         }
 
         // Window buttons (only when titlebar is visible)
-        if !WindowManager.shared.hideTitleBars {
+        if !isEmbedded && !WindowManager.shared.hideTitleBars {
             if hitTestCloseButton(at: point) { pressedButton = .close; needsDisplay = true; return }
         }
 
@@ -4215,7 +4284,7 @@ class ModernLibraryBrowserView: NSView {
         }
 
         // When HT is on, lazily start window drag on first mouseDragged (handles content-area drags)
-        if !isDraggingWindow && WindowManager.shared.hideTitleBars {
+        if !isEmbedded && !isDraggingWindow && WindowManager.shared.hideTitleBars {
             isDraggingWindow = true
             if let window = window { WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true) }
         }
@@ -5328,7 +5397,7 @@ class ModernLibraryBrowserView: NSView {
     /// Appends grouped effect submenus to `menu`. Each item is checked when it
     /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
     private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
-        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        let savedDefault = preferences.string(forKey: "browserVisDefaultEffect")
         for group in VisEffect.groups {
             let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
             let sub = NSMenu(title: group.title)
@@ -5426,6 +5495,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func prependBackdropMenu(to menu: NSMenu) {
+        guard !isolatesPresentationPreferences else { return }
         guard backdropMenuIsAvailable else { return }
         if !menu.items.isEmpty {
             menu.insertItem(.separator(), at: 0)
@@ -6231,11 +6301,11 @@ class ModernLibraryBrowserView: NSView {
               let effect = VisEffect(rawValue: raw) else { return }
         visMode = .single
         currentVisEffect = effect
-        UserDefaults.standard.set(effect.rawValue, forKey: "browserVisEffect")
+        preferences.set(effect.rawValue, forKey: "browserVisEffect")
     }
 
     @objc private func menuSetDefaultEffect() {
-        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
+        preferences.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
     }
     @objc private func enableArtVisualization() { isVisualizingArt = true }
     @objc private func exitArtView() { isArtOnlyMode = false }

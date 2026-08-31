@@ -30,6 +30,7 @@ class SpectrumView: NSView {
     
     /// Observer for spectrum data notifications
     private var spectrumObserver: NSObjectProtocol?
+    private var isPreparedForUITeardown = false
     
     // MARK: - Layout Constants
     
@@ -118,8 +119,19 @@ class SpectrumView: NSView {
     }
     
     deinit {
+        prepareForUITeardown()
+    }
+
+    /// Release mode-scoped resources synchronously. AppKit can retain closed views
+    /// past a UI rebuild, so consumer registration cannot depend on `deinit` timing.
+    func prepareForUITeardown() {
+        guard !isPreparedForUITeardown else { return }
+        isPreparedForUITeardown = true
+
+        stopRendering()
         if let observer = spectrumObserver {
             NotificationCenter.default.removeObserver(observer)
+            spectrumObserver = nil
         }
         NotificationCenter.default.removeObserver(self)
         WindowManager.shared.audioEngine.removeSpectrumConsumer("spectrumView")

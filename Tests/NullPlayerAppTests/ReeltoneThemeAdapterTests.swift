@@ -50,4 +50,17 @@ final class ReeltoneThemeAdapterTests: XCTestCase {
         XCTAssertEqual(adapter.palette.panel, ReeltoneThemeAdapter.defaultPalette.panel)
         XCTAssertEqual(adapter.palette.panelText, ReeltoneThemeAdapter.defaultPalette.panelText)
     }
+
+    func testMapsVersionOneBuiltinFontsIntoTransientPresentation() throws {
+        let manifest = try ReeltoneManifestDecoder.decode(Data(#"""
+        {"formatVersion":1,"id":"fonts","name":"Fonts","fonts":{
+          "body":{"builtin":"Silkscreen-Regular"},
+          "digits":{"builtin":"DSEG7Classic-Regular"}
+        }}
+        """#.utf8))
+        let adapter = ReeltoneThemeAdapter(manifest: manifest)
+        XCTAssertNotNil(adapter.presentationSkin.primaryFont)
+        XCTAssertNotNil(adapter.presentationSkin.timeFont)
+        XCTAssertNotNil(adapter.presentationSkin.smallFont)
+    }
 }

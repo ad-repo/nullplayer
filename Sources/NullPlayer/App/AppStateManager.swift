@@ -56,9 +56,13 @@ class AppStateManager {
 
     static func shouldRestoreGeometry(
         savedMode: PlayerUIMode,
-        runningMode: PlayerUIMode
+        runningMode: PlayerUIMode,
+        savedReeltoneIdentity: String? = nil,
+        runningReeltoneIdentity: String? = nil
     ) -> Bool {
-        savedMode == runningMode
+        guard savedMode == runningMode else { return false }
+        guard runningMode == .reeltone else { return true }
+        return savedReeltoneIdentity != nil && savedReeltoneIdentity == runningReeltoneIdentity
     }
     
     // MARK: - UserDefaults Keys
@@ -293,6 +297,7 @@ class AppStateManager {
         // UI mode the state was saved in (used to skip frame restoration on mode mismatch)
         var uiMode: String?
         var savedInModernMode: Bool = false
+        var reeltoneSkinIdentity: String?
         
         // Version for future compatibility
         var stateVersion: Int = 3
@@ -311,7 +316,7 @@ class AppStateManager {
             case projectMPresetIndex
             // v2 fields
             case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, selectedOutputDeviceUID
-            case browserBrowseMode, uiMode, savedInModernMode
+            case browserBrowseMode, uiMode, savedInModernMode, reeltoneSkinIdentity
             case stateVersion
         }
 
@@ -409,6 +414,7 @@ class AppStateManager {
             browserBrowseMode = try container.decodeIfPresent(Int.self, forKey: .browserBrowseMode)
             uiMode = try container.decodeIfPresent(String.self, forKey: .uiMode)
             savedInModernMode = try container.decodeIfPresent(Bool.self, forKey: .savedInModernMode) ?? false
+            reeltoneSkinIdentity = try container.decodeIfPresent(String.self, forKey: .reeltoneSkinIdentity)
             
             // Version
             stateVersion = try container.decodeIfPresent(Int.self, forKey: .stateVersion) ?? 1
@@ -466,6 +472,7 @@ class AppStateManager {
             browserBrowseMode: Int? = nil,
             uiMode: String? = nil,
             savedInModernMode: Bool = false,
+            reeltoneSkinIdentity: String? = nil,
             stateVersion: Int = 3
         ) {
             self.isPlaylistVisible = isPlaylistVisible
@@ -520,6 +527,7 @@ class AppStateManager {
             self.browserBrowseMode = browserBrowseMode
             self.uiMode = uiMode
             self.savedInModernMode = savedInModernMode
+            self.reeltoneSkinIdentity = reeltoneSkinIdentity
             self.stateVersion = stateVersion
         }
     }
@@ -647,7 +655,8 @@ class AppStateManager {
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
             uiMode: wm.uiMode.rawValue,
-            savedInModernMode: wm.uiMode.usesModernControllers
+            savedInModernMode: wm.uiMode.usesModernControllers,
+            reeltoneSkinIdentity: wm.uiMode == .reeltone ? ReeltoneSkinEngine.shared.currentSkinIdentity : nil
         )
         
         // Encode and save
@@ -838,7 +847,9 @@ class AppStateManager {
         let savedMode = state.restoredUIMode
         let modeMatches = Self.shouldRestoreGeometry(
             savedMode: savedMode,
-            runningMode: runningMode
+            runningMode: runningMode,
+            savedReeltoneIdentity: state.reeltoneSkinIdentity,
+            runningReeltoneIdentity: ReeltoneSkinEngine.shared.currentSkinIdentity
         )
         if !modeMatches {
             NSLog("AppStateManager: UI mode changed (saved=%@, current=%@) - skipping window frame restoration",
@@ -1128,7 +1139,13 @@ class AppStateManager {
         // Main window exists at this point, so we can restore its frame directly
         if let frameString = state.mainWindowFrame,
            let window = wm.mainWindowController?.window {
-            let frame = NSRectFromString(frameString)
+            let restoredFrame = NSRectFromString(frameString)
+            let frame = wm.uiMode == .reeltone
+                ? ReeltonePanelGeometry.frameForPresentation(
+                    restoredFrame,
+                    visibleFrames: NSScreen.screens.map(\.visibleFrame)
+                )
+                : restoredFrame
             if frame != .zero {
                 window.setFrame(frame, display: true)
             }

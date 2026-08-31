@@ -29,6 +29,11 @@ The main window's built-in visualization area (76×16 pixels in Winamp coordinat
 - **Double-click** the visualization area to cycle through modes
 - **Visuals → Main Window → Mode** selects a specific mode, including **Off**
 - Persisted as `mainWindowVisMode` (UserDefaults)
+- `ModernMainWindowView` uses the application defaults domain by default. Reeltone's v1 fallback
+  must construct it with `ReeltoneDefaults.shared`, and its embedded `SpectrumAnalyzerView` must
+  inherit that same domain, so Original main-window visualization choices stay untouched.
+  Cava and vis_classic remain unavailable in this isolated fallback until their full settings
+  graphs accept an injected defaults domain; other main-window visualization modes remain usable.
 
 ## Settings
 

@@ -10,6 +10,7 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
     // MARK: - Properties
     
     private var spectrumView: ModernSpectrumView!
+    private var preferences: UserDefaults = .standard
 
     /// Custom fullscreen state (for borderless window)
     private var isCustomFullscreen = false
@@ -19,6 +20,10 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
     // MARK: - Initialization
     
     convenience init() {
+        self.init(preferences: .standard)
+    }
+
+    convenience init(preferences: UserDefaults) {
         let windowSize = ModernSkinElements.spectrumWindowSize
         
         let window = BorderlessWindow(
@@ -34,6 +39,7 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
         window.collectionBehavior = [.fullScreenPrimary, .managed]
         
         self.init(window: window)
+        self.preferences = preferences
         
         setupWindow()
         setupView()
@@ -66,7 +72,10 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
     }
     
     private func setupView() {
-        spectrumView = ModernSpectrumView(frame: NSRect(origin: .zero, size: ModernSkinElements.spectrumWindowSize))
+        spectrumView = ModernSpectrumView(
+            frame: NSRect(origin: .zero, size: ModernSkinElements.spectrumWindowSize),
+            preferences: preferences
+        )
         spectrumView.controller = self
         spectrumView.autoresizingMask = [.width, .height]
         window?.contentView = spectrumView
@@ -87,6 +96,10 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
     /// This saves CPU since orderOut() doesn't trigger windowWillClose
     func stopRenderingForHide() {
         spectrumView.stopRendering()
+    }
+
+    func prepareForUITeardown() {
+        spectrumView.prepareForUITeardown()
     }
     
     // MARK: - Public Methods

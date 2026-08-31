@@ -23,6 +23,8 @@ enum ReeltoneDiagnosticCode: String, Codable, Sendable {
     case imageDimensionLimit
     case decodedImageMemoryLimit
     case invalidFont
+    case duplicateSingletonComponent
+    case unsupportedConstruct
     case duplicateManifestID
     case installationNotFound
     case storeFailure
@@ -34,19 +36,31 @@ struct ReeltoneDiagnostic: Error, Codable, Equatable, Sendable, LocalizedError {
     let message: String
     let codingPath: [String]
     let resourcePath: String?
+    let skinID: String?
+    let surfaceID: String?
+    let regionIndex: Int?
+    let component: String?
 
     init(
         severity: ReeltoneDiagnosticSeverity = .error,
         code: ReeltoneDiagnosticCode,
         message: String,
         codingPath: [String] = [],
-        resourcePath: String? = nil
+        resourcePath: String? = nil,
+        skinID: String? = nil,
+        surfaceID: String? = nil,
+        regionIndex: Int? = nil,
+        component: String? = nil
     ) {
         self.severity = severity
         self.code = code
         self.message = message
         self.codingPath = codingPath
         self.resourcePath = resourcePath
+        self.skinID = skinID
+        self.surfaceID = surfaceID
+        self.regionIndex = regionIndex
+        self.component = component
     }
 
     var errorDescription: String? {

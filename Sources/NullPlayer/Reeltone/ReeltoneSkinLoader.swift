@@ -1,41 +1,5 @@
 import Foundation
 
-final class ReeltoneLoadedSkin {
-    let manifest: ReeltoneManifest
-    let rootURL: URL
-    let resources: [String: ReeltoneResourceHandle]
-    let imageInfo: [String: ReeltoneImageInfo]
-    let diagnostics: [ReeltoneDiagnostic]
-
-    private var cleanupURL: URL?
-
-    init(
-        manifest: ReeltoneManifest,
-        rootURL: URL,
-        resources: [String: ReeltoneResourceHandle],
-        imageInfo: [String: ReeltoneImageInfo],
-        diagnostics: [ReeltoneDiagnostic] = [],
-        cleanupURL: URL? = nil
-    ) {
-        self.manifest = manifest
-        self.rootURL = rootURL
-        self.resources = resources
-        self.imageInfo = imageInfo
-        self.diagnostics = diagnostics
-        self.cleanupURL = cleanupURL
-    }
-
-    deinit {
-        close()
-    }
-
-    func close() {
-        guard let cleanupURL else { return }
-        self.cleanupURL = nil
-        try? FileManager.default.removeItem(at: cleanupURL)
-    }
-}
-
 struct ReeltoneSkinLoader {
     static let temporaryDirectoryPrefix = "ReeltoneSkin_"
 
@@ -106,12 +70,67 @@ struct ReeltoneSkinLoader {
             return handle
         }
         let imageInfo = try ReeltoneImageValidator.validate(imageHandles)
+        for source in manifest.fonts?.allSources ?? [] {
+            if let path = source.file, let postScriptName = source.postScriptName,
+               let handle = resources[path] {
+                try ReeltoneFontValidator.validate(handle, expectedPostScriptName: postScriptName)
+            }
+        }
         return ReeltoneLoadedSkin(
             manifest: manifest,
             rootURL: rootURL,
             resources: resources,
             imageInfo: imageInfo,
+            diagnostics: compatibilityDiagnostics(for: manifest),
             cleanupURL: cleanupURL
         )
+    }
+
+    private func compatibilityDiagnostics(for manifest: ReeltoneManifest) -> [ReeltoneDiagnostic] {
+        var diagnostics: [ReeltoneDiagnostic] = []
+        if let sprites = manifest.sprites {
+            let values: [(String, ReeltoneSprite?)] = [
+                ("reelRim", sprites.reelRim), ("reelSpokes", sprites.reelSpokes),
+                ("background", sprites.background), ("keyNormal", sprites.keyNormal),
+                ("keyPressed", sprites.keyPressed)
+            ]
+            for (name, sprite) in values where sprite != nil {
+                diagnostics.append(ReeltoneDiagnostic(
+                    severity: .warning,
+                    code: .unsupportedConstruct,
+                    message: "Sprite '\(name)' is validated but is not rendered by NullPlayer's \(manifest.formatVersion == 1 ? "Original-content" : "shaped-surface") adapter",
+                    codingPath: ["sprites", name],
+                    resourcePath: sprite?.file,
+                    skinID: manifest.id
+                ))
+            }
+        }
+        if manifest.fonts?.bodyBold != nil {
+            diagnostics.append(ReeltoneDiagnostic(
+                severity: .warning,
+                code: .unsupportedConstruct,
+                message: "bodyBold is validated but is not independently mapped; body is used for hosted content",
+                codingPath: ["fonts", "bodyBold"],
+                resourcePath: manifest.fonts?.bodyBold?.file,
+                skinID: manifest.id
+            ))
+        }
+        let surfaces: [(String, [ReeltoneRegion])] = [("main", manifest.regions)] + (manifest.window?.panels.map { ("panel:\($0.key)", $0.value.regions) } ?? [])
+        for (surfaceID, regions) in surfaces {
+            for (index, region) in regions.enumerated()
+            where region.rowHeight != nil && region.component != .trackList && region.component != .library {
+                diagnostics.append(ReeltoneDiagnostic(
+                    severity: .warning,
+                    code: .unsupportedConstruct,
+                    message: "rowHeight applies only to trackList and library regions",
+                    codingPath: [surfaceID == "main" ? "regions" : "window.panels", String(index), "rowHeight"],
+                    skinID: manifest.id,
+                    surfaceID: surfaceID,
+                    regionIndex: index,
+                    component: region.component.rawValue
+                ))
+            }
+        }
+        return diagnostics
     }
 }

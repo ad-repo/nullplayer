@@ -95,6 +95,22 @@ final class WindowRestoreGeometryTests: XCTestCase {
             AppStateManager.shouldRestoreGeometry(savedMode: .metal, runningMode: .metal)
         )
         XCTAssertTrue(
+            AppStateManager.shouldRestoreGeometry(
+                savedMode: .reeltone,
+                runningMode: .reeltone,
+                savedReeltoneIdentity: "skin-a",
+                runningReeltoneIdentity: "skin-a"
+            )
+        )
+        XCTAssertFalse(
+            AppStateManager.shouldRestoreGeometry(
+                savedMode: .reeltone,
+                runningMode: .reeltone,
+                savedReeltoneIdentity: "skin-a",
+                runningReeltoneIdentity: "skin-b"
+            )
+        )
+        XCTAssertFalse(
             AppStateManager.shouldRestoreGeometry(savedMode: .reeltone, runningMode: .reeltone)
         )
         XCTAssertFalse(

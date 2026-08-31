@@ -40,6 +40,7 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
 
     /// Observer for playback state changes
     private var playbackStateObserver: NSObjectProtocol?
+    private var isPreparedForUITeardown = false
     
     /// Current preset cycle mode
     private var presetCycleMode: VisualizationCycleMode = .off
@@ -194,16 +195,30 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
     }
     
     deinit {
+        prepareForUITeardown()
+    }
+
+    /// Stop all mode-scoped work synchronously before the controller is replaced.
+    /// Closed OpenGL views can otherwise remain alive until AppKit drains its pool.
+    func prepareForUITeardown() {
+        guard !isPreparedForUITeardown else { return }
+        isPreparedForUITeardown = true
+
         presetRatingDismissTask?.cancel()
+        presetRatingDismissTask = nil
         if let observer = pcmObserver {
             NotificationCenter.default.removeObserver(observer)
+            pcmObserver = nil
         }
         if let observer = spectrumObserver {
             NotificationCenter.default.removeObserver(observer)
+            spectrumObserver = nil
         }
         if let observer = playbackStateObserver {
             NotificationCenter.default.removeObserver(observer)
+            playbackStateObserver = nil
         }
+        NotificationCenter.default.removeObserver(self)
         WindowManager.shared.audioEngine.removeSpectrumConsumer("projectMView")
         stopPresetCycleTimer()
         stopTripexCycleTimer()

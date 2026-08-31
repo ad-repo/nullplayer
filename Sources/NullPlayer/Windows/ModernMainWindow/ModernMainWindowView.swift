@@ -13,6 +13,8 @@ class ModernMainWindowView: NSView {
     
     /// Reference to controller
     weak var controller: ModernMainWindowController?
+    private let preferences: UserDefaults
+    private let isolatesPresentationPreferences: Bool
     
     /// The skin renderer
     private var renderer: ModernSkinRenderer!
@@ -43,8 +45,8 @@ class ModernMainWindowView: NSView {
     /// Main window visualization mode (persisted)
     private var mainVisMode: MainWindowVisMode = .spectrum {
         didSet {
-            UserDefaults.standard.set(mainVisMode.rawValue, forKey: "modernMainWindowVisMode")
-            UserDefaults.standard.set(mainVisMode.rawValue, forKey: "mainWindowVisMode")
+            preferences.set(mainVisMode.rawValue, forKey: "modernMainWindowVisMode")
+            preferences.set(mainVisMode.rawValue, forKey: "mainWindowVisMode")
             updateMetalOverlay()
         }
     }
@@ -97,11 +99,22 @@ class ModernMainWindowView: NSView {
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
+        preferences = .standard
+        isolatesPresentationPreferences = false
+        super.init(frame: frameRect)
+        commonInit()
+    }
+
+    init(frame frameRect: NSRect, preferences: UserDefaults) {
+        self.preferences = preferences
+        isolatesPresentationPreferences = true
         super.init(frame: frameRect)
         commonInit()
     }
     
     required init?(coder: NSCoder) {
+        preferences = .standard
+        isolatesPresentationPreferences = false
         super.init(coder: coder)
         commonInit()
     }
@@ -905,6 +918,7 @@ class ModernMainWindowView: NSView {
     }
 
     private func applyCavaSkinDefaultColors(_ skin: ModernSkin) {
+        guard !isolatesPresentationPreferences else { return }
         let palette = skin.config.palette
         CavaSettings.setSkinDefaultColors(
             low: palette.resolvedPrimary(),
@@ -1183,7 +1197,7 @@ class ModernMainWindowView: NSView {
     
     /// Cycle through visualization modes on the mini spectrum area
     private func cycleMainVisMode() {
-        let allModes = MainWindowVisMode.visualizationOrder
+        let allModes = MainWindowVisMode.visualizationOrder.filter(supportsVisualizationMode)
         guard let currentIndex = allModes.firstIndex(of: mainVisMode) else {
             mainVisMode = .spectrum
             return
@@ -1213,9 +1227,12 @@ class ModernMainWindowView: NSView {
         if mainVisMode.usesMetal {
             if metalOverlay == nil {
                 let specRect = currentMainSpectrumOverlayRect()
-                let overlay = SpectrumAnalyzerView(frame: specRect)
-                overlay.isEmbedded = true  // prevent contamination of "spectrumQualityMode" UserDefaults
-                overlay.normalizationUserDefaultsKey = "mainWindowNormalizationMode"
+                let overlay = SpectrumAnalyzerView(
+                    frame: specRect,
+                    preferences: preferences,
+                    embedded: true,
+                    normalizationUserDefaultsKey: "mainWindowNormalizationMode"
+                )
                 overlay.wantsLayer = true
                 overlay.layer?.cornerRadius = 4 * scale
                 overlay.layer?.masksToBounds = true
@@ -1228,19 +1245,19 @@ class ModernMainWindowView: NSView {
                 }
 
                 // Load mode-specific settings from main-window-specific keys
-                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+                if let savedStyle = preferences.string(forKey: "mainWindowFlameStyle"),
                    let style = FlameStyle(rawValue: savedStyle) { overlay.flameStyle = style }
-                if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+                if let savedIntensity = preferences.string(forKey: "mainWindowFlameIntensity"),
                    let intensity = FlameIntensity(rawValue: savedIntensity) { overlay.flameIntensity = intensity }
-                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+                if let savedStyle = preferences.string(forKey: "mainWindowLightningStyle"),
                    let style = LightningStyle(rawValue: savedStyle) { overlay.lightningStyle = style }
-                if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+                if let savedScheme = preferences.string(forKey: "mainWindowMatrixColorScheme"),
                    let scheme = MatrixColorScheme(rawValue: savedScheme) { overlay.matrixColorScheme = scheme }
-                if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+                if let savedIntensity = preferences.string(forKey: "mainWindowMatrixIntensity"),
                    let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
-                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowEKGStyle"),
+                if let savedStyle = preferences.string(forKey: "mainWindowEKGStyle"),
                    let style = EKGStyle(rawValue: savedStyle) { overlay.ekgStyle = style }
-                if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+                if let savedDecay = preferences.string(forKey: "mainWindowDecayMode"),
                    let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
 
                 addSubview(overlay)
@@ -1299,8 +1316,12 @@ class ModernMainWindowView: NSView {
     }
     
     private func restoreVisMode() {
-        if let savedMode = UserDefaults.standard.string(forKey: "modernMainWindowVisMode"),
+        if let savedMode = preferences.string(forKey: "modernMainWindowVisMode"),
            let mode = MainWindowVisMode(rawValue: savedMode) {
+            guard supportsVisualizationMode(mode) else {
+                mainVisMode = .spectrum
+                return
+            }
             // Validate shader availability before restoring a GPU mode — if the shader file
             // is missing (e.g., not included in DMG), fall back to Spectrum to prevent crashes
             if let qualityMode = mode.spectrumQualityMode,
@@ -1323,8 +1344,9 @@ class ModernMainWindowView: NSView {
     }
 
     @objc private func mainVisSettingsChanged() {
-        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
-           let mode = MainWindowVisMode(rawValue: savedMode) {
+        if let savedMode = preferences.string(forKey: "mainWindowVisMode"),
+           let mode = MainWindowVisMode(rawValue: savedMode),
+           supportsVisualizationMode(mode) {
             if let qualityMode = mode.spectrumQualityMode,
                !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
                 return
@@ -1337,19 +1359,19 @@ class ModernMainWindowView: NSView {
             if let qualityMode = mainVisMode.spectrumQualityMode {
                 overlay.qualityMode = qualityMode
             }
-            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+            if let savedStyle = preferences.string(forKey: "mainWindowFlameStyle"),
                let style = FlameStyle(rawValue: savedStyle) { overlay.flameStyle = style }
-            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+            if let savedIntensity = preferences.string(forKey: "mainWindowFlameIntensity"),
                let intensity = FlameIntensity(rawValue: savedIntensity) { overlay.flameIntensity = intensity }
-            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+            if let savedStyle = preferences.string(forKey: "mainWindowLightningStyle"),
                let style = LightningStyle(rawValue: savedStyle) { overlay.lightningStyle = style }
-            if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+            if let savedScheme = preferences.string(forKey: "mainWindowMatrixColorScheme"),
                let scheme = MatrixColorScheme(rawValue: savedScheme) { overlay.matrixColorScheme = scheme }
-            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+            if let savedIntensity = preferences.string(forKey: "mainWindowMatrixIntensity"),
                let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
-            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowEKGStyle"),
+            if let savedStyle = preferences.string(forKey: "mainWindowEKGStyle"),
                let style = EKGStyle(rawValue: savedStyle) { overlay.ekgStyle = style }
-            if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+            if let savedDecay = preferences.string(forKey: "mainWindowDecayMode"),
                let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
             overlay.refreshNormalizationMode()
             if mainVisMode == .visClassicExact {
@@ -1365,6 +1387,13 @@ class ModernMainWindowView: NSView {
         }
         updateSpectrumOverlayOpacity()
         cavaPresenter?.settingsDidChange()
+    }
+
+    /// Cava and vis_classic currently own app-domain preference stores. An injected skin domain
+    /// must not consult those stores, so the Reeltone fallback exposes only modes whose complete
+    /// preference graph is injectable.
+    private func supportsVisualizationMode(_ mode: MainWindowVisMode) -> Bool {
+        !isolatesPresentationPreferences || (mode != .cava && mode != .visClassicExact)
     }
 
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {

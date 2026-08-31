@@ -66,4 +66,5 @@ final class ReeltoneSkinEngineTests: XCTestCase {
         XCTAssertNil(ReeltoneSkinState.selectedSkinIdentity(in: defaults))
         XCTAssertEqual(defaults.string(forKey: ModernSkinFamily.modern.skinNameKey), "Original Fixture")
     }
+
 }

@@ -13,6 +13,11 @@ The standalone waveform window is **not** a Metal visualization mode. It reuses 
 
 Visualization choices are durable `UserDefaults` preferences, not AppState session fields. AppState only remembers quit-session state such as window visibility/layout and playlist/audio state.
 
+`SpectrumAnalyzerView` defaults to the application preference domain for existing standalone
+Original/Metal windows. Embedded Reeltone hosts must inject `ReeltoneDefaults.shared`; each hosted
+analyzer remains a distinct view with its own audio-consumer identity so duplicate visualizer
+regions cannot unregister or overwrite one another.
+
 - Main-window (including embedded Cava), Spectrum-window, Visualizations-window, `vis_classic`, and browser artwork visualizer settings must remain resettable through `VisualizationPreferences`.
 - Modern/metal skin `visualization` defaults are first-use defaults on app launch. They may seed missing keys, but must not overwrite user-selected mode/style/profile keys during a normal relaunch.
 - Explicit skin changes and **Reset Skin to Default** still reapply the selected skin's visualization defaults.

@@ -95,7 +95,7 @@ final class ReeltoneSkinStore {
         }
     }
 
-    func remove(identity: String, defaults: UserDefaults = .standard) throws {
+    func remove(identity: String, defaults: UserDefaults = ReeltoneDefaults.shared) throws {
         let destination = try installationURL(for: identity)
         guard fileManager.fileExists(atPath: destination.path) else {
             throw ReeltoneDiagnostic(code: .installationNotFound, message: "Reeltone installation was not found")
@@ -146,12 +146,12 @@ final class ReeltoneSkinStore {
         return ReeltoneDiscoveryResult(installations: installations, diagnostics: diagnostics)
     }
 
-    func preferredSkin(in defaults: UserDefaults = .standard) -> ReeltoneInstalledSkin? {
+    func preferredSkin(in defaults: UserDefaults = ReeltoneDefaults.shared) -> ReeltoneInstalledSkin? {
         guard let identity = ReeltoneSkinState.selectedSkinIdentity(in: defaults) else { return nil }
         return discover().installations.first { $0.record.identity == identity }
     }
 
-    func selectPreferred(_ installation: ReeltoneInstalledSkin?, in defaults: UserDefaults = .standard) {
+    func selectPreferred(_ installation: ReeltoneInstalledSkin?, in defaults: UserDefaults = ReeltoneDefaults.shared) {
         ReeltoneSkinState.selectSkin(identity: installation?.record.identity, in: defaults)
     }
 

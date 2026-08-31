@@ -10,10 +10,15 @@ class ModernEQWindowController: NSWindowController, EQWindowProviding {
     // MARK: - Properties
 
     private var eqView: ModernEQView!
+    private var preferences: UserDefaults = .standard
     
     // MARK: - Initialization
     
     convenience init() {
+        self.init(preferences: .standard)
+    }
+
+    convenience init(preferences: UserDefaults) {
         let windowSize = ModernSkinElements.eqWindowSize
         
         let window = BorderlessWindow(
@@ -24,6 +29,7 @@ class ModernEQWindowController: NSWindowController, EQWindowProviding {
         )
         
         self.init(window: window)
+        self.preferences = preferences
         
         setupWindow()
         setupView()
@@ -59,7 +65,7 @@ class ModernEQWindowController: NSWindowController, EQWindowProviding {
     }
     
     private func setupView() {
-        eqView = ModernEQView(frame: NSRect(origin: .zero, size: ModernSkinElements.eqWindowSize))
+        eqView = ModernEQView(frame: NSRect(origin: .zero, size: ModernSkinElements.eqWindowSize), preferences: preferences)
         eqView.controller = self
         eqView.autoresizingMask = [.width, .height]
         window?.contentView = eqView

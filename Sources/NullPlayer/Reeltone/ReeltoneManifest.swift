@@ -62,13 +62,6 @@ struct ReeltoneFontSource: Codable, Equatable, Sendable {
     let postScriptName: String?
 
     init(from decoder: Decoder) throws {
-        let rawValues = try decoder.container(keyedBy: ReeltoneAnyCodingKey.self)
-        let allowedKeys: Set<String> = ["builtin", "file", "postScriptName"]
-        if let unknown = rawValues.allKeys.first(where: { !allowedKeys.contains($0.stringValue) }) {
-            throw DecodingError.dataCorrupted(
-                .init(codingPath: decoder.codingPath + [unknown], debugDescription: "Unknown font field '\(unknown.stringValue)'")
-            )
-        }
         let values = try decoder.container(keyedBy: CodingKeys.self)
         builtin = try values.decodeIfPresent(String.self, forKey: .builtin)
         file = try values.decodeIfPresent(String.self, forKey: .file)
@@ -147,7 +140,7 @@ struct ReeltoneWindow: Codable, Equatable, Sendable {
 }
 
 struct ReeltonePanel: Codable, Equatable, Sendable {
-    enum Attachment: String, Codable, Sendable { case left, right, top, bottom }
+    enum Attachment: String, Codable, CaseIterable, Sendable { case left, right, top, bottom }
     let size: [Double]
     let attach: Attachment
     let art: ReeltoneArt
@@ -200,14 +193,6 @@ struct ReeltoneRegion: Codable, Equatable, Sendable {
 
 private struct ReeltoneManifestEnvelope: Decodable {
     let formatVersion: Int
-}
-
-private struct ReeltoneAnyCodingKey: CodingKey {
-    let stringValue: String
-    let intValue: Int?
-
-    init?(stringValue: String) { self.stringValue = stringValue; intValue = nil }
-    init?(intValue: Int) { self.intValue = intValue; stringValue = String(intValue) }
 }
 
 private struct ReeltoneManifestDocument: Decodable {

@@ -81,6 +81,10 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
     func stopRenderingForHide() {
         spectrumView.stopRendering()
     }
+
+    func prepareForUITeardown() {
+        spectrumView.prepareForUITeardown()
+    }
     
     // MARK: - Public Methods
     

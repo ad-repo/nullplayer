@@ -24,7 +24,7 @@ struct ReeltoneThemeAdapter {
     let palette: ReeltoneThemePalette
     let presentationSkin: ModernSkin
 
-    init(manifest: ReeltoneManifest?) {
+    init(manifest: ReeltoneManifest?, resources: [String: ReeltoneResourceHandle] = [:]) {
         let fallback = Self.defaultPalette
         let colors = manifest?.colors
         palette = ReeltoneThemePalette(
@@ -106,6 +106,32 @@ struct ReeltoneThemeAdapter {
             animations: nil
         )
         presentationSkin = ModernSkin(config: config, bundlePath: nil)
+        let primary = Self.resolveFont(manifest?.fonts?.body ?? manifest?.fonts?.display, resources: resources, role: .body)
+        let time = Self.resolveFont(manifest?.fonts?.digits, resources: resources, role: .digits)
+        let small = Self.resolveFont(manifest?.fonts?.body, resources: resources, role: .body)
+        presentationSkin.setFonts(primary: primary, time: time, small: small)
+    }
+
+    private enum FontRole { case body, digits }
+
+    private static func resolveFont(
+        _ source: ReeltoneFontSource?,
+        resources: [String: ReeltoneResourceHandle],
+        role: FontRole
+    ) -> NSFont? {
+        guard let source else { return nil }
+        let size: CGFloat = role == .digits ? 12 : 11
+        if let builtin = source.builtin {
+            if let exact = NSFont(name: builtin, size: size) { return exact }
+            let weight: NSFont.Weight = builtin.hasSuffix("-Bold") ? .bold : .regular
+            return role == .digits
+                ? NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+                : NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        }
+        guard let path = source.file, let postScriptName = source.postScriptName,
+              let handle = resources[path] else { return nil }
+        try? handle.registerFont(expectedPostScriptName: postScriptName)
+        return NSFont(name: postScriptName, size: size)
     }
 
     private static func normalizedRGB(_ candidate: String?, fallback: String) -> String {

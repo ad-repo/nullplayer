@@ -74,6 +74,10 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
         projectMView.stopRendering()
     }
 
+    func prepareForUITeardown() {
+        projectMView.prepareForUITeardown()
+    }
+
     func resumeRenderingAfterWindowTransition() {
         projectMView.resumeRenderingAfterWindowTransition()
     }

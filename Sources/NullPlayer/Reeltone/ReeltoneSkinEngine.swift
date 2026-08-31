@@ -14,13 +14,19 @@ final class ReeltoneSkinEngine {
     private(set) var currentTheme = ReeltoneThemeAdapter(manifest: nil)
     private(set) var preferredSkinLoadDiagnostic: ReeltoneDiagnostic?
 
+    var currentSkinIdentity: String? {
+        if let identity = currentInstallation?.record.identity { return identity }
+        if let manifestID = currentSkin?.manifest.id { return "manifest:\(manifestID)" }
+        return nil
+    }
+
     private let store: ReeltoneSkinStore
     private let defaults: UserDefaults
     private let notificationCenter: NotificationCenter
 
     init(
         store: ReeltoneSkinStore = ReeltoneSkinStore(),
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = ReeltoneDefaults.shared,
         notificationCenter: NotificationCenter = .default
     ) {
         self.store = store
@@ -102,7 +108,7 @@ final class ReeltoneSkinEngine {
         currentSkin?.close()
         currentSkin = skin
         currentInstallation = installation
-        currentTheme = ReeltoneThemeAdapter(manifest: skin?.manifest)
+        currentTheme = ReeltoneThemeAdapter(manifest: skin?.manifest, resources: skin?.resources ?? [:])
         notificationCenter.post(name: .reeltoneSkinDidChange, object: self)
     }
 }

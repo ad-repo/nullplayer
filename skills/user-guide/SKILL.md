@@ -73,7 +73,7 @@ Windows automatically snap together when dragged near each other:
 
 ### Compact Mode
 
-**Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in **every UI family**. When enabled:
+**Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in Classic, Original, and Original-Metal. Reeltone mode does not offer Compact Mode. When enabled:
 
 - The Dock icon is hidden (the app switches to an accessory/menu-bar app) and a **NullPlayer status-bar item** appears in the menu bar. Clicking it reveals the single compact window; its menu also has **Exit Compact Mode**.
 - Left-clicking the status-bar item toggles the compact window shown/hidden. Right-clicking opens the Compact Mode menu.
@@ -85,6 +85,8 @@ Windows automatically snap together when dragged near each other:
 ### Compact Window
 
 **Compact Window** opens the same compact Library Browser mini-player as a normal free-floating window. Toggle it from the main window's right-click context menu (**Compact Window**) or the `Windows` top menu. It is mutually exclusive with menu-bar Compact Mode.
+
+Compact Window is unavailable in Reeltone mode.
 
 - NullPlayer stays a regular app: Dock icon and menu bar remain visible.
 - Only the main window is hidden. Playlist, EQ, Spectrum, Library, Visualizations, video, and other windows stay where they are.
@@ -350,6 +352,25 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Original skins use `skin.json` format
 - Portable Original skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Original > Load Skin...**
 - Bundled Original skins: NeonWave (default), Skulls
+
+### Reeltone UI Mode
+
+- Reeltone is a separate live-switchable UI mode for validated `.reeltone` archives.
+- Use **Skins > Reeltone > Import Reeltone Skin…** to validate and install an archive. Installed
+  skins appear in the same submenu and can be switched without stopping playback.
+- Version 1 themes reuse Original content with the Reeltone palette. Version 2 skins create their
+  main window and declared panels from the manifest, including shaped controls, artwork,
+  visualizers, animations, and hosted Playlist, Equalizer, or Library regions.
+- If a v2 skin omits Playlist, Equalizer, Library, or Spectrum, the normal Original auxiliary
+  window opens as a themed fallback.
+- Panel visibility and detached positions restore only for the same installed skin. Invalid or
+  missing preferred skins fall back to the built-in Reeltone theme without changing Original skin
+  preferences.
+- To uninstall the selected package, use **Skins > Reeltone > Remove [Skin Name]…** and confirm.
+  This removes NullPlayer's installed copy, not the archive you originally imported. Import and
+  validation failures appear in an alert; invalid installations found during discovery are
+  reported in the Reeltone submenu and ignored.
+- Compact Mode and Compact Window are not available while Reeltone is active.
 
 ### UI Size Mode
 - **Original/Original-Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**

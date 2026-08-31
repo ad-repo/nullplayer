@@ -56,7 +56,9 @@ final class ReeltoneSkinStoreTests: XCTestCase {
         try makeArchive(at: invalid, manifest: Data(#"{"formatVersion":1,"id":"x","name":"X","sprites":{"background":{"file":"missing.png"}}}"#.utf8))
         let store = ReeltoneSkinStore(rootURL: storeRoot)
 
-        XCTAssertThrowsError(try store.install(archiveAt: invalid))
+        for _ in 0..<3 {
+            XCTAssertThrowsError(try store.install(archiveAt: invalid))
+        }
         XCTAssertTrue(store.discover().installations.isEmpty)
         let children = try FileManager.default.contentsOfDirectory(at: storeRoot, includingPropertiesForKeys: nil)
         XCTAssertFalse(children.contains { $0.lastPathComponent.hasPrefix(".staging-") })

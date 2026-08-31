@@ -44,17 +44,17 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Compact Mode works in both classic and modern UI. Set apart on its own, above the
-        // display toggles.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
-        let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
-        compactWindow.target = MenuActions.shared
-        compactWindow.state = wm.compactWindowEnabled ? .on : .off
-        menu.addItem(compactWindow)
-        menu.addItem(NSMenuItem.separator())
+        if wm.uiMode.supportsCompactSurfaces {
+            let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+            compactMode.target = MenuActions.shared
+            compactMode.state = wm.compactModeEnabled ? .on : .off
+            menu.addItem(compactMode)
+            let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
+            compactWindow.target = MenuActions.shared
+            compactWindow.state = wm.compactWindowEnabled ? .on : .off
+            menu.addItem(compactWindow)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         // Display toggles
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
@@ -113,6 +113,17 @@ class ContextMenuBuilder {
                                      enabled: wm.currentVideoPlayerController != nil))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
+        if !wm.reeltonePanelMenuEntries.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            for panel in wm.reeltonePanelMenuEntries {
+                let item = NSMenuItem(title: panel.title, action: #selector(MenuActions.toggleReeltonePanel(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = panel.name
+                item.state = panel.isVisible ? .on : .off
+                menu.addItem(item)
+            }
+        }
+
         #if DEBUG
         let recreate = NSMenuItem(title: "Recreate Windows (Debug)", action: #selector(MenuActions.recreateWindows), keyEquivalent: "")
         recreate.target = MenuActions.shared
@@ -121,17 +132,17 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Compact Mode works in both classic and modern UI. Set apart on its own, above the
-        // display toggles.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
-        let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
-        compactWindow.target = MenuActions.shared
-        compactWindow.state = wm.compactWindowEnabled ? .on : .off
-        menu.addItem(compactWindow)
-        menu.addItem(NSMenuItem.separator())
+        if wm.uiMode.supportsCompactSurfaces {
+            let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+            compactMode.target = MenuActions.shared
+            compactMode.state = wm.compactModeEnabled ? .on : .off
+            menu.addItem(compactMode)
+            let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
+            compactWindow.target = MenuActions.shared
+            compactWindow.state = wm.compactWindowEnabled ? .on : .off
+            menu.addItem(compactWindow)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
         alwaysOnTop.target = MenuActions.shared
@@ -448,8 +459,11 @@ class ContextMenuBuilder {
             libraryWindowItem.submenu = buildLibraryBackdropMenu()
             menu.addItem(libraryWindowItem)
         }
-        if wm.isRunningModernUI,
-           AppCapabilities.supports(.compactWindowVisualsMenu) {
+        if shouldIncludeCompactWindowVisuals(
+            isRunningModernUI: wm.isRunningModernUI,
+            mode: wm.uiMode,
+            capabilityEnabled: AppCapabilities.supports(.compactWindowVisualsMenu)
+        ) {
             let compactWindowItem = NSMenuItem(title: "Compact Window", action: nil, keyEquivalent: "")
             compactWindowItem.submenu = buildCompactBackdropMenu()
             menu.addItem(compactWindowItem)
@@ -460,6 +474,14 @@ class ContextMenuBuilder {
         menu.addItem(resetAll)
         menu.autoenablesItems = false
         return menu
+    }
+
+    static func shouldIncludeCompactWindowVisuals(
+        isRunningModernUI: Bool,
+        mode: PlayerUIMode,
+        capabilityEnabled: Bool
+    ) -> Bool {
+        isRunningModernUI && mode.supportsCompactSurfaces && capabilityEnabled
     }
 
     static func buildCompactBackdropMenu(presenter explicitPresenter: CavaPresenter? = nil) -> NSMenu {
@@ -5085,6 +5107,11 @@ class MenuActions: NSObject {
 
     @objc func minimizeAllWindows() {
         WindowManager.shared.miniaturizeAllManagedWindows()
+    }
+
+    @objc func toggleReeltonePanel(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        WindowManager.shared.toggleReeltonePanel(named: name)
     }
     
     // MARK: - Playback Controls

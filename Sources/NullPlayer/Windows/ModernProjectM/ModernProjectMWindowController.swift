@@ -104,6 +104,10 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
         projectMView.stopRendering()
     }
 
+    func prepareForUITeardown() {
+        projectMView.prepareForUITeardown()
+    }
+
     func resumeRenderingAfterWindowTransition() {
         projectMView.resumeRenderingAfterWindowTransition()
     }
