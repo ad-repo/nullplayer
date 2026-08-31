@@ -700,10 +700,51 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private func mapPixel(bitmapID: String, source: WalSourceLocation, x: Int, y: Int)
         -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8, inBounds: Bool) {
         guard let image = mapImage(bitmapID: bitmapID, source: source) else { return (0, 0, 0, 0, false) }
-        guard x >= 0, y >= 0, x < image.width, y < image.height else { return (0, 0, 0, 0, false) }
+        let crop = mapCrop(bitmapID: bitmapID, image: image)
+        guard x >= 0, y >= 0, x < crop.width, y < crop.height else { return (0, 0, 0, 0, false) }
         let bitmap = WasabiBitmap(image: image, width: image.width, height: image.height, cost: 0)
-        guard let pixel = bitmap.pixel(at: CGPoint(x: x, y: y)) else { return (0, 0, 0, 0, false) }
+        guard let pixel = bitmap.pixel(at: CGPoint(x: crop.x + x, y: crop.y + y))
+        else { return (0, 0, 0, 0, false) }
         return (pixel.red, pixel.green, pixel.blue, pixel.alpha, true)
+    }
+
+    /// The region of the decoded file a `Map` actually covers.
+    ///
+    /// `loadMap` takes a **bitmap id** as well as a path, and a `<bitmap>` is routinely a *slice* of a
+    /// shared sheet: `<bitmap id="window.titlebar.menu.1" file="buttons.png" x="0" y="87" w="10"
+    /// h="21"/>`. A map of that id is 10x21 starting at (0, 87) — pixel (0, 0) of the map is pixel
+    /// (0, 87) of the file — and sampling the file's own origin instead reads whatever art happens to
+    /// sit in the sheet's top-left corner.
+    ///
+    /// Measured, and the whole of the cPro "pink menu bar": ClassicPro's `mainmenu.maki` opens with a
+    /// self-check for a skin that never cut its menu artwork —
+    ///
+    /// ```maki
+    /// temp.loadMap("window.titlebar.menu.1");
+    /// if (temp.getARGBValue(0,0,3) != 0)                        // not fully transparent
+    ///   if (temp.getARGBValue(0,0,2)==255 && temp.getARGBValue(0,0,1)==0
+    ///       && temp.getARGBValue(0,0,0)==128) {                 // the template's (255,0,128) filler
+    ///     myGroup.hide(); disableMenu = true; bg_title.show();  // no menu bar; centred title instead
+    ///   }
+    /// ```
+    ///
+    /// — so the engine hides its own menu bar and shows a plain title whenever the slice is filler.
+    /// Reading (0, 0) of `buttons.png` gave it a transport button, the test never fired, and four cPro
+    /// skins drew five magenta boxes across the titlebar that Winamp never shows.
+    private func mapCrop(bitmapID: String, image: CGImage) -> (x: Int, y: Int, width: Int, height: Int) {
+        let whole = (x: 0, y: 0, width: image.width, height: image.height)
+        guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: bitmapID),
+              definition.kind == "bitmap" else { return whole }
+        let number: (String) -> Int? = { definition.attributes[$0].flatMap { Int($0) } }
+        // A `<bitmap>` with no `x`/`y`/`w`/`h` is the whole file, which is the common case and the one
+        // the path form always takes.
+        guard number("x") != nil || number("y") != nil
+                || number("w") != nil || number("h") != nil else { return whole }
+        let x = min(max(0, number("x") ?? 0), image.width)
+        let y = min(max(0, number("y") ?? 0), image.height)
+        return (x: x, y: y,
+                width: min(number("w") ?? (image.width - x), image.width - x),
+                height: min(number("h") ?? (image.height - y), image.height - y))
     }
 
     private func mapImage(bitmapID: String, source scriptSource: WalSourceLocation) -> CGImage? {
@@ -4187,9 +4228,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             default: return .integer(0)
             }
         case "getwidth", "getheight":
+            // The map's own size, which for a sliced `<bitmap>` is the slice's, not the sheet's —
+            // same reason as `mapCrop`. The path form has no definition and stays the whole file,
+            // which is what ClassicPro's two width probes (`read.suiframe.png`, `installed.png`) ask.
             guard case .map(let bitmapID, let source) = state.role,
                   let image = mapImage(bitmapID: bitmapID, source: source) else { return .integer(0) }
-            return .integer(Int32(clamping: method == "getwidth" ? image.width : image.height))
+            let crop = mapCrop(bitmapID: bitmapID, image: image)
+            return .integer(Int32(clamping: method == "getwidth" ? crop.width : crop.height))
         case "additem":
             guard state.items.count < Self.maximumListItems else { return .integer(-1) }
             state.items.append(arguments[0])
