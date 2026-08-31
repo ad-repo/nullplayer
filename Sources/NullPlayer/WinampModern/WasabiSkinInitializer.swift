@@ -356,6 +356,16 @@ final class WasabiSkinRuntime {
     let loadDiagnostics: [WalDiagnostic]
     private(set) var state: WasabiRuntimeState = .awaitingFirstPaint
 
+    /// Whether `WinampModernScriptRuntime.start()` has run for this skin. Lives here rather than on
+    /// the script runtime because a `WasabiSceneRenderer` holds the skin, not the scripts, and it is
+    /// the renderer that has to know: a `Wasabi:StandardFrame`'s client group is instantiated by the
+    /// skin's own `standardframe.maki` from an `onSetXuiParam`, so before this is true a window's
+    /// scene is the bare frame with nothing in it (ClassicPro's Widgets Manager: 19 nodes before,
+    /// 30 after). Anything sizing a window from what it contains has to wait for it.
+    private(set) var hasStartedScripts = false
+
+    func markScriptsStarted() { hasStartedScripts = true }
+
     /// Winamp's thinger (B34): which component icon the skin's `<componentbucket>`s are pointing at,
     /// and how far the strip is scrolled. Skin-wide — one skin has one thinger however many of its
     /// layouts and windows draw one.

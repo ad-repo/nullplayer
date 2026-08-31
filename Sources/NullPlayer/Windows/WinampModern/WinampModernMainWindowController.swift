@@ -239,6 +239,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // until then (see `scriptsDidStart`).
             view.scriptsDidStart()
             auxiliaryContainers.forEach { $0.view.scriptsDidStart() }
+            // Again, now that the scripts have built each window's content: a layout the skin never
+            // sized only gets its real minimum once there is content to measure (`contentFittedFloor`),
+            // and the first call above ran before any of it existed.
+            applyLayoutConstraints()
             // The player's window is on screen from here; the auxiliary ones were ordered out at
             // creation and say so when they open. A skin that starts its animation from
             // `onSetVisible` (Defix's cassette reels) needs to be told.
@@ -1990,6 +1994,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             guard let minimum = scaled(limits.minimum), let maximum = scaled(limits.maximum) else { continue }
             container.window.contentMinSize = minimum
             container.window.contentMaxSize = maximum
+            // AppKit applies `contentMinSize` to the *next* user resize, never retroactively, so a
+            // window already smaller than its limits stays that way. That is the whole of "the
+            // Widgets Manager keeps coming up the wrong size": a frame restored from before the
+            // content fit existed is 100x400, arrives before the scripts run, and nothing afterwards
+            // brings it back up to the 313x400 its content needs. Growing it here is upward-only and
+            // bounded by the same limits a drag obeys.
+            let current = container.window.contentRect(forFrameRect: container.window.frame).size
+            let clamped = NSSize(width: min(max(current.width, minimum.width), maximum.width),
+                                 height: min(max(current.height, minimum.height), maximum.height))
+            if clamped != current { container.window.setContentSize(clamped) }
         }
     }
 

@@ -517,6 +517,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     }
 
     func start() throws {
+        // Recorded on the skin runtime, which the scene renderers can see; see `hasStartedScripts`.
+        defer { loadedSkin.runtime.markScriptsStarted() }
         host.beginVisualizationConsumption()
         // A skin-level `<scripts>` block sits at the end of `skin.xml`, after every object and every
         // XUI param, and Winamp loads it there — so it is the one script that may assume the rest of

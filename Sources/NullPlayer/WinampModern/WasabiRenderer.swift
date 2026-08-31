@@ -553,7 +553,16 @@ final class WasabiSceneRenderer {
     let themes: WasabiColorThemeCatalog
     let container: WasabiObject
     private(set) var layout: WasabiObject
-    private(set) var canvasSize: CGSize
+    /// The layout's canvas, in skin pixels.
+    ///
+    /// Reading it settles the content fit, because the first thing anybody does with a renderer is
+    /// ask how big its window should be, and that read comes *before* the first scene is resolved.
+    /// (Measured: with the fit hung off `sceneNodes()` alone, the render dump printed the pre-fit
+    /// 100x400 for a window the fit had already grown to 313x400 — one statement later.)
+    var canvasSize: CGSize { fitCanvasToContentIfNeeded(); return storedCanvasSize }
+
+    /// `canvasSize` without the fit — for the fit itself, and for the reads inside it.
+    private var storedCanvasSize: CGSize
     private let clock: () -> TimeInterval
 
     /// Optional sandboxed seam supplying playlist/EQ/library content for embedded component holders.
@@ -612,9 +621,10 @@ final class WasabiSceneRenderer {
         }
         self.container = container
         self.layout = layout
-        self.canvasSize = Self.defaultSize(for: layout, resources: self.resources)
+        self.storedCanvasSize = Self.defaultSize(for: layout, resources: self.resources)
         // Whichever window switches the theme, every renderer of this skin drops its themed bitmaps.
         themeCoordinator.addObserver(self) { [weak self] in self?.themeDidChange() }
+        self.autoFittedCanvas = self.storedCanvasSize
     }
 
     @discardableResult
@@ -713,7 +723,10 @@ final class WasabiSceneRenderer {
                                            location: container.source))
         }
         layout = next
-        canvasSize = defaultSize(for: next)
+        storedCanvasSize = defaultSize(for: next)
+        autoFittedCanvas = storedCanvasSize
+        hasFittedContent = false
+        contentFloorCache = nil
         invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
         return canvasSize
@@ -725,8 +738,37 @@ final class WasabiSceneRenderer {
     var layoutMinimumSize: CGSize {
         let declared = declaredMinimumSize
         let protective = protectiveMinimumSize
-        return CGSize(width: max(declared.width, protective.width),
-                      height: max(declared.height, protective.height))
+        let content = contentFittedFloor ?? .zero
+        return CGSize(width: max(max(declared.width, protective.width), content.width),
+                      height: max(max(declared.height, protective.height), content.height))
+    }
+
+    private var contentFloorCache: CGSize??
+
+    /// The size the content fit asks for, as a **floor** as well as a default — `nil` for a layout
+    /// the skin sized itself, which is nearly all of them.
+    ///
+    /// `fitCanvasToContentIfNeeded` only applies while the canvas is still the one this renderer
+    /// chose, so it cannot help a window whose size arrives from somewhere else first — restored
+    /// state, above all. ClassicPro's Widgets Manager is the case: a frame saved before the fit
+    /// existed puts the canvas at its useless 100x400 *before* the scripts run, the fit then declines
+    /// to touch a canvas it did not set, and the window comes back the wrong size every launch.
+    ///
+    /// Making it a minimum settles that without second-guessing the user: below this width the
+    /// content is genuinely clipped (a 305px header in a 92px pane), so it is not a size anyone can
+    /// have meant, and the existing `contentMinSize` plumbing carries it to the window.
+    var contentFittedFloor: CGSize? {
+        // Same gate as the fit: before the scripts run, a `Wasabi:StandardFrame`'s content does not
+        // exist yet and the measurement would be of an empty frame.
+        guard loadedSkin.runtime.hasStartedScripts, !isFittingContent else { return nil }
+        if let contentFloorCache { return contentFloorCache }
+        isFittingContent = true
+        defer { isFittingContent = false }
+        let declared = Self.defaultSize(for: layout, resources: resources)
+        let fitted = contentFittedSize(declared, for: layout)
+        let value: CGSize? = fitted == declared ? nil : fitted
+        contentFloorCache = value
+        return value
     }
 
     /// Whether the skin described a resize range for the active layout **at all** — any one of
@@ -878,8 +920,8 @@ final class WasabiSceneRenderer {
         // container in one skin shares one object graph. That is the stall that showed up in the
         // spectrum analyzer and nowhere else: it was the only thing on screen moving fast enough for
         // a dropped frame to read as one.
-        guard clamped != canvasSize else { return canvasSize }
-        canvasSize = clamped
+        guard clamped != storedCanvasSize else { return storedCanvasSize }
+        storedCanvasSize = clamped
         invalidateSceneCache()
         warpedImageCache.removeAll()
         // Every destination size in the pre-scaled cache is now a size nothing draws at.
@@ -899,6 +941,7 @@ final class WasabiSceneRenderer {
     /// *not* graph state, chiefly the host's playback state feeding `resolvedBitmapID`. The one
     /// attribute deliberately left out of that counter is `alpha`, re-resolved below.
     func sceneNodes() -> [WasabiSceneNode] {
+        fitCanvasToContentIfNeeded()
         let generation = loadedSkin.runtime.graph.sceneGeneration
         if let cache = sceneNodeCache, cache.generation == generation, cache.canvas == canvasSize {
             return withRefreshedAlpha(cache.nodes.map(withRefreshedBitmapID))
@@ -987,6 +1030,7 @@ final class WasabiSceneRenderer {
     private var layoutNodeCache: (generation: UInt64, canvas: CGSize, nodes: [WasabiSceneNode])?
 
     private func layoutNodes() -> [WasabiSceneNode] {
+        fitCanvasToContentIfNeeded()
         let generation = loadedSkin.runtime.graph.sceneGeneration
         if let cache = layoutNodeCache, cache.generation == generation, cache.canvas == canvasSize {
             return cache.nodes
@@ -5038,6 +5082,115 @@ final class WasabiSceneRenderer {
 
     private func defaultSize(for layout: WasabiObject) -> CGSize {
         Self.defaultSize(for: layout, resources: resources)
+    }
+
+    /// The canvas this renderer last chose *for itself*. While `canvasSize` still equals it the fit
+    /// below may replace it; the moment anything else sets a size — a drag, a script, restored state
+    /// — the two diverge and the fit never touches the canvas again.
+    private var autoFittedCanvas: CGSize?
+    private var hasFittedContent = false
+    private var isFittingContent = false
+
+    /// Size a layout that describes no size of its own to the content it turns out to hold.
+    ///
+    /// Runs **once**, on the first scene resolved after `runtime.start()`, because that is when the
+    /// content exists: a `Wasabi:StandardFrame`'s client group is instantiated by the skin's own
+    /// `standardframe.maki`, not by the markup, so a fit measured in `init` reads an empty frame and
+    /// settles on the wrong number. (Measured: ClassicPro's Widgets Manager is 19 nodes at `init`
+    /// and 30 after — and a first attempt that fitted in `init` left it at 100x400, its whole
+    /// defect, while growing four *other* skins that happened to be complete by then.)
+    private func fitCanvasToContentIfNeeded() {
+        guard !hasFittedContent, !isFittingContent,
+              loadedSkin.runtime.hasStartedScripts,
+              storedCanvasSize == autoFittedCanvas else { return }
+        isFittingContent = true
+        defer { isFittingContent = false; hasFittedContent = true }
+        let fitted = contentFittedSize(defaultSize(for: layout), for: layout)
+        guard fitted != storedCanvasSize else { return }
+        storedCanvasSize = fitted
+        autoFittedCanvas = fitted
+        invalidateSceneCache()
+        loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
+    }
+
+    /// Grow a layout that describes **no** size of its own to the extent of the content it lays out.
+    ///
+    /// The third fallback in the chain `defaultSize` walks. A layout that declares `w`/`default_w`
+    /// is sized by its author, and one with a `background` bitmap is sized by that artwork (ZDL's
+    /// Reel-To-Reel); a layout with neither has been sized, until now, by its **`minimum_w`** — the
+    /// floor it is allowed to shrink to, which is not a size anybody drew. ClassicPro's Widgets
+    /// Manager is the measured case: `<layout id="normal" minimum_h="400" minimum_w="100" …>` and
+    /// nothing else, so it opened 100x400 — a tall empty sliver — on all five cPro skins, cPro-Bento
+    /// included. Its content group's header layer is a 305x57 bitmap, clipped to 92 wide and
+    /// invisible along with everything the list draws.
+    ///
+    /// Measured, never inferred: the layout is resolved at the candidate size and any node that
+    /// escapes **its own parent's box** is content the canvas is too small to hold, so the canvas
+    /// grows by the largest such escape and the layout is resolved again. Relative children track the
+    /// canvas and never overflow, so the only thing that moves the number is intrinsic artwork, and
+    /// the loop reaches its fixed point in one or two passes. It is bounded to four regardless, and
+    /// clamped by any `maximum_w`/`maximum_h` the layout declares.
+    ///
+    /// The gate is per axis and deliberately narrow. A skin that sized its window is left exactly
+    /// where it was — which is what the corpus sweep diff has to keep proving, because a slider thumb
+    /// that overhangs its track on purpose looks identical to content that does not fit.
+    private func contentFittedSize(_ declared: CGSize, for layout: WasabiObject) -> CGSize {
+        let key = layout.xmlID ?? "-"
+        let attributes = layout.attributes
+        let unsized: (String, String) -> Bool = { own, fallback in
+            attributes[own] == nil && attributes[fallback] == nil && attributes["background"] == nil
+        }
+        var fitsWidth = unsized("w", "default_w"), fitsHeight = unsized("h", "default_h")
+        guard fitsWidth || fitsHeight else { return declared }
+        let ceiling = CGSize(
+            width: Self.optionalDimension(attributes["maximum_w"]) ?? 16384,
+            height: Self.optionalDimension(attributes["maximum_h"]) ?? 16384)
+        let trace = ProcessInfo.processInfo.environment["WINAMP_MODERN_FIT_TRACE"] != nil
+        var size = declared
+        var previousSize = declared
+        var previous: CGSize?
+        for _ in 0..<4 {
+            var growth = CGSize.zero
+            let nodes = sceneNodes(canvas: size)
+            for node in nodes where node.object !== layout {
+                growth.width = max(growth.width, node.frame.maxX - node.parentFrame.maxX)
+                growth.height = max(growth.height, node.frame.maxY - node.parentFrame.maxY)
+            }
+            if trace { print("FIT \(key) at \(size) growth=\(growth) nodes=\(nodes.count)") }
+            // Overflow that does not shrink when the canvas grows is not content the window is too
+            // small for — it is artwork drawn deliberately past its box, and no size will ever
+            // satisfy it. Stop and **step back one**, to the last size that was not chosen to chase
+            // this residual. Two measured cases, and the step-back is what serves both:
+            //
+            // * BLAKK's video window stretches `component.bottom.middle-video`, a 407px sheet,
+            //   across a 204px frame and reports the same 51px overhang at *every* canvas. It stalls
+            //   on the first comparison, so the step back is to its declared 204 — which is right,
+            //   its `minimum_w="204"` is the window its author drew.
+            // * ClassicPro's Widgets Manager overflows by 213 (the header), then by a standing 3
+            //   from a list item's artwork. It stalls on the second comparison, so the step back is
+            //   to the 313 the header asked for rather than all the way to the useless 100.
+            if let previous {
+                if growth.width > 0, growth.width >= previous.width {
+                    if trace { print("FIT \(key) width stalled at \(growth.width) — stepping back to \(previousSize.width)") }
+                    size.width = previousSize.width
+                    fitsWidth = false
+                }
+                if growth.height > 0, growth.height >= previous.height {
+                    if trace { print("FIT \(key) height stalled at \(growth.height) — stepping back to \(previousSize.height)") }
+                    size.height = previousSize.height
+                    fitsHeight = false
+                }
+                if !fitsWidth && !fitsHeight { return size }
+            }
+            previous = growth
+            previousSize = size
+            let next = CGSize(
+                width: fitsWidth ? min(ceiling.width, size.width + max(0, growth.width)) : size.width,
+                height: fitsHeight ? min(ceiling.height, size.height + max(0, growth.height)) : size.height)
+            if next == size { break }
+            size = next
+        }
+        return size
     }
 
     /// A layout's canvas size.
