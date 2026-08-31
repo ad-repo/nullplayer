@@ -17,6 +17,18 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: config windows with a see-through background are fixed** — on Itemskin, EPS
+  High-End System and eleven other skins, some windows had no background at all: the Notifier
+  Preferences screen in particular came up as floating text and controls with the desktop showing
+  straight through, and on EPS the controls are painted in a near-white colour so the window looked
+  simply empty. A skin can point a window's background either at a named piece of its own artwork or
+  at an image file inside the skin, and only the first was being read; separately, a number of skins
+  ask for a background that belongs to Winamp itself rather than shipping their own, and there was
+  nothing behind it. Windows now find the file when a skin names one, and fall back to the skin's own
+  panel colour when it asks for a background nothing can supply. Skins whose windows are meant to be
+  see-through — the shaped and cut-out players — are untouched: only a window that asks for a
+  background gets one.
+
 - **Winamp Modern skins: cPro's tab labels are readable again** — on the five ClassicPro skins
   (Bento, Insomnis, Insomnis v2, T2T, das-skin-prev), the seven tabs above the library shorten to
   three letters when the window is too narrow to spell them out, and each one was losing the right

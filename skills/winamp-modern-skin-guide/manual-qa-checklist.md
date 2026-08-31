@@ -184,6 +184,11 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
 - [ ] mmd3 / CornerAmp: the synthesized library window is drawn with **the skin's own frame** (its
       title bar, borders, and buttons), not NullPlayer chrome
 - [ ] A surface with no home falls back to a window of its own, and the DEBUG log names the reason
+- [ ] **Itemskin and EPS High-End: the Notifier Preferences window has a background** (B90) — open
+      it from **Skin Windows** on each. Itemskin shows its own `config.png` panel artwork behind the
+      six title boxes; EPS shows a black panel, against which its near-white controls are legible.
+      Neither should be see-through. Then check one shaped player (Ujola Cat, winampmodern566) in the
+      same pass: a window that declares no background must **not** have gained a rectangle.
 - [ ] **Itemskin: the frame windows follow their content** (B69) — open the playlist, video, library
       and AVS windows. Each must be a *single* composed window, not an empty frame in one place and a
       chromeless panel in another: this skin builds every component window as a pair (a bare content

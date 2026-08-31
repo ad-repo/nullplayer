@@ -309,6 +309,56 @@ final class WasabiResourceCache {
         return bitmap
     }
 
+    /// A `background=` value, which Winamp accepts in **either** form — the id of a declared
+    /// `<bitmap>`, or a path to an image inside the skin — exactly as `loadMap` and
+    /// `<bitmapfont file=>` do, and as this cache already answers for both of those.
+    ///
+    /// Itemskin's notifier preferences is the corpus's one path-form declaration
+    /// (`<layout background="notifier\config.png">`, `notifier/notifier.xml`). Resolving only the id
+    /// form answered nil, and a layout's background *is* the window's backing, so the whole 300x422
+    /// config window drew fully transparent.
+    ///
+    /// The path is tried against the declaring file's own directory first and the **skin root**
+    /// second: Itemskin's is written from the root while the declaration sits one directory down.
+    func bitmap(background value: String, declaredIn source: WalSourceLocation) -> WasabiBitmap? {
+        if let declared = bitmap(identifier: value) { return declared }
+        guard !isTornDown, value.contains(".") else { return nil }
+        var candidates: [String] = []
+        if let resolved = try? loadedSkin.vfs.resolve(value, relativeTo: source.path) {
+            candidates.append(resolved.logicalPath)
+        }
+        if let root = loadedSkin.vfs.skinRoot,
+           let resolved = try? loadedSkin.vfs.resolve(value, relativeTo: root + "/.") {
+            candidates.append(resolved.logicalPath)
+        }
+        for path in candidates {
+            if let bitmap = bitmap(atLogicalPath: path, location: source) { return bitmap }
+        }
+        return nil
+    }
+
+    /// A whole image file, decoded and cached under its path so it cannot collide with a `<bitmap>`
+    /// of the same name. No crop and no gamma group: a path form declares neither.
+    private func bitmap(atLogicalPath path: String, location: WalSourceLocation?) -> WasabiBitmap? {
+        let key = "path:" + path.folding(options: [.caseInsensitive],
+                                          locale: Locale(identifier: "en_US_POSIX"))
+        accessCounter &+= 1
+        if var cached = bitmaps[key] {
+            cached.access = accessCounter
+            bitmaps[key] = cached
+            return cached.bitmap
+        }
+        guard let data = try? loadedSkin.vfs.data(at: path, location: location),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let cost = image.width * image.height * 4
+        let bitmap = WasabiBitmap(image: image, width: image.width, height: image.height, cost: cost)
+        bitmaps[key] = CachedBitmap(bitmap: bitmap, access: accessCounter)
+        currentCost += cost
+        evictIfNeeded(protecting: key)
+        return bitmap
+    }
+
     /// The alpha mask for a script-set region, or `nil` when the map cannot be resolved — in which
     /// case the caller must leave the object unclipped rather than draw an empty control.
     ///
@@ -2162,9 +2212,24 @@ final class WasabiSceneRenderer {
         context.setAlpha(effectiveAlpha)
         applyFlip(of: object, frame: node.frame, context: context)
 
-        if let background = object.attributes["background"],
-           let bitmap = resources.bitmap(identifier: background) {
-            drawImage(bitmap.image, in: node.frame, context: context)
+        if let background = object.attributes["background"] {
+            if let bitmap = resources.bitmap(background: background, declaredIn: object.source) {
+                drawImage(bitmap.image, in: node.frame, context: context)
+            } else if type == "layout" {
+                // A layout's `background=` is the window's backing, and 13 corpus skins name a
+                // resource the `.wal` does not ship — `component.basetexture`,
+                // `wasabi.frame.basetexture`, `studio.BaseTexture`, `wasabi.frame` — because in
+                // Winamp those come from the base Wasabi skin, which we have no equivalent of. A
+                // window whose only backing is one of those drew entirely transparent: EPS
+                // High-End's and Itemskin's notifier preferences are the reported case, where every
+                // control is painted in the skin's light list colours and vanishes against the
+                // desktop. The skin's own content background is the nearest thing we can answer
+                // with, and it is the same colour NullPlayer's embedded surfaces already use.
+                // Only when the skin *asked* for a backing: a layout that declares none is
+                // deliberately shaped and must stay transparent.
+                context.setFillColor(palette.contentBackground.cgColor)
+                context.fill(node.frame)
+            }
         }
 
         // A Wasabi standard form widget's own chrome, under whatever the primitive it became draws

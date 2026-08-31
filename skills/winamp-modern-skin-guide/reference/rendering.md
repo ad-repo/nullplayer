@@ -208,6 +208,34 @@ loaded. Defix builds every background id by prefixing a preference it never seed
 `"" + "_background_material.Element.top.left"` nine times per window and stripped the skin's wood
 panelling off the player, both speakers, the playlist and the library.
 
+#### A layout's `background=` is the window's backing — id **or** path, with a fallback (B90, 2026-08-31)
+
+`background=` is read as a declared `<bitmap>` id first and as a **path inside the skin** second, the
+same either/or `loadMap` and `<bitmapfont file=>` already take. The path is tried against the
+declaring file's own directory, then the skin root: Itemskin's `<layout background="notifier\config.png">`
+sits in `notifier/notifier.xml` and is written from the root. It is the corpus's only path-form
+declaration, and resolving only the id form left its whole 300x422 notifier-preferences window
+transparent.
+
+When neither form resolves and the object is a **layout**, the frame is filled with the palette's
+`contentBackground`. 13 skins name a resource that comes from Winamp's own Wasabi base skin, which we
+ship no equivalent of — `component.basetexture` (14), `wasabi.frame.basetexture` (15),
+`studio.BaseTexture` (11), `wasabi.frame` (1). Most never show, because the skin paints its own chrome
+over the top; where the layout background is the *only* backing the window vanishes, and its controls
+with it — EPS High-End's notifier preferences draws every control in the skin's near-white list
+colours against nothing at all.
+
+Two bounds keep the fill honest, and both are pinned in `WinampModernB90Tests`:
+
+- **Only when the skin asked.** A layout that declares no `background=` stays transparent — that is
+  every `sysregion`-shaped player in the corpus, and filling those would square each one off.
+- **Only a layout.** A group with an unresolvable background still draws nothing: a group has no
+  region of its own (see *hit-testing*), so an opaque fill there slabs over whatever the layout put
+  behind it.
+
+Corpus sweep, 441 renders: **15 changed**, and 8 of those are Big Bento dialogs already opaque where
+the fill landed underneath existing chrome.
+
 #### Layer fill modes
 
 - **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome

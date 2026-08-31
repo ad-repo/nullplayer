@@ -2,6 +2,66 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B90 — a config window with a transparent background — closed 2026-08-31
+
+- [x] **B90. A layout's `background=` resolves to nothing, so the whole window draws transparent.**
+      Reported live 2026-08-31 as *"itemskin, EPS high end and other where the config screen has a
+      transparent background"*. Both named windows are the same one — the **Notifier Preferences**
+      container that ships with the open-source notifier script — and they fail for two different
+      reasons under one heading. A layout's `background=` **is** the window's backing; nothing else in
+      either layout paints one.
+
+      **Measured before the fix** (`WINAMP_MODERN_RENDER_DUMP`, alpha channel): Itemskin's
+      `opensource_notifier_prefs/normal` 300x422 is **82.6%** fully transparent, EPS's 300x420 is
+      **82.0%**. Both are near the top of the whole 441-render corpus sweep ranked by transparent
+      area, below only layouts that are legitimately empty.
+
+      **Cause 1 — the value is a file path.** Itemskin declares
+      `<layout background="notifier\config.png">` (`notifier/notifier.xml:98`), and `config.png` is
+      in the archive. We looked the value up only as a declared `<bitmap>` id. Winamp accepts either
+      form, and this cache already answered both for `loadMap` and for `<bitmapfont file=>` — only the
+      background path was missing. It is the corpus's **one** path-form declaration; every other one
+      of the 193 layout `background=` values is an id.
+
+      **Cause 2 — the id is a Winamp base-skin resource the `.wal` does not ship.** EPS declares
+      `background="component.basetexture"`, which comes from Winamp's own Wasabi base skin. We have no
+      equivalent of that skin, so it resolves to nothing. Corpus: **41 declarations across 13 skins** —
+      `component.basetexture` 14, `wasabi.frame.basetexture` 15, `studio.BaseTexture` 11,
+      `wasabi.frame` 1 ([M29]). Most are invisible because the skin paints its own chrome on top —
+      BLAKK's Configure window names it and looks correct. It only bites where the layout background is
+      the sole backing.
+
+      **The EPS window was never blank.** Composited over grey, every control is there — six title
+      boxes, three sliders, ten check boxes, two drop-downs. They are painted in the skin's own list
+      colours, which are near-white, so against the desktop the window read as empty rather than as
+      transparent. That is the trap this entry is worth keeping for: *"the widgets do not draw"* and
+      *"the widgets draw on nothing"* are indistinguishable on screen, and one is a form-widget bug
+      while the other is a one-line backing bug.
+
+      **Fixed 2026-08-31.** `WasabiResourceCache.bitmap(background:declaredIn:)` takes the id form
+      first and the path form second (declaring file's directory, then the skin root — Itemskin's is
+      root-relative from one directory down). When neither resolves and the object is a **layout**, the
+      frame is filled with the palette's `contentBackground`, which is the same colour NullPlayer's own
+      embedded surfaces already use. Two bounds, both pinned: a layout that declares **no** background
+      stays transparent (or every `sysregion`-shaped player squares off), and a **group** with an
+      unresolvable background is still not filled (a group has no region of its own, so a fill there
+      slabs over the layout behind it).
+
+      **Corpus sweep, 441 renders: 15 changed.** The two reported windows; 8 Big Bento dialogs
+      (`query.pathurl`, `welcomessage`) that are visually identical because the fill landed under
+      chrome that was already opaque; 3 EPS layouts that were 100% invisible and now show their
+      content (`leftspeaker`/`rightspeaker` `glassy` and `Main/shade_metallic`, whose declared
+      `speaker3` and `shade.bg.met` name files the archive does not contain); Core-X5's
+      `Skin Consortium` at 6px; and `Anexa/main-shade` at 179px, which is the pre-existing
+      non-reproducible drift already recorded under B76. `swift test`: five cases in
+      `WinampModernB90Tests`. Live-verified on both skins 2026-08-31.
+
+- <a id="m29"></a>**M29:** the reach number, over an unpacked corpus (`unzip` each `.wal`): collect
+  every `background="…"` on a `<layout>`, `<group>` or `<groupdef>`, collect every `<bitmap>`,
+  `<color>` and `<elementalias>` `id=`, and report the values with no declaration. Counting only
+  `<bitmap>` ids overstates it — five skins declare `component.basetexture` as a `<color>` — and
+  grepping the `.wal` directly answers nothing, because it is a compressed archive.
+
 ## B87 — cPro's 3-letter tab labels are clipped by a few pixels — closed 2026-08-31
 
 - [x] **B87. cPro's 3-letter tab labels are clipped by a few pixels.** In the running app the tab

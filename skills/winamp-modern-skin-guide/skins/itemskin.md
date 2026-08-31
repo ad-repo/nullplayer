@@ -1,8 +1,8 @@
 # Itemskin
 
 A glass-framed skin whose component windows are built in an unusual way, and the reason B69 exists.
-Loads as of Phase 35; its notifier preferences draw as of B66; its frames find their content as of
-B69 (2026-08-29).
+Loads as of Phase 35; its notifier preferences draw as of B66, on their own background as of B90; its
+frames find their content as of B69 (2026-08-29).
 
 ## The shape of this skin
 
@@ -53,6 +53,12 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
 - **A pinned move must not be clamped on screen.** The tiler had already put `MLibrary`'s right edge
   past the visible frame; clamping the frame window — the only one of the pair a script moves — left it
   82px short of its content, which reads as a rendering offset rather than a placement one.
+- **Its notifier preferences point `background=` at a file, not at an id.**
+  `<layout background="notifier\config.png">` (`notifier/notifier.xml:98`), written from the skin
+  root while the declaration sits in `notifier/`. It is the corpus's only path-form layout background,
+  and it is what made this the reported skin for B90 — a layout's background *is* the window's
+  backing, so reading only the id form left the whole 300x422 window **82.6% transparent**. Winamp
+  takes either form; see [`reference/rendering.md`](../reference/rendering.md).
 - **`<include file="xml/eq.xml">` names a file the archive does not ship.** Skipped with a warning
   since Phase 35; Winamp does the same. This skin and Overdrive_2 are why B1 was closed.
 - **Its compatibility level reads `unsupported` although the skin draws.** The notifier script wants
