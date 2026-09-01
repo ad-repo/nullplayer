@@ -44,17 +44,21 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Compact Mode works in both classic and modern UI. Set apart on its own, above the
-        // display toggles.
-        let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
-        compactMode.target = MenuActions.shared
-        compactMode.state = wm.compactModeEnabled ? .on : .off
-        menu.addItem(compactMode)
-        let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
-        compactWindow.target = MenuActions.shared
-        compactWindow.state = wm.compactWindowEnabled ? .on : .off
-        menu.addItem(compactWindow)
-        menu.addItem(NSMenuItem.separator())
+        // Compact Mode works in the classic and modern UI. Set apart on its own, above the display
+        // toggles. A `.wal` skin supplies its own compact/shade layouts, so showing NullPlayer's
+        // alternatives there creates a second, unrelated compact-window model; the menu-bar
+        // Windows menu suppresses them the same way.
+        if wm.uiMode.controllerFamily != .winampModern {
+            let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
+            compactMode.target = MenuActions.shared
+            compactMode.state = wm.compactModeEnabled ? .on : .off
+            menu.addItem(compactMode)
+            let compactWindow = NSMenuItem(title: "Compact Window", action: #selector(MenuActions.toggleCompactWindow), keyEquivalent: "")
+            compactWindow.target = MenuActions.shared
+            compactWindow.state = wm.compactWindowEnabled ? .on : .off
+            menu.addItem(compactWindow)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         // Display toggles
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
