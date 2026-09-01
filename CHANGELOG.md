@@ -17,6 +17,7 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: a skin's second window of the same name is no longer a copy of the first** — WMP11-BlueVU ships both a large and a small VU meter, and picking *VU Meters Small* from the Skin Windows menu opened a second copy of the large one, because the two windows share an internal name and everything resolved that name to the first. Both meters now open as themselves. The reverse case is fixed too: jvc.tape listed its playlist window twice in the Skin Windows menu — the skin declares it once and the skin's own files ask for it twice — and the duplicate entry is gone.
 - **Winamp Modern skins: `Winamp 3.0 Default` was a blank white rectangle and now works** — Nullsoft's
   own Winamp3 base skin loaded and then drew literally nothing, the only skin in the collection that
   did. Winamp3-era skins expect the player itself to supply the window frame and its title-bar

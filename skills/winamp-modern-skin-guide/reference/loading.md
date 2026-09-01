@@ -60,6 +60,40 @@ button could never open, reported by the render sweep only as `dropped container
 layout)`. It also laundered the one failure the skin-mount scope exists to keep fatal, since a
 ClassicPro engine include nested under an ordinary in-skin one was judged by the *outer* path.
 
+### A container root's id has to be unique, and the source location says how to make it so
+
+Every consumer downstream of expansion addresses a window by its **id string** — `WasabiSceneRenderer`'s
+`containerID`, the Skin Windows menu, `TOGGLE`'s container fallback, and the per-container layout and
+frame persistence in `WinampModernSkinState`. A second container root claiming an id another already
+holds is therefore unreachable: it is never the answer to a lookup for that id. Two causes produce
+that shape, and they want opposite answers, so `WasabiSkinInitializer` keys the first declaration's
+**source location** and compares (B96):
+
+- **Same location — one declaration reached twice.** A skin that includes the same file from two
+  places gets two container roots out of one `<container>`; `jvc.tape.v0.5` reads `xml/pledit.xml`
+  from both `skin.xml` and `xml/amp.xml`, and its `Pledit` came out twice. The repeat is **dropped**,
+  with a `duplicateIdentifier` warning. This is the container-root half only — re-including an
+  elements file to share its resources and `<groupdef>`s is ordinary Winamp practice and is untouched
+  (see the duplicate-definition rule below). B75, a skin that runs every handler twice because it
+  includes the same *script* twice, is the script-side sibling and is still open.
+- **Different locations — two declarations sharing an id.** `WMP11-BlueVU/xml/VU-Meters.xml` writes
+  `<container id="Meter" name="VU Meters Large">` and then `<container id="Meter" name="VU Meters
+  Small">`. Both are windows the skin means to ship, so both are **kept**, and the second is renamed
+  to `Meter#2` (`#3` for a third, and so on) so it can be addressed. The **first** keeps the declared
+  id, which is what Winamp's own container table answers with, so `getContainer("Meter")` and every
+  persisted key resolve exactly where they did. The skin's `name=` is untouched — that is what the
+  Skin Windows menu shows, and it is the only thing telling the pair apart to a user.
+
+Corpus: one rename (`WMP11-BlueVU`) and one drop (`jvc.tape.v0.5`) across all 70 archives; every other
+skin takes the identical path, because the branch only fires on a repeated container-root id.
+
+**Do not read `resolved=0` on a repeated container id as an engine defect.** The render dump keys its
+renderers by container id and tears each one down at the end of its turn, so before this a duplicate
+id took two turns on one renderer and the second ran against a **torn-down** cache — reporting
+`resolved=0` and listing the *first* container's bitmap ids as missing. That is the harness, not the
+skin's resource scope. `jvc.tape`'s `Pledit` missing `pl.button.bg` and `pl.button.small` is a real
+and separate two-bitmap miss.
+
 ### What the XML parser tolerates, and what it still rejects
 
 `WalLenientXMLParser` accepts multiple roots and raw ampersands. It also, since B33, accepts a file

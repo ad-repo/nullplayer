@@ -2,6 +2,78 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B96 — a container declared twice yields a second instance with an empty resource scope — closed 2026-09-01
+
+- [x] **B96. A container declared twice yields a second instance with an empty resource scope.**
+      One symptom, two causes, and the grep only finds one of them.
+
+      **Literal duplicate `id=`.** `WMP11-BlueVU/xml/VU-Meters.xml:1` opens
+      `<container id="Meter" name="VU Meters Large">` and then `<container id="Meter" name="VU
+      Meters Small">`. Both reach the graph; the second resolves nothing:
+
+      ```
+      BITMAPS Meter/normal: resolved=22 missing=
+      BITMAPS Meter/normal: resolved=0  missing=btnshadow.1 component.left component.top.left
+                                                needleimg1 scaleimg1 vusettingslarge …
+      ```
+
+      The ids it reports missing are the **first** container's, and they include the standard-frame
+      `component.*` set that every other container in the same skin resolves — so the second
+      instance is not merely missing artwork, it is resolving against an empty scope.
+
+      **Double include.** jvc.tape.v0.5 declares `Pledit` **once**, in `xml/pledit.xml:1`, but
+      includes that file from both `skin.xml:17` and `xml/amp.xml:9`. `RENDER-DUMP containers`
+      prints `Pledit` twice, both `resolved=0` (`pl.button.bg`, `pl.button.small`). B75 — a skin that
+      includes the same script twice runs every handler twice — is the script-side sibling of this
+      half, and an include-once guard would likely close both.
+
+      **Open question before implementing:** real Winamp keys containers by id, so it would keep one
+      and discard the other. Discarding may be more correct than repairing the second scope — but
+      that loses WMP11's *"VU Meters Small"* window, which the skin plainly intends as a second
+      window. Decide which before writing code.
+
+---
+
+      **Fixed 2026-09-01.** The **source location** of the first declaration to claim an id is what
+      tells the two causes apart, so `WasabiSkinInitializer` keys container roots by id and compares
+      locations before creating the object:
+
+      * **Same location** — one `<container>` reached through two include paths. The repeat is
+        dropped, with a `duplicateIdentifier` warning. Scoped to container *roots*: re-including an
+        elements file for its resources and `<groupdef>`s stays ordinary practice and is untouched,
+        and B75 (the same *script* included twice) is still open.
+      * **Different locations** — two declarations the skin means as two windows. Both are kept and
+        the second is renamed (`Meter` → `Meter#2`, `#3` for a third). The first keeps the declared
+        id, so `getContainer("Meter")` and every persisted layout/frame key answer with the first
+        declaration exactly as Winamp's own container table does; only the second moves. The skin's
+        `name=` is untouched, which is what the Skin Windows menu shows.
+
+      Discarding the second was the other candidate and is what a literal reading of Winamp's by-id
+      container table suggests, but it deletes a window WMP11 ships. Renaming keeps the window *and*
+      the by-id semantics.
+
+      **The "empty resource scope" was a harness artifact.** The render dump keys its renderers by
+      container id and tears each one down at the end of its turn, so a duplicate id took two turns
+      on one renderer and the second ran against a torn-down cache — which is where `resolved=0` and
+      the first container's ids-as-missing came from. jvc's `Pledit` missing `pl.button.bg` and
+      `pl.button.small` is a real and separate two-bitmap miss that this change does not touch.
+
+      Measured, before → after:
+
+      ```
+      WMP11-BlueVU  ["… Meter", "Meter"]          → ["… Meter", "Meter#2"]
+                    Meter/normal   resolved=22      Meter/normal   resolved=22
+                    Meter/normal   resolved=0       Meter#2/normal resolved=24   ← the small meter
+      jvc.tape      ["… Pledit", "tape", "Pledit"] → ["… Pledit", "tape"]
+      ```
+
+      Corpus sweep over all 70 archives: one rename (WMP11-BlueVU), one drop (jvc.tape), no skin left
+      with a duplicate container id, and every other skin on the identical path. Reach was filed as 3
+      skins; the live figure is **2** — Ebonite_2_1's second `sc.alphaframe` is in
+      `wasabi/standardframe/Copy of standardframe.xml`, which no `<include>` names, so it never
+      reaches the graph. Tests: `WinampModernB96Tests`. Rule written up in
+      [`reference/loading.md`](../../skills/winamp-modern-skin-guide/reference/loading.md).
+
 ## B94 — a path-shaped `image=` resolves nothing, so a skin draws none of its own art — closed 2026-09-01
 
 - [x] **B94. A path-shaped `image=` resolves nothing.** Wasabi creates an implicit bitmap when

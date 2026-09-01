@@ -508,6 +508,39 @@ final class WasabiSkinInitializer {
     let maximumObjectCount: Int
     let resourceLimits: WasabiResourceLimits
 
+    /// Where each container-root `id` was first declared, for B96's two-cause duplicate rule.
+    private var containerRootIdentities: [String: WalSourceLocation] = [:]
+    /// Findings raised while creating objects. The registries carry their own; this one belongs to
+    /// the initializer.
+    private var containerDiagnostics: [WalDiagnostic] = []
+
+    private enum ContainerRootIdentity {
+        /// The first container to claim this id.
+        case keep
+        /// The same declaration reached twice through two include paths: drop it.
+        case reinclude
+        /// A genuinely separate declaration sharing the id: give it one of its own.
+        case rename(String)
+    }
+
+    private func resolveContainerRootIdentity(declaredID: String,
+                                              location: WalSourceLocation) -> ContainerRootIdentity {
+        let key = declaredID.lowercased()
+        guard let first = containerRootIdentities[key] else {
+            containerRootIdentities[key] = location
+            return .keep
+        }
+        guard first != location else { return .reinclude }
+        var suffix = 2
+        var unique = "\(declaredID)#\(suffix)"
+        while containerRootIdentities[unique.lowercased()] != nil {
+            suffix += 1
+            unique = "\(declaredID)#\(suffix)"
+        }
+        containerRootIdentities[unique.lowercased()] = location
+        return .rename(unique)
+    }
+
     init(vfs: WalVirtualFileSystem, maximumObjectCount: Int = 100_000,
          resourceLimits: WasabiResourceLimits = .production) {
         self.vfs = vfs
@@ -516,6 +549,8 @@ final class WasabiSkinInitializer {
     }
 
     func initialize(document: WalExpandedXMLDocument) throws -> WasabiSkinRuntime {
+        containerRootIdentities.removeAll()
+        containerDiagnostics.removeAll()
         var passes: [WasabiInitializationPass] = []
         let resources = WalResourceRegistry()
         var validatedImages: Set<String> = []
@@ -575,6 +610,7 @@ final class WasabiSkinInitializer {
             scriptBindings: bindings,
             completedPasses: passes,
             diagnostics: document.diagnostics + resources.diagnostics + types.diagnostics
+                + containerDiagnostics
         )
         // The closure retains this initializer so runtime expansion keeps the same VFS, limits, and
         // object budget as load time. `createdCount` continues from the load-time total, so scripts
@@ -1245,6 +1281,40 @@ final class WasabiSkinInitializer {
                 attributes[WasabiFormWidgets.kindAttribute] = substitution.kind.rawValue
                 for (name, value) in substitution.defaults where attributes[name] == nil {
                     attributes[name] = value
+                }
+            }
+
+            // B96: a second container root carrying an `id` the skin has already used. Two causes,
+            // and they want opposite answers. A skin that includes the same file twice — jvc.tape
+            // reads `xml/pledit.xml` from both `skin.xml` and `xml/amp.xml` — declares its `Pledit`
+            // once and gets it twice; the copies come from the *same* source location, and the
+            // second is a phantom window. A skin that writes the tag twice — WMP11-BlueVU's
+            // `<container id="Meter" name="VU Meters Large">` and `<container id="Meter" name="VU
+            // Meters Small">` — means two windows, and they come from two different locations.
+            // Everything downstream of here addresses a window by its id string (the renderer, the
+            // Skin Windows menu, the per-container layout and frame persistence), so the second of a
+            // pair is otherwise unreachable: opening "VU Meters Small" resolved the id back to the
+            // large meter. Winamp's own by-id lookups keep answering with the first declaration,
+            // which is what a renamed *second* preserves.
+            if parent == nil, typeName.caseInsensitiveCompare("container") == .orderedSame,
+               let declaredID = attributes["id"], !declaredID.isEmpty {
+                switch resolveContainerRootIdentity(declaredID: declaredID, location: node.location) {
+                case .keep:
+                    break
+                case .reinclude:
+                    containerDiagnostics.append(WalDiagnostic(
+                        .duplicateIdentifier,
+                        "Container '\(declaredID)' is included twice from the same declaration; "
+                        + "the repeat is dropped.",
+                        severity: .warning, location: node.location))
+                    continue
+                case .rename(let unique):
+                    containerDiagnostics.append(WalDiagnostic(
+                        .duplicateIdentifier,
+                        "Container '\(declaredID)' is declared again; this instance answers to "
+                        + "'\(unique)' so both windows can be opened.",
+                        severity: .warning, location: node.location))
+                    attributes["id"] = unique
                 }
             }
 
