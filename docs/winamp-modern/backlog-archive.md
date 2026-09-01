@@ -61,8 +61,9 @@ Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below
       *same* build — the pre-existing non-reproducible drift already recorded under B76 and B90.
       `swift test`: 1620 pass, seven new cases in `WinampModernB94Tests`.
 
-      **Not live-verified.** None of the 13 skins has been driven under the mouse; the checks are in
-      [manual-qa-checklist.md](../../skills/winamp-modern-skin-guide/manual-qa-checklist.md).
+      **Confirmed live 2026-09-01.** The standing checks are in
+      [manual-qa-checklist.md](../../skills/winamp-modern-skin-guide/manual-qa-checklist.md), which
+      keeps them for the next release pass rather than as a record of this one.
 
       One trap for the next sweep: a capture came up 14 lines short at the start of one skin's block
       and re-running produced the full file with no other difference — a dropped stdout chunk through
