@@ -164,7 +164,9 @@ enum WMPJScriptCompatibility {
     ]
 
     static func supports(object: String, member: String) -> Bool {
-        members[object.lowercased()]?.contains(member) == true
+        members[object.lowercased()]?.contains {
+            $0.caseInsensitiveCompare(member) == .orderedSame
+        } == true
     }
 }
 

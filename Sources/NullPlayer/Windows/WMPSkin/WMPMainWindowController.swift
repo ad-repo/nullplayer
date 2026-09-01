@@ -97,7 +97,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let resolved = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: scene.canvasSize,
                            overrides: output.overrides)
-                let rendered = try await WMPRenderer(imageStore: store).render(scene: resolved, backingScale: 1)
+                let rendered = try await WMPRenderer(imageStore: store).render(
+                    scene: resolved, backingScale: renderBackingScale)
                 try Task.checkCancellation()
                 apply(skin: skin, store: store, scene: resolved, image: rendered.image,
                       phase5: phase5, runtime: runtime, overrides: output.overrides)
@@ -297,7 +298,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID, requestedSize: requested, overrides: resolvedOverrides)
-                let result = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                let result = try await WMPRenderer(imageStore: store).render(
+                    scene: scene, backingScale: self?.renderBackingScale ?? 1)
                 try Task.checkCancellation()
                 self?.sceneOverrides = resolvedOverrides
                 self?.activeScene = scene
@@ -361,7 +363,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: base.canvasSize,
                            overrides: output.overrides)
-                let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                let rendered = try await WMPRenderer(imageStore: store).render(
+                    scene: scene, backingScale: renderBackingScale)
                 try Task.checkCancellation()
                 apply(skin: skin, store: store, scene: scene, image: rendered.image,
                       phase5: phase5Session, runtime: phase5Runtime, overrides: output.overrides)
@@ -385,6 +388,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 WMPSize(width: window.frame.width, height: window.frame.height),
                 skin: importer.selectedSkinName ?? "", view: viewID)
         }
+        renderCurrentSize()
+    }
+    func windowDidChangeBackingProperties(_ notification: Notification) {
         renderCurrentSize()
     }
     func windowDidMove(_ notification: Notification) {
@@ -448,7 +454,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize,
                            interactionState: state, dirtyNodeIDs: changed,
                            overrides: overrides)
-                let result = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                let result = try await WMPRenderer(imageStore: store).render(
+                    scene: scene, backingScale: self?.renderBackingScale ?? 1)
                 try Task.checkCancellation()
                 self?.activeScene = scene
                 self?.mainView?.present(result.image, scene: scene, dirtyBounds: scene.dirtyBounds)
@@ -484,7 +491,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize,
                            dirtyNodeIDs: output.repaintNodeIDs.isEmpty ? nil : output.repaintNodeIDs,
                            overrides: output.overrides)
-                let result = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                let result = try await WMPRenderer(imageStore: store).render(
+                    scene: scene, backingScale: renderBackingScale)
                 guard !Task.isCancelled else { return }
                 sceneOverrides = output.overrides
                 self.activeScene = scene
@@ -577,7 +585,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             do {
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize, overrides: output.overrides)
-                let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                let rendered = try await WMPRenderer(imageStore: store).render(
+                    scene: scene, backingScale: renderBackingScale)
                 self.sceneOverrides = output.overrides; self.activeScene = scene
                 self.mainView?.present(rendered.image, scene: scene, dirtyBounds: scene.dirtyBounds)
                 self.applyHostCommands(output.hostCommands); self.recordScriptDiagnostics(output.diagnostics)
@@ -593,6 +602,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private func recordScriptDiagnostics(_ diagnostics: [WMPJScriptDiagnostic]) {
         guard !diagnostics.isEmpty else { return }
         lastLoadDiagnostic = diagnostics.map { "[\($0.code)] \($0.message)" }.joined(separator: "\n")
+    }
+
+    private var renderBackingScale: CGFloat {
+        max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
     }
 }
 

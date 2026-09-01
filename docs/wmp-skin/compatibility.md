@@ -70,3 +70,26 @@ handles, native-object reflection, modal script UI, WMP plug-ins, DLLs, and Obje
 not available. Script input/output is bounded JSON. A timeout, crash, allocation failure, malformed
 response, or explicit teardown terminates the helper process, cancels timers, keeps the last valid
 static scene, and disables script for that skin session.
+
+## Phase 7 corpus findings
+
+The opt-in local corpus contained 14 user-supplied skins spanning several WMP styles. The Phase 7
+report harness accepted and measured 4 archives and rejected 10 with typed diagnostics. Reports
+contain only archive hashes/facts, compatibility demand, diagnostics, and numeric render metrics;
+they never contain source archives, artwork, screenshots, render buffers, or local corpus paths.
+
+- Seven archives use text outside the locked UTF-8/UTF-16LE/UTF-16BE contract and fail with
+  `WMP0025`. NullPlayer does not guess an ANSI code page.
+- Three archives contain duplicate XML attributes, which are not well-formed XML, and fail with
+  `WMP0027`. NullPlayer does not silently choose one authored value.
+- Empty optional image attributes are compatibility-defaulted as a `WMP0023` warning. They no
+  longer reject the surrounding skin; direct provider escapes remain hard failures.
+- The accepted corpus exercises full/tiny views, transport elements, multiple auxiliary-style
+  views, 1×/2× render surfaces, resize layout, mapping/hit testing, and bounded cache reuse.
+- Remaining demand includes custom controls such as `CUSTOMSLIDER`, `EDITBOX`, `LISTBOX`, legacy
+  `EFFECTS`/video settings, additional playlist variants, appearance-only attributes, and denied
+  object-model members. These appear explicitly as unknowns and reduce report confidence instead of
+  being guessed or bridged dynamically.
+
+Run `WMPPhase7Tests.testOptInLocalCorpusProducesTypedReport` with `WMP_CORPUS_PATH` to use an external
+directory and `WMP_CORPUS_REPORT_DIR` to retain the JSON report outside the repository.

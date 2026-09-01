@@ -40,4 +40,17 @@ final class WMPCompatibilityReportTests: XCTestCase {
         let encoded = try JSONEncoder().encode(report)
         XCTAssertEqual(try JSONDecoder().decode(WMPCompatibilityReport.self, from: encoded), report)
     }
+
+    func testEmptyOptionalImageIsReportedMissingWithoutRejectingSkin() async throws {
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data("""
+            <THEME><VIEW id="main" width="40" height="20">
+              <IMAGE id="optional" left="0" top="0" width="10" height="10" image=""/>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        XCTAssertEqual(skin.resources.first?.status, .missing)
+        XCTAssertTrue(skin.diagnostics.contains { $0.code == .resourceMissing && $0.severity == .warning })
+    }
 }

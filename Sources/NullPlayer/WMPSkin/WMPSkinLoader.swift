@@ -141,7 +141,12 @@ struct WMPSkinLoader {
                 }
                 guard WMPAttributeParser.isResourceAttribute(attribute.name) else { continue }
                 let authored = attribute.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                if isUnsupported(authored) {
+                if authored.isEmpty {
+                    resources.append(WMPResourceRegistration(attributeName: attribute.name,
+                        authoredPath: authored, resolvedPath: nil, declaringPath: path, status: .missing))
+                    diagnostics.append(WMPDiagnostic(.resourceMissing,
+                        "Optional image resource is empty.", severity: .warning, location: node.location))
+                } else if isUnsupported(authored) {
                     resources.append(WMPResourceRegistration(attributeName: attribute.name,
                         authoredPath: authored, resolvedPath: nil, declaringPath: path, status: .unsupported))
                     diagnostics.append(WMPDiagnostic(.unsupportedResource,

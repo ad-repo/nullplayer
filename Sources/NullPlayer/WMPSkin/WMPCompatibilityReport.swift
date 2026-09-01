@@ -66,8 +66,8 @@ struct WMPCompatibilityReport: Equatable, Codable {
     }
 
     private static func collectEvents(in source: String, into counts: inout [String: Int]) {
-        let pattern = #"\b(?:on[A-Za-z][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_]*_onchange)\b"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return }
+        let pattern = #"\b(?:on[A-Z][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_]*_[oO][nN][cC][hH][aA][nN][gG][eE])\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
         let range = NSRange(source.startIndex..<source.endIndex, in: source)
         for match in regex.matches(in: source, range: range) {
             guard let swiftRange = Range(match.range, in: source) else { continue }

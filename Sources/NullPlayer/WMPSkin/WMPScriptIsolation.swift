@@ -40,8 +40,13 @@ final class WMPScriptIsolation {
 
     func evaluate(script: String, globalsJSON: String = "{}",
                   callbackLimit: Int = WMPPhase0Limits.activeTimers) -> WMPScriptEvaluationResult {
-        guard let globalsData = globalsJSON.data(using: .utf8),
-              (try? JSONSerialization.jsonObject(with: globalsData)) is [String: Any] else {
+        guard script.lengthOfBytes(using: .utf8) <= WMPPhase0Limits.scriptMessageBytes,
+              let globalsData = globalsJSON.data(using: .utf8),
+              globalsData.count <= WMPPhase0Limits.scriptMessageBytes else {
+            return .failed(WMPPhase0Diagnostic(code: .scriptMessageTooLarge, path: nil,
+                                               detail: "script/globals exceed 1 MiB"))
+        }
+        guard (try? JSONSerialization.jsonObject(with: globalsData)) is [String: Any] else {
             return .failed(WMPPhase0Diagnostic(code: .scriptProtocolViolation, path: nil,
                                                detail: "globals must be a JSON object"))
         }
@@ -87,7 +92,8 @@ final class WMPScriptIsolation {
         let responseLock = NSLock()
         var responseData = Data()
         DispatchQueue.global(qos: .userInitiated).async {
-            let data = output.fileHandleForReading.readDataToEndOfFile()
+            let data = Self.readBounded(output.fileHandleForReading,
+                                        limit: WMPPhase0Limits.scriptMessageBytes + 4)
             responseLock.lock()
             responseData = data
             responseLock.unlock()
@@ -100,16 +106,22 @@ final class WMPScriptIsolation {
             return .failed(WMPPhase0Diagnostic(code: .scriptTimedOut, path: nil,
                                                detail: "deadline \(timeout)s"))
         }
+        responseLock.lock()
+        let framedResponse = responseData
+        responseLock.unlock()
+        guard framedResponse.count <= WMPPhase0Limits.scriptMessageBytes + 4 else {
+            terminate(process)
+            return .failed(WMPPhase0Diagnostic(code: .scriptProtocolViolation, path: nil,
+                                               detail: "response frame exceeds 1 MiB"))
+        }
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            let errorText = String(data: errors.fileHandleForReading.readDataToEndOfFile(),
+            let errorData = Self.readBounded(errors.fileHandleForReading, limit: 64 * 1_024)
+            let errorText = String(data: errorData,
                                    encoding: .utf8) ?? ""
             return .failed(WMPPhase0Diagnostic(code: .scriptCrashed, path: nil,
                                                detail: "status \(process.terminationStatus) \(errorText)"))
         }
-        responseLock.lock()
-        let framedResponse = responseData
-        responseLock.unlock()
         guard framedResponse.count >= 4 else {
             return .failed(WMPPhase0Diagnostic(code: .scriptProtocolViolation, path: nil,
                                                detail: "missing response frame"))
@@ -142,5 +154,26 @@ final class WMPScriptIsolation {
         let processes = Array(activeProcesses.values)
         processLock.unlock()
         processes.forEach(terminate)
+    }
+
+    var activeProcessCount: Int {
+        processLock.lock()
+        defer { processLock.unlock() }
+        return activeProcesses.count
+    }
+
+    private static func readBounded(_ handle: FileHandle, limit: Int) -> Data {
+        var data = Data()
+        while data.count <= limit {
+            let remaining = limit - data.count + 1
+            guard let chunk = try? handle.read(upToCount: min(64 * 1_024, remaining)),
+                  !chunk.isEmpty else { break }
+            data.append(chunk)
+            if data.count > limit {
+                try? handle.close()
+                break
+            }
+        }
+        return data
     }
 }

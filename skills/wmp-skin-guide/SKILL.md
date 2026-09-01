@@ -164,3 +164,20 @@ selected by Phase 0 and must repeat its hard-stop/restart security gate before p
 Use the committed original fixtures in `Tests/NullPlayerAppTests/Fixtures/WMPSkin/`. Run focused WMP
 tests first, the user-supplied `WMP_TEST_WMZ` corpus check when available, then full `swift test` and
 `git diff --check`. Do not commit third-party skins or build a DMG unless the user requests it.
+
+## Phase 7 hardening contracts
+
+- `WMPCorpusReportHarness` is the reusable corpus seam. It emits archive hashes/facts, compatibility
+  demand and unknowns, diagnostics, cold/warm load plus render/layout/hit metrics, and confidence.
+  It must never serialize local input paths, source text, archive payloads, pixels, or screenshots.
+- Keep reports outside the repository. `WMP_CORPUS_PATH` selects an external corpus directory and
+  `WMP_CORPUS_REPORT_DIR` selects an external report directory for the opt-in Phase 7 test.
+- Fuzz/mutation outcomes are success or `WMPFailure`; exercise archive metadata/payloads, strict
+  text, XML, attributes/colors, mapping images, image decode, and bridge bounds.
+- Helper stdout is bounded while reading, not after `readDataToEndOfFile`; request size is rejected
+  before process launch. Teardown assertions use `activeProcessCount` only as read-only evidence.
+- Render at the window's current backing scale and rebuild when backing properties change. Keep 1×
+  and 2× correctness in original-fixture tests; never add real-skin goldens.
+- Corpus-driven compatibility defaults must remain narrow. Empty optional images warn; text outside
+  UTF-8/UTF-16 and malformed duplicate-attribute XML remain typed rejections unless the security
+  contract and compatibility rationale are deliberately amended.
