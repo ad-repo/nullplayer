@@ -79,6 +79,10 @@ final class WinampModernMainView: NSView {
     /// Whether the open press has already moved the window, so the release drops the click it would
     /// otherwise have performed.
     private var pressMovedWindow = false
+    /// Whether the handler running right now is a **double-click**, which is dispatched from the
+    /// press with the button still physically down. Only `presentScriptPopup` reads it — see the
+    /// mouse-up drain there.
+    private var isDispatchingDoubleClick = false
     /// A drag on a `resize="…"` handle: which window edges it moves, and the frame and screen
     /// pointer the drag started from. Measured from the start rather than accumulated per delta, so a
     /// drag that runs into the layout's minimum and comes back out again lands where the pointer is.
@@ -1421,7 +1425,9 @@ final class WinampModernMainView: NSView {
         // A skin puts real commands on a double-click: cPro's beat display cycles its animation from
         // `mouseTrap.onLeftButtonDblClk`, and a tab's own dblclk suppresses the drag-to-reorder.
         if event.clickCount == 2 {
+            isDispatchingDoubleClick = true
             dispatch(object: object, event: "onleftbuttondblclk", point: point)
+            isDispatchingDoubleClick = false
         }
         updateSlider(object, point: point)
         // Focus follows the click, after the handlers: a skin shows its search box *from* the click
@@ -2228,6 +2234,22 @@ final class WinampModernMainView: NSView {
         var skinModeCommands: Set<Int> = []
         if let location, renderer.visualizationObject(at: skinPoint(location)) != nil {
             skinModeCommands = appendSpectrumAnalyzerSection(to: menu)
+        }
+        // A menu asked for from a **double-click** has to wait for the button to come up before it
+        // tracks. `onLeftButtonDblClk` is dispatched from `mouseDown`, so the left button is still
+        // physically down here, and `popUp` opened while it is held runs in press-and-drag tracking
+        // mode: the release that ends the double-click arrives milliseconds later, lands on no item,
+        // and dismisses the menu before it has drawn. The menu was built, shown and thrown away, and
+        // the user saw a double-click that did nothing — Hal's Eye's rotation-speed menu, which is
+        // the only way to reach that skin's `Stop/Slow/Moderate/Fast` (B91). Draining the release
+        // first is what makes the tracking loop start from a settled button, and it is scoped to the
+        // double-click dispatch so a press-and-hold menu keeps the drag-to-pick Winamp gives it.
+        if isDispatchingDoubleClick, NSEvent.pressedMouseButtons & 1 != 0 {
+            // Bounded: the release is milliseconds away for a real double-click, and a wait that
+            // could not time out would be a hang on the main thread if it never arrived.
+            _ = NSApplication.shared.nextEvent(matching: .leftMouseUp,
+                                               until: Date(timeIntervalSinceNow: 1),
+                                               inMode: .eventTracking, dequeue: true)
         }
         menu.popUp(positioning: nil, at: location ?? .zero, in: self)
         // The skin's mode rows and ours are one group, so picking one of the skin's is also a choice

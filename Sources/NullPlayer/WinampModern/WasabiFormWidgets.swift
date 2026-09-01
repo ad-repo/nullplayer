@@ -84,7 +84,14 @@ enum WasabiFormWidgets {
     static func substitution(forTypeName name: String) -> Substitution? {
         switch name.lowercased() {
         case "wasabi:text":
-            return Substitution(kind: .text, typeName: "text", defaults: [:])
+            // `wrap` and `valign` are Winamp's own definition, not an embellishment: all six
+            // replacements in the corpus say `valign="top"` and four of them (Lobe, ZDL,
+            // dreliction, and Hal's Eye by relying on it) also say `wrap="1"`. Seeded rather than
+            // forced, so a caller that states either keeps its own. Without them a standard text
+            // widget is a single centred line, which is what a paragraph handed to `<Wasabi:Text>`
+            // renders as — one clipped sentence floating in the middle of the box (B91).
+            return Substitution(kind: .text, typeName: "text",
+                                defaults: ["wrap": "1", "valign": "top"])
         case "wasabi:editbox", "wasabi:editbox2":
             return Substitution(kind: .edit, typeName: "edit", defaults: [:])
         case "wasabi:hslider":

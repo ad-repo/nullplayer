@@ -34,14 +34,21 @@ By area:
 - **Events dispatched to scripts** — see the table below
 - **Timers**: bounded scheduling (see limits)
 - **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
-  `setSpeed`, `setAutoReplay`, `play`/`stop`, `isPlaying` — the play head is a pure function of the
+  `getStartFrame`, `getEndFrame`, `setSpeed`, `setAutoReplay`, `play`/`stop`, `isPlaying` — the play
+  head is a pure function of the
   time since `play()` (`WasabiAnimation`), so the renderer and the script always agree on the current
   frame. **The preamble is four calls, not three**: skins write
   `setStartFrame; setEndFrame; setAutoReplay; setSpeed; play` as one block, so a missing signature
   anywhere in it abandons the whole handler — `setAutoReplay` was the gap, and it is what stuck Big
   Bento Modern's play/pause button in *paused* (`skins/big-bento-modern.md` → BB22). `setAutoReplay`
   writes the same `autoreplay` attribute the markup carries, which decides what a layer does with no
-  explicit `playing` and therefore does not disturb a range `play()` started right after it
+  explicit `playing` and therefore does not disturb a range `play()` started right after it.
+  **The read halves are how a skin pages a sheet by hand** (B91): a manual or a slideshow asks the
+  layer where its own ends are rather than hard-coding a count, so an *unset* range has to answer the
+  whole sheet — `getStartFrame` 0, `getEndFrame` `getLength() - 1` — and a set one is clamped into it.
+  Hal's Eye caches both in `onScriptLoaded` and clamps its Back/Next buttons against them, so the
+  missing `getEndFrame` signature left the end frame at 0, which is also the current frame: both
+  guards read *already at the end* and both buttons did nothing. 4 corpus skins call it
 - **`Map`**: `loadMap`, `inRegion`, `getValue`, `getWidth`, `getHeight`, `getARGBValue(x, y, channel)`
   — a bitmap the script samples. `new Map` and `new Timer` are indistinguishable at construction
   (class GUIDs are not in the archive), so a dynamic object becomes a map on its first `loadMap`.
@@ -49,12 +56,19 @@ By area:
   installed?" probe is the path form (`…/engine/image/installed.png`, width 1). The `getARGBValue`
   channel index is **BGRA** — pinned by `player.maki` building `colorbandpeak="r,g,b"` from channels
   2, 1, 0
-- **`Region`**: `loadFromMap(map, threshold, reversed)`, `offset(dx, dy)`, and `<object>.setRegion(r)`
+- **`Region`**: `loadFromMap(map, threshold, reversed)`, `loadFromBitmap(bitmapid)`, `offset(dx, dy)`,
+  and `<object>.setRegion(r)`
   — plus the short `<object>.setRegionFromMap(map, threshold, reversed)`, which skips the intermediate
   object. Clips one control to a shape taken from a map's red channel: **reversed** keeps every pixel
   at or below the threshold (how a skin fills a bar as its value rises), the plain form everything at
   or above. `offset` moves the shape in map pixels, for skins whose map covers a whole window rather
-  than the control. Settled by the same first-call rule as `Map`. `setRegion` with anything that is
+  than the control. **`loadFromBitmap` is the same region without the `Map` in front of it**: the
+  shape is the named bitmap's own opaque area, which is `threshold: 0` taken through the existing
+  mask builder — that already drops a zero-alpha pixel, so admitting every value is exactly the
+  silhouette rule and nothing more (B91). It sits mid-initialiser in the four skins that call it, so
+  failing closed on it cost each of them everything the handler had left to do: Hal's Eye's eye never
+  started rotating, and BLAKK's seek bar and boombox spectrum drew unclipped and permanently full.
+  Settled by the same first-call rule as `Map`. `setRegion` with anything that is
   not a loaded region clears the clip, and a map that cannot be resolved leaves the control
   **unclipped** rather than clipping it away to nothing. The region does not affect hit testing: T800
   drags its volume by tracking the mouse across the *whole* strip, most of which the region has
@@ -504,8 +518,10 @@ a whole script):
 - Any method not in `signature(for:)` — fails closed with `.unsupportedScriptCapability` and is
   recorded in the compatibility report's `unsupportedMethods` bucket
 - Unsupported opcodes fail closed; they never become silent no-ops
-- **Region set operations** — `Region.add`, `sub`, `stretch`, `copy`, `loadFromBitmap` and the
-  `getBoundingBox*` readers. No measured skin calls them; a region is built from one map and used.
+- **Region set operations** — `Region.add`, `sub`, `stretch`, `copy` and the `getBoundingBox*`
+  readers. No measured skin calls them; a region is built from one map or bitmap and used.
+  (`loadFromBitmap` was in this list until B91, on the same "no measured skin calls it" reasoning —
+  four of them do. The list is only as good as the last grep behind it.)
   `WindowHolder.setRegionFromMap` and `MouseRedir.setRegion` share the region model but not the
   window-shaping half: a region on a container does not reshape the window
 

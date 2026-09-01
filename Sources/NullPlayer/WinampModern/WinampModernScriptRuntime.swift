@@ -2357,6 +2357,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getlength": .init(argumentCount: 0, returnKind: .integer),
             "setstartframe": .init(argumentCount: 1, returnKind: .null),
             "setendframe": .init(argumentCount: 1, returnKind: .null),
+            // The read halves of the same pair. A skin that pages through a sprite sheet by hand
+            // asks the layer where its own ends are rather than hard-coding a count: Hal's Eye
+            // `manual.maki` caches `getCurFrame()`/`getEndFrame()` in `onScriptLoaded` and clamps
+            // both page buttons against them, so with the signature missing the handler abandoned
+            // the whole initialiser at that call and both buttons sat at frame 0 forever (B91).
+            "getstartframe": .init(argumentCount: 0, returnKind: .integer),
+            "getendframe": .init(argumentCount: 0, returnKind: .integer),
             "setspeed": .init(argumentCount: 1, returnKind: .null),
             // Part of the same four-call preamble every skin writes before `play()`, and the one that
             // was missing: Big Bento Modern's `animbutton` sets start, end, **autoreplay** and speed
@@ -2445,6 +2452,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // the object to it. T800 fills its volume bar this way; the stock `customseek.m` its
             // seek ghost.
             "loadfrommap": .init(argumentCount: 3, returnKind: .null),
+            // `loadFromBitmap(String bitmapid)` is the same region without the `Map` in front of it:
+            // the shape is the bitmap's own opaque area. MMD3's `std.mi` declares the pair together
+            // (`extern Region.loadFromMap(…); extern Region.loadFromBitmap(String bitmapid);`) and
+            // three more skins call it — BLAKK's `boombox.m` clips its seek bar with
+            // `seekregion.loadfrombitmap("player.bb-seek-region"); seek1.setregion(seekregion);`.
+            "loadfrombitmap": .init(argumentCount: 1, returnKind: .null),
             "offset": .init(argumentCount: 2, returnKind: .null),
             "setregion": .init(argumentCount: 1, returnKind: .null),
             // Screen-space cursor position, in the same skin-pixel units as the x/y a mouse event
@@ -3903,6 +3916,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "setendframe":
             _ = object.setAttribute("endframe", value: String(max(0, arguments[0].integerValue)))
             return .null
+        case "getstartframe":
+            // Unset means "the whole sheet", exactly as `WasabiAnimation` reads it.
+            let count = animationFrameCount(of: object)
+            let raw = Int(object.attributes["startframe"] ?? "") ?? 0
+            return .integer(Int32(max(0, min(count - 1, raw))))
+        case "getendframe":
+            let count = animationFrameCount(of: object)
+            let raw = Int(object.attributes["endframe"] ?? "") ?? (count - 1)
+            return .integer(Int32(max(0, min(count - 1, raw))))
         case "setspeed":
             _ = object.setAttribute("speed", value: String(max(1, arguments[0].integerValue)))
             return .null
@@ -4299,6 +4321,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                                         mapPath: mapLogicalPath(bitmapID: bitmapID, source: source),
                                                         threshold: Int(arguments[1].integerValue),
                                                         reversed: arguments[2].truthy))
+            dynamicObjects[id] = state
+            return .null
+        case "loadfrombitmap":
+            // A bitmap region is its artwork's silhouette: every pixel the image actually paints is
+            // inside, every transparent one is outside. `regionMask` already drops a pixel whose
+            // alpha is zero, so a threshold of 0 taken forward — which admits every value — is
+            // exactly that rule and nothing more.
+            let bitmapID = arguments[0].stringValue
+            state.role = .region(clip: WasabiRegionClip(
+                mapID: bitmapID, mapPath: mapLogicalPath(bitmapID: bitmapID, source: program.source),
+                threshold: 0, reversed: false))
             dynamicObjects[id] = state
             return .null
         case "offset":

@@ -127,7 +127,11 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   Wasabi does not know reads as `top`, and only an absent attribute centres), `forcefixed` gives
   fixed-pitch cells, and a **time display is laid out as a run of fields** with the colon in the cell
   `timecolonwidth` sizes, room held for a two-digit minute, and clearance from the edge it aligns
-  against (BB33)
+  against (BB33). **`wrap="1"` makes it a paragraph** (B91): broken at word boundaries inside the
+  object's own width, stacked downward, never scrolled, aligned by the height of the *whole* block,
+  and keeping its box on both axes. A `\n` in a markup literal is a line break — the only way XML can
+  carry one inside an attribute value. 11 skins declare it. See
+  [../reference/rendering/text.md](../reference/rendering/text.md) — *A paragraph is not a line*
 - Script-built menus: `PopupMenu` with `addCommand`/`addSeparator`/`addSubMenu`/`checkCommand`/
   `popAtMouse`/`popAtXY`, shown as a real `NSMenu` at the mouse or at a computed point; both block and
   answer the picked id
@@ -164,7 +168,10 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   work as for any primitive. A check box carries a drawn box, a `radioid` one draws and behaves as a
   radio, and a drop-down carries a drawn box, an arrow, a menu and the invisible `dropdownlist.text`
   handle a skin's script persists the pick from. A slider takes the conventional
-  `wasabi.slider.horizontal.*` artwork 19 skins ship. **A skin's own `<groupdef xuitag="…">` for any of
+  `wasabi.slider.horizontal.*` artwork 19 skins ship. **`<Wasabi:Text>` is a wrapping, top-aligned
+  label** — `wrap="1"` and `valign="top"` are seeded on it (B91), which is what the six corpus skins
+  that ship a replacement for the tag all say; a paragraph handed to it drew as one centred clipped
+  line until then. **A skin's own `<groupdef xuitag="…">` for any of
   these always wins.** See [../reference/rendering.md](../reference/rendering.md) — *The Wasabi
   standard form widgets are the primitives they wrap*
 - **Hidden objects are still laid out.** They are not painted and take no clicks, but their geometry

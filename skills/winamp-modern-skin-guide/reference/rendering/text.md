@@ -102,6 +102,44 @@ render is the ground truth for this kind of thing):
   between them, which declares no `valign` at all. Nine declarations corpus-wide, eight of them
   Bento's; the arithmetic is what identifies them, not the spelling.
 
+#### A paragraph is not a line — `wrap="1"` (B91)
+
+`wrap="1"` on a `<text>` is the Text class's **multi-line** mode: the string is broken at word
+boundaries inside the object's own width, stacked downward, and it never scrolls. Until B91 the
+attribute was not implemented at all, so any object carrying it drew as one line cut at its own box.
+Four things follow from that and each of them was a separate way to lose the text:
+
+- **The box is the line-breaking width.** The wrapped rect is neither widened to the measurement (the
+  B87 rule above) nor shifted by the object's own alignment — the paragraph style already aligns each
+  broken line inside it, and moving the rect would align the block a second time. A wrapping object
+  therefore keeps its box on **both** axes, like a ticker and unlike an ordinary label: a line that
+  still overruns is one unbreakable word, and Winamp cuts it there.
+- **A paragraph has no ticker.** The overflow that would start a marquee is absorbed into extra lines,
+  so `tickerMotion` is never consulted. A marquee running a wrapped block sideways is not a thing any
+  skin asks for.
+- **Its vertical `cell` is the whole block**, not one line. `valign` is applied to the measured height
+  of the broken text (`boundingRect(with:options:)`), because aligning a nine-line block by a single
+  line's leading centres its *first* line in the box and runs the other eight out of the bottom. That
+  is exactly what Hal's Eye's credits looked like: one sentence floating in the middle of an empty
+  panel.
+- **`\n` in a markup literal is a line break.** XML cannot carry one inside an attribute value, so a
+  skin spells it the way the MAKI compiler takes it, and `WasabiTextMetrics.unescaped` turns the pair
+  back into the character (`\t` likewise). Deliberately **only** the markup literal: a string a script
+  assigned already carries real newlines, since MAKI resolves its own escapes at compile time, so
+  translating there would eat a backslash the script meant to keep (a Windows path in a `setText`).
+
+**And `<Wasabi:Text>` is a wrapping, top-aligned label** — the attribute matters far beyond the skins
+that spell it, because the standard widget carries it. `WasabiFormWidgets` seeds `wrap="1"` and
+`valign="top"` on the substitution, which is Winamp's own definition measured from the six corpus
+skins that ship a *replacement* for the tag: all six say `valign="top"` and four (Lobe, ZDL,
+dreliction, and Hal's Eye by relying on it) also say `wrap="1"`. Seeded, not forced — an instance
+that states either keeps its own.
+
+Reach: 11 skins declare `wrap="1"` and 15 declare `<Wasabi:Text>`. Corpus sweep after the change:
+16 of 441 renders differ, all of them config/preferences/about/message windows, and every difference
+is either a paragraph that was being cut and now is not (BLAKK's About, Core-X5's Message) or a
+group title moving a pixel or two up to its box's top edge.
+
 #### A clock is a run of fields, not a string (BB29)
 
 A time readout — `display="time"`, `timeelapsed` or `songlength`, with a colon in the value — is laid

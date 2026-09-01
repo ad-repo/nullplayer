@@ -2819,9 +2819,13 @@ final class WasabiSceneRenderer {
         case "right": alignment = .right
         default: alignment = .left
         }
+        // A wrapping object is laid out as a paragraph rather than as a line: broken at word
+        // boundaries inside its own width, stacked downward, and never scrolled. See
+        // `WasabiTextMetrics.wraps`.
+        let wraps = WasabiTextMetrics.wraps(of: object)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
-        paragraph.lineBreakMode = .byClipping
+        paragraph.lineBreakMode = wraps ? .byWordWrapping : .byClipping
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font, .foregroundColor: color, .paragraphStyle: paragraph
         ]
@@ -2833,7 +2837,9 @@ final class WasabiSceneRenderer {
         let clock = WasabiTextMetrics.clockRun(of: object, text: text, font: font)
         let measured = clock?.width ?? pitch?.width(of: text)
             ?? (text as NSString).size(withAttributes: attributes).width
-        let overflow = pitch == nil && clock == nil ? measured - frame.width : 0
+        // A paragraph absorbs its overflow into extra lines, so there is nothing left for a ticker
+        // to carry — and a marquee running a wrapped block sideways is never what a skin asked for.
+        let overflow = pitch == nil && clock == nil && !wraps ? measured - frame.width : 0
         let scroll = overflow > 0 ? tickerMotion(for: object, overflow: overflow, textWidth: measured) : nil
         if scroll != nil {
             // While scrolling, the string is drawn into an oversized rect, so any alignment other
@@ -2849,7 +2855,20 @@ final class WasabiSceneRenderer {
         // mirror below, a rect's *top* edge is its `maxY`, so lowering the text by `inset` means
         // moving the rect down the same amount. Clamped at zero: a string taller than its own box
         // starts at the top rather than above it, whatever it asked for.
-        let cell = font.ascender - font.descender
+        //
+        // A paragraph's "cell" is the height of the whole broken block, not of one line: aligning a
+        // nine-line block by a single line's leading would centre its *first* line in the box and
+        // run the other eight out of the bottom.
+        let lineCell = font.ascender - font.descender
+        let cell: CGFloat
+        if wraps {
+            let bounds = (text as NSString).boundingRect(
+                with: CGSize(width: frame.width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
+            cell = max(lineCell, ceil(bounds.height))
+        } else {
+            cell = lineCell
+        }
         let inset = max(0, WasabiTextMetrics.verticalAlignment(of: object)
             .offset(cell: cell, in: frame.height))
         // `offsetx`/`offsety` shift the *string* inside its own box without moving the box — so the
@@ -2889,8 +2908,13 @@ final class WasabiSceneRenderer {
         //
         // A **scrolling** ticker keeps its own box on both axes: the motion is defined by that box, and
         // a marquee let loose in its parent would smear across the whole panel.
+        //
+        // A **wrapping** object keeps its box on both axes too, and for the same reason as a ticker:
+        // the width is not an approximation the skin measured a string against, it is the width the
+        // paragraph was broken to. Anything still overrunning it is one unbreakable word, and Winamp
+        // cuts it there.
         let clip: CGRect
-        if scroll == nil {
+        if scroll == nil, !wraps {
             let ambient = context.boundingBoxOfClipPath
             let minX = min(frame.minX, ambient.minX)
             let maxX = max(frame.maxX, ambient.maxX)
@@ -2961,14 +2985,21 @@ final class WasabiSceneRenderer {
             // string fits; when it does not, the object's own alignment is applied here rather than
             // inside an oversized rect, where it would move the string a second time.
             var textFrame = drawFrame
-            switch alignment {
-            case .right: textFrame.origin.x = drawFrame.maxX - measured
-            case .center: textFrame.origin.x = drawFrame.midX - measured / 2
-            default: break
+            if wraps {
+                // The rect *is* the line-breaking width, so neither the widening nor the alignment
+                // shift below may touch it — the paragraph style already aligns each broken line
+                // inside it, and moving the rect would re-align the block a second time.
+                (text as NSString).draw(in: textFrame, withAttributes: attributes)
+            } else {
+                switch alignment {
+                case .right: textFrame.origin.x = drawFrame.maxX - measured
+                case .center: textFrame.origin.x = drawFrame.midX - measured / 2
+                default: break
+                }
+                textFrame.size.width = max(drawFrame.width, measured)
+                let leading = attributes.merging([.paragraphStyle: leadingParagraph]) { _, new in new }
+                (text as NSString).draw(in: textFrame, withAttributes: leading)
             }
-            textFrame.size.width = max(drawFrame.width, measured)
-            let leading = attributes.merging([.paragraphStyle: leadingParagraph]) { _, new in new }
-            (text as NSString).draw(in: textFrame, withAttributes: leading)
         }
         context.restoreGState()
     }

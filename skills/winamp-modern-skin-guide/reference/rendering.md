@@ -326,6 +326,22 @@ worked perfectly. `WinampModernMainView` now sends `onrightbuttondown` on the pr
 claimed — `popAtMouse` runs its own tracking loop, so by the time the up arrives the pointer is
 wherever the user dismissed the menu, usually not over the control any more.
 
+**A fifth, found in B91: a menu opened from a *left-button-down* handler needs the button up first.**
+`onLeftButtonDblClk` is dispatched from `mouseDown` — Winamp's ordering, and what a skin expects — so
+`popAtMouse` opens `NSMenu.popUp` while the left button is still physically down. AppKit then runs the
+menu in press-and-drag tracking, and the release that *ends* the double-click arrives milliseconds
+later over no item and dismisses it before it has drawn. The menu is built, shown and thrown away, and
+the user sees a double-click that does nothing. `presentScriptPopup` drains the pending
+`.leftMouseUp` (bounded, so it cannot hang the main thread) before popping, scoped to the double-click
+dispatch so a press-and-hold menu keeps the drag-to-pick Winamp gives it.
+
+The reason this hid for so long is that the two buttons fail differently: the right-button menus come
+from `rightMouseUp`, where the button is *already* released, so every one of them worked. Hal's Eye
+has one of each on the same object — right-click picks the visualization, double-click picks the
+rotation speed — and only the second was dead, which is the signature. **No probe can see this**: the
+harness's popup presenter never holds a mouse button, so `RENDER_CLICK` reports the menu building
+correctly, which is exactly what it does.
+
 `WINAMP_MODERN_RENDER_CLICK` prints the menu a right-click builds, which is the fastest way to see
 whether the failure is the menu or what it does afterwards. **It drove only `onrightbuttonup` until
 Phase 31**, and so reported four dead buttons on a skin that implements them fully — the reason a

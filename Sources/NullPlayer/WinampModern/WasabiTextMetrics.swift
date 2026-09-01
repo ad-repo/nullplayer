@@ -245,6 +245,14 @@ final class WasabiTextMetrics {
         }
     }
 
+    /// `wrap="1"` — the Text class's multi-line mode. The string is broken at word boundaries inside
+    /// the object's own width and laid out downward; it never scrolls, because a paragraph is not a
+    /// ticker. This is the whole difference between a label and the body of a `<Wasabi:TitleBox>`,
+    /// and without it a paragraph draws as its first clipped line (B91).
+    static func wraps(of object: WasabiObject) -> Bool {
+        isEnabled(object.attributes["wrap"])
+    }
+
     private static func isEnabled(_ value: String?) -> Bool {
         guard let value = value?.lowercased() else { return false }
         return !["0", "off", "false", "no", ""].contains(value)
@@ -380,8 +388,23 @@ final class WasabiTextMetrics {
                 return host.trackDisplayTitle
             }
             let literal = object.attributes["text"] ?? object.attributes["default"] ?? ""
-            return resolvePlaceholder(literal, on: object)
+            return resolvePlaceholder(unescaped(literal), on: object)
         }
+    }
+
+    /// Line breaks a skin spelled in its markup. XML has no way to write one inside an attribute, so
+    /// a multi-paragraph literal is written the way the MAKI compiler takes it — `\n` — and the pair
+    /// has to be turned back into the character before anything measures or draws it. Hal's Eye's
+    /// credits box is the corpus's only such literal, and the escapes ran straight through into the
+    /// drawn paragraph: *"…use his scripts!\n\nIdeas: SLoB…"* (B91).
+    ///
+    /// Deliberately only the markup literal. A string a script assigned already carries real
+    /// newlines — MAKI resolves its own escapes at compile time — so translating there would eat a
+    /// backslash the script meant to keep.
+    private static func unescaped(_ literal: String) -> String {
+        guard literal.contains("\\") else { return literal }
+        return literal.replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "\\t", with: "\t")
     }
 
     /// A playback time in the form a clock readout draws it. `timerhours="1"` asks for an `h:mm:ss`

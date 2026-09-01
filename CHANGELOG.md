@@ -17,6 +17,18 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: Hal's Eye works end to end** — on this skin the six-page user manual would
+  not turn its pages, the Credits window showed one sentence cut off in the middle of an empty panel,
+  the eye did not rotate, and double-clicking the ring never opened the rotation-speed menu the
+  manual describes. All four are fixed, and three of them were general problems that this skin
+  happened to expose. Paragraph text now **wraps**: any skin that puts a block of text in a box —
+  About screens, Configure screens, notifier messages — shows the whole thing instead of the first
+  line, and it starts at the top of its box the way Winamp draws it. BLAKK's About screen and
+  Core-X5's message panel were both losing text this way. Skins that clip a control to a shape taken
+  from a picture now do so, which also fixes BLAKK's seek bar showing as permanently full and its
+  boombox spectrum drawing past its own frame. And a menu a skin opens on a double-click now stays up
+  long enough to use — it was appearing and vanishing again in the same instant, so it looked like
+  the double-click did nothing at all. Menus opened with the right button were never affected.
 - **Winamp Modern skins: config windows with a see-through background are fixed** — on Itemskin, EPS
   High-End System and eleven other skins, some windows had no background at all: the Notifier
   Preferences screen in particular came up as floating text and controls with the desktop showing

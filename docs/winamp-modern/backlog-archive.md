@@ -2,6 +2,75 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B91 — Hal's Eye: dead manual pages, a truncated credits box, a still eye, and a double-click menu nobody saw — closed 2026-08-31
+
+- [x] **B91. Four unrelated causes under one skin, three of them engine-wide capabilities.**
+      Reported live 2026-08-31 as *"in 1-hal skin the user manual page buttons do not work, in the
+      credits window the text is truncated"*, then, after the manual became readable, *"you should be
+      able to double click in vis mode to get a menu"* and *"i can get the viz menu but double click
+      does not do anything"*. The skin ships its own six-page user manual, and that manual is the
+      specification for every one of these — see [skins/1-hals-eye.md](../../skills/winamp-modern-skin-guide/skins/1-hals-eye.md).
+
+      **1. `getEndFrame` had no signature, so the manual's pages would not turn.** `manual.maki`'s
+      `onScriptLoaded` caches `getCurFrame()` and `getEndFrame()` off the six-frame page sheet and
+      both button handlers clamp against the cached pair. Dispatch fails closed on a missing
+      **signature**, so the initialiser abandoned at that call with the end frame still 0 — which is
+      also the current frame, so both guards read *already at the end* and returned. The buttons
+      drew, pressed, ran their handler and did nothing. `getStartFrame`/`getEndFrame` now answer, an
+      unset range means the whole sheet (`0` … `getLength() - 1`) and a set one is clamped into it.
+      Reach: 4 corpus skins call it (Hal's Eye, dreliction, Anexa, MMD3).
+
+      **2. `wrap="1"` was not implemented at all, so the credits box drew one clipped line.** Every
+      `<text>` was a single line cut at its own box. A wrapping object now breaks at word boundaries
+      inside its own width, stacks downward, never enters the ticker, keeps its box on **both** axes
+      (the width *is* the line-breaking width, so the B87 widening must not apply), and is aligned
+      vertically by the height of the **whole broken block** — aligning a seven-line block by one
+      line's leading centres its first line and runs the rest out of the bottom, which is exactly
+      what the reported window looked like. Reach: 11 skins declare it.
+
+      **2a. `<Wasabi:Text>` is a wrapping, top-aligned label**, and this is the half with the reach.
+      The synthesized substitution seeded neither attribute. Winamp's own definition is measured from
+      the six corpus skins that ship a *replacement* for the tag: all six say `valign="top"` and four
+      (Lobe, ZDL, dreliction, and Hal's Eye by relying on it) also say `wrap="1"`. Seeded, not
+      forced — an instance that states either keeps its own. 15 skins declare the tag.
+
+      **2b. `\n` in a markup literal is a line break.** XML cannot carry one inside an attribute
+      value, so a skin spells it the way the MAKI compiler takes it. Hal's credits is the corpus's
+      only such literal and the escapes were drawn verbatim. Translated for the **markup literal
+      only**: a string a script assigned already carries real newlines, so translating there would
+      eat a backslash the script meant to keep.
+
+      **3. `Region.loadFromBitmap` was unimplemented, so the eye never rotated.** Found while probing
+      the vis, not reported — the manual page that says the eye spins is page 3, behind the Next
+      button that did not work. `rotate.maki`'s `onScriptLoaded` aborted on it, taking the rotation
+      timer, the Layer FX warp and the region clip with it. It is `loadFromMap` without the `Map`:
+      the shape is the named bitmap's opaque area, which is `threshold: 0` through the existing mask
+      builder, since that already drops a zero-alpha pixel. It had been **listed as unsupported on
+      the grounds that no measured skin called it**; four do. Hal's Eye now reports compatibility
+      `full`, and BLAKK's seek bar and boombox spectrum — which drew unclipped and permanently full —
+      are clipped.
+
+      **4. A menu opened from a double-click was dismissed by the release that ended the
+      double-click.** `onLeftButtonDblClk` is dispatched from `mouseDown` (Winamp's ordering), so
+      `popAtMouse` ran `NSMenu.popUp` with the left button still physically down; AppKit tracks that
+      as press-and-drag, and the second click's release arrives milliseconds later over no item. The
+      menu was built, shown and thrown away. **The symptom split is the diagnosis**: the right-button
+      menus come from `rightMouseUp`, where the button is already released, so every one of them
+      worked — Hal's Eye has one of each on the same object and only the double-click one was dead.
+      `presentScriptPopup` now drains the pending `.leftMouseUp` (bounded, so it cannot hang the main
+      thread) before popping, scoped to the double-click dispatch so a press-and-hold menu keeps its
+      drag-to-pick. **No probe can see this**: the harness's popup presenter never holds a mouse
+      button, so `RENDER_CLICK` reported both menus building correctly, which is what they do.
+
+      **Corpus sweep, 52 skins: 16 renders differ**, every one a config/preferences/about/message
+      window. Improvements — BLAKK's About paragraph was cut mid-sentence and now shows in full, its
+      Configure paragraph gained two lines, Core-X5's Message block moved into its box, BLAKK's
+      remote seek bar stopped drawing permanently full and its boombox spectrum is region-clipped;
+      the rest are group titles moving a pixel or two up to their box's top edge. `Anexa/main-shade`
+      is the pre-existing non-reproducible drift already recorded under B76. `swift test`: 13 cases
+      in `WinampModernB91Tests` (the double-click timing has no test — nothing in the harness holds a
+      mouse button down; it is covered by the live verification). Live-verified 2026-08-31.
+
 ## B90 — a config window with a transparent background — closed 2026-08-31
 
 - [x] **B90. A layout's `background=` resolves to nothing, so the whole window draws transparent.**
