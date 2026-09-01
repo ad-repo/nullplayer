@@ -17,6 +17,11 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: the menu bar no longer offers a second, wrong main-window visualization
+  menu** — in Winamp Modern mode the in-skin visualizer is configured from the main window's own
+  right-click menu, but the menu bar still showed a **Visuals > Main Window** submenu belonging to
+  the other skin families. It is now hidden in Winamp Modern mode; Classic, Original, and
+  Original-Metal keep it exactly as before.
 - **Winamp Modern skins: cPro2 Dark Aluminum now works** — this skin loaded for the first time only
   in the previous fix, and once it did, almost nothing about it was right. The song title and
   transport buttons were drawn on top of the window's own titlebar, with an empty grey strip below

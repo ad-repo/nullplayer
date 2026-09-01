@@ -524,9 +524,13 @@ class ContextMenuBuilder {
         let menu = NSMenu()
         let wm = WindowManager.shared
 
-        let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
-        mainWindowItem.submenu = buildMainVisualizationSubmenu()
-        menu.addItem(mainWindowItem)
+        // Winamp Modern (.wal) drives its in-skin visualizer from the main window's own menu,
+        // so the menu-bar entry is suppressed there. Classic and NullPlayer modern keep it.
+        if wm.uiMode.controllerFamily != .winampModern {
+            let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
+            mainWindowItem.submenu = buildMainVisualizationSubmenu()
+            menu.addItem(mainWindowItem)
+        }
 
         let spectrumWindowItem = NSMenuItem(title: "Spectrum Window", action: nil, keyEquivalent: "")
         spectrumWindowItem.submenu = buildSpectrumWindowMenu()

@@ -318,7 +318,8 @@ skill for internals.
 Off, Spectrum, Cava, Enhanced, Ultra, Fire, JWST, Lightning, Matrix, Snow, EKG, vis_classic.
 Double-click cycles visual modes; select one from **Visuals > Main Window > Mode**. When Cava is
 selected, the same submenu exposes its independent Color Preset, Bars, Smoothing, and Bass Tilt
-controls.
+controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is hidden — that skin
+family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
 the ProjectM/Geiss/Tripex/Met visualization host.
