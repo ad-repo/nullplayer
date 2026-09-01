@@ -17,6 +17,13 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: an empty video window no longer opens with the skin** — on Itemskin a black
+  panel with the skin's Fullscreen / 1x / 2x / Options buttons appeared at every launch with nothing
+  in it. Once you had watched a video in the skin's own video window, NullPlayer treated that window
+  as one you had chosen to leave open and reopened it on the next launch, when nothing was playing.
+  The video window now opens when a video starts and closes when it finishes, and is never restored
+  empty. Opening it yourself from the skin's video button still works exactly as before, and no other
+  window's remembered state changes.
 - **Winamp Modern skins: `canum` now loads** — the skin was refused outright with a message asking
   you to install a skin called `Defaultxml`, which is not a thing. Skins may borrow parts of Winamp's
   own stock skin for windows they do not style themselves, and canum borrows three; NullPlayer does

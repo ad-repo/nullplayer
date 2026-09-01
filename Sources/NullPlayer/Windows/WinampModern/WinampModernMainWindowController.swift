@@ -1342,7 +1342,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         container.view.needsLayout = true
         container.view.layoutSubtreeIfNeeded()
         guard container.view.hostedVideoSurface != nil else { return false }
-        setAuxiliaryWindow(id: id, visible: true, record: true)
+        // Not recorded: a film starting is not the user deciding this window should be open, and
+        // writing it as one left an empty video window opening with the skin at every later launch
+        // (B97). The same rule the runtime's `show()`/`hide()` already follow — this run, not the
+        // next one.
+        setAuxiliaryWindow(id: id, visible: true)
         return true
     }
 
@@ -1397,7 +1401,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
               let container = auxiliaryContainers.first(where: { $0.containerID == id }),
               container.window.isVisible
         else { return false }
-        setAuxiliaryWindow(id: id, visible: false, record: true)
+        // The `autoclose` counterpart of `hostVideoOutput`, and unrecorded for the same reason.
+        setAuxiliaryWindow(id: id, visible: false)
         return true
     }
 
@@ -1553,7 +1558,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         var opened = false
         for container in auxiliaryContainers where !container.window.isVisible {
             guard Self.opensAtLoad(opensByDefault: container.opensByDefault,
-                                   remembered: rememberedContainerVisibility(id: container.containerID))
+                                   remembered: rememberedContainerVisibility(id: container.containerID),
+                                   hostsVideo: routedSurfaceKind(ofContainer: container.containerID) == .video)
             else { continue }
             setAuxiliaryWindow(id: container.containerID, visible: true, activate: false)
             opened = true
@@ -1568,8 +1574,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// The precedence, in one testable place: what the user last decided about this window wins over
     /// what the skin declares, and the skin's declaration wins over "closed". A user who has never
     /// touched the window has `remembered == nil`, which is not the same as having closed it.
-    static func opensAtLoad(opensByDefault: Bool, remembered: Bool?) -> Bool {
-        remembered ?? opensByDefault
+    ///
+    /// **The video window is never restored** (B97). Nothing is playing at load, so it can only come
+    /// up as the empty black panel Itemskin was reported with — the skin's own `FS`/`1X`/`2X`/
+    /// `OPTIONS` chrome around a box with no picture in it, which is exactly the state its
+    /// `default_visible="0"` asks to avoid. It is not the user's window to leave open the way a
+    /// playlist or a configurator is: playback opens it (`hostVideoOutput`) and `autoclose` puts it
+    /// away, so *when* it belongs on screen is a fact about the film, not about the last session.
+    static func opensAtLoad(opensByDefault: Bool, remembered: Bool?, hostsVideo: Bool = false) -> Bool {
+        guard !hostsVideo else { return false }
+        return remembered ?? opensByDefault
     }
 
     /// What the user last did with this window, or `nil` when they have never said. Stored in the

@@ -2,6 +2,51 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B97 — a video window the skin declares `default_visible="0"` opens with the skin, empty — closed 2026-09-01
+
+- [x] **B97. A video window the skin declares as `default_visible="0"` opens with the skin, empty.**
+      Reported 2026-09-01 on Itemskin: a black panel sits on screen from launch carrying the skin's
+      own `FS` / `1X` / `2X` / `OPTIONS` buttons and nothing else.
+
+      **What is on screen.** Two windows, not one. Itemskin draws its video chrome the way it draws
+      every frame — `<Wasabi:StandardFrame:VD>` is a groupdef whose script (`standardframeVD.maki`)
+      calls `newDynamicContainer("cont.clear.vd")` and mirrors that container's visibility onto the
+      frame it is instantiated in, from `onSetVisible` and from a 100 ms timer. So the panel with the
+      buttons is `cont.clear.vd` (`xml/window.xml:175`, 15 nodes), shown *because* the `Video`
+      container (`xml/video.xml:1`, 6 nodes, the component holder) was open. Both declare
+      `default_visible="0"`, and the startup catalog logs `video=declared:Video` — which is why the
+      container that opened looked like the wrong one.
+
+      **Cause — not the declaration.** `default_visible` was read and honoured correctly.
+      `applyDefaultContainerVisibility` opens a window when `opensAtLoad(opensByDefault:remembered:)`
+      says so, and *remembered* wins over the declaration by design (a settings window the user has
+      closed must stay closed). The stored answer for this skin was
+      `winampModern.config.Itemskin.@nullplayer.windows.Video = 1` — written by `hostVideoOutput()`,
+      which opened the window with `record: true` when a **film** started. Playback is not the user
+      deciding a window should be open, so every launch after the first video reopened it with
+      nothing to show.
+
+      **Fix.** Two parts, in `WinampModernMainWindowController`:
+
+      - `opensAtLoad` takes `hostsVideo:` and answers **false** for the container the catalog routes
+        video to, whatever is remembered or declared. Nothing is playing at load, so a restored video
+        window can only be the empty panel; when it belongs on screen is a fact about the film, and
+        `hostVideoOutput()` / `autoclose` already decide that.
+      - `hostVideoOutput()` and `hideVideoSurfaceWindow()` no longer pass `record: true` — the same
+        rule the runtime's script-driven `show()`/`hide()` already follow: this run, not the next one.
+        Without this the stale `1` would keep being rewritten.
+
+      **Found by** `WINAMP_MODERN_TRACE_MAKI=1` in the running app (`SETVISIBLE layout.clear.vd -> 1
+      by=window.xml@159` — the VD frame's `onSetVisible`, so the *host* had opened `Video`), then a
+      call-stack probe on `setSceneVisible`, which named `applyDefaultContainerVisibility`. The
+      headless render dump cannot see any of it: it installs no windows, so `containerVisibilityQuery`
+      answers `nil` and no window is ever opened or restored.
+
+      A reminder for the next one of these: a persisted per-skin decision is part of the state a
+      "clean" launch reproduces. Verified live on Itemskin with the stale `Video = 1` still in
+      `defaults` — the panel is gone and the player's video button still opens the window.
+      `swift test`: WinampModernPhase40Tests 8 passed.
+
 ## B98 — switching skins leaves NullPlayer's own open windows in the outgoing skin — closed 2026-09-01
 
 - [x] **B98. A `.wal` skin change never reaches the surfaces NullPlayer draws itself.** Reported

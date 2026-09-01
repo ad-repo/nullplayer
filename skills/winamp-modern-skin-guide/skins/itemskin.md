@@ -39,6 +39,13 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
 
 ## Traps this skin sets
 
+- **The chrome window is the visible half, so a window that should be closed is reported as the
+  chrome container.** B97's "black panel with `FS`/`1X`/`2X`/`OPTIONS`" is `cont.clear.vd`, but
+  nothing opened `cont.clear.vd` — the *host* opened `Video`, and the frame script's `onSetVisible`
+  brought its chrome up alongside. Read the pair, not the container that is drawn: the startup catalog
+  logging `video=declared:Video` was the correct answer, not the discrepancy it looked like. (B97's
+  actual cause was a remembered window state; see
+  [`reference/components.md`](../reference/components.md) → *`default_visible="1"`*.)
 - **Two windows per component is not a defect.** A probe that counts windows, or that expects a
   component window to have chrome of its own, reads this skin wrong. `PLEdit/normal` having 6 scene
   nodes is correct; its 40-node frame is a different container.

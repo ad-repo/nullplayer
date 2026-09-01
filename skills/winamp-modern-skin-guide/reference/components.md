@@ -58,6 +58,20 @@ Shield_Amp, S7Reflex and Defix enter this same path rather than being parsed as 
 
   Browser-only containers are not suppressed: their real, policy-gated WebKit surface opens when
   `default_visible="1"`, subject to the same remembered user choice.
+- **The video window is exempt from the remembered choice entirely** (B97). `opensAtLoad`'s
+  `hostsVideo:` term answers **false** for the container the catalog routes video to, whatever is
+  remembered or declared: nothing is playing at load, so a restored video window can only be an empty
+  panel — which on Itemskin is a black slab carrying its own `FS`/`1X`/`2X`/`OPTIONS` chrome, because
+  its `<Wasabi:StandardFrame:VD>` script mirrors the `Video` container's visibility onto a dynamic
+  `cont.clear.vd` it creates. `hostVideoOutput()` opens the window when a film starts and `autoclose`
+  puts it away, so *when* it belongs on screen is a fact about the film. Neither of those records:
+  playback is not the user deciding, and recording it was what wrote the stale `Video = 1` this fix
+  now ignores.
+
+  **A persisted per-skin decision is part of the state a "clean" launch reproduces.** This defect is
+  invisible to the render dump — the harness installs no windows, so nothing is ever restored — and
+  invisible to a fresh profile. `defaults read NullPlayer | grep '_nullplayer_windows'` is the state
+  to read before believing a window opened itself.
 
 #### `visible` on a container answers two questions, and only the declared one classifies it (B16)
 

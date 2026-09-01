@@ -82,6 +82,27 @@ final class WinampModernPhase40Tests: XCTestCase {
         XCTAssertTrue(Controller.opensAtLoad(opensByDefault: false, remembered: true))
     }
 
+    /// …except the video window, which nothing restores (B97).
+    ///
+    /// Itemskin's was reported opening with the skin as an empty black panel — its own `FS`/`1X`/
+    /// `2X`/`OPTIONS` chrome around a box with no picture in it — although the skin declares
+    /// `default_visible="0"` on both the `Video` container and the frame container that draws it.
+    /// The window had been *remembered* open, because a film starting used to record its opening as
+    /// the user's decision. Nothing is playing at load, so a restored video window can only ever be
+    /// that empty panel: when it belongs on screen is a fact about the film, not about the last
+    /// session.
+    func testTheVideoWindowIsNeverRestored() {
+        typealias Controller = WinampModernMainWindowController
+        XCTAssertFalse(Controller.opensAtLoad(opensByDefault: false, remembered: true,
+                                              hostsVideo: true))
+        XCTAssertFalse(Controller.opensAtLoad(opensByDefault: true, remembered: nil,
+                                              hostsVideo: true))
+        // Every other window keeps the precedence above — the flag is scoped to the one container
+        // the catalog routes video to, not to auxiliary windows in general.
+        XCTAssertTrue(Controller.opensAtLoad(opensByDefault: false, remembered: true,
+                                             hostsVideo: false))
+    }
+
     /// And where that decision lives: the *skin's own* namespaced configuration, so two skins that
     /// both declare a `Config` window do not share one answer, and "never said" is distinguishable
     /// from "said no".
