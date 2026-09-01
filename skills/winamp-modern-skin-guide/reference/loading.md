@@ -10,6 +10,7 @@ Fixed logical mounts only — the skin never sees a real path:
 |--------------|-----------|
 | `/Skins/<sanitized-name>/` | the `.wal` archive |
 | `/Skins/<other skin>/` | another **installed** `.wal`, mounted lazily — see *Sibling skin mounts* |
+| `/Skins/Default/` | Winamp's stock Modern skin — **usually nothing**, see *`@DEFAULTSKINPATH@` is an optional mount* |
 | `/Plugins/classicPro/engine/` | the imported ClassicPro engine, when installed |
 | `/System/` | code-supplied defaults via `WinampModernAdditionalMount` |
 
@@ -45,7 +46,8 @@ two shipped skins (`Itemskin`: `xml/eq.xml`, `Overdrive_2`: `xml/pledit-elements
 their archive does not contain. The expander skips it, records `resourceMissing` at `.warning`, and
 expands the rest of the document; this is the same tolerance `WasabiSkinInitializer` applies to a
 missing bitmap, cursor or TTF. **Scoped to the skin mount:** the tolerance only covers a path that
-resolves inside `@SKINPATH@`. An include that climbs into another mount — the ClassicPro engine line
+resolves inside `@SKINPATH@` — or inside `/Skins/Default`, the one root a skin may name with nothing
+behind it (see *`@DEFAULTSKINPATH@` is an optional mount*). An include that climbs into another mount — the ClassicPro engine line
 above — still fails the load, because that one means *the engine is not installed*, and a skin that
 loads and draws almost nothing is worse than a named error. Cycles, depth, expansion limits, path
 escapes and unresolved variables are all unchanged: still hard errors.
@@ -184,6 +186,36 @@ string.
 
 The contract this puts on the user: **the installed filename must match the skin name the overlay
 asks for.** `Big Bento Modern.wal` renamed is `Big Bento Modern Light` failing to load.
+
+### `@DEFAULTSKINPATH@` is an optional mount, and the only one
+
+`@DEFAULTSKINPATH@` means Winamp's **stock Modern skin**, which sits beside the user's own skins in a
+real installation. NullPlayer ships none, so `/Skins/Default` is normally empty. A skin names it to
+borrow windows it does not style itself: canum's `skin.xml` pulls `xml/eq.xml`, `xml/thinger.xml` and
+`xml/pledit.xml` out of it, and there is no reason to expect the corpus to stop at one.
+
+Two rules, both of which cost canum its whole load before B92:
+
+- **It carries a trailing separator**, set through `setVariable(…, trailingSeparator: true)` exactly
+  like `@SKINPATH@` and `@COLORTHEMESPATH@`, because skins concatenate a filename straight onto it.
+  Assigned bare, `@DEFAULTSKINPATH@xml/eq.xml` canonicalises to `/Skins/Defaultxml/eq.xml` — and the
+  fused name comes back out of the sibling mount verbatim, as *"requires the skin 'Defaultxml'"*.
+  **A mount name in an error that is two words run together is this bug**, not a corrupt skin.
+- **An unanswered path under it is `resourceMissing`, not `missingRequiredMount`.**
+  `mountSiblingIfNeeded` returns `false` for this root rather than throwing, so the include expander's
+  skipped-include warning applies (`WalXML.isInsideSkin` accepts `/Skins/Default/` alongside
+  `vfs.skinRoot`) and `WasabiSurfaceSynthesizer` then builds the surface out of **the skin's own
+  frame**. That is nearer to what the author asked for than refusing the skin.
+
+**Do not alias `Default` onto `winampmodern566.wal`.** It is the *Winamp5 Base Skin*, a reference
+subset: it has `xml/pledit.xml` and neither `xml/eq.xml` nor `xml/thinger.xml`, so two of canum's
+three includes would still fail — and the shipped stock skin they were written against is not in the
+corpus at all. A skin genuinely installed as `Default.wal` is still mounted and still resolves; that
+path is unchanged.
+
+**This is the only optional root.** Every other absent sibling mount stays the hard, named
+`missingRequiredMount` above, and so does the ClassicPro engine — an overlay drawn against missing
+artwork, or a cPro skin with no engine, must say so rather than half-load.
 
 ### Initialization passes
 

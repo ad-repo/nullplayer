@@ -67,9 +67,18 @@ final class WalVirtualFileSystem {
     /// Security-model bound: a skin may pull in at most this many sibling archives per load.
     private static let maximumLazySiblingMounts = 4
 
+    /// Where `@DEFAULTSKINPATH@` points: Winamp's *stock* Modern skin, which lives beside the user's
+    /// own skins in a real installation. NullPlayer ships no such skin, so nothing is mounted here
+    /// unless the user happens to have installed one named `Default` — see `isOptionalMountRoot`.
+    static let defaultSkinRoot = "/Skins/Default"
+
     init() {
         variables["WINAMPPATH"] = "/"
-        variables["DEFAULTSKINPATH"] = "/Skins/Default"
+        // Trailing separator, for the same reason `@SKINPATH@` carries one: skins concatenate
+        // straight onto it — canum's `<include file="@DEFAULTSKINPATH@xml/eq.xml"/>` canonicalised
+        // to `/Skins/Defaultxml/eq.xml` without it, and the fused name surfaced verbatim in the
+        // failure (B92).
+        setVariable("DEFAULTSKINPATH", to: Self.defaultSkinRoot, trailingSeparator: true)
         // Winamp's skins *collection* root. Skins write `@SKINSPATH@\<Skin Name>\xml\player.xml`,
         // both to reach their own files and — for overlay skins such as the Big Bento Modern Light
         // editions — to reach the base skin they are written against. Every loaded skin is mounted
@@ -244,7 +253,10 @@ final class WalVirtualFileSystem {
         // A mount can own the root itself without owning any path *under* it (a wildcard include
         // naming the mount directory), and re-mounting it would be a case collision.
         guard !mounts.contains(where: { $0.foldedRoot == foldedRoot }) else { return false }
-        guard !failedSiblingNames.contains(foldedRoot) else { throw Self.missingMount(name, location) }
+        guard !failedSiblingNames.contains(foldedRoot) else {
+            if Self.isOptionalMountRoot(foldedRoot) { return false }
+            throw Self.missingMount(name, location)
+        }
         guard lazySiblingMountCount < Self.maximumLazySiblingMounts else {
             throw WalFailure(WalDiagnostic(
                 .entryLimitExceeded,
@@ -253,11 +265,23 @@ final class WalVirtualFileSystem {
         }
         guard let provider = try siblingMountResolver(name) else {
             failedSiblingNames.insert(foldedRoot)
+            // `/Skins/Default` is the one root a skin may name without any skin standing behind it:
+            // it means Winamp's stock Modern skin, which we do not ship. Returning `false` lets the
+            // path fail as an ordinary `resourceMissing`, which the include expander tolerates and
+            // surface synthesis then covers with the skin's own frame — rather than a hard
+            // "requires the skin 'Default'" that fails the whole load (B92).
+            if Self.isOptionalMountRoot(foldedRoot) { return false }
             throw Self.missingMount(name, location)
         }
         try mount(provider, at: root)
         lazySiblingMountCount += 1
         return true
+    }
+
+    /// Whether a `/Skins/<name>` root that resolves to nothing is a tolerable absence rather than an
+    /// uninstalled dependency.
+    static func isOptionalMountRoot(_ foldedRoot: String) -> Bool {
+        foldedRoot == fold(defaultSkinRoot)
     }
 
     private static func missingMount(_ name: String, _ location: WalSourceLocation?) -> WalFailure {

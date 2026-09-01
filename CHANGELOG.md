@@ -17,6 +17,13 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: `canum` now loads** — the skin was refused outright with a message asking
+  you to install a skin called `Defaultxml`, which is not a thing. Skins may borrow parts of Winamp's
+  own stock skin for windows they do not style themselves, and canum borrows three; NullPlayer does
+  not ship that stock skin, and the path to it was being built wrong on top of that. Borrowed parts
+  that are not present are now skipped, and NullPlayer builds those windows out of the skin's own
+  frame instead, so canum loads and draws. If you do have a skin named `Default` installed, it is
+  used as before. No other skin's appearance changes.
 - **Winamp Modern skins: `cpro2 Dark Aluminum` now loads** — the skin was refused outright with a
   nesting error. One of its files was saved in a text format (UTF-16, which is what Windows editors
   produce by default) that NullPlayer did not recognise, so the skin's markup was read as gibberish

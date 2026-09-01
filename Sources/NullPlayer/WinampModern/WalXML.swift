@@ -386,10 +386,16 @@ final class WalXMLDocumentLoader {
     /// ClassicPro skin whose engine is not installed, and that stays a hard, nameable failure rather
     /// than a skin that loads and draws almost nothing.
     private func isInsideSkin(_ rawPath: String, relativeTo sourcePath: String) -> Bool {
-        guard let skinRoot = vfs.skinRoot,
-              let canonical = try? vfs.resolve(rawPath, relativeTo: sourcePath, mustExist: false)
+        guard let canonical = try? vfs.resolve(rawPath, relativeTo: sourcePath, mustExist: false)
         else { return false }
-        return Self.fold(canonical.logicalPath).hasPrefix(Self.fold(skinRoot + "/"))
+        let folded = Self.fold(canonical.logicalPath)
+        if let skinRoot = vfs.skinRoot, folded.hasPrefix(Self.fold(skinRoot + "/")) { return true }
+        // `@DEFAULTSKINPATH@` names Winamp's stock Modern skin, which NullPlayer does not ship, so
+        // nothing is mounted there. canum includes three of its files — `xml/eq.xml`,
+        // `xml/thinger.xml`, `xml/pledit.xml` — for surfaces it does not skin itself; skipping them
+        // leaves those surfaces to `WasabiSurfaceSynthesizer`, which builds them out of the skin's
+        // *own* frame. That is closer to what the author asked for than failing the load (B92).
+        return folded.hasPrefix(Self.fold(WalVirtualFileSystem.defaultSkinRoot + "/"))
     }
 
     /// Windows XML tooling routinely emits UTF-16, so honour a byte order mark before falling back

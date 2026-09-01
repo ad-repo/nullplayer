@@ -2,6 +2,54 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B92 — `@DEFAULTSKINPATH@` mis-expands, and nothing is mounted behind it — closed 2026-09-01
+
+- [x] **B92. `@DEFAULTSKINPATH@` mis-expands, and nothing is mounted behind it.**
+
+      `Sources/NullPlayer/WinampModern/WalVirtualFileSystem.swift:72`:
+
+      ```swift
+      variables["DEFAULTSKINPATH"] = "/Skins/Default"
+      ```
+
+      `SKINPATH` and `COLORTHEMESPATH` are both set through
+      `setVariable(…, trailingSeparator: true)` a few lines below, with a comment explaining why.
+      This one is a bare assignment, so canum's `<include file="@DEFAULTSKINPATH@xml/eq.xml"/>`
+      canonicalises to `/Skins/Defaultxml/eq.xml` and the lazy sibling mount reports, verbatim:
+
+      ```
+      [missingRequiredMount] This skin requires the skin 'Defaultxml' to be installed.
+      ```
+
+      The concatenated mount name in that message is the proof of the missing separator.
+
+      **Two bugs stacked.** Adding the separator only changes the error to `requires the skin
+      'Default'`, because no mount is ever established at `/Skins/Default`. `@DEFAULTSKINPATH@` means
+      Winamp's **stock Modern skin**, which the corpus already has as `winampmodern566.wal`.
+      **This needs a decision** — map `Default` onto that archive when installed, ship a minimal
+      default tree, or fail with a message naming what to install. The separator fix alone does not
+      make canum load.
+
+      Reach is small but the variable is corpus-wide surface: [M28] finds 3 skins naming it, and
+      Bio-Nid's and Rika's are inside a `<!-- -->` spanning lines 15-20, which is exactly why those
+      two load today and canum does not.
+
+**Closing note (not part of the filed entry).** The decision went to a fourth option, because the
+first one does not work: `winampmodern566.wal` is the *Winamp5 Base Skin*, and it contains neither
+`xml/eq.xml` nor `xml/thinger.xml` — two of the three files canum asks the stock skin for. Aliasing
+it onto `Default` would have fixed one include in three, and only for the users who own that archive.
+`/Skins/Default` is instead the one root a skin may name with nothing behind it: an unanswered path
+there fails as an ordinary `resourceMissing`, the include expander skips it with a warning, and
+`WasabiSurfaceSynthesizer` builds the surface from the skin's *own* frame. A `Default` that really is
+installed is still mounted and still resolves, and every other absent sibling mount stays the hard,
+nameable failure the Big Bento Light editions depend on. canum goes from *does not load* to
+`main/normal` at 340x220, 34 nodes. See `skills/winamp-modern-skin-guide/reference/loading.md` →
+*`@DEFAULTSKINPATH@` is an optional mount*.
+
+**M28** (moved here with the entry that cited it). `grep -rl 'DEFAULTSKINPATH' "$corpus" --include="*.xml"`, then **check whether the line is commented out** — that is the whole measurement. Three skins name it: canum uses it live (3 includes), while **Bio-Nid and Rika both have theirs inside a single `<!-- -->` spanning lines 15-20**, which is why they load today and canum does not. **Closed 2026-09-01 with B92**; kept as the record of how the reach was bounded. The grep is the whole measurement only because the comment check is — a `grep -c` here reads 3 and the live figure is 1.
+
+---
+
 ## B93 — the XML reader does not honour a UTF-16 BOM — closed 2026-09-01
 
 - [x] **B93. The XML reader does not honour a UTF-16 BOM.** cpro2_dark_aluminum's
@@ -33,6 +81,8 @@ one character per byte with the nulls intact. The distinction is the reusable pa
 ending in a total encoding has no failing branch, so a new encoding has to be selected *before* the
 chain, never appended to it. See `skills/winamp-modern-skin-guide/reference/loading.md` → *A byte
 order mark decides the encoding*.
+
+**M27** (moved here 2026-09-01 while closing B92; it was left in `TASKS.md` when B93 closed, citing nothing). find every `.xml` whose first two bytes are `ff fe` or `fe ff`. Measured 2026-08-31: **3 files** — `cpro2_dark_aluminum_final_by_victhor/colorthemes.xml` (fatal, it is on the include path) and `languages/Wasabi.xml` in both **Big Bento Modern** and **Big Bento Modern Windows 10 edition**, which load fine because nothing includes those. So the count overstates the blast radius: what matters is whether a UTF-16 file is reachable from `skin.xml`. **Closed 2026-09-01 with B93**; kept as the record of how the reach was bounded. The count is a floor rather than a reach — Windows XML tooling emits UTF-16 by default, so this arrives without an author deciding on it.
 
 ---
 
