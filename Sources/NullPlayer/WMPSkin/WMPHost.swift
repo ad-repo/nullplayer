@@ -39,6 +39,8 @@ struct WMPHostSnapshot: Hashable, Codable {
     var muted = false
     var shuffle = false
     var repeatMode = false
+    var bufferingProgress: Double = 0
+    var receptionQuality: Double = 0
     var metadata = WMPMediaMetadata()
     var playlistIndex = -1
     var playlistCount = 0

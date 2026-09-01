@@ -36,6 +36,7 @@ final class WMPLoadedSkin {
     let views: [WMPViewRegistration]
     let resources: [WMPResourceRegistration]
     let scripts: [WMPScriptRegistration]
+    let scriptSources: [String: String]
     let diagnostics: [WMPDiagnostic]
     let compatibilityReport: WMPCompatibilityReport
     let deterministicGraphDump: String
@@ -56,6 +57,7 @@ final class WMPLoadedSkin {
         self.views = views
         self.resources = resources
         self.scripts = scripts
+        self.scriptSources = scriptSources
         self.diagnostics = diagnostics
         compatibilityReport = WMPCompatibilityReport(graph: graph, resources: resources,
             scripts: scripts, diagnostics: diagnostics, scriptSources: scriptSources)

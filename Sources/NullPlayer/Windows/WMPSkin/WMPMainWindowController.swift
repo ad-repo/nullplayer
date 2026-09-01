@@ -6,11 +6,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private let importer: WMPSkinImporter
     private let host: any WMPHost
     private var loadTask: Task<Void, Never>?
+    private var phase5Task: Task<Void, Never>?
+    private var scriptTimerTasks: [Int: Task<Void, Never>] = [:]
     private var loadedSkin: WMPLoadedSkin?
     private var imageStore: WMPImageStore?
     private var activeViewID: String?
     private var activeLimits: WMPResizeLimits?
     private var activeScene: WMPScene?
+    private var sceneOverrides = WMPSceneOverrides.empty
+    private var phase5Session: WMPPhase5Session?
+    private var phase5Runtime: WMPJScriptRuntime?
+    private var lastScriptSnapshot: WMPHostSnapshot?
     private var mainView: WMPMainView?
     private var unskinnedView: WMPUnskinnedMainView?
     private var isApplyingSceneSize = false
@@ -80,9 +86,24 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: requested)
-                let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                let skinData = try await Task.detached { try Data(contentsOf: skin.archive.sourceURL) }.value
+                let runtime = WMPJScriptRuntime(helperURL: WMPJScriptRuntime.bundledHelperURL())
+                let phase5 = WMPPhase5Session(runtime: runtime,
+                    preferences: WMPPreferenceStore(skinData: skinData, defaults: importer.defaults))
+                let loadEvent = WMPJScriptEvent(name: "load", targetID: registration.id,
+                    handlers: Self.handlers(in: skin, event: "load", targetID: nil))
+                let output = await phase5.transact(skin: skin, viewID: registration.id,
+                    size: scene.canvasSize, snapshot: host.snapshot, event: loadEvent)
+                let resolved = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                    .build(viewID: registration.id, requestedSize: scene.canvasSize,
+                           overrides: output.overrides)
+                let rendered = try await WMPRenderer(imageStore: store).render(scene: resolved, backingScale: 1)
                 try Task.checkCancellation()
-                apply(skin: skin, store: store, scene: scene, image: rendered.image)
+                applyHostCommands(output.hostCommands)
+                apply(skin: skin, store: store, scene: resolved, image: rendered.image,
+                      phase5: phase5, runtime: runtime, overrides: output.overrides)
+                scheduleTimers(output.timerRequests)
+                recordScriptDiagnostics(output.diagnostics)
             } catch is CancellationError {
                 return
             } catch {
@@ -135,6 +156,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         presentUnskinned(message: nil)
     }
 
+    func resetScriptPreferences() {
+        guard let phase5Session else { return }
+        Task { await phase5Session.resetPreferences() }
+        lastLoadDiagnostic = "WMP skin script preferences were reset."
+    }
+
     func restoreFrame(_ frame: NSRect, skinName: String?, viewID: String?) {
         guard frame != .zero else { return }
         let selectedName = importer.selectedSkinName
@@ -156,12 +183,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
-    private func apply(skin: WMPLoadedSkin, store: WMPImageStore, scene: WMPScene, image: CGImage) {
+    private func apply(skin: WMPLoadedSkin, store: WMPImageStore, scene: WMPScene, image: CGImage,
+                       phase5: WMPPhase5Session, runtime: WMPJScriptRuntime,
+                       overrides: WMPSceneOverrides) {
         loadedSkin = skin
         imageStore = store
         activeViewID = scene.viewID
         activeLimits = scene.resizeLimits
         activeScene = scene
+        phase5Session = phase5
+        phase5Runtime = runtime
+        lastScriptSnapshot = host.snapshot
+        sceneOverrides = overrides
         lastLoadDiagnostic = nil
         importer.defaults.set(scene.viewID, forKey: WMPSkinImporter.selectedViewIDKey)
 
@@ -171,6 +204,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             guard let self else { return }
             self.host.perform(action, value: value)
             self.refreshHostState()
+        }
+        view.onScriptEvent = { [weak self] name, targetID in
+            self?.dispatchScriptEvent(name: name, targetID: targetID)
         }
         view.onInteractionChanged = { [weak self] state, changed in
             self?.renderInteraction(state: state, changed: changed)
@@ -199,6 +235,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         activeViewID = nil
         activeLimits = nil
         activeScene = nil
+        sceneOverrides = .empty
+        if let phase5Session { Task { await phase5Session.teardown() } }
+        phase5Runtime?.cancelAll()
+        phase5Runtime = nil
+        phase5Session = nil
+        lastScriptSnapshot = nil
+        cancelScriptTimers()
         lastLoadDiagnostic = message
         mainView?.prepareForUITeardown()
         mainView = nil
@@ -230,15 +273,31 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
               let viewID = activeViewID, let window else { return }
         loadTask?.cancel()
         let requested = WMPSize(width: window.contentLayoutRect.width, height: window.contentLayoutRect.height)
+        let overrides = sceneOverrides
+        let phase5Session = phase5Session
         loadTask = Task { [weak self] in
             do {
+                var resolvedOverrides = overrides
+                var scriptOutput: WMPPhase5Output?
+                if let phase5Session, let self {
+                    let output = await phase5Session.transact(skin: skin, viewID: viewID,
+                        size: requested, snapshot: self.host.snapshot, event: nil)
+                    resolvedOverrides = output.overrides
+                    scriptOutput = output
+                }
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: viewID, requestedSize: requested)
+                    .build(viewID: viewID, requestedSize: requested, overrides: resolvedOverrides)
                 let result = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
                 try Task.checkCancellation()
+                self?.sceneOverrides = resolvedOverrides
                 self?.activeScene = scene
                 self?.mainView?.present(result.image, scene: scene)
                 self?.mainView?.refreshHostState(self?.host.snapshot ?? WMPHostSnapshot())
+                if let scriptOutput {
+                    self?.applyHostCommands(scriptOutput.hostCommands)
+                    self?.scheduleTimers(scriptOutput.timerRequests)
+                    self?.recordScriptDiagnostics(scriptOutput.diagnostics)
+                }
             } catch is CancellationError {} catch {
                 self?.lastLoadDiagnostic = error.localizedDescription
             }
@@ -248,6 +307,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func prepareForUITeardown() {
         loadTask?.cancel()
         loadTask = nil
+        phase5Task?.cancel()
+        phase5Task = nil
+        cancelScriptTimers()
+        phase5Runtime?.cancelAll()
+        phase5Runtime = nil
+        if let phase5Session { Task { await phase5Session.teardown() } }
+        phase5Session = nil
+        lastScriptSnapshot = nil
         mainView?.prepareForUITeardown()
         mainView = nil
         unskinnedView?.onImport = nil
@@ -258,6 +325,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         loadedSkin = nil
         imageStore = nil
         activeScene = nil
+        sceneOverrides = .empty
         host.stopContinuousCommands()
     }
 
@@ -296,23 +364,170 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private func refreshHostState() {
         mainView?.refreshHostState(host.snapshot)
         unskinnedView?.refresh(host.snapshot)
+        guard loadedSkin != nil, phase5Session != nil else { return }
+        let snapshot = host.snapshot
+        let previous = lastScriptSnapshot
+        lastScriptSnapshot = snapshot
+        var events: [String] = []
+        if previous?.state != snapshot.state { events += ["openstatechange", "playstatechange"] }
+        if previous?.currentTime != snapshot.currentTime || previous?.duration != snapshot.duration
+            || previous?.metadata != snapshot.metadata { events.append("status_onchange") }
+        if previous?.shuffle != snapshot.shuffle || previous?.repeatMode != snapshot.repeatMode {
+            events.append("modechange")
+        }
+        if previous?.bufferingProgress != snapshot.bufferingProgress { events.append("buffering_onchange") }
+        if previous?.receptionQuality != snapshot.receptionQuality { events.append("reception_onchange") }
+        guard !events.isEmpty else { return }
+        phase5Task?.cancel()
+        phase5Task = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 16_000_000)
+            guard !Task.isCancelled else { return }
+            self?.dispatchHostEvents(events)
+        }
     }
 
     private func renderInteraction(state: WMPInteractionState, changed: Set<Int>) {
         guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
               let activeScene else { return }
         loadTask?.cancel()
+        let overrides = sceneOverrides
         loadTask = Task { [weak self] in
             do {
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize,
-                           interactionState: state, dirtyNodeIDs: changed)
+                           interactionState: state, dirtyNodeIDs: changed,
+                           overrides: overrides)
                 let result = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
                 try Task.checkCancellation()
                 self?.activeScene = scene
                 self?.mainView?.present(result.image, scene: scene, dirtyBounds: scene.dirtyBounds)
             } catch is CancellationError {} catch { self?.lastLoadDiagnostic = error.localizedDescription }
         }
+    }
+
+    private func dispatchScriptEvent(name: String, targetID: String?) {
+        guard let skin = loadedSkin else { return }
+        dispatchScriptTransaction(WMPJScriptEvent(name: name, targetID: targetID,
+            handlers: Self.handlers(in: skin, event: name, targetID: targetID)))
+    }
+
+    private func dispatchHostEvents(_ names: [String]) {
+        guard let skin = loadedSkin else { return }
+        let handlers = names.flatMap { Self.handlers(in: skin, event: $0, targetID: nil) }
+        dispatchScriptTransaction(WMPJScriptEvent(name: names.joined(separator: ","),
+                                                   targetID: nil, handlers: handlers))
+    }
+
+    private func dispatchScriptTransaction(_ event: WMPJScriptEvent) {
+        guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
+              let activeScene, let phase5Session else { return }
+        // A binding-only transaction is still required when no authored handler exists.
+        phase5Task?.cancel()
+        phase5Task = Task { [weak self] in
+            guard let self else { return }
+            let output = await phase5Session.transact(skin: skin, viewID: viewID,
+                size: activeScene.canvasSize, snapshot: host.snapshot, event: event)
+            guard !Task.isCancelled else { return }
+            do {
+                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                    .build(viewID: viewID, requestedSize: activeScene.canvasSize,
+                           dirtyNodeIDs: output.repaintNodeIDs.isEmpty ? nil : output.repaintNodeIDs,
+                           overrides: output.overrides)
+                let result = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                guard !Task.isCancelled else { return }
+                sceneOverrides = output.overrides
+                self.activeScene = scene
+                mainView?.present(result.image, scene: scene, dirtyBounds: scene.dirtyBounds)
+                applyHostCommands(output.hostCommands)
+                scheduleTimers(output.timerRequests)
+                recordScriptDiagnostics(output.diagnostics)
+            } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }
+        }
+    }
+
+    static func handlers(in skin: WMPLoadedSkin, event: String, targetID: String?) -> [String] {
+        let wanted = event.lowercased().replacingOccurrences(of: "_", with: "")
+        return skin.graph.allNodes.filter { node in
+            targetID == nil || node.xmlID?.caseInsensitiveCompare(targetID ?? "") == .orderedSame
+                || (targetID == "view" && node.kind == .view)
+        }.flatMap { node in
+            node.attributes.compactMap { attribute -> String? in
+                guard case let .handler(authored, source) = attribute.value else { return nil }
+                let normalized = authored.lowercased().replacingOccurrences(of: "_", with: "")
+                let stripped = normalized.hasPrefix("on") ? String(normalized.dropFirst(2)) : normalized
+                let wantedStripped = wanted.hasPrefix("on") ? String(wanted.dropFirst(2)) : wanted
+                return stripped == wantedStripped ? source : nil
+            }
+        }
+    }
+
+    private func applyHostCommands(_ commands: [WMPJScriptHostCommand]) {
+        for command in commands.prefix(WMPJScriptProtocol.maximumHostCommands) {
+            let number = command.value?.number
+            switch command.action {
+            case "play": host.perform(.play, value: nil)
+            case "pause": host.perform(.pause, value: nil)
+            case "stop": host.perform(.stop, value: nil)
+            case "previous": host.perform(.previous, value: nil)
+            case "next": host.perform(.next, value: nil)
+            case "scanForward": host.perform(.beginScan(.forward), value: nil)
+            case "scanReverse": host.perform(.beginScan(.reverse), value: nil)
+            case "seekSeconds":
+                let duration = max(host.snapshot.duration, 0.001)
+                host.perform(.seek, value: .number(max(0, min(1, (number ?? 0) / duration))))
+            case "volumePercent": host.perform(.volume, value: .number(max(0, min(1, (number ?? 0) / 100))))
+            case "balancePercent": host.perform(.balance, value: .number(max(-1, min(1, (number ?? 0) / 100))))
+            case "setMute": if (command.value?.number ?? 0) != (host.snapshot.muted ? 1 : 0) { host.perform(.toggleMute, value: nil) }
+            case "setShuffle": if (command.value?.number ?? 0) != (host.snapshot.shuffle ? 1 : 0) { host.perform(.toggleShuffle, value: nil) }
+            case "setRepeat": if (command.value?.number ?? 0) != (host.snapshot.repeatMode ? 1 : 0) { host.perform(.toggleRepeat, value: nil) }
+            default: continue
+            }
+        }
+    }
+
+    private func scheduleTimers(_ requests: [WMPJScriptTimerRequest]) {
+        cancelScriptTimers()
+        for request in requests.prefix(WMPPhase0Limits.activeTimers) {
+            let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, request.periodMilliseconds)
+            scriptTimerTasks[request.token] = Task { [weak self] in
+                repeat {
+                    try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
+                    guard !Task.isCancelled else { return }
+                    self?.dispatchTimer(request)
+                } while request.repeats && !Task.isCancelled
+            }
+        }
+    }
+
+    private func dispatchTimer(_ request: WMPJScriptTimerRequest) {
+        guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
+              let activeScene, let phase5Session else { return }
+        phase5Task?.cancel()
+        phase5Task = Task { [weak self] in
+            guard let self else { return }
+            let event = WMPJScriptEvent(name: "timer", targetID: nil, handlers: [request.source])
+            let output = await phase5Session.transact(skin: skin, viewID: viewID,
+                size: activeScene.canvasSize, snapshot: host.snapshot, event: event)
+            guard !Task.isCancelled else { return }
+            do {
+                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                    .build(viewID: viewID, requestedSize: activeScene.canvasSize, overrides: output.overrides)
+                let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                self.sceneOverrides = output.overrides; self.activeScene = scene
+                self.mainView?.present(rendered.image, scene: scene, dirtyBounds: scene.dirtyBounds)
+                self.applyHostCommands(output.hostCommands); self.recordScriptDiagnostics(output.diagnostics)
+            } catch { self.recordScriptDiagnostics([.init(code: "timer-transaction", message: error.localizedDescription)]) }
+        }
+    }
+
+    private func cancelScriptTimers() {
+        scriptTimerTasks.values.forEach { $0.cancel() }
+        scriptTimerTasks.removeAll()
+    }
+
+    private func recordScriptDiagnostics(_ diagnostics: [WMPJScriptDiagnostic]) {
+        guard !diagnostics.isEmpty else { return }
+        lastLoadDiagnostic = diagnostics.map { "[\($0.code)] \($0.message)" }.joined(separator: "\n")
     }
 }
 

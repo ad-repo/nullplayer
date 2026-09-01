@@ -3,6 +3,7 @@ import AppKit
 final class WMPMainView: NSView {
     var onInteractionChanged: ((WMPInteractionState, Set<Int>) -> Void)?
     var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
+    var onScriptEvent: ((String, String?) -> Void)?
     private var image: NSImage?
     private var scene: WMPScene?
     private var hitTester: WMPHitTester?
@@ -50,7 +51,7 @@ final class WMPMainView: NSView {
     func prepareForUITeardown() {
         if !interaction.cancelCapture().isEmpty { onAction?(.endScan, nil) }
         image = nil; scene = nil; hitTester = nil; capturedTarget = nil; isDraggingWindow = false
-        onInteractionChanged = nil; onAction = nil
+        onInteractionChanged = nil; onAction = nil; onScriptEvent = nil
     }
 
     func skinPoint(from event: NSEvent, sceneSize: WMPSize) -> WMPPoint {
@@ -82,6 +83,7 @@ final class WMPMainView: NSView {
         guard let target else { beginWindowDrag(event); return }
         capturedTarget = target
         notify(interaction.press(target))
+        onScriptEvent?("mousedown", target.nodeID)
         window?.makeFirstResponder(self)
         if case .beginScan = target.action { onAction?(target.action!, nil) }
         if target.action == .seek || target.action == .volume || target.action == .balance { performSlider(target, event: event) }
@@ -100,10 +102,13 @@ final class WMPMainView: NSView {
         let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
         let result = interaction.release(over: target)
         notify(result.changed)
+        onScriptEvent?("mouseup", capturedTarget?.nodeID)
         defer { capturedTarget = nil }
         guard let capturedTarget else { return }
         if case .beginScan = capturedTarget.action { onAction?(.endScan, nil); return }
-        guard result.activated == capturedTarget.stableID, let action = capturedTarget.action,
+        guard result.activated == capturedTarget.stableID else { return }
+        onScriptEvent?("click", capturedTarget.nodeID)
+        guard let action = capturedTarget.action,
               action != .seek, action != .volume, action != .balance else { return }
         onAction?(action, nil)
     }
@@ -149,6 +154,7 @@ final class WMPMainView: NSView {
         let point = skinPoint(from: event, sceneSize: scene.canvasSize)
         let fraction = target.frame.width > 0 ? max(0, min(1, (point.x - target.frame.x) / target.frame.width)) : 0
         onAction?(action, .number(action == .balance ? Double(fraction * 2 - 1) : Double(fraction)))
+        onScriptEvent?("change", target.nodeID)
     }
 
     private func notify(_ changed: Set<Int>) {

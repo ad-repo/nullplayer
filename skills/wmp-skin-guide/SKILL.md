@@ -120,6 +120,27 @@ selected by Phase 0 and must repeat its hard-stop/restart security gate before p
 - Both the skinned and app-authored unskinned WMP players use this same host. Custom-drawn controls
   publish accessibility children with stable `wmp.*` identifiers.
 
+## Phase 5 script, expression, and binding contracts
+
+- `WMPJScriptRuntime` is the only production route for skin JScript. It sends a versioned, bounded
+  JSON batch to a fresh `WMPScriptIsolationHelper` process. The compatibility bootstrap exposes only
+  the checked table in `docs/wmp-skin/compatibility.md`; it never bridges a native object.
+- Every batch has a parent deadline. Timeout, crash, protocol failure, allocation failure, or
+  teardown terminates and reaps the helper. The session then disables script, cancels timers, emits
+  one actionable diagnostic, and retains its last committed scene overrides.
+- Expression reads form a per-view dependency graph. Resolve in stable topological order and commit
+  one immutable scene. Missing/ambiguous IDs, cross-view reads, cycles, non-finite values, negative
+  sizes, and depth/pass overflow never partially update the visible scene.
+- Resizes evaluate from proposed view dimensions off-main. AppKit keeps drawing the last scene until
+  the resolved replacement is complete; never synchronously rendezvous with helper work.
+- `WMPObservablePropertyRegistry` owns both `wmpprop:` and `wmpenabled:`. Coalesce host snapshots,
+  retain committed values across batches, and tag origins so script echoes cannot create feedback.
+- Host timers enforce the Phase 0 count and period limits. Preferences are bounded and namespaced by
+  the SHA-256 of skin archive contents; reset only the active skin namespace.
+- Dispatch authored handlers in document order. Host changes use open, play, status, mode,
+  buffering, then reception order; input uses mouse-down, mouse-up, click/change semantics from the
+  Phase 4 capture model.
+
 ## Verification
 
 Use the committed original fixtures in `Tests/NullPlayerAppTests/Fixtures/WMPSkin/`. Run focused WMP

@@ -28,6 +28,9 @@ final class WMPScriptIsolation {
     let helperURL: URL
     let timeout: TimeInterval
     let terminationGrace: TimeInterval
+    private let processLock = NSLock()
+    private let terminationLock = NSLock()
+    private var activeProcesses: [Int32: Process] = [:]
 
     init(helperURL: URL, timeout: TimeInterval = 0.25, terminationGrace: TimeInterval = 0.1) {
         self.helperURL = helperURL
@@ -62,6 +65,14 @@ final class WMPScriptIsolation {
         do { try process.run() } catch {
             return .failed(WMPPhase0Diagnostic(code: .scriptCrashed, path: nil,
                                                detail: error.localizedDescription))
+        }
+        processLock.lock()
+        activeProcesses[process.processIdentifier] = process
+        processLock.unlock()
+        defer {
+            processLock.lock()
+            activeProcesses.removeValue(forKey: process.processIdentifier)
+            processLock.unlock()
         }
 
         var frame = Data()
@@ -116,11 +127,20 @@ final class WMPScriptIsolation {
     }
 
     private func terminate(_ process: Process) {
+        terminationLock.lock()
+        defer { terminationLock.unlock() }
         guard process.isRunning else { return }
         process.terminate()
         let deadline = Date().addingTimeInterval(terminationGrace)
         while process.isRunning && Date() < deadline { usleep(1_000) }
         if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
         process.waitUntilExit()
+    }
+
+    func cancelAll() {
+        processLock.lock()
+        let processes = Array(activeProcesses.values)
+        processLock.unlock()
+        processes.forEach(terminate)
     }
 }

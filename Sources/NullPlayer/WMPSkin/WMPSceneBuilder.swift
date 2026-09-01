@@ -14,16 +14,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
     /// UI caller initiates the transaction.
     func build(viewID: String, requestedSize: WMPSize? = nil,
                interactionState: WMPInteractionState = WMPInteractionState(),
-               dirtyNodeIDs: Set<Int>? = nil) async throws -> WMPScene {
+               dirtyNodeIDs: Set<Int>? = nil,
+               overrides: WMPSceneOverrides = .empty) async throws -> WMPScene {
         try await Task.detached(priority: .userInitiated) {
             try buildOffMain(viewID: viewID, requestedSize: requestedSize,
-                             interactionState: interactionState, dirtyNodeIDs: dirtyNodeIDs)
+                             interactionState: interactionState, dirtyNodeIDs: dirtyNodeIDs,
+                             overrides: overrides)
         }.value
     }
 
     private func buildOffMain(viewID: String, requestedSize: WMPSize?,
                               interactionState: WMPInteractionState,
-                              dirtyNodeIDs: Set<Int>?) throws -> WMPScene {
+                              dirtyNodeIDs: Set<Int>?, overrides: WMPSceneOverrides) throws -> WMPScene {
         guard let registration = loadedSkin.views.first(where: {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
         }) else {
@@ -56,6 +58,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
         var resolvedNodes = Set<Int>()
         var layoutResolver = WMPInitialLayoutResolver(graph: loadedSkin.graph, view: view, canvas: canvas)
 
+        func literalString(_ node: WMPNode, _ name: String) -> String? {
+            if let value = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
+                                                                        property: name.lowercased())] {
+                return value.string
+            }
+            guard let attribute = node.attribute(named: name),
+                  case let .literal(value) = attribute.value else { return nil }
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         func recordUnresolved(_ node: WMPNode, attribute: String, value: String) {
             let key = "\(node.stableID):\(attribute.lowercased())"
             guard unresolvedAttributes.insert(key).inserted else { return }
@@ -68,6 +80,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
         }
 
         func parseDimension(_ node: WMPNode, _ name: String) -> CGFloat? {
+            if let value = overrides.geometry[WMPScenePropertyAddress(stableID: node.stableID,
+                                                                      property: name.lowercased())],
+               value.isFinite { return value }
             guard let property = WMPInitialLayoutResolver.Property(rawValue: name.lowercased()) else { return nil }
             switch layoutResolver.resolve(node, property: property) {
             case let .value(value): return value
@@ -355,4 +370,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
         return leftZ == rightZ ? lhs.stableID < rhs.stableID : leftZ < rightZ
     }
 
+}
+
+struct WMPScenePropertyAddress: Hashable, Codable, Sendable {
+    let stableID: Int
+    let property: String
+}
+
+struct WMPSceneOverrides: Hashable, Codable, Sendable {
+    var geometry: [WMPScenePropertyAddress: CGFloat]
+    var properties: [WMPScenePropertyAddress: WMPJSONValue]
+
+    static let empty = WMPSceneOverrides(geometry: [:], properties: [:])
 }
