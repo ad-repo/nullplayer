@@ -1038,7 +1038,7 @@ final class WasabiSkinInitializer {
         ("Wasabi:TitleBar", "wasabi.titlebar"),
         (WasabiTitleBox.xuiTag, WasabiTitleBox.groupIdentifier),
         (WasabiTabSheet.xuiTag, WasabiTabSheet.groupIdentifier),
-    ]
+    ] + WasabiStandardFrames.conventionalXUITags
 
     /// The standard-library shells that can be reconstructed from conventional skin resources.
     ///
@@ -1065,24 +1065,39 @@ final class WasabiSkinInitializer {
                 middle: "wasabi.objectframe.center"
             )]
         case "wasabi.titlebar":
-            return [WalXMLNode(
-                name: "text",
-                attributes: [
-                    "id": "window.titlebar.title",
-                    "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
-                    "align": "center",
-                    // A point under the 11 default: text draws from the top of its box and CornerAmp's
-                    // title bar is 11px tall, where 11pt clips the descenders of "Playlist Editor".
-                    "fontsize": "10",
-                    "default": ":componentname",
-                    "font": "wasabi.font.default",
-                    "color": "wasabi.window.text",
-                ],
-                location: wasabiStandardLibrarySource
-            )]
+            return [titleTextNode(height: nil)]
         default:
             return []
         }
+    }
+
+    /// The window title, resolved from `:componentname` the way a skin-supplied title bar's own
+    /// `<text>` is. `wasabi.window.text` and `wasabi.font.default` are the conventional ids, and both
+    /// degrade (white, system font) when the skin defines neither.
+    ///
+    /// A standard frame we drew ourselves gets one too, confined to its title strip. It is expanded
+    /// onto the **instance** rather than into the shell's body, because the shell is also reachable
+    /// as a plain `inherit_group`/`<group>` base — EPS's notifier writes
+    /// `<group id="wasabi.standardframe.nostatusbar" …/>` and wants the empty base it asked for.
+    static func titleTextNode(height: Double?) -> WalXMLNode {
+        var attributes: [String: String] = [
+            "id": "window.titlebar.title",
+            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+            "align": "center",
+            // A point under the 11 default: text draws from the top of its box and CornerAmp's
+            // title bar is 11px tall, where 11pt clips the descenders of "Playlist Editor".
+            "fontsize": "10",
+            "default": ":componentname",
+            "font": "wasabi.font.default",
+            "color": "wasabi.window.text",
+        ]
+        if let height {
+            // A standard frame fills its whole window, so its title has to be confined to the strip
+            // rather than centred over the client area.
+            attributes["h"] = String(Int(height))
+            attributes["relath"] = "0"
+        }
+        return WalXMLNode(name: "text", attributes: attributes, location: wasabiStandardLibrarySource)
     }
 
     /// Winamp supplies these two group bodies, while modern skins supply the artwork under stable
@@ -1326,6 +1341,26 @@ final class WasabiSkinInitializer {
                                   createdCount: &createdCount,
                                   documentOrder: documentOrder, enclosingOrder: nodeOrder)
                 WasabiFrame.applyLayout(to: object)
+            }
+            // A `<Wasabi:StandardFrame:*>` the skin never defined. Winamp's own frame instantiates
+            // the `content=` group into its client area from `standardframe.maki`, and a skin that
+            // expects Winamp's frame ships neither the groupdef nor that script — so the group with
+            // all of the skin's artwork in it stayed out of the graph. `Winamp 3.0 Default` is every
+            // full-size layout of one such frame, which is why it rendered a blank white 275x116
+            // while its windowshade layouts (plain groups) drew fine (B95).
+            if WasabiStandardFrames.isStandardFrame(object), !claimedBySkin,
+               let content = WasabiStandardFrames.contentGroupNode(for: object, location: node.location) {
+                // The title strip first, so the client area draws over it rather than under it, and
+                // because `window.titlebar.title` is the one object such a skin addresses by name:
+                // `<sendparams target="window.titlebar.title" default="WINAMP"/>` is how `Winamp 3.0
+                // Default` names its own player, and with no such object the send lands nowhere.
+                let title = Self.titleTextNode(height: WasabiStandardFrames.titleHeight)
+                try createObjects(from: [title, content], parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
             }
             // A `<Wasabi:TitleBox>` names its body by group id the way a standard frame does, and
             // the object that would instantiate it lives in Winamp rather than in the skin. Without

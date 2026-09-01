@@ -17,6 +17,17 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: `Winamp 3.0 Default` was a blank white rectangle and now works** — Nullsoft's
+  own Winamp3 base skin loaded and then drew literally nothing, the only skin in the collection that
+  did. Winamp3-era skins expect the player itself to supply the window frame and its title-bar
+  controls, so the skin ships only what goes *inside* the frame — and with no frame to put it in,
+  every piece of the skin was left out of the window. All of it is there now: the player, equalizer,
+  playlist, video and thinger windows all draw, and the menu, minimize, windowshade and close buttons
+  are back in the title bar. Four other skins gain from the same fix — **TomK**'s photo gallery and
+  colour-theme windows were empty and now show their contents, **corneramp_redux** gets the menu and
+  close controls its windows were missing, and **Overdrive_2** and **jvc.tape** get their playlist
+  window titles. No other skin's appearance changes.
+
 - **Winamp Modern skins: eight skins that were drawing almost none of their own artwork now draw all
   of it** — Darjah 1, MoonLight, Pure Inspired, K-jr, the three DewyTears editions and WMP11-BlueVU
   build their players by pointing at image files inside the skin rather than by naming pieces of

@@ -18,7 +18,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B95 | **A skin that expects Wasabi's built-in `wasabi.button.*` / `wasabi.titlebar.*` chrome gets nothing.** Winamp3 base skins never declare those ids because the player supplied them; we ship no default set, so every full-size layout resolves 0 bitmaps and `Winamp 3.0 Default`'s `main/normal` renders **blank white**. Class C — missing host content, not wrong semantics | 4 skins reference undeclared ids; **1 fatal** (24 of 24 undeclared) ([M31]) | M | Measured |
 | B96 | **A container declared twice yields a second instance whose resource scope is empty.** Two causes, one symptom: a literal duplicate `id=` (WMP11-BlueVU's two `<container id="Meter">`) and a **double include** of the same file (jvc.tape includes `xml/pledit.xml` from both `skin.xml:17` and `xml/amp.xml:9`). The second instance resolves nothing — including the standard-frame `component.*` ids every other container in the same skin resolves — and reports the *first* instance's bitmap ids as missing. B75 is the script-side sibling of the include half | 3 skins ([M30]) | M | Measured |
 | B92 | **`@DEFAULTSKINPATH@` mis-expands, and nothing is mounted behind it.** `WalVirtualFileSystem.swift:72` assigns it bare while `SKINPATH`/`COLORTHEMESPATH` use `setVariable(…, trailingSeparator: true)`, so `@DEFAULTSKINPATH@xml/eq.xml` canonicalises to `/Skins/Defaultxml/eq.xml` — the concatenated name appears verbatim in the failure. canum does not load. Fixing the separator only moves the error to `'Default'`: no mount is established there either | 3 skins declare it, **1 live** (Bio-Nid's and Rika's are commented out) ([M28]) | S | Measured |
 | B93 | **The XML reader does not honour a UTF-16 BOM.** cpro2_dark_aluminum's `colorthemes.xml` is UTF-16LE; read as bytes every `<` scans as an open tag and no `</` ever matches, so the depth guard fires at `xmlDepthExceeded` and the skin is refused. The guard is right; the decoder never ran | 3 files / 3 skins, **1 fatal** — the other two are `languages/Wasabi.xml`, off the include path ([M27]) | S | Measured |
@@ -78,7 +77,6 @@ resolve to a live citation above.
 
   M23, the playlist-holder size sweep this row used to cite, is **deleted rather than archived**: it measured the wrong thing. Its finding is kept here because it is still true and still not the bug — the holder Ebonite allots is 227x172, the smallest in the corpus is micro at 140x69, and 27 of the 44 skins that expose one are under 260x180. See B78 for why holder size is innocent.
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
-- <a id="m31"></a>**M31:** per skin tree, take every `image=`/`downImage=` value matching `wasabi.(button|titlebar).*` and subtract the `<bitmap id="wasabi.…">` the same tree declares; the remainder is chrome the skin expects the *player* to supply. Measured 2026-08-31: **Winamp 3.0 Default 24 of 24 undeclared** (hence blank), Formamp 7 of 7, corneramp_redux 6 of 6, ZDL_Reel-To-Reel 2 of 12. Formamp and corneramp_redux load and render acceptably today, so a partly-undeclared set is survivable and only a wholly-undeclared one is fatal — which is why reach is 4 but severity is 1.
 - <a id="m30"></a>**M30:** per skin tree, case-fold the `id=` of every `<container>` and keep the duplicates. Measured 2026-08-31: **Ebonite_2_1** (`sc.alphaframe`) and **WMP11-BlueVU** (`meter`). That grep finds only the literal-duplicate half; the **double-include** half does not show up in it and must be found from the render dump, where one declaration prints twice in `RENDER-DUMP containers` — **jvc.tape.v0.5**, whose `xml/pledit.xml` is included from both `skin.xml:17` and `xml/amp.xml:9`. Three skins between the two shapes.
 - <a id="m27"></a>**M27:** find every `.xml` whose first two bytes are `ff fe` or `fe ff`. Measured 2026-08-31: **3 files** — `cpro2_dark_aluminum_final_by_victhor/colorthemes.xml` (fatal, it is on the include path) and `languages/Wasabi.xml` in both **Big Bento Modern** and **Big Bento Modern Windows 10 edition**, which load fine because nothing includes those. So the count overstates the blast radius: what matters is whether a UTF-16 file is reachable from `skin.xml`.
 - <a id="m28"></a>**M28:** `grep -rl 'DEFAULTSKINPATH' "$corpus" --include="*.xml"`, then **check whether the line is commented out** — that is the whole measurement. Three skins name it: canum uses it live (3 includes), while **Bio-Nid and Rika both have theirs inside a single `<!-- -->` spanning lines 15-20**, which is why they load today and canum does not.
@@ -89,45 +87,15 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
 
 ## Item detail
 
-The four entries below (B92, B93, B95 and B96) came out of one batch measurement of the **12 skins added
+The three entries below (B92, B93 and B96) came out of one batch measurement of the **12 skins added
 2026-08-30 and 2026-08-31**, profiled 2026-08-31 with `WinampModernRenderDumpTests` under
 `RENDER_BITMAPS` + `RENDER_SCRIPTS=bindings` and every layout PNG read. Grades from that batch:
-`cpro2_dark_aluminum` and `canum` do not load (**F**), `Winamp 3.0 Default` loads blank (**F**),
+`cpro2_dark_aluminum` and `canum` do not load (**F**), `Winamp 3.0 Default` loaded blank (**F**,
+fixed 2026-09-01 — it was a standard frame whose content group never entered the graph),
 `Darjah 1` **D**, `cpro_interface` / `nullsoft_media_player_10` / `jvc.tape` **C**, and
 `WMP11-BlueVU` / `MMD3-4-5` / `EPS_High-End` / `TRON Legacy` / `Firefox` **B**. **No live pass was
 run**, so nothing below has been driven under the mouse and the harness's absence of a component
 host means an empty *pane* is not evidence — only an empty *window* is.
-
----
-
-### B95
-
-- [ ] **B95. No default `wasabi.*` chrome bitmap set.** Winamp3-era skins reference
-      `wasabi.button.appmenu`, `wasabi.button.minimize`, `wasabi.button.winshade`,
-      `wasabi.titlebar.center.active` and siblings **without declaring them**, because Winamp
-      supplied those from Wasabi's built-in resources. We supply none.
-
-      `Winamp 3.0 Default` — Nullsoft's own *"Winamp3 Base Skin"* — is the fatal case, 24 of 24
-      references undeclared:
-
-      ```
-      BITMAPS main/normal:    resolved=0  missing=wasabi.button.appmenu … wasabi.button.winshade.pressed
-      BITMAPS eq/normal:      resolved=0
-      BITMAPS eq/advanced:    resolved=0
-      BITMAPS Pledit/normal:  resolved=0
-      BITMAPS Video/normal:   resolved=0
-      BITMAPS thinger/normal: resolved=0
-      ```
-
-      `main-normal.png` is a **completely blank white 275x116** — the only skin in the corpus that
-      loads and renders nothing at all. Its windowshade layouts partially resolve (`main/shade` 13,
-      `eq/shade` 5, `Pledit/shade` 8) because those use the skin's own artwork, which is what
-      isolates the cause to the undeclared set rather than to the skin.
-
-      **Severity is not reach here.** [M31] finds 4 skins referencing undeclared `wasabi.*` ids, but
-      Formamp (7 of 7) and corneramp_redux (6 of 6) both load and render acceptably today, so a
-      partly-missing set is survivable. Supplying a default set would also change what those two
-      draw — check them in the sweep before assuming this is additive.
 
 ---
 

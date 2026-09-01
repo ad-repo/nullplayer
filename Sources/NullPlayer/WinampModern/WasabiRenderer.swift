@@ -2005,6 +2005,14 @@ final class WasabiSceneRenderer {
            (object.typeName.lowercased().components(separatedBy: ":").last ?? "") == "text" {
             intrinsic.height = Double(resources.metrics.lineHeight(of: object))
         }
+        // A window-chrome button whose artwork Winamp supplied and the skin does not. It has no
+        // bitmap to size to, so it resolved to 0x0 and never appeared at all — `Winamp 3.0 Default`'s
+        // titlebar is four such buttons and had no menu, minimize, windowshade or close (B95).
+        if intrinsic == .zero, resources.bitmap(identifier: bitmapID) == nil,
+           let role = WasabiChromeButtons.role(of: object, bitmapID: bitmapID) {
+            if object.attributes["w"] == nil { intrinsic.width = Double(role.defaultSize.width) }
+            if object.attributes["h"] == nil { intrinsic.height = Double(role.defaultSize.height) }
+        }
         // A `<Wasabi:TitleBox>` that declares no `h` is as tall as its body needs (B67). Four of
         // impulse's five say `<Wasabi:TitleBox x="320" y="5" w="-325" relatw="1" …/>` and nothing
         // more, so the box resolved to no height, the negative-box guard below dropped it, and its
@@ -2305,6 +2313,13 @@ final class WasabiSceneRenderer {
             } else {
                 draw(bitmap, object: object, frame: node.frame, context: context)
             }
+        } else if let role = WasabiChromeButtons.role(
+                    of: object,
+                    bitmapID: resolvedBitmapID(for: object,
+                                               pressed: pressed == object.stableID,
+                                               hovered: hovered == object.stableID)) {
+            drawChromeButton(role, frame: node.frame, context: context,
+                             pressed: pressed == object.stableID)
         } else if Self.isTextButton(object) {
             drawTextButton(object, frame: node.frame, context: context,
                            pressed: pressed == object.stableID)
@@ -4410,11 +4425,15 @@ final class WasabiSceneRenderer {
     /// Deliberate exception to the identifier-only-shell rule (`wasabiStandardLibraryGroups`), which
     /// exists so we never invent artwork a skin did not ship. Three measured skins — CornerAmp, mmd3's
     /// big colour-theme window and Anexa — put a bare `<Wasabi:Button text="Switch">` under their
-    /// theme list, and **no** `.wal` ships `wasabi.button.*` bitmaps because in real Winamp the
-    /// standard library supplies them. So the choice is a plain border with the skin's own list colour
-    /// or a screen whose only working control is an undiscoverable double-click. Contained by
-    /// construction: a skin with its own button artwork resolves a bitmap and never reaches here
-    /// (mmd3's in-player drawer and multipass both ship theirs).
+    /// theme list, and such a button names **no `image=` at all**, so it resolves no bitmap whatever
+    /// the skin declares. So the choice is a plain border with the skin's own list colour or a screen
+    /// whose only working control is an undiscoverable double-click. Contained by construction: a
+    /// button with artwork resolves a bitmap and never reaches here (mmd3's in-player drawer and
+    /// multipass both ship theirs).
+    ///
+    /// This used to say no `.wal` ships `wasabi.button.*` bitmaps. That is false — 49 of the 70
+    /// corpus skins declare some, CornerAmp and Anexa included — and the containment never rested on
+    /// it. Corrected while measuring B95.
     static func isTextButton(_ object: WasabiObject) -> Bool {
         guard object.typeName.caseInsensitiveCompare("wasabi:button") == .orderedSame else { return false }
         return !(object.attributes["text"] ?? "").isEmpty
@@ -4436,6 +4455,28 @@ final class WasabiSceneRenderer {
         let inset = frame.insetBy(dx: 2, dy: max(0, (frame.height - 11) / 2))
         drawSurfaceText(label, in: inset, color: color, alignment: .center, pointSize: 9,
                         context: context)
+        context.restoreGState()
+    }
+
+    /// A window-chrome button — menu, minimize, windowshade, close — whose artwork is Winamp's.
+    ///
+    /// The same deliberate exception as `drawTextButton` above, and reached the same way: only after
+    /// the bitmap branch has failed, so a skin that ships the artwork draws its own and never comes
+    /// here. See `WasabiChromeButtons` for what the corpus actually references.
+    private func drawChromeButton(_ role: WasabiChromeButtons.Role, frame: CGRect,
+                                  context: CGContext, pressed: Bool) {
+        guard frame.width > 2, frame.height > 2 else { return }
+        let color = palette.listText
+        context.saveGState()
+        if pressed {
+            context.setFillColor(color.withAlphaComponent(0.25).cgColor)
+            context.fill(frame)
+        }
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(1)
+        context.setLineCap(.square)
+        context.addPath(WasabiChromeButtons.glyphPath(for: role, in: frame.insetBy(dx: 0.5, dy: 0.5)))
+        context.strokePath()
         context.restoreGState()
     }
 
@@ -5283,6 +5324,11 @@ final class WasabiSceneRenderer {
         // hit testing without owning a bitmap.
         if Self.isColorThemeList(object) || Self.isTextButton(object)
             || Self.isComponentBucket(object) { return true }
+        // A chrome button draws its own glyph in place of the artwork Winamp would have supplied
+        // (see `drawChromeButton`), so it has a region and has to be clickable. Its `action=` already
+        // makes it interactive; this is what stops the hit test rejecting it for owning no bitmap.
+        if resources.bitmap(identifier: bitmapID) == nil,
+           WasabiChromeButtons.role(of: object, bitmapID: bitmapID) != nil { return true }
         // A substituted Wasabi form widget paints a surface of its own — a check box's box, a
         // drop-down's frame, an edit's field — so it is opaque to hit testing without a bitmap. Its
         // primitive type already makes it interactive (`togglebutton`, `button`, `slider`).

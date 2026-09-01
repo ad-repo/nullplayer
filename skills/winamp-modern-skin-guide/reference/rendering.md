@@ -395,10 +395,40 @@ ahead of the playhead, which is precisely where a seek click lands. Phase 33.
 
 A deliberate exception to the identifier-only rule for the seeded Wasabi standard-library shells. Three
 measured skins (CornerAmp, mmd3's `ctsbig`, Anexa) put a bare `<Wasabi:Button text="Switch">` under
-their theme list, and **no** `.wal` ships `wasabi.button.*` artwork because in real Winamp the standard
-library supplies it. The renderer draws a 1px border in `palette.listText` with the label centred, but
+their theme list, and such a button names **no `image=` at all**, so it resolves no bitmap whatever
+the skin declares. (An earlier version of this note said no `.wal` ships `wasabi.button.*` artwork.
+That is wrong — **49 of the 70 corpus skins declare some**, Bio-Nid, Firefox and T800 116 ids each,
+and CornerAmp and Anexa are themselves among them. The containment was never the corpus-wide absence;
+it is the `text=` and no-bitmap test below. Corrected while measuring B95.) The renderer draws a 1px border in `palette.listText` with the label centred, but
 only when the instance resolves *no* bitmap and carries a non-empty `text=` — a skin with its own
 button artwork never reaches the fallback.
+
+##### Window-chrome buttons with no artwork (B95, 2026-09-01)
+
+The third instance of the same deliberate exception, and reached the same way — only after the
+bitmap branch has failed. A Winamp3-era skin writes
+`<button action="CLOSE" image="wasabi.button.exit"/>` and declares no `<bitmap>` for it, because the
+artwork lived in Wasabi's built-in resources rather than in the archive. Such a button resolved no
+image, **sized itself to 0x0** and vanished: `Winamp 3.0 Default` has 24 references and not one
+declaration, so its player had no menu, no minimize, no windowshade and no close.
+
+`WasabiChromeButtons` names the roles the corpus actually references — `appmenu`, `sysmenu`,
+`minimize`, `maximize`, `restore`, `winshade`, `close`, `exit`, `more`, `less` and the four
+`label.arrow.*` — and nothing else. An unresolved id under the prefix that is not one of them is
+left alone: this draws a known control, not a box around every id that failed to resolve. The state
+suffix (`.pressed`, `.active`, …) is stripped before the match, because a skin routinely writes the
+pressed id as the resting `image=` on one of a button's two alpha-gated copies.
+
+- **The default size is measured.** `Winamp 3.0 Default`'s three right-hand buttons sit at `x="230"`,
+  `x="244"` and `x="261"` in a 275-wide window, so each is 14 wide and the last ends flush with the
+  edge; the 9 is the title strip (`WasabiStandardFrames.titleHeight`) less the `y="3"` they declare,
+  twice. It applies **per axis and only where the skin states none** — a button with its own `w`/`h`
+  keeps them.
+- **It is opaque to hit testing.** The glyph is a real surface, so `isRenderable` accepts it; without
+  that the button drew and could not be clicked.
+- **Contained by construction.** A skin that ships the artwork resolves a bitmap and never reaches
+  here. Formamp declares 20 of the `wasabi.button.*` ids and corneramp_redux most of the rest, and
+  both keep every piece they ship.
 
 ##### `<Wasabi:TitleBox>` is a body, not just a border
 

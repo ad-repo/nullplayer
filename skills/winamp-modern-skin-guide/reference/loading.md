@@ -177,7 +177,47 @@ Group semantics worth knowing:
   - Two alias passes, and the order matters: `WasabiStandardFrames.conventionalXUITags` runs *before*
     seeding (its destinations are the skin's own groupdefs), `wasabiStandardLibraryXUITags` *after*
     (its destinations are the shells). Both only fill an *unclaimed* tag, so a skin's own `xuitag=`
-    always wins.
+    always wins. The standard-frame pairs are in **both** lists on purpose — a skin that declares
+    the groupdef is aliased to its own in the first pass, and one that declares none falls through
+    to the shell in the second. Before B95 they were only in the first, so a skin with no frame of
+    its own left `<Wasabi:StandardFrame:*>` resolving to *nothing at all*.
+
+#### A standard frame the skin never defined instantiates its own client area (B95, 2026-09-01)
+
+A `<Wasabi:StandardFrame:*>` **names its body by group id** — `content="player.content.group"` —
+and in real Winamp the frame's own `standardframe.maki` does the `newGroup(getParam("content"))`.
+A skin that ships that groupdef ships the script with it; a skin that expects Winamp's ships
+neither, so the named group never entered the graph at all. Not undrawn — **absent**, the same shape
+as [`WasabiTitleBox`](rendering.md) and `<Wasabi:Frame>`'s two panes.
+
+`Winamp 3.0 Default` — Nullsoft's own *"Winamp3 Base Skin"* — is every full-size layout of one such
+frame, and it measured **9 nodes, `resolved=0`**: a blank white 275x116, the only skin in the corpus
+that loaded and rendered nothing. Its windowshade layouts are plain groups and always drew fine,
+which is what isolates the cause to the frame rather than to the skin. B95 was filed against the
+missing `wasabi.*` chrome bitmaps; that is real but it is the *survivable* half — Formamp and
+corneramp_redux are missing part of the same set and render acceptably. The frame is the fatal half.
+
+`WasabiStandardFrames.contentGroupNode` supplies the client area and the initializer expands it onto
+the frame **instance**, beside the `<Wasabi:TitleBox>` and `<Wasabi:Frame>` expansions, gated on
+`!claimedBySkin`. Three things worth keeping:
+
+- **`contentInset` is measured, not chosen.** `Winamp 3.0 Default`'s `placeholder` sits at `6,5` in
+  its content group and lands at `11,20` in the skin's own `screenshot.png`, which puts the client
+  origin at `5,15`; its resize grip is a 16px sprite at `254,85`, so the client must be at least
+  270x101 inside a 275x116 window. That is the whole derivation of `(5, 15, -5, -15)`.
+- **The title strip goes on the instance, never in the shell's body.** The shell is also reachable
+  as an ordinary base — EPS's notifier writes
+  `<group id="wasabi.standardframe.nostatusbar" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>`
+  and wants the empty base it asked for. Putting the strip in `shellTemplateChildren` pushed a stray
+  object into it, and `testEveryOtherShellStaysIdentifierOnly` is the guard that caught it.
+- **`window.titlebar.title` is the one object such a skin addresses by name.**
+  `<sendparams target="window.titlebar.title" default="WINAMP"/>` is how `Winamp 3.0 Default` names
+  its own player, so the strip carries that id or the send lands nowhere.
+
+Reach when this landed: **5 skins, 18 layouts** — `Winamp 3.0 Default` (8 layouts, blank → fully
+drawn), TomK (`gallery` and `colorwnd`, empty windows → the image gallery and a working theme list),
+corneramp_redux (5), Overdrive_2 and jvc.tape (playlist titles). The other 31 skins and 531 layouts
+in the sweep are pixel-identical.
 
 **An undecodable image degrades; an oversized one still fails.** A `<bitmap>`/`<cursor>`/
 `<bitmapfont>` whose file *exists* but has no valid image metadata registers **without** its
