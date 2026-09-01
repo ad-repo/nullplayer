@@ -840,6 +840,17 @@ not looking at.
   `WindowManager.winampModernSurfaceStyle`, which is **nil in every other mode** (and nil until a
   skin loads), so classic mode runs the untouched classic path. A theme switch posts
   `.winampModernThemeDidChange`; the style is re-derived per draw, so a repaint is the whole job.
+- **Loading a skin posts it too, and that is not optional (B98).** A fallback window holds no
+  reference to the skin controller, so the notification is the *only* thing that can tell it the
+  palette moved — and a **skin change** moves the palette exactly as a theme switch does. Posted from
+  the end of `WinampModernMainWindowController.loadSkin(at:)`, on the failure path as well: a
+  placeholder has no palette, so those windows must fall back to their classic drawing rather than
+  keep painting a skin that is gone. Until B98 it was posted by `themeDidChange` and nothing else, so
+  switching skins reskinned everything the renderer draws and nothing NullPlayer draws; the Media
+  Library, the playlist and the equalizer kept the outgoing skin's chrome until the user closed and
+  reopened them, which rebuilt the view. **`PlexBrowserView` also caches its resolved style** (it
+  asks for one per string, ~77 times a frame) and drops that cache on this notification only, so for
+  the library it is a cache invalidation and not merely a repaint. Tests: `WinampModernB98Tests`.
 
 Hosted AppKit surfaces (`WinampModernLibrarySurface`) are **reconciled from `layout()`, never from
 `draw`** — creating and adding a subview inside a draw cycle is a re-entrant hierarchy mutation. A

@@ -377,6 +377,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             tearDownSkin()
             showPlaceholder(error.localizedDescription)
         }
+        // A new skin is a new palette, and NullPlayer's *own* windows — the Media Library, the
+        // playlist, the equalizer, the visualization windows — are still open in front of it wearing
+        // the outgoing skin's chrome. They have no handle on this controller, so they learn about a
+        // palette change exactly the way a colour-theme switch tells them (`themeDidChange`): the
+        // style is re-derived on the next draw, so a repaint is the whole job. Without this the only
+        // thing that reskinned them was closing and reopening, which rebuilt the view.
+        //
+        // Posted on the failure path too: the placeholder has no palette, so those windows must fall
+        // back to their classic drawing rather than keep painting a skin that is gone.
+        NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
     }
 
     /// Create one native window per visible non-main container. The main window owns the scripted

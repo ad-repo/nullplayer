@@ -2,6 +2,44 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B98 — switching skins leaves NullPlayer's own open windows in the outgoing skin — closed 2026-09-01
+
+- [x] **B98. A `.wal` skin change never reaches the surfaces NullPlayer draws itself.** Reported
+      2026-09-01: with the **Media Library** open, picking a different `.wal` skin reskins everything
+      the renderer draws and leaves the library — and the playlist, the equalizer, the visualization
+      windows — in the palette of the skin that just went away. Closing and reopening the window is
+      the only cure, because that rebuilds the view.
+
+      Reported and closed the same day, so it was never ranked in `TASKS.md`.
+
+      **Cause.** Those windows are painted from `WinampModernSurfaceStyle`, derived from the loaded
+      skin's `WasabiPalette`. None of them holds a reference to the skin controller, so the only
+      thing that can tell them the palette moved is `.winampModernThemeDidChange` — which was posted
+      by `WinampModernMainView.themeDidChange` (a **colour-theme** switch) and by nothing else.
+      `WinampModernMainWindowController.loadSkin(at:)` tears the old skin down and builds the new one
+      without announcing it. The library is the loudest case because `PlexBrowserView` *caches* its
+      resolved style — it asks for one per string, ~77 times a frame — and invalidates that cache on
+      this notification only, so it kept the old chrome even where a bare repaint would have shown
+      the new one.
+
+      **Fixed 2026-09-01** by posting `.winampModernThemeDidChange` at the end of `loadSkin(at:)`,
+      which is the signal every one of those views already handles correctly: re-derive the style,
+      repaint. Posted on the **failure** path too — a placeholder has no palette, so
+      `WindowManager.winampModernSurfaceStyle` is nil from there on and those windows have to fall
+      back to their classic drawing rather than keep painting a skin that no longer exists.
+
+      Confirmed live by the reporter before the tests were written. Classic and Original are
+      untouched by construction: the post is inside a `winampModern`-only controller, and no other
+      mode observes that notification.
+
+      Tests: `WinampModernB98Tests` — the load path announces, and so does the failure path. Both
+      were checked against the pre-fix source and fail there, so neither is vacuous. Rule written up
+      in [`reference/components.md`](../../skills/winamp-modern-skin-guide/reference/components.md)
+      → *Colours and hosted AppKit content*; the QA step is in
+      [`manual-qa-checklist.md`](../../skills/winamp-modern-skin-guide/manual-qa-checklist.md) §5.
+
+---
+
 ## B92 — `@DEFAULTSKINPATH@` mis-expands, and nothing is mounted behind it — closed 2026-09-01
 
 - [x] **B92. `@DEFAULTSKINPATH@` mis-expands, and nothing is mounted behind it.**
