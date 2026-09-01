@@ -903,6 +903,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         scripts.containerOriginQuery = { [weak self] id in
             self?.containerWindow(forID: id).map(Self.winampScreenOrigin(of:))
         }
+        // The other half of `getCurAppWidth`/`getCurAppHeight`. The origin above needs a coordinate
+        // flip and the size does not, which is why the two are separate queries rather than one frame.
+        scripts.playerWindowSizeRequested = { [weak self] in self?.skinView?.window?.frame.size }
     }
 
     /// The window backing a container id, resolved the way `containerActiveQuery` resolves it: the

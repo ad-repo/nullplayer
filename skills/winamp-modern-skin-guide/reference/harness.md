@@ -298,6 +298,35 @@ git stash -u && sweep base && git stash pop
 diff base/invariants.txt curr/invariants.txt
 ```
 
+**Redirect the run to a file and grep the *file*.** Piping the sweep straight into `grep` drops lines:
+the test binary's own stdout and the runner's interleave under a pipe, and whole blocks go missing
+without any error. Measured 2026-09-01 — Shield_Amp's `arrangement`/`containers`/`catalog`/`skin
+windows` lines and its entire `updateSystem` container vanished from a piped capture, reproducibly,
+and were present in the same build's redirected output. That reads exactly like a regression that
+dropped a container, and it is not one.
+
+```sh
+sweep() {  # $1 = output directory
+  mkdir -p "$1"
+  WINAMP_MODERN_WAL=~/Library/Application\ Support/NullPlayer/WinampModernSkins \
+  WINAMP_MODERN_RENDER_DUMP="$1/png" WINAMP_MODERN_RENDER_BITMAPS=1 \
+    swift test --filter WinampModernRenderDumpTests > "$1/raw.txt" 2>&1
+  grep -E "^(SKIN |RENDER-DUMP …)" "$1/raw.txt" > "$1/invariants.txt"
+}
+```
+
+Two more things worth checking before calling a sweep difference a regression:
+
+- **Run the one skin alone.** If its lines come back, the sweep capture is the problem, not the code.
+- **Run the same build twice.** Some skins are genuinely non-deterministic: Anexa's `main/shade`
+  draws an analogue clock from the wall clock, so it differs between two runs of one binary. Proving
+  that takes one extra sweep and settles it; assuming it does not.
+
+**Do not capture the baseline with `git stash`** — it relinks `.build` under the user's running app.
+Use a worktree (`git worktree add`), and copy the vendored `*.framework` and `*.dylib` from
+`.build/arm64-apple-macosx/debug/` into the worktree's matching directory or the test bundle will not
+load.
+
 Every archive prints **`SKIN <file.wal>`** first, which is what makes one flat capture readable: every
 other line is keyed by `<container>/<layout>`, and those are not unique across skins. A skin that
 fails to load prints `SKIN <file.wal> FAILED <error>` and the sweep carries on — one broken archive

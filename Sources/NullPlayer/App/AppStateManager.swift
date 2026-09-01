@@ -1322,10 +1322,30 @@ class AppStateManager {
                 // Restoring verbatim is what brought a 500×500 `.wal` window back as 376×182 (R1):
                 // the saved frame is honoured for position, but the window that owns it decides which
                 // sizes it can actually render.
-                let frame = controller.clampRestoredFrame(saved)
+                var frame = controller.clampRestoredFrame(saved)
                 if frame != saved {
                     NSLog("AppStateManager: clamped restored main frame %@ → %@",
                           NSStringFromRect(saved), NSStringFromRect(frame))
+                }
+                // A saved *size* the skin has to resize to be legal was never a size this skin had.
+                //
+                // `mainFrameForRestore` above only distrusts a frame saved under a **different**
+                // skin. A frame saved under this same skin in a session where it failed to load is
+                // trusted instead — and it is self-perpetuating, because restoring it is what the
+                // next save records. cPro2 Dark Aluminum graded "did not load" until B93, so every
+                // frame it ever saved is the unskinned 275×116 default; the skin sized its window to
+                // 800×600 on load and this restore put it back into a 275×200 box, on every launch.
+                //
+                // Position is still honoured — only the size is rejected, and only when the clamp
+                // proves the saved one could not have come from this skin. Winamp Modern only: the
+                // Classic and Original windows are not sized by a skin's own layout, so the signal
+                // does not exist there and their behaviour is untouched.
+                if wm.uiMode == .winampModern, frame.size != saved.size {
+                    NSLog("AppStateManager: saved main size %@ is not one %@ can render — keeping its own %@",
+                          NSStringFromSize(saved.size), loadedSkin ?? "(none)",
+                          NSStringFromSize(window.frame.size))
+                    frame = NSRect(x: frame.minX, y: frame.maxY - window.frame.height,
+                                   width: window.frame.width, height: window.frame.height)
                 }
                 window.setFrame(frame, display: true)
             }

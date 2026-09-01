@@ -32,6 +32,58 @@ feature instead of inferring semantics — `getARGBValue`'s BGRA channel order, 
 years-since-1900 scale, and the `isInvalid` probe idiom were all pinned that way rather than guessed.
 
 
+## Engine "two"
+
+Everything above is the `one` family, which every cPro skin in the corpus used until cPro2 Dark
+Aluminum was first measured (2026-09-01). A skin selects the family in **two** places and both must
+agree: `ClassicPro.xml`'s `<ClassicPro version="2.01" engine="two">`, and the `<include>` in
+`skin.xml` — `load-two.xml`, or `load-two_alpha.xml` for the drop-shadow variant.
+
+The `two` entry point pulls an include graph **disjoint** from `one`. Nothing measured on a
+cPro-Bento-family skin transfers automatically:
+
+| | `one` | `two` |
+|---|---|---|
+| player XML | `one/xml/player*.xml` | `two/xml/player{,-elements,-elements-sui,-shade,-shade-elements}.xml`, `standardframe.xml`, `window-overrides.xml` |
+| SUI / playlist | `xui/CentroSUI`, `PlaylistPro` | `xui/CentroSUI/_v2`, `PlaylistPro/_v2` (via `xui/xui-files_two.xml`) |
+| widgets | `widgets/Load/*` | `widgets/Load/v2/*`, `xml/widgets-manager-cpro2.xml` |
+| shadow | — | `two/xml/player-shadow.xml` (`main.shadow`), only under `load-two_alpha.xml` |
+| layout scripts | `one/scripts/player.m`, `shade.m` | `two/scripts/layout.m`, `playback-layout.m`, `shade{,-layout,-resizer}.m`, `info-text.m`, `info-seeker.m`, `presetpos.m`, `read-classicpro.m` |
+
+**The whole player is laid out from `System.onShowLayout`, and only from there.** `layout.m` places
+`two.screen` — the entire info + transport band — inside `fullScreen()`, and the only cold-start
+caller is `System.onShowLayout`, which the engine comments *"On cold start"*. The one line in
+`buildSkin()` that would otherwise set it is **commented out in the engine source**. A host that does
+not dispatch that event gets a skin whose bands sit at `y=0`, drawn over the titlebar, with a
+titlebar-height dead strip above the SUI — and no diagnostic anywhere, because every element parsed
+and every script ran.
+
+Its guard is `if(_layout==normal && !shade.isVisible())`, so a host must also answer `isVisible` on a
+**layout** by whether it is its container's *active* one. A container shows exactly one layout at a
+time; reporting the window's visibility for every layout it owns makes `normal` and `shade` both true
+and the cold start never runs.
+
+`fullScreen(false)` also seeds the window from `getPublicInt("cPro2.x", getCurAppLeft())` and the
+three siblings, so all four `getCurApp*` methods must exist **and answer in Winamp's screen space**
+(y downward). `presetpos.m`'s F9–F12 slots call the same four in one expression, so a missing
+`getCurAppWidth`/`getCurAppHeight` kills `saveFramePos()` on its third call and nothing is ever
+stored.
+
+**`<TextSettings>` styles are order-dependent.** `two/scripts/read-classicpro.m` receives each
+`<Style>` through `parser_onCallback` as two parallel lists and applies them with
+`if (name == "id") busyWith = value; else if (busyWith == …) apply` — so every attribute written
+*before* `id` is skipped by construction, and the engine comments that it relies on the id arriving
+first. The lists must be in **document** order; see
+[scripting.md](scripting.md) → *`parser_onCallback` hands its attributes in document order*.
+
+**`ClassicProEngineStore.validate` still hard-requires the `one` family**
+(`ClassicProEngine.swift`, *"does not provide the \"one\" family required by cPro-Bento"*). That was
+accurate when written and is now misleading: a `two`-only tree would be rejected even though the
+corpus has a skin that needs only `two`. It is not a live problem — the shipped ClassicPro 2.01
+installer contains **both** families, so the gate passes and `WINAMP_MODERN_ENGINE` need not be set
+at all (the shared store already resolves) — but if a `two`-only tree ever turns up, the gate and its
+message are what to change.
+
 ## The widget census: `ColorMgr.onLoaded` → `cProLoaded()`
 
 The engine's widgets — the Widgets Manager's list, and the SUI tabs a user widget adds — all hang off

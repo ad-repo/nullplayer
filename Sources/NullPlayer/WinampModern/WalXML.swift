@@ -11,14 +11,46 @@ struct WalXMLLimits: Equatable {
 final class WalXMLNode {
     let name: String
     private(set) var attributes: [String: String]
+    /// The attribute names in the order the document wrote them, lowercased, without duplicates.
+    ///
+    /// `attributes` is a dictionary and therefore unordered, which is fine for every lookup — but a
+    /// skin's `parser_onCallback` receives its attributes as two parallel **lists**, and Winamp fills
+    /// those in document order. ClassicPro's `read-classicpro.m` depends on it outright: it reads
+    /// each `<Style>` with `if (name == "id") busyWith = value; else if (busyWith == …) apply`, so
+    /// every attribute written before `id` is skipped. Handing it an alphabetised list put `id` at
+    /// position 4 of 10 and silently dropped `display`, `fontsize`, `forcefixed` and `h` from every
+    /// style in the file — which is why cPro2's clock lost `forcefixed="1"` and `fontsize="26"`, was
+    /// measured with the wrong metrics, and had its elapsed and total times laid out on top of each
+    /// other in the corner. The script even comments that it relies on the id arriving first.
+    ///
+    /// Empty for a node built in code rather than parsed; callers fall back to sorted order.
+    private(set) var attributeOrder: [String]
     let location: WalSourceLocation
     private(set) var children: [WalXMLNode]
 
-    init(name: String, attributes: [String: String], location: WalSourceLocation, children: [WalXMLNode] = []) {
+    init(name: String, attributes: [String: String], location: WalSourceLocation,
+         children: [WalXMLNode] = [], attributeOrder: [String] = []) {
         self.name = name
         self.attributes = attributes
+        self.attributeOrder = attributeOrder
         self.location = location
         self.children = children
+    }
+
+    /// The node's attributes as the document wrote them: document order where it is known, and
+    /// alphabetical as a stable fallback for a node assembled in code.
+    var orderedAttributes: [(key: String, value: String)] {
+        guard !attributeOrder.isEmpty else {
+            return attributes.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
+        }
+        var seen = Set<String>()
+        var ordered = attributeOrder.compactMap { name -> (key: String, value: String)? in
+            guard seen.insert(name).inserted, let value = attributes[name] else { return nil }
+            return (name, value)
+        }
+        // Anything added after parsing keeps a deterministic place at the end rather than vanishing.
+        ordered += attributes.keys.filter { !seen.contains($0) }.sorted().map { ($0, attributes[$0]!) }
+        return ordered
     }
 
     func attribute(_ name: String) -> String? { attributes[name.lowercased()] }
@@ -182,6 +214,7 @@ struct WalLenientXMLParser {
             }
 
             var attributes: [String: String] = [:]
+            var attributeOrder: [String] = []
             var selfClosing = false
             var closed = false
             while cursor < chars.count {
@@ -220,7 +253,11 @@ struct WalLenientXMLParser {
                         attrValue = Self.unescape(String(chars[valueStart..<cursor]))
                     }
                 }
-                if !attrName.isEmpty { attributes[attrName] = attrValue }
+                if !attrName.isEmpty {
+                    if attributes.updateValue(attrValue, forKey: attrName) == nil {
+                        attributeOrder.append(attrName)
+                    }
+                }
                 // A stray '/' that does not close the tag matches no branch above and would
                 // otherwise leave the cursor parked forever. Skip it so the scan always advances.
                 if cursor == iterationStart { cursor += 1 }
@@ -230,7 +267,8 @@ struct WalLenientXMLParser {
             }
 
             let node = WalXMLNode(name: name, attributes: attributes,
-                                  location: WalSourceLocation(path: path, line: tagLine, column: tagColumn))
+                                  location: WalSourceLocation(path: path, line: tagLine, column: tagColumn),
+                                  attributeOrder: attributeOrder)
             nodeCount += 1
             guard nodeCount <= maximumNodeCount else {
                 throw WalFailure(WalDiagnostic(.expandedNodeLimitExceeded, "XML contains more than \(maximumNodeCount) nodes before include expansion.", location: node.location))

@@ -288,3 +288,33 @@ returns early (`visible` is `context.boundingBoxOfClipPath ∩ frame`, read befo
 on the corpus: 310 images, 305 identical, the 4 Bento `main-normal`s the fix, Anexa's nondeterministic
 `main-shade` discounted.
 
+
+## `forcefixed` reserves a width; it does not monospace the glyphs
+
+The reservation is the point: it stops a readout's box jittering as the digits change. The string
+itself is drawn with the font's own advances, from the reserved room's aligned edge —
+`WasabiTextMetrics.fixedPitch` still supplies the *measurement*, so `getTextWidth()` and any box a
+skin sizes from it are unchanged.
+
+Drawing each glyph centred in a widest-digit cell was the earlier reading, and cPro2 Dark Aluminum
+rules it out on evidence rather than taste. `info-text.m` places the total time at
+`trackTime.getTextWidth() - 4 + 21` while the elapsed time sits at `x = 21` — a deliberate 4px tuck
+into the elapsed time's *reserved* box, so the two boxes overlap by 4px **whatever** the measurement
+returns. (Widening the cell only slides the whole group left; it cannot open the gap. That was tried,
+and reverted.) Under cell drawing the final digit fills its cell, the ink runs to the box edge, and
+the `/` lands on top of it for *every* value and *every* cell width — clearing a 4px tuck by centring
+would need a cell 8px wider than the glyph on each side. The archive's own `screenshot.png` shows
+`2:16 / 3:56` with a clear gap. Only a proportionally drawn string inside a fixed reservation
+produces it.
+
+**A clock run is unaffected and must stay that way.** `display="time"` / `timeelapsed"` / `songlength`
+goes through `clockRun`, which keeps its per-field cells — that is what holds Big Bento Modern's
+digits in their columns across 9:59 → 10:00, and it is a separately measured case. The corpus check
+is Ebonite_2_1, whose `1 : 13` clock is byte-identical across this change while its `khz :44` label
+became `khz:44`: the colon had been forced into a digit-width cell and floated off the word it
+belongs to. Shield_Amp's `kbps :320` → `kbps: 320` is the same correction.
+
+**Beware `display=` that is not a display binding.** ClassicPro's `<TextSettings>` uses `display` as a
+right-margin *number* (`display="4"` = "move the text 4px away from the right side") and reads it back
+with `getXmlParam("display")`. So a ClassicPro time readout is `forcefixed` but is **not** a clock
+run, and anything keyed on `isClockDisplay` will not see it.

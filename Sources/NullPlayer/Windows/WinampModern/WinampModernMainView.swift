@@ -1783,7 +1783,7 @@ final class WinampModernMainView: NSView {
         if host.playbackState != lastPlaybackState { updatePlaybackState() }
         if duration > 0 {
             let posted = Int32(max(0, min(255, current / duration * 255)))
-            for object in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenSeek") {
+            for object in positionListeners {
                 _ = try? scripts.dispatch(object: object, event: "onpostedposition", arguments: [.integer(posted)])
             }
         }
@@ -1802,6 +1802,44 @@ final class WinampModernMainView: NSView {
 
     /// The boxes of everything whose drawing follows the playback clock: an elapsed-time readout, a
     /// seek slider's thumb, a seek progress bar. Cached with the other rect scans.
+    /// The objects Winamp posts the play position to, ten times a second.
+    ///
+    /// This used to be `graph.objects(xmlID: "HiddenSeek")` alone — stock Winamp Modern's own name
+    /// for its off-screen seek slider — so a skin that calls its seek slider anything else never
+    /// heard the clock. ClassicPro engine "two" hangs its entire seek fill off
+    /// `two.info.seeker.slider.0`'s `onPostedPosition`, and in cPro2 Dark Aluminum the seek bar *is*
+    /// the whole top panel: it never advanced while a track played. Dragging it still worked, which
+    /// is what made this look like a paint bug rather than a missing event — a drag is the user's own
+    /// value change, and only the clock comes through here.
+    ///
+    /// The rule is the one `timeDependentRects` already uses to decide what repaints from the clock:
+    /// a seek slider is `action="SEEK"`, whatever it is named. `HiddenSeek` stays in the union so a
+    /// skin that names one without declaring the action keeps working; the ids are deduplicated
+    /// because stock declares both a `Seeker` and a `SeekerGhost` and a doubled post is a doubled
+    /// handler chain.
+    private var positionListeners: [WasabiObject] {
+        if let positionListenerCache { return positionListenerCache }
+        var seen: Set<WasabiObjectID> = []
+        var found: [WasabiObject] = []
+        func consider(_ object: WasabiObject) {
+            let isSeekSlider = object.typeName.caseInsensitiveCompare("slider") == .orderedSame
+                && object.attributes["action"]?.lowercased() == "seek"
+            if isSeekSlider, seen.insert(object.stableID).inserted { found.append(object) }
+            object.children.forEach(consider)
+        }
+        renderer.loadedSkin.runtime.graph.roots.forEach(consider)
+        for named in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenSeek")
+        where seen.insert(named.stableID).inserted {
+            found.append(named)
+        }
+        positionListenerCache = found
+        return found
+    }
+
+    /// Cleared with the skin, not with the layout: the graph a skin declares does not change when a
+    /// different layout is activated, and this is read ten times a second while a track plays.
+    private var positionListenerCache: [WasabiObject]?
+
     func timeDependentRects() -> [NSRect] {
         if let timeRectsCache { return timeRectsCache }
         let rects = renderer.sceneNodes().compactMap { node -> NSRect? in

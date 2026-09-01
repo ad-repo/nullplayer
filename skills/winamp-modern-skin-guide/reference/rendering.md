@@ -777,3 +777,47 @@ and is gated on `uiMode.controllerFamily == .winampModern`.
 zero box and cannot be clicked — `autoWidth` answers only for `<text>`, `<songticker>` and check
 boxes. winampmodern566 and The_Nokia_5220 are both affected (12 declarations each); ClassicPro is
 not, because it points `autowidthsource` at a `<text>`. Open as **B79**.
+
+## A declared-empty group clips to nothing — it is a reveal window
+
+`w="0"` on a group whose box the skin **declared** is not a missing answer, it is the answer. Wasabi's
+progress-reveal idiom is a sized group the script widens from 0 with the full-width "filled" artwork
+parked inside it, and the group's box is the aperture that artwork shows through.
+
+`append(…)` used to fall back to the *parent's* clip whenever the resolved box was empty
+(`parentClip.intersection(resolved.isEmpty ? parentClip : resolved)`), so all of the artwork painted
+at once. cPro2 Dark Aluminum is the measured case and it is spectacular, because in that skin the
+whole top panel *is* the seek control: `two.info.seeker.active` (`w="0" h="40"`) and
+`two.info.seeker.finder` (`w="0"`, `alpha="175"`) each hold a 550px lit layer. Unclipped, both painted
+across the entire info band, so it read as two flat colour blocks with a hard seam that **jumped to
+wherever the pointer went** — reported as *"clicking the top area recolours the UI"* — and the bar
+could never reflect the track position, because the width it is drawn from meant nothing.
+`action="SEEK"` on the slider over it worked the whole time, which is why clicking moved playback
+while the paint did not follow.
+
+**Only a *declared* box does this.** A group whose height we inferred, or failed to, keeps the
+inherited clip — the same reason `isSizedGroup` gates ordinary clipping: clipping children to a guess
+erases content that is really there, which is a worse failure than the overhang it prevents. The
+empty clip is built as an explicit zero-size rect pinned inside the parent clip rather than
+`CGRect.null`, so `intersects` and `CGContext.clip(to:)` both behave.
+
+The same bug was quietly damaging `211786-Cpro_Winamp_Modern`, whose beat-vis bars spilled out of
+their box across the window chrome; it is not a cPro2-only shape.
+
+## `autoheightsource` sizes a plain `<group>`, not only a `<Wasabi:TitleBox>`
+
+It was read for the title box alone, so every other group carrying it resolved to **no height**. That
+is invisible at first glance, because a group does not clip to its own box — the children still draw
+where they always did.
+
+What it breaks is `onResize`. A zero-height group is not a resize target, so a script hung on the
+group's own `onResize` never runs. ClassicPro engine two's whole transport band is
+`<group id="two.playback" autoheightsource="two.playback.left">` with no `h`, and
+`playback-layout.maki`'s `g.onResize` is what centres the transport strip (`w/2 − 112`), picks the
+normal/mini/micro band from the window width, and places the volume group. With it dead the buttons
+stayed hard left at their declared `x=8`, the visualization sat on top of them at the same x, and the
+volume slider never appeared — a layout bug with no missing element and no diagnostic.
+
+Both sources are the ones Wasabi resolves any auto height from, and both answer the child's **bottom**
+rather than its own height: an `autoheightsource="<id>"` naming a descendant, else the lowest edge any
+child reaches (`contentBottom`).

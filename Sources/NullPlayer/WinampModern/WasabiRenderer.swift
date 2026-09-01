@@ -2021,6 +2021,25 @@ final class WasabiSceneRenderer {
            let height = titleBoxAutoHeight(of: object) {
             intrinsic.height = Double(height)
         }
+        // `autoheightsource="<id>"` on a plain `<group>` is the same rule the title box already uses:
+        // the group is as tall as the bottom of the child it names. It was only ever read for a
+        // `<Wasabi:TitleBox>`, so every other group carrying it resolved to **no height**.
+        //
+        // ClassicPro engine "two" is the measured case. Its whole transport band is
+        // `<group id="two.playback" autoheightsource="two.playback.left">` with no `h`, so it came out
+        // 0 tall — and a zero-height group is not a resize target, so `playback-layout.maki`'s
+        // `g.onResize` never ran. That handler is what centres the transport strip
+        // (`g_buttons.x = w/2 - 112`), picks the normal/mini/micro band from the window width, and
+        // places the volume group; with it dead the buttons stayed hard left at their declared `x=8`,
+        // the visualization sat on top of them at the same x, and the volume slider never appeared.
+        // The children still drew, because a group does not clip to its own box — which is why this
+        // read as a layout bug rather than a missing group.
+        if object.attributes["h"] == nil,
+           object.typeName.caseInsensitiveCompare("group") == .orderedSame,
+           object.attributes["autoheightsource"] != nil,
+           let bottom = contentBottom(of: object), bottom > 0 {
+            intrinsic.height = Double(bottom)
+        }
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
@@ -2058,11 +2077,36 @@ final class WasabiSceneRenderer {
         // layout — whose `thumb` is the 44×1012 knob *sheet*, and a slider centres its thumb on its
         // track, so without this the whole sheet painted a column of knobs across the window.
         if !includingHidden, !resolved.isEmpty, !resolved.intersects(parentClip) { return }
-        let clip = parentClip.intersection(resolved.isEmpty ? parentClip : resolved)
         nodes.append(WasabiSceneNode(object: object, frame: resolved, clip: parentClip,
                                      bitmapID: bitmapID, parentFrame: isRoot ? resolved : parentFrame,
                                      inheritedAlpha: inheritedAlpha))
-        let childClip = clipsChildren(object) || isFramePane(object) ? clip : parentClip
+        // A group that **declared** its own box clips to it even when that box is empty. A width of
+        // zero is not a missing answer, it is the answer: Wasabi's progress-reveal idiom is a sized
+        // group the script widens from 0 with the full-width "filled" artwork parked inside it, and
+        // falling back to the parent's clip there revealed the whole thing at once.
+        //
+        // cPro2 Dark Aluminum's seek bar is the measured case, and in that skin the whole top panel
+        // *is* the seek control: `two.info.seeker.active` (`w="0" h="40"`) and
+        // `two.info.seeker.finder` (`w="0"`, `alpha="175"`) each hold a 550px lit layer. Unclipped,
+        // both painted across the entire info band, so the band read as two flat colour blocks with a
+        // hard seam, the seam jumped to wherever the pointer went, and the bar could never reflect
+        // the track position — the reveal window it is drawn from was being ignored, so its width
+        // meant nothing. `action="SEEK"` on the slider over it worked the whole time, which is why
+        // clicking moved playback while the paint did not follow.
+        //
+        // Only a *declared* box does this. A group whose height we inferred (or failed to) keeps the
+        // inherited clip, because clipping children to a guess erases content that is really there —
+        // the same reason `isSizedGroup` gates ordinary clipping.
+        let childClip: CGRect
+        if clipsChildren(object) || isFramePane(object) {
+            childClip = resolved.isEmpty
+                ? CGRect(x: min(max(resolved.minX, parentClip.minX), parentClip.maxX),
+                         y: min(max(resolved.minY, parentClip.minY), parentClip.maxY),
+                         width: 0, height: 0)
+                : parentClip.intersection(resolved)
+        } else {
+            childClip = parentClip
+        }
         let childAlpha = inheritedAlpha * Self.alphaFraction(of: object)
         // A container a script has scrolled lays its children out against a box shifted *up* by the
         // offset; the clip stays on the unscrolled box, so content leaves through the top and arrives
@@ -2982,24 +3026,25 @@ final class WasabiSceneRenderer {
                     withAttributes: cell.centred ? centred : leading)
                 origin += cell.width
             }
-        } else if let pitch {
-            var origin: CGFloat
-            switch alignment {
-            case .right: origin = drawFrame.maxX - measured
-            case .center: origin = drawFrame.midX - measured / 2
-            default: origin = drawFrame.minX
-            }
-            // Each glyph is centred in its own cell, which is what keeps a `1` in the same column as
-            // an `8` — the point of asking for fixed pitch in the first place.
-            let cellAttributes = attributes.merging([.paragraphStyle: centredParagraph]) { _, new in new }
-            for character in text {
-                let width = character == ":" ? pitch.colon : pitch.cell
-                (String(character) as NSString).draw(
-                    in: CGRect(x: origin, y: drawFrame.minY, width: width, height: drawFrame.height),
-                    withAttributes: cellAttributes)
-                origin += width
-            }
         } else {
+            // `forcefixed` outside a clock run reserves a **width**; it does not monospace the glyphs.
+            // `measured` above is already the fixed-pitch width, so the box a skin sizes from
+            // `getTextWidth()` stays put as the digits change — which is the jitter `forcefixed`
+            // exists to stop — while the string itself is drawn with the font's own advances, from
+            // that reserved room's aligned edge.
+            //
+            // Drawing each glyph centred in a widest-digit cell was the earlier reading, and cPro2
+            // Dark Aluminum rules it out. `info-text.m` places the total time at
+            // `trackTime.getTextWidth() - 4 + 21` — a deliberate 4px tuck into the elapsed time's
+            // reserved box — and the author's own `screenshot.png` shows a clear gap between `2:16`
+            // and the `/`. Under cell drawing the final digit fills its cell, so the ink runs to the
+            // box edge and the separator lands on top of it *for every value and every cell width*:
+            // clearing a 4px tuck by centring would need a cell 8px wider than the glyph on each
+            // side. Only a proportionally drawn string inside a fixed reservation produces the gap.
+            //
+            // A clock run (`display="time"`) is unaffected: it is handled above and keeps its cells,
+            // which is what holds Big Bento Modern's digits in their columns across 9:59 → 10:00.
+            //
             // `NSString.draw(in:)` lays the string out *inside* the rect and cuts it there, so the
             // context clip above is not the only scissor — the rect is one too. Give it the room the
             // string actually measures and let the clip decide what shows, which is what makes the

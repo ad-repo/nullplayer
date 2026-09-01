@@ -544,6 +544,33 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         deliverXUIParams(forSubtreeOf: loadedSkin.runtime.graph.roots)
         if !skinLevel.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: skinLevel) }
         dispatchColorManagerLoaded()
+        dispatchColdStartLayoutShown()
+    }
+
+    /// `System.onShowLayout(<layout>)` for the window that comes up with the skin.
+    ///
+    /// Winamp shows the main player's layout as the last step of loading a skin, and a script that
+    /// lays the window out from that event has no other signal that it may start. Nothing here
+    /// dispatched it at all, so every such script was dead.
+    ///
+    /// ClassicPro engine "two" is the measured case. `two/scripts/layout.m` places `two.screen` —
+    /// the entire info + transport band — only from `fullScreen()`, whose sole cold-start caller is
+    /// `System.onShowLayout`, commented in the engine as *"On cold start"*; the one line in
+    /// `buildSkin()` that would otherwise set it is commented out. Without the event `two.screen`
+    /// kept its declared default of `y=0`: the song title and transport row drew on top of the
+    /// titlebar, and a 28px dead strip opened above the SUI, which is `cpro.sui`'s hard-coded
+    /// `y="98"` — titlebar 28 + info 40 + playback 30 — with nothing beneath it.
+    ///
+    /// Only the **main player** is announced. Every other container opens on request, and telling a
+    /// skin that a window it has not been asked to show is on screen is a worse answer than silence.
+    private func dispatchColdStartLayoutShown() {
+        guard let main = loadedSkin.runtime.graph.roots.first(where: {
+            $0.typeName.caseInsensitiveCompare("container") == .orderedSame &&
+            $0.xmlID?.caseInsensitiveCompare("main") == .orderedSame
+        }),
+              let layoutID = activeLayoutByContainer[main.stableID],
+              let layout = loadedSkin.runtime.graph.object(withID: layoutID) else { return }
+        _ = try? dispatchSystem(event: "onshowlayout", arguments: [objectValue(layout)])
     }
 
     /// `ColorMgr.onLoaded` — Winamp's "the skin has finished loading" callback, and the one event a
@@ -2607,8 +2634,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "getmonitorheight": .init(argumentCount: 0, returnKind: .integer),
             "getmonitorleft": .init(argumentCount: 0, returnKind: .integer),
             "getmonitortop": .init(argumentCount: 0, returnKind: .integer),
+            // The player window's own box. `getCurAppWidth`/`getCurAppHeight` were missing while
+            // their two siblings were present, and `two/scripts/presetpos.m` calls all four in one
+            // expression — `saveFramePos()` died on the third call, so the F9–F12 preset positions
+            // stored nothing and `gotoFramePos` could only ever restore its fallback.
             "getcurappleft": .init(argumentCount: 0, returnKind: .integer),
             "getcurapptop": .init(argumentCount: 0, returnKind: .integer),
+            "getcurappwidth": .init(argumentCount: 0, returnKind: .integer),
+            "getcurappheight": .init(argumentCount: 0, returnKind: .integer),
             "getruntimeversion": .init(argumentCount: 0, returnKind: .integer),
             "getskinname": .init(argumentCount: 0, returnKind: .string),
             // `System.getSettingsPath()` — where the player keeps its own configuration. Arity 0,
@@ -3043,8 +3076,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             return .integer(Self.screenDimension(monitorSizeRequested?()?.height
                                                   ?? NSScreen.main?.frame.height))
         case "getmonitorleft", "getmonitortop": return .integer(0)
-        case "getcurappleft": return .integer(Int32(NSApp.mainWindow?.frame.minX ?? 0))
-        case "getcurapptop": return .integer(Int32(NSApp.mainWindow?.frame.minY ?? 0))
+        case "getcurappleft": return .integer(Self.appFrameDimension(playerWindowFrame?.minX))
+        case "getcurapptop": return .integer(Self.appFrameDimension(playerWindowFrame?.minY))
+        case "getcurappwidth": return .integer(Self.appFrameDimension(playerWindowFrame?.width))
+        case "getcurappheight": return .integer(Self.appFrameDimension(playerWindowFrame?.height))
         case "getmouseposx": return .integer(Int32(clamping: Int((mousePositionRequested?().x ?? 0).rounded())))
         case "getmouseposy": return .integer(Int32(clamping: Int((mousePositionRequested?().y ?? 0).rounded())))
         case "atan": return .float(atan(arguments[0].doubleValue))
@@ -4605,7 +4640,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             let here = components + [node.name]
             if callbacks.contains(where: { Self.parserPath($0, matches: here) }) {
                 reported += 1
-                let attributes = node.attributes.sorted { $0.key < $1.key }
+                // Document order, not alphabetical: a `parser_onCallback` body reads these two lists
+                // positionally and ClassicPro's keys its whole apply loop on reaching `id` first.
+                // See `WalXMLNode.attributeOrder`.
+                let attributes = node.orderedAttributes
                 dynamicObjects[names.id]?.items = attributes.map { .string($0.key) }
                 dynamicObjects[values.id]?.items = attributes.map { .string($0.value) }
                 _ = try? dispatch(target: MakiObjectReference(.dynamic(id)),
@@ -5018,22 +5056,69 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// `GuiObject::isVisible()` answers for the object itself, and walking the group chain broke
     /// cPro-Bento's tab system, whose script shows a tab page whose parent group is still hidden
     /// (B22). A closed *window* is a different question, and it is the one Defix asks.
+    /// The player window's box in **Winamp's screen space** — y measured downward from the top of the
+    /// screen the window is on — or `nil` when no host has answered (the headless harness).
+    ///
+    /// The obvious `NSApp.mainWindow?.frame` is wrong twice over. `NSApp` is an implicitly-unwrapped
+    /// global that is **nil** until an `NSApplication` exists, so reading it traps in the headless
+    /// harness rather than answering; and AppKit's `minY` is the window's *bottom* measured upward,
+    /// which is the opposite of the coordinate every other window read in this runtime answers in
+    /// (`getLeft`/`getTop` go through `containerOriginQuery`, which the controller fills from
+    /// `winampScreenOrigin`). ClassicPro seeds `normal.resize(x, y, …)` from `getCurAppTop()` when
+    /// the user has no stored position, so an upward y put the player wherever the flip landed.
+    ///
+    /// Both faults were unreachable until `System.onShowLayout` began to be dispatched: `fullScreen()`
+    /// is the only caller, and nothing ran it.
+    private var playerWindowFrame: CGRect? {
+        guard let origin = containerOriginQuery?(Self.playerContainerID),
+              let size = playerWindowSizeRequested?() else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+
+    /// The id Winamp gives the player's own container. The same literal the topology keys `isMainPlayer` on.
+    private static let playerContainerID = "main"
+
+    /// The player window's size in logical points. Paired with `containerOriginQuery` rather than
+    /// folded into it, because the origin needs a coordinate flip and the size does not.
+    var playerWindowSizeRequested: (() -> CGSize?)?
+
+    /// One edge of that frame as MAKI sees it: clamped, and 0 when there is no window to measure.
+    private static func appFrameDimension(_ value: CGFloat?) -> Int32 {
+        guard let value, value.isFinite else { return 0 }
+        return Int32(clamping: Int(value.rounded()))
+    }
+
     private func effectiveVisibility(of object: WasabiObject) -> Bool {
+        let hosted = enclosingWindowID(of: object).flatMap { containerVisibilityQuery?($0) }
+        // Nothing inside a closed window is on screen, whatever its own attribute still says.
+        // Defix's `ML` round button asks the media-library tab page this before deciding what
+        // its click means; with the SUI window shut and the page's stale `visible="1"` answering
+        // yes, every press took the "already showing — close it" branch, so the button could
+        // only ever shut a window the menu had opened (B22).
+        if hosted == false { return false }
+        // A container shows exactly **one** layout at a time, so a layout that is not its
+        // container's active one is not on screen however open the window is. Answering for the
+        // window alone made `normal` and `shade` both report visible simultaneously, which is a
+        // state no Winamp skin can be in, and a skin that tells the two apart then read the wrong
+        // one: ClassicPro engine "two" lays its whole player out from
+        // `if(_layout==normal && !shade.isVisible())` on cold start, and with `shade` answering yes
+        // that branch never ran — `two.screen` kept its default `y=0`, the info and transport bands
+        // drew over the titlebar, and a 28px dead strip sat above the SUI (cPro2 Dark Aluminum).
+        //
+        // This is deliberately answered from the graph rather than from the host, so it holds in
+        // the headless harness too, where no container visibility is reported at all.
+        if object.typeName.caseInsensitiveCompare("layout") == .orderedSame,
+           let container = Self.enclosingContainer(of: object),
+           let active = activeLayoutByContainer[container.stableID] {
+            return active == object.stableID
+        }
         // A layout answers for its window as its container does, and for the same reason: the window
         // is the thing that is actually on screen, and the host can close it (a dismissed
         // `autoclose` popup) without the graph attribute moving. Big Bento asks its search results'
         // *layout* whether it is open before re-showing it, so a stale `visible="1"` there left the
         // skin believing a window the user had dismissed was still up — and the next search filled a
         // list nobody could see (BB31).
-        if let hosted = enclosingWindowID(of: object).flatMap({ containerVisibilityQuery?($0) }) {
-            // Nothing inside a closed window is on screen, whatever its own attribute still says.
-            // Defix's `ML` round button asks the media-library tab page this before deciding what
-            // its click means; with the SUI window shut and the page's stale `visible="1"` answering
-            // yes, every press took the "already showing — close it" branch, so the button could
-            // only ever shut a window the menu had opened (B22).
-            guard hosted else { return false }
-            if Self.isWindowObject(object) { return true }
-        }
+        if hosted == true, Self.isWindowObject(object) { return true }
         return isVisible(object)
     }
 
@@ -5360,6 +5445,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         graphDidMutate = nil
         popupPresenter = nil
         layoutSwitchRequested = nil
+        playerWindowSizeRequested = nil
         layoutResizeRequested = nil
         uiScaleRequested = nil
         monitorSizeRequested = nil

@@ -17,6 +17,26 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: cPro2 Dark Aluminum now works** — this skin loaded for the first time only
+  in the previous fix, and once it did, almost nothing about it was right. The song title and
+  transport buttons were drawn on top of the window's own titlebar, with an empty grey strip below
+  them where the tabs should start; the transport buttons sat jammed against the left edge with the
+  visualization drawn on top of them and no volume slider at all; clicking anywhere along the top
+  panel made a large section of it change colour, with the boundary jumping to wherever you had just
+  clicked; the seek bar never moved while a track played, even though clicking it did jump the music;
+  the elapsed and total times were printed on top of each other in the corner, with the bitrate
+  underneath running through the stereo icon; and the player reopened in a tiny 275×200 box on every
+  launch however you had resized it. All of that is fixed. The whole top panel is this skin's seek
+  bar — it fills as the track plays, and clicking anywhere in it seeks — and the six tabs, embedded
+  playlist, library and video, the bolt button's command menu and the F9–F12 position presets all
+  work.
+
+- **Winamp Modern skins: a few other skins picked up small corrections on the way** — Big Bento
+  Modern's titlebar showed the "restore" icon on a window that was not maximized and now shows
+  "maximize"; Ebonite and Shield_Amp printed `khz :44` and `kbps :320` with the colon floating away
+  from its label, and now print `khz:44` and `kbps: 320`; and cPro Winamp Modern's beat visualizer no
+  longer spills its bars out of their panel across the window frame.
+
 - **Winamp Modern skins: an empty video window no longer opens with the skin** — on Itemskin a black
   panel with the skin's Fullscreen / 1x / 2x / Options buttons appeared at every launch with nothing
   in it. Once you had watched a video in the skin's own video window, NullPlayer treated that window

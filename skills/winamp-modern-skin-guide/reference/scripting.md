@@ -801,6 +801,80 @@ carries the flag. Clamping it is what pulled Itemskin's library frame 82px off i
 tiler had already put the content window's right edge past the screen, and only the frame — the one of
 the pair a script moves — was pushed back.
 
+### `System.onShowLayout` / `onHideLayout` — the only signal a layout script gets
+
+Winamp shows the main player's layout as the last step of loading a skin, and a script that lays the
+window out from that event has **no other signal that it may start**. Nothing dispatched it here at
+all until 2026-09-01, so every such script was dead — silently, because the elements all parsed and
+every `onScriptLoaded` ran.
+
+ClassicPro engine "two" is the measured case and it is total: `two/scripts/layout.m` places the whole
+info + transport band only from `fullScreen()`, whose sole cold-start caller is this event. See
+[classicpro.md](classicpro.md) → *Engine "two"*.
+
+`WinampModernScriptRuntime.start()` announces the **main player only**, after `onScriptLoaded` and
+`ColorMgr.onLoaded`. Every other container opens on request, and telling a skin that a window it has
+not been asked to show is on screen is a worse answer than silence.
+
+### `isVisible()` on a *layout* means "is this the container's active one"
+
+A container shows exactly **one** layout at a time, so `normal` and `shade` must never both report
+visible — that is a state no Winamp skin can be in. Answering for the window alone (a layout *is* a
+window object, so it inherited the container's answer) made both true, and a skin that tells the two
+apart then read the wrong one: engine two's cold start is gated on
+`if(_layout==normal && !shade.isVisible())` and never ran.
+
+Answered from the graph (`activeLayoutByContainer`) rather than from the host, so it holds in the
+headless harness too, where no container visibility is reported at all. A container with no recorded
+active layout keeps the old behaviour rather than answering "invisible" for everything it owns.
+
+### `onPostedPosition` goes to every `<slider action="SEEK">`, not to an id
+
+The play clock used to post to `graph.objects(xmlID: "HiddenSeek")` — stock Winamp Modern's own name
+for its off-screen seek slider — so a skin that calls its seek slider anything else never heard the
+clock. ClassicPro engine two hangs its entire seek fill off `two.info.seeker.slider.0`.
+
+**Dragging such a bar still works while it never advances**, which is what makes this look like a
+paint bug: a drag is the *user's* value change and only the clock comes through this event. The rule
+is the one `timeDependentRects()` already uses to decide what repaints from the clock — a seek slider
+is `action="SEEK"`, whatever it is named. `HiddenSeek` stays in the union, and the ids are
+deduplicated because stock declares both a `Seeker` and a `SeekerGhost`.
+
+### `parser_onCallback` hands its attributes in **document** order
+
+The two parallel lists a `parser_onCallback` receives are read *positionally*, and a skin may key its
+whole apply loop on reaching a particular one. ClassicPro's `read-classicpro.m` does exactly that:
+
+```
+if (strlower(paramname.enumItem(i)) == "id") busyWith = paramvalue.enumItem(i);
+else if (busyWith == "normal.info.timebig.text") { … apply … }
+```
+
+Everything written *before* `id` is skipped by construction, and the engine comments that it relies on
+the id arriving first — which it does, because the skin writes `id` as the first attribute.
+
+`WalXMLNode.attributes` is a dictionary and therefore unordered; the callback used to sort it
+alphabetically for determinism. That put `id` at index 4 of 10 and silently dropped `display`,
+`fontsize`, `forcefixed` and `h` from **every** `<Style>` in the file. `WalXMLNode.attributeOrder`
+now records document order at parse time and `orderedAttributes` is what the callback walks; a node
+built in code rather than parsed still falls back to sorted order.
+
+The failure mode is worth remembering in general: a partially-applied style is far harder to spot than
+one that never applied, because the attributes that *did* land make it look like the mechanism works.
+
+### `getCurAppLeft/Top/Width/Height` answer in Winamp's screen space
+
+All four report the player window's box with **y measured downward** from the top of its screen, the
+same coordinate every other window read in this runtime answers in (they go through
+`containerOriginQuery`, which the controller fills from `winampScreenOrigin`). The obvious
+`NSApp.mainWindow?.frame` is wrong twice over: AppKit's `minY` is the window's *bottom* measured
+upward, and `NSApp` is an implicitly-unwrapped global that is **nil** until an `NSApplication` exists,
+so reading it *traps* in the headless harness rather than answering.
+
+ClassicPro seeds `normal.resize(x, y, …)` from `getCurAppTop()` when the user has no stored position,
+so an upward y put the player wherever the flip landed. Both faults were unreachable until
+`System.onShowLayout` began to be dispatched — `fullScreen()` is the only caller.
+
 ### `onMove()` is dispatched to the window objects only
 
 A resize is a change *inside* the scene, so `onResize` reaches every object whose own box moved. A
