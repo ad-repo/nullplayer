@@ -17,10 +17,21 @@ struct WasabiBitmap {
     ///
     /// MMD3's rotary knobs are driven by a `Map`: a grayscale bitmap whose value at the cursor *is*
     /// the knob's angle, so the script needs the colour channels, not just the mask.
+    ///
+    /// The colour is the one **stored** in the file, not the one you would see composited. Sampling
+    /// by drawing into a `premultipliedLast` context multiplies every channel by alpha, so a pixel
+    /// with `alpha = 0` reads back as pure black however much colour it actually carries — and skins
+    /// keep real data under transparent pixels. ClassicPro's classic-vis colour swatch is the
+    /// measured case: `<bitmap id="cpro2.color.read" file="playback_area.png" x="282" y="62" w="3"
+    /// h="18"/>` stores eight of its sixteen band colours in rows whose alpha is 0, so
+    /// `playback-layout.m`'s `getARGBValue` loop read `0,0,0` for every other band and the built-in
+    /// spectrum analyzer came out striped with black — or, on a colour theme whose remaining bands
+    /// were dark too, invisible.
     func pixel(at point: CGPoint) -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8)? {
         let x = Int(point.x.rounded(.down))
         let y = Int(point.y.rounded(.down))
         guard x >= 0, y >= 0, x < width, y < height else { return nil }
+        if let stored = storedPixel(x: x, y: y) { return stored }
         var pixel = [UInt8](repeating: 0, count: 4)
         pixel.withUnsafeMutableBytes { bytes in
             guard let context = CGContext(data: bytes.baseAddress, width: 1, height: 1,
@@ -31,6 +42,41 @@ struct WasabiBitmap {
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
         return (pixel[0], pixel[1], pixel[2], pixel[3])
+    }
+
+    /// The pixel exactly as the decoded file holds it, for the ordinary 8-bit-per-channel formats.
+    ///
+    /// `nil` for anything else — an indexed or 16-bit image, or a layout whose component order is not
+    /// one of the four below — and the caller falls back to the compositing sampler. That fallback is
+    /// lossy for transparent pixels, which is unavoidable once the data has been multiplied out;
+    /// PNGs, which is what every skin ships, decode to unpremultiplied `.last` and take this path.
+    private func storedPixel(x: Int, y: Int) -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8)? {
+        guard image.bitsPerComponent == 8, image.bitsPerPixel == 32,
+              let data = image.dataProvider?.data else { return nil }
+        let length = CFDataGetLength(data)
+        let offset = y * image.bytesPerRow + x * 4
+        guard offset >= 0, offset + 4 <= length, let base = CFDataGetBytePtr(data) else { return nil }
+        var component = (0..<4).map { base[offset + $0] }
+        // Normalise to the big-endian component order the alpha-info names describe.
+        if image.bitmapInfo.intersection(.byteOrderMask) == .byteOrder32Little { component.reverse() }
+        let red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8
+        switch image.alphaInfo {
+        case .last, .premultipliedLast, .noneSkipLast:
+            red = component[0]; green = component[1]; blue = component[2]
+            alpha = image.alphaInfo == .noneSkipLast ? 255 : component[3]
+        case .first, .premultipliedFirst, .noneSkipFirst:
+            alpha = image.alphaInfo == .noneSkipFirst ? 255 : component[0]
+            red = component[1]; green = component[2]; blue = component[3]
+        default:
+            return nil
+        }
+        guard image.alphaInfo == .premultipliedLast || image.alphaInfo == .premultipliedFirst else {
+            return (red, green, blue, alpha)
+        }
+        // Already multiplied out: recover what can be recovered. At alpha 0 nothing can.
+        guard alpha > 0 else { return (0, 0, 0, 0) }
+        let restore: (UInt8) -> UInt8 = { UInt8(min(255, Int($0) * 255 / Int(alpha))) }
+        return (restore(red), restore(green), restore(blue), alpha)
     }
 }
 

@@ -31,6 +31,14 @@
   playlist, library and video, the bolt button's command menu and the F9–F12 position presets all
   work.
 
+- **Winamp Modern skins: the built-in spectrum analyzer is no longer striped or missing** — on the
+  cPro family the analyzer drew with alternate bars dimmed, which on some colour themes made those
+  bars disappear into the background and left the analyzer looking half missing. Its sixteen colours
+  are a bottom-to-top gradient shared by every bar — the fine horizontal banding the classic Winamp
+  analyzer has — and they were being spread left to right across the row instead, one per bar. On
+  cPro2 Dark Aluminum a second fault put black lines through the bars: that skin stores half its
+  gradient in fully transparent pixels, and those were being read as black.
+
 - **Winamp Modern skins: a few other skins picked up small corrections on the way** — Big Bento
   Modern's titlebar showed the "restore" icon on a window that was not maximized and now shows
   "maximize"; Ebonite and Shield_Amp printed `khz :44` and `kbps :320` with the colon floating away

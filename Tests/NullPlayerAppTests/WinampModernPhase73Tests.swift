@@ -101,15 +101,27 @@ final class WinampModernPhase73Tests: XCTestCase {
     }
 
     /// The three `coloring` modes have to be visibly different, which is the whole reason the menu
-    /// item exists: by band index, by the bar's own height, or one colour throughout.
-    func testColoringPicksTheBandByIndexByHeightOrNotAtAll() {
+    /// item exists: a vertical ramp, by the bar's own height, or one colour throughout.
+    ///
+    /// **This test asserted the opposite of `normal` until 2026-09-01** — that the sixteen colours ran
+    /// left to right across the row, one per bar. That was never measured; it sounds plausible and the
+    /// default skins ramp smoothly enough that either reading looks like a gradient. It is wrong:
+    /// classic `viscolor.txt` entries 2–17 are a bottom-to-top gradient over the analyzer box, the
+    /// count is fixed at sixteen while the number of bars follows `bandwidth`, and ClassicPro's ramp
+    /// bitmap alternates bright and dim rows for the LED scanline inside each bar. Across the row
+    /// instead, that dimmed every other *bar* — cPro_MMD's analyzer read as striped, and on a colour
+    /// theme whose dim value sat near the background the alternate bars disappeared.
+    func testColoringRampsVerticallyByHeightOrNotAtAll() {
         var attributes: [String: String] = [:]
         for band in 1...16 { attributes["colorband\(band)"] = "\(band),0,0" }
 
         let normal = style(attributes)
-        XCTAssertEqual(red(normal.barColor(index: 0, count: 16, level: 1)), 1)
-        XCTAssertEqual(red(normal.barColor(index: 15, count: 16, level: 0)), 16,
-                       "by band, whatever the height")
+        XCTAssertEqual(red(normal.rampColor(atHeightFraction: 0)), 1, "colorband1 sits on the floor")
+        XCTAssertEqual(red(normal.rampColor(atHeightFraction: 0.99)), 16, "colorband16 at the top")
+        // The bar's index in the row does not enter into it.
+        XCTAssertEqual(red(normal.barColor(index: 0, count: 16, level: 0.99)),
+                       red(normal.barColor(index: 15, count: 16, level: 0.99)),
+                       "two bars of the same height are the same colour, wherever they sit")
 
         attributes["coloring"] = "Fire"
         let fire = style(attributes)

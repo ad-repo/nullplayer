@@ -116,13 +116,15 @@ struct WasabiVisStyle {
     }
 
     /// The colour of the analyzer bar at `index` of `count`, at height `level`.
+    ///
+    /// For `normal` this is the **top** of the bar's own ramp; the bar itself is painted by
+    /// `fillRamped`, and this single answer is what a peak cap falls back to when the skin declares
+    /// no `colorbandpeak`.
     func barColor(index: Int, count: Int, level: CGFloat) -> CGColor {
         guard !bandColors.isEmpty else { return WasabiVisStyle.white }
         switch coloring {
         case .normal:
-            // Colour by band, which is what a skin's sixteen `colorband` values are cut for: the
-            // gradient runs left to right across the row.
-            return bandColors[min(bandColors.count - 1, index * bandColors.count / max(1, count))]
+            return rampColor(atHeightFraction: level)
         case .fire:
             // Colour by the bar's own height, so a loud band lights the top of the ramp wherever it
             // sits in the row.
@@ -130,6 +132,49 @@ struct WasabiVisStyle {
                                   max(0, Int(level * CGFloat(bandColors.count))))]
         case .line:
             return bandColors[0]
+        }
+    }
+
+    /// One step of the analyzer's **vertical** ramp, at a fraction of the box's height.
+    ///
+    /// Winamp's sixteen `colorband` values are a bottom-to-top gradient over the analyzer *box* —
+    /// classic `viscolor.txt` entries 2–17, in that order — so every bar shares one ramp and a bar's
+    /// colour at a given row is the same whatever its height or its position in the row.
+    ///
+    /// They are **not** one colour per bar. That reading survived because it sounds plausible and
+    /// because the default skins ramp smoothly enough that either looks like a gradient, but it is
+    /// ruled out three ways: the count is fixed at sixteen while the number of bars follows
+    /// `bandwidth` (75 for `thin`, so sixteen colours would paint sixteen wide blocks across the
+    /// row); `colorbandpeak` is a single colour for a cap that can sit at any height; and the corpus
+    /// swatches are authored for it. ClassicPro reads its ramp out of a 3×18 bitmap column whose rows
+    /// **alternate** bright and dim — the classic LED scanline within each bar. Mapped across the row
+    /// instead, that made every other *bar* dim: cPro_MMD's analyzer came out striped, and on a
+    /// colour theme whose dim value was near the background the alternate bars vanished, which is
+    /// what "the analyzer is missing" was.
+    func rampColor(atHeightFraction fraction: CGFloat) -> CGColor {
+        guard !bandColors.isEmpty else { return WasabiVisStyle.white }
+        let step = Int(min(1, max(0, fraction)) * CGFloat(bandColors.count))
+        return bandColors[min(bandColors.count - 1, step)]
+    }
+
+    /// Paint one bar as that ramp, in as many slices as the skin declared colours.
+    ///
+    /// The ramp is laid over the **box**, not over the bar, so a short bar shows the bottom of the
+    /// gradient rather than a squashed copy of the whole thing — which is what keeps the scanlines
+    /// lined up across bars of different heights.
+    func fillRamped(bar: CGRect, boxBottom: CGFloat, boxHeight: CGFloat, in context: CGContext) {
+        guard !bandColors.isEmpty, bar.height > 0, boxHeight > 0 else { return }
+        let slice = boxHeight / CGFloat(bandColors.count)
+        for step in bandColors.indices {
+            // The context is the renderer's, with y increasing downward, so step 0 is the slice
+            // sitting on the bottom edge and later steps climb toward the top.
+            let top = boxBottom - CGFloat(step + 1) * slice
+            let bottom = boxBottom - CGFloat(step) * slice
+            let y = max(top, bar.minY)
+            let height = min(bottom, bar.maxY) - y
+            guard height > 0 else { continue }
+            context.setFillColor(bandColors[step])
+            context.fill(CGRect(x: bar.minX, y: y, width: bar.width, height: height))
         }
     }
 
@@ -351,10 +396,16 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
                 : max(level, previous - barStep)
             state.bars[index] = bar
             state.peaks[index] = max(bar, state.peaks[index] - peakStep)
-            context.setFillColor(style.barColor(index: index, count: count, level: bar))
             let (x, barWidth) = columns(index)
-            context.fill(CGRect(x: x, y: frame.maxY - bar * frame.height,
-                                width: barWidth, height: bar * frame.height))
+            let barRect = CGRect(x: x, y: frame.maxY - bar * frame.height,
+                                 width: barWidth, height: bar * frame.height)
+            if style.coloring == .normal {
+                style.fillRamped(bar: barRect, boxBottom: frame.maxY,
+                                 boxHeight: frame.height, in: context)
+            } else {
+                context.setFillColor(style.barColor(index: index, count: count, level: bar))
+                context.fill(barRect)
+            }
             // **A cap draws only once it has cleared its bar by a visible gap**, not merely once
             // `peaks > bar`. That test is true the instant a bar falls by a fraction of a pixel, and
             // the cap it paints then touches the bar top — which is not a floating cap at all, it is

@@ -84,6 +84,15 @@ Visualization, Web Reader, Now Playing.
   nothing instantiates it. macOS draws its own window shadow.
 - **`beatvis.overlay`** is unresolved, as on every cPro skin — the skin ships no such bitmap.
 
+### Working (continued)
+
+- **The built-in spectrum analyzer** draws its sixteen-step ramp. This skin keeps eight of those
+  sixteen colours in swatch rows whose **alpha is 0** (`cpro2.color.read`, a 3x18 slice of
+  `playback_area.png` at 282,62), so a `Map` that samples composited rather than stored pixels reads
+  `0,0,0` for every other band — the analyzer came out with black scanlines through it. No
+  `one`-family cPro skin has a transparent swatch row, so this half of the defect was cPro2's alone.
+  See [reference/rendering/vis.md](../reference/rendering/vis.md).
+
 ### Traps this skin sets
 
 - **Nothing lays out until `System.onShowLayout` fires.** This was never dispatched anywhere in the

@@ -357,3 +357,51 @@ none:
   `analyzerPeaks` store — a `<component>` holder and a `<vis>` are different objects, so the keys
   cannot collide.
 
+
+## The sixteen `colorband` colours are a **vertical** ramp, not one colour per bar
+
+`colorband1`…`colorband16` are classic `viscolor.txt` entries 2–17: a bottom-to-top gradient over the
+analyzer **box**, shared by every bar. `colorband1` is the row sitting on the floor. A bar is painted
+as slices of that ramp (`WasabiVisStyle.fillRamped`), so two bars of the same height are the same
+colour wherever they sit in the row, and the ramp is laid over the box rather than over each bar —
+which is what keeps the bands lined up across bars of different heights.
+
+They were mapped **across the row**, one colour per bar, until 2026-09-01. That reading sounds
+plausible and survives on the default skins, whose ramps are smooth enough that either looks like a
+gradient. Three things rule it out:
+
+- **The count is fixed at sixteen while the number of bars is not.** `bandwidth="thin"` draws far more
+  (75 in the corpus), so sixteen colours painted sixteen wide blocks across the row.
+- **`colorbandpeak` is a single colour** for a cap that can sit at any height — it only makes sense
+  against a ramp the cap is read out of.
+- **The corpus swatches are authored for it.** ClassicPro reads its ramp out of a 3×18 bitmap column
+  whose rows deliberately **alternate** bright and dim: up the box that is the LED scanline inside
+  each bar, which is what the classic analyzer looks like.
+
+Across the row instead, that alternation dimmed every other *bar*: cPro_MMD's analyzer read as
+striped, and on a colour theme whose dim value sat near the background the alternate bars vanished
+entirely — reported together as "the analyzer is striped, and on some themes it is missing".
+
+`coloring=` picks between three readings and only `normal` is the ramp: `fire` colours the whole bar
+by its own height (a loud band lights the top of the ramp wherever it sits), and `line` is
+`colorband1` throughout.
+
+## A `Map` samples the **stored** pixel, including under full transparency
+
+`WasabiBitmap.pixel(at:)` reads the decoded file's bytes directly. Sampling by drawing into a
+`premultipliedLast` context multiplies every channel by alpha, so a pixel with `alpha = 0` reads back
+as pure black however much colour it carries — and skins keep real data under transparent pixels.
+
+ClassicPro engine two is the measured case: `<bitmap id="cpro2.color.read" file="playback_area.png"
+x="282" y="62" w="3" h="18"/>` stores eight of its sixteen band colours in rows whose alpha is 0, so
+`playback-layout.m`'s `getARGBValue` loop answered `0,0,0` for every other band and half the ramp went
+black. **No `one`-family cPro skin has a transparent swatch row**, which is why this half of the
+report only ever showed on cPro2.
+
+PNGs decode to unpremultiplied `.last`, so every skin takes the direct path; an exotic format falls
+back to the compositing sampler, which stays lossy for transparent pixels because the data has
+already been multiplied out. `alpha(at:)` is unaffected either way — only the colour channels were
+ever wrong.
+
+When a script reads colour out of a bitmap, check the swatch's **alpha** before believing the values:
+a swatch is authoring data, not artwork, and there is no reason for its pixels to be opaque.

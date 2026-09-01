@@ -50,10 +50,24 @@ final class WinampModernPhase22Tests: XCTestCase {
                        "the skin's one-stroke band colour, not the white default")
     }
 
+    /// The sixteen band colours are a **vertical** ramp over the box — classic `viscolor.txt` entries
+    /// 2–17, bottom to top — so `colorband1` is the row sitting on the floor of the analyzer and not
+    /// the leftmost bar. This test probed `(1, 10)` for it until 2026-09-01, which only passed while
+    /// the colours were mapped across the row; that mapping is what made ClassicPro's alternating
+    /// ramp dim every other bar instead of drawing scanlines inside each one.
     func testAPerBandColourStillWinsOverColorAllBands() throws {
         let pixels = try render(visAttributes: #"colorallbands="0,0,255" colorband1="255,0,0""#)
-        XCTAssertEqual(pixel(pixels, x: 1, y: 10), [255, 0, 0, 255], "band 1 keeps its own colour")
-        XCTAssertEqual(pixel(pixels, x: 34, y: 10), [0, 0, 255, 255], "the rest fall back")
+        XCTAssertEqual(pixel(pixels, x: 1, y: 19), [255, 0, 0, 255],
+                       "band 1 keeps its own colour, on the bottom row of the box")
+        XCTAssertEqual(pixel(pixels, x: 1, y: 10), [0, 0, 255, 255],
+                       "the rest of the ramp falls back to colorallbands")
+    }
+
+    /// And the ramp is the same for every bar, which is the half the old mapping got wrong.
+    func testTheRampIsIdenticalInEveryColumn() throws {
+        let pixels = try render(visAttributes: #"colorallbands="0,0,255" colorband1="255,0,0""#)
+        XCTAssertEqual(pixel(pixels, x: 1, y: 19), pixel(pixels, x: 34, y: 19))
+        XCTAssertEqual(pixel(pixels, x: 1, y: 10), pixel(pixels, x: 34, y: 10))
     }
 
     /// Rika's actual declaration: black at 50/255, which is a shading over its art rather than a
