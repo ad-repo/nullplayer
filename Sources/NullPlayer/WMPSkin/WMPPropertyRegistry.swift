@@ -24,7 +24,7 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
             node.attributes.compactMap { attribute in
                 guard case let .binding(kind, path) = attribute.value else { return nil }
                 return Binding(address: .init(stableID: node.stableID,
-                    property: kind == .enabled ? "enabled" : attribute.name.lowercased()), kind: kind, path: path)
+                    property: attribute.name.lowercased()), kind: kind, path: path)
             }
         }
     }

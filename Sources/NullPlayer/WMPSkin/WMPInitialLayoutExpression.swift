@@ -111,7 +111,10 @@ struct WMPInitialLayoutResolver {
         } else if reference.object?.caseInsensitiveCompare("view") == .orderedSame {
             target = view
         } else {
-            let matches = graph.nodes(id: reference.object ?? "")
+            // WMP IDs are scoped to a VIEW. Real multi-view skins commonly reuse IDs such as
+            // `svTop`, `seek`, and `volume`; treating those as theme-global makes otherwise valid
+            // geometry ambiguous and drops whole pieces of the active view.
+            let matches = graph.nodes(id: reference.object ?? "").filter(isInActiveView)
             guard matches.count == 1, let match = matches.first else {
                 throw WMPInitialLayoutExpressionError(
                     matches.isEmpty ? "unknown geometry object '\(reference.object ?? "")'"
@@ -126,6 +129,16 @@ struct WMPInitialLayoutResolver {
         case let .value(value): return value
         case let .unresolved(reason): throw WMPInitialLayoutExpressionError(reason)
         }
+    }
+
+    private func isInActiveView(_ node: WMPNode) -> Bool {
+        var current: WMPNode? = node
+        while let candidate = current {
+            if candidate === view { return true }
+            if candidate.kind == .view { return false }
+            current = candidate.parent
+        }
+        return false
     }
 
     private func validated(_ value: CGFloat, property: Property) -> Resolution {

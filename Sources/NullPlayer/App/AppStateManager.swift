@@ -765,9 +765,9 @@ class AppStateManager {
     /// Apply settings state (skin, volume, EQ, windows) - no playlist
     private func applySettingsState(_ state: AppState, completion: (() -> Void)? = nil) {
         let wm = WindowManager.shared
-        // DEBUG command-line mode selection is an explicit launch override. Session restoration
+        // A diagnostic command-line mode selection is an explicit launch override. Session restoration
         // may restore state within that mode, but must not replace the requested controller family.
-        let restoredMode = PlayerUIMode.debugArgumentOverride ?? state.restoredUIMode
+        let restoredMode = PlayerUIMode.argumentOverride ?? state.restoredUIMode
 
         if restoredMode == .wmp, state.restoredUIMode == .wmp {
             let importer = WMPSkinImporter()

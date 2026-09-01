@@ -80,4 +80,53 @@ final class WMPGeometryTests: XCTestCase {
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
         XCTAssertEqual(scene.commands.compactMap(\.nodeID), ["back", "front"])
     }
+
+    func testGeometryReferencesResolveIDsWithinTheActiveView() async throws {
+        let xml = """
+        <THEME>
+          <VIEW id="full" width="100" height="40">
+            <SUBVIEW id="bar" left="0" top="0" width="80" height="12"/>
+            <SUBVIEW id="art" left="0" top="0" width="80" height="JScript:bar.height;"/>
+          </VIEW>
+          <VIEW id="tiny" width="60" height="20">
+            <SUBVIEW id="bar" left="0" top="0" width="50" height="7"/>
+            <SUBVIEW id="art" left="0" top="0" width="50" height="JScript:bar.height;"/>
+          </VIEW>
+        </THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let full = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "full")
+        let tiny = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "tiny")
+        let fullArt = try XCTUnwrap(skin.views.first { $0.id == "full" }?.node.children.first { $0.xmlID == "art" })
+        let tinyArt = try XCTUnwrap(skin.views.first { $0.id == "tiny" }?.node.children.first { $0.xmlID == "art" })
+
+        XCTAssertEqual(full.geometries[fullArt.stableID]?.absoluteFrame.height, 12)
+        XCTAssertEqual(tiny.geometries[tinyArt.stableID]?.absoluteFrame.height, 7)
+        XCTAssertFalse(full.unresolved.contains { $0.nodeID == "art" })
+        XCTAssertFalse(tiny.unresolved.contains { $0.nodeID == "art" })
+    }
+
+    func testSeekSliderUsesForegroundArtworkForImplicitSizeAndHitTarget() async throws {
+        let track = try WMPSkinTestSupport.encodedImage(width: 120, height: 13,
+            rgba: [UInt8](repeating: 255, count: 120 * 13 * 4), type: .bmp)
+        let xml = """
+        <THEME><VIEW id="main" width="160" height="40">
+          <SEEKSLIDER id="seek" left="20" top="10" foregroundImage="track.bmp"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("track.bmp", data: track)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let hit = try XCTUnwrap(scene.hits.first { $0.nodeID == "seek" })
+
+        XCTAssertEqual(hit.frame, WMPRect(x: 20, y: 10, width: 120, height: 13))
+        XCTAssertEqual(hit.action, .seek)
+        XCTAssertEqual(WMPHitTester(hits: scene.hits).hitTest(WMPPoint(x: 80, y: 16))?.action, .seek)
+    }
 }

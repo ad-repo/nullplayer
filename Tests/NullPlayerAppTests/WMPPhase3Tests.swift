@@ -36,10 +36,10 @@ final class WMPPhase3Tests: XCTestCase {
         }
     }
 
-    func testDebugCapabilityExposesDistinctWMPMenu() {
+    func testPublicCapabilityExposesDistinctWMPMenuAndDiagnosticOverride() {
         XCTAssertTrue(AppCapabilities.supports(.wmpSkinMode))
-        XCTAssertEqual(PlayerUIMode.debugArgumentOverride(from: ["uiMode": "wmp"]), .wmp)
-        XCTAssertNil(PlayerUIMode.debugArgumentOverride(from: ["uiMode": "unknown"]))
+        XCTAssertEqual(PlayerUIMode.argumentOverride(from: ["uiMode": "wmp"]), .wmp)
+        XCTAssertNil(PlayerUIMode.argumentOverride(from: ["uiMode": "unknown"]))
         XCTAssertFalse(ContextMenuBuilder.supportsSkinnedAuxiliaryWindows(for: .wmp))
         XCTAssertTrue(ContextMenuBuilder.supportsSkinnedAuxiliaryWindows(for: .classic))
         XCTAssertTrue(ContextMenuBuilder.supportsSkinnedAuxiliaryWindows(for: .modern))
@@ -48,6 +48,7 @@ final class WMPPhase3Tests: XCTestCase {
         XCTAssertNotNil(wmpItem)
         XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Load WMZ Skin…" })
         XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Unskinned Default Player" })
+        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Save Compatibility Report…" })
         XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Open WMP Skins Folder…" })
     }
 

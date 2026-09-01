@@ -42,8 +42,9 @@ fallback. Existing users keep their persisted mode.
   CRC failure. The provider is read-only and never extracts to disk.
 - A skin contains exactly one unambiguous `.wms` at root or under one wrapper directory. Resources
   resolve relative to the declaring file and then the skin root, never outside the provider.
-- Text decoding is strict BOM-aware UTF-8/UTF-16LE/UTF-16BE. Do not shell out to `iconv`, accept
-  malformed surrogates, or allow embedded NULs.
+- Text decoding is strict BOM-aware UTF-8/UTF-16LE/UTF-16BE, with a deterministic Windows-1252
+  fallback for unmarked legacy WMP text. Do not guess other ANSI code pages, shell out to `iconv`,
+  accept malformed surrogates, or allow embedded NULs.
 - XML retains authored tag/attribute spelling and source locations while bounding depth and node
   count. Unknown elements stay in the graph for compatibility reporting.
 - Attribute parsing classifies expressions, bindings, handlers, colors, and resources without
@@ -165,6 +166,22 @@ Use the committed original fixtures in `Tests/NullPlayerAppTests/Fixtures/WMPSki
 tests first, the user-supplied `WMP_TEST_WMZ` corpus check when available, then full `swift test` and
 `git diff --check`. Do not commit third-party skins or build a DMG unless the user requests it.
 
+## Phase 8 public exposure contracts
+
+- The full edition supports `.wmp` in debug and release builds. A custom edition still decides
+  through `EditionPolicy`; do not bypass that capability seam.
+- `PlayerUIMode.stored(in:)` defaults to `.wmp` only when neither the current mode key nor the legacy
+  `modernUIEnabled` key exists. Every persisted four-mode choice and both legacy Boolean values are
+  upgrade inputs and remain authoritative.
+- Keep `-uiMode wmp -wmpSkinPath /absolute/skin.wmz` available in packaged builds as a diagnostic
+  launch hook. It imports through the production bounded importer and grants no direct file access to
+  skin script.
+- Public UI owns import, installed-skin selection, selected-skin removal, authored view selection,
+  unskinned recovery, and bounded JSON compatibility-report export. Archive removal never deletes
+  the user's original downloaded file.
+- User support instructions live in `docs/wmp-skin/user-guide.md`; the exact implemented object-model
+  contract stays in `docs/wmp-skin/compatibility.md`.
+
 ## Phase 7 hardening contracts
 
 - `WMPCorpusReportHarness` is the reusable corpus seam. It emits archive hashes/facts, compatibility
@@ -179,5 +196,5 @@ tests first, the user-supplied `WMP_TEST_WMZ` corpus check when available, then 
 - Render at the window's current backing scale and rebuild when backing properties change. Keep 1×
   and 2× correctness in original-fixture tests; never add real-skin goldens.
 - Corpus-driven compatibility defaults must remain narrow. Empty optional images warn; text outside
-  UTF-8/UTF-16 and malformed duplicate-attribute XML remain typed rejections unless the security
-  contract and compatibility rationale are deliberately amended.
+  UTF-8/UTF-16/Windows-1252 and malformed duplicate-attribute XML remain typed rejections unless the
+  security contract and compatibility rationale are deliberately amended.

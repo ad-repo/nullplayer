@@ -67,6 +67,29 @@ final class WMPSkinImporterTests: XCTestCase {
         XCTAssertNil(importer.selectedSkinName)
         XCTAssertNil(try importer.selectedSkinURL())
     }
+
+    func testRemovingSelectedSkinDeletesOnlyInstalledArchiveAndClearsWMPSelection() async throws {
+        let root = try WMPSkinTestSupport.temporaryDirectory()
+        let installed = root.appendingPathComponent("installed", isDirectory: true)
+        let suite = "WMPSkinImporterTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let importer = WMPSkinImporter(directoryURL: installed, defaults: defaults)
+        let source = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("<THEME><VIEW id=\"main\" width=\"10\" height=\"10\"/></THEME>".utf8))
+        ], filename: "Removable.wmz")
+        let skin = try await importer.importSkin(from: source)
+        defaults.set("tiny", forKey: WMPSkinImporter.selectedViewIDKey)
+
+        try await importer.removeSkin(named: skin.name)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: skin.url.path))
+        XCTAssertTrue(importer.installedSkins().isEmpty)
+        XCTAssertNil(importer.selectedSkinName)
+        XCTAssertNil(importer.selectedViewID)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path),
+                      "Removing an installed skin must not delete the user's downloaded source")
+    }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(

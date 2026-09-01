@@ -24,6 +24,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var pendingRestoredViewID: String?
     private(set) var lastLoadDiagnostic: String?
 
+    var availableViewIDs: [String] { loadedSkin?.views.map(\.id) ?? [] }
+    var selectedViewID: String? { activeViewID }
+    var hasCompatibilityReport: Bool { loadedSkin != nil }
+
     convenience init() {
         self.init(importer: WMPSkinImporter(), host: WMPAudioEngineHost(audioEngine: WindowManager.shared.audioEngine))
     }
@@ -161,6 +165,32 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         guard let phase5Session else { return }
         Task { await phase5Session.resetPreferences() }
         lastLoadDiagnostic = "WMP skin script preferences were reset."
+    }
+
+    func saveCompatibilityReportFromPanel() {
+        guard let report = loadedSkin?.compatibilityReport else {
+            let alert = NSAlert()
+            alert.messageText = "No WMP Skin Report Available"
+            alert.informativeText = "Import and load a valid .wmz skin before saving a compatibility report."
+            alert.runModal()
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "WMP-Skin-Compatibility.json"
+        panel.message = "Save a bounded compatibility report for the active WMP skin"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                try await Task.detached(priority: .utility) {
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                    try encoder.encode(report).write(to: url, options: .atomic)
+                }.value
+            } catch {
+                _ = await MainActor.run { NSAlert(error: error).runModal() }
+            }
+        }
     }
 
     func restoreFrame(_ frame: NSRect, skinName: String?, viewID: String?) {

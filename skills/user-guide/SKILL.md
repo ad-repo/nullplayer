@@ -14,6 +14,15 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 
 ## Core Features
 
+### Windows Media Player skins
+
+Fresh installs start in NullPlayer's app-authored Windows Media Player mode. Use **Import WMZ…** on
+the unskinned player or **UI > Windows Media Player > Load WMZ Skin…** to install a user-supplied
+`.wmz`. The same menu selects installed skins and authored views, removes the selected installed
+copy, exports a compatibility report, or returns to **Unskinned Default Player**. Existing users keep
+their saved Classic, Original, Original-Metal, or WMP choice after upgrading. See
+`docs/wmp-skin/user-guide.md` for recovery and security limitations.
+
 ### Windows
 
 | Window | Description | Toggle |

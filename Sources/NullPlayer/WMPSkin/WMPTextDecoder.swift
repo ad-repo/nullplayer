@@ -4,6 +4,7 @@ enum WMPTextEncoding: String, Codable {
     case utf8
     case utf16LittleEndian
     case utf16BigEndian
+    case windows1252
 }
 
 struct WMPDecodedText: Equatable {
@@ -25,12 +26,19 @@ enum WMPTextDecoder {
             decoded = try decodeUTF16(Array(bytes.dropFirst(2)), littleEndian: false)
                 .map { WMPDecodedText(string: $0, encoding: .utf16BigEndian) }
         } else {
-            decoded = String(data: data, encoding: .utf8)
-                .map { WMPDecodedText(string: $0, encoding: .utf8) }
+            if let string = String(data: data, encoding: .utf8) {
+                decoded = WMPDecodedText(string: string, encoding: .utf8)
+            } else {
+                // Legacy WMP 7-10 skins were commonly authored as system-ANSI text without an
+                // encoding declaration. Windows-1252 is deterministic and single-byte, so this
+                // compatibility fallback does not add heuristic code-page detection.
+                decoded = String(data: data, encoding: .windowsCP1252)
+                    .map { WMPDecodedText(string: $0, encoding: .windows1252) }
+            }
         }
         guard let decoded else {
             throw WMPFailure(WMPDiagnostic(.invalidTextEncoding,
-                "'\(path)' is not valid UTF-8, UTF-16LE, or UTF-16BE text.",
+                "'\(path)' is not valid UTF-8, UTF-16LE, UTF-16BE, or Windows-1252 text.",
                 location: WMPSourceLocation(path: path)))
         }
         guard !decoded.string.unicodeScalars.contains(where: { $0.value == 0 }) else {

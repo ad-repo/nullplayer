@@ -34,7 +34,7 @@ NullPlayer is submitted to the Mac App Store (MAS) with full feature parity to t
 | Spectrum analyzer (Metal, 84-bar) | ✓ | ✓ | — | `Visualization/SpectrumAnalyzerView.swift` |
 | Geiss, Tripex, Met Museum, Album Art effects | ✓ | ✓ | — | `Visualization/Geiss*`, `Tripex*`, `MetMuseum/` |
 | **Skins** | ✓ | ✓ | — | — |
-| Classic `.wsz` skins + modern JSON skins | ✓ | ✓ | — | `Skin/`, `ModernSkin/` |
+| Classic `.wsz`, Original JSON, and WMP `.wmz` skins | ✓ | ✓ | — | `Skin/`, `ModernSkin/`, `WMPSkin/` |
 | **Audio Processing** | ✓ | ✓ | — | — |
 | 10/21-band parametric EQ | ✓ | ✓ | — | `Windows/ModernEQ/`, `Audio/EQ.swift` |
 | Reference tuning (432/440/custom Hz) | ✓ | ✓ | — | — |

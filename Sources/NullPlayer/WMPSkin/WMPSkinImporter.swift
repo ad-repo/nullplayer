@@ -145,4 +145,19 @@ struct WMPSkinImporter {
         defaults.removeObject(forKey: Self.selectedSkinNameKey)
         defaults.removeObject(forKey: Self.selectedViewIDKey)
     }
+
+    /// Removes one installed archive off-main. Removing the selected skin also clears its view
+    /// identity so the active WMP controller can recover to the app-authored unskinned player.
+    func removeSkin(named name: String) async throws {
+        let skin = try await Task.detached(priority: .userInitiated) {
+            guard let skin = installedSkins().first(where: {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+            }) else { throw WMPSkinImportError.selectionMissing(name) }
+            try fileManager.removeItem(at: skin.url)
+            return skin
+        }.value
+        if selectedSkinName?.caseInsensitiveCompare(skin.name) == .orderedSame {
+            resetSelection()
+        }
+    }
 }

@@ -98,6 +98,10 @@ struct WMPRenderer: @unchecked Sendable {
                 let decoded = try imageStore.image(for: specification.resourcePath,
                                                    colorKey: specification.colorKey)
                 let sourceImage = crop(specification.sourceRect, from: decoded.image)
+                if let mappingMask = specification.mappingMask,
+                   let mask = mappingMask.mapping.maskImage(for: Set(mappingMask.nodeIDs)) {
+                    context.clip(to: command.frame.cgRect, mask: mask)
+                }
                 if specification.tiled {
                     context.clip(to: command.frame.cgRect)
                     let tileWidth = CGFloat(sourceImage.width), tileHeight = CGFloat(sourceImage.height)

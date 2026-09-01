@@ -26,13 +26,6 @@ enum AppFeature {
 /// to know which edition that is.
 enum AppCapabilities {
     static func supports(_ feature: AppFeature) -> Bool {
-        if feature == .wmpSkinMode {
-            #if DEBUG
-            return true
-            #else
-            return false
-            #endif
-        }
         #if EDITION_CUSTOM
         return EditionPolicy.supports(feature)
         #else

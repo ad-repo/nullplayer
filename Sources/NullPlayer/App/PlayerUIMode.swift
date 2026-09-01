@@ -66,7 +66,12 @@ enum PlayerUIMode: String, CaseIterable {
            let mode = PlayerUIMode(rawValue: rawValue) {
             return mode
         }
-        return defaults.bool(forKey: legacyModernEnabledKey) ? .modern : .classic
+        // Preserve users upgrading from releases that stored only this Boolean. A genuinely fresh
+        // profile has neither key and starts in WMP's app-authored unskinned player.
+        if defaults.object(forKey: legacyModernEnabledKey) != nil {
+            return defaults.bool(forKey: legacyModernEnabledKey) ? .modern : .classic
+        }
+        return .wmp
     }
 
     func persist(
@@ -85,16 +90,14 @@ enum PlayerUIMode: String, CaseIterable {
         forcedMode == nil || forcedMode == requestedMode
     }
 
-    static var debugArgumentOverride: PlayerUIMode? {
-        #if DEBUG
-        return debugArgumentOverride(
+    /// Diagnostic GUI launch override supplied by `-uiMode <mode>` in NSArgumentDomain.
+    /// This remains available in release builds so packaged WMP failures can be reproduced.
+    static var argumentOverride: PlayerUIMode? {
+        return argumentOverride(
             from: UserDefaults.standard.volatileDomain(forName: "NSArgumentDomain"))
-        #else
-        return nil
-        #endif
     }
 
-    static func debugArgumentOverride(from arguments: [String: Any]) -> PlayerUIMode? {
+    static func argumentOverride(from arguments: [String: Any]) -> PlayerUIMode? {
         guard let rawValue = arguments[userDefaultsKey] as? String,
               let mode = PlayerUIMode(rawValue: rawValue),
               mode != .wmp || AppCapabilities.supports(.wmpSkinMode) else { return nil }

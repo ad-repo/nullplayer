@@ -823,7 +823,7 @@ class ContextMenuBuilder {
         metalItem.submenu = metalMenu
         if AppCapabilities.supports(.metalMode) { uiMenu.addItem(metalItem) }
 
-        // --- Windows Media Player submenu (experimental/DEBUG capability) ---
+        // --- Windows Media Player submenu ---
         if AppCapabilities.supports(.wmpSkinMode) {
             let wmpItem = NSMenuItem(title: PlayerUIMode.wmp.displayName, action: nil, keyEquivalent: "")
             let wmpMenu = NSMenu()
@@ -846,6 +846,24 @@ class ContextMenuBuilder {
             unskinned.target = MenuActions.shared
             unskinned.state = activeMode == .wmp && importer.selectedSkinName == nil ? .on : .off
             wmpMenu.addItem(unskinned)
+
+            if activeMode == .wmp,
+               let controller = wm.mainWindowController as? WMPMainWindowController,
+               controller.availableViewIDs.count > 1 {
+                let viewsItem = NSMenuItem(title: "Views", action: nil, keyEquivalent: "")
+                let viewsMenu = NSMenu()
+                for viewID in controller.availableViewIDs {
+                    let item = NSMenuItem(title: viewID, action: #selector(MenuActions.selectWMPView(_:)),
+                                          keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = viewID
+                    item.state = controller.selectedViewID?.caseInsensitiveCompare(viewID) == .orderedSame
+                        ? .on : .off
+                    viewsMenu.addItem(item)
+                }
+                viewsItem.submenu = viewsMenu
+                wmpMenu.addItem(viewsItem)
+            }
             wmpMenu.addItem(.separator())
 
             let installed = importer.installedSkins()
@@ -866,6 +884,20 @@ class ContextMenuBuilder {
                 }
             }
             wmpMenu.addItem(.separator())
+            let report = NSMenuItem(title: "Save Compatibility Report…",
+                                    action: #selector(MenuActions.saveWMPCompatibilityReport),
+                                    keyEquivalent: "")
+            report.target = MenuActions.shared
+            report.isEnabled = activeMode == .wmp
+                && (wm.mainWindowController as? WMPMainWindowController)?.hasCompatibilityReport == true
+            wmpMenu.addItem(report)
+            if let selectedName = importer.selectedSkinName {
+                let remove = NSMenuItem(title: "Remove \u{201c}\(selectedName)\u{201d}…",
+                                        action: #selector(MenuActions.removeSelectedWMPSkin),
+                                        keyEquivalent: "")
+                remove.target = MenuActions.shared
+                wmpMenu.addItem(remove)
+            }
             let open = NSMenuItem(title: "Open WMP Skins Folder…",
                                   action: #selector(MenuActions.openWMPSkinsFolder), keyEquivalent: "")
             open.target = MenuActions.shared
@@ -4323,6 +4355,41 @@ class MenuActions: NSObject {
             controller.resetToUnskinned()
         } else {
             wm.reloadUI(to: .wmp)
+        }
+    }
+
+    @objc func selectWMPView(_ sender: NSMenuItem) {
+        guard AppCapabilities.supports(.wmpSkinMode),
+              let viewID = sender.representedObject as? String,
+              let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController else { return }
+        controller.switchView(to: viewID)
+    }
+
+    @objc func saveWMPCompatibilityReport() {
+        guard AppCapabilities.supports(.wmpSkinMode),
+              let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController else { return }
+        controller.saveCompatibilityReportFromPanel()
+    }
+
+    @objc func removeSelectedWMPSkin() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        let importer = WMPSkinImporter()
+        guard let name = importer.selectedSkinName else { return }
+        let alert = NSAlert()
+        alert.messageText = "Remove WMP Skin?"
+        alert.informativeText = "\u{201c}\(name)\u{201d} will be removed from NullPlayer. The original downloaded file is not affected."
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            do {
+                try await importer.removeSkin(named: name)
+                await MainActor.run {
+                    (WindowManager.shared.mainWindowController as? WMPMainWindowController)?.resetToUnskinned()
+                }
+            } catch {
+                _ = await MainActor.run { NSAlert(error: error).runModal() }
+            }
         }
     }
 

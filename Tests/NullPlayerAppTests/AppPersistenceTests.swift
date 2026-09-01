@@ -99,6 +99,32 @@ final class AppPersistenceTests: XCTestCase {
         }
     }
 
+    func testFreshFullEditionDefaultsToWMPWithoutPersistingAMode() {
+        withDefaults { defaults in
+            XCTAssertNil(defaults.object(forKey: PlayerUIMode.userDefaultsKey))
+            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .wmp)
+            XCTAssertNil(defaults.object(forKey: PlayerUIMode.userDefaultsKey),
+                         "Resolving the first-launch default must not overwrite a future user choice")
+        }
+    }
+
+    func testUpgradePreservesEveryPersistedModeAndLegacyBoolean() {
+        for mode in PlayerUIMode.allCases {
+            withDefaults { defaults in
+                defaults.set(mode.rawValue, forKey: PlayerUIMode.userDefaultsKey)
+                XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), mode)
+            }
+        }
+        withDefaults { defaults in
+            defaults.set(false, forKey: "modernUIEnabled")
+            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .classic)
+        }
+        withDefaults { defaults in
+            defaults.set(true, forKey: "modernUIEnabled")
+            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .modern)
+        }
+    }
+
     func testForcedModeAllowsOnlyMatchingAssignments() {
         XCTAssertTrue(PlayerUIMode.allowsAssignment(.metal, forcedMode: .metal))
         XCTAssertFalse(PlayerUIMode.allowsAssignment(.modern, forcedMode: .metal))

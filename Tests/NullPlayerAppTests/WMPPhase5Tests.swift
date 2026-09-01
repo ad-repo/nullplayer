@@ -122,14 +122,20 @@ final class WMPPhase5Tests: XCTestCase {
     func testPropertyRegistryCoalescesBindingsAndPreventsOriginFeedback() throws {
         let graph = WMPObjectGraph(document: try WMPXMLParser().parse("""
         <VIEW id="main"><TEXT id="time" value="wmpprop:player.controls.currentPositionString"/>
-        <BUTTON id="play" enabled="wmpenabled:player.controls.play"/></VIEW>
+        <BUTTON id="play" enabled="wmpenabled:player.controls.play"/>
+        <BUTTON id="pause" visible="wmpenabled:player.controls.pause"/></VIEW>
         """, path: "bindings.wms"))
         var registry = WMPObservablePropertyRegistry(graph: graph)
         var snapshot = WMPHostSnapshot(); snapshot.playlistCount = 1; snapshot.currentTime = 5
         let first = registry.changes(for: snapshot)
-        XCTAssertEqual(first.count, 2)
+        XCTAssertEqual(first.count, 3)
         XCTAssertTrue(first.contains { $0.value == .string("0:05") })
         XCTAssertTrue(first.contains { $0.value == .bool(true) })
+        let pause = try XCTUnwrap(graph.nodes(id: "pause").first)
+        XCTAssertTrue(first.contains {
+            $0.address == WMPScenePropertyAddress(stableID: pause.stableID, property: "visible")
+                && $0.value == .bool(false)
+        })
         XCTAssertTrue(registry.changes(for: snapshot).isEmpty)
         let origin = WMPPropertyTransactionOrigin(id: UUID())
         _ = registry.changes(for: snapshot, origin: origin)

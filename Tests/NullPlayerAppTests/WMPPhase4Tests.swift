@@ -121,10 +121,20 @@ final class WMPPhase4Tests: XCTestCase {
         _ = state.move(over: playTarget)
         let hovered = try await WMPSceneBuilder(loadedSkin: skin).build(
             viewID: "main", interactionState: state, dirtyNodeIDs: [group.mappingTargets[0].stableID])
-        guard case let .image(image) = hovered.commands.first(where: { $0.stableID == group.stableID })?.paint else {
-            return XCTFail("Expected group artwork")
+        let groupCommands = hovered.commands.filter { $0.stableID == group.stableID }
+        XCTAssertEqual(groupCommands.count, 2)
+        guard case let .image(base) = groupCommands[0].paint,
+              case let .image(overlay) = groupCommands[1].paint else {
+            return XCTFail("Expected normal group artwork plus a mapped state overlay")
         }
-        XCTAssertEqual(image.resourcePath, "hover.png")
+        XCTAssertEqual(base.resourcePath, "normal.png")
+        XCTAssertNil(base.mappingMask)
+        XCTAssertEqual(overlay.resourcePath, "hover.png")
+        XCTAssertEqual(overlay.mappingMask?.nodeIDs, [playTarget.stableID])
+        let rendered = try await WMPRenderer(imageStore: WMPImageStore(provider: skin.archive))
+            .render(scene: hovered)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 2, yFromTop: 5), [20, 20, 20, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 17, yFromTop: 5), [10, 10, 10, 255])
         XCTAssertEqual(hovered.dirtyBounds, group.frame)
     }
 

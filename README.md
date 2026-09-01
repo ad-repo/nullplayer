@@ -42,7 +42,8 @@
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
 - Original UI skin system, with many skins included. Its open JSON format makes custom skins easy to create
 - Original-Metal — a hi-fi faceplate look with seven brushed-metal finishes (Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, Copper)
-- Switch between Classic, Original, and Original-Metal live, with no restart — playback, casting, and the open playlist continue uninterrupted while the windows rebuild
+- Windows Media Player skin mode loads user-supplied `.wmz`/`.wms` skins through a bounded, isolated engine; fresh installs start in its built-in unskinned player and can import a skin from the UI
+- Switch between Classic, Original, Original-Metal, and Windows Media Player live, with no restart — playback and mode-independent state continue while the main player rebuilds
 - Original Spenctrum analysis visualization system
 - Audio Analysis window — Friture-style multi-pane analyzer with a live oscilloscope, stereo peak/RMS level meters, and a scrolling Metal spectrogram (Viridis colormap)
 - Cava spectrum analyzer — a cava-style bar spectrum in a dedicated window and in the main-window display, with mono/stereo modes, skin-following gradient and metallic color presets, and configurable bars, smoothing, and bass tilt

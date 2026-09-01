@@ -101,7 +101,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         CastManager.shared.startDiscovery()
 
         AppStateManager.shared.restoreSettingsState { [weak self] in
-            self?.loadDebugWMPSkinIfRequested()
+            self?.loadDiagnosticWMPSkinIfRequested()
             if shouldRestoreCompactMode {
                 // The main window was created but never revealed, so force its snapshot to
                 // "visible" — exiting Compact Mode must restore it onscreen.
@@ -125,16 +125,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     }
 
-    private func loadDebugWMPSkinIfRequested() {
-        #if DEBUG
+    private func loadDiagnosticWMPSkinIfRequested() {
         // Run after state restoration so a remembered mode/skin reload cannot cancel this explicit
-        // diagnostic launch request. NSArgumentDomain supplies both command-line values.
+        // diagnostic launch request. NSArgumentDomain supplies `-uiMode wmp` and
+        // `-wmpSkinPath /absolute/file.wmz` in debug and packaged release builds.
         guard windowManager.uiMode == .wmp,
               let path = UserDefaults.standard.string(forKey: "wmpSkinPath"),
               path.hasPrefix("/"),
               let controller = windowManager.mainWindowController as? WMPMainWindowController else { return }
         controller.importSkin(from: URL(fileURLWithPath: path))
-        #endif
     }
     
     // MARK: - UI Testing Mode

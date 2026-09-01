@@ -1,9 +1,15 @@
 # WMP skin compatibility
 
-This is the checked compatibility surface for the experimental WMP skin mode. A member not listed
+This is the checked compatibility surface for the public WMP skin mode. A member not listed
 here is not dynamically bridged to AppKit, Objective-C, `AudioEngine`, the filesystem, or the
 network. Unsupported reads return a stable empty/zero value plus a diagnostic; unsupported commands
 are ignored with a diagnostic.
+
+NullPlayer supports ZIP-based `.wmz` archives containing the XML/JScript `.wms` format used by
+Windows Media Player 7 through 12 when a skin stays within the capabilities below. The version label
+is not a blanket compatibility promise: malformed XML, unsafe archives, legacy code-page text, and
+Windows-only object-model features are rejected or diagnosed even when Windows Media Player accepted
+them. UTF-8, UTF-16LE, UTF-16BE, and deterministic legacy Windows-1252 definitions are supported.
 
 ## Phase 6 object model
 
@@ -78,8 +84,8 @@ report harness accepted and measured 4 archives and rejected 10 with typed diagn
 contain only archive hashes/facts, compatibility demand, diagnostics, and numeric render metrics;
 they never contain source archives, artwork, screenshots, render buffers, or local corpus paths.
 
-- Seven archives use text outside the locked UTF-8/UTF-16LE/UTF-16BE contract and fail with
-  `WMP0025`. NullPlayer does not guess an ANSI code page.
+- Unmarked legacy text falls back only to Windows-1252, the system-ANSI encoding commonly used by
+  WMP 7-10 skin tools. NullPlayer does not guess among ANSI code pages.
 - Three archives contain duplicate XML attributes, which are not well-formed XML, and fail with
   `WMP0027`. NullPlayer does not silently choose one authored value.
 - Empty optional image attributes are compatibility-defaulted as a `WMP0023` warning. They no

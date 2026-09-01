@@ -15,6 +15,12 @@ struct WMPSceneImage: Hashable, Codable {
     let colorKey: WMPColor?
     let tiled: Bool
     let interpolation: WMPImageInterpolation
+    let mappingMask: WMPSceneMappingMask?
+}
+
+struct WMPSceneMappingMask: Hashable, Codable {
+    let mapping: WMPMappingImage
+    let nodeIDs: [Int]
 }
 
 struct WMPSceneText: Hashable, Codable {

@@ -114,6 +114,20 @@ struct WMPMappingImage: Hashable, Codable {
         return nil
     }
 
+    func maskImage(for nodes: Set<Int>) -> CGImage? {
+        let bytes = (0..<(width * height)).map { pixel -> UInt8 in
+            guard alpha[pixel] > 0 else { return 0 }
+            let offset = pixel * 3
+            let color = WMPColor(red: rgb[offset], green: rgb[offset + 1], blue: rgb[offset + 2])
+            return nodeByColor[color].map(nodes.contains) == true ? 255 : 0
+        }
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let colorSpace = CGColorSpace(name: CGColorSpace.linearGray) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8,
+            bytesPerRow: width, space: colorSpace, bitmapInfo: CGBitmapInfo(rawValue: 0),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
+
     private static func unpremultiply(_ component: UInt8, alpha: UInt8) -> UInt8 {
         guard alpha < 255 else { return component }
         return UInt8(min(255, (Int(component) * 255 + Int(alpha) / 2) / Int(alpha)))

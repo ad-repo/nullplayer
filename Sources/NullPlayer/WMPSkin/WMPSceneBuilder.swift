@@ -129,7 +129,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
                 if width == nil || height == nil,
                    node.attribute(named: "width") == nil || node.attribute(named: "height") == nil,
-                   let (_, path) = try resource(node, names: ["image", "backgroundImage", "background"]) {
+                   let (_, path) = try resource(node, names: intrinsicSizeResourceNames(for: node.kind)) {
                     let intrinsic = try imageStore.image(for: path).size
                     if node.attribute(named: "width") == nil { width = intrinsic.width }
                     if node.attribute(named: "height") == nil { height = intrinsic.height }
@@ -206,11 +206,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     clip: inheritedClip, z: z, background: true))
             }
             let childStates = node.kind == .buttonGroup
-                ? node.children.map { interactionState.visualState(for: $0.stableID) } : []
+                ? node.children.map { ($0.stableID, interactionState.visualState(for: $0.stableID)) } : []
             let visualState: WMPVisualInteractionState
-            if childStates.contains(.down) { visualState = .down }
-            else if childStates.contains(.hover) { visualState = .hover }
-            else if !childStates.isEmpty && childStates.allSatisfy({ $0 == .disabled }) { visualState = .disabled }
+            if childStates.contains(where: { $0.1 == .down }) { visualState = .down }
+            else if childStates.contains(where: { $0.1 == .hover }) { visualState = .hover }
+            else if !childStates.isEmpty && childStates.allSatisfy({ $0.1 == .disabled }) { visualState = .disabled }
             else { visualState = interactionState.visualState(for: node.stableID) }
             let foregroundNames: [String]
             switch visualState {
@@ -219,10 +219,32 @@ struct WMPSceneBuilder: @unchecked Sendable {
             case .hover: foregroundNames = ["hoverImage", "image"]
             case .normal: foregroundNames = ["image"]
             }
-            if let (_, path) = try resource(node, names: foregroundNames), !frame.isEmpty,
-               node.kind != .subview && node.kind != .view {
-                commands.append(imageCommand(node: node, path: path, frame: frame,
-                    clip: inheritedClip, z: z, background: false))
+            if !frame.isEmpty, node.kind != .subview && node.kind != .view {
+                if node.kind == .buttonGroup, visualState != .normal,
+                   let (_, normalPath) = try resource(node, names: ["image"]),
+                   let (_, statePath) = try resource(node, names: foregroundNames),
+                   let (_, mappingPath) = try resource(node, names: ["mappingImage"]) {
+                    let colors = Dictionary(uniqueKeysWithValues: node.children.compactMap { child -> (WMPColor, Int)? in
+                        guard let value = child.attribute(named: "mappingColor")?.value,
+                              case let .color(color) = value else { return nil }
+                        return (color, child.stableID)
+                    })
+                    let activeIDs = childStates.filter { $0.1 == visualState }.map(\.0)
+                    if !colors.isEmpty, !activeIDs.isEmpty {
+                        let mapping = try imageStore.mappingImage(for: mappingPath, nodeByColor: colors)
+                        commands.append(imageCommand(node: node, path: normalPath, frame: frame,
+                            clip: inheritedClip, z: z, background: false))
+                        commands.append(imageCommand(node: node, path: statePath, frame: frame,
+                            clip: inheritedClip, z: z, background: false,
+                            mappingMask: WMPSceneMappingMask(mapping: mapping, nodeIDs: activeIDs)))
+                    } else {
+                        commands.append(imageCommand(node: node, path: statePath, frame: frame,
+                            clip: inheritedClip, z: z, background: false))
+                    }
+                } else if let (_, path) = try resource(node, names: foregroundNames) {
+                    commands.append(imageCommand(node: node, path: path, frame: frame,
+                        clip: inheritedClip, z: z, background: false))
+                }
             }
             if node.kind == .text, !frame.isEmpty,
                let value = literalString(node, "value") {
@@ -316,7 +338,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
     }
 
     private func imageCommand(node: WMPNode, path: String, frame: WMPRect,
-                              clip: WMPRect?, z: Int, background: Bool) -> WMPPaintCommand {
+                              clip: WMPRect?, z: Int, background: Bool,
+                              mappingMask: WMPSceneMappingMask? = nil) -> WMPPaintCommand {
         let prefix = background ? "background" : ""
         let sourceX = literal(node, prefix + "CropLeft") ?? literal(node, "cropLeft")
         let sourceY = literal(node, prefix + "CropTop") ?? literal(node, "cropTop")
@@ -329,7 +352,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
         let image = WMPSceneImage(resourcePath: path, sourceRect: source,
             colorKey: color(node, names: ["transparencyColor"]),
             tiled: literalString(node, tiledName)?.caseInsensitiveCompare("true") == .orderedSame,
-            interpolation: .low)
+            interpolation: .low, mappingMask: mappingMask)
         return WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID, frame: frame,
             clipRect: clip, zIndex: z, documentOrder: node.stableID, paint: .image(image))
     }
@@ -367,6 +390,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
              .nextElement, .rewButton, .rewElement, .ffwdButton, .ffwdElement,
              .returnButton, .shuffleButton, .playlist, .dropdownPlaylist, .popup: return true
         default: return false
+        }
+    }
+
+    private func intrinsicSizeResourceNames(for kind: WMPElementKind) -> [String] {
+        switch kind {
+        case .slider, .volumeSlider, .seekSlider, .balanceSlider:
+            // WMP slider controls conventionally omit width/height and take their track size from
+            // foregroundImage. thumbImage is a last-resort size for unusual authored controls.
+            return ["image", "backgroundImage", "background", "foregroundImage", "thumbImage"]
+        default:
+            return ["image", "backgroundImage", "background"]
         }
     }
 
