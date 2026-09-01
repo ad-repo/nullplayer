@@ -313,10 +313,7 @@ final class WalXMLDocumentLoader {
         if visitedSet.insert(folded).inserted { visited.append(path) }
 
         let data = try vfs.data(at: path, location: WalSourceLocation(path: path))
-        let text: String
-        if let utf8 = String(data: data, encoding: .utf8) { text = utf8 }
-        else if let latin1 = String(data: data, encoding: .isoLatin1) { text = latin1 }
-        else {
+        guard let text = Self.decodeText(data) else {
             throw WalFailure(WalDiagnostic(.malformedXML, "XML resource is neither UTF-8 nor ISO-8859-1 text.", location: WalSourceLocation(path: path)))
         }
         let parsed = try WalLenientXMLParser(maximumDepth: limits.maximumNestingDepth,
@@ -393,6 +390,29 @@ final class WalXMLDocumentLoader {
               let canonical = try? vfs.resolve(rawPath, relativeTo: sourcePath, mustExist: false)
         else { return false }
         return Self.fold(canonical.logicalPath).hasPrefix(Self.fold(skinRoot + "/"))
+    }
+
+    /// Windows XML tooling routinely emits UTF-16, so honour a byte order mark before falling back
+    /// to the byte encodings. The fallback cannot find this on its own: `ff fe` is not valid UTF-8,
+    /// so a UTF-16 file skipped straight to ISO-8859-1 -- an encoding that accepts *every* byte
+    /// sequence and so never reports a wrong guess. It yielded one character per byte, nulls
+    /// included, and the parser saw a `<` that no `</` ever closed (B93).
+    static func decodeText(_ data: Data) -> String? {
+        let bytes = [UInt8](data.prefix(4))
+        let body = { (count: Int) in data.subdata(in: data.startIndex.advanced(by: count) ..< data.endIndex) }
+        if bytes.count >= 4, bytes[0] == 0xFF, bytes[1] == 0xFE, bytes[2] == 0x00, bytes[3] == 0x00 {
+            if let text = String(data: body(4), encoding: .utf32LittleEndian) { return text }
+        } else if bytes.count >= 4, bytes[0] == 0x00, bytes[1] == 0x00, bytes[2] == 0xFE, bytes[3] == 0xFF {
+            if let text = String(data: body(4), encoding: .utf32BigEndian) { return text }
+        } else if bytes.count >= 3, bytes[0] == 0xEF, bytes[1] == 0xBB, bytes[2] == 0xBF {
+            if let text = String(data: body(3), encoding: .utf8) { return text }
+        } else if bytes.count >= 2, bytes[0] == 0xFF, bytes[1] == 0xFE {
+            if let text = String(data: body(2), encoding: .utf16LittleEndian) { return text }
+        } else if bytes.count >= 2, bytes[0] == 0xFE, bytes[1] == 0xFF {
+            if let text = String(data: body(2), encoding: .utf16BigEndian) { return text }
+        }
+        if let utf8 = String(data: data, encoding: .utf8) { return utf8 }
+        return String(data: data, encoding: .isoLatin1)
     }
 
     private static func fold(_ value: String) -> String {

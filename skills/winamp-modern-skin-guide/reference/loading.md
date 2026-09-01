@@ -114,6 +114,30 @@ closing** tag (a `</foo>` matching nothing on the stack — no corpus skin does 
 until one demands otherwise), an unterminated comment, declaration, tag or attribute value, a tag
 with no name, and every depth/node-count bound.
 
+### A byte order mark decides the encoding, and it has to be read before the fallback chain
+
+`WalXMLDocumentLoader.decodeText` sniffs the mark — UTF-32LE/BE, UTF-8, UTF-16LE/BE — strips it, and
+only then falls through to the old chain of UTF-8 then ISO-8859-1. **The order is the whole point.**
+ISO-8859-1 maps all 256 byte values, so it accepts any input whatsoever and can never report a wrong
+guess; a decoder chain ending in it has no failing branch to hang a third encoding off. Before B93 a
+UTF-16 file failed UTF-8 (on `ff fe`, which is not valid UTF-8), landed on ISO-8859-1, and came back
+as one character per byte with the nulls intact — so the parser read `ÿþ<\0g\0a\0m…`, scanned every
+`<` as an opening tag, matched no `</` against any of them, and climbed until the depth guard threw:
+
+```
+colorthemes.xml:260:6: [xmlDepthExceeded] XML nesting exceeds 256 levels.
+```
+
+The guard was right and the skin still did not load. `cpro2_dark_aluminum` is the measured case, and
+it was refused outright. Note the two orderings that matter inside the sniff: `ff fe` opens **both**
+UTF-16LE and UTF-32LE, so the 4-byte marks are tested first, and a UTF-8 mark is *stripped* rather
+than decoded, or a leading U+FEFF sits in front of the first tag.
+
+Reach was measured at 3 files across the corpus and only the one on an include path was fatal
+(`languages/Wasabi.xml` in both Big Bento Modern editions is never included). **Treat that as a
+floor, not the reach** — Windows XML tooling emits UTF-16 by default, so an author on Windows
+produces one without deciding to.
+
 ### `loadMap("file.png")` resolves against the **skin**, not the calling script
 
 `Map.loadMap` takes either a declared `<bitmap>` id or a path, and the path form is relative to the

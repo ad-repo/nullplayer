@@ -19,7 +19,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | B92 | **`@DEFAULTSKINPATH@` mis-expands, and nothing is mounted behind it.** `WalVirtualFileSystem.swift:72` assigns it bare while `SKINPATH`/`COLORTHEMESPATH` use `setVariable(…, trailingSeparator: true)`, so `@DEFAULTSKINPATH@xml/eq.xml` canonicalises to `/Skins/Defaultxml/eq.xml` — the concatenated name appears verbatim in the failure. canum does not load. Fixing the separator only moves the error to `'Default'`: no mount is established there either | 3 skins declare it, **1 live** (Bio-Nid's and Rika's are commented out) ([M28]) | S | Measured |
-| B93 | **The XML reader does not honour a UTF-16 BOM.** cpro2_dark_aluminum's `colorthemes.xml` is UTF-16LE; read as bytes every `<` scans as an open tag and no `</` ever matches, so the depth guard fires at `xmlDepthExceeded` and the skin is refused. The guard is right; the decoder never ran | 3 files / 3 skins, **1 fatal** — the other two are `languages/Wasabi.xml`, off the include path ([M27]) | S | Measured |
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
 
@@ -77,7 +76,7 @@ resolve to a live citation above.
   M23, the playlist-holder size sweep this row used to cite, is **deleted rather than archived**: it measured the wrong thing. Its finding is kept here because it is still true and still not the bug — the holder Ebonite allots is 227x172, the smallest in the corpus is micro at 140x69, and 27 of the 44 skins that expose one are under 260x180. See B78 for why holder size is innocent.
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
 - <a id="m30"></a>**M30:** per skin tree, case-fold the `id=` of every `<container>` and keep the duplicates. Measured 2026-08-31: **Ebonite_2_1** (`sc.alphaframe`) and **WMP11-BlueVU** (`meter`). That grep finds only the literal-duplicate half; the **double-include** half does not show up in it and must be found from the render dump, where one declaration prints twice in `RENDER-DUMP containers` — **jvc.tape.v0.5**, whose `xml/pledit.xml` is included from both `skin.xml:17` and `xml/amp.xml:9`. Three skins between the two shapes. **Corrected 2026-09-01 while closing B96:** the live reach is **2**. Ebonite's second `sc.alphaframe` is in `wasabi/standardframe/Copy of standardframe.xml`, an authoring leftover no `<include>` names, so it never reaches the graph — a reminder that this grep reads the *tree*, not the include closure.
-- <a id="m27"></a>**M27:** find every `.xml` whose first two bytes are `ff fe` or `fe ff`. Measured 2026-08-31: **3 files** — `cpro2_dark_aluminum_final_by_victhor/colorthemes.xml` (fatal, it is on the include path) and `languages/Wasabi.xml` in both **Big Bento Modern** and **Big Bento Modern Windows 10 edition**, which load fine because nothing includes those. So the count overstates the blast radius: what matters is whether a UTF-16 file is reachable from `skin.xml`.
+- <a id="m27"></a>**M27:** find every `.xml` whose first two bytes are `ff fe` or `fe ff`. Measured 2026-08-31: **3 files** — `cpro2_dark_aluminum_final_by_victhor/colorthemes.xml` (fatal, it is on the include path) and `languages/Wasabi.xml` in both **Big Bento Modern** and **Big Bento Modern Windows 10 edition**, which load fine because nothing includes those. So the count overstates the blast radius: what matters is whether a UTF-16 file is reachable from `skin.xml`. **Closed 2026-09-01 with B93**; kept as the record of how the reach was bounded. The count is a floor rather than a reach — Windows XML tooling emits UTF-16 by default, so this arrives without an author deciding on it.
 - <a id="m28"></a>**M28:** `grep -rl 'DEFAULTSKINPATH' "$corpus" --include="*.xml"`, then **check whether the line is commented out** — that is the whole measurement. Three skins name it: canum uses it live (3 includes), while **Bio-Nid and Rika both have theirs inside a single `<!-- -->` spanning lines 15-20**, which is why they load today and canum does not.
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
@@ -86,7 +85,7 @@ symbol, not necessarily a call-site count; rows say so where that distinction ma
 
 ## Item detail
 
-The two entries below (B92 and B93) came out of one batch measurement of the **12 skins added
+The entry below (B92) came out of one batch measurement of the **12 skins added
 2026-08-30 and 2026-08-31**, profiled 2026-08-31 with `WinampModernRenderDumpTests` under
 `RENDER_BITMAPS` + `RENDER_SCRIPTS=bindings` and every layout PNG read. Grades from that batch:
 `cpro2_dark_aluminum` and `canum` do not load (**F**), `Winamp 3.0 Default` loaded blank (**F**,
@@ -129,31 +128,6 @@ host means an empty *pane* is not evidence — only an empty *window* is.
       Reach is small but the variable is corpus-wide surface: [M28] finds 3 skins naming it, and
       Bio-Nid's and Rika's are inside a `<!-- -->` spanning lines 15-20, which is exactly why those
       two load today and canum does not.
-
----
-
-### B93
-
-- [ ] **B93. The XML reader does not honour a UTF-16 BOM.** cpro2_dark_aluminum's
-      `colorthemes.xml` opens with `ff fe` and interleaves nulls:
-
-      ```
-      < g a m m a s e t   i d = " * D e f a u l t " >
-      ```
-
-      Read as bytes, every `<` scans as an opening tag and no `</` ever matches, so nesting climbs
-      until the depth guard fires:
-
-      ```
-      colorthemes.xml:260:6: [xmlDepthExceeded] XML nesting exceeds 256 levels.
-      ```
-
-      The guard is behaving correctly — the decoder never ran. Sniff the BOM, decode to UTF-8, then
-      parse.
-
-      [M27] finds 3 UTF-16 files corpus-wide and only this one is fatal; the other two are
-      `languages/Wasabi.xml` in the two Big Bento Modern editions, which load fine because nothing
-      includes them. Windows XML tooling emits UTF-16 routinely, so expect more as the corpus grows.
 
 ---
 

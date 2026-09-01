@@ -2,6 +2,40 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B93 — the XML reader does not honour a UTF-16 BOM — closed 2026-09-01
+
+- [x] **B93. The XML reader does not honour a UTF-16 BOM.** cpro2_dark_aluminum's
+      `colorthemes.xml` opens with `ff fe` and interleaves nulls:
+
+      ```
+      < g a m m a s e t   i d = " * D e f a u l t " >
+      ```
+
+      Read as bytes, every `<` scans as an opening tag and no `</` ever matches, so nesting climbs
+      until the depth guard fires:
+
+      ```
+      colorthemes.xml:260:6: [xmlDepthExceeded] XML nesting exceeds 256 levels.
+      ```
+
+      The guard is behaving correctly — the decoder never ran. Sniff the BOM, decode to UTF-8, then
+      parse.
+
+      [M27] finds 3 UTF-16 files corpus-wide and only this one is fatal; the other two are
+      `languages/Wasabi.xml` in the two Big Bento Modern editions, which load fine because nothing
+      includes them. Windows XML tooling emits UTF-16 routinely, so expect more as the corpus grows.
+
+**Closing note (not part of the filed entry).** The route to the depth guard was one step further
+along than the entry says. `ff fe` is not valid UTF-8, so the file never got the wrong UTF-8 read the
+entry describes — it failed UTF-8 and fell to the chain's last resort, ISO-8859-1, which maps all 256
+byte values and therefore accepts any input and never reports a wrong guess. That is what returned
+one character per byte with the nulls intact. The distinction is the reusable part: a fallback chain
+ending in a total encoding has no failing branch, so a new encoding has to be selected *before* the
+chain, never appended to it. See `skills/winamp-modern-skin-guide/reference/loading.md` → *A byte
+order mark decides the encoding*.
+
+---
+
 ## B96 — a container declared twice yields a second instance with an empty resource scope — closed 2026-09-01
 
 - [x] **B96. A container declared twice yields a second instance with an empty resource scope.**
