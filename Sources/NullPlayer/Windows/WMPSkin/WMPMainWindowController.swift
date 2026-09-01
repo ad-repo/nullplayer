@@ -99,10 +99,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                            overrides: output.overrides)
                 let rendered = try await WMPRenderer(imageStore: store).render(scene: resolved, backingScale: 1)
                 try Task.checkCancellation()
-                applyHostCommands(output.hostCommands)
                 apply(skin: skin, store: store, scene: resolved, image: rendered.image,
                       phase5: phase5, runtime: runtime, overrides: output.overrides)
-                scheduleTimers(output.timerRequests)
+                let switchedView = applyHostCommands(output.hostCommands)
+                if !switchedView { scheduleTimers(output.timerRequests) }
                 recordScriptDiagnostics(output.diagnostics)
             } catch is CancellationError {
                 return
@@ -208,6 +208,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         view.onScriptEvent = { [weak self] name, targetID in
             self?.dispatchScriptEvent(name: name, targetID: targetID)
         }
+        view.onElementValueChanged = { [weak self] stableID, targetID, value in
+            guard let self, let phase5Session = self.phase5Session else { return }
+            Task {
+                await phase5Session.setWidgetValue(stableID: stableID, value: value)
+                self.dispatchScriptEvent(name: "change", targetID: targetID)
+            }
+        }
+        view.onSpectrumDemandChanged = { [weak self] active in
+            self?.host.setSpectrumConsumerActive(active)
+        }
         view.onInteractionChanged = { [weak self] state, changed in
             self?.renderInteraction(state: state, changed: changed)
         }
@@ -294,8 +304,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self?.mainView?.present(result.image, scene: scene)
                 self?.mainView?.refreshHostState(self?.host.snapshot ?? WMPHostSnapshot())
                 if let scriptOutput {
-                    self?.applyHostCommands(scriptOutput.hostCommands)
-                    self?.scheduleTimers(scriptOutput.timerRequests)
+                    let switchedView = self?.applyHostCommands(scriptOutput.hostCommands) ?? false
+                    if !switchedView { self?.scheduleTimers(scriptOutput.timerRequests) }
                     self?.recordScriptDiagnostics(scriptOutput.diagnostics)
                 }
             } catch is CancellationError {} catch {
@@ -329,13 +339,54 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         host.stopContinuousCommands()
     }
 
+    func switchView(to requestedID: String) {
+        guard let skin = loadedSkin, let store = imageStore,
+              let registration = skin.views.first(where: {
+                  $0.id.caseInsensitiveCompare(requestedID) == .orderedSame
+              }), registration.id.caseInsensitiveCompare(activeViewID ?? "") != .orderedSame,
+              let phase5Session, let phase5Runtime else { return }
+        loadTask?.cancel(); phase5Task?.cancel(); cancelScriptTimers()
+        mainView?.cancelInputCapture(); host.stopContinuousCommands()
+        let oldTopLeft = window.map { NSPoint(x: $0.frame.minX, y: $0.frame.maxY) }
+        let savedSize = WMPViewFrameStore(defaults: importer.defaults).size(
+            skin: importer.selectedSkinName ?? "", view: registration.id)
+        loadTask = Task { [weak self] in
+            guard let self else { return }
+            await phase5Session.prepareForViewSwitch()
+            do {
+                let base = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                    .build(viewID: registration.id, requestedSize: savedSize)
+                let output = await phase5Session.transact(skin: skin, viewID: registration.id,
+                    size: base.canvasSize, snapshot: host.snapshot, event: nil)
+                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                    .build(viewID: registration.id, requestedSize: base.canvasSize,
+                           overrides: output.overrides)
+                let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                try Task.checkCancellation()
+                apply(skin: skin, store: store, scene: scene, image: rendered.image,
+                      phase5: phase5Session, runtime: phase5Runtime, overrides: output.overrides)
+                if let oldTopLeft, let window {
+                    window.setFrameOrigin(NSPoint(x: oldTopLeft.x, y: oldTopLeft.y - window.frame.height))
+                }
+                dispatchScriptEvent(name: "viewchange", targetID: registration.id)
+            } catch is CancellationError {} catch { lastLoadDiagnostic = error.localizedDescription }
+        }
+    }
+
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         guard let limits = activeLimits else { return Self.unskinnedSize }
         let clamped = limits.clamp(WMPSize(width: frameSize.width, height: frameSize.height))
         return NSSize(width: clamped.width, height: clamped.height)
     }
 
-    func windowDidResize(_ notification: Notification) { renderCurrentSize() }
+    func windowDidResize(_ notification: Notification) {
+        if let window, let viewID = activeViewID {
+            WMPViewFrameStore(defaults: importer.defaults).setSize(
+                WMPSize(width: window.frame.width, height: window.frame.height),
+                skin: importer.selectedSkinName ?? "", view: viewID)
+        }
+        renderCurrentSize()
+    }
     func windowDidMove(_ notification: Notification) {
         guard let window else { return }
         let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
@@ -356,7 +407,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func clearVideoTrackInfo() {}
     func updateTime(current: TimeInterval, duration: TimeInterval) { refreshHostState() }
     func updatePlaybackState() { refreshHostState() }
-    func updateSpectrum(_ levels: [Float]) {}
+    func updateSpectrum(_ levels: [Float]) { mainView?.updateSpectrum(levels) }
     func skinDidChange() {}
     func windowVisibilityDidChange() {}
     func setNeedsDisplay() { window?.contentView?.needsDisplay = true }
@@ -438,8 +489,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 sceneOverrides = output.overrides
                 self.activeScene = scene
                 mainView?.present(result.image, scene: scene, dirtyBounds: scene.dirtyBounds)
-                applyHostCommands(output.hostCommands)
-                scheduleTimers(output.timerRequests)
+                let switchedView = applyHostCommands(output.hostCommands)
+                if !switchedView { scheduleTimers(output.timerRequests) }
                 recordScriptDiagnostics(output.diagnostics)
             } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }
         }
@@ -461,7 +512,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
-    private func applyHostCommands(_ commands: [WMPJScriptHostCommand]) {
+    @discardableResult
+    private func applyHostCommands(_ commands: [WMPJScriptHostCommand]) -> Bool {
+        var switchedView = false
         for command in commands.prefix(WMPJScriptProtocol.maximumHostCommands) {
             let number = command.value?.number
             switch command.action {
@@ -480,9 +533,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             case "setMute": if (command.value?.number ?? 0) != (host.snapshot.muted ? 1 : 0) { host.perform(.toggleMute, value: nil) }
             case "setShuffle": if (command.value?.number ?? 0) != (host.snapshot.shuffle ? 1 : 0) { host.perform(.toggleShuffle, value: nil) }
             case "setRepeat": if (command.value?.number ?? 0) != (host.snapshot.repeatMode ? 1 : 0) { host.perform(.toggleRepeat, value: nil) }
+            case "setEQEnabled": host.perform(.setEQEnabled, value: command.value.map { .number($0.number ?? 0) })
+            case let action where action.hasPrefix("setEQBand:"):
+                if let index = Int(action.dropFirst("setEQBand:".count)) {
+                    host.perform(.setEQBand(index), value: command.value.map { .number($0.number ?? 0) })
+                }
+            case "setCurrentView":
+                if let id = command.value?.string,
+                   loadedSkin?.views.contains(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) == true,
+                   id.caseInsensitiveCompare(activeViewID ?? "") != .orderedSame {
+                    switchedView = true; switchView(to: id)
+                }
             default: continue
             }
         }
+        return switchedView
     }
 
     private func scheduleTimers(_ requests: [WMPJScriptTimerRequest]) {

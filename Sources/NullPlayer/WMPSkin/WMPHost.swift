@@ -7,6 +7,8 @@ enum WMPTransportAction: Hashable, Codable {
     case beginScan(WMPScanDirection), endScan
     case seek, volume, balance
     case toggleMute, toggleShuffle, toggleRepeat
+    case playPlaylistItem(Int), removePlaylistItem(Int), movePlaylistItem(Int, Int)
+    case setEQEnabled, setEQBand(Int), setPreamp
 }
 
 enum WMPHostValue: Hashable, Codable {
@@ -29,6 +31,18 @@ struct WMPMediaMetadata: Hashable, Codable {
     var album = ""
 }
 
+struct WMPPlaylistItemSnapshot: Hashable, Codable {
+    let title: String
+    let artist: String
+    let duration: TimeInterval
+}
+
+struct WMPEqualizerSnapshot: Hashable, Codable {
+    var enabled = false
+    var preamp: Double = 0
+    var gains: [Double] = Array(repeating: 0, count: 10)
+}
+
 struct WMPHostSnapshot: Hashable, Codable {
     enum State: String, Hashable, Codable { case stopped, playing, paused }
     var state: State = .stopped
@@ -44,6 +58,8 @@ struct WMPHostSnapshot: Hashable, Codable {
     var metadata = WMPMediaMetadata()
     var playlistIndex = -1
     var playlistCount = 0
+    var playlistItems: [WMPPlaylistItemSnapshot] = []
+    var equalizer = WMPEqualizerSnapshot()
 
     var elapsedText: String { Self.timeString(currentTime) }
     var durationText: String { Self.timeString(duration) }
@@ -55,7 +71,12 @@ struct WMPHostSnapshot: Hashable, Codable {
         case .stop: return state != .stopped
         case .previous, .next: return playlistCount > 1
         case .seek, .beginScan: return duration > 0
-        case .endScan, .volume, .balance, .toggleMute, .toggleShuffle, .toggleRepeat: return true
+        case let .playPlaylistItem(index), let .removePlaylistItem(index):
+            return playlistItems.indices.contains(index)
+        case let .movePlaylistItem(source, destination):
+            return playlistItems.indices.contains(source) && playlistItems.indices.contains(destination)
+        case .endScan, .volume, .balance, .toggleMute, .toggleShuffle, .toggleRepeat,
+             .setEQEnabled, .setEQBand, .setPreamp: return true
         }
     }
 
@@ -70,6 +91,7 @@ protocol WMPHost: AnyObject {
     var snapshot: WMPHostSnapshot { get }
     func perform(_ action: WMPTransportAction, value: WMPHostValue?)
     func stopContinuousCommands()
+    func setSpectrumConsumerActive(_ active: Bool)
 }
 
 extension WMPTransportAction {

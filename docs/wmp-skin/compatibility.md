@@ -5,7 +5,7 @@ here is not dynamically bridged to AppKit, Objective-C, `AudioEngine`, the files
 network. Unsupported reads return a stable empty/zero value plus a diagnostic; unsupported commands
 are ignored with a diagnostic.
 
-## Phase 5 object model
+## Phase 6 object model
 
 | Object | Supported members |
 |---|---|
@@ -13,16 +13,35 @@ are ignored with a diagnostic.
 | `player.controls` | `play`, `pause`, `stop`, `previous`, `next`, `fastForward`, `fastReverse`, `currentPosition`, `currentPositionString` |
 | `player.settings` | `volume`, `balance`, `mute`, `getMode`, `setMode`, `getString`, `setString` |
 | media / metadata | `name`, `duration`, `durationString`, `getItemInfo`; title, artist, album |
-| playlist | `count`; `item` and attribute enumeration return safe placeholders until Phase 6 |
+| playlist | `count`, bounded `item(index)` snapshots (`name`, `duration`, artist metadata), `attributeCount`, `getAttributeName` |
 | network | `bufferingProgress`, `receptionQuality`, `bandWidth` (`bandWidth` is currently zero) |
-| `eq` | `enabled`, ten gain-level properties; values are placeholders until the Phase 6 EQ slice |
-| `vis` | `currentEffect`, `currentPreset` placeholders |
-| `theme` | `currentViewID` |
+| `eq` | live `enabled` and ten gain-level properties, remapped to/from NullPlayer's active 10/21-band layout |
+| `vis` | bounded `currentEffect` / `currentPreset` state; WMP effects render the safe NullPlayer bars surface |
+| `theme` | live `currentViewID`; assignment requests a controlled switch to an authored view |
 | `view` / elements | `left`, `top`, `width`, `height`, `visible`, `enabled`, `value`, `text`, `down` |
 | popup | `show` is recognized but modal script UI is not executed |
 
 The implemented host-command vocabulary is transport, scan, seek, volume, balance, mute, shuffle,
-and repeat. Numeric values are finite-checked and clamped again at the main-actor host boundary.
+repeat, playlist play/remove/move, EQ enable/gain/preamp, and view switching. Numeric values are
+finite-checked and clamped again at the main-actor host boundary.
+
+## Phase 6 tags and native surfaces
+
+| Tag/capability | Status |
+|---|---|
+| `TEXT`, `IMAGE`, `SUBVIEW` | Rendered; text publishes static-text accessibility, authored labels and tooltips |
+| `SLIDER` | Pointer capture, keyboard adjustment, bounded value mutation, and change events |
+| `VOLUMESLIDER`, `SEEKSLIDER`, `BALANCESLIDER` | Live typed host controls with keyboard/pointer accessibility |
+| `PLAYLIST` | Live bounded list, selection, scrolling, double-click/Return play, and Delete mutation |
+| `DROPDOWNPLAYLIST` | Live bounded selection and play |
+| `EQUALIZERSETTINGS` | AppKit 10-band/preamp surface backed by live EQ with 10↔21-band remapping |
+| `POPUP` | Safe host-owned preset menu only; arbitrary script modal UI remains denied |
+| `WMPEFFECTS` | Safe NullPlayer bar visualizer; its audio consumer exists only while the active view contains the surface |
+| `VIDEO`, `WMPVIDEO` | Documented app-authored placeholder; plug-ins and ActiveX remain denied |
+| Multiple `VIEW`s | Controlled `theme.currentViewID` transaction, per-skin/view size, safe top-left, accessibility replacement |
+
+NullPlayer auxiliary windows remain hidden in WMP mode because WMP-owned chrome hosts have not been
+defined for them. They never fall back to Classic, Original, Original-Metal, or Winamp Modern chrome.
 
 ## Expressions and bindings
 

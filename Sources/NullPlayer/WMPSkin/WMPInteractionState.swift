@@ -43,6 +43,10 @@ struct WMPInteractionState: Equatable {
         return changed
     }
 
+    mutating func focus(_ node: Int?) -> Set<Int> {
+        transition(\Self.focusedNode, to: node)
+    }
+
     mutating func setDisabled(_ disabled: Bool, node: Int) -> Set<Int> {
         let changed = disabled ? disabledNodes.insert(node).inserted : disabledNodes.remove(node) != nil
         if disabled, capturedNode == node { _ = cancelCapture() }

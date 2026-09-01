@@ -32,6 +32,22 @@ enum WMPPaint: Hashable, Codable {
     case text(WMPSceneText)
 }
 
+enum WMPWidgetKind: String, Hashable, Codable {
+    case text, slider, playlist, dropdownPlaylist, equalizer, popup, effects, video
+}
+
+struct WMPWidget: Hashable, Codable {
+    let stableID: Int
+    let nodeID: String?
+    let kind: WMPWidgetKind
+    let frame: WMPRect
+    let clipRect: WMPRect?
+    let label: String
+    let toolTip: String?
+    let minimumValue: Double?
+    let maximumValue: Double?
+}
+
 struct WMPPaintCommand: Hashable, Codable {
     let stableID: Int
     let nodeID: String?
@@ -78,12 +94,25 @@ struct WMPScene: Hashable, Codable {
     let resizeLimits: WMPResizeLimits
     let commands: [WMPPaintCommand]
     let hits: [WMPHitMetadata]
+    let widgets: [WMPWidget]
     let geometries: [Int: WMPResolvedGeometry]
     let unresolved: [WMPUnresolvedGeometry]
     let diagnostics: [WMPDiagnostic]
     let dirtyBounds: WMPRect?
     let metrics: WMPSceneMetrics
     let wasBuiltOnMainThread: Bool
+
+    init(viewID: String, canvasSize: WMPSize, resizeLimits: WMPResizeLimits,
+         commands: [WMPPaintCommand], hits: [WMPHitMetadata], widgets: [WMPWidget] = [],
+         geometries: [Int: WMPResolvedGeometry], unresolved: [WMPUnresolvedGeometry],
+         diagnostics: [WMPDiagnostic], dirtyBounds: WMPRect?, metrics: WMPSceneMetrics,
+         wasBuiltOnMainThread: Bool) {
+        self.viewID = viewID; self.canvasSize = canvasSize; self.resizeLimits = resizeLimits
+        self.commands = commands; self.hits = hits; self.widgets = widgets
+        self.geometries = geometries; self.unresolved = unresolved; self.diagnostics = diagnostics
+        self.dirtyBounds = dirtyBounds; self.metrics = metrics
+        self.wasBuiltOnMainThread = wasBuiltOnMainThread
+    }
 
     var deterministicDump: String {
         var lines = ["view=\(viewID) size=\(WMPNumber.format(canvasSize.width))x\(WMPNumber.format(canvasSize.height)) resolved=\(metrics.resolvedNodeCount) unresolved=\(metrics.unresolvedNodeCount)"]

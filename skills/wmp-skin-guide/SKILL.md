@@ -141,6 +141,24 @@ selected by Phase 0 and must repeat its hard-stop/restart security gate before p
   buffering, then reception order; input uses mouse-down, mouse-up, click/change semantics from the
   Phase 4 capture model.
 
+## Phase 6 widget and view contracts
+
+- `WMPScene.widgets` is immutable semantic metadata for accessibility and native surfaces. AppKit
+  overlays are created only after a completed scene arrives and are replaced with the scene.
+- Playlist snapshots are capped at 4,096 rows. Selection, scrolling, play, removal, and movement use
+  typed host actions; scripts receive plain copied item values, never `Track` objects.
+- WMP exposes ten EQ gains. `WMPAudioEngineHost` uses `EQBandRemapper` at the boundary when the live
+  engine is in its 21-band layout; every write remains clamped to ±12 dB.
+- `WMPEFFECTS` hosts the safe WMP bars surface. Its single ref-counted spectrum consumer must be
+  registered only while an effects surface exists in the active view and removed on switch/teardown.
+- `VIDEO`/`WMPVIDEO` remain an app-authored placeholder. WMP plug-ins, ActiveX, DLLs, and arbitrary
+  media surfaces remain denied.
+- A view switch cancels capture and outgoing timers, stops continuous commands, clears view-local
+  overrides, resolves off-main, preserves safe top-left, applies per-skin/view size, atomically swaps
+  scene/native/accessibility state, then dispatches the view event.
+- Auxiliary NullPlayer windows stay hidden in WMP mode until they have WMP-owned chrome. Never expose
+  them through another skin family's provider or artwork.
+
 ## Verification
 
 Use the committed original fixtures in `Tests/NullPlayerAppTests/Fixtures/WMPSkin/`. Run focused WMP

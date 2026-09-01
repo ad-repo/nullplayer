@@ -50,6 +50,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
         var commands: [WMPPaintCommand] = []
         var hits: [WMPHitMetadata] = []
+        var widgets: [WMPWidget] = []
         var geometries: [Int: WMPResolvedGeometry] = [:]
         var unresolved: [WMPUnresolvedGeometry] = []
         var diagnostics = loadedSkin.diagnostics
@@ -184,6 +185,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
             resolvedNodes.insert(node.stableID)
             let z = Int(literal(node, "zIndex") ?? 0)
 
+            if let kind = widgetKind(node.kind), visible != nil {
+                let label = literalString(node, "accessibleName")
+                    ?? literalString(node, "title") ?? literalString(node, "name")
+                    ?? node.xmlID ?? node.kind.description
+                widgets.append(WMPWidget(stableID: node.stableID, nodeID: node.xmlID, kind: kind,
+                    frame: frame, clipRect: inheritedClip, label: label,
+                    toolTip: literalString(node, "toolTip") ?? literalString(node, "tooltip"),
+                    minimumValue: (literal(node, "min") ?? literal(node, "minValue")).map(Double.init),
+                    maximumValue: (literal(node, "max") ?? literal(node, "maxValue")).map(Double.init)))
+            }
+
             if let background = color(node, names: ["backgroundColor"]), !frame.isEmpty {
                 commands.append(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
@@ -298,7 +310,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
         let metrics = WMPSceneMetrics(resolvedNodeCount: resolvedNodes.count,
             unresolvedNodeCount: unresolvedNodes.count, visibleBounds: allDirty)
         return WMPScene(viewID: registration.id, canvasSize: canvas, resizeLimits: resizeLimits,
-            commands: commands, hits: hits, geometries: geometries, unresolved: unresolved,
+            commands: commands, hits: hits, widgets: widgets, geometries: geometries, unresolved: unresolved,
             diagnostics: diagnostics, dirtyBounds: dirty, metrics: metrics,
             wasBuiltOnMainThread: Thread.isMainThread)
     }
@@ -355,6 +367,20 @@ struct WMPSceneBuilder: @unchecked Sendable {
              .nextElement, .rewButton, .rewElement, .ffwdButton, .ffwdElement,
              .returnButton, .shuffleButton, .playlist, .dropdownPlaylist, .popup: return true
         default: return false
+        }
+    }
+
+    private func widgetKind(_ kind: WMPElementKind) -> WMPWidgetKind? {
+        switch kind {
+        case .text: return .text
+        case .slider, .volumeSlider, .seekSlider, .balanceSlider: return .slider
+        case .playlist: return .playlist
+        case .dropdownPlaylist: return .dropdownPlaylist
+        case .equalizerSettings: return .equalizer
+        case .popup: return .popup
+        case .wmpEffects: return .effects
+        case .video, .wmpVideo: return .video
+        default: return nil
         }
     }
 

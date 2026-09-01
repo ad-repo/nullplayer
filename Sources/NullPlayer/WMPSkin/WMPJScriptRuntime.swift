@@ -288,12 +288,17 @@ final class WMPJScriptRuntime: @unchecked Sendable {
   };
   var media = {name:String(host.title || ''), duration:Number(host.duration || 0), durationString:String(host.durationText || '0:00'),
     getItemInfo:function(name){var key=String(name).toLowerCase(); return key === 'artist' ? String(host.artist||'') : key === 'album' ? String(host.album||'') : key === 'title' ? String(host.title||'') : '';}};
-  var playlist = {count:Number(host.playlistCount || 0), item:function(){warn('unsupported-member','playlist.item'); return null;}, attributeCount:0, getAttributeName:function(){return '';}};
+  var playlistItems=[]; try { playlistItems=JSON.parse(String(host.playlistJSON||'[]')); } catch(e) { warn('playlist-data','invalid playlist snapshot'); }
+  var playlist = {count:Number(host.playlistCount || 0), item:function(index){index=Math.floor(Number(index)); if(index<0||index>=playlistItems.length)return null; var item=playlistItems[index]; return {name:String(item.title||''),duration:Number(item.duration||0),getItemInfo:function(name){return String(name).toLowerCase()==='artist'?String(item.artist||''):'';}};}, attributeCount:3, getAttributeName:function(index){return ['name','artist','duration'][Number(index)]||'';}};
   var network = {bufferingProgress:Number(host.bufferingProgress || 0), receptionQuality:Number(host.receptionQuality || 0), bandWidth:0};
   var player = {controls:controls, settings:settings, currentMedia:media, currentPlaylist:playlist,
     network:network, playState:String(host.state || 'stopped'), status:String(host.status || '')};
   globalThis.player=player; globalThis.elements=elements; globalThis.network=network;
-  globalThis.eq=element('eq',{}); globalThis.vis=element('vis',{}); globalThis.theme=element('theme',{currentViewID:String(host.viewID||'')});
+  var eqGains=[]; try { eqGains=JSON.parse(String(host.eqGainsJSON||'[]')); } catch(e) {}
+  var eq={}; Object.defineProperty(eq,'enabled',{get:function(){return !!host.eqEnabled;},set:function(v){command('setEQEnabled',!!v);}});
+  for(var eqIndex=0;eqIndex<10;eqIndex++)(function(index){Object.defineProperty(eq,'gainLevel'+(index+1),{get:function(){return Number(eqGains[index]||0);},set:function(v){command('setEQBand:'+index,v);}});})(eqIndex);
+  globalThis.eq=eq; globalThis.vis=element('vis',{currentEffect:String(host.currentEffect||'nullplayer-bars'),currentPreset:String(host.currentPreset||'default')});
+  var theme={}; Object.defineProperty(theme,'currentViewID',{get:function(){return String(host.viewID||'');},set:function(v){command('setCurrentView',String(v));}}); globalThis.theme=theme;
   globalThis.ActiveXObject=undefined; globalThis.WScript=undefined; globalThis.Enumerator=undefined;
   globalThis.setTimeout=function(fn,ms){ if(out.timers.length>=256)return 0; var source=typeof fn==='function'?'('+fn.toString()+')()':String(fn); var token=++timerToken; out.timers.push({token:token,periodMilliseconds:Math.max(8,Math.floor(Number(ms)||0)),repeats:false,source:source}); return token; };
   globalThis.setInterval=function(fn,ms){var token=setTimeout(fn,ms); if(token)out.timers[out.timers.length-1].repeats=true; return token;};

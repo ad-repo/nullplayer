@@ -138,6 +138,14 @@ actor WMPPhase5Session {
     }
 
     func resetPreferences() { preferences.reset() }
+    func setWidgetValue(stableID: Int, value: Double) {
+        guard value.isFinite else { return }
+        committedOverrides.properties[.init(stableID: stableID, property: "value")] = .number(value)
+    }
+    func prepareForViewSwitch() {
+        committedOverrides = .empty
+        propertyRegistry = nil
+    }
     func teardown() { scriptsDisabled = true }
 
     private struct Context {
@@ -181,6 +189,8 @@ actor WMPPhase5Session {
             registrations.append(.init(id: id, properties: properties))
         }
         let scripts = skin.scripts.compactMap(\.resolvedPath).compactMap { skin.scriptSources[$0] }
+        let playlistJSON = Self.jsonString(snapshot.playlistItems)
+        let eqGainsJSON = Self.jsonString(snapshot.equalizer.gains)
         let host: [String: WMPJSONValue] = [
             "state": .string(snapshot.state.rawValue), "currentTime": .number(snapshot.currentTime),
             "duration": .number(snapshot.duration), "elapsedText": .string(snapshot.elapsedText),
@@ -192,10 +202,19 @@ actor WMPPhase5Session {
             "playlistIndex": .number(Double(snapshot.playlistIndex)), "viewID": .string(viewID),
             "bufferingProgress": .number(snapshot.bufferingProgress),
             "receptionQuality": .number(snapshot.receptionQuality),
+            "playlistJSON": .string(playlistJSON), "eqEnabled": .bool(snapshot.equalizer.enabled),
+            "eqGainsJSON": .string(eqGainsJSON),
             "view": .string("registered")
         ]
         return Context(registrations: registrations, expressions: expressions,
                        expressionAddresses: addresses, scripts: scripts, host: host, idToStableID: ids)
+    }
+
+    private static func jsonString<T: Encodable>(_ value: T) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              data.count <= WMPPhase0Limits.scriptMessageBytes,
+              let string = String(data: data, encoding: .utf8) else { return "[]" }
+        return string
     }
 
     private enum TopologyResult { case success([WMPJScriptExpression]), failure([WMPJScriptDiagnostic]) }
