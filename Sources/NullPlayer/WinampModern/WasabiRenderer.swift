@@ -439,7 +439,14 @@ final class WasabiResourceCache {
     /// and leave its text untinted.
     func fontSheet(for definition: WalResourceDefinition) -> WasabiBitmap? {
         guard !isTornDown else { return nil }
-        if let declared = bitmap(identifier: definition.attributes["file"]) { return declared }
+        // A **declared** `<bitmap>` only. An implicit one — created because some attribute elsewhere
+        // named this same path — is the whole file with no gamma group, and taking it would leave
+        // MMD3's ticker, time, KBPS and KHZ untinted while the artwork around them stayed themed.
+        if let file = definition.attributes["file"],
+           loadedSkin.runtime.resources.resolvedDefinition(identifier: file)?.isImplicit == false,
+           let declared = bitmap(identifier: file) {
+            return declared
+        }
         guard let path = definition.logicalFile else { return nil }
         let key = "bitmapfont:" + path.folding(options: [.caseInsensitive],
                                                locale: Locale(identifier: "en_US_POSIX"))

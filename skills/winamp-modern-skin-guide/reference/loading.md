@@ -188,6 +188,51 @@ per resolved path, so a second `<bitmap>` naming the same dud file degrades too.
 itself is unchanged and `imageDimensionsExceeded` stays a hard error: that one is the *bound*, not a
 content problem, and so is every traversal/escape/variable failure.
 
+#### An attribute that names an image file gets an implicit bitmap (B94, 2026-09-01)
+
+Wasabi creates a bitmap on the skin's behalf when an attribute names an image **file** where a
+declared `<bitmap>` id was expected, so `image="play/Bar.png"` is as good as `image="volume.bar"`.
+Resolving only the declared form left a skin authored entirely that way drawing none of its own
+artwork: Darjah 1 declares no `<bitmap>` for its player at all, both of its layouts reported
+`resolved=0`, and it fell back to NullPlayer's generic transport over a plain background. **606 such
+declarations across 9 corpus skins** — Pure Inspired 184, K-jr 133, MoonLight 78, Darjah 1 75,
+the three DewyTears editions 40 each, WMP11-BlueVU 10, Itemskin 6.
+
+A second registration pass over the expanded document walks every node's attributes and, for a value
+ending in `.png`/`.jpg`/`.jpeg`/`.gif`/`.bmp` that resolves to a real image in the skin, registers a
+bitmap under the path string itself. Doing it here rather than at the ~24 sites that read a bitmap id
+is what makes one change reach all of them — layers, buttons, sliders, an `animatedlayer`'s frame
+count, `Map.loadMap`, and a script's `setXmlParam("image", …)`. The path resolves through
+`resolveSkinResource`, so the declaring file's own directory is tried first and the skin root second:
+Darjah writes `image="Player/Normal.png"` from `xml/player-normal.xml`.
+
+Four bounds, all pinned in `WinampModernB94Tests`:
+
+- **It runs after every declaration and never displaces one.** A `<bitmap>` keeps its id, its crop
+  and its gamma group; an implicit bitmap is only ever created for an id nothing else claims,
+  `<elementalias>` included.
+- **It is the whole file.** A path form declares no `x`/`y`/`w`/`h` and no `gammagroup`, so there is
+  no crop and no colour-theme tint — the same reading `background=` already takes (B90).
+- **It never answers a colour request.** `registerImplicit` does not touch `colorsByIdentifier`.
+- **It is not a declaration**, and `WalResourceDefinition.isImplicit` says so, because one caller has
+  to tell them apart. `fontSheet` reads `<bitmapfont file=>` as an id first and a path second, and
+  the id branch must take a **declared** bitmap only: MMD3 writes
+  `<bitmapfont file="player/tickerfont2.png">`, and once that path had an implicit bitmap the id
+  branch returned the untinted whole file, so the ticker, time, KBPS and KHZ went grey inside a
+  themed player. The font's sheet carries the *font's* gamma group.
+
+The file gets the same `validateImage` check a declared `<bitmap>` gets, sharing its memo; a failure
+just declines to create the implicit bitmap, with no warning — nothing asked for the file yet, so
+there is no skin to fail. A path-shaped value the archive does not contain still registers nothing
+and still draws nothing, which is Darjah's remaining `play/on.png` (the file it ships is
+`player/On.png`, a different directory — Winamp misses it too).
+
+Corpus sweep, 549 renders: **62 changed across 13 skins**, every one an improvement, and MMD3 and
+mmd3 byte-identical once the `fontSheet` bound was in. Two structural changes, both correct: the five
+DewyTears `main` layouts resize 275x116 -> **299x113**, which is the exact size of the
+`player/background.png` that now resolves, and Darjah's `main/du` drops the fallback transport node
+it no longer needs.
+
 ### A skin's settings must start in a state its own scripts can express
 
 `WinampModernConfigDefaults.apply` runs in `WinampModernSkinLoader.load`, **before** the runtime is

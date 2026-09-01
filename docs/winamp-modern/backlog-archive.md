@@ -2,6 +2,75 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B94 — a path-shaped `image=` resolves nothing, so a skin draws none of its own art — closed 2026-09-01
+
+- [x] **B94. A path-shaped `image=` resolves nothing.** Wasabi creates an implicit bitmap when
+      `image=` names a file rather than a declared id; we resolve declared ids only, so a skin
+      authored entirely that way draws none of its own artwork.
+
+      **The measured case.** Darjah 1 declares no `<bitmap>` for its player at all:
+
+      ```
+      xml/player-shade.xml:153  <layer id="volume.fillbar" x="457" y="402" image="play/Bar.png" />
+      xml/player-normal.xml:43  image="Player/Normal.png"
+      ```
+
+      Both files are **in the archive** — the skin ships a `play/` and a `player/` directory, so the
+      capital `Player/` is a case-insensitive hit, not an authoring typo. Both of its layouts report
+      `resolved=0` and `main-du.png` shows NullPlayer's generic fallback transport over a plain
+      background with none of the skin's art. **56 of Darjah's 74 unique `image=` values** are paths.
+
+      **Do not scope this to Darjah.** [M29](#m29-b94) puts it at 606 declarations across 9 skins, and the two
+      heaviest users (Pure Inspired 184, K-jr 133) are *not* in the batch that surfaced it. It also
+      accounts for WMP11-BlueVU's `player/winamp_text.png`, `player/Equalizer_text.png`,
+      `player/AVS_text.png` and `player/Frame/resizer.png` misses, which were filed as separate
+      absences before this was understood.
+
+      This moves bitmap id resolution engine-wide, so it wants the corpus render sweep as its
+      regression proof, not a per-skin check.
+
+      **Fixed 2026-09-01.** A second registration pass in `WasabiSkinInitializer`
+      (`registerImplicitBitmaps`) walks every node's attributes after all declarations and registers
+      a bitmap under the path string itself for any value ending in `.png`/`.jpg`/`.jpeg`/`.gif`/`.bmp`
+      that resolves to a real image in the skin. Registering them rather than teaching each of the ~24
+      sites that read a bitmap id to also try a path is what makes one change reach all of them —
+      layers, buttons, sliders, an `animatedlayer`'s frame count, `Map.loadMap`, and a script's
+      `setXmlParam("image", …)`. The path is tried against the declaring file's own directory and then
+      the skin root, so Darjah's root-relative `Player/Normal.png` written from `xml/` resolves.
+
+      Four bounds, all pinned in `WinampModernB94Tests`: it runs **after** every declaration and never
+      displaces one (a `<bitmap>` keeps its id, its crop and its gamma group); it is the **whole file**,
+      because a path form declares no `x`/`y`/`w`/`h` and no `gammagroup`; it never answers a **colour**
+      request; and it is marked `isImplicit`, because `fontSheet` has to tell the two apart.
+
+      **That last bound is the one the first sweep found the hard way.** MMD3 writes
+      `<bitmapfont file="player/tickerfont2.png">`, and `fontSheet` reads `file=` as an id first and a
+      path second. Once that path had an implicit bitmap the id branch won and returned the untinted
+      whole file, so MMD3's ticker, time, KBPS and KHZ went grey inside a themed player while the
+      artwork around them stayed tinted. The id branch now takes a **declared** bitmap only. The lesson
+      generalizes: adding a resolution to a namespace changes what every *earlier* either/or lookup in
+      it finds, and the id-first ones are where to look.
+
+      **Corpus sweep, 69 archives / 549 renders: 62 changed across 13 skins**, every one an
+      improvement — Darjah's player draws its wood panelling and its own round blue transport, and
+      MoonLight's went from a clock on an empty bar to a full player. mmd3 and MMD3-4-5 are
+      byte-identical to baseline once the `fontSheet` bound was in. Two structural changes, both
+      correct: the five DewyTears `main` layouts resize 275x116 -> **299x113**, the exact size of the
+      `player/background.png` that now resolves, and Darjah's `main/du` drops the fallback transport
+      node it no longer needs. `Anexa/main-shade` also differs, but it differs between two runs of the
+      *same* build — the pre-existing non-reproducible drift already recorded under B76 and B90.
+      `swift test`: 1620 pass, seven new cases in `WinampModernB94Tests`.
+
+      **Not live-verified.** None of the 13 skins has been driven under the mouse; the checks are in
+      [manual-qa-checklist.md](../../skills/winamp-modern-skin-guide/manual-qa-checklist.md).
+
+      One trap for the next sweep: a capture came up 14 lines short at the start of one skin's block
+      and re-running produced the full file with no other difference — a dropped stdout chunk through
+      the grep pipe, not a load failure. The harness's *"a clean run is byte-identical"* can break that
+      way; render the skin alone before believing a gap.
+
+- <a id="m29-b94"></a>**M29:** per skin tree, count `image=` / `downImage=` / `hoverImage=` values ending in `.png`, `.jpg` or `.bmp` — a path where a declared bitmap id is expected. Measured 2026-08-31 over all 70 installed trees: **606 declarations across 9 distinct skins** — Pure Inspired 184, K-jr 133, MoonLight 78, **Darjah 1 75**, DewyTears Transparent / PinkGlass / BlackGlass 40 each, WMP11-BlueVU 10, Itemskin 6. Darjah is the clearest test case because **56 of its 74 unique `image=` values** are paths, so both its layouts render `resolved=0` and the defect is visible in one PNG. Note the count is declarations, not distinct files. The four skins re-added under DeviantArt filenames are excluded — see the corpus note above.
+
 ## B91 — Hal's Eye: dead manual pages, a truncated credits box, a still eye, and a double-click menu nobody saw — closed 2026-08-31
 
 - [x] **B91. Four unrelated causes under one skin, three of them engine-wide capabilities.**

@@ -17,6 +17,11 @@ struct WalResourceDefinition {
     let logicalFile: String?
     let attributes: [String: String]
     let source: WalSourceLocation
+    /// Created by the engine for an attribute that named an image **file**, not read from a
+    /// `<bitmap>` the skin wrote. It is the whole file with no crop and no gamma group, so a caller
+    /// that needs a *declared* resource — `fontSheet`, which must carry the font's own gamma group —
+    /// has to be able to tell the two apart.
+    var isImplicit = false
 }
 
 final class WalResourceRegistry {
@@ -72,6 +77,23 @@ final class WalResourceRegistry {
             && definition.attributes["file"]?.hasPrefix("$") == true
             && definition.attributes["color"] != nil
         return isGenerated ? 1 : 0
+    }
+
+    /// Whether this id is already spoken for, by a declaration or an `<elementalias>`. An implicit
+    /// bitmap must never displace either.
+    func hasIdentifier(_ identifier: String) -> Bool {
+        let key = Self.fold(identifier)
+        return byIdentifier[key] != nil || aliases[key] != nil
+    }
+
+    /// A bitmap Wasabi creates on the skin's behalf, because an attribute named an image **file**
+    /// where a declared id was expected. It is not a declaration, so it never replaces one, never
+    /// answers a colour request, and never warns about a duplicate — the first path wins and every
+    /// later mention of the same path is the same bitmap.
+    func registerImplicit(_ definition: WalResourceDefinition) {
+        guard let identifier = definition.identifier, !hasIdentifier(identifier) else { return }
+        definitions.append(definition)
+        byIdentifier[Self.fold(identifier)] = definition
     }
 
     func warn(_ diagnostic: WalDiagnostic) { diagnostics.append(diagnostic) }
@@ -500,6 +522,8 @@ final class WasabiSkinInitializer {
         var undecodableImages: Set<String> = []
         try registerResources(in: document.roots, registry: resources,
                               validatedImages: &validatedImages, undecodableImages: &undecodableImages)
+        registerImplicitBitmaps(in: document.roots, registry: resources,
+                                validatedImages: &validatedImages, undecodableImages: &undecodableImages)
         passes.append(.resourceRegistration)
 
         let types = WasabiTypeRegistry()
@@ -815,6 +839,70 @@ final class WasabiSkinInitializer {
                                   validatedImages: &validatedImages,
                                   undecodableImages: &undecodableImages)
         }
+    }
+
+    /// The image file extensions an implicit bitmap may be created from. Deliberately a
+    /// whitelist: the test is what makes an attribute value a *path* rather than an id, and every
+    /// value in the corpus that names artwork ends in one of these.
+    private static let implicitBitmapExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "bmp"]
+
+    /// Wasabi creates a bitmap for an attribute that names an image **file** where a declared
+    /// `<bitmap>` id was expected — `image="play/Bar.png"` is as good as `image="volume.bar"`.
+    /// Resolving only the declared form left a skin authored entirely that way drawing none of its
+    /// own artwork: Darjah 1 declares no `<bitmap>` for its player at all, so both of its layouts
+    /// resolved zero and fell back to NullPlayer's generic transport over a plain background. 56 of
+    /// its 74 unique `image=` values are paths, and the corpus has 606 such declarations across 9
+    /// skins.
+    ///
+    /// Registering them as ordinary bitmaps — rather than teaching each of the two dozen call sites
+    /// that read an id to also try a path — is what makes this reach every one of them at once, the
+    /// script runtime's `setXmlParam("image", …)` and `Map.loadMap` included.
+    ///
+    /// Runs **after** every declaration, and never displaces one: an id that a `<bitmap>` already
+    /// claims keeps its declaration, crop, and gamma group. An implicit bitmap has none of those —
+    /// a path form declares no `x`/`y`/`w`/`h` and no `gammagroup`, so it is the whole file,
+    /// untinted, exactly as `background=` already resolves one (B90).
+    private func registerImplicitBitmaps(in nodes: [WalXMLNode], registry: WalResourceRegistry,
+                                         validatedImages: inout Set<String>,
+                                         undecodableImages: inout Set<String>) {
+        for node in nodes {
+            for value in node.attributes.values where Self.looksLikeImagePath(value) {
+                guard !registry.hasIdentifier(value),
+                      let resolved = try? resolveSkinResource(value, source: node.location).logicalPath,
+                      !undecodableImages.contains(resolved) else { continue }
+                // The same validation a declared `<bitmap>` gets, with the same memo, but a failure
+                // only declines to create the implicit bitmap: nothing asked for this file yet, so
+                // there is no skin to fail and no warning to raise.
+                if validatedImages.insert(resolved).inserted {
+                    do {
+                        try validateImage(at: resolved, source: node.location)
+                    } catch {
+                        undecodableImages.insert(resolved)
+                        continue
+                    }
+                }
+                registry.registerImplicit(WalResourceDefinition(
+                    kind: "bitmap",
+                    identifier: value,
+                    logicalFile: resolved,
+                    attributes: ["file": value],
+                    source: node.location,
+                    isImplicit: true
+                ))
+            }
+            registerImplicitBitmaps(in: node.children, registry: registry,
+                                    validatedImages: &validatedImages,
+                                    undecodableImages: &undecodableImages)
+        }
+    }
+
+    /// A path shape, not an id shape: a final component with an image extension. `$solid` and the
+    /// wildcard an `<include>` may carry are excluded — neither is a file this can load.
+    private static func looksLikeImagePath(_ value: String) -> Bool {
+        guard !value.isEmpty, !value.hasPrefix("$"), !value.contains("*"),
+              let dot = value.lastIndex(of: ".") else { return false }
+        let ext = value[value.index(after: dot)...].lowercased()
+        return implicitBitmapExtensions.contains(ext)
     }
 
     private static func undecodableImage(_ path: String, _ source: WalSourceLocation) -> WalFailure {

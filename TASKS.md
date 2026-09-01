@@ -18,6 +18,10 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
+| B95 | **A skin that expects Wasabi's built-in `wasabi.button.*` / `wasabi.titlebar.*` chrome gets nothing.** Winamp3 base skins never declare those ids because the player supplied them; we ship no default set, so every full-size layout resolves 0 bitmaps and `Winamp 3.0 Default`'s `main/normal` renders **blank white**. Class C — missing host content, not wrong semantics | 4 skins reference undeclared ids; **1 fatal** (24 of 24 undeclared) ([M31]) | M | Measured |
+| B96 | **A container declared twice yields a second instance whose resource scope is empty.** Two causes, one symptom: a literal duplicate `id=` (WMP11-BlueVU's two `<container id="Meter">`) and a **double include** of the same file (jvc.tape includes `xml/pledit.xml` from both `skin.xml:17` and `xml/amp.xml:9`). The second instance resolves nothing — including the standard-frame `component.*` ids every other container in the same skin resolves — and reports the *first* instance's bitmap ids as missing. B75 is the script-side sibling of the include half | 3 skins ([M30]) | M | Measured |
+| B92 | **`@DEFAULTSKINPATH@` mis-expands, and nothing is mounted behind it.** `WalVirtualFileSystem.swift:72` assigns it bare while `SKINPATH`/`COLORTHEMESPATH` use `setVariable(…, trailingSeparator: true)`, so `@DEFAULTSKINPATH@xml/eq.xml` canonicalises to `/Skins/Defaultxml/eq.xml` — the concatenated name appears verbatim in the failure. canum does not load. Fixing the separator only moves the error to `'Default'`: no mount is established there either | 3 skins declare it, **1 live** (Bio-Nid's and Rika's are commented out) ([M28]) | S | Measured |
+| B93 | **The XML reader does not honour a UTF-16 BOM.** cpro2_dark_aluminum's `colorthemes.xml` is UTF-16LE; read as bytes every `<` scans as an open tag and no `</` ever matches, so the depth guard fires at `xmlDepthExceeded` and the skin is refused. The guard is right; the decoder never ran | 3 files / 3 skins, **1 fatal** — the other two are `languages/Wasabi.xml`, off the include path ([M27]) | S | Measured |
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
 
@@ -36,7 +40,8 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B84 | **`WA5:Options` maps to the Skins/UI menu, which is thin.** B77 routed a skin's own menu bar to NullPlayer's menus; `WA5:File`/`Play`/`Windows`/`Help` have clear counterparts, but Winamp's Options menu (preferences, time display, skins, always-on-top) has none. It currently opens `buildMenuBarUIMenu()` — 4 items, mostly skin families. The fatter candidate is `buildMenu()`, the player's own context menu, which duplicates the Exit already on `WA5:File`. A decision, not a defect: pick a mapping or build an Options menu for it | 6 skins declare a `<Menu>` bar | S | Live-reported |
 | B80 | Horizontal seams at fractional UI Sizes. Reported 2026-08-31 on cPro at **105%**, as hairlines along the boundaries between the drawer, seek and transport bands. **Measured facts:** a *full* draw is clean at both 2.0 and 2.1 device scale — zero partially-transparent rows in either, tested on the alpha channel, so this is not inherent to fractional scaling. It is the **targeted-repaint** path: `draw(_:)` clears `dirtyRect` and redraws the scene clipped to it, and a boundary row that is only partly cleared and partly repainted keeps a hairline until something forces a full repaint (which is why changing UI Size makes them vanish). Backing-aligning the invalidation rect outward in `setNeedsDisplay(_:)` was tried and **did not cure it** — necessary but not sufficient; the remaining unaligned step is unidentified. Suspect the hosted surfaces, which are real `NSView` subviews with their own invalidation. Affected sizes are exactly those fractional at 2x backing — 90/105/110/115/125/135/175 — and 50/100/150/200/250/300 are clean, confirmed by the reporter | 7 of 13 UI Sizes; every skin ([M25]) | M | Live-reported |
 | B79 | `autowidthsource` naming a **bitmap** label sizes its group to nothing. `autoWidth` answers only for `<text>`, `<songticker>` and check boxes; every other type returns `nil`, so a group pointed at a `<layer image="…">` collapses to 0 wide and takes its children with it. Reported on winampmodern566 (2026-08-31): its titlebar menu entries do not open, because `<groupdef id="menugroup.file" autowidthsource="File.txt">` resolves to `(1, 18, **0**, 16)` while the label layer beside it is 31 wide, so `<Menu w="0" relatw="1">` inherits a zero box and there is nothing to click. **Not a regression** — those entries had no hit target before `<Menu>` existed either; B77 exposed the gap rather than causing it. cPro is unaffected because its `autowidthsource` names a `<text>`. Fix is to give an object with resolved artwork its bitmap's width, but it moves group sizing engine-wide and wants its own corpus sweep | 2 skins / 24 declarations ([M24]) | S | Live-reported |
-| B78 | A hosted surface draws past the holder a skin gives it. Reported on Ebonite_2_1 (2026-08-31) as "the window contents are bigger than the frame": its playlist box is **227x172**, one of the smallest in the corpus, and the rows spill outside it. **The frame is not the bug** — `WinampModernMainView` sets `surface.view.frame = viewRect(fromSkin: holder.frame)`, so the view is exactly the holder's size and the overflow is *inside* it, where NullPlayer's own row height and text metrics have floors the holder is below. Confirmed **pre-existing**: an A/B of the whole Ebonite scene against HEAD is byte-identical (every container size, every holder frame, every node count), so none of Phase B77's work causes it | 27 of 44 skins hand a playlist holder under 260x180 ([M23]) | M | Live-reported |
+| B97 | **A video window the skin declares as `default_visible="0"` opens with the skin, empty.** Reported 2026-09-01 on Itemskin: a black panel sits on screen from launch carrying the skin's own `FS` / `1X` / `2X` / `OPTIONS` buttons and nothing else. That is `<container id="cont.clear.vd" default_visible="0" dynamic="1">` (`xml/window.xml:175`) — its four buttons are `VID_FS`, `VID_1X`, `VID_2X`, `VID_Misc`, and its 15-node layout matches what is drawn; the `Video` container the skin *names* as its video surface has 6 nodes and no buttons. It is empty because nothing is playing video, which is exactly why the skin asked for it closed. **Not a B94 regression** — reproduced identically on a stashed pre-B94 build, and B94 moved four bitmap counts in this skin and nothing in its container or window lists. `default_visible` is read (`WinampModernContainerTopology.swift:109`) and acted on (`WinampModernMainWindowController.swift:1530`), so the suspect is our own surface arrangement rather than the container's declaration: the startup catalog logs `video=declared:Video`, a different container from the one that opened | 1 skin reported; corpus reach unmeasured | M | Live-reported |
+| B78 | **A negative `sysregion` suppresses real frame artwork, so the content overhangs the frame.** Reported on Ebonite_2_1 (2026-08-31) as "the window contents are bigger than the frame"; reproduced and root-caused 2026-08-31. `WasabiRenderer.isRegionOnly` drops any layer whose `sysregion` is negative, which deletes the four border layers of Ebonite's standard frame and leaves only its `inner` layer — 19px narrower than the client area drawn over it. The rule is right for the silhouette masks it was written for (Ujola Cat) and wrong for real artwork | 308 layers / **37 of 53 skins** currently suppressed ([M26]) | M | Live-reported |
 
 ### Awaiting manual QA
 
@@ -48,9 +53,17 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 ## Reproducible reach commands
 
-All commands use the 36 directories extracted with `7zz` from
+All commands use the directories extracted with `7zz` from
 `~/Library/Application Support/NullPlayer/WinampModernSkins/` (excluding
 `ClassicProEngine`). Set `corpus=/path/to/the/extracted/root`.
+
+**The corpus is 70 archives as of 2026-08-31**, up from the 36 and then 53 earlier rows were measured
+against — so an older `[M##]` denominator is not comparable to a newer one, and rows say which they
+used. **Four of the 70 are byte-identical re-adds** of skins already installed, under their
+DeviantArt filenames — `pure_inspired_for_winamp_by_marisa85_d35ix2r` = `Pure Inspired`,
+`k_jr_winamp_skin_by_marisa85_d329ymw` = `K-jr`, and the two `dewytears_v2_5_by_dewytear_d2yn025_*`
+= `DewyTears_{Pink,Black}GlassV2.5` (SHA-256 verified). They should be deleted; until they are,
+**exclude them from any per-skin count** or one skin is reported twice.
 
 **A command lives here only while the item that cites it is open.** Closing an item moves its
 command into that item's archive entry, in the same change — otherwise the entry is left behind
@@ -61,14 +74,151 @@ resolve to a live citation above.
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases — and 50, 100, 150, 200, 250, 300 are integral. To check a *full* draw at either, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests` renders the scene the way the view does; count rows whose alpha is strictly between transparent and opaque to find partial-coverage seams objectively rather than by eye. The harness has no partial-repaint mode, which is why it cannot reproduce the live defect — adding one is most of this task.
 - <a id="m24"></a>**M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: **The_Nokia_5220_XpressMusic 12 of 12** and **winampmodern566 12 of 18**; no other skin in the 53 points one at a bitmap. Both are Menu-bar skins, which is why the symptom shows up there first.
-- <a id="m23"></a>**M23:** `WINAMP_MODERN_WAL="$corpus_wal" WINAMP_MODERN_RENDER_DUMP=/tmp/holders swift test --filter WinampModernRenderDumpTests`, then read the `PLAYLIST holder <container>/<layout>: <id>(x, y, w, h)` lines — one per skin, smallest first, ignoring the `hidden` ones. The holder is the box the skin allots; the question is whether NullPlayer's own surface fits inside it. Ebonite_2_1 is the reported case at **227x172**; the smallest in the corpus is micro at 140x69, and 27 of the 44 skins that expose one are under 260x180. The holder lines are unconditional, so no extra switch is needed. The same question applies to the `library@` and `video@` holders the `HOLDERS` line reports beside them.
+- <a id="m26"></a>**M26:** over the 53 extracted skin trees, count `<layer>` / `<animatedlayer>` declarations whose `sysregion` parses as a negative integer — these are exactly the ones `WasabiRenderer.isRegionOnly` refuses to paint. Measured 2026-08-31: **308 layers across 37 of the 53 skins**, led by winampmodern566 (26), Styx (23), Nullsoft.Winamp.2000.SP4.Lite (20), S7Reflex (18), Anaheim_Player_01 (16) and Ebonite_2_1 (16). The recurring four-layer `top`/`left`/`right`/`bottom` shape — the standard frame's own border — accounts for most of the ~25 skins that declare exactly 4. To see what a suppressed layer would have painted, read its `image=` bitmap's alpha profile: Ebonite's `gfx/standardframe/window/background.png` is 10x10 solid black at a uniform **alpha 179** (a fill), while Ujola Cat's `window-regions.png` is a magenta-and-white mask. That difference is the candidate discriminator and is not yet a rule.
+
+  M23, the playlist-holder size sweep this row used to cite, is **deleted rather than archived**: it measured the wrong thing. Its finding is kept here because it is still true and still not the bug — the holder Ebonite allots is 227x172, the smallest in the corpus is micro at 140x69, and 27 of the 44 skins that expose one are under 260x180. See B78 for why holder size is innocent.
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
+- <a id="m31"></a>**M31:** per skin tree, take every `image=`/`downImage=` value matching `wasabi.(button|titlebar).*` and subtract the `<bitmap id="wasabi.…">` the same tree declares; the remainder is chrome the skin expects the *player* to supply. Measured 2026-08-31: **Winamp 3.0 Default 24 of 24 undeclared** (hence blank), Formamp 7 of 7, corneramp_redux 6 of 6, ZDL_Reel-To-Reel 2 of 12. Formamp and corneramp_redux load and render acceptably today, so a partly-undeclared set is survivable and only a wholly-undeclared one is fatal — which is why reach is 4 but severity is 1.
+- <a id="m30"></a>**M30:** per skin tree, case-fold the `id=` of every `<container>` and keep the duplicates. Measured 2026-08-31: **Ebonite_2_1** (`sc.alphaframe`) and **WMP11-BlueVU** (`meter`). That grep finds only the literal-duplicate half; the **double-include** half does not show up in it and must be found from the render dump, where one declaration prints twice in `RENDER-DUMP containers` — **jvc.tape.v0.5**, whose `xml/pledit.xml` is included from both `skin.xml:17` and `xml/amp.xml:9`. Three skins between the two shapes.
+- <a id="m27"></a>**M27:** find every `.xml` whose first two bytes are `ff fe` or `fe ff`. Measured 2026-08-31: **3 files** — `cpro2_dark_aluminum_final_by_victhor/colorthemes.xml` (fatal, it is on the include path) and `languages/Wasabi.xml` in both **Big Bento Modern** and **Big Bento Modern Windows 10 edition**, which load fine because nothing includes those. So the count overstates the blast radius: what matters is whether a UTF-16 file is reachable from `skin.xml`.
+- <a id="m28"></a>**M28:** `grep -rl 'DEFAULTSKINPATH' "$corpus" --include="*.xml"`, then **check whether the line is commented out** — that is the whole measurement. Three skins name it: canum uses it live (3 includes), while **Bio-Nid and Rika both have theirs inside a single `<!-- -->` spanning lines 15-20**, which is why they load today and canum does not.
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
 number of matched declarations or MAKI program symbols. A compiled MAKI method name is a program
 symbol, not necessarily a call-site count; rows say so where that distinction matters.
 
 ## Item detail
+
+The four entries below (B92, B93, B95 and B96) came out of one batch measurement of the **12 skins added
+2026-08-30 and 2026-08-31**, profiled 2026-08-31 with `WinampModernRenderDumpTests` under
+`RENDER_BITMAPS` + `RENDER_SCRIPTS=bindings` and every layout PNG read. Grades from that batch:
+`cpro2_dark_aluminum` and `canum` do not load (**F**), `Winamp 3.0 Default` loads blank (**F**),
+`Darjah 1` **D**, `cpro_interface` / `nullsoft_media_player_10` / `jvc.tape` **C**, and
+`WMP11-BlueVU` / `MMD3-4-5` / `EPS_High-End` / `TRON Legacy` / `Firefox` **B**. **No live pass was
+run**, so nothing below has been driven under the mouse and the harness's absence of a component
+host means an empty *pane* is not evidence — only an empty *window* is.
+
+---
+
+### B95
+
+- [ ] **B95. No default `wasabi.*` chrome bitmap set.** Winamp3-era skins reference
+      `wasabi.button.appmenu`, `wasabi.button.minimize`, `wasabi.button.winshade`,
+      `wasabi.titlebar.center.active` and siblings **without declaring them**, because Winamp
+      supplied those from Wasabi's built-in resources. We supply none.
+
+      `Winamp 3.0 Default` — Nullsoft's own *"Winamp3 Base Skin"* — is the fatal case, 24 of 24
+      references undeclared:
+
+      ```
+      BITMAPS main/normal:    resolved=0  missing=wasabi.button.appmenu … wasabi.button.winshade.pressed
+      BITMAPS eq/normal:      resolved=0
+      BITMAPS eq/advanced:    resolved=0
+      BITMAPS Pledit/normal:  resolved=0
+      BITMAPS Video/normal:   resolved=0
+      BITMAPS thinger/normal: resolved=0
+      ```
+
+      `main-normal.png` is a **completely blank white 275x116** — the only skin in the corpus that
+      loads and renders nothing at all. Its windowshade layouts partially resolve (`main/shade` 13,
+      `eq/shade` 5, `Pledit/shade` 8) because those use the skin's own artwork, which is what
+      isolates the cause to the undeclared set rather than to the skin.
+
+      **Severity is not reach here.** [M31] finds 4 skins referencing undeclared `wasabi.*` ids, but
+      Formamp (7 of 7) and corneramp_redux (6 of 6) both load and render acceptably today, so a
+      partly-missing set is survivable. Supplying a default set would also change what those two
+      draw — check them in the sweep before assuming this is additive.
+
+---
+
+### B96
+
+- [ ] **B96. A container declared twice yields a second instance with an empty resource scope.**
+      One symptom, two causes, and the grep only finds one of them.
+
+      **Literal duplicate `id=`.** `WMP11-BlueVU/xml/VU-Meters.xml:1` opens
+      `<container id="Meter" name="VU Meters Large">` and then `<container id="Meter" name="VU
+      Meters Small">`. Both reach the graph; the second resolves nothing:
+
+      ```
+      BITMAPS Meter/normal: resolved=22 missing=
+      BITMAPS Meter/normal: resolved=0  missing=btnshadow.1 component.left component.top.left
+                                                needleimg1 scaleimg1 vusettingslarge …
+      ```
+
+      The ids it reports missing are the **first** container's, and they include the standard-frame
+      `component.*` set that every other container in the same skin resolves — so the second
+      instance is not merely missing artwork, it is resolving against an empty scope.
+
+      **Double include.** jvc.tape.v0.5 declares `Pledit` **once**, in `xml/pledit.xml:1`, but
+      includes that file from both `skin.xml:17` and `xml/amp.xml:9`. `RENDER-DUMP containers`
+      prints `Pledit` twice, both `resolved=0` (`pl.button.bg`, `pl.button.small`). B75 — a skin that
+      includes the same script twice runs every handler twice — is the script-side sibling of this
+      half, and an include-once guard would likely close both.
+
+      **Open question before implementing:** real Winamp keys containers by id, so it would keep one
+      and discard the other. Discarding may be more correct than repairing the second scope — but
+      that loses WMP11's *"VU Meters Small"* window, which the skin plainly intends as a second
+      window. Decide which before writing code.
+
+---
+
+### B92
+
+- [ ] **B92. `@DEFAULTSKINPATH@` mis-expands, and nothing is mounted behind it.**
+
+      `Sources/NullPlayer/WinampModern/WalVirtualFileSystem.swift:72`:
+
+      ```swift
+      variables["DEFAULTSKINPATH"] = "/Skins/Default"
+      ```
+
+      `SKINPATH` and `COLORTHEMESPATH` are both set through
+      `setVariable(…, trailingSeparator: true)` a few lines below, with a comment explaining why.
+      This one is a bare assignment, so canum's `<include file="@DEFAULTSKINPATH@xml/eq.xml"/>`
+      canonicalises to `/Skins/Defaultxml/eq.xml` and the lazy sibling mount reports, verbatim:
+
+      ```
+      [missingRequiredMount] This skin requires the skin 'Defaultxml' to be installed.
+      ```
+
+      The concatenated mount name in that message is the proof of the missing separator.
+
+      **Two bugs stacked.** Adding the separator only changes the error to `requires the skin
+      'Default'`, because no mount is ever established at `/Skins/Default`. `@DEFAULTSKINPATH@` means
+      Winamp's **stock Modern skin**, which the corpus already has as `winampmodern566.wal`.
+      **This needs a decision** — map `Default` onto that archive when installed, ship a minimal
+      default tree, or fail with a message naming what to install. The separator fix alone does not
+      make canum load.
+
+      Reach is small but the variable is corpus-wide surface: [M28] finds 3 skins naming it, and
+      Bio-Nid's and Rika's are inside a `<!-- -->` spanning lines 15-20, which is exactly why those
+      two load today and canum does not.
+
+---
+
+### B93
+
+- [ ] **B93. The XML reader does not honour a UTF-16 BOM.** cpro2_dark_aluminum's
+      `colorthemes.xml` opens with `ff fe` and interleaves nulls:
+
+      ```
+      < g a m m a s e t   i d = " * D e f a u l t " >
+      ```
+
+      Read as bytes, every `<` scans as an opening tag and no `</` ever matches, so nesting climbs
+      until the depth guard fires:
+
+      ```
+      colorthemes.xml:260:6: [xmlDepthExceeded] XML nesting exceeds 256 levels.
+      ```
+
+      The guard is behaving correctly — the decoder never ran. Sniff the BOM, decode to UTF-8, then
+      parse.
+
+      [M27] finds 3 UTF-16 files corpus-wide and only this one is fatal; the other two are
+      `languages/Wasabi.xml` in the two Big Bento Modern editions, which load fine because nothing
+      includes them. Windows XML tooling emits UTF-16 routinely, so expect more as the corpus grows.
 
 ---
 
@@ -207,6 +357,68 @@ The implementation and its automated coverage shipped; that record is in
       (The Itemskin observation that used to sit here — a standard frame with `surfaces=0` for every
       hosted id — was a different defect and is closed as B69: its frames are a *second* container per
       window, so the hosted probe was looking at the content half of a pair.)
+
+### B78
+
+- [ ] **B78. A negative `sysregion` suppresses real frame artwork, so the window's content overhangs
+      the frame.** Reported on Ebonite_2_1 (2026-08-31) as "the window contents are bigger than the
+      frame". **Reproduced live and root-caused the same day** — the two causes the entry originally
+      proposed are both wrong and are recorded below so they are not re-derived.
+
+      **What is on screen.** Ebonite's Playlist window, moved clear of every other window and
+      measured per row against the renderer's own 250x250 output:
+
+      ```
+      y=  0..16   fully transparent
+      y= 17..29   opaque x = 11..213     <- 203 wide
+      y= 30..219  opaque x = 10..232     <- 223 wide
+      y=220..226  opaque x = 11..213     <- 203 wide
+      y=227..249  fully transparent
+      ```
+
+      The content is 223px wide and overhangs the only frame artwork that draws by **19px to the
+      right and 9px below**. There is no border at all: the outer 10px left, 17px right, 17px top and
+      23px bottom of the window are fully transparent.
+
+      **The cause.** Ebonite's `wasabi.frame.dummy` groupdef
+      (`wasabi/standardframe/standardframe.xml:134`) draws its frame as five layers — `top`, `left`,
+      `right`, `bottom` over `wasabi.frame.dummybg` with `sysregion="-2"`, and `inner` over
+      `wasabi.frame.inner` with `sysregion="1"`. `WasabiRenderer.isRegionOnly` (`:2398`) answers true
+      for any negative `sysregion` and such a layer is never painted, so the four border layers are
+      dropped and only `inner` survives — `x=11 y=17 w=203 h=210`, which is the measured opaque box
+      exactly. The frame's script then instantiates the content group at `(10, 30, 223, 190)` on top
+      of it, and that is the overhang.
+
+      **The suppressed bitmap is not a mask.** `gfx/standardframe/window/background.png` is 10x10
+      solid black at a uniform **alpha 179** — a translucent border fill. The rule exists for a real
+      defect (Ujola Cat's `window-regions.png` silhouettes painting magenta and white slabs over the
+      title strips) but keys on the sign alone, which is too coarse.
+
+      **Two corrections to how this was filed.** The `.playlist` holder has **no NSView surface**:
+      `layoutHostedSubviews` (`WinampModernMainView.swift:1058`) positions only `.library`,
+      `.visualization`, `.video`, `.hostWindow` and browser surfaces, and the embedded playlist is
+      drawn by `WasabiRenderer.drawPlaylistComponent` (`:4744`), which clips to the holder before
+      drawing a row — so the `surface.view.frame` sentence described a path this surface never takes.
+      And the row metrics are innocent: `auto` resolves to **100%** here (`text=11.0px row=12.0px`,
+      14 rows in 172px), because `WinampModernTextScale.autoDivisor` is 48 and anything under a 528px
+      window sits on the 11px floor. Holder size is not the reach number; [M26] is.
+
+      **Also ruled out, do not re-try.** Container-level `default_w`/`default_h`/`minimum_w`/
+      `minimum_h` are read nowhere — `WinampModernContainerTopology.analyze` takes sizes only from the
+      layout (`:86-94`) while reading the container's `default_x`/`default_y` (`:244`) — and 37 such
+      declarations across 20 skins are ignored. **Honouring them would be a regression.** Ebonite
+      disproves them itself: its `<container id="equalizer" default_w="346" default_h="192">` sits
+      over a layout locked at `w/h/minimum/maximum = 147x106`, and its `<container id="main"
+      minimum_h="300" maximum_h="300">` over layouts 40 to 297 tall. The numbers are cargo-culted from
+      Winamp Modern and Winamp evidently ignores them too.
+
+      **Before changing the rule:** it is shared, and 37 of 53 skins have layers behind it ([M26]), so
+      this wants the corpus render sweep behind it rather than a live poke at one window. Ujola Cat is
+      the named regression case — a fix that repaints its five masks puts magenta and white slabs back
+      over its title strips. The candidate discriminator is the bitmap's alpha profile (uniform
+      translucent fill vs. colour-keyed mask); it is a candidate, not yet a rule.
+
+---
 
 <details>
 <summary>B52's task list, kept for the measurements it records</summary>

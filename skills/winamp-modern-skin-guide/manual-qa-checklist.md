@@ -184,6 +184,13 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
 - [ ] mmd3 / CornerAmp: the synthesized library window is drawn with **the skin's own frame** (its
       title bar, borders, and buttons), not NullPlayer chrome
 - [ ] A surface with no home falls back to a window of its own, and the DEBUG log names the reason
+- [ ] **Darjah 1, MoonLight and Pure Inspired draw their own artwork** (B94) — none has been driven
+      under the mouse. Load each: Darjah's player must show its wood panelling and its own round blue
+      transport, not NullPlayer's generic controls over a plain background; MoonLight's `main/normal`
+      must be a full player rather than a clock on an empty bar. Then load **mmd3 or MMD3-4-5** in the
+      same pass and read its display text: the ticker, time, KBPS and KHZ must be tinted with the rest
+      of the player, not grey — that is the `fontSheet` bound, and a corpus render sweep catches it
+      only because those two skins are in it.
 - [ ] **Itemskin and EPS High-End: the Notifier Preferences window has a background** (B90) — open
       it from **Skin Windows** on each. Itemskin shows its own `config.png` panel artwork behind the
       six title boxes; EPS shows a black panel, against which its near-white controls are legible.

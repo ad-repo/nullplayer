@@ -217,6 +217,10 @@ sits in `notifier/notifier.xml` and is written from the root. It is the corpus's
 declaration, and resolving only the id form left its whole 300x422 notifier-preferences window
 transparent.
 
+The same either/or reaches every *other* bitmap attribute through the registry rather than through
+this call: see [loading.md](loading.md) -> *An attribute that names an image file gets an implicit
+bitmap* (B94).
+
 When neither form resolves and the object is a **layout**, the frame is filled with the palette's
 `contentBackground`. 13 skins name a resource that comes from Winamp's own Wasabi base skin, which we
 ship no equivalent of — `component.basetexture` (14), `wasabi.frame.basetexture` (15),

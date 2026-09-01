@@ -17,6 +17,16 @@
 
 ### Bug Fixes
 
+- **Winamp Modern skins: eight skins that were drawing almost none of their own artwork now draw all
+  of it** — Darjah 1, MoonLight, Pure Inspired, K-jr, the three DewyTears editions and WMP11-BlueVU
+  build their players by pointing at image files inside the skin rather than by naming pieces of
+  artwork they declared up front. Only the second way was being read, so Darjah and MoonLight came up
+  as NullPlayer's plain fallback controls on an empty background, with nothing of the skin visible at
+  all. All eight now show the players their authors drew — Darjah its wood panelling and round blue
+  transport, MoonLight a full player where there had been a clock on a bare strip — and the three
+  DewyTears players also take their proper size. Where a skin names artwork it declared, that still
+  wins, so nothing that already looked right has changed.
+
 - **Winamp Modern skins: Hal's Eye works end to end** — on this skin the six-page user manual would
   not turn its pages, the Credits window showed one sentence cut off in the middle of an empty panel,
   the eye did not rotate, and double-clicking the ring never opened the rotation-speed menu the
