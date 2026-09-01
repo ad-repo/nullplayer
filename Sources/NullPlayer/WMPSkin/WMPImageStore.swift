@@ -17,6 +17,9 @@ struct WMPImageStoreMetrics: Hashable, Codable {
     let peakCacheBytes: Int
     let decodedImageCount: Int
     let evictionCount: Int
+    let cachedMappingImageCount: Int
+    let currentMappingBytes: Int
+    let decodedMappingImageCount: Int
 }
 
 struct WMPDecodedImage {
@@ -32,6 +35,10 @@ final class WMPImageStore: @unchecked Sendable {
         let image: WMPDecodedImage
         var access: UInt64
     }
+    private struct MappingEntry {
+        let mapping: WMPMappingImage
+        var access: UInt64
+    }
 
     private let provider: WMPResourceProviding
     private let limits: WMPImageStoreLimits
@@ -42,6 +49,9 @@ final class WMPImageStore: @unchecked Sendable {
     private var peakBytes = 0
     private var decodeCount = 0
     private var evictions = 0
+    private var mappingEntries: [String: MappingEntry] = [:]
+    private var mappingBytes = 0
+    private var mappingDecodeCount = 0
 
     init(provider: WMPResourceProviding, limits: WMPImageStoreLimits = .production) {
         self.provider = provider
@@ -84,7 +94,43 @@ final class WMPImageStore: @unchecked Sendable {
         lock.lock()
         entries.removeAll(keepingCapacity: false)
         currentBytes = 0
+        mappingEntries.removeAll(keepingCapacity: false)
+        mappingBytes = 0
         lock.unlock()
+    }
+
+    func mappingImage(for path: String, nodeByColor: [WMPColor: Int]) throws -> WMPMappingImage {
+        let canonical = provider.canonicalPath(for: path) ?? path
+        let assignments = nodeByColor.sorted { lhs, rhs in
+            lhs.key.description == rhs.key.description ? lhs.value < rhs.value
+                : lhs.key.description < rhs.key.description
+        }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        let key = "\(canonical)|map=\(assignments)"
+        lock.lock()
+        if var entry = mappingEntries[key] {
+            clock &+= 1
+            entry.access = clock
+            mappingEntries[key] = entry
+            lock.unlock()
+            return entry.mapping
+        }
+        lock.unlock()
+
+        let mapping = try WMPMappingImage(image: image(for: canonical).image, nodeByColor: nodeByColor)
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = mappingEntries[key] { return existing.mapping }
+        mappingDecodeCount += 1
+        guard mapping.decodedBytes <= limits.cacheBytes else { return mapping }
+        while mappingBytes + mapping.decodedBytes > limits.cacheBytes,
+              let victim = mappingEntries.min(by: { $0.value.access < $1.value.access }) {
+            mappingBytes -= victim.value.mapping.decodedBytes
+            mappingEntries.removeValue(forKey: victim.key)
+        }
+        clock &+= 1
+        mappingEntries[key] = MappingEntry(mapping: mapping, access: clock)
+        mappingBytes += mapping.decodedBytes
+        return mapping
     }
 
     var metrics: WMPImageStoreMetrics {
@@ -92,7 +138,9 @@ final class WMPImageStore: @unchecked Sendable {
         defer { lock.unlock() }
         return WMPImageStoreMetrics(cachedImageCount: entries.count,
             currentCacheBytes: currentBytes, peakCacheBytes: peakBytes,
-            decodedImageCount: decodeCount, evictionCount: evictions)
+            decodedImageCount: decodeCount, evictionCount: evictions,
+            cachedMappingImageCount: mappingEntries.count, currentMappingBytes: mappingBytes,
+            decodedMappingImageCount: mappingDecodeCount)
     }
 
     private func decode(path: String, colorKey: WMPColor?) throws -> WMPDecodedImage {

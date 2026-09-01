@@ -4,11 +4,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     static let unskinnedSize = NSSize(width: 440, height: 170)
 
     private let importer: WMPSkinImporter
+    private let host: any WMPHost
     private var loadTask: Task<Void, Never>?
     private var loadedSkin: WMPLoadedSkin?
     private var imageStore: WMPImageStore?
     private var activeViewID: String?
     private var activeLimits: WMPResizeLimits?
+    private var activeScene: WMPScene?
     private var mainView: WMPMainView?
     private var unskinnedView: WMPUnskinnedMainView?
     private var isApplyingSceneSize = false
@@ -17,11 +19,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private(set) var lastLoadDiagnostic: String?
 
     convenience init() {
-        self.init(importer: WMPSkinImporter())
+        self.init(importer: WMPSkinImporter(), host: WMPAudioEngineHost(audioEngine: WindowManager.shared.audioEngine))
     }
 
-    init(importer: WMPSkinImporter) {
+    init(importer: WMPSkinImporter, host: (any WMPHost)? = nil) {
         self.importer = importer
+        self.host = host ?? WMPAudioEngineHost(audioEngine: WindowManager.shared.audioEngine)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.unskinnedSize),
                               styleMask: [.borderless, .resizable, .miniaturizable],
                               backing: .buffered, defer: false)
@@ -158,11 +161,20 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         imageStore = store
         activeViewID = scene.viewID
         activeLimits = scene.resizeLimits
+        activeScene = scene
         lastLoadDiagnostic = nil
         importer.defaults.set(scene.viewID, forKey: WMPSkinImporter.selectedViewIDKey)
 
         let view = mainView ?? WMPMainView(frame: .zero)
         mainView = view
+        view.onAction = { [weak self] action, value in
+            guard let self else { return }
+            self.host.perform(action, value: value)
+            self.refreshHostState()
+        }
+        view.onInteractionChanged = { [weak self] state, changed in
+            self?.renderInteraction(state: state, changed: changed)
+        }
         unskinnedView = nil
         window?.contentView = view
         if let restored = pendingRestoredFrame {
@@ -177,7 +189,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         } else {
             setWindowSize(NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height))
         }
-        view.present(image)
+        view.present(image, scene: scene)
+        view.refreshHostState(host.snapshot)
     }
 
     private func presentUnskinned(message: String?) {
@@ -185,6 +198,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         imageStore = nil
         activeViewID = nil
         activeLimits = nil
+        activeScene = nil
         lastLoadDiagnostic = message
         mainView?.prepareForUITeardown()
         mainView = nil
@@ -194,6 +208,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         view.onImport = { [weak self] in self?.importSkinFromPanel() }
         view.onMinimize = { [weak self] in self?.window?.miniaturize(nil) }
         view.onClose = { [weak self] in self?.window?.orderOut(nil) }
+        view.host = host
         view.show(message: message)
         window?.contentView = view
         setWindowSize(Self.unskinnedSize)
@@ -221,7 +236,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     .build(viewID: viewID, requestedSize: requested)
                 let result = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
                 try Task.checkCancellation()
-                self?.mainView?.present(result.image)
+                self?.activeScene = scene
+                self?.mainView?.present(result.image, scene: scene)
+                self?.mainView?.refreshHostState(self?.host.snapshot ?? WMPHostSnapshot())
             } catch is CancellationError {} catch {
                 self?.lastLoadDiagnostic = error.localizedDescription
             }
@@ -236,9 +253,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         unskinnedView?.onImport = nil
         unskinnedView?.onMinimize = nil
         unskinnedView?.onClose = nil
+        unskinnedView?.host = nil
         unskinnedView = nil
         loadedSkin = nil
         imageStore = nil
+        activeScene = nil
+        host.stopContinuousCommands()
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
@@ -263,15 +283,37 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 
-    func updateTrackInfo(_ track: Track?) {}
+    func updateTrackInfo(_ track: Track?) { refreshHostState() }
     func updateVideoTrackInfo(title: String, artworkTrack: Track?) {}
     func clearVideoTrackInfo() {}
-    func updateTime(current: TimeInterval, duration: TimeInterval) {}
-    func updatePlaybackState() {}
+    func updateTime(current: TimeInterval, duration: TimeInterval) { refreshHostState() }
+    func updatePlaybackState() { refreshHostState() }
     func updateSpectrum(_ levels: [Float]) {}
     func skinDidChange() {}
     func windowVisibilityDidChange() {}
     func setNeedsDisplay() { window?.contentView?.needsDisplay = true }
+
+    private func refreshHostState() {
+        mainView?.refreshHostState(host.snapshot)
+        unskinnedView?.refresh(host.snapshot)
+    }
+
+    private func renderInteraction(state: WMPInteractionState, changed: Set<Int>) {
+        guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
+              let activeScene else { return }
+        loadTask?.cancel()
+        loadTask = Task { [weak self] in
+            do {
+                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                    .build(viewID: viewID, requestedSize: activeScene.canvasSize,
+                           interactionState: state, dirtyNodeIDs: changed)
+                let result = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+                try Task.checkCancellation()
+                self?.activeScene = scene
+                self?.mainView?.present(result.image, scene: scene, dirtyBounds: scene.dirtyBounds)
+            } catch is CancellationError {} catch { self?.lastLoadDiagnostic = error.localizedDescription }
+        }
+    }
 }
 
 enum WMPWindowRestorePolicy {

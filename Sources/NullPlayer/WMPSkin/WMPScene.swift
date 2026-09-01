@@ -49,6 +49,12 @@ struct WMPHitMetadata: Hashable, Codable {
     let frame: WMPRect
     let clipRect: WMPRect?
     let zIndex: Int
+    let documentOrder: Int
+    let action: WMPTransportAction?
+    let sticky: Bool
+    let enabled: Bool
+    let mappingImage: WMPMappingImage?
+    let mappingTargets: [WMPHitTarget]
 }
 
 struct WMPUnresolvedGeometry: Hashable, Codable {

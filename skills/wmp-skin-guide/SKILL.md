@@ -94,6 +94,32 @@ selected by Phase 0 and must repeat its hard-stop/restart security gate before p
   has a WMP host, hide or disable it; missing skin chrome uses only an app-authored WMP-neutral
   fallback.
 
+## Phase 4 input and transport contracts
+
+- `WMPMappingImage` stores canonical, un-premultiplied RGB plus alpha in authored top-left row
+  order. Alpha-zero and unregistered colors never hit. Sample by scaling the original unclipped
+  control frame into mapping pixels; apply inherited clipping as a separate hit-test gate.
+- Mapping-image child bounds are only rejection/dirty metadata. Irregular regions may have empty
+  corners inside their bounding box, so activation always samples an exact pixel. Cache mapping
+  buffers through `WMPImageStore` with a byte bound and a key containing canonical path plus the
+  color-to-node assignment.
+- `WMPHitTester` walks reverse z/document order. Mapped unknown/transparent pixels fall through to
+  lower controls; disabled controls do not intercept input. Window dragging is reached only after
+  interactive hit testing returns no target.
+- Mouse capture belongs to the pressed node until release or cancellation. Activation requires an
+  inside release on that same node. Seek/volume/balance continue tracking while captured; scan
+  commands always stop on release, cancellation, or teardown.
+- Normal, hover, down/sticky, and disabled artwork selection is resolved off-main by rebuilding an
+  immutable scene. AppKit invalidates only the union of changed control frames while retaining the
+  full last rendered image.
+- `WMPHost` is a main-actor, typed command/snapshot boundary. `WMPAudioEngineHost` clamps all numeric
+  values and exposes metadata, time strings, playlist position, command-enabled state, shuffle,
+  repeat, mute, volume, and balance without exposing `AudioEngine` to skin code. JScript remains
+  disabled; Phase 4 recognizes semantic transport elements and only a small exact allowlist of
+  literal transport statements.
+- Both the skinned and app-authored unskinned WMP players use this same host. Custom-drawn controls
+  publish accessibility children with stable `wmp.*` identifiers.
+
 ## Verification
 
 Use the committed original fixtures in `Tests/NullPlayerAppTests/Fixtures/WMPSkin/`. Run focused WMP

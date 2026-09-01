@@ -12,13 +12,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
     /// Layout, resource resolution, and image metadata/decode stay off the main thread even when a
     /// UI caller initiates the transaction.
-    func build(viewID: String, requestedSize: WMPSize? = nil) async throws -> WMPScene {
+    func build(viewID: String, requestedSize: WMPSize? = nil,
+               interactionState: WMPInteractionState = WMPInteractionState(),
+               dirtyNodeIDs: Set<Int>? = nil) async throws -> WMPScene {
         try await Task.detached(priority: .userInitiated) {
-            try buildOffMain(viewID: viewID, requestedSize: requestedSize)
+            try buildOffMain(viewID: viewID, requestedSize: requestedSize,
+                             interactionState: interactionState, dirtyNodeIDs: dirtyNodeIDs)
         }.value
     }
 
-    private func buildOffMain(viewID: String, requestedSize: WMPSize?) throws -> WMPScene {
+    private func buildOffMain(viewID: String, requestedSize: WMPSize?,
+                              interactionState: WMPInteractionState,
+                              dirtyNodeIDs: Set<Int>?) throws -> WMPScene {
         guard let registration = loadedSkin.views.first(where: {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
         }) else {
@@ -173,7 +178,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 commands.append(imageCommand(node: node, path: path, frame: frame,
                     clip: inheritedClip, z: z, background: true))
             }
-            if let (_, path) = try resource(node, names: ["image"]), !frame.isEmpty,
+            let childStates = node.kind == .buttonGroup
+                ? node.children.map { interactionState.visualState(for: $0.stableID) } : []
+            let visualState: WMPVisualInteractionState
+            if childStates.contains(.down) { visualState = .down }
+            else if childStates.contains(.hover) { visualState = .hover }
+            else if !childStates.isEmpty && childStates.allSatisfy({ $0 == .disabled }) { visualState = .disabled }
+            else { visualState = interactionState.visualState(for: node.stableID) }
+            let foregroundNames: [String]
+            switch visualState {
+            case .disabled: foregroundNames = ["disabledImage", "image"]
+            case .down: foregroundNames = ["downImage", "image"]
+            case .hover: foregroundNames = ["hoverImage", "image"]
+            case .normal: foregroundNames = ["image"]
+            }
+            if let (_, path) = try resource(node, names: foregroundNames), !frame.isEmpty,
                node.kind != .subview && node.kind != .view {
                 commands.append(imageCommand(node: node, path: path, frame: frame,
                     clip: inheritedClip, z: z, background: false))
@@ -196,9 +215,41 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .text(text)))
             }
-            if isInteractive(node.kind), let visible {
+            if isInteractive(node.kind), visible != nil {
+                let enabled = literalString(node, "enabled")?.caseInsensitiveCompare("false") != .orderedSame
+                    && !interactionState.disabledNodesForScene.contains(node.stableID)
+                let sticky = literalString(node, "sticky")?.caseInsensitiveCompare("true") == .orderedSame
+                var mappingImage: WMPMappingImage?
+                var mappingTargets: [WMPHitTarget] = []
+                if node.kind == .buttonGroup,
+                   let (_, mappingPath) = try resource(node, names: ["mappingImage"]) {
+                    // WMP allows both literal BUTTONELEMENT nodes and semantic transport elements
+                    // (PLAYELEMENT, NEXTELEMENT, and peers) inside one mapping image.
+                    let children = node.children.filter { $0.attribute(named: "mappingColor") != nil }
+                    let colors = Dictionary(uniqueKeysWithValues: children.compactMap { child -> (WMPColor, Int)? in
+                        guard let value = child.attribute(named: "mappingColor")?.value,
+                              case let .color(color) = value else { return nil }
+                        return (color, child.stableID)
+                    })
+                    if !colors.isEmpty {
+                        mappingImage = try imageStore.mappingImage(for: mappingPath, nodeByColor: colors)
+                        mappingTargets = children.compactMap { child in
+                            guard colors.values.contains(child.stableID) else { return nil }
+                            let childEnabled = literalString(child, "enabled")?.caseInsensitiveCompare("false") != .orderedSame
+                                && !interactionState.disabledNodesForScene.contains(child.stableID)
+                            return WMPHitTarget(stableID: child.stableID, nodeID: child.xmlID,
+                                kind: child.kind.description, frame: frame,
+                                action: WMPTransportAction.authoredAction(for: child),
+                                sticky: literalString(child, "sticky")?.caseInsensitiveCompare("true") == .orderedSame,
+                                enabled: childEnabled)
+                        }
+                    }
+                }
                 hits.append(WMPHitMetadata(stableID: node.stableID, nodeID: node.xmlID,
-                    kind: node.kind.description, frame: visible, clipRect: inheritedClip, zIndex: z))
+                    kind: node.kind.description, frame: frame, clipRect: inheritedClip, zIndex: z,
+                    documentOrder: node.stableID, action: WMPTransportAction.authoredAction(for: node),
+                    sticky: sticky, enabled: enabled, mappingImage: mappingImage,
+                    mappingTargets: mappingTargets))
             }
 
             let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
@@ -216,13 +267,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
                  parentAuthoredSize: WMPSize(width: authoredWidth, height: authoredHeight),
                  inheritedClip: canvasRect, isRoot: true)
         hits.sort { ($0.zIndex, $0.stableID) < ($1.zIndex, $1.stableID) }
-        let dirty = commands.compactMap { command in
+        let allDirty = commands.compactMap { command in
             command.clipRect.flatMap { command.frame.intersection($0) } ?? command.frame
         }.reduce(nil as WMPRect?) { accumulated, next in
             accumulated.map { $0.union(next) } ?? next
         }
+        let dirty = dirtyNodeIDs.map { identifiers in
+            hits.filter { identifiers.contains($0.stableID)
+                || $0.mappingTargets.contains(where: { identifiers.contains($0.stableID) }) }
+                .compactMap { hit in hit.clipRect.flatMap { hit.frame.intersection($0) } ?? hit.frame }
+                .reduce(nil as WMPRect?) { accumulated, next in
+                    accumulated.map { $0.union(next) } ?? next
+                }
+        } ?? allDirty
         let metrics = WMPSceneMetrics(resolvedNodeCount: resolvedNodes.count,
-            unresolvedNodeCount: unresolvedNodes.count, visibleBounds: dirty)
+            unresolvedNodeCount: unresolvedNodes.count, visibleBounds: allDirty)
         return WMPScene(viewID: registration.id, canvasSize: canvas, resizeLimits: resizeLimits,
             commands: commands, hits: hits, geometries: geometries, unresolved: unresolved,
             diagnostics: diagnostics, dirtyBounds: dirty, metrics: metrics,

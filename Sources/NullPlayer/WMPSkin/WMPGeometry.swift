@@ -46,6 +46,10 @@ struct WMPRect: Hashable, Codable, CustomStringConvertible {
         return WMPRect(x: left, y: top, width: max(maxX, other.maxX) - left,
                        height: max(maxY, other.maxY) - top)
     }
+
+    func contains(_ point: WMPPoint) -> Bool {
+        point.x >= x && point.y >= y && point.x < maxX && point.y < maxY
+    }
 }
 
 enum WMPAxisAlignment: String, Codable {
