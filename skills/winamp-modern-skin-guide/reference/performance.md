@@ -174,3 +174,74 @@ the frame. What is *not* allowed there is arithmetic that could have happened el
 two doubles, and the FX mesh is evaluated by the animation clock before it invalidates rather than by
 the paint that follows.
 
+
+#### Profile the build the user runs (2026-09-01)
+
+A cPro report — "the skins feel slower, low fps, not smooth" — was chased through five rounds of
+optimization on a **debug** build. The first four found real defects; the fifth was chasing an
+artifact, and the measurement that would have said so cost ten minutes and was run last.
+
+Main-thread **busy** fraction, cPro Bento with the drawer visualization up and audio playing:
+
+| build | busy | idle |
+|---|---:|---:|
+| debug, before | 98.6% | 1.4% |
+| debug, after the fixes below | 94.4% | 5.6% |
+| **release, same tree** | **60.7%** | **39.3%** |
+
+The split that matters is **algorithmic vs. merely hot**. A table rebuilt per call, a `CharacterSet`
+built per character, a CoreText pass re-answering a constant — the optimizer fixes none of those, and
+they are worth fixing from a debug profile alone. Ordinary code executed often is the opposite: that
+is where debug-vs-release decides whether there is a problem at all. Once the named defects are gone
+and what is left is `draw` and the interpreter doing genuine work, **stop and measure release** before
+spending another round.
+
+Two instrument traps this session hit, both worth knowing:
+
+- **`WINAMP_MODERN_VIS_STALL` is `#if DEBUG`.** A release run reports zero stalls whether or not any
+  occurred. A silent instrument is "not running" until proven otherwise.
+- **`sample` aggregation must not sum a recursive symbol.** Counting every frame that carries a name
+  counts each level of a recursion separately: `append` read as **73%** of the main thread against a
+  true **12.2%**, and `normalize` as 28.3% against 14.6%. Inclusive share counts only the *outermost*
+  occurrence on each stack. Substring matching is unsafe for the same reason —
+  `refreshWaveformDemand` also appears as `closure #4 in …` and `partial apply for closure #4 in …`
+  on the same stack. The cross-build metric that does work is the busy fraction: leaf frames in
+  `mach_msg2_trap` / `semaphore_wait` / `__psynch_cvwait` are idle, everything else is busy.
+
+#### Five tables rebuilt per call (B103–B106, 2026-09-01)
+
+All found by `sample` on cPro, whose graph — ClassicPro engine + CentroSUI + tabs + widgets + drawer —
+is the corpus's largest. **None of the defects is cPro-specific; the reach is.** Each cost is per
+object or per call, so the skin with the most objects is where an invisible cost becomes the profile.
+
+| where | what | share |
+|---|---|---:|
+| `WinampModernScriptRuntime.signature(for:classGUID:)` | its 311-entry table was a **local**, rebuilt on every method invocation the interpreter makes; the class GUID was canonicalized five times in one call | 10.4% → 0.4% |
+| `MakiClassGUID.canonical` | `index(_:offsetBy:)` from the start per byte pair, 16 substrings and a join: O(n²) and ~20 allocations for a 32-character constant | 5.1% → 0.3% |
+| `WasabiTextMetrics.font` | cached the raw `CGFont` only, so `CTFontCreateWithGraphicsFont`, the trait conversion and the `NSFontManager`/CoreText descriptor match ran per string, per frame | 5.7% → 1.2% |
+| `WalResourceRegistry.resolved` | `String.folding(options:locale:)` — a full ICU pass — per resource id, per frame, plus a `Set` allocated for a cycle guard most lookups never need | 3.4% → 0.6% |
+| `WinampModernComponentRegistry.normalize` | built `CharacterSet(charactersIn:)` **inside** its filter closure, so CoreFoundation sorted a string and freed it once per character | 14.6% → 0.0% |
+| `WinampModernConfiguration.safeComponent` | rebuilt `CharacterSet.alphanumerics.union(_:)` per call — that union materializes Unicode bitmap planes — twice per `storageKey`, one `storageKey` per config read | 2.5% → 0.2% |
+
+**A `CharacterSet` built inside a frequently-called function is the recurring trap here** — two
+independent instances in one profile. `CharacterSet.alphanumerics.union(_:)` and
+`CharacterSet(charactersIn:)` are both allocating constructors, not constants.
+
+Two structural fixes alongside them:
+
+- **`refreshWaveformDemand` walked `allObjectsUnordered` twice**, asking `componentKind(of:)` about
+  every object for two booleans. One pass answers both. With `surfaceID(of:)` now memoized on the
+  object — dropped by `setAttribute` for the five attributes it reads, and stamped with a new graph
+  `structureGeneration` so a reparent invalidates a subtree at once — the whole gate went
+  **32.8% → 1.7%**.
+- **`autoWidth(of:)` is reached from `append`**, so every `<text>` sized from its own content was
+  measured with a full CoreText typesetting pass on every scene rebuild.
+  `WasabiTextMetrics.measuredWidth(of:font:)` memoizes it. Applied only to the two sites that measure
+  with exactly `[.font:]`, which is what makes the key provably complete.
+
+**Still unfixed, and now the largest cost in the window:** the *drawing* half of `drawText`. It builds
+an `NSAttributedString` attribute dictionary and enters `NSString.draw` per string, per frame, and the
+embedded playlist does it per row. Converting it to cached CoreText lines is the remaining win — and
+it is ~200 lines in which nearly every branch documents a specific skin defect it exists to fix (B87's
+clip rule, the `offsetx` sliver, cPro2's 4px tuck, the clock cells), so it wants the corpus render
+sweep as a safety net rather than a careful reading.
