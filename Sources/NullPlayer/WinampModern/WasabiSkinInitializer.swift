@@ -37,6 +37,31 @@ final class WalResourceRegistry {
     /// that asked the skin for its list background fell through to the black literal instead (BB2a).
     private var colorsByIdentifier: [String: WalResourceDefinition] = [:]
     private var aliases: [String: String] = [:]
+    /// `fold(_:)` memoized, because it is not the cheap string op it looks like.
+    ///
+    /// `String.folding(options:locale:)` is a full ICU normalization pass with an allocation, and
+    /// every bitmap, colour and font id in the scene goes through it on **every frame** — the
+    /// renderer resolves artwork per object, per draw. `resolved` measured 3.4% of the main
+    /// thread on cPro Bento (B103). Hashing the string to find the cached answer is far less work
+    /// than folding it again.
+    ///
+    /// Never invalidated: the fold of a string does not depend on anything the registry holds, so a
+    /// later `register` or `registerAlias` cannot change an answer already in here.
+    private var foldedIdentifiers: [String: String] = [:]
+
+    /// Ids come from the skin's own XML, so this is a bounded set in practice; the cap only guards
+    /// against a caller resolving generated ids in a loop.
+    private static let maximumFoldedIdentifiers = 4096
+
+    private func folded(_ value: String) -> String {
+        if let cached = foldedIdentifiers[value] { return cached }
+        let key = Self.fold(value)
+        if foldedIdentifiers.count >= Self.maximumFoldedIdentifiers {
+            foldedIdentifiers.removeAll(keepingCapacity: true)
+        }
+        foldedIdentifiers[value] = key
+        return key
+    }
 
     func register(_ definition: WalResourceDefinition) {
         definitions.append(definition)
@@ -82,7 +107,7 @@ final class WalResourceRegistry {
     /// Whether this id is already spoken for, by a declaration or an `<elementalias>`. An implicit
     /// bitmap must never displace either.
     func hasIdentifier(_ identifier: String) -> Bool {
-        let key = Self.fold(identifier)
+        let key = folded(identifier)
         return byIdentifier[key] != nil || aliases[key] != nil
     }
 
@@ -98,7 +123,7 @@ final class WalResourceRegistry {
 
     func warn(_ diagnostic: WalDiagnostic) { diagnostics.append(diagnostic) }
 
-    func definition(identifier: String) -> WalResourceDefinition? { byIdentifier[Self.fold(identifier)] }
+    func definition(identifier: String) -> WalResourceDefinition? { byIdentifier[folded(identifier)] }
 
     func registerAlias(identifier: String, target: String, source: WalSourceLocation) {
         let key = Self.fold(identifier)
@@ -124,13 +149,17 @@ final class WalResourceRegistry {
 
     private func resolved(identifier: String,
                           in table: [String: WalResourceDefinition]) -> WalResourceDefinition? {
-        var key = Self.fold(identifier)
-        var visited: Set<String> = []
+        var key = folded(identifier)
+        // The overwhelmingly common case is an id that resolves directly, so neither the cycle
+        // guard's `Set` nor its allocation is paid until the lookup actually follows an alias.
+        if let definition = table[key] { return definition }
+        guard aliases[key] != nil else { return nil }
+        var visited: Set<String> = [key]
         for _ in 0..<64 {
+            guard let target = aliases[key] else { return nil }
+            key = folded(target)
             guard visited.insert(key).inserted else { return nil }
             if let definition = table[key] { return definition }
-            guard let target = aliases[key] else { return nil }
-            key = Self.fold(target)
         }
         return nil
     }

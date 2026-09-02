@@ -2247,19 +2247,536 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "playitem": .init(argumentCount: 1, returnKind: .null),
     ]
 
+    /// Every verb that is **not** gated on a declaring class, and the arity the interpreter must
+    /// unwind the stack by.
+    ///
+    /// `static`, and that is the whole point: this was a **local** literal inside
+    /// `signature(for:classGUID:)`, so all 311 entries were allocated and hashed on every call —
+    /// which is every method invocation the interpreter makes, in every skin. Measured at 10.4% of
+    /// the main thread on cPro Bento, whose realtime Layer FX layer dispatches 1320 calls a second
+    /// (B103). A dictionary literal this size is not something to rebuild on a hot path.
+    private static let generalSignatures: [String: MakiMethodSignature] = [
+        "getcontainer": .init(argumentCount: 1, returnKind: .object),
+        "newdynamiccontainer": .init(argumentCount: 1, returnKind: .object),
+        "getlayout": .init(argumentCount: 1, returnKind: .object),
+        "getobject": .init(argumentCount: 1, returnKind: .object),
+        "findobject": .init(argumentCount: 1, returnKind: .object),
+        "getscriptgroup": .init(argumentCount: 0, returnKind: .object),
+        "getparam": .init(argumentCount: 0, returnKind: .string),
+        "gettoken": .init(argumentCount: 3, returnKind: .string),
+        "getid": .init(argumentCount: 0, returnKind: .string),
+        // `Color`'s channels. Global rather than class-gated: all three are zero-argument getters,
+        // so even a collision with another class's same-named verb cannot desynchronise the stack
+        // the way a wrong *count* would.
+        "getred": .init(argumentCount: 0, returnKind: .integer),
+        "getgreen": .init(argumentCount: 0, returnKind: .integer),
+        "getblue": .init(argumentCount: 0, returnKind: .integer),
+        "getparent": .init(argumentCount: 0, returnKind: .object),
+        "getparentlayout": .init(argumentCount: 0, returnKind: .object),
+        "getcurlayout": .init(argumentCount: 0, returnKind: .object),
+        "switchtolayout": .init(argumentCount: 1, returnKind: .null),
+        "getxmlparam": .init(argumentCount: 1, returnKind: .string),
+        "setxmlparam": .init(argumentCount: 2, returnKind: .null),
+        "settext": .init(argumentCount: 1, returnKind: .null),
+        "gettext": .init(argumentCount: 0, returnKind: .string),
+        "getautowidth": .init(argumentCount: 0, returnKind: .integer),
+        "getautoheight": .init(argumentCount: 0, returnKind: .integer),
+        // `getTextWidth()` — how wide the string this object *currently shows* draws. Distinct
+        // from `getAutoWidth()`, which is how wide the object wants to be: a skin compares the
+        // two (`if (t.getWidth() < t.getTextWidth()) t.hide(); else t.show();`) to decide whether
+        // a caption fits its box. Big Bento Modern does exactly that from `onTextChanged`, so
+        // the method was missing on the one handler that runs at every track change.
+        "gettextwidth": .init(argumentCount: 0, returnKind: .integer),
+        // `GuiObject.getGuid()` — the component GUID an object was declared with, "" for the
+        // objects that carry none (which is most of them).
+        "getguid": .init(argumentCount: 0, returnKind: .string),
+        // The playlist *widget's* own "scroll to the playing entry", as against `PlEdit`'s
+        // `showCurrentlyPlayingTrack`. Itemskin and micro reach it through `findObject` on their
+        // playlist object, so it is a GUI method with a receiver, not a System one. Unique in the
+        // corpus, so it needs no class gate.
+        "showcurrentlyplayingentry": .init(argumentCount: 0, returnKind: .null),
+        "resize": .init(argumentCount: 4, returnKind: .null),
+        "show": .init(argumentCount: 0, returnKind: .null),
+        "hide": .init(argumentCount: 0, returnKind: .null),
+        "toggle": .init(argumentCount: 0, returnKind: .null),
+        "isvisible": .init(argumentCount: 0, returnKind: .boolean),
+        // "does my window have the keyboard?" — the gate a skin puts in front of a key handler
+        // so one window's accelerator does not fire while another is focused. A System event
+        // reaches every program in the skin, so without this winampmodern566's `ctrl+w` would
+        // shade its playlist window from anywhere.
+        "isactive": .init(argumentCount: 0, returnKind: .boolean),
+        "setalpha": .init(argumentCount: 1, returnKind: .null),
+        "getalpha": .init(argumentCount: 0, returnKind: .integer),
+        "setenabled": .init(argumentCount: 1, returnKind: .null),
+        "setactivated": .init(argumentCount: 1, returnKind: .null),
+        // The same write **without** the `onToggle` it would otherwise provoke. A skin uses it to
+        // follow state it is already reacting to: multipass's `configAttribute_eqVisible`
+        // handler moves the drawer's toggle to match the attribute it just observed, and
+        // `setActivated` there would re-enter `toggleDrawer` from inside its own notification.
+        "setactivatednocallback": .init(argumentCount: 1, returnKind: .null),
+        "getactivated": .init(argumentCount: 0, returnKind: .boolean),
+        // The object's Wasabi class, which a script branches on to treat a heterogeneous set of
+        // objects uniformly: multipass's `initStyle` walks its whole element list and swaps
+        // `image=` on a LAYER, `image=`/`downImage=`/`hoverImage=` on a BUTTON, and the thumb
+        // ids on a SLIDER — one loop over every skinnable thing the Style menu touches.
+        "getclassname": .init(argumentCount: 0, returnKind: .string),
+        // Closing a container is hiding its window: `.wal` windows are ours, and nothing in the
+        // engine owns a destroyed-container lifecycle. Multipass's notifier closes itself.
+        "close": .init(argumentCount: 0, returnKind: .null),
+        "getleft": .init(argumentCount: 0, returnKind: .integer),
+        "gettop": .init(argumentCount: 0, returnKind: .integer),
+        "getwidth": .init(argumentCount: 0, returnKind: .integer),
+        "getheight": .init(argumentCount: 0, returnKind: .integer),
+        "getguix": .init(argumentCount: 0, returnKind: .integer),
+        "getguiy": .init(argumentCount: 0, returnKind: .integer),
+        "getguiw": .init(argumentCount: 0, returnKind: .integer),
+        "getguih": .init(argumentCount: 0, returnKind: .integer),
+        "getposition": .init(argumentCount: 0, returnKind: .integer),
+        "setposition": .init(argumentCount: 1, returnKind: .null),
+        "clienttoscreenx": .init(argumentCount: 1, returnKind: .integer),
+        "clienttoscreeny": .init(argumentCount: 1, returnKind: .integer),
+        "screentoclientx": .init(argumentCount: 1, returnKind: .integer),
+        "screentoclienty": .init(argumentCount: 1, returnKind: .integer),
+        // `isInvalid()` is how a ClassicPro script asks "did this element survive the skin's
+        // overrides?" before configuring it; `getScale()` is a layout's zoom factor.
+        "isinvalid": .init(argumentCount: 0, returnKind: .boolean),
+        // Its write half is the host's UI Size, not a layout transform — see `uiScaleRequested`.
+        "setscale": .init(argumentCount: 1, returnKind: .null),
+        "getscale": .init(argumentCount: 0, returnKind: .float),
+        "setredraw": .init(argumentCount: 1, returnKind: .null),
+        // `scrollToPercent(pct)` on a scrolling group. Arity 1, result discarded — pinned by the
+        // bytecode (`v103.scrollToPercent(v119)` followed by `op2`).
+        "scrolltopercent": .init(argumentCount: 1, returnKind: .null),
+        "setregionfrommap": .init(argumentCount: 3, returnKind: .null),
+        "setmode": .init(argumentCount: 1, returnKind: .null),
+        "play": .init(argumentCount: 0, returnKind: .null),
+        "pause": .init(argumentCount: 0, returnKind: .null),
+        "gotoframe": .init(argumentCount: 1, returnKind: .null),
+        "setframe": .init(argumentCount: 1, returnKind: .null),
+        "getcurframe": .init(argumentCount: 0, returnKind: .integer),
+        // Animated-layer playback control. MMD3's volume/bass/treble knobs are animated layers
+        // played frame-range to frame-range, and the driving timer polls `isPlaying()`.
+        "getlength": .init(argumentCount: 0, returnKind: .integer),
+        "setstartframe": .init(argumentCount: 1, returnKind: .null),
+        "setendframe": .init(argumentCount: 1, returnKind: .null),
+        // The read halves of the same pair. A skin that pages through a sprite sheet by hand
+        // asks the layer where its own ends are rather than hard-coding a count: Hal's Eye
+        // `manual.maki` caches `getCurFrame()`/`getEndFrame()` in `onScriptLoaded` and clamps
+        // both page buttons against them, so with the signature missing the handler abandoned
+        // the whole initialiser at that call and both buttons sat at frame 0 forever (B91).
+        "getstartframe": .init(argumentCount: 0, returnKind: .integer),
+        "getendframe": .init(argumentCount: 0, returnKind: .integer),
+        "setspeed": .init(argumentCount: 1, returnKind: .null),
+        // Part of the same four-call preamble every skin writes before `play()`, and the one that
+        // was missing: Big Bento Modern's `animbutton` sets start, end, **autoreplay** and speed
+        // in that order, so a missing signature here abandoned the whole handler at the third
+        // call — the play/pause morph never ran and the buttons were never swapped.
+        "setautoreplay": .init(argumentCount: 1, returnKind: .null),
+        "isplaying": .init(argumentCount: 0, returnKind: .boolean),
+        // `isStopped()` is the **`AnimatedLayer`'s**, not the player's — the same receiver
+        // `play()` and `stop()` take, pinned by the call sites (`RENDER_DISASM=isStopped`:
+        // `op1(v3) op24(isstopped)` where `v3` is also the receiver of `play`). It reads like a
+        // transport question, and that resemblance is the trap: `isPlaying` beside it was already
+        // implemented for animated layers, so the pair looked complete while T800's jaw animation
+        // — `Noname2.maki`, behind the `animationbutton` under the mouth — aborted on the missing
+        // half every time it was pressed.
+        "isstopped": .init(argumentCount: 0, returnKind: .boolean),
+        "setalternatetext": .init(argumentCount: 1, returnKind: .null),
+        "setfontsize": .init(argumentCount: 1, returnKind: .null),
+        // `setFocus()` — the keyboard, asked for by the object that wants it. Big Bento's
+        // `playlistpro.maki` shows its playlist search box and focuses it in the same handler, so
+        // without this the handler aborted at the focus call and the box could never be typed in.
+        "setfocus": .init(argumentCount: 0, returnKind: .null),
+        // The `<list>` control a script fills — Big Bento's playlist search is the measured
+        // consumer, and every arity here is counted from its call sites: `deleteAllItems()`,
+        // `getItemLabel(item, column)`, `getFirstItemSelected()`, `getNextItemSelected(after)`,
+        // `scrollToItem(item)`. `addItem` is already declared (the dynamic `List` container shares
+        // the name); the receiver decides which one answers.
+        "deleteallitems": .init(argumentCount: 0, returnKind: .null),
+        "getitemlabel": .init(argumentCount: 2, returnKind: .string),
+        "getfirstitemselected": .init(argumentCount: 0, returnKind: .integer),
+        "getnextitemselected": .init(argumentCount: 1, returnKind: .integer),
+        "scrolltoitem": .init(argumentCount: 1, returnKind: .null),
+        // The write half of the same control, and Big Bento Modern's Web Reader is the measured
+        // consumer: its provider drop-down adds a placeholder row per `parser_onCallback` and
+        // then fills that row's two columns and its icon. The three `setIcon*`/`setShowIcons`
+        // calls sit at the very top of the same `onSetVisible` that loads the provider file, so
+        // until they existed the handler aborted before reaching the parser at all.
+        "setitemlabel": .init(argumentCount: 2, returnKind: .null),
+        "setsubitem": .init(argumentCount: 3, returnKind: .null),
+        "setitemicon": .init(argumentCount: 2, returnKind: .null),
+        // `setSelected(row, selected)` — the write half of `getFirstItemSelected`. The reader
+        // selects the provider it restored so the drop-down opens on it.
+        "setselected": .init(argumentCount: 2, returnKind: .null),
+        "seticonwidth": .init(argumentCount: 1, returnKind: .null),
+        "seticonheight": .init(argumentCount: 1, returnKind: .null),
+        "setshowicons": .init(argumentCount: 1, returnKind: .null),
+        "leftclick": .init(argumentCount: 0, returnKind: .null),
+        // Layer FX: Winamp warps a layer through a grid whose per-pixel source is supplied by the
+        // skin's own `fx_onGetPixel*` callbacks — implemented in Phase 28 (`invokeLayerFX`,
+        // `layerFXMesh(for:)`). Arities are read off the call sites, not assumed
+        // (`WINAMP_MODERN_RENDER_DISASM=fx_setgridsize`): every setter takes one argument except
+        // `fx_setGridSize(w, h)`, and `fx_update()` takes none.
+        "fx_setenabled": .init(argumentCount: 1, returnKind: .null),
+        "fx_setalphamode": .init(argumentCount: 1, returnKind: .null),
+        "fx_restart": .init(argumentCount: 0, returnKind: .null),
+        "fx_getenabled": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getwrap": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getrect": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getbgfx": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getclear": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getrealtime": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getlocalized": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getbilinear": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getalphamode": .init(argumentCount: 0, returnKind: .boolean),
+        "fx_getspeed": .init(argumentCount: 0, returnKind: .integer),
+        "fx_setwrap": .init(argumentCount: 1, returnKind: .null),
+        "fx_setrect": .init(argumentCount: 1, returnKind: .null),
+        "fx_setbgfx": .init(argumentCount: 1, returnKind: .null),
+        "fx_setclear": .init(argumentCount: 1, returnKind: .null),
+        "fx_setrealtime": .init(argumentCount: 1, returnKind: .null),
+        "fx_setlocalized": .init(argumentCount: 1, returnKind: .null),
+        "fx_setbilinear": .init(argumentCount: 1, returnKind: .null),
+        "fx_setspeed": .init(argumentCount: 1, returnKind: .null),
+        "fx_setgridsize": .init(argumentCount: 2, returnKind: .null),
+        "fx_update": .init(argumentCount: 0, returnKind: .null),
+        // `Map`: a bitmap sampled by the script (the knob-angle lookup MMD3 drives its rotary
+        // controls with). `new Map` yields a generic dynamic object; `loadMap` gives it its role.
+        "loadmap": .init(argumentCount: 1, returnKind: .null),
+        "inregion": .init(argumentCount: 2, returnKind: .boolean),
+        "getvalue": .init(argumentCount: 2, returnKind: .integer),
+        // A `Map` is also queried for its own size and for whole pixels: ClassicPro reads its
+        // colour scheme out of a bitmap (`player.maki` builds the classic-vis colour bands from
+        // `getARGBValue`) and sizes animations from `getWidth`/`getHeight`.
+        "getargbvalue": .init(argumentCount: 3, returnKind: .integer),
+        // `Region`: `loadFromMap(Map, Int threshold, Boolean reversed)` turns a map into a
+        // shape, `offset` moves it into the clipped object's own space, and `setRegion` clips
+        // the object to it. T800 fills its volume bar this way; the stock `customseek.m` its
+        // seek ghost.
+        "loadfrommap": .init(argumentCount: 3, returnKind: .null),
+        // `loadFromBitmap(String bitmapid)` is the same region without the `Map` in front of it:
+        // the shape is the bitmap's own opaque area. MMD3's `std.mi` declares the pair together
+        // (`extern Region.loadFromMap(…); extern Region.loadFromBitmap(String bitmapid);`) and
+        // three more skins call it — BLAKK's `boombox.m` clips its seek bar with
+        // `seekregion.loadfrombitmap("player.bb-seek-region"); seek1.setregion(seekregion);`.
+        "loadfrombitmap": .init(argumentCount: 1, returnKind: .null),
+        "offset": .init(argumentCount: 2, returnKind: .null),
+        "setregion": .init(argumentCount: 1, returnKind: .null),
+        // Screen-space cursor position, in the same skin-pixel units as the x/y a mouse event
+        // hands the script — the knob scripts mix the two in one expression.
+        "getmouseposx": .init(argumentCount: 0, returnKind: .integer),
+        "getmouseposy": .init(argumentCount: 0, returnKind: .integer),
+        // "is the pointer still on me?" — what a button asks in `onLeftButtonUp` to tell a click
+        // from a drag that left the control. Defix's every SUI tab does exactly that, so without
+        // it the handler aborted at the first tab and the whole tab strip was inert.
+        "ismouseoverrect": .init(argumentCount: 0, returnKind: .boolean),
+        "atan": .init(argumentCount: 1, returnKind: .float),
+        "geteq": .init(argumentCount: 0, returnKind: .integer),
+        "geteqband": .init(argumentCount: 1, returnKind: .integer),
+        "seteqband": .init(argumentCount: 2, returnKind: .null),
+        "geteqpreamp": .init(argumentCount: 0, returnKind: .integer),
+        "seteqpreamp": .init(argumentCount: 1, returnKind: .null),
+        "settargetx": .init(argumentCount: 1, returnKind: .null),
+        "settargety": .init(argumentCount: 1, returnKind: .null),
+        "settargetw": .init(argumentCount: 1, returnKind: .null),
+        "settargeth": .init(argumentCount: 1, returnKind: .null),
+        "settargeta": .init(argumentCount: 1, returnKind: .null),
+        "settargetspeed": .init(argumentCount: 1, returnKind: .null),
+        "gototarget": .init(argumentCount: 0, returnKind: .null),
+        "reversetarget": .init(argumentCount: 1, returnKind: .null),
+        "canceltarget": .init(argumentCount: 0, returnKind: .null),
+        "isgoingtotarget": .init(argumentCount: 0, returnKind: .boolean),
+        "sendaction": .init(argumentCount: 6, returnKind: .null),
+        "triggeraction": .init(argumentCount: 2, returnKind: .null),
+        "getleftvumeter": .init(argumentCount: 0, returnKind: .integer),
+        "getrightvumeter": .init(argumentCount: 0, returnKind: .integer),
+        // `extern Int System.getVisBand(int channel, int band); // 0,1 / 0..75` (std.mi). Every
+        // meter a skin draws itself reads this — Defix's speaker cones, VU needles and level
+        // bars all poll it from a timer — so without it those layers never move at all.
+        "getvisband": .init(argumentCount: 2, returnKind: .integer),
+        // `extern AlbumArtLayer.isLoading()`. Defix's playlist window polls it every tick, and
+        // the miss aborted that whole `ontimer` handler continuously.
+        "isloading": .init(argumentCount: 0, returnKind: .boolean),
+        "refresh": .init(argumentCount: 0, returnKind: .null),
+        "getvolume": .init(argumentCount: 0, returnKind: .integer),
+        "setvolume": .init(argumentCount: 1, returnKind: .null),
+        "seekto": .init(argumentCount: 1, returnKind: .null),
+        "getplayitemlength": .init(argumentCount: 0, returnKind: .integer),
+        "getplaylistlength": .init(argumentCount: 0, returnKind: .integer),
+        "getplaylistindex": .init(argumentCount: 0, returnKind: .integer),
+        "integertostring": .init(argumentCount: 1, returnKind: .string),
+        "integertotime": .init(argumentCount: 1, returnKind: .string),
+        "floattostring": .init(argumentCount: 2, returnKind: .string),
+        "stringtointeger": .init(argumentCount: 1, returnKind: .integer),
+        "stringtofloat": .init(argumentCount: 1, returnKind: .float),
+        // MAKI's casts are System methods: `System.Integer(v)`, `System.Float(v)`, … A script
+        // reaches for them wherever it mixes a float with an int-typed API — Love is War Miku's
+        // volume buttons keep the level as a float and hand `Integer(level)` to `setVolume`, so
+        // without these the whole volume path aborted at the first press.
+        "integer": .init(argumentCount: 1, returnKind: .integer),
+        "float": .init(argumentCount: 1, returnKind: .float),
+        "string": .init(argumentCount: 1, returnKind: .string),
+        "boolean": .init(argumentCount: 1, returnKind: .boolean),
+        // MAKI's math library, all `System` methods. Measured demand, not a shopping list:
+        // Defix's VU needle computes its ballistics with `sqrt` and its rotation with `sin`/`cos`,
+        // and the *whole* `onTimer` aborted on the first `sqrt` — which is why the needle styles
+        // stood still even with Layer FX implemented.
+        "sqrt": .init(argumentCount: 1, returnKind: .double),
+        "pow": .init(argumentCount: 2, returnKind: .double),
+        "sin": .init(argumentCount: 1, returnKind: .double),
+        "cos": .init(argumentCount: 1, returnKind: .double),
+        "tan": .init(argumentCount: 1, returnKind: .double),
+        "asin": .init(argumentCount: 1, returnKind: .double),
+        "acos": .init(argumentCount: 1, returnKind: .double),
+        "atan2": .init(argumentCount: 2, returnKind: .double),
+        "log": .init(argumentCount: 1, returnKind: .double),
+        "log10": .init(argumentCount: 1, returnKind: .double),
+        "exp": .init(argumentCount: 1, returnKind: .double),
+        "abs": .init(argumentCount: 1, returnKind: .double),
+        "strlen": .init(argumentCount: 1, returnKind: .integer),
+        "strlower": .init(argumentCount: 1, returnKind: .string),
+        "strupper": .init(argumentCount: 1, returnKind: .string),
+        "strsearch": .init(argumentCount: 2, returnKind: .integer),
+        // Percent-encoding for a search term a skin is about to put in a URL. Every measured call
+        // sits *inside* the expression that builds the address — Big Bento's lyrics finder is
+        // `"…/search?q=" + urlEncode(artist) + " " + urlEncode(title) + " lyrics"` — so refusing
+        // it took the whole handler down and the two magnifier buttons did nothing at all, one
+        // layer before the navigation this phase is about (B40).
+        "urlencode": .init(argumentCount: 1, returnKind: .string),
+        "strleft": .init(argumentCount: 2, returnKind: .string),
+        "strright": .init(argumentCount: 2, returnKind: .string),
+        "strmid": .init(argumentCount: 3, returnKind: .string),
+        // The extension of a filename, without the dot. Defix reads it off the playing item
+        // (`getExtension(getPlayItemMetaDataString("filename"))`) for the display's format
+        // readout, in the middle of the main layout's `onScriptLoaded` — so refusing it took the
+        // rest of that handler, and the whole display area, down with it.
+        "getextension": .init(argumentCount: 1, returnKind: .string),
+        // `getPath(filename)` — the *directory* half, the way `getExtension` is the tail. Pure
+        // string work on a string the host already handed out: it opens nothing and reaches no
+        // filesystem. Big Bento's file-info panel prints it as the track's folder, and the corpus
+        // always calls it on the playing item.
+        "getpath": .init(argumentCount: 1, returnKind: .string),
+        // …and its complement, the leaf. `getPath` + `removePath` is how a skin splits an item
+        // into "folder" and "file" for two separate readouts.
+        "removepath": .init(argumentCount: 1, returnKind: .string),
+        "translate": .init(argumentCount: 1, returnKind: .string),
+        "getprivateint": .init(argumentCount: 3, returnKind: .integer),
+        "setprivateint": .init(argumentCount: 3, returnKind: .null),
+        // The string half of the same store. Unreachable until Phase 24 dispatched `onResize`:
+        // `CproTabs.m` reads its saved tab order out of it while laying the strip out, and the
+        // missing method aborted that handler — so the tabs never re-sized to fit.
+        "getprivatestring": .init(argumentCount: 3, returnKind: .string),
+        "setprivatestring": .init(argumentCount: 3, returnKind: .null),
+        "getitem": .init(argumentCount: 1, returnKind: .object),
+        "getitembyguid": .init(argumentCount: 1, returnKind: .object),
+        "newitem": .init(argumentCount: 2, returnKind: .object),
+        "newattribute": .init(argumentCount: 2, returnKind: .object),
+        "getattribute": .init(argumentCount: 1, returnKind: .object),
+        "getdata": .init(argumentCount: 0, returnKind: .string),
+        "setdata": .init(argumentCount: 1, returnKind: .null),
+        "ondatachanged": .init(argumentCount: 0, returnKind: .null),
+        "setdelay": .init(argumentCount: 1, returnKind: .null),
+        "start": .init(argumentCount: 0, returnKind: .boolean),
+        "stop": .init(argumentCount: 0, returnKind: .null),
+        "isrunning": .init(argumentCount: 0, returnKind: .boolean),
+        // Window-manager notifications around a layout resize. Arities read out of the bytecode
+        // rather than guessed (`WINAMP_MODERN_RENDER_DISASM`): each is called on the layout, and
+        // counting the net pushes between receiver and call gives `beforeRedock()` /
+        // `snapAdjust(x, y, w, h)`. Guessing here is not an option — a wrong count desynchronises
+        // the interpreter's stack.
+        "beforeredock": .init(argumentCount: 0, returnKind: .null),
+        "redock": .init(argumentCount: 0, returnKind: .null),
+        "snapadjust": .init(argumentCount: 4, returnKind: .null),
+        // `debugString(msg, level)` — a skin's own trace output. Two arguments, pinned by
+        // ClassicPro (`debugString("setCustomVis=" + …, 9)`).
+        "debugstring": .init(argumentCount: 2, returnKind: .null),
+        "getviewportwidth": .init(argumentCount: 0, returnKind: .integer),
+        "getviewportheight": .init(argumentCount: 0, returnKind: .integer),
+        "getviewportleft": .init(argumentCount: 0, returnKind: .integer),
+        "getviewporttop": .init(argumentCount: 0, returnKind: .integer),
+        "getviewportwidthfromguiobject": .init(argumentCount: 1, returnKind: .integer),
+        "getviewportheightfromguiobject": .init(argumentCount: 1, returnKind: .integer),
+        "getviewportleftfromguiobject": .init(argumentCount: 1, returnKind: .integer),
+        "getviewporttopfromguiobject": .init(argumentCount: 1, returnKind: .integer),
+        // The **monitor** family, which is the viewport's whole-screen twin: Winamp's viewport is
+        // the work area, the monitor is the display it sits on. Big Bento's notifier asks for both
+        // one after the other, and its `pledit.maki` sizes the side playlist from
+        // `getMonitorWidth()` — so with this unimplemented the `onAction("load_comp")` that moves
+        // the playlist beside the player aborted, and with it every option that governs that
+        // playlist ("Enlarge Playlist" had nothing left to enlarge). Arity 0, pinned by the four
+        // call sites in that skin.
+        "getmonitorwidth": .init(argumentCount: 0, returnKind: .integer),
+        "getmonitorheight": .init(argumentCount: 0, returnKind: .integer),
+        "getmonitorleft": .init(argumentCount: 0, returnKind: .integer),
+        "getmonitortop": .init(argumentCount: 0, returnKind: .integer),
+        // The player window's own box. `getCurAppWidth`/`getCurAppHeight` were missing while
+        // their two siblings were present, and `two/scripts/presetpos.m` calls all four in one
+        // expression — `saveFramePos()` died on the third call, so the F9–F12 preset positions
+        // stored nothing and `gotoFramePos` could only ever restore its fallback.
+        "getcurappleft": .init(argumentCount: 0, returnKind: .integer),
+        "getcurapptop": .init(argumentCount: 0, returnKind: .integer),
+        "getcurappwidth": .init(argumentCount: 0, returnKind: .integer),
+        "getcurappheight": .init(argumentCount: 0, returnKind: .integer),
+        "getruntimeversion": .init(argumentCount: 0, returnKind: .integer),
+        "getskinname": .init(argumentCount: 0, returnKind: .string),
+        // `System.getSettingsPath()` — where the player keeps its own configuration. Arity 0,
+        // pinned by the bytecode (`v82 = v67.getSettingsPath() + "/WACUP_Tools/koopa.ini"`, then
+        // a `File.load`/`exists` pair): the string is only ever concatenated with a filename and
+        // probed. Missing it aborted 23 of Big Bento Modern's `onScriptLoaded` handlers.
+        "getsettingspath": .init(argumentCount: 0, returnKind: .string),
+        // `System.getApplicationPath()` — where the *player* is installed, as against
+        // `getSettingsPath`'s where it keeps its configuration. Arity 0, pinned by the bytecode
+        // (`getApplicationPath() + "/Lang/Winamp-es-us.wlz"`, then a `File.load`/`exists`/
+        // `getSize` probe). Big Bento's Localization page is built entirely out of those probes.
+        "getapplicationpath": .init(argumentCount: 0, returnKind: .string),
+        "getcolortheme": .init(argumentCount: 0, returnKind: .string),
+        "setcolortheme": .init(argumentCount: 1, returnKind: .null),
+        "getnumcolorthemes": .init(argumentCount: 0, returnKind: .integer),
+        "enumcolorthemes": .init(argumentCount: 1, returnKind: .string),
+        "gettimeofday": .init(argumentCount: 0, returnKind: .integer),
+        "getplayitemdisplaytitle": .init(argumentCount: 0, returnKind: .string),
+        "getplayitemmetadatastring": .init(argumentCount: 1, returnKind: .string),
+        "getplayitemstring": .init(argumentCount: 0, returnKind: .string),
+        // `System.getDecoderName(item)` — the input plugin decoding the named item. Counted from
+        // the call site, which is `getDecoderName(getPlayItemString())`: one argument, a string
+        // back. Big Bento's file-info panel fills its *Decoder* line from it, in the same
+        // `onSetVisible` that fills every other line, so the whole panel stayed empty without it.
+        "getdecodername": .init(argumentCount: 1, returnKind: .string),
+        "getstatus": .init(argumentCount: 0, returnKind: .integer),
+        "getsonginfotext": .init(argumentCount: 0, returnKind: .string),
+        "isvideo": .init(argumentCount: 0, returnKind: .boolean),
+        "isvideofullscreen": .init(argumentCount: 0, returnKind: .boolean),
+        "iskeydown": .init(argumentCount: 1, returnKind: .boolean),
+        "isminimized": .init(argumentCount: 0, returnKind: .boolean),
+        // Answered honestly, unlike its neighbours: a skin *gates work* on it. Multipass's drawer
+        // "Focus Mode" returns early from its 100 ms timer whenever the app is inactive, so a
+        // hardcoded `false` would not just mis-report — it would stop the drawers from ever
+        // opening again once that option was turned on.
+        "isappactive": .init(argumentCount: 0, returnKind: .boolean),
+        "isdesktopalphaavailable": .init(argumentCount: 0, returnKind: .boolean),
+        "istransparencyavailable": .init(argumentCount: 0, returnKind: .boolean),
+        "istransparencysafe": .init(argumentCount: 0, returnKind: .boolean),
+        "islayoutanimationsafe": .init(argumentCount: 0, returnKind: .boolean),
+        "hasvideosupport": .init(argumentCount: 0, returnKind: .boolean),
+        // The playing video's native size. Zero is the honest answer here for the same reason
+        // `hasVideoSupport` is false — there is no video component behind a `.wal` holder — and it
+        // is also what Winamp answers for an audio track, which is the case skins branch on.
+        "getidealvideowidth": .init(argumentCount: 0, returnKind: .integer),
+        "getidealvideoheight": .init(argumentCount: 0, returnKind: .integer),
+        "lockui": .init(argumentCount: 0, returnKind: .null),
+        "unlockui": .init(argumentCount: 0, returnKind: .null),
+        "hidenamedwindow": .init(argumentCount: 1, returnKind: .null),
+        "isnamedwindowvisible": .init(argumentCount: 1, returnKind: .boolean),
+        "navigateurl": .init(argumentCount: 1, returnKind: .null),
+        "navigateurlbrowser": .init(argumentCount: 1, returnKind: .null),
+        "setclipboardtext": .init(argumentCount: 1, returnKind: .null),
+        // Internet Explorer's own error page, which a `<browser>` asks Winamp to suppress so it
+        // can show its own. There is no IE here — the surface is WebKit — so the preference is
+        // recorded and nothing else; refusing it aborted the handler that sets it, which on Big
+        // Bento Modern is the one that also loads the Web Reader's provider list.
+        "setcancelieerrorpage": .init(argumentCount: 1, returnKind: .null),
+        "addcommand": .init(argumentCount: 4, returnKind: .null),
+        "addseparator": .init(argumentCount: 0, returnKind: .null),
+        "addsubmenu": .init(argumentCount: 2, returnKind: .null),
+        "checkcommand": .init(argumentCount: 2, returnKind: .null),
+        "popatmouse": .init(argumentCount: 0, returnKind: .integer),
+        "popatxy": .init(argumentCount: 2, returnKind: .integer),
+        "newgroup": .init(argumentCount: 1, returnKind: .object),
+        "newgroupaslayout": .init(argumentCount: 1, returnKind: .object),
+        // `GroupList.instantiate(groupdef, count)` — the *list's* own expansion, as against
+        // `System.newGroup`. The second argument is a **count**, not an index; the author's own
+        // comment in `config_vscrollbars.m` says so, and the bytecode agrees
+        // (`v103.instantiate(v121:"…part1", v6:1)`, receiver + two pushes, result assigned).
+        "instantiate": .init(argumentCount: 2, returnKind: .object),
+        "init": .init(argumentCount: 1, returnKind: .null),
+        // Paint order within the parent. ClassicPro raises a tab while it is being dragged along
+        // the strip, and the missing method aborted the whole drag handler.
+        "bringtofront": .init(argumentCount: 0, returnKind: .null),
+        "bringtoback": .init(argumentCount: 0, returnKind: .null),
+        "messagebox": .init(argumentCount: 4, returnKind: .integer),
+        "callme": .init(argumentCount: 1, returnKind: .null),
+        // ClassicPro version gate (branch, not hard-block) + public config.
+        "getbuildnumber": .init(argumentCount: 0, returnKind: .integer),
+        "getwinampversion": .init(argumentCount: 0, returnKind: .string),
+        "getpublicint": .init(argumentCount: 2, returnKind: .integer),
+        "setpublicint": .init(argumentCount: 2, returnKind: .null),
+        "getpublicstring": .init(argumentCount: 2, returnKind: .string),
+        "setpublicstring": .init(argumentCount: 2, returnKind: .null),
+        "switchskin": .init(argumentCount: 1, returnKind: .null),
+        "getcurcfgval": .init(argumentCount: 0, returnKind: .integer),
+        "getdate": .init(argumentCount: 0, returnKind: .integer),
+        // `System.random(max)` — one argument, settled from the bytecode rather than guessed
+        // (`WINAMP_MODERN_RENDER_DISASM=random`: every one of the eighteen call sites in the
+        // stock skin's `about.maki` pushes the receiver and exactly one value before `op24`).
+        "random": .init(argumentCount: 1, returnKind: .integer),
+        "getdatedoy": .init(argumentCount: 1, returnKind: .integer),
+        "getdateyear": .init(argumentCount: 1, returnKind: .integer),
+        // ClassicPro `ClassicProFile` shell service (the entire native surface, P0B §1).
+        // `XmlDoc`: load an optional config document. Bounded — see `DynamicRole.xmlDocument`.
+        "load": .init(argumentCount: 1, returnKind: .null),
+        "exists": .init(argumentCount: 0, returnKind: .boolean),
+        // `XmlDoc`'s callback parser. The document is walked once by `parser_start()`, which
+        // dispatches `parser_onCallback` back at the same object for every element matching a
+        // path registered with `parser_addCallback`. Big Bento Modern's Web Reader is the whole
+        // measured demand: its provider drop-down is built entirely from those callbacks, so
+        // without them `exists()` answered false, the skin took its "Oops! Something went wrong!"
+        // branch on every `onSetVisible`, and the list came up empty.
+        "parser_addcallback": .init(argumentCount: 1, returnKind: .null),
+        "parser_start": .init(argumentCount: 0, returnKind: .null),
+        "parser_destroy": .init(argumentCount: 0, returnKind: .null),
+        "getfilesize": .init(argumentCount: 1, returnKind: .integer),
+        "getlanguageid": .init(argumentCount: 0, returnKind: .string),
+        // `List`: MAKI's own container (`extern List.addItem(Any)` …). ClassicPro builds its tab
+        // order, its widget registry and its beat-vis names in one, so a missing `addItem` aborts
+        // the script that assembles the SUI's tab strip.
+        "additem": .init(argumentCount: 1, returnKind: .integer),
+        "enumitem": .init(argumentCount: 1, returnKind: .object),
+        "getnumitems": .init(argumentCount: 0, returnKind: .integer),
+        "removeitem": .init(argumentCount: 1, returnKind: .null),
+        "removeall": .init(argumentCount: 0, returnKind: .null),
+        "finditem": .init(argumentCount: 1, returnKind: .integer),
+        // `BitList` — a sized array of flags, sharing the `List` backing store.
+        "setsize": .init(argumentCount: 1, returnKind: .null),
+        "getsize": .init(argumentCount: 0, returnKind: .integer),
+        "setitem": .init(argumentCount: 2, returnKind: .null),
+        // `WinampConfig.getGroup(guid)` → a `WinampConfigGroup`. Arities follow `winampconfig.mi`,
+        // which is what the skin's compiler encoded.
+        "getgroup": .init(argumentCount: 1, returnKind: .object),
+        "getint": .init(argumentCount: 1, returnKind: .integer),
+        "getbool": .init(argumentCount: 1, returnKind: .boolean),
+        "getstring": .init(argumentCount: 1, returnKind: .string),
+        "getcurrenttrackrating": .init(argumentCount: 0, returnKind: .integer),
+        "setcurrenttrackrating": .init(argumentCount: 1, returnKind: .null),
+        // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.
+        "getnumchildren": .init(argumentCount: 0, returnKind: .integer),
+        "enumchildren": .init(argumentCount: 1, returnKind: .object),
+        "explorefile": .init(argumentCount: 1, returnKind: .null),
+        "openfile": .init(argumentCount: 2, returnKind: .null),
+        "findfiles": .init(argumentCount: 3, returnKind: .integer),
+        // Arity settled off the call sites (`RENDER_DISASM=playFile`): T800's
+        // `quicksongpick.maki` emits `op1(v0) op1(v44) op112(playfile)` — receiver, one push —
+        // and Big Bento's `progbutton.maki` the same shape with the path built by a subroutine.
+        // The name is unique across the installed corpus and belongs to `System` at both sites.
+        "playfile": .init(argumentCount: 1, returnKind: .null),
+    ]
+
     func signature(for method: String, classGUID: String?) -> MakiMethodSignature? {
+        // Both of these were recomputed per test below — the GUID five times, through a fold that
+        // is itself O(n²) (see `MakiClassGUID.canonical`). They are loop-invariant for the call.
+        let canonical = classGUID.map(Self.canonicalGUID)
+        let name = method.lowercased()
         if method.caseInsensitiveCompare("getcontainer") == .orderedSame,
-           classGUID.map(Self.canonicalGUID) == "60906d4e482e537e94cc04b072568861" {
+           canonical == "60906d4e482e537e94cc04b072568861" {
             return .init(argumentCount: 0, returnKind: .object)
         }
         // A program compiled without a class table (the pre-5.0 MAKI layout) carries no GUID here, so
         // it does not reach this. None of the measured corpus's PlEdit callers are in that form.
-        if classGUID.map(Self.canonicalGUID) == MakiClassGUID.playlistEditor,
-           let signature = Self.playlistEditorSignatures[method.lowercased()] {
+        if canonical == MakiClassGUID.playlistEditor,
+           let signature = Self.playlistEditorSignatures[name] {
             return signature
         }
-        if classGUID.map(Self.canonicalGUID) == MakiClassGUID.playlistManager,
-           let signature = Self.playlistManagerSignatures[method.lowercased()] {
+        if canonical == MakiClassGUID.playlistManager,
+           let signature = Self.playlistManagerSignatures[name] {
             return signature
         }
         // The colour-theme pair, both gated by their **declaring** class — which is what the
@@ -2268,7 +2785,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // verb, and a wrong argument count is the one error the interpreter cannot recover from: it
         // leaves values on the stack and desynchronises everything after the call. See
         // `reference/scripting.md` → *`PlEdit`*, which records that failure mode.
-        switch classGUID.map(Self.canonicalGUID) {
+        switch canonical {
         case MakiClassGUID.colorManager where method.caseInsensitiveCompare("getgammaset") == .orderedSame:
             return .init(argumentCount: 1, returnKind: .object)
         // Gated for the same reason `getGammaSet` is — "getColor" is exactly the sort of verb another
@@ -2280,512 +2797,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         default:
             break
         }
-        let signatures: [String: MakiMethodSignature] = [
-            "getcontainer": .init(argumentCount: 1, returnKind: .object),
-            "newdynamiccontainer": .init(argumentCount: 1, returnKind: .object),
-            "getlayout": .init(argumentCount: 1, returnKind: .object),
-            "getobject": .init(argumentCount: 1, returnKind: .object),
-            "findobject": .init(argumentCount: 1, returnKind: .object),
-            "getscriptgroup": .init(argumentCount: 0, returnKind: .object),
-            "getparam": .init(argumentCount: 0, returnKind: .string),
-            "gettoken": .init(argumentCount: 3, returnKind: .string),
-            "getid": .init(argumentCount: 0, returnKind: .string),
-            // `Color`'s channels. Global rather than class-gated: all three are zero-argument getters,
-            // so even a collision with another class's same-named verb cannot desynchronise the stack
-            // the way a wrong *count* would.
-            "getred": .init(argumentCount: 0, returnKind: .integer),
-            "getgreen": .init(argumentCount: 0, returnKind: .integer),
-            "getblue": .init(argumentCount: 0, returnKind: .integer),
-            "getparent": .init(argumentCount: 0, returnKind: .object),
-            "getparentlayout": .init(argumentCount: 0, returnKind: .object),
-            "getcurlayout": .init(argumentCount: 0, returnKind: .object),
-            "switchtolayout": .init(argumentCount: 1, returnKind: .null),
-            "getxmlparam": .init(argumentCount: 1, returnKind: .string),
-            "setxmlparam": .init(argumentCount: 2, returnKind: .null),
-            "settext": .init(argumentCount: 1, returnKind: .null),
-            "gettext": .init(argumentCount: 0, returnKind: .string),
-            "getautowidth": .init(argumentCount: 0, returnKind: .integer),
-            "getautoheight": .init(argumentCount: 0, returnKind: .integer),
-            // `getTextWidth()` — how wide the string this object *currently shows* draws. Distinct
-            // from `getAutoWidth()`, which is how wide the object wants to be: a skin compares the
-            // two (`if (t.getWidth() < t.getTextWidth()) t.hide(); else t.show();`) to decide whether
-            // a caption fits its box. Big Bento Modern does exactly that from `onTextChanged`, so
-            // the method was missing on the one handler that runs at every track change.
-            "gettextwidth": .init(argumentCount: 0, returnKind: .integer),
-            // `GuiObject.getGuid()` — the component GUID an object was declared with, "" for the
-            // objects that carry none (which is most of them).
-            "getguid": .init(argumentCount: 0, returnKind: .string),
-            // The playlist *widget's* own "scroll to the playing entry", as against `PlEdit`'s
-            // `showCurrentlyPlayingTrack`. Itemskin and micro reach it through `findObject` on their
-            // playlist object, so it is a GUI method with a receiver, not a System one. Unique in the
-            // corpus, so it needs no class gate.
-            "showcurrentlyplayingentry": .init(argumentCount: 0, returnKind: .null),
-            "resize": .init(argumentCount: 4, returnKind: .null),
-            "show": .init(argumentCount: 0, returnKind: .null),
-            "hide": .init(argumentCount: 0, returnKind: .null),
-            "toggle": .init(argumentCount: 0, returnKind: .null),
-            "isvisible": .init(argumentCount: 0, returnKind: .boolean),
-            // "does my window have the keyboard?" — the gate a skin puts in front of a key handler
-            // so one window's accelerator does not fire while another is focused. A System event
-            // reaches every program in the skin, so without this winampmodern566's `ctrl+w` would
-            // shade its playlist window from anywhere.
-            "isactive": .init(argumentCount: 0, returnKind: .boolean),
-            "setalpha": .init(argumentCount: 1, returnKind: .null),
-            "getalpha": .init(argumentCount: 0, returnKind: .integer),
-            "setenabled": .init(argumentCount: 1, returnKind: .null),
-            "setactivated": .init(argumentCount: 1, returnKind: .null),
-            // The same write **without** the `onToggle` it would otherwise provoke. A skin uses it to
-            // follow state it is already reacting to: multipass's `configAttribute_eqVisible`
-            // handler moves the drawer's toggle to match the attribute it just observed, and
-            // `setActivated` there would re-enter `toggleDrawer` from inside its own notification.
-            "setactivatednocallback": .init(argumentCount: 1, returnKind: .null),
-            "getactivated": .init(argumentCount: 0, returnKind: .boolean),
-            // The object's Wasabi class, which a script branches on to treat a heterogeneous set of
-            // objects uniformly: multipass's `initStyle` walks its whole element list and swaps
-            // `image=` on a LAYER, `image=`/`downImage=`/`hoverImage=` on a BUTTON, and the thumb
-            // ids on a SLIDER — one loop over every skinnable thing the Style menu touches.
-            "getclassname": .init(argumentCount: 0, returnKind: .string),
-            // Closing a container is hiding its window: `.wal` windows are ours, and nothing in the
-            // engine owns a destroyed-container lifecycle. Multipass's notifier closes itself.
-            "close": .init(argumentCount: 0, returnKind: .null),
-            "getleft": .init(argumentCount: 0, returnKind: .integer),
-            "gettop": .init(argumentCount: 0, returnKind: .integer),
-            "getwidth": .init(argumentCount: 0, returnKind: .integer),
-            "getheight": .init(argumentCount: 0, returnKind: .integer),
-            "getguix": .init(argumentCount: 0, returnKind: .integer),
-            "getguiy": .init(argumentCount: 0, returnKind: .integer),
-            "getguiw": .init(argumentCount: 0, returnKind: .integer),
-            "getguih": .init(argumentCount: 0, returnKind: .integer),
-            "getposition": .init(argumentCount: 0, returnKind: .integer),
-            "setposition": .init(argumentCount: 1, returnKind: .null),
-            "clienttoscreenx": .init(argumentCount: 1, returnKind: .integer),
-            "clienttoscreeny": .init(argumentCount: 1, returnKind: .integer),
-            "screentoclientx": .init(argumentCount: 1, returnKind: .integer),
-            "screentoclienty": .init(argumentCount: 1, returnKind: .integer),
-            // `isInvalid()` is how a ClassicPro script asks "did this element survive the skin's
-            // overrides?" before configuring it; `getScale()` is a layout's zoom factor.
-            "isinvalid": .init(argumentCount: 0, returnKind: .boolean),
-            // Its write half is the host's UI Size, not a layout transform — see `uiScaleRequested`.
-            "setscale": .init(argumentCount: 1, returnKind: .null),
-            "getscale": .init(argumentCount: 0, returnKind: .float),
-            "setredraw": .init(argumentCount: 1, returnKind: .null),
-            // `scrollToPercent(pct)` on a scrolling group. Arity 1, result discarded — pinned by the
-            // bytecode (`v103.scrollToPercent(v119)` followed by `op2`).
-            "scrolltopercent": .init(argumentCount: 1, returnKind: .null),
-            "setregionfrommap": .init(argumentCount: 3, returnKind: .null),
-            "setmode": .init(argumentCount: 1, returnKind: .null),
-            "play": .init(argumentCount: 0, returnKind: .null),
-            "pause": .init(argumentCount: 0, returnKind: .null),
-            "gotoframe": .init(argumentCount: 1, returnKind: .null),
-            "setframe": .init(argumentCount: 1, returnKind: .null),
-            "getcurframe": .init(argumentCount: 0, returnKind: .integer),
-            // Animated-layer playback control. MMD3's volume/bass/treble knobs are animated layers
-            // played frame-range to frame-range, and the driving timer polls `isPlaying()`.
-            "getlength": .init(argumentCount: 0, returnKind: .integer),
-            "setstartframe": .init(argumentCount: 1, returnKind: .null),
-            "setendframe": .init(argumentCount: 1, returnKind: .null),
-            // The read halves of the same pair. A skin that pages through a sprite sheet by hand
-            // asks the layer where its own ends are rather than hard-coding a count: Hal's Eye
-            // `manual.maki` caches `getCurFrame()`/`getEndFrame()` in `onScriptLoaded` and clamps
-            // both page buttons against them, so with the signature missing the handler abandoned
-            // the whole initialiser at that call and both buttons sat at frame 0 forever (B91).
-            "getstartframe": .init(argumentCount: 0, returnKind: .integer),
-            "getendframe": .init(argumentCount: 0, returnKind: .integer),
-            "setspeed": .init(argumentCount: 1, returnKind: .null),
-            // Part of the same four-call preamble every skin writes before `play()`, and the one that
-            // was missing: Big Bento Modern's `animbutton` sets start, end, **autoreplay** and speed
-            // in that order, so a missing signature here abandoned the whole handler at the third
-            // call — the play/pause morph never ran and the buttons were never swapped.
-            "setautoreplay": .init(argumentCount: 1, returnKind: .null),
-            "isplaying": .init(argumentCount: 0, returnKind: .boolean),
-            // `isStopped()` is the **`AnimatedLayer`'s**, not the player's — the same receiver
-            // `play()` and `stop()` take, pinned by the call sites (`RENDER_DISASM=isStopped`:
-            // `op1(v3) op24(isstopped)` where `v3` is also the receiver of `play`). It reads like a
-            // transport question, and that resemblance is the trap: `isPlaying` beside it was already
-            // implemented for animated layers, so the pair looked complete while T800's jaw animation
-            // — `Noname2.maki`, behind the `animationbutton` under the mouth — aborted on the missing
-            // half every time it was pressed.
-            "isstopped": .init(argumentCount: 0, returnKind: .boolean),
-            "setalternatetext": .init(argumentCount: 1, returnKind: .null),
-            "setfontsize": .init(argumentCount: 1, returnKind: .null),
-            // `setFocus()` — the keyboard, asked for by the object that wants it. Big Bento's
-            // `playlistpro.maki` shows its playlist search box and focuses it in the same handler, so
-            // without this the handler aborted at the focus call and the box could never be typed in.
-            "setfocus": .init(argumentCount: 0, returnKind: .null),
-            // The `<list>` control a script fills — Big Bento's playlist search is the measured
-            // consumer, and every arity here is counted from its call sites: `deleteAllItems()`,
-            // `getItemLabel(item, column)`, `getFirstItemSelected()`, `getNextItemSelected(after)`,
-            // `scrollToItem(item)`. `addItem` is already declared (the dynamic `List` container shares
-            // the name); the receiver decides which one answers.
-            "deleteallitems": .init(argumentCount: 0, returnKind: .null),
-            "getitemlabel": .init(argumentCount: 2, returnKind: .string),
-            "getfirstitemselected": .init(argumentCount: 0, returnKind: .integer),
-            "getnextitemselected": .init(argumentCount: 1, returnKind: .integer),
-            "scrolltoitem": .init(argumentCount: 1, returnKind: .null),
-            // The write half of the same control, and Big Bento Modern's Web Reader is the measured
-            // consumer: its provider drop-down adds a placeholder row per `parser_onCallback` and
-            // then fills that row's two columns and its icon. The three `setIcon*`/`setShowIcons`
-            // calls sit at the very top of the same `onSetVisible` that loads the provider file, so
-            // until they existed the handler aborted before reaching the parser at all.
-            "setitemlabel": .init(argumentCount: 2, returnKind: .null),
-            "setsubitem": .init(argumentCount: 3, returnKind: .null),
-            "setitemicon": .init(argumentCount: 2, returnKind: .null),
-            // `setSelected(row, selected)` — the write half of `getFirstItemSelected`. The reader
-            // selects the provider it restored so the drop-down opens on it.
-            "setselected": .init(argumentCount: 2, returnKind: .null),
-            "seticonwidth": .init(argumentCount: 1, returnKind: .null),
-            "seticonheight": .init(argumentCount: 1, returnKind: .null),
-            "setshowicons": .init(argumentCount: 1, returnKind: .null),
-            "leftclick": .init(argumentCount: 0, returnKind: .null),
-            // Layer FX: Winamp warps a layer through a grid whose per-pixel source is supplied by the
-            // skin's own `fx_onGetPixel*` callbacks — implemented in Phase 28 (`invokeLayerFX`,
-            // `layerFXMesh(for:)`). Arities are read off the call sites, not assumed
-            // (`WINAMP_MODERN_RENDER_DISASM=fx_setgridsize`): every setter takes one argument except
-            // `fx_setGridSize(w, h)`, and `fx_update()` takes none.
-            "fx_setenabled": .init(argumentCount: 1, returnKind: .null),
-            "fx_setalphamode": .init(argumentCount: 1, returnKind: .null),
-            "fx_restart": .init(argumentCount: 0, returnKind: .null),
-            "fx_getenabled": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getwrap": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getrect": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getbgfx": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getclear": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getrealtime": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getlocalized": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getbilinear": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getalphamode": .init(argumentCount: 0, returnKind: .boolean),
-            "fx_getspeed": .init(argumentCount: 0, returnKind: .integer),
-            "fx_setwrap": .init(argumentCount: 1, returnKind: .null),
-            "fx_setrect": .init(argumentCount: 1, returnKind: .null),
-            "fx_setbgfx": .init(argumentCount: 1, returnKind: .null),
-            "fx_setclear": .init(argumentCount: 1, returnKind: .null),
-            "fx_setrealtime": .init(argumentCount: 1, returnKind: .null),
-            "fx_setlocalized": .init(argumentCount: 1, returnKind: .null),
-            "fx_setbilinear": .init(argumentCount: 1, returnKind: .null),
-            "fx_setspeed": .init(argumentCount: 1, returnKind: .null),
-            "fx_setgridsize": .init(argumentCount: 2, returnKind: .null),
-            "fx_update": .init(argumentCount: 0, returnKind: .null),
-            // `Map`: a bitmap sampled by the script (the knob-angle lookup MMD3 drives its rotary
-            // controls with). `new Map` yields a generic dynamic object; `loadMap` gives it its role.
-            "loadmap": .init(argumentCount: 1, returnKind: .null),
-            "inregion": .init(argumentCount: 2, returnKind: .boolean),
-            "getvalue": .init(argumentCount: 2, returnKind: .integer),
-            // A `Map` is also queried for its own size and for whole pixels: ClassicPro reads its
-            // colour scheme out of a bitmap (`player.maki` builds the classic-vis colour bands from
-            // `getARGBValue`) and sizes animations from `getWidth`/`getHeight`.
-            "getargbvalue": .init(argumentCount: 3, returnKind: .integer),
-            // `Region`: `loadFromMap(Map, Int threshold, Boolean reversed)` turns a map into a
-            // shape, `offset` moves it into the clipped object's own space, and `setRegion` clips
-            // the object to it. T800 fills its volume bar this way; the stock `customseek.m` its
-            // seek ghost.
-            "loadfrommap": .init(argumentCount: 3, returnKind: .null),
-            // `loadFromBitmap(String bitmapid)` is the same region without the `Map` in front of it:
-            // the shape is the bitmap's own opaque area. MMD3's `std.mi` declares the pair together
-            // (`extern Region.loadFromMap(…); extern Region.loadFromBitmap(String bitmapid);`) and
-            // three more skins call it — BLAKK's `boombox.m` clips its seek bar with
-            // `seekregion.loadfrombitmap("player.bb-seek-region"); seek1.setregion(seekregion);`.
-            "loadfrombitmap": .init(argumentCount: 1, returnKind: .null),
-            "offset": .init(argumentCount: 2, returnKind: .null),
-            "setregion": .init(argumentCount: 1, returnKind: .null),
-            // Screen-space cursor position, in the same skin-pixel units as the x/y a mouse event
-            // hands the script — the knob scripts mix the two in one expression.
-            "getmouseposx": .init(argumentCount: 0, returnKind: .integer),
-            "getmouseposy": .init(argumentCount: 0, returnKind: .integer),
-            // "is the pointer still on me?" — what a button asks in `onLeftButtonUp` to tell a click
-            // from a drag that left the control. Defix's every SUI tab does exactly that, so without
-            // it the handler aborted at the first tab and the whole tab strip was inert.
-            "ismouseoverrect": .init(argumentCount: 0, returnKind: .boolean),
-            "atan": .init(argumentCount: 1, returnKind: .float),
-            "geteq": .init(argumentCount: 0, returnKind: .integer),
-            "geteqband": .init(argumentCount: 1, returnKind: .integer),
-            "seteqband": .init(argumentCount: 2, returnKind: .null),
-            "geteqpreamp": .init(argumentCount: 0, returnKind: .integer),
-            "seteqpreamp": .init(argumentCount: 1, returnKind: .null),
-            "settargetx": .init(argumentCount: 1, returnKind: .null),
-            "settargety": .init(argumentCount: 1, returnKind: .null),
-            "settargetw": .init(argumentCount: 1, returnKind: .null),
-            "settargeth": .init(argumentCount: 1, returnKind: .null),
-            "settargeta": .init(argumentCount: 1, returnKind: .null),
-            "settargetspeed": .init(argumentCount: 1, returnKind: .null),
-            "gototarget": .init(argumentCount: 0, returnKind: .null),
-            "reversetarget": .init(argumentCount: 1, returnKind: .null),
-            "canceltarget": .init(argumentCount: 0, returnKind: .null),
-            "isgoingtotarget": .init(argumentCount: 0, returnKind: .boolean),
-            "sendaction": .init(argumentCount: 6, returnKind: .null),
-            "triggeraction": .init(argumentCount: 2, returnKind: .null),
-            "getleftvumeter": .init(argumentCount: 0, returnKind: .integer),
-            "getrightvumeter": .init(argumentCount: 0, returnKind: .integer),
-            // `extern Int System.getVisBand(int channel, int band); // 0,1 / 0..75` (std.mi). Every
-            // meter a skin draws itself reads this — Defix's speaker cones, VU needles and level
-            // bars all poll it from a timer — so without it those layers never move at all.
-            "getvisband": .init(argumentCount: 2, returnKind: .integer),
-            // `extern AlbumArtLayer.isLoading()`. Defix's playlist window polls it every tick, and
-            // the miss aborted that whole `ontimer` handler continuously.
-            "isloading": .init(argumentCount: 0, returnKind: .boolean),
-            "refresh": .init(argumentCount: 0, returnKind: .null),
-            "getvolume": .init(argumentCount: 0, returnKind: .integer),
-            "setvolume": .init(argumentCount: 1, returnKind: .null),
-            "seekto": .init(argumentCount: 1, returnKind: .null),
-            "getplayitemlength": .init(argumentCount: 0, returnKind: .integer),
-            "getplaylistlength": .init(argumentCount: 0, returnKind: .integer),
-            "getplaylistindex": .init(argumentCount: 0, returnKind: .integer),
-            "integertostring": .init(argumentCount: 1, returnKind: .string),
-            "integertotime": .init(argumentCount: 1, returnKind: .string),
-            "floattostring": .init(argumentCount: 2, returnKind: .string),
-            "stringtointeger": .init(argumentCount: 1, returnKind: .integer),
-            "stringtofloat": .init(argumentCount: 1, returnKind: .float),
-            // MAKI's casts are System methods: `System.Integer(v)`, `System.Float(v)`, … A script
-            // reaches for them wherever it mixes a float with an int-typed API — Love is War Miku's
-            // volume buttons keep the level as a float and hand `Integer(level)` to `setVolume`, so
-            // without these the whole volume path aborted at the first press.
-            "integer": .init(argumentCount: 1, returnKind: .integer),
-            "float": .init(argumentCount: 1, returnKind: .float),
-            "string": .init(argumentCount: 1, returnKind: .string),
-            "boolean": .init(argumentCount: 1, returnKind: .boolean),
-            // MAKI's math library, all `System` methods. Measured demand, not a shopping list:
-            // Defix's VU needle computes its ballistics with `sqrt` and its rotation with `sin`/`cos`,
-            // and the *whole* `onTimer` aborted on the first `sqrt` — which is why the needle styles
-            // stood still even with Layer FX implemented.
-            "sqrt": .init(argumentCount: 1, returnKind: .double),
-            "pow": .init(argumentCount: 2, returnKind: .double),
-            "sin": .init(argumentCount: 1, returnKind: .double),
-            "cos": .init(argumentCount: 1, returnKind: .double),
-            "tan": .init(argumentCount: 1, returnKind: .double),
-            "asin": .init(argumentCount: 1, returnKind: .double),
-            "acos": .init(argumentCount: 1, returnKind: .double),
-            "atan2": .init(argumentCount: 2, returnKind: .double),
-            "log": .init(argumentCount: 1, returnKind: .double),
-            "log10": .init(argumentCount: 1, returnKind: .double),
-            "exp": .init(argumentCount: 1, returnKind: .double),
-            "abs": .init(argumentCount: 1, returnKind: .double),
-            "strlen": .init(argumentCount: 1, returnKind: .integer),
-            "strlower": .init(argumentCount: 1, returnKind: .string),
-            "strupper": .init(argumentCount: 1, returnKind: .string),
-            "strsearch": .init(argumentCount: 2, returnKind: .integer),
-            // Percent-encoding for a search term a skin is about to put in a URL. Every measured call
-            // sits *inside* the expression that builds the address — Big Bento's lyrics finder is
-            // `"…/search?q=" + urlEncode(artist) + " " + urlEncode(title) + " lyrics"` — so refusing
-            // it took the whole handler down and the two magnifier buttons did nothing at all, one
-            // layer before the navigation this phase is about (B40).
-            "urlencode": .init(argumentCount: 1, returnKind: .string),
-            "strleft": .init(argumentCount: 2, returnKind: .string),
-            "strright": .init(argumentCount: 2, returnKind: .string),
-            "strmid": .init(argumentCount: 3, returnKind: .string),
-            // The extension of a filename, without the dot. Defix reads it off the playing item
-            // (`getExtension(getPlayItemMetaDataString("filename"))`) for the display's format
-            // readout, in the middle of the main layout's `onScriptLoaded` — so refusing it took the
-            // rest of that handler, and the whole display area, down with it.
-            "getextension": .init(argumentCount: 1, returnKind: .string),
-            // `getPath(filename)` — the *directory* half, the way `getExtension` is the tail. Pure
-            // string work on a string the host already handed out: it opens nothing and reaches no
-            // filesystem. Big Bento's file-info panel prints it as the track's folder, and the corpus
-            // always calls it on the playing item.
-            "getpath": .init(argumentCount: 1, returnKind: .string),
-            // …and its complement, the leaf. `getPath` + `removePath` is how a skin splits an item
-            // into "folder" and "file" for two separate readouts.
-            "removepath": .init(argumentCount: 1, returnKind: .string),
-            "translate": .init(argumentCount: 1, returnKind: .string),
-            "getprivateint": .init(argumentCount: 3, returnKind: .integer),
-            "setprivateint": .init(argumentCount: 3, returnKind: .null),
-            // The string half of the same store. Unreachable until Phase 24 dispatched `onResize`:
-            // `CproTabs.m` reads its saved tab order out of it while laying the strip out, and the
-            // missing method aborted that handler — so the tabs never re-sized to fit.
-            "getprivatestring": .init(argumentCount: 3, returnKind: .string),
-            "setprivatestring": .init(argumentCount: 3, returnKind: .null),
-            "getitem": .init(argumentCount: 1, returnKind: .object),
-            "getitembyguid": .init(argumentCount: 1, returnKind: .object),
-            "newitem": .init(argumentCount: 2, returnKind: .object),
-            "newattribute": .init(argumentCount: 2, returnKind: .object),
-            "getattribute": .init(argumentCount: 1, returnKind: .object),
-            "getdata": .init(argumentCount: 0, returnKind: .string),
-            "setdata": .init(argumentCount: 1, returnKind: .null),
-            "ondatachanged": .init(argumentCount: 0, returnKind: .null),
-            "setdelay": .init(argumentCount: 1, returnKind: .null),
-            "start": .init(argumentCount: 0, returnKind: .boolean),
-            "stop": .init(argumentCount: 0, returnKind: .null),
-            "isrunning": .init(argumentCount: 0, returnKind: .boolean),
-            // Window-manager notifications around a layout resize. Arities read out of the bytecode
-            // rather than guessed (`WINAMP_MODERN_RENDER_DISASM`): each is called on the layout, and
-            // counting the net pushes between receiver and call gives `beforeRedock()` /
-            // `snapAdjust(x, y, w, h)`. Guessing here is not an option — a wrong count desynchronises
-            // the interpreter's stack.
-            "beforeredock": .init(argumentCount: 0, returnKind: .null),
-            "redock": .init(argumentCount: 0, returnKind: .null),
-            "snapadjust": .init(argumentCount: 4, returnKind: .null),
-            // `debugString(msg, level)` — a skin's own trace output. Two arguments, pinned by
-            // ClassicPro (`debugString("setCustomVis=" + …, 9)`).
-            "debugstring": .init(argumentCount: 2, returnKind: .null),
-            "getviewportwidth": .init(argumentCount: 0, returnKind: .integer),
-            "getviewportheight": .init(argumentCount: 0, returnKind: .integer),
-            "getviewportleft": .init(argumentCount: 0, returnKind: .integer),
-            "getviewporttop": .init(argumentCount: 0, returnKind: .integer),
-            "getviewportwidthfromguiobject": .init(argumentCount: 1, returnKind: .integer),
-            "getviewportheightfromguiobject": .init(argumentCount: 1, returnKind: .integer),
-            "getviewportleftfromguiobject": .init(argumentCount: 1, returnKind: .integer),
-            "getviewporttopfromguiobject": .init(argumentCount: 1, returnKind: .integer),
-            // The **monitor** family, which is the viewport's whole-screen twin: Winamp's viewport is
-            // the work area, the monitor is the display it sits on. Big Bento's notifier asks for both
-            // one after the other, and its `pledit.maki` sizes the side playlist from
-            // `getMonitorWidth()` — so with this unimplemented the `onAction("load_comp")` that moves
-            // the playlist beside the player aborted, and with it every option that governs that
-            // playlist ("Enlarge Playlist" had nothing left to enlarge). Arity 0, pinned by the four
-            // call sites in that skin.
-            "getmonitorwidth": .init(argumentCount: 0, returnKind: .integer),
-            "getmonitorheight": .init(argumentCount: 0, returnKind: .integer),
-            "getmonitorleft": .init(argumentCount: 0, returnKind: .integer),
-            "getmonitortop": .init(argumentCount: 0, returnKind: .integer),
-            // The player window's own box. `getCurAppWidth`/`getCurAppHeight` were missing while
-            // their two siblings were present, and `two/scripts/presetpos.m` calls all four in one
-            // expression — `saveFramePos()` died on the third call, so the F9–F12 preset positions
-            // stored nothing and `gotoFramePos` could only ever restore its fallback.
-            "getcurappleft": .init(argumentCount: 0, returnKind: .integer),
-            "getcurapptop": .init(argumentCount: 0, returnKind: .integer),
-            "getcurappwidth": .init(argumentCount: 0, returnKind: .integer),
-            "getcurappheight": .init(argumentCount: 0, returnKind: .integer),
-            "getruntimeversion": .init(argumentCount: 0, returnKind: .integer),
-            "getskinname": .init(argumentCount: 0, returnKind: .string),
-            // `System.getSettingsPath()` — where the player keeps its own configuration. Arity 0,
-            // pinned by the bytecode (`v82 = v67.getSettingsPath() + "/WACUP_Tools/koopa.ini"`, then
-            // a `File.load`/`exists` pair): the string is only ever concatenated with a filename and
-            // probed. Missing it aborted 23 of Big Bento Modern's `onScriptLoaded` handlers.
-            "getsettingspath": .init(argumentCount: 0, returnKind: .string),
-            // `System.getApplicationPath()` — where the *player* is installed, as against
-            // `getSettingsPath`'s where it keeps its configuration. Arity 0, pinned by the bytecode
-            // (`getApplicationPath() + "/Lang/Winamp-es-us.wlz"`, then a `File.load`/`exists`/
-            // `getSize` probe). Big Bento's Localization page is built entirely out of those probes.
-            "getapplicationpath": .init(argumentCount: 0, returnKind: .string),
-            "getcolortheme": .init(argumentCount: 0, returnKind: .string),
-            "setcolortheme": .init(argumentCount: 1, returnKind: .null),
-            "getnumcolorthemes": .init(argumentCount: 0, returnKind: .integer),
-            "enumcolorthemes": .init(argumentCount: 1, returnKind: .string),
-            "gettimeofday": .init(argumentCount: 0, returnKind: .integer),
-            "getplayitemdisplaytitle": .init(argumentCount: 0, returnKind: .string),
-            "getplayitemmetadatastring": .init(argumentCount: 1, returnKind: .string),
-            "getplayitemstring": .init(argumentCount: 0, returnKind: .string),
-            // `System.getDecoderName(item)` — the input plugin decoding the named item. Counted from
-            // the call site, which is `getDecoderName(getPlayItemString())`: one argument, a string
-            // back. Big Bento's file-info panel fills its *Decoder* line from it, in the same
-            // `onSetVisible` that fills every other line, so the whole panel stayed empty without it.
-            "getdecodername": .init(argumentCount: 1, returnKind: .string),
-            "getstatus": .init(argumentCount: 0, returnKind: .integer),
-            "getsonginfotext": .init(argumentCount: 0, returnKind: .string),
-            "isvideo": .init(argumentCount: 0, returnKind: .boolean),
-            "isvideofullscreen": .init(argumentCount: 0, returnKind: .boolean),
-            "iskeydown": .init(argumentCount: 1, returnKind: .boolean),
-            "isminimized": .init(argumentCount: 0, returnKind: .boolean),
-            // Answered honestly, unlike its neighbours: a skin *gates work* on it. Multipass's drawer
-            // "Focus Mode" returns early from its 100 ms timer whenever the app is inactive, so a
-            // hardcoded `false` would not just mis-report — it would stop the drawers from ever
-            // opening again once that option was turned on.
-            "isappactive": .init(argumentCount: 0, returnKind: .boolean),
-            "isdesktopalphaavailable": .init(argumentCount: 0, returnKind: .boolean),
-            "istransparencyavailable": .init(argumentCount: 0, returnKind: .boolean),
-            "istransparencysafe": .init(argumentCount: 0, returnKind: .boolean),
-            "islayoutanimationsafe": .init(argumentCount: 0, returnKind: .boolean),
-            "hasvideosupport": .init(argumentCount: 0, returnKind: .boolean),
-            // The playing video's native size. Zero is the honest answer here for the same reason
-            // `hasVideoSupport` is false — there is no video component behind a `.wal` holder — and it
-            // is also what Winamp answers for an audio track, which is the case skins branch on.
-            "getidealvideowidth": .init(argumentCount: 0, returnKind: .integer),
-            "getidealvideoheight": .init(argumentCount: 0, returnKind: .integer),
-            "lockui": .init(argumentCount: 0, returnKind: .null),
-            "unlockui": .init(argumentCount: 0, returnKind: .null),
-            "hidenamedwindow": .init(argumentCount: 1, returnKind: .null),
-            "isnamedwindowvisible": .init(argumentCount: 1, returnKind: .boolean),
-            "navigateurl": .init(argumentCount: 1, returnKind: .null),
-            "navigateurlbrowser": .init(argumentCount: 1, returnKind: .null),
-            "setclipboardtext": .init(argumentCount: 1, returnKind: .null),
-            // Internet Explorer's own error page, which a `<browser>` asks Winamp to suppress so it
-            // can show its own. There is no IE here — the surface is WebKit — so the preference is
-            // recorded and nothing else; refusing it aborted the handler that sets it, which on Big
-            // Bento Modern is the one that also loads the Web Reader's provider list.
-            "setcancelieerrorpage": .init(argumentCount: 1, returnKind: .null),
-            "addcommand": .init(argumentCount: 4, returnKind: .null),
-            "addseparator": .init(argumentCount: 0, returnKind: .null),
-            "addsubmenu": .init(argumentCount: 2, returnKind: .null),
-            "checkcommand": .init(argumentCount: 2, returnKind: .null),
-            "popatmouse": .init(argumentCount: 0, returnKind: .integer),
-            "popatxy": .init(argumentCount: 2, returnKind: .integer),
-            "newgroup": .init(argumentCount: 1, returnKind: .object),
-            "newgroupaslayout": .init(argumentCount: 1, returnKind: .object),
-            // `GroupList.instantiate(groupdef, count)` — the *list's* own expansion, as against
-            // `System.newGroup`. The second argument is a **count**, not an index; the author's own
-            // comment in `config_vscrollbars.m` says so, and the bytecode agrees
-            // (`v103.instantiate(v121:"…part1", v6:1)`, receiver + two pushes, result assigned).
-            "instantiate": .init(argumentCount: 2, returnKind: .object),
-            "init": .init(argumentCount: 1, returnKind: .null),
-            // Paint order within the parent. ClassicPro raises a tab while it is being dragged along
-            // the strip, and the missing method aborted the whole drag handler.
-            "bringtofront": .init(argumentCount: 0, returnKind: .null),
-            "bringtoback": .init(argumentCount: 0, returnKind: .null),
-            "messagebox": .init(argumentCount: 4, returnKind: .integer),
-            "callme": .init(argumentCount: 1, returnKind: .null),
-            // ClassicPro version gate (branch, not hard-block) + public config.
-            "getbuildnumber": .init(argumentCount: 0, returnKind: .integer),
-            "getwinampversion": .init(argumentCount: 0, returnKind: .string),
-            "getpublicint": .init(argumentCount: 2, returnKind: .integer),
-            "setpublicint": .init(argumentCount: 2, returnKind: .null),
-            "getpublicstring": .init(argumentCount: 2, returnKind: .string),
-            "setpublicstring": .init(argumentCount: 2, returnKind: .null),
-            "switchskin": .init(argumentCount: 1, returnKind: .null),
-            "getcurcfgval": .init(argumentCount: 0, returnKind: .integer),
-            "getdate": .init(argumentCount: 0, returnKind: .integer),
-            // `System.random(max)` — one argument, settled from the bytecode rather than guessed
-            // (`WINAMP_MODERN_RENDER_DISASM=random`: every one of the eighteen call sites in the
-            // stock skin's `about.maki` pushes the receiver and exactly one value before `op24`).
-            "random": .init(argumentCount: 1, returnKind: .integer),
-            "getdatedoy": .init(argumentCount: 1, returnKind: .integer),
-            "getdateyear": .init(argumentCount: 1, returnKind: .integer),
-            // ClassicPro `ClassicProFile` shell service (the entire native surface, P0B §1).
-            // `XmlDoc`: load an optional config document. Bounded — see `DynamicRole.xmlDocument`.
-            "load": .init(argumentCount: 1, returnKind: .null),
-            "exists": .init(argumentCount: 0, returnKind: .boolean),
-            // `XmlDoc`'s callback parser. The document is walked once by `parser_start()`, which
-            // dispatches `parser_onCallback` back at the same object for every element matching a
-            // path registered with `parser_addCallback`. Big Bento Modern's Web Reader is the whole
-            // measured demand: its provider drop-down is built entirely from those callbacks, so
-            // without them `exists()` answered false, the skin took its "Oops! Something went wrong!"
-            // branch on every `onSetVisible`, and the list came up empty.
-            "parser_addcallback": .init(argumentCount: 1, returnKind: .null),
-            "parser_start": .init(argumentCount: 0, returnKind: .null),
-            "parser_destroy": .init(argumentCount: 0, returnKind: .null),
-            "getfilesize": .init(argumentCount: 1, returnKind: .integer),
-            "getlanguageid": .init(argumentCount: 0, returnKind: .string),
-            // `List`: MAKI's own container (`extern List.addItem(Any)` …). ClassicPro builds its tab
-            // order, its widget registry and its beat-vis names in one, so a missing `addItem` aborts
-            // the script that assembles the SUI's tab strip.
-            "additem": .init(argumentCount: 1, returnKind: .integer),
-            "enumitem": .init(argumentCount: 1, returnKind: .object),
-            "getnumitems": .init(argumentCount: 0, returnKind: .integer),
-            "removeitem": .init(argumentCount: 1, returnKind: .null),
-            "removeall": .init(argumentCount: 0, returnKind: .null),
-            "finditem": .init(argumentCount: 1, returnKind: .integer),
-            // `BitList` — a sized array of flags, sharing the `List` backing store.
-            "setsize": .init(argumentCount: 1, returnKind: .null),
-            "getsize": .init(argumentCount: 0, returnKind: .integer),
-            "setitem": .init(argumentCount: 2, returnKind: .null),
-            // `WinampConfig.getGroup(guid)` → a `WinampConfigGroup`. Arities follow `winampconfig.mi`,
-            // which is what the skin's compiler encoded.
-            "getgroup": .init(argumentCount: 1, returnKind: .object),
-            "getint": .init(argumentCount: 1, returnKind: .integer),
-            "getbool": .init(argumentCount: 1, returnKind: .boolean),
-            "getstring": .init(argumentCount: 1, returnKind: .string),
-            "getcurrenttrackrating": .init(argumentCount: 0, returnKind: .integer),
-            "setcurrenttrackrating": .init(argumentCount: 1, returnKind: .null),
-            // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.
-            "getnumchildren": .init(argumentCount: 0, returnKind: .integer),
-            "enumchildren": .init(argumentCount: 1, returnKind: .object),
-            "explorefile": .init(argumentCount: 1, returnKind: .null),
-            "openfile": .init(argumentCount: 2, returnKind: .null),
-            "findfiles": .init(argumentCount: 3, returnKind: .integer),
-            // Arity settled off the call sites (`RENDER_DISASM=playFile`): T800's
-            // `quicksongpick.maki` emits `op1(v0) op1(v44) op112(playfile)` — receiver, one push —
-            // and Big Bento's `progbutton.maki` the same shape with the path built by a subroutine.
-            // The name is unique across the installed corpus and belongs to `System` at both sites.
-            "playfile": .init(argumentCount: 1, returnKind: .null),
-        ]
-        let name = method.lowercased()
-        if let signature = signatures[name] { return signature }
+        if let signature = Self.generalSignatures[name] { return signature }
         // A script may call one of its own event handlers directly to reuse it — MMD3 runs its
         // crossfade slider's handler once at load with `slidercb.onSetPosition(slidercb.getPosition())`.
         // Without an arity the interpreter cannot unwind the stack, so only events with a known

@@ -12,7 +12,31 @@ import Foundation
 final class WasabiTextMetrics {
     let loadedSkin: WinampModernLoadedSkin
     private var fonts: [String: CGFont] = [:]
+    /// The **resolved** font for a request, which is not what `fonts` holds.
+    ///
+    /// `fonts` caches the raw `CGFont` parsed out of the skin, and everything after it ran per
+    /// string, per frame: `CTFontCreateWithGraphicsFont` at the size, `applying(_:to:)` (an
+    /// `NSFontManager.convert` round trip), and — for the far more common case of a skin naming a
+    /// plain family rather than a declared resource — the whole `installedFont` branch, whose
+    /// `NSFontManager.font(withFamily:)` reaches
+    /// `CTFontDescriptorCreateMatchingFontDescriptorsWithOptions`. That subtree measured 5.7% of the
+    /// main thread on `cPro_T2T-by-MAC` (B103). The answer is a pure function of the key, so it is
+    /// cached on the whole key the signature already offers.
+    ///
+    /// `nil` is cached too: a skin naming a font nobody has is the case that pays the *full*
+    /// descriptor-matching cost before failing, so it is the one most worth not repeating.
+    private var resolvedFonts: [FontKey: NSFont?] = [:]
     private(set) var isTornDown = false
+
+    private struct FontKey: Hashable {
+        let identifier: String
+        let size: CGFloat
+        let traits: UInt
+    }
+
+    /// A skin declares a handful of sizes and the UI Size scales them, so this is small in practice.
+    /// The cap is a guard against a script driving `fontsize` continuously, not a working limit.
+    private static let maximumResolvedFonts = 512
 
     init(loadedSkin: WinampModernLoadedSkin) {
         self.loadedSkin = loadedSkin
@@ -20,6 +44,7 @@ final class WasabiTextMetrics {
 
     func teardown() {
         fonts.removeAll()
+        resolvedFonts.removeAll()
         isTornDown = true
     }
 
@@ -31,6 +56,17 @@ final class WasabiTextMetrics {
     /// never be able to do that, so the null is caught here — assigning to an `NSFont?` is what makes
     /// it visible — and answered by the caller's guaranteed fallback.
     func font(identifier: String?, size: CGFloat, traits: NSFontTraitMask = []) -> NSFont? {
+        guard !isTornDown else { return nil }
+        guard let identifier else { return resolvedFont(identifier: nil, size: size, traits: traits) }
+        let key = FontKey(identifier: identifier, size: size, traits: traits.rawValue)
+        if let cached = resolvedFonts[key] { return cached }
+        let resolved = resolvedFont(identifier: identifier, size: size, traits: traits)
+        if resolvedFonts.count >= Self.maximumResolvedFonts { resolvedFonts.removeAll(keepingCapacity: true) }
+        resolvedFonts[key] = resolved
+        return resolved
+    }
+
+    private func resolvedFont(identifier: String?, size: CGFloat, traits: NSFontTraitMask) -> NSFont? {
         guard !isTornDown, let identifier,
               let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
               definition.kind == "truetypefont", let path = definition.logicalFile else {

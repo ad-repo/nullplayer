@@ -55,18 +55,30 @@ enum MakiClassGUID {
     /// before this became a null receiver.
     static let runtimeBound: Set<String> = [playlistEditor, colorManager, playlistManager]
 
+    /// Reverse each of the four words, so two spellings of the same class compare equal.
+    ///
+    /// This is on the interpreter's dispatch path — `signature(for:classGUID:)` calls it for every
+    /// method invocation — so how it walks the string matters. It used to reach each byte pair with
+    /// `raw.index(raw.startIndex, offsetBy:)`, which is O(n) from the *start* every time, and it
+    /// materialised 16 two-character `String`s plus a reversed array plus a join. That is O(n²) and
+    /// ~20 allocations for a 32-character constant, and it measured on cPro Bento (B103). One
+    /// `Array(raw)` and one `String` give the identical result — same characters, same order, the
+    /// same trailing `lowercased()` — with O(n) indexing.
+    ///
+    /// Not memoized: the cache would be keyed on the raw string, and hashing 32 characters is the
+    /// same order of work as the loop below now is.
     static func canonical(_ raw: String) -> String {
         guard raw.count == 32 else { return raw.lowercased() }
-        let bytes = stride(from: 0, to: raw.count, by: 2).map { offset -> String in
-            let start = raw.index(raw.startIndex, offsetBy: offset)
-            let end = raw.index(start, offsetBy: 2)
-            return String(raw[start..<end])
-        }
-        var ordered: [String] = []
+        let characters = Array(raw)
+        var ordered = String()
+        ordered.reserveCapacity(32)
         for start in stride(from: 0, to: 16, by: 4) {
-            ordered.append(contentsOf: bytes[start..<(start + 4)].reversed())
+            for pair in stride(from: start + 3, through: start, by: -1) {
+                ordered.append(characters[pair * 2])
+                ordered.append(characters[pair * 2 + 1])
+            }
         }
-        return ordered.joined().lowercased()
+        return ordered.lowercased()
     }
 }
 
