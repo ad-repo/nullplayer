@@ -28,6 +28,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
+| B106 | **String width is measured with a full CoreText typesetting pass on the layout path.** `autoWidth(of:)` is reached from `append`, so every `<text>` sized from its own content ran `NSString.size(withAttributes:)` on **every scene rebuild** - `__NSStringDrawingEngine` -> `TTypesetterAttrString` - to answer a question whose answer never changes. Measured 2026-09-01 on cPro Bento (drawer visualization up, playing): the walk from `append` alone was 4.7%, and `__NSStringDrawingEngine` totalled **13.6%** across three call sites (`append`/`autoWidth`, `drawPlaylistComponent`/`drawSurfaceText`, and `drawText`'s own measure). Fixed for the two sites that measure with exactly `[.font:]`, which makes the memo key provably complete: `WasabiTextMetrics.measuredWidth(of:font:)`. `width(of:text:)` 5.1% -> 0.3%, `autoWidth` 5.5% -> 0.8%, `sizeWithAttributes` 7.8% -> 2.4% | every `.wal` skin with `autowidth` text; worst where the graph is largest | S | Live-reported |
 | B105 | **`WinampModernConfiguration.safeComponent` rebuilds `CharacterSet.alphanumerics.union(_:)` on every call.** That union is not a cheap constant - it materializes Unicode bitmap planes (`CFUniCharGetBitmapForPlane`). It runs **twice per `storageKey`**, and a `storageKey` per config read, which puts it on the frame path for every `cfgattrib` in the scene. Measured **2.5%** of the main thread on cPro Bento, 2026-09-01. Fixed: the set is a `static let`, and an already-safe name is returned as-is instead of being rebuilt one `Character` at a time | every `.wal` skin with `cfgattrib` bindings | S | Live-reported |
 | B104 | **A `CharacterSet` is rebuilt once per character, on a scan over every object in the graph, twice a frame.** `WinampModernComponents.swift:112` builds `CharacterSet(charactersIn:)` **inside** a `filter` closure, so CoreFoundation runs `CFCharacterSetCreateWithCharactersInString` -> `qsort` (and the matching dealloc) once per scalar to answer "is this character hex". It is reached from `refreshWaveformDemand`, which walks `allObjectsUnordered` **twice** calling `componentKind(of:)` on every object. Measured 2026-09-01 on cPro Bento with the drawer visualization up and audio playing (7991 main-thread samples): `normalize` **14.6%** of the main thread (~13.7% of it building and freeing `CharacterSet`s), `refreshWaveformDemand` **32.8%**, `surfaceID(of:)` **32.0%**. Nothing in the line is cPro-specific - the **reach** is: the cost is per object, and cPro's graph (ClassicPro engine + CentroSUI + tabs + widgets + drawer) is the corpus's largest, which is also why adding the drawer made it worse | every `.wal` skin; scales with object count, so worst by far on cPro | S | Live-reported |
 | B103 | **The script-dispatch and per-frame resolution paths rebuild their lookup tables on every call.** Measured 2026-09-01 on `2222-cPro__Bento`, debug build, **idle with nothing playing**: the process sits at **58-65% CPU** and `sample` puts ~64% of it on the main thread - 32.1% in `animationTick` -> `refreshLayerFXMeshes` -> `evaluateLayerFXMesh`, 30.8% in the `draw` that tick asks for. The mesh is not the cost: `WINAMP_MODERN_FX_TRACE=1` shows **one** realtime layer, `layer#animationscreen`, at `fx_setgridsize(10,1)` - an 11x2 vertex mesh, 44 MAKI calls per tick, 1320/sec. That works out to **~240 us per script dispatch**, and the four causes are all rebuilt-per-call tables; see the detail section | every `.wal` skin (items 1, 2, 4 are shared script/resource code); worst on cPro, which runs a 30 Hz realtime FX layer | M | Live-reported |
@@ -193,6 +194,43 @@ The implementation and its automated coverage shipped; that record is in
 ---
 
 -
+---
+
+### B106
+
+- [x] Memoize the string measurement in `WasabiTextMetrics.measuredWidth(of:font:)`, keyed on
+      `(text, fontName, pointSize)` and shared by `width(of:text:)` and `surfaceTextWidth`.
+
+**Deliberately not done: the drawing half.** `drawText` is ~200 lines in which nearly every branch
+documents a specific skin defect it exists to fix (B87's clip rule, the `offsetx` sliver, cPro2's
+4px tuck, the clock cells). Converting it to cached CoreText lines is the real remaining win and is
+exactly the change that quietly breaks one of those cases - it wants the corpus render sweep as a
+safety net first. `drawText`'s own `measured` call is also left alone: it passes the full attribute
+dictionary (font + colour + paragraph), so routing it through a font-only cache is only safe if
+paragraph style cannot affect a single-line width, which is believed but not established.
+
+**The result that matters more than the table, measured 2026-09-01.** Main-thread *busy* fraction
+across the three runs on identical state:
+
+| | busy |
+|---|---:|
+| before B104 | 95.3% |
+| after B104 | 93.8% |
+| after B105 + B106 | 91.1% |
+
+**The main thread is still saturated.** Per-frame work fell a long way - the named functions dropped
+by 5-20x - but the animation and visualization clocks simply take the freed capacity and run more
+frames, so the busy fraction barely moves. Chasing individual leaf costs has reached diminishing
+returns: what is left is dominated by `draw` (41.4%, mostly text drawing and image compositing),
+`refreshLayerFXMeshes`, and the scene walk.
+
+**That makes B104 item 4 the next real lever, and it is now evidenced rather than predicted.**
+`append` (13.4%) + `sceneNodes` (12.4%) are rebuilding a scene that mostly did not change, because
+`sceneGeneration` still moves every frame from cPro's `beatvis` `<animatedlayer>`s writing `frame`.
+Verified when B103 was investigated: `append` never reads `frame`, and the sprite is picked at draw
+time by `animatedFrameImage` -> `WasabiAnimation.state` on the live object, downstream of the scene
+cache - so exempting it cannot freeze the animation.
+
 ---
 
 ### B105

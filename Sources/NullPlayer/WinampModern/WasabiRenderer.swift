@@ -521,6 +521,13 @@ final class WasabiResourceCache {
         return metrics.font(identifier: identifier, size: size, traits: traits)
     }
 
+    /// `WasabiTextMetrics.measuredWidth(of:font:)`, so the renderer's own measurements share the one
+    /// cache the layout path fills. Same contract: `[.font:]` and nothing else.
+    func textWidth(of text: String, font: NSFont) -> CGFloat {
+        guard !isTornDown else { return 0 }
+        return metrics.measuredWidth(of: text, font: font)
+    }
+
     func teardown() {
         bitmaps.removeAll()
         regionMasks.removeAll()
@@ -4462,7 +4469,7 @@ final class WasabiSceneRenderer {
         }
         let font = resources.font(identifier: surfaceFont?.identifier, size: pointSize)
             ?? NSFont.systemFont(ofSize: pointSize)
-        return (text as NSString).size(withAttributes: [.font: font]).width
+        return resources.textWidth(of: text, font: font)
     }
 
     /// A row colour that can be read on the bar behind it, for the lists **this renderer** draws

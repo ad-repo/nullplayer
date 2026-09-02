@@ -26,7 +26,41 @@ final class WasabiTextMetrics {
     /// `nil` is cached too: a skin naming a font nobody has is the case that pays the *full*
     /// descriptor-matching cost before failing, so it is the one most worth not repeating.
     private var resolvedFonts: [FontKey: NSFont?] = [:]
+
+    /// How wide a string draws in a font — memoized, because it is a pure function of exactly that
+    /// and it is asked on the **layout** path, not only the paint one.
+    ///
+    /// `autoWidth(of:)` is reached from `append`, so every `<text>` sized from its own content is
+    /// measured on every scene rebuild, and `NSString.size(withAttributes:)` is a full CoreText
+    /// typesetting pass (`__NSStringDrawingEngine` → `TTypesetterAttrString`). Measured at 4.7% of
+    /// the main thread from `append` alone on cPro Bento, with the playlist and `drawText` paths
+    /// asking the same question again (B106).
+    ///
+    /// Keyed on the font's *name and size* rather than its identity, so it stays correct if the
+    /// font cache ever hands back a different instance for the same face.
+    private var stringWidths: [StringWidthKey: CGFloat] = [:]
     private(set) var isTornDown = false
+
+    private struct StringWidthKey: Hashable {
+        let text: String
+        let fontName: String
+        let pointSize: CGFloat
+    }
+
+    /// A ticking clock produces a new string every second, so this is bounded rather than unbounded;
+    /// the cap is a guard, not a working limit.
+    private static let maximumStringWidths = 4096
+
+    /// The width of `text` drawn in `font`, exactly as `NSString.size(withAttributes: [.font:])`
+    /// answers it. Callers that measure with any *other* attribute must not use this.
+    func measuredWidth(of text: String, font: NSFont) -> CGFloat {
+        let key = StringWidthKey(text: text, fontName: font.fontName, pointSize: font.pointSize)
+        if let cached = stringWidths[key] { return cached }
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
+        if stringWidths.count >= Self.maximumStringWidths { stringWidths.removeAll(keepingCapacity: true) }
+        stringWidths[key] = width
+        return width
+    }
 
     private struct FontKey: Hashable {
         let identifier: String
@@ -45,6 +79,7 @@ final class WasabiTextMetrics {
     func teardown() {
         fonts.removeAll()
         resolvedFonts.removeAll()
+        stringWidths.removeAll()
         isTornDown = true
     }
 
@@ -501,7 +536,7 @@ final class WasabiTextMetrics {
         if let pitch = Self.fixedPitch(of: object, font: font) {
             return pitch.width(of: text) + padding
         }
-        return (text as NSString).size(withAttributes: [.font: font]).width + padding
+        return measuredWidth(of: text, font: font) + padding
     }
 
     /// Height of one line of the object's text, in skin pixels — the vertical answer to `width(of:)`,
