@@ -815,6 +815,9 @@ class WindowManager {
     /// macOS posts this repeatedly while a display reconfigures, and the frames are not settled until
     /// it stops, so the sweep is coalesced onto the next runloop pass rather than run per notification.
     @objc private func handleScreenParametersDidChange(_ notification: Notification) {
+        // Winamp Modern only. A display reconfiguration leaves Classic and Original exactly where
+        // they were before this branch, which is what the other families expect.
+        guard appliesWinampModernPlacement else { return }
         guard !isScreenParameterSweepScheduled else { return }
         isScreenParameterSweepScheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -922,6 +925,21 @@ class WindowManager {
         guard uiMode.controllerFamily == .winampModern else { return nil }
         return (mainWindowController as? WinampModernMainWindowController)?.surfaceCoordinator
     }
+
+    /// Whether the placement and ordering corrections this branch introduced for `.wal` window
+    /// management apply right now.
+    ///
+    /// They were written for one problem: a `.wal` skin's windows are sized by the skin, arranged by
+    /// a generated tiling, and could land off the display with no way back. Classic and Original
+    /// place their windows by rules that predate all of it and that people have laid their desktops
+    /// out around — including the habit of parking a window mostly past an edge, which every one of
+    /// these corrections reads as damage to repair.
+    ///
+    /// So they are gated rather than justified as no-ops, per `CLAUDE.md` and the
+    /// `winamp-modern-skin-guide` rule. B56 is the precedent: a screen clamp added for `.wal`
+    /// placement moved Classic's sub-windows too, and cost four confidently static-reasoned fixes,
+    /// two of them regressions, before anyone launched the app.
+    var appliesWinampModernPlacement: Bool { uiMode.controllerFamily == .winampModern }
 
     private var winampModernHostedController: WinampModernMainWindowController? {
         guard uiMode.controllerFamily == .winampModern else { return nil }
@@ -4306,7 +4324,13 @@ class WindowManager {
         // Growing the UI is the most reliable way to push the bottom of a stack, or the right of a
         // wide skin, past the edge of the display — every window is re-sized around the main window
         // as an anchor and nothing was checking where they landed.
-        ensureAllWindowsOnScreen()
+        //
+        // Winamp Modern only: a `.wal` skin's windows are sized by the skin and can grow far past
+        // what Classic's fixed sprite geometry ever produces. Classic keeps the UI Size behaviour it
+        // had before this branch.
+        if appliesWinampModernPlacement {
+            ensureAllWindowsOnScreen()
+        }
     }
 
     /// Apply UI scaling to all windows.
@@ -5316,6 +5340,12 @@ class WindowManager {
     /// reachable means the top-left corner is on some screen — is mode-independent. It is verified
     /// separately in each.
     func ensureAllWindowsOnScreen() {
+        // Winamp Modern only, enforced here as well as at every call site. The call-site guards say
+        // *why* each moment needs the sweep; this one makes the restriction structural, so a caller
+        // added later cannot quietly reintroduce the sweep into Classic or Original — which is the
+        // exact way B56 reached them.
+        guard appliesWinampModernPlacement else { return }
+
         let screens = visibleScreenFrames()
         guard !screens.isEmpty else { return }
         // A full-screen visualizer legitimately fills a display and must not be "corrected" off it.
@@ -5405,31 +5435,23 @@ class WindowManager {
         }
 
         // Get screen for positioning - use the screen the main window is on, or fall back to main screen
+        // Use full screen frame (not visibleFrame) so windows aren't constrained by menu bar/dock
         //
-        // `visibleFrame`, not `frame`. Measuring against the full display was the reason a recovery
-        // could hand back a stack whose bottom sat under the Dock and whose top sat under the menu
-        // bar — off screen in the only sense that matters, on the command whose entire job is to
-        // bring windows back.
+        // The `.wal` recovery this branch needed — `visibleFrame`, a measured stack that anchors to
+        // the top when it overruns, and clamped side windows — is in
+        // `snapWinampModernToDefaultPositions` above, reached by the early return at the top of this
+        // function. None of it belongs here: Classic and Original have laid their desktops out around
+        // these rules, and parking a window past an edge is a placement, not damage to repair.
         guard let screen = mainWindowController?.window?.screen ?? NSScreen.main else { return }
-        let screenFrame = screen.visibleFrame
+        let screenFrame = screen.frame
         
         // Use current main window size (preserves user scaling)
         let mainSize = mainWindowController?.window?.frame.size ??
             (isModernUIEnabled ? ModernSkinElements.mainWindowSize : Skin.mainWindowSize)
 
-        // Measure the whole stack before placing its top. Centring the main window vertically and
-        // stacking downward with no bottom clamp is fine while the stack fits, and strands its lower
-        // half the moment it does not — five windows at a large UI Size overrun any laptop display.
-        // When that happens the main window anchors at the top instead, so the stack starts at the
-        // visible top edge and uses every point there is.
-        let stackHeightBelowMain = visibleCenterStackHeightBelowMain()
-        let centredMainOriginY = screenFrame.midY - mainSize.height / 2
-        let mainOriginY = centredMainOriginY - stackHeightBelowMain < screenFrame.minY
-            ? screenFrame.maxY - mainSize.height
-            : centredMainOriginY
         let mainFrame = NSRect(
             x: screenFrame.midX - mainSize.width / 2,
-            y: mainOriginY,
+            y: screenFrame.midY - mainSize.height / 2,
             width: mainSize.width,
             height: mainSize.height
         )
@@ -5513,21 +5535,14 @@ class WindowManager {
         var browserFrame: NSRect?
         var projectMFrame: NSRect?
         
-        // Both side windows are placed by arithmetic that can leave the visible frame: the browser
-        // sits at the stack's right edge, which a wide skin at a large UI Size pushes past `maxX`,
-        // and the visualizer sits a full window-width to the *left* of it, which for anything wider
-        // than the left margin lands at a negative x. Clamped here rather than left to the rescue
-        // pass so the width the caller asked for survives.
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
             let w = plexWindow.frame.width
-            let x = min(mainFrame.maxX, max(screenFrame.minX, screenFrame.maxX - w))
-            browserFrame = NSRect(x: x, y: stackBottomY, width: w, height: stackHeight)
+            browserFrame = NSRect(x: mainFrame.maxX, y: stackBottomY, width: w, height: stackHeight)
         }
         
         if let projectMWindow = projectMWindowController?.window, projectMWindow.isVisible {
             let w = projectMWindow.frame.width
-            let x = max(mainFrame.minX - w, screenFrame.minX)
-            projectMFrame = NSRect(x: x, y: stackBottomY, width: w, height: stackHeight)
+            projectMFrame = NSRect(x: mainFrame.minX - w, y: stackBottomY, width: w, height: stackHeight)
         }
         
         clearSavedWindowFramePositions()
@@ -5536,50 +5551,39 @@ class WindowManager {
         isSnappingWindow = true
         defer { isSnappingWindow = false }
         
-        // Last resort before anything is applied: a frame this routine produced that still is not
-        // reachable is moved onto the screen, accepting overlap. Nothing here should normally need
-        // it — the stack is measured and the side windows are clamped — but "normally" is what the
-        // old routine assumed too, and the cost of being wrong is a window with no way back.
-        let screens = visibleScreenFrames()
-        func applied(_ frame: NSRect) -> NSRect {
-            guard !WindowPlacement.isReachable(frame, screens: screens) else { return frame }
-            let host = WindowPlacement.hostScreen(for: frame, screens: screens) ?? screenFrame
-            return WindowPlacement.rescued(frame, into: host)
-        }
-
         // Apply positions to visible windows
         if let mainWindow = mainWindowController?.window {
-            mainWindow.setFrame(applied(mainFrame), display: true, animate: false)
+            mainWindow.setFrame(mainFrame, display: true, animate: false)
         }
         if let frame = eqFrame, let window = equalizerWindowController?.window {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = playlistFrame, let window = playlistWindowController?.window {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = spectrumFrame, let window = spectrumWindow {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = waveformFrame, let window = waveformWindow {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = audioAnalysisFrame, let window = audioAnalysisWindow {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = peppyMeterFrame, let window = peppyMeterWindow {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = networkMonitorFrame, let window = networkMonitorWindow {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = cavaFrame, let window = cavaWindow {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let frame = projectMFrame, let window = projectMWindowController?.window {
-            window.setFrame(applied(frame), display: true, animate: false)
+            window.setFrame(frame, display: true, animate: false)
         }
         if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
             videoWindow.center()
@@ -7390,9 +7394,12 @@ class WindowManager {
     /// unreachable at launch.
     func restoreWindowPositions() {
         let defaults = UserDefaults.standard
+        // Winamp Modern only: outside it, a saved frame is re-applied exactly as it was saved.
+        let rescuesOffScreenFrames = appliesWinampModernPlacement
         let screens = visibleScreenFrames()
         func onScreen(_ frame: NSRect) -> NSRect {
-            guard !WindowPlacement.isReachable(frame, screens: screens),
+            guard rescuesOffScreenFrames,
+                  !WindowPlacement.isReachable(frame, screens: screens),
                   let host = WindowPlacement.hostScreen(for: frame, screens: screens)
             else { return frame }
             return WindowPlacement.rescued(frame, into: host)

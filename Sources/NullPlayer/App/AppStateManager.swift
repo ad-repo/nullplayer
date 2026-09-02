@@ -914,13 +914,21 @@ class AppStateManager {
             }
         }
 
+        // Winamp Modern only, and gated at the call site so `correctedRestoredFrames` stays a pure,
+        // directly-testable function. Classic and Original restore the frames they saved, verbatim —
+        // a window parked mostly past an edge there is a *placement*, and this sweep would move it.
+        //
         // A session saved on a screen that is not here any more is suspect even when its frames
         // happen to land on a present one, so the correction runs unconditionally in that case.
-        let screenContextChanged = Self.savedScreenIsMissing(state.mainScreenVisibleFrame,
-                                                             screens: Self.currentScreenFrames())
-        let restoredFrames = Self.correctedRestoredFrames(savedFrames,
-                                                          screens: Self.currentScreenFrames(),
-                                                          force: screenContextChanged)
+        let appliesPlacementCorrection = wm.appliesWinampModernPlacement
+        let screenContextChanged = appliesPlacementCorrection
+            && Self.savedScreenIsMissing(state.mainScreenVisibleFrame,
+                                         screens: Self.currentScreenFrames())
+        let restoredFrames = appliesPlacementCorrection
+            ? Self.correctedRestoredFrames(savedFrames,
+                                           screens: Self.currentScreenFrames(),
+                                           force: screenContextChanged)
+            : savedFrames
         if restoredFrames != savedFrames {
             NSLog("AppStateManager: restored session was off screen — corrected %d frame(s)%@",
                   restoredFrames.filter { savedFrames[$0.key] != $0.value }.count,
@@ -1029,7 +1037,13 @@ class AppStateManager {
             // arrangement. This is the first and last moment the whole layout can be checked at
             // once — anything the frame correction could not anticipate (a skin clamping its own
             // size after the fact, a stack that grew when UI Size was restored) is caught here.
-            wm.ensureAllWindowsOnScreen()
+            //
+            // Winamp Modern only: in the other families nothing resized the windows behind the
+            // session's back, so there is nothing for the sweep to catch and everything for it to
+            // disturb.
+            if wm.appliesWinampModernPlacement {
+                wm.ensureAllWindowsOnScreen()
+            }
         }
         
         NSLog("AppStateManager: Settings state restored (eqAutoEnabled: %d, doubleSize: %d)", state.eqAutoEnabled ? 1 : 0, state.isDoubleSize ? 1 : 0)
