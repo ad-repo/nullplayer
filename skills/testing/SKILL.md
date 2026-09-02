@@ -175,7 +175,7 @@ else is busy. It answers "is this thread the constraint?" in one number, in eith
 sample $(pgrep -f 'arm64-apple-macosx/release/NullPlayer') 10 -file /tmp/np.txt
 ```
 
-### Three ways a profile lies
+### Five ways a profile lies
 
 - **A `#if DEBUG` instrument reports nothing in release, and nothing looks like success.**
   `WINAMP_MODERN_VIS_STALL` cannot fire in a release build, so a release run shows zero dropped
@@ -188,6 +188,19 @@ sample $(pgrep -f 'arm64-apple-macosx/release/NullPlayer') 10 -file /tmp/np.txt
 - **Substring matching catches a symbol's own closures.** `refreshWaveformDemand` also appears as
   `closure #4 in …` and `partial apply for closure #4 in …` on the same stack — three frames, one
   call. Match whole symbol names.
+- **The app was not in the state you believe, and the profile still looks fine.** A 10-second sample
+  of NullPlayer showing a comfortable 10.3% busy was taken while playback had silently stopped —
+  a valid-looking number for a question nobody asked. The same window, actually playing, measured
+  23.7%. Worse, a window that is **occluded does not repaint at all** (B51), so a sample taken while
+  the app sits behind a terminal reports the draw path as free. Before trusting a sample, prove the
+  state: screenshot the window by its **window id** (`screencapture -o -x -l <id>`, never `-R <rect>`,
+  which photographs whatever is frontmost at those coordinates), confirm a clock or meter is
+  *advancing* between two shots, and confirm the app is frontmost.
+- **A repaint benchmark is not a frame rate.** `WINAMP_MODERN_RENDER_TIME` redraws the entire scene
+  each iteration; the app repaints only what was invalidated. Big Bento Modern measures 30 ms/frame
+  in the harness and leaves the main thread 23.7% busy in the app — the first is the cost of a
+  resize, the second is what a user feels. Sample the app before optimizing against the harness. See
+  `winamp-modern-skin-guide/reference/performance.md` → *Big Bento Modern's 30 ms frame is a repaint*.
 
 ### Compare identical state, or do not compare
 

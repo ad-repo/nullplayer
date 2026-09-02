@@ -176,6 +176,67 @@ two doubles, and the FX mesh is evaluated by the animation clock before it inval
 the paint that follows.
 
 
+#### Big Bento Modern's 30 ms frame is a *repaint*, not a frame rate (2026-09-02)
+
+`WINAMP_MODERN_RENDER_TIME` reports **30.3 ms/frame** for `main/normal` at `RENDER_TIME_SCALE=2`
+(10.5 at 1×), six times cPro Bento's. That number is real and it is not a performance problem, and
+the difference is worth understanding before anyone spends a day on it — this section exists because
+someone already did.
+
+**The running app, in the same skin, is nearly idle.** Release build, playing, window frontmost and
+unoccluded at 1400×850:
+
+| main thread | |
+|---|---:|
+| busy | **23.7%** |
+| `WinampModernMainView.draw` | 16.0% |
+| `drawVisualization` (of which `drawAnalyzer` 3.7%) | 5.6% |
+| `drawText` | 3.3% |
+| `CGContextDrawImage` | **0.8%** |
+
+`RENDER_TIME` draws the **whole scene** every iteration. The app does not: B51's vis clock and B52's
+targeted invalidation mean a steady-state frame repaints the vis rects and the readouts, not 198
+nodes. So the benchmark answers *"what does a full repaint cost?"* — the price of a resize, a layout
+switch or a theme change — and the profiler answers *"is this thread the constraint?"*. They are
+different questions and the second one is the one users feel. **Do not tune against `RENDER_TIME`
+without sampling the app first.**
+
+**What the full repaint is made of,** for when a resize does feel slow (headless, scale 2):
+`CGContextDrawImage` **75%** — `ripc_` → `argb32`, plain CPU compositing — with `drawGrid` 30% of the
+thread inside it, `drawText` 4.9%, and the pre-scale cache healthy at 1% (`prescaled` 1.08%,
+`resized` 0.83%; it is not re-resampling anything).
+
+Two things that make the arithmetic misleading:
+
+- **Overdraw is 1.33×, not 4.3×.** Count every bitmap-bearing node and Big Bento appears to paint the
+  window 4.31 times over, with three near-full-window background layers stacked. Eighteen of those
+  nodes carry `alpha=0` — 2.98× of window area — and the renderer already skips them. Only nodes with
+  `alpha > 0` are composited, and those come to **1.33×**. There is no occlusion problem to fix here.
+- **Per-pixel cost varies ~25× between an opaque copy and a translucent blend**, so area is not a
+  proxy for cost. `window.background.center` is a 10×6 crop stretched over 1526×845 and opaque:
+  5.16 M device pixels in **1.57 ms** (~3.3 Gpx/s). `shade.left` is a 500×500 RGBA crop of
+  `shades.png` drawn into 500×178 with real alpha: 356 K device pixels in **2.64 ms**
+  (~135 Mpx/s). The five `shade.*` overlays are ~4% of the painted pixels and ~31% of the frame.
+
+**A hypothesis worth recording because it was wrong:** the pre-scale cache flushes *entirely*
+(`prescaledCache.removeAll()`) when `maximumPrescaledCachePixels` is exceeded, which looks exactly
+like per-frame thrash on a window this size. Raising the budget 32× moved the frame from 30.28 ms to
+**29.86 ms**. Not it — and one `sed` and one test run is what that cost to find out, against an
+afternoon of reasoning.
+
+**What is genuinely still redone per frame,** both found in the release profile and both *deliberately
+not fixed* — they are the B103–B106 defect class but an order of magnitude smaller than the items
+that pass reached, and the thread is 23.7% busy:
+
+- `WasabiVisStyle.decode(attributes:color:)` — **1.71%**. The visualizer's style is parsed out of XML
+  attributes on every frame.
+- `WasabiTextMetrics.digitCell` — inside `clockRun`'s **1.25%**. It measures all ten digits with
+  uncached `NSString.size(withAttributes:)` calls, per clock object, per frame. It is a `static func`,
+  so it cannot reach the instance-level width memo B106 added.
+
+Fixing both would plausibly move 23.7% to ~20%, which nobody can perceive. Take them if you are in
+these files anyway; do not schedule them.
+
 #### Profile the build the user runs (2026-09-01)
 
 A cPro report — "the skins feel slower, low fps, not smooth" — was chased through five rounds of
