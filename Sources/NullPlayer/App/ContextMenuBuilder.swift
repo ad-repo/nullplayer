@@ -4358,11 +4358,13 @@ class MenuActions: NSObject {
         if wm.isRunningModernUI {
             // Load the bundled default classic skin (clears lastClassicSkinPath itself),
             // then live-switch to classic. No restart.
-            wm.loadBundledDefaultSkin()
-            wm.reloadUI(toModernUI: false)
+            SkinLoadingOverlay.shared.run {
+                wm.loadBundledDefaultSkin()
+                wm.reloadUI(toModernUI: false)
+            }
         } else {
             // Already in classic mode - load bundled default skin now
-            wm.loadBundledDefaultSkin()
+            SkinLoadingOverlay.shared.run { wm.loadBundledDefaultSkin() }
         }
     }
     
@@ -4377,7 +4379,7 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
         do {
             let importedURL = try wm.importClassicSkin(from: url)
-            if !wm.loadSkin(from: importedURL) {
+            if !SkinLoadingOverlay.shared.run({ wm.loadSkin(from: importedURL) }) {
                 let alert = NSAlert()
                 alert.messageText = "Failed to Load Classic Skin"
                 alert.informativeText = "The skin was imported but could not be loaded."
@@ -4415,9 +4417,11 @@ class MenuActions: NSObject {
             let imported = try WinampModernSkinImporter.shared.importContainer(at: url)
             NSLog("WinampModern: Imported validated skin '%@' to %@", imported.name, imported.archiveURL.path)
             if WindowManager.shared.uiMode == .winampModern {
-                (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
-                    .loadSkin(at: imported.archiveURL)
-                WindowManager.shared.ensureAllWindowsOnScreen()
+                SkinLoadingOverlay.shared.run {
+                    (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
+                        .loadSkin(at: imported.archiveURL)
+                    WindowManager.shared.ensureAllWindowsOnScreen()
+                }
             }
         } catch {
             let alert = NSAlert()
@@ -4498,11 +4502,14 @@ class MenuActions: NSObject {
                                             archiveURL: url)
         WinampModernSkinImporter.shared.selectSkin(skin)
         if WindowManager.shared.uiMode == .winampModern {
-            (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
-                .loadSkin(at: url)
-            // A `.wal` window's size *is* the skin, so switching to a larger one grows every window
-            // in place around its top-left — off the display, for a skin wide or tall enough.
-            WindowManager.shared.ensureAllWindowsOnScreen()
+            SkinLoadingOverlay.shared.run {
+                (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
+                    .loadSkin(at: url)
+                // A `.wal` window's size *is* the skin, so switching to a larger one grows every
+                // window in place around its top-left — off the display, for a skin wide or tall
+                // enough.
+                WindowManager.shared.ensureAllWindowsOnScreen()
+            }
         }
     }
 
@@ -4548,7 +4555,7 @@ class MenuActions: NSObject {
     
     @objc func loadSkin(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
-        WindowManager.shared.loadSkin(from: url)
+        SkinLoadingOverlay.shared.run { WindowManager.shared.loadSkin(from: url) }
         UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
     }
     
@@ -4557,15 +4564,17 @@ class MenuActions: NSObject {
         guard let url = sender.representedObject as? URL else { return }
         let wm = WindowManager.shared
 
-        if wm.isRunningModernUI {
-            // Load the chosen classic skin into `currentSkin` (also persists
-            // lastClassicSkinPath), then live-switch to classic — the rebuilt classic
-            // windows render `currentSkin`. No restart.
-            wm.loadSkin(from: url)
-            wm.reloadUI(toModernUI: false)
-        } else {
-            // Already in classic mode — load the skin immediately
-            wm.loadSkin(from: url)
+        SkinLoadingOverlay.shared.run {
+            if wm.isRunningModernUI {
+                // Load the chosen classic skin into `currentSkin` (also persists
+                // lastClassicSkinPath), then live-switch to classic — the rebuilt classic
+                // windows render `currentSkin`. No restart.
+                wm.loadSkin(from: url)
+                wm.reloadUI(toModernUI: false)
+            } else {
+                // Already in classic mode — load the skin immediately
+                wm.loadSkin(from: url)
+            }
         }
     }
 
@@ -4578,12 +4587,14 @@ class MenuActions: NSObject {
         // reads this key when entering modern, so the live switch loads exactly this skin.
         UserDefaults.standard.set(name, forKey: ModernSkinFamily.modern.skinNameKey)
 
-        if wm.uiMode != .modern {
-            // Live-switch to modern — no restart.
-            wm.reloadUI(to: .modern)
-        } else {
-            // Already in modern mode — load the skin immediately
-            ModernSkinEngine.shared.loadSkin(named: name, family: .modern)
+        SkinLoadingOverlay.shared.run {
+            if wm.uiMode != .modern {
+                // Live-switch to modern — no restart.
+                wm.reloadUI(to: .modern)
+            } else {
+                // Already in modern mode — load the skin immediately
+                ModernSkinEngine.shared.loadSkin(named: name, family: .modern)
+            }
         }
     }
 
@@ -4594,10 +4605,12 @@ class MenuActions: NSObject {
 
         UserDefaults.standard.set(name, forKey: ModernSkinFamily.metal.skinNameKey)
 
-        if wm.uiMode != .metal {
-            wm.reloadUI(to: .metal)
-        } else {
-            ModernSkinEngine.shared.loadSkin(named: name, family: .metal)
+        SkinLoadingOverlay.shared.run {
+            if wm.uiMode != .metal {
+                wm.reloadUI(to: .metal)
+            } else {
+                ModernSkinEngine.shared.loadSkin(named: name, family: .metal)
+            }
         }
     }
     
@@ -4615,21 +4628,21 @@ class MenuActions: NSObject {
         guard AppCapabilities.supports(.classicMode) else { return }
         let wm = WindowManager.shared
         guard wm.uiMode != .classic else { return }
-        wm.reloadUI(to: .classic)
+        SkinLoadingOverlay.shared.run { wm.reloadUI(to: .classic) }
     }
 
     @objc func setModernMode() {
         guard AppCapabilities.supports(.modernMode) else { return }
         let wm = WindowManager.shared
         guard wm.uiMode != .modern else { return }
-        wm.reloadUI(to: .modern)
+        SkinLoadingOverlay.shared.run { wm.reloadUI(to: .modern) }
     }
 
     @objc func setMetalMode() {
         guard AppCapabilities.supports(.metalMode) else { return }
         let wm = WindowManager.shared
         guard wm.uiMode != .metal else { return }
-        wm.reloadUI(to: .metal)
+        SkinLoadingOverlay.shared.run { wm.reloadUI(to: .metal) }
     }
 
     /// Switch into the Winamp 5.x `.wal` family, shown to the user as **Modern**. See
@@ -4637,7 +4650,7 @@ class MenuActions: NSObject {
     @objc func setWinampModernMode() {
         let wm = WindowManager.shared
         guard wm.uiMode != .winampModern else { return }
-        wm.reloadUI(to: .winampModern)
+        SkinLoadingOverlay.shared.run { wm.reloadUI(to: .winampModern) }
     }
 
     /// Reset the active modern/metal skin to its shipped defaults, discarding
