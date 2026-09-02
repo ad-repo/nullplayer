@@ -35,7 +35,6 @@
 - Local media library with metadata parsing, editing, library management
 - ProjectM visualizations with 100 included. Users can download more
 - Geiss and Tripex visualizations — ports of classic Winamp-era visualizers with native macOS/OpenGL rendering and runtime controls
-- Met Museum Art visualization — public-domain artwork slideshow with department filters, transitions, and optional audio-reactive effects
 - Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
 - Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)

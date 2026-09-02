@@ -5,9 +5,9 @@ description: ProjectM/MilkDrop preset engine inside the visualization window —
 
 # ProjectM/MilkDrop Visualizer
 
-Renders classic MilkDrop presets using OpenGL. The visualization window has two implementations (classic/modern UI modes) both embedding `VisualizationGLView` for rendering. The same window hosts the ProjectM, Geiss, Tripex, and Met Museum engines, switchable from the right-click **Visualization Engine** submenu.
+Renders classic MilkDrop presets using OpenGL. The visualization window has two implementations (classic/modern UI modes) both embedding `VisualizationGLView` for rendering. The same window hosts the ProjectM, Geiss and Tripex engines, switchable from the right-click **Visualization Engine** submenu.
 
-For sibling engines see [geiss-port](../geiss-port/SKILL.md), [tripex-port](../tripex-port/SKILL.md), [met-museum-visualizer](../met-museum-visualizer/SKILL.md).
+For sibling engines see [geiss-port](../geiss-port/SKILL.md) and [tripex-port](../tripex-port/SKILL.md).
 
 ## Access
 

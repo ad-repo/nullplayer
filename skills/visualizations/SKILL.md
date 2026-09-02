@@ -1,6 +1,6 @@
 ---
 name: visualizations
-description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, Met Museum, vis_classic, Metal mode internals).
+description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, vis_classic, Metal mode internals).
 ---
 
 # NullPlayer Visualization Systems — Index
@@ -30,7 +30,6 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 | [gpu-vis-modes](../gpu-vis-modes/SKILL.md) | Per-mode internals shared by both windows: Fire, JWST, Lightning, Matrix, Snow, EKG, Classic/Enhanced/Ultra |
 | [album-art-visualizer](../album-art-visualizer/SKILL.md) | Library Browser ART-mode effects (30 Core Image filters) |
 | [projectm-milkdrop](../projectm-milkdrop/SKILL.md) | ProjectM/MilkDrop preset engine in the visualization window |
-| [met-museum-visualizer](../met-museum-visualizer/SKILL.md) | Met Museum public-domain artwork slideshow engine |
 | [geiss-port](../geiss-port/SKILL.md) | Geiss engine — port architecture, ABI, configuration |
 | [tripex-port](../tripex-port/SKILL.md) | Tripex (ben-marsh/tripex) port — D3D9→OpenGL, C ABI |
 | [vis-classic-guide](../vis-classic-guide/SKILL.md) | vis_classic exact-port analyzer core |
@@ -38,13 +37,13 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 
 ## Comparison
 
-| Feature | Album Art | ProjectM | Geiss | Tripex | Met Museum | Spectrum Window |
-|---------|-----------|----------|-------|--------|------------|-----------------|
-| **Visual Style** | Transformed artwork | Procedural shaders | Indexed framebuffer + palette | 3D Winamp-era effects | Public-domain artwork slideshow | Bars / vis_classic / Fire / JWST / Lightning / Matrix / Snow / EKG |
-| **Effect Count** | 30 built-in | 100s of presets | 25 modes | Upstream effect set | N/A | 10 modes |
-| **Customization** | Intensity | Full preset ecosystem | Effect selection | Effect / cycle / intensity | Department / interval / transition / aspect | Mode + decay + style presets |
-| **GPU Tech** | Core Image (Metal) | OpenGL shaders | OpenGL palette LUT | OpenGL geometry | OpenGL textured quad | Metal shaders + compute |
-| **Audio Response** | Spectrum bands | PCM + beats | PCM + 256-bin host spectrum | PCM-driven internal FFT | Optional zoom/pan + beat advance | 75-band spectrum / energy |
+| Feature | Album Art | ProjectM | Geiss | Tripex | Spectrum Window |
+|---------|-----------|----------|-------|--------|-----------------|
+| **Visual Style** | Transformed artwork | Procedural shaders | Indexed framebuffer + palette | 3D Winamp-era effects | Bars / vis_classic / Fire / JWST / Lightning / Matrix / Snow / EKG |
+| **Effect Count** | 30 built-in | 100s of presets | 25 modes | Upstream effect set | 10 modes |
+| **Customization** | Intensity | Full preset ecosystem | Effect selection | Effect / cycle / intensity | Mode + decay + style presets |
+| **GPU Tech** | Core Image (Metal) | OpenGL shaders | OpenGL palette LUT | OpenGL geometry | Metal shaders + compute |
+| **Audio Response** | Spectrum bands | PCM + beats | PCM + 256-bin host spectrum | PCM-driven internal FFT | 75-band spectrum / energy |
 
 ### When to use each
 
@@ -52,7 +51,6 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 - **ProjectM** — immersive full-screen, classic Winamp nostalgia
 - **Geiss** — classic Geiss look, low-level palette effects
 - **Tripex** — Winamp-era 3D, no preset files needed
-- **Met Museum** — calm gallery slideshow with optional audio reactivity
 - **Main Window Vis** — quick access without a separate window
 - **Spectrum Window** — detailed 84-bar frequency view + ambient modes (Fire/JWST/etc.)
 - **Cava** — responsive bar spectrum with gravity/autosens and skin-matched gradient colors; use mono inline in the main window or mono/stereo in the dockable standalone window
