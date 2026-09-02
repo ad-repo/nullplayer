@@ -195,4 +195,60 @@ final class WinampModernB73Tests: XCTestCase {
     func testACapInsideItsBarIsNotDrawn() {
         XCTAssertFalse(WasabiBuiltInVisRenderer.capClears(barTop: 50, capY: 60, capHeight: 2))
     }
+
+    // MARK: - The FFT that feeds the calibration
+
+    /// The calibration above is pinned against a *hand-built* spectrum. This pins the thing that
+    /// produces the real one: the mono sum, the Hann window, and the `2 / fftSize` scaling that is
+    /// what makes 0 dB mean 0 dBFS. A full-scale sine on a bin centre must come out at 1.0 there.
+    ///
+    /// It also stands guard over the three base-address guards on that path. They cannot fire on a
+    /// fixed-size scratch buffer, which is why they are guards rather than force-unwraps — but a
+    /// guard that silently swallowed the whole transform would look like silence, and this is what
+    /// would notice.
+    func testAFullScaleSineOnABinCentreComesOutAtOne() throws {
+        let tap = WinampModernAnalyzerTap(consumerId: "b73-fft-test")
+        let size = WinampModernAnalyzerTap.fftSize
+        let bin = 46                                          // 990.5 Hz at 44.1 kHz — a bin centre
+        let tone = (0..<size).map {
+            sinf(2 * .pi * Float(bin) * Float($0) / Float(size))
+        }
+
+        let spectrum = try XCTUnwrap(tap.analyzeForTesting(left: tone, right: tone))
+
+        XCTAssertEqual(spectrum.count, size / 2)
+        let peak = try XCTUnwrap(spectrum.indices.max(by: { spectrum[$0] < spectrum[$1] }))
+        XCTAssertEqual(peak, bin, "the tone lands in its own bin")
+        XCTAssertEqual(spectrum[peak], 1.0, accuracy: 0.02,
+                       "a full-scale sine is 0 dBFS, which `mapBands` reads as the top of the box")
+    }
+
+    /// A source that hands over fewer frames than the window — the streaming player forwards
+    /// whatever its decoder produced — is zero-padded rather than refused, and the buffer that
+    /// hands over nothing at all draws nothing rather than trapping.
+    func testAShortBufferIsPaddedAndAnEmptyOneIsRefused() throws {
+        let tap = WinampModernAnalyzerTap(consumerId: "b73-fft-short-test")
+        let size = WinampModernAnalyzerTap.fftSize
+
+        let short = (0..<(size / 4)).map { sinf(2 * .pi * 46 * Float($0) / Float(size)) }
+        let padded = try XCTUnwrap(tap.analyzeForTesting(left: short, right: short))
+        XCTAssertEqual(padded.count, size / 2, "the analysis frame is the window, not the input")
+        XCTAssertTrue(padded.contains { $0 > 0 }, "and the audio inside it still reaches the FFT")
+
+        XCTAssertNil(tap.analyzeForTesting(left: [], right: []))
+    }
+
+    /// The two channels are summed to mono and halved, so a tone panned hard to one side reads 6 dB
+    /// below the same tone in both — not clipped, and not silent.
+    func testTheChannelsAreSummedToMono() throws {
+        let tap = WinampModernAnalyzerTap(consumerId: "b73-fft-mono-test")
+        let size = WinampModernAnalyzerTap.fftSize
+        let tone = (0..<size).map { sinf(2 * .pi * 46 * Float($0) / Float(size)) }
+        let silence = [Float](repeating: 0, count: size)
+
+        let centred = try XCTUnwrap(tap.analyzeForTesting(left: tone, right: tone))
+        let panned = try XCTUnwrap(tap.analyzeForTesting(left: tone, right: silence))
+
+        XCTAssertEqual(panned[46], centred[46] / 2, accuracy: 0.02)
+    }
 }

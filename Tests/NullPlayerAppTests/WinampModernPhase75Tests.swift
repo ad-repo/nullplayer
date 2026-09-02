@@ -187,6 +187,40 @@ final class WinampModernPhase75Tests: XCTestCase {
         XCTAssertEqual(WinampModernVisSensitivity.from(storedValue: 42), .normal)
     }
 
+    /// The memo behind `stored` is read **once per band per frame** by whichever analyzer is
+    /// drawing, and written from the menu. Both are the main thread today, but nothing about the
+    /// type said so and a `Dictionary` is not safe to resize under a concurrent read — a torn read
+    /// there is a crash on the draw path, in release, with no diagnostic.
+    ///
+    /// This hammers the pair from many queues at once. It cannot *prove* the absence of a race, but
+    /// an unsynchronised dictionary reliably trips it, and it is the shape the guarantee is now
+    /// stated in.
+    func testTheMemoSurvivesConcurrentReadsAndWrites() {
+        let engines: [WinampModernSpectrumAnalyzer] = [.skin, .cava, .visClassic]
+        let levels = WinampModernVisSensitivity.allCases
+        let defaults = self.defaults!
+
+        DispatchQueue.concurrentPerform(iterations: 256) { iteration in
+            let engine = engines[iteration % engines.count]
+            if iteration.isMultiple(of: 4) {
+                WinampModernVisSensitivity.set(levels[iteration % levels.count], for: engine,
+                                               defaults: defaults)
+            } else {
+                _ = WinampModernVisSensitivity.gain(for: engine, defaults: defaults)
+            }
+            if iteration.isMultiple(of: 32) { WinampModernVisSensitivity.invalidateCache() }
+        }
+
+        // Whatever the last writer left, a read still answers one of the five levels rather than
+        // garbage, and the memo still agrees with what was persisted.
+        for engine in engines {
+            WinampModernVisSensitivity.invalidateCache()
+            let fromDefaults = WinampModernVisSensitivity.stored(for: engine, defaults: defaults)
+            XCTAssertEqual(WinampModernVisSensitivity.stored(for: engine, defaults: defaults),
+                           fromDefaults, "the memo answers what `UserDefaults` holds")
+        }
+    }
+
     /// vis_classic takes its gain on the input, because the core runs its own FFT and paints its own
     /// bars. The buffer is Winamp's `visdata` — `UInt8` centred on 128 — so the excursion is scaled
     /// about that centre and clamped to the byte range rather than wrapping around it.

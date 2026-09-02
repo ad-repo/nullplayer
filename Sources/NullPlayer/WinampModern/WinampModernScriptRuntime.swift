@@ -4302,7 +4302,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case "checkcommand":
             let commandID = arguments[0].integerValue
             if let index = popupCommands[id]?.firstIndex(where: { $0.commandID == commandID }) {
-                popupCommands[id]![index].checked = arguments[1].truthy
+                popupCommands[id]?[index].checked = arguments[1].truthy
             }
             return .null
         case "popatmouse": return .integer(popupPresenter?(popupItems(of: id, depth: 0), nil) ?? 0)

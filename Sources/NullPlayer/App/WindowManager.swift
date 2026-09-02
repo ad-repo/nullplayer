@@ -4365,7 +4365,7 @@ class WindowManager {
         // sizes (window sizes, title bar heights, border widths, etc.) reflect the UI size.
         // This must happen BEFORE reading any ModernSkinElements sizes.
         if runningModernMode {
-            ModernSkinElements.sizeMultiplier = targetScale
+            ModernSkinElements.applySizeMultiplier(targetScale)
         }
         
         let scale = targetScale
@@ -7289,7 +7289,7 @@ class WindowManager {
             // stale value left over from a previous modern session would create the windows
             // at the wrong scale. reloadUI collapses uiScaleLevel to 1x before switching, so
             // this is normally 1.0 here; UI Size is re-applied via applyDoubleSize afterward.
-            ModernSkinElements.sizeMultiplier = uiScaleLevel.scaleFactor
+            ModernSkinElements.applySizeMultiplier(uiScaleLevel.scaleFactor)
             // A live UI-family switch is a skin change: apply the incoming skin's own
             // visualization defaults instead of preserving the outgoing family's shared,
             // window-scoped vis_classic profile keys (which would leak e.g. classic's

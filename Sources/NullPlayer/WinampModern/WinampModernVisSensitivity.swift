@@ -50,11 +50,11 @@ enum WinampModernVisSensitivity: Int, CaseIterable {
 
     static func stored(for analyzer: WinampModernSpectrumAnalyzer,
                        defaults: UserDefaults = .standard) -> WinampModernVisSensitivity {
-        if let cached = cache[analyzer] { return cached }
+        if let cached = memoized(analyzer) { return cached }
         let key = key(for: analyzer)
         let value = defaults.object(forKey: key) == nil
             ? .normal : from(storedValue: defaults.integer(forKey: key))
-        cache[analyzer] = value
+        memoize(value, for: analyzer)
         return value
     }
 
@@ -62,16 +62,41 @@ enum WinampModernVisSensitivity: Int, CaseIterable {
                     for analyzer: WinampModernSpectrumAnalyzer,
                     defaults: UserDefaults = .standard) {
         defaults.set(sensitivity.rawValue, forKey: key(for: analyzer))
-        cache[analyzer] = sensitivity
+        memoize(sensitivity, for: analyzer)
     }
 
     /// The setting is read **once per band per frame** by the analyzer that is drawing, so it is held
     /// in memory rather than asked of `UserDefaults` at that rate. Every write goes through `set`,
     /// which is the only thing that can move it.
+    ///
+    /// The reads come from the draw path and the writes from a menu, both of which are the main
+    /// thread today — but nothing here enforced that, and a dictionary is not safe to resize under
+    /// a concurrent read. `cacheLock` makes the guarantee the comment used to assert, matching the
+    /// `NSLock` the audio taps beside this file already use. A racing pair of `stored` calls can
+    /// still both miss and both recompute; that is idempotent, and cheaper than holding the lock
+    /// across `UserDefaults`.
     private nonisolated(unsafe) static var cache: [WinampModernSpectrumAnalyzer: WinampModernVisSensitivity] = [:]
+    private static let cacheLock = NSLock()
+
+    private static func memoized(_ analyzer: WinampModernSpectrumAnalyzer) -> WinampModernVisSensitivity? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return cache[analyzer]
+    }
+
+    private static func memoize(_ value: WinampModernVisSensitivity,
+                                for analyzer: WinampModernSpectrumAnalyzer) {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        cache[analyzer] = value
+    }
 
     /// Drop the memoized values — for tests, which write straight to their own `UserDefaults`.
-    static func invalidateCache() { cache.removeAll() }
+    static func invalidateCache() {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        cache.removeAll()
+    }
 
     /// The gain an engine actually draws at: its calibration times the user's adjustment.
     static func gain(for analyzer: WinampModernSpectrumAnalyzer,

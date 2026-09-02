@@ -358,19 +358,33 @@ final class WinampModernAnalyzerTap {
         vDSP_vmul(windowed, 1, hann, 1, &windowed, 1, vDSP_Length(Self.fftSize))
 
         let half = Self.fftSize / 2
-        realp.withUnsafeMutableBufferPointer { realPointer in
-            imagp.withUnsafeMutableBufferPointer { imagPointer in
-                var split = DSPSplitComplex(realp: realPointer.baseAddress!,
-                                            imagp: imagPointer.baseAddress!)
-                windowed.withUnsafeBufferPointer { input in
-                    input.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: half) {
+        // The scratch buffers are fixed-size and non-empty by construction, so none of the base
+        // addresses below can be `nil` today — but a force-unwrap here traps in a release build
+        // with no diagnostic if that ever stops holding. A dropped spectrum is the better failure:
+        // the caller already treats `nil` as "no frame this time".
+        let transformed = realp.withUnsafeMutableBufferPointer { realPointer -> Bool in
+            imagp.withUnsafeMutableBufferPointer { imagPointer -> Bool in
+                guard let realBase = realPointer.baseAddress, realPointer.count >= half,
+                      let imagBase = imagPointer.baseAddress, imagPointer.count >= half else {
+                    return false
+                }
+                var split = DSPSplitComplex(realp: realBase, imagp: imagBase)
+                let interleaved = windowed.withUnsafeBufferPointer { input -> Bool in
+                    guard let base = input.baseAddress, input.count >= Self.fftSize else {
+                        return false
+                    }
+                    base.withMemoryRebound(to: DSPComplex.self, capacity: half) {
                         vDSP_ctoz($0, 2, &split, 1, vDSP_Length(half))
                     }
+                    return true
                 }
+                guard interleaved else { return false }
                 vDSP_fft_zrip(setup, &split, 1, Self.log2n, FFTDirection(FFT_FORWARD))
                 vDSP_zvabs(&split, 1, &magnitudes, 1, vDSP_Length(half))
+                return true
             }
         }
+        guard transformed else { return nil }
         // `vDSP_fft_zrip` leaves every term scaled by 2, and a Hann window has a coherent gain of
         // 0.5, so the two together are `2 / fftSize` — a full-scale sine comes out at 1.0, which is
         // what makes 0 dB mean 0 dBFS in `mapBands`.
@@ -380,6 +394,12 @@ final class WinampModernAnalyzerTap {
     }
 
     #if DEBUG
+    /// Test seam for the FFT itself. The scratch buffers are owned by `processingQueue`, so this is
+    /// only safe on a tap that was never started — which is exactly the tap a test builds.
+    func analyzeForTesting(left: [Float], right: [Float]) -> [Float]? {
+        analyze(left: left, right: right)
+    }
+
     /// `WINAMP_MODERN_VIS_GAPS=1` — every break in the analyzer's input, on the two paths that can
     /// produce one: a buffer that never arrived, and the silence timeout it trips.
     static let tracesGaps = ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_GAPS"] != nil

@@ -615,6 +615,49 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertNil(points.last ?? nil, "`popAtMouse` passes no point")
     }
 
+    /// `checkCommand(id, on)` ticks one row of a menu the script already built — the idiom behind
+    /// every "current selection" mark in a skin's own menus (Love is War Miku's visualization
+    /// presets, ClassicPro's tab options). It is keyed by the **command id**, not by position, and
+    /// an id the menu never carried must leave the menu exactly as it was rather than trap.
+    func testCheckCommandTicksTheRowWithThatCommandID() throws {
+        let runtime = try makeRuntime()
+        var presented: [WinampModernPopupMenuItem] = []
+        runtime.popupPresenter = { items, _ in
+            presented = items
+            return 0
+        }
+        let menu = try runtime.makeObject(classGUID: "f47a78f4bbb2f74e9cfbe74ba9bea88d",
+                                          program: emptyProgram())
+        for (title, commandID) in [("Spectrum", Int32(11)), ("Oscilloscope", Int32(12))] {
+            _ = try runtime.invoke(method: "addcommand", on: menu,
+                                   arguments: [.string(title), .integer(commandID),
+                                               .boolean(false), .boolean(false)],
+                                   program: emptyProgram())
+        }
+        func check(_ commandID: Int32, _ on: Bool) throws {
+            _ = try runtime.invoke(method: "checkcommand", on: menu,
+                                   arguments: [.integer(commandID), .boolean(on)],
+                                   program: emptyProgram())
+        }
+        func present() throws -> [Bool] {
+            _ = try runtime.invoke(method: "popatmouse", on: menu, arguments: [],
+                                   program: emptyProgram())
+            return presented.map(\.checked)
+        }
+
+        try check(12, true)
+        XCTAssertEqual(try present(), [false, true], "the tick lands on the matching command id")
+
+        try check(12, false)
+        try check(11, true)
+        XCTAssertEqual(try present(), [true, false], "and it moves when the script moves it")
+
+        // The row the id names is gone from the menu — nothing to tick, and nothing to trap on.
+        try check(99, true)
+        XCTAssertEqual(try present(), [true, false], "an unknown command id leaves the menu alone")
+        XCTAssertEqual(presented.map(\.title), ["Spectrum", "Oscilloscope"])
+    }
+
     // MARK: - D9: the window commands on a skin's titlebar
 
     /// Reported from a live run: "none of the winamp-modern window close/minimize work". The click
