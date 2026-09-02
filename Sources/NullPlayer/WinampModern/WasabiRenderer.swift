@@ -528,6 +528,19 @@ final class WasabiResourceCache {
         return metrics.measuredWidth(of: text, font: font)
     }
 
+    /// `WasabiTextMetrics.line(for:font:)` — the laid-out line the renderer draws.
+    /// Nil once the skin is torn down, for the same reason `font(identifier:size:traits:)` is.
+    func line(for text: String, font: NSFont) -> CTLine? {
+        guard !isTornDown else { return nil }
+        return metrics.line(for: text, font: font)
+    }
+
+    /// `WasabiTextMetrics.baselineOffset(of:)` — where the line's baseline sits below its box top.
+    func baselineOffset(of font: NSFont) -> CGFloat {
+        guard !isTornDown else { return 0 }
+        return metrics.baselineOffset(of: font)
+    }
+
     func teardown() {
         bitmaps.removeAll()
         regionMasks.removeAll()
@@ -3069,16 +3082,36 @@ final class WasabiSceneRenderer {
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -frame.midY)
+        // The rect a string was drawn in was a **vertical** scissor as well as a layout box, and a
+        // `CTLine` has no rect at all, so that bound is restored here. It is load-bearing wherever a
+        // skin declares a font taller than the box it draws into, which is the whole point of a box
+        // that clips: measured pixel-for-pixel against `NSString.draw` over four faces, a 24pt line
+        // in a 16px box differs by ~350 pixels without it and by none with it
+        // (`WinampModernTextDrawingTests`). The wrapping branch draws into its own rect and needs no
+        // help.
+        //
+        // Applied *inside* the mirror, which is the space the rect it replaces was read in. `clip`
+        // above works unflipped only because mirroring `frame` about its own midpoint gives `frame`
+        // back; `drawFrame` is that box after `valign` and `offsety` have moved the string inside
+        // it, so it is not symmetric and the same trick does not work on it.
+        if !wraps {
+            context.clip(to: CGRect(x: clip.minX, y: drawFrame.minY,
+                                    width: clip.width, height: drawFrame.height))
+        }
+        // Where a line's baseline sits inside `drawFrame`, and the one piece of vertical arithmetic
+        // the conversion needs. All three branches share it: a clock cell and a ticker use the same
+        // rect vertically, and only the horizontal origin differs between them.
+        let baseline = drawFrame.maxY - resources.baselineOffset(of: font)
         if let scroll {
-            var textFrame = drawFrame
-            textFrame.origin.x -= scroll.offset
-            textFrame.size.width = measured
-            (text as NSString).draw(in: textFrame, withAttributes: attributes)
+            // The rect the string used to be drawn in was exactly `measured` wide, so it never
+            // scissored; `clip = frame` above is what bounds a marquee, and it is unchanged.
+            var x = drawFrame.minX - scroll.offset
+            drawCachedLine(text, font: font, color: color, x: x, baseline: baseline, context: context)
             if scroll.wraps {
                 // Continuous mode runs the tail off the left edge, so draw a second copy a gap
                 // behind it; otherwise the ticker would blank out between cycles.
-                textFrame.origin.x += measured + Self.tickerGap
-                (text as NSString).draw(in: textFrame, withAttributes: attributes)
+                x += measured + Self.tickerGap
+                drawCachedLine(text, font: font, color: color, x: x, baseline: baseline, context: context)
             }
         } else if let clock {
             // The run keeps a pixel or two of clearance from the edge it is aligned against — a skin
@@ -3094,18 +3127,24 @@ final class WasabiSceneRenderer {
             default: origin = drawFrame.minX + WasabiTextMetrics.ClockRun.edgeInset
             }
             // Each cell places its own field, so the object's alignment must not apply a second time
-            // inside one.
-            // Centred puts a single glyph in the middle of its fixed-pitch cell; leading starts a
-            // field at its own cell's left edge. Both clip rather than truncate, because a cell is
-            // sized to its content and an ellipsis in a clock is never what a skin asked for.
-            let centred = textAttributes(font: font, color: color, alignment: .center,
-                                         lineBreakMode: .byClipping)
-            let leading = textAttributes(font: font, color: color, alignment: .left,
-                                         lineBreakMode: .byClipping)
+            // inside one: a centred glyph sits in the middle of its fixed-pitch cell, and every other
+            // field starts at its own cell's left edge.
+            //
+            // The cell rect used to be a scissor as well as a box — `.byClipping` was set for that
+            // reason — and a `CTLine` has none. The per-cell clip below restores it. It is not
+            // hypothetical: a `timecolonwidth` narrower than the colon glyph is exactly the case, and
+            // Big Bento Modern declares one.
             for cell in clock.cells {
-                (cell.text as NSString).draw(
-                    in: CGRect(x: origin, y: drawFrame.minY, width: cell.width, height: drawFrame.height),
-                    withAttributes: cell.centred ? centred : leading)
+                let cellFrame = CGRect(x: origin, y: drawFrame.minY,
+                                       width: cell.width, height: drawFrame.height)
+                let glyphWidth = resources.textWidth(of: cell.text, font: font)
+                let x = cell.centred ? cellFrame.minX + (cellFrame.width - glyphWidth) / 2
+                                     : cellFrame.minX
+                context.saveGState()
+                context.clip(to: cellFrame)
+                drawCachedLine(cell.text, font: font, color: color, x: x, baseline: baseline,
+                               context: context)
+                context.restoreGState()
                 origin += cell.width
             }
         } else {
@@ -3127,34 +3166,47 @@ final class WasabiSceneRenderer {
             // A clock run (`display="time"`) is unaffected: it is handled above and keeps its cells,
             // which is what holds Big Bento Modern's digits in their columns across 9:59 → 10:00.
             //
-            // `NSString.draw(in:)` lays the string out *inside* the rect and cuts it there, so the
-            // context clip above is not the only scissor — the rect is one too. Give it the room the
-            // string actually measures and let the clip decide what shows, which is what makes the
-            // widened clip above do anything at all. Identical to drawing in `drawFrame` while the
-            // string fits; when it does not, the object's own alignment is applied here rather than
-            // inside an oversized rect, where it would move the string a second time.
-            var textFrame = drawFrame
+            // The **widened clip** above is now the only scissor, which is what B87 wanted all
+            // along. `NSString.draw(in:)` also cut the string at its own rect, so the rect had to be
+            // widened to `max(drawFrame.width, measured)` purely to defeat that second scissor; a
+            // `CTLine` draws from an origin and is bounded by the context clip alone, so the
+            // widening has nothing left to do and is gone.
             if wraps {
-                // The rect *is* the line-breaking width, so neither the widening nor the alignment
-                // shift below may touch it — the paragraph style already aligns each broken line
-                // inside it, and moving the rect would re-align the block a second time.
-                (text as NSString).draw(in: textFrame, withAttributes: attributes)
+                // The one branch that stays on `NSString.draw`. Here the rect *is* the line-breaking
+                // width — the paragraph style breaks and aligns each line inside it, and
+                // `boundingRect` on the same attributes decided the block's height above. Replacing
+                // it means re-implementing line breaking to keep the draw and the measure agreeing,
+                // for a case that is rare and never in a per-row loop.
+                (text as NSString).draw(in: drawFrame, withAttributes: attributes)
             } else {
+                // The object's own alignment, applied to the origin rather than inside a rect —
+                // which is what it already was, so cPro2's 4px tuck and Big Bento's clock columns
+                // keep the arithmetic they had.
+                let x: CGFloat
                 switch alignment {
-                case .right: textFrame.origin.x = drawFrame.maxX - measured
-                case .center: textFrame.origin.x = drawFrame.midX - measured / 2
-                default: break
+                case .right: x = drawFrame.maxX - measured
+                case .center: x = drawFrame.midX - measured / 2
+                default: x = drawFrame.minX
                 }
-                textFrame.size.width = max(drawFrame.width, measured)
-                // Drawn from the string's own left edge: the alignment was already applied to the
-                // rect's origin just above, and a second one inside the widened rect would move it
-                // again.
-                let leading = textAttributes(font: font, color: color, alignment: .left,
-                                             lineBreakMode: .byClipping)
-                (text as NSString).draw(in: textFrame, withAttributes: leading)
+                drawCachedLine(text, font: font, color: color, x: x, baseline: baseline,
+                               context: context)
             }
         }
         context.restoreGState()
+    }
+
+    /// Draw one cached line with its **left edge at `x` and its baseline at `y`**, in `color`.
+    ///
+    /// The context is expected to be inside `drawText`'s local flip, which is the y-up space
+    /// CoreText draws upright in — the scene's own transform is top-origin, so the flip is what
+    /// makes it y-up rather than something to undo. The colour goes on the context because the line
+    /// is cached colourless; see `WasabiTextMetrics.line(for:font:)`.
+    private func drawCachedLine(_ text: String, font: NSFont, color: NSColor, x: CGFloat,
+                                baseline: CGFloat, context: CGContext) {
+        guard !text.isEmpty, let line = resources.line(for: text, font: font) else { return }
+        context.setFillColor(color.cgColor)
+        context.textPosition = CGPoint(x: x, y: baseline)
+        CTLineDraw(line, context)
     }
 
     /// The attribute dictionary a string draws with — memoized, because it is a pure function of
@@ -5311,13 +5363,37 @@ final class WasabiSceneRenderer {
 
     private func drawFlippedText(_ text: String, in frame: CGRect, font: NSFont, color: NSColor,
                                  alignment: NSTextAlignment, context: CGContext) {
-        let attributes = textAttributes(font: font, color: color, alignment: alignment,
-                                        lineBreakMode: .byTruncatingTail)
         context.saveGState()
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -frame.midY)
-        (text as NSString).draw(in: frame, withAttributes: attributes)
+        let width = resources.textWidth(of: text, font: font)
+        if width > frame.width {
+            // **The row does not fit, so it keeps `NSString.draw`.** `.byTruncatingTail` is not just
+            // a cut: AppKit first tightens inter-character spacing by up to
+            // `tighteningFactorForTruncation` (0.05 by default) to save a character, and that drift
+            // accumulates across the whole line. A `CTLine` reproduces the cut and not the
+            // tightening — measured, the first dozen columns match to the byte and the rest diverge,
+            // ~85% of the ink — so an over-long row would visibly re-space itself. Rare enough to be
+            // worth the exactness: this is the branch a *widened* playlist column leaves behind.
+            let attributes = textAttributes(font: font, color: color, alignment: alignment,
+                                            lineBreakMode: .byTruncatingTail)
+            (text as NSString).draw(in: frame, withAttributes: attributes)
+        } else {
+            // The common case, and the per-row playlist path: one cached line, drawn from the
+            // alignment's own origin. `NSString.draw` scissored at the rect, so the rect becomes the
+            // clip.
+            context.clip(to: frame)
+            let x: CGFloat
+            switch alignment {
+            case .right: x = frame.maxX - width
+            case .center: x = frame.midX - width / 2
+            default: x = frame.minX
+            }
+            drawCachedLine(text, font: font, color: color, x: x,
+                           baseline: frame.maxY - resources.baselineOffset(of: font),
+                           context: context)
+        }
         context.restoreGState()
     }
 

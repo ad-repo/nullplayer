@@ -62,6 +62,78 @@ final class WasabiTextMetrics {
         return width
     }
 
+    /// A laid-out line, cached — the drawing half of what `stringWidths` does for the measuring
+    /// half, and the larger of the two costs.
+    ///
+    /// `drawText` built an `NSAttributedString` and entered `NSString.draw` per string, per frame,
+    /// and the embedded playlist did it per row: a full TextKit typesetting pass to redraw a string
+    /// that has not changed since the last frame. A `CTLine` is that pass's result, and it is a pure
+    /// function of the text and the face.
+    ///
+    /// **Built colourless**, with `kCTForegroundColorFromContextAttributeName`, and the colour set
+    /// on the context before `CTLineDraw`. Baking the colour in would give a playlist two entries
+    /// per row — selected and not — and a hover state a third, for text that is otherwise identical.
+    private var lines: [LineKey: CTLine] = [:]
+
+    private struct LineKey: Hashable {
+        let text: String
+        let fontName: String
+        let pointSize: CGFloat
+    }
+
+    /// A ticking clock makes a new string a second, so this is bounded rather than unbounded; the
+    /// cap is a guard, not a working limit.
+    private static let maximumLines = 1024
+
+    /// `text` laid out in `font`, ready to draw at a baseline.
+    ///
+    /// Deliberately has **no truncating form**. `.byTruncatingTail` is not just a cut: before
+    /// AppKit truncates it tightens inter-character spacing by up to
+    /// `NSParagraphStyle.tighteningFactorForTruncation`, which defaults to 0.05, and that drift is
+    /// cumulative across the line. Measured against `NSString.draw`: the first dozen columns of an
+    /// over-long row match to the byte and the rest diverge steadily, ~85% of the ink. A
+    /// `CTLineCreateTruncatedLine` reproduces the cut and not the tightening, so a caller that has
+    /// to truncate keeps `NSString.draw` — see `WasabiSceneRenderer.drawFlippedText`.
+    func line(for text: String, font: NSFont) -> CTLine {
+        let key = LineKey(text: text, fontName: font.fontName, pointSize: font.pointSize)
+        if let cached = lines[key] { return cached }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font, kCTForegroundColorFromContextAttributeName as NSAttributedString.Key: true
+        ]
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text,
+                                                                      attributes: attributes))
+        if lines.count >= Self.maximumLines { lines.removeAll(keepingCapacity: true) }
+        lines[key] = line
+        return line
+    }
+
+    /// How far below a line's box top its baseline sits, as **TextKit** places it.
+    ///
+    /// This is the whole of the conversion's vertical arithmetic: `NSString.draw(in:)` lays a line
+    /// out from its rect's top edge, `CTLineDraw` draws from an explicit baseline, and this is the
+    /// distance between them. Established by pixel comparison rather than derived
+    /// (`WinampModernTextDrawingTests.testCachedLineMatchesStringDrawing`), because it is *not* the
+    /// font's own ascender: at 8pt every face tested answers 8 while their ascenders run from 6.03
+    /// to 7.73, and Helvetica at 17.6pt answers 18 against an ascender of 13.55. Asking the same
+    /// layout manager AppKit's own drawing asks is what makes the two agree.
+    func baselineOffset(of font: NSFont) -> CGFloat {
+        let key = FontMetricKey(fontName: font.fontName, pointSize: font.pointSize)
+        if let cached = baselineOffsets[key] { return cached }
+        let offset = NSLayoutManager().defaultBaselineOffset(for: font)
+        if baselineOffsets.count >= Self.maximumResolvedFonts {
+            baselineOffsets.removeAll(keepingCapacity: true)
+        }
+        baselineOffsets[key] = offset
+        return offset
+    }
+
+    private var baselineOffsets: [FontMetricKey: CGFloat] = [:]
+
+    private struct FontMetricKey: Hashable {
+        let fontName: String
+        let pointSize: CGFloat
+    }
+
     private struct FontKey: Hashable {
         let identifier: String
         let size: CGFloat
@@ -80,6 +152,8 @@ final class WasabiTextMetrics {
         fonts.removeAll()
         resolvedFonts.removeAll()
         stringWidths.removeAll()
+        lines.removeAll()
+        baselineOffsets.removeAll()
         isTornDown = true
     }
 
