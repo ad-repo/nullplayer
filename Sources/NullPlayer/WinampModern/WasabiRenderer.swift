@@ -2961,29 +2961,34 @@ final class WasabiSceneRenderer {
         // boundaries inside its own width, stacked downward, and never scrolled. See
         // `WasabiTextMetrics.wraps`.
         let wraps = WasabiTextMetrics.wraps(of: object)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = alignment
-        paragraph.lineBreakMode = wraps ? .byWordWrapping : .byClipping
-        var attributes: [NSAttributedString.Key: Any] = [
-            .font: font, .foregroundColor: color, .paragraphStyle: paragraph
-        ]
+        var attributes = textAttributes(font: font, color: color, alignment: alignment,
+                                        lineBreakMode: wraps ? .byWordWrapping : .byClipping)
         // `forcefixed` is a different layout, not a different font: every glyph gets the same cell.
         // A fixed run is a clock or a counter and is sized to fit, so it never enters the ticker.
         let pitch = WasabiTextMetrics.fixedPitch(of: object, font: font)
         // A clock is laid out in fields with their own cells, which is a third layout again — and it
         // is sized to fit for the same reason a fixed run is, so it never scrolls either.
         let clock = WasabiTextMetrics.clockRun(of: object, text: text, font: font)
+        // The same memo the layout path fills (B106), which is keyed on the *font alone*. Safe
+        // here even though the draw dictionary also carries a colour and a paragraph style:
+        // `NSString.size(withAttributes:)` has no bounding width to align or break inside, so
+        // neither attribute has anything to act on — established over the whole cross product by
+        // `WinampModernTextDrawingTests.testParagraphStyleDoesNotChangeSingleLineWidth` rather than
+        // assumed, because a `measured` that stops agreeing with what the skin measured is B87's
+        // defect arriving silently.
         let measured = clock?.width ?? pitch?.width(of: text)
-            ?? (text as NSString).size(withAttributes: attributes).width
+            ?? resources.textWidth(of: text, font: font)
         // A paragraph absorbs its overflow into extra lines, so there is nothing left for a ticker
         // to carry — and a marquee running a wrapped block sideways is never what a skin asked for.
         let overflow = pitch == nil && clock == nil && !wraps ? measured - frame.width : 0
         let scroll = overflow > 0 ? tickerMotion(for: object, overflow: overflow, textWidth: measured) : nil
         if scroll != nil {
             // While scrolling, the string is drawn into an oversized rect, so any alignment other
-            // than left would re-centre it inside that rect and cancel the motion out.
-            paragraph.alignment = .left
-            attributes[.paragraphStyle] = paragraph
+            // than left would re-centre it inside that rect and cancel the motion out. A scrolling
+            // object never wraps (the overflow a ticker carries is what a paragraph absorbs into
+            // extra lines), so the line-break mode here is the non-wrapping one by construction.
+            attributes = textAttributes(font: font, color: color, alignment: .left,
+                                        lineBreakMode: .byClipping)
         }
 
         // Wasabi centres a string in its box unless `valign=` says otherwise; `NSString.draw(in:)`
@@ -3090,8 +3095,13 @@ final class WasabiSceneRenderer {
             }
             // Each cell places its own field, so the object's alignment must not apply a second time
             // inside one.
-            let centred = attributes.merging([.paragraphStyle: centredParagraph]) { _, new in new }
-            let leading = attributes.merging([.paragraphStyle: leadingParagraph]) { _, new in new }
+            // Centred puts a single glyph in the middle of its fixed-pitch cell; leading starts a
+            // field at its own cell's left edge. Both clip rather than truncate, because a cell is
+            // sized to its content and an ellipsis in a clock is never what a skin asked for.
+            let centred = textAttributes(font: font, color: color, alignment: .center,
+                                         lineBreakMode: .byClipping)
+            let leading = textAttributes(font: font, color: color, alignment: .left,
+                                         lineBreakMode: .byClipping)
             for cell in clock.cells {
                 (cell.text as NSString).draw(
                     in: CGRect(x: origin, y: drawFrame.minY, width: cell.width, height: drawFrame.height),
@@ -3136,28 +3146,54 @@ final class WasabiSceneRenderer {
                 default: break
                 }
                 textFrame.size.width = max(drawFrame.width, measured)
-                let leading = attributes.merging([.paragraphStyle: leadingParagraph]) { _, new in new }
+                // Drawn from the string's own left edge: the alignment was already applied to the
+                // rect's origin just above, and a second one inside the widened rect would move it
+                // again.
+                let leading = textAttributes(font: font, color: color, alignment: .left,
+                                             lineBreakMode: .byClipping)
                 (text as NSString).draw(in: textFrame, withAttributes: leading)
             }
         }
         context.restoreGState()
     }
 
-    /// Starts a clock's field at its own cell's left edge.
-    private var leadingParagraph: NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.alignment = .left
-        style.lineBreakMode = .byClipping
-        return style
+    /// The attribute dictionary a string draws with — memoized, because it is a pure function of
+    /// exactly these four values and it is the **same** dictionary for every row of a list.
+    ///
+    /// `drawText` and `drawFlippedText` each built one per string, per frame, allocating a fresh
+    /// `NSMutableParagraphStyle` inside it; the two clock-cell styles were computed *properties*, so
+    /// a skin with a seconds field allocated one per cell per frame. Nothing here depends on the
+    /// call, and a dictionary handed to `NSString.draw` is not mutated by it.
+    private func textAttributes(font: NSFont, color: NSColor, alignment: NSTextAlignment,
+                                lineBreakMode: NSLineBreakMode) -> [NSAttributedString.Key: Any] {
+        let key = TextAttributeKey(font: font, color: color, alignment: alignment,
+                                   lineBreakMode: lineBreakMode)
+        if let cached = cachedTextAttributes[key] { return cached }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = alignment
+        paragraph.lineBreakMode = lineBreakMode
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font, .foregroundColor: color, .paragraphStyle: paragraph
+        ]
+        if cachedTextAttributes.count >= Self.maximumTextAttributes {
+            cachedTextAttributes.removeAll(keepingCapacity: true)
+        }
+        cachedTextAttributes[key] = attributes
+        return attributes
     }
 
-    /// Centres a single glyph inside its fixed-pitch cell.
-    private var centredParagraph: NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.alignment = .center
-        style.lineBreakMode = .byClipping
-        return style
+    private struct TextAttributeKey: Hashable {
+        let font: NSFont
+        let color: NSColor
+        let alignment: NSTextAlignment
+        let lineBreakMode: NSLineBreakMode
     }
+
+    private var cachedTextAttributes: [TextAttributeKey: [NSAttributedString.Key: Any]] = [:]
+
+    /// A skin declares a handful of faces and a handful of colours. The cap is a guard against a
+    /// script driving one of them continuously, not a working limit.
+    private static let maximumTextAttributes = 256
 
     /// Gap between the repeats of a continuously scrolling ticker, in skin pixels.
     private static let tickerGap: CGFloat = 40
@@ -3188,6 +3224,29 @@ final class WasabiSceneRenderer {
         return (CGFloat((clock() * Self.tickerSpeed).truncatingRemainder(dividingBy: cycle)), true)
     }
 
+    /// Where each character sits in a bitmap-font sheet, as `(column, row)`.
+    ///
+    /// Winamp's sheet is three rows of glyphs. The accented row used to be appended to the second
+    /// one, which put it past column 32 — outside every real sheet, so those glyphs cropped out of
+    /// bounds and drew nothing.
+    ///
+    /// The two trailing spaces on the first row are load-bearing: they map the space character onto
+    /// a blank cell of that row rather than onto the fallback, glyph (0, 0).
+    ///
+    /// Built once. It was built per call — a three-row `[Character]` array and the derived
+    /// dictionary, per string per frame — in the path a bitmap-font skin takes for every playlist
+    /// row.
+    private static let bitmapGlyphPositions: [Character: (Int, Int)] = {
+        let rows = [Array("abcdefghijklmnopqrstuvwxyz\"@  "),
+                    Array("0123456789….:()-'!_+\\/[]^&%,=$#"),
+                    Array("âöä?*")]
+        var positions: [Character: (Int, Int)] = [:]
+        for (row, characters) in rows.enumerated() {
+            for (column, character) in characters.enumerated() { positions[character] = (column, row) }
+        }
+        return positions
+    }()
+
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition,
                                 object: WasabiObject, frame: CGRect, context: CGContext) {
         let alignment: NSTextAlignment
@@ -3212,18 +3271,7 @@ final class WasabiSceneRenderer {
         let charHeight = max(1, Int(Double(definition.attributes["charheight"] ?? "1") ?? 1))
         let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
         let advance = max(1, charWidth + spacing)
-        // Winamp's bitmap-font sheet is three rows of glyphs. The accented row used to be appended to
-        // the second one, which put it past column 32 — outside every real sheet, so those glyphs
-        // cropped out of bounds and drew nothing.
-        // The two trailing spaces are load-bearing: they map the space character onto a blank cell of
-        // the sheet's first row rather than onto its fallback, glyph (0, 0).
-        let mapRows = [Array("abcdefghijklmnopqrstuvwxyz\"@  "),
-                       Array("0123456789….:()-'!_+\\/[]^&%,=$#"),
-                       Array("âöä?*")]
-        var positions: [Character: (Int, Int)] = [:]
-        for (row, characters) in mapRows.enumerated() {
-            for (column, character) in characters.enumerated() { positions[character] = (column, row) }
-        }
+        let positions = Self.bitmapGlyphPositions
         let width = CGFloat(text.count * advance)
         var startX: CGFloat
         switch alignment {
@@ -5263,12 +5311,8 @@ final class WasabiSceneRenderer {
 
     private func drawFlippedText(_ text: String, in frame: CGRect, font: NSFont, color: NSColor,
                                  alignment: NSTextAlignment, context: CGContext) {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = alignment
-        paragraph.lineBreakMode = .byTruncatingTail
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font, .foregroundColor: color, .paragraphStyle: paragraph
-        ]
+        let attributes = textAttributes(font: font, color: color, alignment: alignment,
+                                        lineBreakMode: .byTruncatingTail)
         context.saveGState()
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
