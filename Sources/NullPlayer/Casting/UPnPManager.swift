@@ -1852,13 +1852,17 @@ class UPnPManager {
         do {
             posInfo = try await getPositionInfo()
         } catch {
-            NSLog("UPnPManager: [CLOCKDBG] getPositionInfo FAILED during poll — forcing position=0 duration=0; state=%@ err=%@",
-                  transportState, error.localizedDescription)
+            if castClockLoggingEnabled {
+                NSLog("UPnPManager: [CLOCKDBG] getPositionInfo FAILED during poll — forcing position=0 duration=0; state=%@ err=%@",
+                      transportState, error.localizedDescription)
+            }
             return (state: transportState, position: 0, duration: 0)
         }
         guard let posInfo else {
-            NSLog("UPnPManager: [CLOCKDBG] getPositionInfo returned nil during poll — forcing position=0 duration=0; state=%@",
-                  transportState)
+            if castClockLoggingEnabled {
+                NSLog("UPnPManager: [CLOCKDBG] getPositionInfo returned nil during poll — forcing position=0 duration=0; state=%@",
+                      transportState)
+            }
             return (state: transportState, position: 0, duration: 0)
         }
         return (state: transportState, position: posInfo.position, duration: posInfo.duration)

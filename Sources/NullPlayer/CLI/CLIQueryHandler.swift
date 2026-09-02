@@ -434,7 +434,7 @@ struct CLIQueryHandler {
                 let plexTracks = try await mgr.fetchTracks(forAlbum: alb)
                 allTracks.append(contentsOf: mgr.convertToTracks(plexTracks))
             }
-            let names = allTracks.map { "\($0.artist ?? "Unknown") - \($0.title ?? "Unknown")" }
+            let names = allTracks.map { "\($0.artist ?? "Unknown") - \($0.title)" }
             if json { CLIDisplay.printJSON(names) }
             else {
                 for name in names { print(name) }
@@ -450,7 +450,7 @@ struct CLIQueryHandler {
             opts.artist = artistName
             opts.album = album
             let tracks = try await CLISourceResolver.resolveContent(source: source, opts: opts)
-            let names = tracks.map { "\($0.artist ?? "Unknown") - \($0.title ?? "Unknown")" }
+            let names = tracks.map { "\($0.artist ?? "Unknown") - \($0.title)" }
             if json { CLIDisplay.printJSON(names) }
             else {
                 for name in names { print(name) }
@@ -510,7 +510,7 @@ struct CLIQueryHandler {
             return
         }
 
-        let names = tracks.map { "\($0.artist ?? "Unknown") - \($0.title ?? "Unknown")" }
+        let names = tracks.map { "\($0.artist ?? "Unknown") - \($0.title)" }
         if json { CLIDisplay.printJSON(names) }
         else {
             for name in names { print(name) }

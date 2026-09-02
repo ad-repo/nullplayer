@@ -6032,7 +6032,6 @@ class PlexBrowserView: NSView {
         
         let colorIndex = Int(fmod(t * 0.5, CGFloat(glowColors.count)))
         let nextIndex = (colorIndex + 1) % glowColors.count
-        let blend = fmod(t * 0.5, 1.0)
         
         // Multiple glow passes
         for pass in 0..<3 {
@@ -15977,7 +15976,7 @@ class PlexBrowserView: NSView {
             if expanded, let tracks = localPlaylistTracks[key] {
                 for t in tracks {
                     let duration = t.duration.map { Int($0) }
-                    let title = t.title ?? "Unknown"
+                    let title = t.title
                     displayItems.append(PlexDisplayItem(id: "\(key)-\(t.url.absoluteString)", title: title, info: formatDuration(duration), indentLevel: 1, hasChildren: false, type: .localPlaylistTrack(t)))
                 }
             }
@@ -18544,7 +18543,7 @@ class PlexBrowserView: NSView {
                 toggleExpand(item)
             }
 
-        case .youtubeChannel(let channel):
+        case .youtubeChannel:
             toggleExpand(item)
         case .youtubeVideo(let video):
             if YouTubeManager.shared.isDownloaded(video.videoId) {

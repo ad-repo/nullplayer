@@ -136,7 +136,7 @@ class ContextMenuBuilder {
     private static func buildWinampModernHelpMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let about = NSMenuItem(title: "About nullPlayer", action: Selector(("showAbout")),
+        let about = NSMenuItem(title: "About nullPlayer", action: #selector(AppDelegate.showAbout),
                                keyEquivalent: "")
         about.target = NSApp.delegate
         menu.addItem(about)

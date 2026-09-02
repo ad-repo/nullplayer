@@ -2209,7 +2209,7 @@ class AudioEngine {
             startTimeUpdates()
             
             // Report resume to Plex
-            if let track = currentTrack {
+            if currentTrack != nil {
                 PlexPlaybackReporter.shared.trackDidResume(at: currentTime)
             }
             

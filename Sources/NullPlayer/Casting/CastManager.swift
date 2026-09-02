@@ -2392,14 +2392,20 @@ class CastManager {
                     self.sonosLocalStopState.observePlaying()
                     // Observe (do not change) the incoming sync for the stuck-clock signature.
                     if result.position == 0 && result.duration == 0 {
-                        NSLog("CastManager: [CLOCKDBG] PLAYING poll carries position=0 duration=0 (likely failed getPositionInfo) — overwriting engineT=%.1f sessionT=%.1f; clock will reset",
-                              engineNow, session?.position ?? -1)
+                        if castClockLoggingEnabled {
+                            NSLog("CastManager: [CLOCKDBG] PLAYING poll carries position=0 duration=0 (likely failed getPositionInfo) — overwriting engineT=%.1f sessionT=%.1f; clock will reset",
+                                  engineNow, session?.position ?? -1)
+                        }
                     } else if engineNow > result.position + 2.0 {
-                        NSLog("CastManager: [CLOCKDBG] PLAYING poll REWINDS clock: engineT=%.1f -> result.position=%.1f (delta=%.1f)",
-                              engineNow, result.position, engineNow - result.position)
+                        if castClockLoggingEnabled {
+                            NSLog("CastManager: [CLOCKDBG] PLAYING poll REWINDS clock: engineT=%.1f -> result.position=%.1f (delta=%.1f)",
+                                  engineNow, result.position, engineNow - result.position)
+                        }
                     }
                     if result.duration > 0, (session?.duration ?? 0) == 0 {
-                        NSLog("CastManager: [CLOCKDBG] Sonos reports duration=%.1f but session.duration=0 (Plex nil-duration?)", result.duration)
+                        if castClockLoggingEnabled {
+                            NSLog("CastManager: [CLOCKDBG] Sonos reports duration=%.1f but session.duration=0 (Plex nil-duration?)", result.duration)
+                        }
                     }
                     // Sync position from Sonos and reset playbackStartDate so currentTime interpolates
                     self.activeSession?.position = result.position
