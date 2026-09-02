@@ -307,6 +307,35 @@ spread ≤1%):
 Big Bento Modern's main layout is the honest caveat: it is 30 ms/frame and text is not what it is
 spending it on. Reach for the next win there elsewhere.
 
+**In the build the user runs** (release, cPro Bento, drawer visualization up, playing, `sample` 10 s,
+7802 main-thread samples). No release *baseline* was captured before the change, so these are shares
+of the state after it, read by the outermost occurrence of each symbol — the headless table above is
+the controlled before/after:
+
+| main thread | share |
+|---|---:|
+| busy | 51.5% |
+| `WinampModernMainView.draw` | 25.4% |
+| `drawText` | **2.5%** |
+| `drawSurfaceText` → `__NSStringDrawingEngine` | **3.2%** |
+| `refreshLayerFXMeshes` | 1.8% |
+| `textAttributes` / `measuredWidth` / `boundingRect` / `drawBitmapText` | 0.4 / 0.3 / 0.4 / 0.2% |
+
+`drawCachedLine` and `CTLineDraw` do not appear (inlined, 1 sample) — the drawing half of `drawText`
+has stopped being a cost.
+
+**What that leaves, and it is worth naming:** *every one of those 3.2% samples is the
+`drawFlippedText` truncation fallback*, reached from `drawPlaylistComponent` → `drawSurfaceText`.
+Winamp draws a playlist row's title and its time into the **same** rect (`rowRect.insetBy(dx: 3)`,
+one left-aligned and one right-aligned), so the title's box is the whole row and any title longer
+than the row takes the exact-but-slow path. In a normally-filled playlist that is most rows, so
+`drawFlippedText`'s conversion buys much less than its call count suggests.
+
+Closing it means giving up the tightening: set `tighteningFactorForTruncation = 0` on that path and a
+truncated `CTLine` matches exactly, at the cost of rows that AppKit currently squeezes to fit
+truncating one character earlier instead. That is a visible change to the playlist and a decision to
+take deliberately, not a free win — which is why it was not taken here.
+
 **Sweep result** (`scripts/wal_render_sweep.sh`, all 69 installed archives): 1993 of 1993 comparable
 invariant lines identical, 585 of 590 PNGs byte-identical. The 5 that differ are antialiasing — two
 skins (Formamp, K-jr, the latter shipped twice), at most 10 pixels each, at most **5/255**, with
