@@ -239,7 +239,8 @@ final class WasabiObjectGraph {
 
     /// Bumped by every mutation **except** the ones the scene walk does not read.
     ///
-    /// Today that is `alpha` alone, and it earns its own counter because it is the attribute skins
+    /// Today that is `alpha` and `frame`, and it earns its own counter because these are the
+    /// attributes skins
     /// animate: a target-alpha fade writes it up to sixty times a second, and keying the renderer's
     /// scene and layout caches on `mutationGeneration` meant every one of those writes re-solved the
     /// whole object tree — geometry, clips, bitmaps — to change one multiplier (B52). `append`
@@ -259,7 +260,28 @@ final class WasabiObjectGraph {
     private(set) var isTornDown = false
 
     /// Attributes `append` never reads except through the value `sceneNodes()` re-resolves itself.
-    static func isSceneNeutral(attribute: String) -> Bool { attribute == "alpha" }
+    ///
+    /// **`frame`** is an `<animatedlayer>`'s play head — which cell of its filmstrip is drawn. It is
+    /// here on the same terms `alpha` is, checked rather than assumed:
+    ///
+    /// - `append` does not read it. The only reader in the renderer is `WasabiAnimation.state`.
+    /// - The sprite is chosen at **draw** time: `animatedFrameImage` calls `WasabiAnimation.state`
+    ///   on the live object and crops the sheet then, downstream of the memoized scene — so a
+    ///   cached node cannot freeze the animation. The cached `bitmapID` is the *sheet*, not the cell.
+    /// - Unlike `image`/`text` it cannot size an object: a filmstrip's cells are uniform, so the
+    ///   layer's geometry is the same whichever one is showing.
+    ///
+    /// It matters because a self-playing layer writes it on every tick, which threw away the whole
+    /// memoized scene 30 times a second: cPro's two `beatvis` layers were 92 of 128 graph writes in
+    /// a five-second window, and `append` + `sceneNodes` were ~25% of the main thread re-deriving a
+    /// scene that had not changed shape (B104 item 4).
+    ///
+    /// Anything else added here has to clear the same bar: `visible` does not (it decides
+    /// membership), `image`/`text` do not (they can size an object), and an attribute the flag map
+    /// does not recognise does not.
+    static func isSceneNeutral(attribute: String) -> Bool {
+        attribute == "alpha" || attribute == "frame"
+    }
 
     private var nextRawID: UInt64 = 1
     private var objectsByID: [WasabiObjectID: WasabiObject] = [:]

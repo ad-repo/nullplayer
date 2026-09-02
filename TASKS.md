@@ -224,12 +224,45 @@ frames, so the busy fraction barely moves. Chasing individual leaf costs has rea
 returns: what is left is dominated by `draw` (41.4%, mostly text drawing and image compositing),
 `refreshLayerFXMeshes`, and the scene walk.
 
-**That makes B104 item 4 the next real lever, and it is now evidenced rather than predicted.**
+**Item 4 is done (2026-09-01).** `frame` joined `alpha` in `isSceneNeutral`. It is evidenced rather
+than predicted:
 `append` (13.4%) + `sceneNodes` (12.4%) are rebuilding a scene that mostly did not change, because
 `sceneGeneration` still moves every frame from cPro's `beatvis` `<animatedlayer>`s writing `frame`.
 Verified when B103 was investigated: `append` never reads `frame`, and the sprite is picked at draw
 time by `animatedFrameImage` -> `WasabiAnimation.state` on the live object, downstream of the scene
-cache - so exempting it cannot freeze the animation.
+cache - so exempting it cannot freeze the animation. Measured effect in the debug build: `append`
+13.4% -> 3.0%, `layoutNodes` 8.6% -> 2.1%, `layout()` 10.5% -> 3.8%.
+
+**It did not improve the frame rate, and the reason matters more than the change.** With the
+exemption in, the debug build's visualization clock still stalled at the same cadence: 8.6 -> 8.1
+late ticks/s, median gap 47ms -> 49ms against a 33ms target. The freed capacity was absorbed rather
+than turned into frames.
+
+## The debug build was the constraint (2026-09-01)
+
+Main-thread **busy** fraction, cPro Bento with the drawer visualization up and audio playing:
+
+| build | busy | idle |
+|---|---:|---:|
+| debug, before B103 | 98.6% | 1.4% |
+| debug, after B103-B106 | 94.4% | 5.6% |
+| debug, + `frame` exempt | 96.2% | 3.8% |
+| **release, all of it** | **60.7%** | **39.3%** |
+
+**Profile the build the user runs before optimizing past the algorithmic fixes.** Everything after
+B106 - the 46ms frames, the 21.7 fps, "still saturated after freeing 23%" - was a debug-build
+artifact. B103-B106 were worth doing at any optimization level because they are *algorithmic* (a
+311-entry dictionary rebuilt per call, a `CharacterSet` per character, a CoreText pass to re-answer
+a constant); ordinary code executed often is the category where debug-vs-release decides whether
+there is a problem at all.
+
+**`WINAMP_MODERN_VIS_STALL` is `#if DEBUG`.** It cannot fire in a release build, so a release run
+reports zero stalls whether or not any occurred. Read a silent instrument as "not running" until
+proven otherwise. The cross-build metric that does work is the busy fraction from `sample`: count
+leaf frames sitting in `mach_msg2_trap` / `semaphore_wait` / `__psynch_cvwait` as idle.
+
+**No pre-fix release baseline was captured**, so how much of that 39% headroom these changes bought
+is unmeasured. The release figure above is *with* every fix including the `frame` exemption.
 
 ---
 
