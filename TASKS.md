@@ -28,6 +28,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
+| B105 | **`WinampModernConfiguration.safeComponent` rebuilds `CharacterSet.alphanumerics.union(_:)` on every call.** That union is not a cheap constant - it materializes Unicode bitmap planes (`CFUniCharGetBitmapForPlane`). It runs **twice per `storageKey`**, and a `storageKey` per config read, which puts it on the frame path for every `cfgattrib` in the scene. Measured **2.5%** of the main thread on cPro Bento, 2026-09-01. Fixed: the set is a `static let`, and an already-safe name is returned as-is instead of being rebuilt one `Character` at a time | every `.wal` skin with `cfgattrib` bindings | S | Live-reported |
 | B104 | **A `CharacterSet` is rebuilt once per character, on a scan over every object in the graph, twice a frame.** `WinampModernComponents.swift:112` builds `CharacterSet(charactersIn:)` **inside** a `filter` closure, so CoreFoundation runs `CFCharacterSetCreateWithCharactersInString` -> `qsort` (and the matching dealloc) once per scalar to answer "is this character hex". It is reached from `refreshWaveformDemand`, which walks `allObjectsUnordered` **twice** calling `componentKind(of:)` on every object. Measured 2026-09-01 on cPro Bento with the drawer visualization up and audio playing (7991 main-thread samples): `normalize` **14.6%** of the main thread (~13.7% of it building and freeing `CharacterSet`s), `refreshWaveformDemand` **32.8%**, `surfaceID(of:)` **32.0%**. Nothing in the line is cPro-specific - the **reach** is: the cost is per object, and cPro's graph (ClassicPro engine + CentroSUI + tabs + widgets + drawer) is the corpus's largest, which is also why adding the drawer made it worse | every `.wal` skin; scales with object count, so worst by far on cPro | S | Live-reported |
 | B103 | **The script-dispatch and per-frame resolution paths rebuild their lookup tables on every call.** Measured 2026-09-01 on `2222-cPro__Bento`, debug build, **idle with nothing playing**: the process sits at **58-65% CPU** and `sample` puts ~64% of it on the main thread - 32.1% in `animationTick` -> `refreshLayerFXMeshes` -> `evaluateLayerFXMesh`, 30.8% in the `draw` that tick asks for. The mesh is not the cost: `WINAMP_MODERN_FX_TRACE=1` shows **one** realtime layer, `layer#animationscreen`, at `fx_setgridsize(10,1)` - an 11x2 vertex mesh, 44 MAKI calls per tick, 1320/sec. That works out to **~240 us per script dispatch**, and the four causes are all rebuilt-per-call tables; see the detail section | every `.wal` skin (items 1, 2, 4 are shared script/resource code); worst on cPro, which runs a 30 Hz realtime FX layer | M | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
@@ -192,6 +193,21 @@ The implementation and its automated coverage shipped; that record is in
 ---
 
 -
+---
+
+### B105
+
+- [x] Hoist the `CharacterSet` to a `static let`; return an already-safe component unchanged.
+      Measured at **2.5%** before the fix; not yet re-measured after.
+
+**Remaining, measured but not fixed** (cPro Bento, drawer visualization up, playing, after B103-B105):
+
+| candidate | share | note |
+|---|---:|---|
+| `drawText` | 8.8% | Builds an `NSAttributedString` attribute dictionary and enters `NSString.draw` per string, per frame, plus a `boundingRect` measure pass. Already named as the largest cost inside `draw` in `reference/performance.md`; the font lookup under it is fixed (B103) but the layout is not. Wants a cached laid-out line, drawn through CoreText |
+| float16 image compositing | ~7% | `ripc_DrawImage` -> `RGBAf16_image` -> `RGBAf16_sample_RGBAf_inner` plus `vCGCompositePixelShape_ARGB16F_vec`: every blit runs through the **16-bit float** pipeline. Nothing in the app sets `contentsFormat`, `colorSpace` or a depth limit, so this is the system default on a wide-gamut display. Skin art is 8-bit PNG, so `RGBA8Uint` would be lossless *for the artwork* - but the renderer also synthesizes gradients (`$gradient`), which could band. **A visual decision, not a free win**: measure and look at it before adopting |
+| `refreshLayerFXMeshes` | 20.0% | The MAKI interpreter evaluating cPro's warp mesh per tick. Genuine work; bounded by B103's dispatch fixes. Would need a cheaper interpreter or a coarser mesh, both of which change behaviour |
+
 ---
 
 ### B104

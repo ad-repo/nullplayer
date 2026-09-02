@@ -34,9 +34,24 @@ final class WinampModernConfiguration {
         "winampModern.config.\(namespace).\(Self.safeComponent(section)).\(Self.safeComponent(key))"
     }
 
+    /// `static`, for the reason `WinampModernComponentRegistry.normalize` is written over bytes:
+    /// this used to be rebuilt on every call, and `CharacterSet.alphanumerics.union(_:)` is not a
+    /// cheap constant — it materializes Unicode bitmap planes (`CFUniCharGetBitmapForPlane`). Two
+    /// calls per `storageKey`, and a `storageKey` per config read, puts it on the frame path for
+    /// every `cfgattrib` in the scene: 2.5% of the main thread on cPro Bento (B105).
+    private static let allowedComponentCharacters: CharacterSet =
+        CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_ -"))
+
     private static func safeComponent(_ value: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_ -"))
-        let result = String(value.unicodeScalars.map { allowed.contains($0) ? Character(String($0)) : "_" })
-        return result.isEmpty ? "default" : result
+        guard !value.isEmpty else { return "default" }
+        // Section and key names are overwhelmingly already safe, and rebuilding an identical string
+        // one `Character` at a time is the rest of the cost. Answer with the original when it is.
+        if value.unicodeScalars.allSatisfy(allowedComponentCharacters.contains) { return value }
+        var result = ""
+        result.unicodeScalars.reserveCapacity(value.unicodeScalars.count)
+        for scalar in value.unicodeScalars {
+            result.unicodeScalars.append(allowedComponentCharacters.contains(scalar) ? scalar : "_")
+        }
+        return result
     }
 }
