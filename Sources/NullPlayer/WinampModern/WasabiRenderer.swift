@@ -5016,6 +5016,39 @@ final class WasabiSceneRenderer {
                     on: palette.contentBackground))
     }
 
+    /// Winamp's own "m:ss" for a playlist row's running time.
+    static func playlistTimeText(_ duration: TimeInterval) -> String {
+        let seconds = Int(duration)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    /// How a playlist row divides between its title and its running time.
+    ///
+    /// They are two columns, not two strings in one box. Drawn into the same rect — the title left,
+    /// the time right — neither draw knows about the other, so a long title runs all the way to the
+    /// row's right edge and the time paints on top of its last few characters. That is what put
+    /// ClassicPro's long titles under their own durations.
+    ///
+    /// Both text paths already stop at the rect they are handed (`drawFlippedText` truncates with an
+    /// ellipsis, `drawBitmapText` clips), so reserving the time's width is the whole fix. The time is
+    /// measured in the font the row actually draws in — `surfaceTextWidth` resolves it by the same
+    /// two branches `drawSurfaceText` does — and separated by two spaces, so a title cut flush
+    /// against its running time still reads as two columns.
+    ///
+    /// `timeInk` is where the right-aligned time will actually land, and is nil for a row that has no
+    /// duration to show — such a row keeps the full width.
+    func playlistRowColumns(text textRect: CGRect, duration: TimeInterval,
+                            pointSize: CGFloat) -> (label: CGRect, timeInk: CGRect?) {
+        guard duration > 0 else { return (textRect, nil) }
+        let timeWidth = surfaceTextWidth(Self.playlistTimeText(duration), pointSize: pointSize)
+        let gap = surfaceTextWidth("  ", pointSize: pointSize)
+        var label = textRect
+        label.size.width = max(0, textRect.width - timeWidth - gap)
+        let ink = CGRect(x: textRect.maxX - timeWidth, y: textRect.minY,
+                         width: timeWidth, height: textRect.height)
+        return (label, ink)
+    }
+
     private func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: CGContext) {
         // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
         // and selection follow the skin's colour resources and its active colour theme.
@@ -5052,15 +5085,16 @@ final class WasabiSceneRenderer {
                                             ? palette.currentText
                                             : (selected ? palette.selectionText : palette.listText),
                                         selected: selected)
-            let label = "\(index + 1). \(row.title)"
-            drawSurfaceText(label, in: rowRect.insetBy(dx: 3, dy: 1), color: color,
-                            alignment: .left, pointSize: pointSize, context: context)
-            if row.duration > 0 {
-                let seconds = Int(row.duration)
-                let time = String(format: "%d:%02d", seconds / 60, seconds % 60)
-                drawSurfaceText(time, in: rowRect.insetBy(dx: 3, dy: 1), color: color,
+            let textRect = rowRect.insetBy(dx: 3, dy: 1)
+            let columns = playlistRowColumns(text: textRect, duration: row.duration,
+                                             pointSize: pointSize)
+            if columns.timeInk != nil {
+                drawSurfaceText(Self.playlistTimeText(row.duration), in: textRect, color: color,
                                 alignment: .right, pointSize: pointSize, context: context)
             }
+            let label = "\(index + 1). \(row.title)"
+            drawSurfaceText(label, in: columns.label, color: color,
+                            alignment: .left, pointSize: pointSize, context: context)
         }
         context.restoreGState()
     }

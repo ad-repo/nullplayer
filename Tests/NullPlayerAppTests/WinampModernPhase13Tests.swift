@@ -1039,6 +1039,75 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(snapshot([10, 20]).totalDuration, 30)
     }
 
+    /// A row's title column must stop before its running time, however long the title is.
+    ///
+    /// Both were drawn into the same rect — the title left-aligned, the time right-aligned — so
+    /// neither knew about the other and a long title ran underneath its own duration. Reported
+    /// against ClassicPro, whose playlist box is narrow enough to reach it constantly.
+    func testAPlaylistRowsTitleColumnStopsBeforeItsRunningTime() throws {
+        let renderer = try makePlaylistRenderer()
+        let textRect = CGRect(x: 10, y: 0, width: 200, height: 12)
+
+        let columns = renderer.playlistRowColumns(text: textRect, duration: 251, pointSize: 11)
+        let timeInk = try XCTUnwrap(columns.timeInk, "a row with a duration reserves a time column")
+
+        XCTAssertLessThanOrEqual(columns.label.maxX, timeInk.minX,
+                                 "the title's column must end before the time's ink begins")
+        XCTAssertGreaterThan(columns.label.width, 0, "and must still leave a usable title column")
+        XCTAssertEqual(timeInk.maxX, textRect.maxX,
+                       "the time stays flush right, where it is drawn")
+    }
+
+    /// The reservation is the *drawn* width, not a guess: a longer running time takes more of the row.
+    /// `surfaceTextWidth` resolves the font by the same two branches `drawSurfaceText` does, so a time
+    /// measured in one font and drawn in another cannot reopen the overlap.
+    func testALongerRunningTimeReservesMoreOfTheRow() throws {
+        let renderer = try makePlaylistRenderer()
+        let textRect = CGRect(x: 0, y: 0, width: 200, height: 12)
+
+        let short = renderer.playlistRowColumns(text: textRect, duration: 61, pointSize: 11)
+        let long = renderer.playlistRowColumns(text: textRect, duration: 3811, pointSize: 11)
+
+        XCTAssertEqual(WasabiSceneRenderer.playlistTimeText(61), "1:01")
+        XCTAssertEqual(WasabiSceneRenderer.playlistTimeText(3811), "63:31")
+        XCTAssertLessThan(long.label.width, short.label.width,
+                          "\"63:31\" needs more room than \"1:01\", so it leaves the title less")
+    }
+
+    /// A row with nothing to show on the right keeps the whole width. Reserving a column for a time
+    /// that is never drawn would cut titles for no reason.
+    func testAPlaylistRowWithNoDurationKeepsTheWholeWidth() throws {
+        let renderer = try makePlaylistRenderer()
+        let textRect = CGRect(x: 4, y: 0, width: 200, height: 12)
+
+        let columns = renderer.playlistRowColumns(text: textRect, duration: 0, pointSize: 11)
+
+        XCTAssertNil(columns.timeInk)
+        XCTAssertEqual(columns.label, textRect)
+    }
+
+    /// A row too narrow to hold its own running time yields the title column entirely rather than
+    /// producing a negative width.
+    func testAPlaylistRowNarrowerThanItsRunningTimeClampsToZero() throws {
+        let renderer = try makePlaylistRenderer()
+        let columns = renderer.playlistRowColumns(text: CGRect(x: 0, y: 0, width: 4, height: 12),
+                                                  duration: 3811, pointSize: 11)
+        XCTAssertEqual(columns.label.width, 0)
+    }
+
+    private func makePlaylistRenderer() throws -> WasabiSceneRenderer {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="240" h="120"/>
+          </container>
+        </WasabiXML>
+        """)
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { renderer.teardown() }
+        return renderer
+    }
+
     // MARK: - 13.7 EQ actions
 
     /// Every parameter form the measured skins use, and the 1-based → 0-based conversion that is the

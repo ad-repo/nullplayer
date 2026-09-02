@@ -88,6 +88,25 @@ its column, because `.byTruncatingTail` tightens inter-character spacing before 
 [../performance.md](../performance.md) → *The drawing half of `drawText`* for the measurements and the
 full before/after.
 
+#### Two strings in one box is two columns, not one string
+
+Both text paths stop at the rect they are handed — `drawFlippedText` truncates with an ellipsis,
+`drawBitmapText` clips — and **neither knows what else is drawn into the same rect.** So a caller that
+draws one string left-aligned and another right-aligned into the *same* box gets an overlap the moment
+the first one is long: it runs to the box's right edge, and the second paints on top of its last few
+characters.
+
+That is what put ClassicPro's long playlist titles under their own running times. The playlist row is
+the measured case, and `WasabiSceneRenderer.playlistRowColumns(text:duration:pointSize:)` is the
+shape of the fix: measure the right-hand string with **`surfaceTextWidth`** — which resolves the font
+by the same two branches `drawSurfaceText` does, so a string measured in one font and drawn in another
+cannot reopen the gap — subtract it plus a two-space separator, and hand the left-hand string the
+remainder. A row with nothing to show on the right keeps the whole width; reserving a column for a
+time that is never drawn would cut titles for no reason.
+
+If you add a second string to any existing box, split the rect. Do not rely on the two happening to
+fit.
+
 #### How big the font is, and which one
 
 Three rules, all measured against Love is War Miku's shipped `screenshot.png` (a skin's own reference
