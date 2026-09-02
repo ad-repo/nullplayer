@@ -68,6 +68,11 @@ available lesson in how to debug this subsystem.
 - [state-of-the-engine.md](state-of-the-engine.md) — orientation for someone arriving cold: what was
   built, component-by-component status, **what is not verified**, and the reverse-engineering /
   provenance analysis.
+- [branch-review-stage-1.md](branch-review-stage-1.md) — the pre-release review of `feat/winamp-modern`'s
+  **shared** code: every change outside the engine classified gated / inert-by-construction / ungated,
+  with six findings and their dispositions. Written 2026-09-02 at `3e871eb9`. Read it before touching
+  `WindowManager`, `ContextMenuBuilder` or the seven hosted window views — and before the cut, because
+  its Finding 1 is an open decision.
 - [corpus-runner-plan.md](corpus-runner-plan.md) — **a build plan for tooling that does not exist.**
   The unattended corpus-triage pipeline (S0–S4) and its build order. Corpus triage is manual today;
   the method that is runnable now is `skills/winamp-modern-skin-guide/triage-playbook.md`.
