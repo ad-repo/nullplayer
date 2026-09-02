@@ -108,8 +108,32 @@ enum WinampModernComponentRegistry {
         ("waveseeker", .waveformSeeker),
     ]
 
+    /// A GUID reduced to its hex digits, so `{0000000A-000C-…}` and `0000000a000c…` compare equal.
+    ///
+    /// Written over UTF-8 bytes rather than with `CharacterSet` for one reason: the set used to be
+    /// built **inside** the filter closure, so `CharacterSet(charactersIn:)` ran once per character —
+    /// and CoreFoundation answers that by sorting the string (`CFCharacterSetCreateWithCharactersInString`
+    /// → `qsort`) and then freeing the result again. This is reached from `refreshWaveformDemand`,
+    /// which asks `componentKind(of:)` about every object in the graph, so a 38-character GUID cost
+    /// 38 set constructions per object, per scan, twice a frame. It measured **14.6% of the main
+    /// thread** on cPro Bento (B104), whose object graph is the corpus's largest.
+    ///
+    /// ASCII-only by construction, which is the whole domain: a hex digit is an ASCII byte, and any
+    /// multi-byte scalar is not one and is dropped exactly as the old filter dropped it.
     private static func normalize(_ guid: String) -> String {
-        String(guid.lowercased().unicodeScalars.filter { CharacterSet(charactersIn: "0123456789abcdef").contains($0) })
+        var digits = [UInt8]()
+        digits.reserveCapacity(32)
+        for byte in guid.utf8 {
+            switch byte {
+            case UInt8(ascii: "0")...UInt8(ascii: "9"), UInt8(ascii: "a")...UInt8(ascii: "f"):
+                digits.append(byte)
+            case UInt8(ascii: "A")...UInt8(ascii: "F"):
+                digits.append(byte + 0x20)
+            default:
+                continue
+            }
+        }
+        return String(decoding: digits, as: UTF8.self)
     }
 }
 

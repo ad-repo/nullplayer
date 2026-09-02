@@ -35,6 +35,17 @@ final class WasabiObject {
     private(set) var dirtyFlags: WasabiDirtyFlags = .all
     private(set) var isTornDown = false
 
+    /// Memo for `WasabiSceneRenderer.surfaceID(of:)`, which is a pure function of this object's
+    /// attributes and its enclosing container — see there for why it is worth keeping.
+    ///
+    /// Dropped by `setAttribute` for the keys the derivation reads, and stamped with the graph's
+    /// `structureGeneration` so a reparent invalidates it for a whole subtree at once (an object's
+    /// enclosing container is what `hostedWindowID` looks up, and that is not local to the object).
+    var surfaceIDMemo: (structure: UInt64, value: WinampModernSurfaceID?)?
+
+    /// The attributes `surfaceID(of:)` derives its answer from. A write to any of them drops the memo.
+    static let surfaceIDInputs: Set<String> = ["id", "param", "guid", "hold", "component"]
+
     private weak var graph: WasabiObjectGraph?
 
     init(stableID: WasabiObjectID, typeName: String, attributes: [String: String],
@@ -47,6 +58,10 @@ final class WasabiObject {
     }
 
     var xmlID: String? { attributes["id"] }
+
+    /// The graph's structure counter, for callers memoizing something that depends on this object's
+    /// position in the tree rather than only on the object itself.
+    var graphStructureGeneration: UInt64 { graph?.structureGeneration ?? 0 }
     var geometry: WasabiGeometrySpec { WasabiGeometrySpec(attributes: attributes) }
 
     @discardableResult
@@ -59,6 +74,7 @@ final class WasabiObject {
         // A script renaming an object invalidates the graph's id index. Rare, and cheap to be right
         // about: the alternative is a lookup that silently answers with the old name.
         if key == "id" { graph?.invalidateXMLIDIndex() }
+        if Self.surfaceIDInputs.contains(key) { surfaceIDMemo = nil }
         markDirty(Self.dirtyFlag(for: key), reason: key)
         return true
     }
@@ -235,6 +251,11 @@ final class WasabiObjectGraph {
     /// object), and an attribute the flag map does not recognise is not.
     private(set) var sceneGeneration: UInt64 = 0
 
+    /// Bumped by every change to the **shape** of the tree — a child inserted, removed or promoted.
+    /// Distinct from the two above because it is what invalidates anything derived from an object's
+    /// *ancestry* rather than from the object, and reparenting is rare where attribute writes are not.
+    private(set) var structureGeneration: UInt64 = 0
+
     private(set) var isTornDown = false
 
     /// Attributes `append` never reads except through the value `sceneNodes()` re-resolves itself.
@@ -322,6 +343,7 @@ final class WasabiObjectGraph {
         guard !isTornDown else { return }
         invalidated[id, default: []].formUnion(flags)
         mutationGeneration &+= 1
+        if flags.contains(.structure) { structureGeneration &+= 1 }
         if sceneAffecting { sceneGeneration &+= 1 }
     }
 
@@ -358,6 +380,7 @@ final class WasabiObjectGraph {
         xmlIDIndex = nil
         mutationGeneration &+= 1
         sceneGeneration &+= 1
+        structureGeneration &+= 1
     }
 
     func teardown() {

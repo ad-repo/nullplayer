@@ -1665,7 +1665,26 @@ final class WasabiSceneRenderer {
     /// The kind a holder element hosts. `<component param="guid:…">` is the third holder form (the
     /// one mmd3/CornerAmp/Winamp Modern actually use for their playlist and library content), and it
     /// names its component in `param` rather than in `hold`.
+    /// Memoized on the object, because this is a **string** derivation asked about *every* object
+    /// in the graph: `refreshWaveformDemand` walks `allObjectsUnordered` on every cache miss, and
+    /// nothing below is cheap — `componentReference` reads up to four attributes and falls back to
+    /// matching the id against a token list, and `kind(for:)` normalizes a GUID. It measured 17.7% of
+    /// the main thread on cPro Bento even after `normalize` stopped building a `CharacterSet` per
+    /// character (B104).
+    ///
+    /// The answer is a pure function of the object's own attributes and its **ancestry** (only
+    /// `hostedWindowID` uses the latter, to find the enclosing container). So the memo is dropped by
+    /// `setAttribute` for the attributes read here, and stamped with the graph's `structureGeneration`
+    /// so a reparent drops it for every object at once rather than only the one that moved.
     static func surfaceID(of object: WasabiObject) -> WinampModernSurfaceID? {
+        let structure = object.graphStructureGeneration
+        if let memo = object.surfaceIDMemo, memo.structure == structure { return memo.value }
+        let value = uncachedSurfaceID(of: object)
+        object.surfaceIDMemo = (structure, value)
+        return value
+    }
+
+    private static func uncachedSurfaceID(of object: WasabiObject) -> WinampModernSurfaceID? {
         guard let reference = componentReference(of: object) else { return nil }
         if let hosted = hostedWindowID(for: object, reference: reference) {
             return .hostWindow(hosted)
@@ -3556,8 +3575,21 @@ final class WasabiSceneRenderer {
         // state and differs between the renderers of one skin, and they all push to a single host
         // that does not refcount. Erring towards *running* a tap is the safe side of that: the cost
         // is one consumer in `processAudioBuffer`, not a wrong picture.
-        let hasVisualizationHolder = loadedSkin.runtime.graph.allObjectsUnordered.contains {
-            Self.componentKind(of: $0) == .visualization
+        // **One walk, not two.** This and `seekerNeeded` below each used to call
+        // `allObjectsUnordered.contains` on their own, and the walk is the expensive half:
+        // `componentKind(of:)` derives its answer from the object's attributes as strings, per
+        // object (B104). `seekerNeeded` is resolved here rather than at its own site purely so both
+        // can share the pass; it is a pure function of the graph either way.
+        var hasVisualizationHolder = false
+        var seekerNeeded = false
+        for object in loadedSkin.runtime.graph.allObjectsUnordered {
+            switch Self.componentKind(of: object) {
+            case .visualization: hasVisualizationHolder = true
+            case .waveformSeeker: seekerNeeded = true
+            default: break
+            }
+            // Both found: the rest of the graph cannot change either answer.
+            if hasVisualizationHolder, seekerNeeded { break }
         }
         let needed = boxes.contains {
             renderer.needsWaveform(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
@@ -3571,12 +3603,9 @@ final class WasabiSceneRenderer {
         let analyzerNeeded = boxes.contains {
             renderer.needsAnalyzerBands(forMode: WasabiVisualizationMode(attribute: $0.attributes["mode"]))
         } || (hasVisualizationHolder && holderRenderer.needsAnalyzerBands(forMode: holderMode))
-        // The seeker strip's whole-track envelope (BB18), on the same whole-graph terms and for the
-        // same reason. Its cost is a file decode rather than an audio consumer, which makes the
+        // The seeker strip's whole-track envelope (BB18) is `seekerNeeded`, resolved in the single
+        // graph walk above. Its cost is a file decode rather than an audio consumer, which makes the
         // demand gate matter more here than for either tap above, not less.
-        let seekerNeeded = loadedSkin.runtime.graph.allObjectsUnordered.contains {
-            Self.componentKind(of: $0) == .waveformSeeker
-        }
         let changed = waveformDemand?.needed != needed
         let analyzerChanged = waveformDemand?.analyzer != analyzerNeeded
         let seekerChanged = waveformDemand?.seeker != seekerNeeded

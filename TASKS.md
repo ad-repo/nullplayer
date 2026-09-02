@@ -28,6 +28,8 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
+| B104 | **A `CharacterSet` is rebuilt once per character, on a scan over every object in the graph, twice a frame.** `WinampModernComponents.swift:112` builds `CharacterSet(charactersIn:)` **inside** a `filter` closure, so CoreFoundation runs `CFCharacterSetCreateWithCharactersInString` -> `qsort` (and the matching dealloc) once per scalar to answer "is this character hex". It is reached from `refreshWaveformDemand`, which walks `allObjectsUnordered` **twice** calling `componentKind(of:)` on every object. Measured 2026-09-01 on cPro Bento with the drawer visualization up and audio playing (7991 main-thread samples): `normalize` **14.6%** of the main thread (~13.7% of it building and freeing `CharacterSet`s), `refreshWaveformDemand` **32.8%**, `surfaceID(of:)` **32.0%**. Nothing in the line is cPro-specific - the **reach** is: the cost is per object, and cPro's graph (ClassicPro engine + CentroSUI + tabs + widgets + drawer) is the corpus's largest, which is also why adding the drawer made it worse | every `.wal` skin; scales with object count, so worst by far on cPro | S | Live-reported |
+| B103 | **The script-dispatch and per-frame resolution paths rebuild their lookup tables on every call.** Measured 2026-09-01 on `2222-cPro__Bento`, debug build, **idle with nothing playing**: the process sits at **58-65% CPU** and `sample` puts ~64% of it on the main thread - 32.1% in `animationTick` -> `refreshLayerFXMeshes` -> `evaluateLayerFXMesh`, 30.8% in the `draw` that tick asks for. The mesh is not the cost: `WINAMP_MODERN_FX_TRACE=1` shows **one** realtime layer, `layer#animationscreen`, at `fx_setgridsize(10,1)` - an 11x2 vertex mesh, 44 MAKI calls per tick, 1320/sec. That works out to **~240 us per script dispatch**, and the four causes are all rebuilt-per-call tables; see the detail section | every `.wal` skin (items 1, 2, 4 are shared script/resource code); worst on cPro, which runs a 30 Hz realtime FX layer | M | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
@@ -188,6 +190,108 @@ The implementation and its automated coverage shipped; that record is in
       item, outside the `.wal` subsystem
 
 ---
+
+-
+---
+
+### B104
+
+- [x] **1. `normalize` builds a `CharacterSet` per character.** `WinampModernComponents.swift:112`.
+      Hoist the hex test out of the closure — better, drop `CharacterSet` and test the UTF-8 byte
+      directly, which is what "is this an ASCII hex digit" actually is. Measured at **14.6%** of the main thread, ~13.7% of it building and freeing `CharacterSet`s.
+- [x] **2. `surfaceID(of:)` is recomputed per object, per scan.** Nothing memoizes it, so every walk
+      re-derives the same answer for every object. Cache it on the object, dropped by `setAttribute`
+      for the keys it reads.
+- [x] **3. `refreshWaveformDemand` walks `allObjectsUnordered` twice.** `WasabiRenderer.swift:3559`
+      and `:3577` each want one boolean. One pass answers both.
+- [ ] **4. Re-measure, then decide about `isSceneNeutral`.** The memo on `sceneGeneration`
+      (`WasabiRenderer.swift:3545`) misses every frame because cPro's `beatvis` `<animatedlayer>`s
+      write `frame` on every tick (B103's mutation trace). With 1-3 done the miss may stop mattering.
+      **Do not add `frame` to the exemption set on a prediction** — measure first.
+
+**Order matters here.** 1 and 3 are exact and carry no invalidation risk; 2 introduces a cache and
+should be judged on measurement after 1 and 3, not before.
+
+**Result, measured 2026-09-01** — three samples on identical state (cPro Bento, drawer visualization
+up, audio playing), true inclusive share of the main thread:
+
+| symbol | before | after 1+3 | after 1+2+3 |
+|---|---:|---:|---:|
+| `refreshWaveformDemand` | 32.8% | 18.5% | **1.7%** |
+| `surfaceID(of:)` | 32.0% | 17.8% | **0.7%** |
+| `componentKind(of:)` | 31.9% | 17.7% | **0.7%** |
+| `normalize` | 14.6% | 2.6% | **0.0%** |
+| `WinampModernMainView.draw` | 55.1% | 46.1% | **36.2%** |
+
+Item 2 earned its place: 1+3 alone left `componentKind` at 17.7%.
+
+**Measurement pitfall this exposed — `append` is recursive.** Aggregating a `sample` tree by summing
+every frame that carries a symbol counts a recursive function once per level, so `append` read as
+**73%** of the main thread when its true inclusive share is **12.2%**, and `normalize` read as 28.3%
+against a true 14.6%. Inclusive share has to count only the **outermost** occurrence of a symbol on
+each stack. Two figures were reported from the inflated form before this was caught. Anything derived
+from a `sample` tree by substring matching is suspect for the same reason: `refreshWaveformDemand`
+also appears as `closure #4 in …` and `partial apply for closure #4 in …` on the same stack.
+
+--
+
+### B103
+
+Four rebuilt-per-call tables on the main thread. Ranked by measured share; each is independent, so
+they land one at a time.
+
+- [x] **1. `signature(for:classGUID:)` builds a 311-entry dictionary literal per call.**
+      `WinampModernScriptRuntime.swift:2283` declares `let signatures: [String: MakiMethodSignature] = [...]`
+      as a **local**, so every method invocation the interpreter makes allocates and hashes 311
+      entries. Above it, `classGUID.map(Self.canonicalGUID)` is evaluated up to **five separate
+      times** in the same call. Hoist the table to a `static let` and compute the canonical GUID
+      once into a local. Measured at **10.4%** of the main thread.
+- [x] **2. `MakiClassGUID.canonical` is O(n^2) with ~20 allocations, called 5x per dispatch.**
+      `MakiBytecode.swift:58` walks a 32-character string with `String.index(_:offsetBy:)` in a
+      `stride`, building 16 substrings, reversing them in groups of four and joining. Rewrite over
+      `utf8` bytes and memoize on the raw string. Measured at **10.4%** (`canonical` +
+      `canonicalGUID`); item 1 removes four of the five calls, this removes the cost of the fifth.
+      **Done without the memo:** one `Array(raw)` plus one `String` makes the function O(n) with two
+      allocations instead of O(n²) with ~20, and a cache keyed on the raw string would spend a
+      32-character hash to save what is now a 32-character loop. Result is character-identical.
+- [x] **3. The resolved `NSFont` is not cached; only the raw `CGFont` is.**
+      `WasabiTextMetrics.font(identifier:size:traits:)` (`WasabiTextMetrics.swift:33`) caches
+      `CGFont` by path, so `CTFontCreateWithGraphicsFont`, `applying(traits:)` (an
+      `NSFontManager.convert` round trip) and the whole `installedFont` branch - `NSFontManager`
+      `font(withFamily:)` -> `CTFontDescriptorCreateMatchingFontDescriptorsWithOptions` - run **per
+      string, per frame**. Add a cache keyed on `(identifier, size, traits)`, which is what the
+      signature already offers, and clear it beside `fonts` in `teardown`. Measured at **2.6%** on
+      cPro Bento and **5.7%** on `cPro_T2T-by-MAC`, whose text is heavier.
+- [x] **4. `WalResourceRegistry.resolved(identifier:in:)` folds with ICU per lookup.**
+      `WasabiSkinInitializer.swift:125` calls `Self.fold` - `String.folding(options:locale:)`, a full
+      Unicode normalization - on every id, and allocates a fresh `Set<String>` for the alias
+      cycle guard, per resource id, per frame. Memoize the fold. Measured at **3.4%**.
+
+**Constraints.** Items 1, 2 and 4 are shared `.wal` code and item 3 is `WinampModern/` only, so
+Classic and Original are untouched by construction - no mode gate is needed because no shared *app*
+code is involved. None of the four changes what is drawn, so the render sweep must come back
+byte-identical.
+
+**Corrected figures (2026-09-01).** The per-symbol drops first reported for these four were derived
+by substring-matching the `sample` tree, which counts a symbol once per frame that carries it and so
+double-counts closures and recursion (see B104's measurement-pitfall note). True inclusive share,
+outermost occurrence only — and note the two runs are **not** the same app state (idle vs. playing),
+so read each row as an order-of-magnitude drop, not a controlled A/B:
+
+| symbol | before (idle) | after (playing) |
+|---|---:|---:|
+| `signature(for:classGUID:)` | 10.4% | 0.4% |
+| `MakiClassGUID.canonical` | 5.1% | 0.3% |
+| `WasabiTextMetrics.font` | 2.6% | 1.2% |
+| `WalResourceRegistry.resolved` | 3.4% | 0.6% |
+
+**Caveat on the numbers.** All of the above was measured on a **debug** build, so the absolute
+percentages are inflated. The two largest are algorithmic rather than optimizer-sensitive, so the
+shape holds in release, but the win should be re-measured with `sample` on a release build before
+the figures are written into `reference/performance.md`.
+
+**Not measured yet:** the profile above is **idle**. Playing adds B51's vis clock on top of it.
+
 
 ### B58
 
