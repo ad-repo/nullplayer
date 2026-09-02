@@ -1423,7 +1423,11 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         }
                     }
                     let milliseconds = Date().timeIntervalSince(start) * 1000 / Double(frames)
-                    for (name, total) in WasabiSceneRenderer.drawProfile.sorted(by: { $0.value > $1.value }).prefix(8) {
+                    // `WINAMP_MODERN_DRAW_PROFILE_TOP=<n>` widens the per-object report. Eight rows
+                    // name the worst offender; a distribution — "is this one object or two hundred?"
+                    // — needs the tail, and on a large skin the answer is usually the tail.
+                    let top = env["WINAMP_MODERN_DRAW_PROFILE_TOP"].flatMap(Int.init) ?? 8
+                    for (name, total) in WasabiSceneRenderer.drawProfile.sorted(by: { $0.value > $1.value }).prefix(top) {
                         print(String(format: "DRAW-PROFILE %@ %.2f ms/frame", name, total * 1000 / Double(frames)))
                     }
                     WasabiSceneRenderer.drawProfile.removeAll()
