@@ -2712,6 +2712,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     }
 
     static let tracesEveryCall = ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil
+    /// `WINAMP_MODERN_ACTION_TRACE=1` names each `onAction` and its addressee. Read once: this is
+    /// on the dispatch path every ClassicPro internal message takes.
+    static let tracesActions = ProcessInfo.processInfo.environment["WINAMP_MODERN_ACTION_TRACE"] != nil
 
     private func invokeTraced(method: String, on reference: MakiObjectReference, arguments: [MakiValue],
                               program: MakiProgram) throws -> MakiValue {
@@ -3309,7 +3312,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // Traced with the calls that *did* work, because that is the line the reader is looking for:
         // an unimplemented method aborts its whole handler, so what a trace shows is a sequence that
         // simply stops, and the reason is otherwise only in a compatibility report taken later.
-        if ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil {
+        if Self.tracesEveryCall {
             print("CALL-TRACE \(method.lowercased())(…) -> UNSUPPORTED, handler aborts "
                   + "[\((program.source.path as NSString).lastPathComponent)]")
         }

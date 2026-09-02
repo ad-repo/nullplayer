@@ -646,6 +646,9 @@ final class WasabiSceneRenderer {
     /// `WINAMP_MODERN_DRAW_PROFILE=1` accumulates per-object draw time, so "which node costs the
     /// frame?" is answerable from the harness rather than from a sampling profiler.
     static let profilesDrawing = ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAW_PROFILE"] != nil
+    /// `WINAMP_MODERN_FIT_TRACE=1` narrates the content-fit iteration. Read once: the fit runs on
+    /// every resize and on the first read of `canvasSize`.
+    static let tracesContentFit = ProcessInfo.processInfo.environment["WINAMP_MODERN_FIT_TRACE"] != nil
     static var drawProfile: [String: TimeInterval] = [:]
 
     let loadedSkin: WinampModernLoadedSkin
@@ -3750,9 +3753,11 @@ final class WasabiSceneRenderer {
     /// holder in the same frame, and one shared clock would let whichever drew first starve the
     /// other out of the log entirely.
     private static var lastVisTrace: [String: CFTimeInterval] = [:]
+    /// Read once. `traceVisInput` is called from the draw path of every `<vis>` box and component
+    /// analyzer, so a live `environment[…]` lookup here is a dictionary hit per site per frame.
+    static let tracesVisInput = ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_TRACE"] == "1"
     static func traceVisInput(_ levels: [CGFloat], site: String, peaks: [CGFloat]? = nil) {
-        guard ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_TRACE"] == "1",
-              !levels.isEmpty else { return }
+        guard Self.tracesVisInput, !levels.isEmpty else { return }
         let now = CACurrentMediaTime()
         guard now - (lastVisTrace[site] ?? 0) > 1 else { return }
         lastVisTrace[site] = now
@@ -4251,7 +4256,7 @@ final class WasabiSceneRenderer {
         let ceiling = CGSize(
             width: Self.optionalDimension(attributes["maximum_w"]) ?? 16384,
             height: Self.optionalDimension(attributes["maximum_h"]) ?? 16384)
-        let trace = ProcessInfo.processInfo.environment["WINAMP_MODERN_FIT_TRACE"] != nil
+        let trace = Self.tracesContentFit
         var size = declared
         var previousSize = declared
         var previous: CGSize?

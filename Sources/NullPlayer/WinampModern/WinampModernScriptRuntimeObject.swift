@@ -585,7 +585,7 @@ extension WinampModernScriptRuntime {
             // Delivered to the addressed object only, not down its subtree: every measured use names
             // the exact group whose script declares the handler.
             let source = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:))
-            if ProcessInfo.processInfo.environment["WINAMP_MODERN_ACTION_TRACE"] != nil {
+            if Self.tracesActions {
                 print("ACTION \(arguments[0].stringValue) param=\(arguments[1].stringValue) "
                       + "-> \(object.typeName)#\(object.xmlID ?? "-")")
             }
@@ -956,7 +956,7 @@ extension WinampModernScriptRuntime {
         case "getdata":
             guard case .configAttribute(let section, let key) = state.role else { return .string("") }
             let data = loadedSkin.configuration.string(section: section, key: key)
-            if ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil {
+            if Self.tracesEveryCall {
                 print("CALL-TRACE getdata[\(section);\(key)] -> \(data)")
             }
             return .string(data)

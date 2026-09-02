@@ -71,3 +71,6 @@ Frameworks/libprojectM-4.4.dylib
 
 .claude/
 .claude/worktrees/
+
+# opencode agent workspace (contains node_modules)
+.opencode/

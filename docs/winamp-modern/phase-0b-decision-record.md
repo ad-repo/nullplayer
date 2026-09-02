@@ -11,8 +11,15 @@ higher than Phase 0A assumed — the native `ClassicPro.w5s` is **not** on the r
 
 ## 0. How to reproduce this inventory
 
-Everything below is produced by a throwaway, read-only Swift harness committed at
-`tools/winamp-inventory/` (a **separate SPM package** — it never builds with the app). Re-run:
+Everything below was produced by a throwaway, read-only Swift harness that lived at
+`tools/winamp-inventory/` — a **separate SPM package** that never built with the app.
+
+> **The harness was deleted at the 0.30.0 ship-hygiene pass**, per its own `Package.swift` header
+> (*"THROWAWAY Phase-0B feasibility harness… can be deleted wholesale once Phase 0B is signed off"*)
+> — Phase 0B is signed off by this very record. The commands below are kept for provenance: they
+> describe how the artifacts in `phase-0b-artifacts/` were generated, and no longer run as written.
+> Recover the harness from history if it is ever needed again:
+> `git log --diff-filter=D -- tools/winamp-inventory`.
 
 ```sh
 # 1. Re-extract the engine (NSIS installer) — ephemeral, not committed:
