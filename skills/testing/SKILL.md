@@ -149,6 +149,57 @@ Whatever geometry can be lifted out of AppKit should be, and then tested as a pr
 example: *no two slots may overlap, whatever the inputs*. `WinampModernWindowTilingTests` is the model,
 and it caught a real overlap bug in the tiler that the manual pass had missed.
 
+## Profiling: measure the build the user runs
+
+The geometry rule above has a performance counterpart, and it fails the same way — plausibly.
+
+**Fix what is algorithmic from any profile; measure release before going further.** A table rebuilt
+per call, a `CharacterSet` constructed per character, a CoreText pass re-answering a constant — the
+optimizer fixes none of those, so a debug profile is enough to justify the work. Ordinary code
+executed often is the opposite case: that is where debug-vs-release decides whether there is a
+problem at all. Once the named defects are gone and what is left is drawing and interpretation doing
+genuine work, **stop and profile release**, because the remaining "problem" may not exist there.
+
+Worked example (2026-09-01, `winamp-modern-skin-guide/reference/performance.md`): a "cPro skins feel
+slow" report was chased through five rounds on a debug build. The first four found real defects. The
+fifth chased an artifact — the release build of the same tree ran at **60.7%** main-thread busy
+against debug's **96.2%**, and the measurement that said so cost ten minutes and was run last.
+
+### The metric that works across builds
+
+Not a frame counter, and not a `#if DEBUG` probe. **Busy fraction** from `sample`: leaf frames
+sitting in `mach_msg2_trap` / `semaphore_wait` / `__psynch_cvwait` / `kevent` are idle, everything
+else is busy. It answers "is this thread the constraint?" in one number, in either configuration.
+
+```sh
+sample $(pgrep -f 'arm64-apple-macosx/release/NullPlayer') 10 -file /tmp/np.txt
+```
+
+### Three ways a profile lies
+
+- **A `#if DEBUG` instrument reports nothing in release, and nothing looks like success.**
+  `WINAMP_MODERN_VIS_STALL` cannot fire in a release build, so a release run shows zero dropped
+  frames whether or not any occurred. Read a silent instrument as *not running* until proven
+  otherwise — the same rule as [Diagnostics that fail silently](#).
+- **Summing a recursive symbol multiplies it.** `sample` prints one frame per level, so aggregating
+  by "every frame carrying this name" counts a tree walk once per depth: `append` read as **73%** of
+  the main thread against a true **12.2%**. Inclusive share counts only the **outermost** occurrence
+  on each stack.
+- **Substring matching catches a symbol's own closures.** `refreshWaveformDemand` also appears as
+  `closure #4 in …` and `partial apply for closure #4 in …` on the same stack — three frames, one
+  call. Match whole symbol names.
+
+### Compare identical state, or do not compare
+
+A profile taken while idle and one taken while playing are not a before and after, however tempting
+the arrangement. The same session produced `evaluateLayerFXMesh 63.1% → 28.3%` from two runs in
+different playback states, which is not a result. Capture the *same* state — same skin, same windows
+open, same audio playing — or report the two runs separately and say why.
+
+Finally: a share going **up** after a fix usually means the total went down, not that something
+regressed. Check the absolute sample counts and the busy fraction before reading a rising percentage
+as a problem.
+
 ## UI Tests
 
 Location: `Tests/NullPlayerUITests/`
