@@ -191,9 +191,11 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | What paints a `<vis>` box: the choice, the engines, the gain (B51/B53) | `WasabiVisPainter.swift`, `WinampModernSpectrumAnalyzer.swift`, `WinampModernSpectrumAnalyzerRenderers.swift`, `WinampModernVisSensitivity.swift` |
 | The oscilloscope's PCM tap (B51) | `WinampModernWaveformTap.swift` |
 | Fonts + text measurement (shared) | `WasabiTextMetrics.swift` |
-| Resource cache + scene renderer | `WasabiRenderer.swift` |
+| Resource cache + scene renderer | `WasabiRenderer.swift` — the spine: scene walk, clipping, dispatch |
+| Sprites, text, colour, hit testing, Layer FX | `WasabiRendererSprites.swift`, `…Text.swift`, `…Colour.swift`, `…HitTesting.swift`, `…LayerFX.swift` |
 | MAKI parser + interpreter | `MakiBytecode.swift` |
-| Script runtime + method dispatch | `WinampModernScriptRuntime.swift` |
+| Script runtime + method dispatch | `WinampModernScriptRuntime.swift` — the VM loop, the event surface, object lifecycle |
+| MAKI receivers, by class | `WinampModernScriptRuntimeSystem.swift` (System, PlEdit, ColorMgr), `…Object.swift` (GuiObject, dynamic objects), `…Menu.swift` (PopupMenu), `…Timer.swift` (`target*`), `…Text.swift` |
 | Skin-facing host API | `WinampModernHost.swift` |
 | Component model + host protocol | `WinampModernComponents.swift` |
 | Component bucket (thinger): icon set, box layout, strip state | `WinampModernComponentBucket.swift`, `WasabiRenderer.swift` |

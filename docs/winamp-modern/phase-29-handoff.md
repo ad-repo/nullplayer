@@ -166,7 +166,7 @@ meter.
 
 | Concern | File |
 |---|---|
-| Pre-scaled art, stable crops, scene memo, warped-raster cache | `Sources/NullPlayer/WinampModern/WasabiRenderer.swift` |
+| Pre-scaled art, stable crops, scene memo, warped-raster cache | `Sources/NullPlayer/WinampModern/WasabiRendererSprites.swift`, `WasabiRendererLayerFX.swift`, `WasabiRenderer.swift` |
 | `refreshLayerFXMeshes`, `layerFXMeshIsPending` | `Sources/NullPlayer/WinampModern/WinampModernScriptRuntime.swift` |
 | Targeted `updateTime`, animation tick, `invalidateRectCaches`, `.common` mode | `Sources/NullPlayer/Windows/WinampModern/WinampModernMainView.swift` |
 | Peak measurement, block playout, silence, `WINAMP_MODERN_VU_LOG` | `Sources/NullPlayer/WinampModern/WinampModernLevelMeter.swift` |

@@ -151,6 +151,7 @@ does not load while it remains offscreen, hidden, or zero-sized.
   `layoutHostedSubviews(browsers:)`, `globalBrowserTarget()`, the `BROWSER_*` actions
 - `WinampModernMainWindowController.swift` — `routeWebNavigation`, `navigateInternalBrowser`,
   `openInDefaultBrowser` (the confirmation sheet)
-- `WinampModernScriptRuntime.swift` — object-scoped `navigateUrl`, the two global forms, `urlEncode`,
+- `WinampModernScriptRuntimeObject.swift` / `…System.swift` — object-scoped `navigateUrl`, the two
+  global forms, `urlEncode`,
   and the `sendAction` fallback rule
 

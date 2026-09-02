@@ -154,10 +154,12 @@ handler's text-setting (which doesn't work anyway) is overridden.
 - `WinampModernMainWindowController.swift` — `AuxiliaryContainer.isNotifier`, `noActivation`,
   `showNotifier(for:)`, `notifierDismissTimer`, notifier detection in `setupAuxiliaryContainers`,
   bottom-right positioning in `place()`, `containerAlphaChanged` wiring
-- `WinampModernScriptRuntime.swift` — `setNotifierText(title:artist:album:)`,
-  `setTextInSubtree(_:id:text:)`, `containerAlphaChanged` and `containerMoveRequested` callbacks,
-  `applyContainerGeometry(_:)`, `isdesktopalphaavailable`, `onshownotification` in
-  `dispatchableEventArity`, `refresh` no-op
+- `WinampModernScriptRuntimeText.swift` — `setNotifierText(title:artist:album:)`,
+  `setTextInSubtree(_:id:text:)`
+- `WinampModernScriptRuntimeTimer.swift` — `applyContainerGeometry(_:)`
+- `WinampModernScriptRuntime.swift` — `containerAlphaChanged` and `containerMoveRequested`
+  callbacks, `isdesktopalphaavailable`, `onshownotification` in `dispatchableEventArity`,
+  `refresh` no-op
 - `WinampModernHost.swift` — `trackArtist`, `trackAlbum` protocol properties and implementations;
   `WinampModernTrackMetadata`, `playItemMetadata(forKey:)` (the key table), `currentTrackRating`,
   and the engine host's `libraryRow(for:)` / `ratingCache` / `currentTrackRatingChanged`
