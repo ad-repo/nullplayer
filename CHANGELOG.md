@@ -1,223 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.30.0
 
 ### New Features
 
-- **Winamp Modern skins: About now opens the skin's own About page** — most Winamp 5.x skins draw
-  their own About screen, and asking for it (from the skin's logo, corner bolt, or wherever the skin
-  puts it) used to pop up NullPlayer's plain About panel instead. It now opens the skin's page, in a
-  window wearing that skin's own frame and artwork — 30 of the installed skins have one. The skin's
-  menu bar gains **Help > About This Skin** so it is reachable even on a skin that binds no button to
-  it, alongside **About nullPlayer**, which is unchanged and still shows the app's own panel. A skin
-  that draws no About page falls back to that panel exactly as before. As part of this, the stock
-  Winamp Modern skin's About screen now runs its own animation script, which had been failing.
-- **Winamp Modern skins: Big Bento Modern's waveform seeker now works** — the wide empty strip above
-  the transport buttons was reserved for a plugin that only exists in a different player, so it has
-  always sat blank. NullPlayer now fills it with the whole track's waveform: you can see the shape of
-  the song, the part already played is drawn in the skin's own highlight colour, and clicking anywhere
-  in the strip jumps to that point. It uses the same waveform the Waveform window draws, so a track
-  you have already opened there appears instantly. If you prefer the skin's plain seek bar, turn it
-  off under **Skins → Modern → Waveform Seeker** — the setting is per skin and takes effect
-  immediately, and the skin puts its own layout back the way it was.
+- **Winamp 5.x "Modern" skins now run in NullPlayer** — a fourth skin family, alongside Classic,
+  Original and Original-Metal. NullPlayer now loads and runs real Winamp 5.x modern skins — the
+  `.wal` files people have been making since the mid-2000s — natively on macOS, with no Winamp
+  install, plugin, or original application asset involved. Choose one from **Skins → Modern**, or
+  add your own with **Skins → Modern → Import .wal Skin…**.
+
+  A `.wal` skin is much more than artwork: it ships its own window layouts, its own scripted
+  behaviour, and its own idea of where everything belongs. NullPlayer runs that, rather than an
+  approximation of it. You get the skin's own frames, buttons, sliders, animations and colour
+  themes; its playlist, equalizer, library and video surfaces drawn where the skin puts them,
+  embedded in the player instead of in separate NullPlayer windows; its tabs, drawers, config
+  screens and right-click menus, driven by the skin's own scripts; its About page; and its
+  visualization box, which can show an oscilloscope, the spectrum analyzer, Cava or vis_classic.
+  Skins resize and dock like any other NullPlayer window, and per-skin settings — text size, colour
+  theme, waveform seeker — are remembered separately for each skin.
+
+  Skins built on the **ClassicPro** engine work too: point NullPlayer at the ClassicPro plugin
+  installer once, with **Skins → Modern → Import ClassicPro Engine…**, and it unpacks what it needs
+  internally.
+
+  Some skins reach for features that do not exist on macOS, or that NullPlayer does not implement
+  yet. A skin that does degrades to a sensible fallback rather than refusing to load.
+
 - **Cover Flow in the Library browser** — a new **FLOW** toggle in the source bar turns the current library list into a 3D, horizontally-scrolling wall of artwork, available in all three skin families (Original, Original-Metal, Classic) and across music, Movies, and TV Shows. It's a visual lens over whatever you're browsing: scroll or use the arrow keys to flip through covers, the centered item's name stays directly beneath the carousel, and a wider window fans out more covers. Clicking a **container** enters it and shows its contents, with a **‹ Back** cover to step out — folder/subfolder, artist→album, and show→season→episode navigation all work to any depth. Clicking an **album** plays the whole album; clicking a **track**, **movie**, or **episode** plays it. In Original/Original-Metal the covers float above the Library window's Cava/art backdrop, honoring whatever backdrop mode you've set.
 - **Compact window can now show the playlist** — a Library | Playlist toggle at the bottom of the Compact window switches its content between the library browser and the current playlist, so you can view and edit what's playing without opening the full Playlist window. Double-click a track to play it; selection, scrolling, and live now-playing highlight all work in place. The choice is remembered across launches and is available in all three skin families (Original, Original-Metal, Classic). In Original/Original-Metal the playlist is translucent so the Cava/art backdrop shows through it just like the library list.
 
 ### Bug Fixes
 
-- **Winamp Modern skins: the menu bar no longer offers a second, wrong main-window visualization
-  menu** — in Winamp Modern mode the in-skin visualizer is configured from the main window's own
-  right-click menu, but the menu bar still showed a **Visuals > Main Window** submenu belonging to
-  the other skin families. It is now hidden in Winamp Modern mode; Classic, Original, and
-  Original-Metal keep it exactly as before.
-- **Winamp Modern skins: cPro2 Dark Aluminum now works** — this skin loaded for the first time only
-  in the previous fix, and once it did, almost nothing about it was right. The song title and
-  transport buttons were drawn on top of the window's own titlebar, with an empty grey strip below
-  them where the tabs should start; the transport buttons sat jammed against the left edge with the
-  visualization drawn on top of them and no volume slider at all; clicking anywhere along the top
-  panel made a large section of it change colour, with the boundary jumping to wherever you had just
-  clicked; the seek bar never moved while a track played, even though clicking it did jump the music;
-  the elapsed and total times were printed on top of each other in the corner, with the bitrate
-  underneath running through the stereo icon; and the player reopened in a tiny 275×200 box on every
-  launch however you had resized it. All of that is fixed. The whole top panel is this skin's seek
-  bar — it fills as the track plays, and clicking anywhere in it seeks — and the six tabs, embedded
-  playlist, library and video, the bolt button's command menu and the F9–F12 position presets all
-  work.
-
-- **Winamp Modern skins: the built-in spectrum analyzer is no longer striped or missing** — on the
-  cPro family the analyzer drew with alternate bars dimmed, which on some colour themes made those
-  bars disappear into the background and left the analyzer looking half missing. Its sixteen colours
-  are a bottom-to-top gradient shared by every bar — the fine horizontal banding the classic Winamp
-  analyzer has — and they were being spread left to right across the row instead, one per bar. On
-  cPro2 Dark Aluminum a second fault put black lines through the bars: that skin stores half its
-  gradient in fully transparent pixels, and those were being read as black.
-
-- **Winamp Modern skins: a few other skins picked up small corrections on the way** — Big Bento
-  Modern's titlebar showed the "restore" icon on a window that was not maximized and now shows
-  "maximize"; Ebonite and Shield_Amp printed `khz :44` and `kbps :320` with the colon floating away
-  from its label, and now print `khz:44` and `kbps: 320`; and cPro Winamp Modern's beat visualizer no
-  longer spills its bars out of their panel across the window frame.
-
-- **Winamp Modern skins: an empty video window no longer opens with the skin** — on Itemskin a black
-  panel with the skin's Fullscreen / 1x / 2x / Options buttons appeared at every launch with nothing
-  in it. Once you had watched a video in the skin's own video window, NullPlayer treated that window
-  as one you had chosen to leave open and reopened it on the next launch, when nothing was playing.
-  The video window now opens when a video starts and closes when it finishes, and is never restored
-  empty. Opening it yourself from the skin's video button still works exactly as before, and no other
-  window's remembered state changes.
-- **Winamp Modern skins: `canum` now loads** — the skin was refused outright with a message asking
-  you to install a skin called `Defaultxml`, which is not a thing. Skins may borrow parts of Winamp's
-  own stock skin for windows they do not style themselves, and canum borrows three; NullPlayer does
-  not ship that stock skin, and the path to it was being built wrong on top of that. Borrowed parts
-  that are not present are now skipped, and NullPlayer builds those windows out of the skin's own
-  frame instead, so canum loads and draws. If you do have a skin named `Default` installed, it is
-  used as before. No other skin's appearance changes.
-- **Winamp Modern skins: `cpro2 Dark Aluminum` now loads** — the skin was refused outright with a
-  nesting error. One of its files was saved in a text format (UTF-16, which is what Windows editors
-  produce by default) that NullPlayer did not recognise, so the skin's markup was read as gibberish
-  and rejected. Files saved that way are now read correctly whichever format they use. No other
-  skin's appearance changes.
-- **Winamp Modern skins: a skin's second window of the same name is no longer a copy of the first** — WMP11-BlueVU ships both a large and a small VU meter, and picking *VU Meters Small* from the Skin Windows menu opened a second copy of the large one, because the two windows share an internal name and everything resolved that name to the first. Both meters now open as themselves. The reverse case is fixed too: jvc.tape listed its playlist window twice in the Skin Windows menu — the skin declares it once and the skin's own files ask for it twice — and the duplicate entry is gone.
-- **Winamp Modern skins: `Winamp 3.0 Default` was a blank white rectangle and now works** — Nullsoft's
-  own Winamp3 base skin loaded and then drew literally nothing, the only skin in the collection that
-  did. Winamp3-era skins expect the player itself to supply the window frame and its title-bar
-  controls, so the skin ships only what goes *inside* the frame — and with no frame to put it in,
-  every piece of the skin was left out of the window. All of it is there now: the player, equalizer,
-  playlist, video and thinger windows all draw, and the menu, minimize, windowshade and close buttons
-  are back in the title bar. Four other skins gain from the same fix — **TomK**'s photo gallery and
-  colour-theme windows were empty and now show their contents, **corneramp_redux** gets the menu and
-  close controls its windows were missing, and **Overdrive_2** and **jvc.tape** get their playlist
-  window titles. No other skin's appearance changes.
-
-- **Winamp Modern skins: eight skins that were drawing almost none of their own artwork now draw all
-  of it** — Darjah 1, MoonLight, Pure Inspired, K-jr, the three DewyTears editions and WMP11-BlueVU
-  build their players by pointing at image files inside the skin rather than by naming pieces of
-  artwork they declared up front. Only the second way was being read, so Darjah and MoonLight came up
-  as NullPlayer's plain fallback controls on an empty background, with nothing of the skin visible at
-  all. All eight now show the players their authors drew — Darjah its wood panelling and round blue
-  transport, MoonLight a full player where there had been a clock on a bare strip — and the three
-  DewyTears players also take their proper size. Where a skin names artwork it declared, that still
-  wins, so nothing that already looked right has changed.
-
-- **Winamp Modern skins: Hal's Eye works end to end** — on this skin the six-page user manual would
-  not turn its pages, the Credits window showed one sentence cut off in the middle of an empty panel,
-  the eye did not rotate, and double-clicking the ring never opened the rotation-speed menu the
-  manual describes. All four are fixed, and three of them were general problems that this skin
-  happened to expose. Paragraph text now **wraps**: any skin that puts a block of text in a box —
-  About screens, Configure screens, notifier messages — shows the whole thing instead of the first
-  line, and it starts at the top of its box the way Winamp draws it. BLAKK's About screen and
-  Core-X5's message panel were both losing text this way. Skins that clip a control to a shape taken
-  from a picture now do so, which also fixes BLAKK's seek bar showing as permanently full and its
-  boombox spectrum drawing past its own frame. And a menu a skin opens on a double-click now stays up
-  long enough to use — it was appearing and vanishing again in the same instant, so it looked like
-  the double-click did nothing at all. Menus opened with the right button were never affected.
-- **Winamp Modern skins: config windows with a see-through background are fixed** — on Itemskin, EPS
-  High-End System and eleven other skins, some windows had no background at all: the Notifier
-  Preferences screen in particular came up as floating text and controls with the desktop showing
-  straight through, and on EPS the controls are painted in a near-white colour so the window looked
-  simply empty. A skin can point a window's background either at a named piece of its own artwork or
-  at an image file inside the skin, and only the first was being read; separately, a number of skins
-  ask for a background that belongs to Winamp itself rather than shipping their own, and there was
-  nothing behind it. Windows now find the file when a skin names one, and fall back to the skin's own
-  panel colour when it asks for a background nothing can supply. Skins whose windows are meant to be
-  see-through — the shaped and cut-out players — are untouched: only a window that asks for a
-  background gets one.
-
-- **Winamp Modern skins: cPro's tab labels are readable again** — on the five ClassicPro skins
-  (Bento, Insomnis, Insomnis v2, T2T, das-skin-prev), the seven tabs above the library shorten to
-  three letters when the window is too narrow to spell them out, and each one was losing the right
-  half of its last letter: `LIB PLE VID VIS BRO BPR NOW` read `LIE PLE VII VIS BRO BPF NOV`. Text was
-  being cut off at the edge of the invisible box a skin declares for it, rather than at the edge of
-  the button, panel or tab that box sits in — and skins routinely draw a label into a box a pixel or
-  two narrower than the words they put in it. Labels now run to the edge of whatever holds them, so
-  the tab strip spells its seven names. Scrolling song tickers are unchanged: those still stay inside
-  their own box, which is what the scrolling is measured against.
-- **Winamp Modern skins: ClassicPro skins can be shrunk to the compact player again** — the five cPro
-  skins (Bento, Insomnis, Insomnis v2, T2T, das-skin-prev) ship promo sheets showing a small
-  classic-player form — top band, seek bar, transport, no tab strip and no library — and declare it as
-  their minimum size, but the window refused to go anywhere near it. A safety rule meant to stop a
-  shrinking window from stacking one part of a skin over another was counting artwork that is simply
-  cropped, or scrolled out of the window entirely, as if it were overlapping something; on these skins
-  a single decorative panel sitting flush against the right edge tripped it, which pinned the window
-  at the size it opens at. It now counts only artwork that would actually be drawn on top of something
-  else, so every skin can be dragged down to the size its author declared. cPro now reaches 317×174
-  where it stopped at 500×290, and nothing else in the skin corpus draws differently.
-
-- **Winamp Modern skins: the title strip drags the window again, and ⌘ drags it from anywhere** —
-  many `.wal` skins leave almost nothing to grab. ClassicPro is the clearest case: the full width of
-  its toolbar, right where you reach for a titlebar, is covered by a layer the skin uses only to catch
-  a double-click, and that was enough to make the strip refuse to move the window at all. A press on
-  such a layer now moves the window as soon as you actually drag, while a click on it stays a click,
-  so the skin's own double-click still works. And holding **⌘** while dragging moves the window
-  from anywhere in it — over the visualization, a slider, the transport buttons, the title strip —
-  whatever the skin claims that spot is for, which is the way out on the skins that leave no handle at
-  all.
-
-- **Winamp Modern skins: the playlist and library lamps now follow the window** — a `.wal` skin marks
-  its playlist, media library, equalizer and visualization buttons with a lamp meaning *that window is
-  open*. The lamp was counting your clicks instead of looking at the window, so if a window was
-  already open when the skin loaded, the lamp read dark, your first click closed the window and lit
-  the lamp, and the two stayed backwards from then on. Closing the window by its own close button or
-  from a menu had the same effect. Each lamp now reads the window it names — whether that window
-  belongs to the skin or is one of NullPlayer's own — and follows it however you open or close it.
-- **Winamp Modern skins: buttons a skin lights up now actually light up** — a `.wal` skin can give a
-  button a second piece of artwork for its "on" state, and skins use it for anything that has a state
-  to show: indicator lamps, memory slots, mode switches, and Big Bento Modern's file-info **star
-  rating** row. Only a handful of those ever changed — the ones NullPlayer recognised by name, such as
-  shuffle and repeat. Every other one stayed on its "off" artwork no matter what the skin did, so
-  rating a track left the row showing five empty dots even after you rated it. The stars now appear.
-  The rating itself was being saved the whole time, including to Plex, Jellyfin, Emby and Subsonic —
-  only the artwork was missing.
-- **Winamp Modern skins: Snap To Default can bring a skin's windows back** — a `.wal` skin's
-  playlist, media library, equalizer or any other window it owns could be dragged off the edge of the
-  display and then had no way back: **Snap To Default** repositioned only the player, and a window
-  with no titlebar left on screen cannot be dragged either. It now re-lays out every window the skin
-  and the player own — the same arrangement they get at launch — and re-centres the player itself, so
-  one menu pick recovers the whole layout. Classic and Original skins keep the stack they always had.
-- **Winamp Modern skins: a skin's own "Copy to clipboard" menu items now work** — some `.wal` skins
-  put copy commands on their right-click menus (Defix's playlist offers to copy the title or the file
-  path; the ClassicPro engine's file-info and album-art menus do the same). Picking one did nothing,
-  and worse, the failure stopped the menu being built where it stood, so the entries below the copy
-  commands were missing too. The copy now lands on the clipboard as plain text and the rest of the
-  menu comes back with it.
-- **Winamp Modern skins: the built-in spectrum analyzer is smoother, and its bass is readable** —
-  three separate faults in the analyzer Big Bento Modern and other `.wal` skins draw. Its low end was
-  a comb of plateaus and cliffs: below about 500 Hz a bar is narrower than the analysis can resolve,
-  and several neighbouring bars were reading the identical value while the occasional one jumped the
-  whole gap, so a bass note drew as a flat block with a step beside it. Bars also snapped to their
-  new height in a single frame, which read as frantic rather than fast; they now rise over a short
-  glide while falling exactly as the skin's own falloff setting says. And the whole picture stuttered
-  every few seconds: a skin animating one of its own windows — Big Bento's track notifier sliding in
-  and out — was making NullPlayer rebuild every object and rescale every image in the skin on frames
-  where nothing had actually changed size, and the visualization was the one thing on screen moving
-  fast enough to show it. The oscilloscope, Cava and vis_classic were never affected by any of this.
-  The bars also glide to each new height in both directions now instead of only on the way up, and
-  each reading is taken from the freshest audio in the buffer, so the picture tracks the music more
-  closely as well as more smoothly.
-
-
-- **Winamp Modern skins: Big Bento Modern's Visualization tab no longer goes black** — turning on the
-  small visualization pane in the Multi Content View settings used to break the big Visualization tab:
-  it opened black and stayed that way until you reloaded the skin, and in some cases showed the small
-  pane's picture shrunk into the corner of the large one. The skin has several places a visualization
-  can appear and NullPlayer moves one engine between them; handing it from one to the next dropped it
-  on the floor. Both panes now behave: the tab shows the visualization, the small pane shows its
-  spectrum, and switching between them works as often as you like.
-- **Winamp Modern skins: windows can be resized from their whole border again** — grabbing the edge
-  of a playlist, library, visualization or video window used to mean hitting a strip about a pixel
-  wide, which made stretching one a matter of luck (reported on Shield_Amp). These skins draw their
-  own window frames and mark which parts of them are handles, and NullPlayer was ignoring that: the
-  entire 30-odd-pixel border and both corner grips are now live, with the pointer changing shape over
-  them, so a window stretches from wherever it looks like it should. The skins' own exceptions are
-  honoured too — buttons sitting on the frame still act, the inside of the window still drags it, and
-  double-clicking a titlebar corner still toggles windowshade. 32 of the 36 bundled skins mark their
-  frames this way and all of them benefit; a window a skin fixed at one size (Shield_Amp's player) is
-  still fixed, as it is in Winamp.
-- **Winamp Modern skins: Shield_Amp's playlist window opens** — its `PL` button used to do nothing, because the whole layout of the window was skipped while the skin was being read. The skin points at one of its own files in a way NullPlayer read as pointing outside the skin, and a single unfound file was quietly throwing away everything else in the file that referenced it. Both are fixed, so the playlist window now appears with the skin's own frame, title and Add/Rem/Sel/Misc/List buttons.
-- **Winamp Modern skins: buttons a skin drives from its own script now respond** — a `<Wasabi:Button>` whose whole behaviour comes from the skin's script, rather than from a label or a built-in action, was never under the mouse: every click fell straight through it. T800's five memory slots on the robot's head were dead for this reason. They now record the playing track (hold one for about two seconds) and play it back on a click.
-- **Winamp Modern skins: T800's jaw animation works** — the button under the mouth opens the jaw to reveal the song ticker and timer. Its script asked whether the animation was stopped before starting it, and that question was unanswered, so the whole handler gave up before anything moved.
-- **Winamp Modern skins: Big Bento Modern's programmable buttons now open their menu** — right-clicking one of the nine tool buttons in Multi Content View builds a menu of EQ presets, internet searches and your saved playlists. It was reaching the playlist list and stopping there, so the menu was assembled and then thrown away and the button looked dead. Your Media Library playlists now appear in it, and picking one plays it.
-- **Winamp Modern skins: a skin can hand the player a file to play** — programmable buttons set to a folder or URL, and skins with their own "saved song" slots, can now queue and play what they point at. Paths are checked before anything is opened: only a real audio file the player already supports, or an ordinary web stream, is accepted, and skins still have no way to browse or search your disk.
 - **Modern skins: the big visualization pane can now be an oscilloscope, Cava or vis_classic** — a
   Winamp 5.x skin draws its visualization in two different kinds of box, and only one of them had a
   choice. The skin's own `<vis>` boxes (Big Bento Modern's butterfly beside the transport) could

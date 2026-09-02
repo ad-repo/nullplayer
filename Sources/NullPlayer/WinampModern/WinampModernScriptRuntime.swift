@@ -58,7 +58,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Populated by `unsupported(_:program:)` before it throws. This is the measured-demand signal that
     /// drives Phase 7.3 API additions and feeds the per-skin compatibility report (Phase 7.2); it never
     /// changes execution semantics.
-    internal(set) var unsupportedMethodCalls: [String: Int] = [:]
+    var unsupportedMethodCalls: [String: Int] = [:]
     /// Diagnostics from script events that aborted without stopping the rest of the skin. Capped:
     /// a handler that fails on a repeating event (a timer or mouse move) would otherwise accumulate
     /// forever. The report de-duplicates anyway, so the cap costs no distinct information.

@@ -2458,7 +2458,6 @@ class ModernLibraryBrowserView: NSView {
         let headerColumns = headerColumnsForCurrentContent()
         
         // Draw column headers
-        var contentListY = listAreaY
         if let columns = headerColumns {
             let headerY = listAreaY + listAreaHeight - columnHeaderHeight
             let headerRect = NSRect(x: fullListRect.minX, y: headerY,
@@ -2471,12 +2470,10 @@ class ModernLibraryBrowserView: NSView {
                                  height: columnHeaderHeight)
             contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
             context.fill(gapRect)
-            contentListY = listAreaY
         }
         
         // Content area
         let contentHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
-        let contentTopY = headerColumns != nil ? (listAreaY + listAreaHeight - columnHeaderHeight) : (listAreaY + listAreaHeight)
         let listRect = NSRect(x: fullListRect.minX, y: listAreaY,
                               width: fullListRect.width, height: contentHeight)
         
@@ -8493,7 +8490,6 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildRateSubmenuForLocalAlbum(albumId: String) -> NSMenu {
         let menu = NSMenu(title: "Rate")
-        let current = MediaLibrary.shared.albumRating(for: albumId)
         for stars in 1...5 {
             let rating = stars * 2
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
@@ -10785,7 +10781,7 @@ class ModernLibraryBrowserView: NSView {
             if expanded, let tracks = localPlaylistTracks[key] {
                 for t in tracks {
                     let duration = t.duration.map { Int($0) }
-                    let title = t.title ?? "Unknown"
+                    let title = t.title
                     displayItems.append(ModernDisplayItem(id: "\(key)-\(t.url.absoluteString)", title: title, info: formatDuration(duration), indentLevel: 1, hasChildren: false, type: .localPlaylistTrack(t)))
                 }
             }
@@ -12564,7 +12560,7 @@ class ModernLibraryBrowserView: NSView {
             if folder.hasChildren {
                 toggleExpand(item)
             }
-        case .youtubeChannel(let channel): toggleExpand(item)
+        case .youtubeChannel: toggleExpand(item)
         case .youtubeVideo(let video):
             if YouTubeManager.shared.isDownloaded(video.videoId) {
                 if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {

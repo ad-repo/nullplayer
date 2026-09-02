@@ -2797,7 +2797,7 @@ final class WinampModernMainView: NSView {
     /// same list from `EQPreset.allPresets` and apply through the component host, so every EQ surface
     /// (this window, an auxiliary one, the classic window) sees the change at once.
     private func showEqualizerPresetMenu() {
-        guard let componentHost, let event = NSApp.currentEvent else { return }
+        guard componentHost != nil, let event = NSApp.currentEvent else { return }
         let menu = NSMenu(title: "Equalizer Presets")
         for preset in EQPreset.allPresets {
             let item = NSMenuItem(title: preset.name, action: #selector(applyEqualizerPreset(_:)),
