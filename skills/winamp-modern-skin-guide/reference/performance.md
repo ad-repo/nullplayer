@@ -157,10 +157,11 @@ Each of these is a general renderer defect that one heavy skin made visible.
    became draggable the analyzer began asking for 75 repaints a second of a 238 ms scene. Now bounded
    to 60 Hz; a frame the display was never going to show costs nothing to drop.
 
-**Still the biggest thing inside `draw`, and unfixed:** text. `drawText` was 339 of 1148 draw samples,
-with `WasabiResourceCache.font(identifier:size:traits:)` alone at 96 — an `NSAttributedString`
-attribute dictionary is built and `NSString.draw` entered per string, per frame, and the embedded
-playlist does it per row.
+**Was the biggest thing inside `draw`:** text. `drawText` was 339 of 1148 draw samples, with
+`WasabiResourceCache.font(identifier:size:traits:)` alone at 96 — an `NSAttributedString` attribute
+dictionary was built and `NSString.draw` entered per string, per frame, and the embedded playlist did
+it per row. The font lookup is fixed by B103 and the drawing by *The drawing half of `drawText`*
+below.
 
 **Sweep note:** the tiling rewrite leaves 12 of 288 corpus images differing by **maxdelta = 1** — one
 LSB, from a single native tiling pass rounding differently than N individually-rounded blits. Diff in
@@ -239,9 +240,78 @@ Two structural fixes alongside them:
   `WasabiTextMetrics.measuredWidth(of:font:)` memoizes it. Applied only to the two sites that measure
   with exactly `[.font:]`, which is what makes the key provably complete.
 
-**Still unfixed, and now the largest cost in the window:** the *drawing* half of `drawText`. It builds
-an `NSAttributedString` attribute dictionary and enters `NSString.draw` per string, per frame, and the
-embedded playlist does it per row. Converting it to cached CoreText lines is the remaining win — and
-it is ~200 lines in which nearly every branch documents a specific skin defect it exists to fix (B87's
-clip rule, the `offsetx` sliver, cPro2's 4px tuck, the clock cells), so it wants the corpus render
-sweep as a safety net rather than a careful reading.
+#### The drawing half of `drawText` (2026-09-02)
+
+Done, and it wanted the sweep rather than a careful reading — a careful reading got the vertical
+arithmetic wrong twice.
+
+Text now draws from **cached CoreText lines**. `WasabiTextMetrics.line(for:font:)` holds them beside
+the B106 width memo, built **colourless** (`kCTForegroundColorFromContextAttributeName`) with the
+colour set on the context, so a playlist row does not get one cached line per selection state. Three
+of `drawText`'s four branches take it — ticker, clock cells, general non-wrapping — plus
+`drawFlippedText`, the per-row playlist path. Ahead of that, four tables that were rebuilt per call
+became memos or `static let`s: the attribute dictionary (keyed on font, colour, alignment and
+line-break mode), `drawBitmapText`'s glyph table, the two clock-cell paragraph styles — which were
+computed *properties*, so a seconds field allocated one per cell per frame — and `drawText`'s own
+`measured`, which joins the B106 width memo now that the memo's key is established as complete
+rather than believed.
+
+**Every horizontal origin is unchanged.** They already were origins, computed from `measured` and
+`cell.width`, so cPro2's 4px tuck and Big Bento's clock columns keep the exact arithmetic they had.
+The change is only *how* the glyphs reach the screen.
+
+**The baseline formula, which is the whole of the vertical arithmetic:**
+
+```swift
+baseline = drawFrame.maxY - NSLayoutManager().defaultBaselineOffset(for: font)   // cached per font
+```
+
+drawn **inside the local flip `drawText` already establishes**. Two things reading got wrong and a
+pixel comparison settled (`WinampModernTextDrawingTests`):
+
+- **The flip stays.** CoreText draws upright in a y-up space, and the scene's own transform is
+  top-origin — so `drawText`'s mirror is what *makes* it y-up, not something to undo. Dropping it
+  draws every string mirrored, and a mirrored `Ayg|H` has almost the same ink bounding box as an
+  upright one. Only a pixel comparison sees it; an ink-box assertion passes.
+- **The offset is TextKit's, not the font's.** Not `ascender`: at 8pt all four faces tested want 8
+  while their ascenders run 6.03…7.73, and Helvetica at 17.6pt wants 18 against an ascender of
+  13.55. `defaultBaselineOffset(for:)` — what AppKit's own drawing asks — agrees exactly everywhere.
+
+**What `NSString.draw`'s rect provided besides layout,** and what became of each half:
+
+| the rect did | now |
+|---|---|
+| scissored **vertically** at `drawFrame` | an explicit clip, inside the mirror. Load-bearing: a 24pt line in a 16px box differs by ~350 pixels without it |
+| scissored each **clock cell** at its own cell (`.byClipping` was set for this) | an explicit per-cell clip |
+| scissored **horizontally** | *deliberately not restored.* The rect was only ever widened to `max(drawFrame.width, measured)` to defeat it — B87's widened context clip was always meant to be the bound. The widening is gone |
+
+**Two branches keep `NSString.draw`, and both say why in the code.** The **wrapping** branch: the
+rect *is* the line-breaking width and `boundingRect` on the same attributes decides the block's
+height, so replacing it means re-implementing line breaking to keep draw and measure agreeing, for a
+case that is rare and never in a per-row loop. And **a `drawFlippedText` row too long for its
+column**: `.byTruncatingTail` is not just a cut — AppKit tightens inter-character spacing by up to
+`tighteningFactorForTruncation` (0.05) before truncating, and a `CTLine` reproduces the cut and not
+the tightening. Measured against `NSString.draw`, the first dozen columns of an over-long row match
+to the byte and the rest diverge steadily, ~85% of the ink.
+
+**Measured** (`WINAMP_MODERN_RENDER_TIME=60 WINAMP_MODERN_RENDER_TIME_SCALE=2`, three runs after,
+spread ≤1%):
+
+| layout | before | after |
+|---|---:|---:|
+| cPro Bento `main/normal` | 5.51 ms/frame | **5.06–5.11** (−8%) |
+| cPro Bento `notifier/normal` | 0.53 | **0.31** (−41%) |
+| cPro Bento `widgets.manager/normal` | 1.25 | **1.07** (−14%) |
+| Big Bento Modern `main/normal` | 30.47 | 30.14–30.32 (−0.7%, at the edge of noise) |
+
+Big Bento Modern's main layout is the honest caveat: it is 30 ms/frame and text is not what it is
+spending it on. Reach for the next win there elsewhere.
+
+**Sweep result** (`scripts/wal_render_sweep.sh`, all 69 installed archives): 1993 of 1993 comparable
+invariant lines identical, 585 of 590 PNGs byte-identical. The 5 that differ are antialiasing — two
+skins (Formamp, K-jr, the latter shipped twice), at most 10 pixels each, at most **5/255**, with
+every full-coverage and every empty pixel unchanged, so no glyph moved. The same residue shows in
+the unit test on **Courier** alone, one or two pixels per string: AppKit's string drawing and a bare
+`CTLineDraw` rasterize a glyph edge slightly differently. `CGContext`'s
+`setShouldSubpixelQuantizePositions` closes it and is not in the public CoreGraphics headers, which
+is not a trade worth making for one pixel of one face.

@@ -49,12 +49,17 @@ at all, and a skin that stacks readouts one box apart and shows one at a time by
 its own box on both axes, because the motion is defined against that box and a marquee let loose in
 its parent would smear across the whole panel.
 
-> **Gotcha: there are two scissors, and moving one alone does nothing.** `NSString.draw(in:)` lays the
-> string out *inside* the rect it is given and cuts it there, so the context clip is only half the
-> story. Widening the clip and leaving `drawFrame` alone produced a byte-identical render. The draw
-> rect now gets the room the string measures, with the object's alignment applied to its **origin**
-> rather than left to the paragraph style inside an oversized rect, where it would move the string a
-> second time.
+> **Gotcha, now historical: there were two scissors, and moving one alone did nothing.**
+> `NSString.draw(in:)` lays the string out *inside* the rect it is given and cuts it there, so
+> widening the context clip and leaving `drawFrame` alone produced a byte-identical render. The draw
+> rect had to be widened to `max(drawFrame.width, measured)` purely to defeat that second scissor.
+>
+> Since the CoreText conversion (2026-09-02) a non-wrapping string is drawn as a `CTLine` from an
+> origin, which has no rect and therefore no second scissor — **the widened context clip is the only
+> horizontal bound, which is what this rule always meant.** The widening is gone. The rect's
+> *vertical* scissor was real and is kept as an explicit clip at `drawFrame`; a 24pt line in a 16px
+> box differs by ~350 pixels without it. The object's alignment is applied to the string's **origin**,
+> as it already was.
 
 This does not make text unclippable, and the difference matters for BB29 below: an `offsetx` that
 pushes a caption out of its *group* still swallows it, and the early return for a string starting in
@@ -63,6 +68,25 @@ the clip's last pixel column reads `context.boundingBoxOfClipPath ∩ frame` bef
 Reach, measured on the corpus render sweep (441 renders, 53 skins): 433 pixel-identical, four
 differing by a single antialiasing row, and Big Bento Modern's `query.pathurl` overflow caption
 showing one more glyph before stopping at its group's edge.
+
+#### Where the glyphs come from (2026-09-02)
+
+A non-wrapping string is a **cached `CTLine`**, held by `WasabiTextMetrics.line(for:font:)` beside
+the B106 width memo and built colourless so a playlist row does not need one per selection state. It
+is drawn inside the local flip `drawText` already establishes — that mirror is what makes the space
+y-up, because the scene's own transform is top-origin — at
+
+```swift
+baseline = drawFrame.maxY - NSLayoutManager().defaultBaselineOffset(for: font)   // cached per font
+```
+
+That offset is **TextKit's, not the font's**: at 8pt four different faces all want 8 while their
+ascenders run 6.03…7.73. Two branches still use `NSString.draw` on purpose and say so in the code —
+a wrapping object, whose rect *is* the line-breaking width, and a `drawFlippedText` row too long for
+its column, because `.byTruncatingTail` tightens inter-character spacing before it cuts and a
+`CTLine` reproduces the cut and not the tightening. See
+[../performance.md](../performance.md) → *The drawing half of `drawText`* for the measurements and the
+full before/after.
 
 #### How big the font is, and which one
 
@@ -79,7 +103,7 @@ render is the ground truth for this kind of thing):
   it expects the system to have (`font="Arial"`), exactly as it asks GDI. Resolving only declared
   resources drew every such string in the monospaced fallback. `bold="1"`/`italic="1"` are their own
   attributes, not part of the name.
-- **Text is centred in its box**, not drawn from the top edge the way `NSString.draw(in:)` does. On a
+- **Text is centred in its box**, not drawn from the top edge that string drawing starts at. On a
   30px-tall readout that is a whole line's leading; on a tight one it is the difference between a
   ticker inside its slot and one sitting on whatever is under it.
 - **`valign` moves it** (Phase 38) — `top`, `center` (the default) or `bottom`, decoded by

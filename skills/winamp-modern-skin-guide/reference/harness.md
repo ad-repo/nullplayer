@@ -279,81 +279,82 @@ behaviour are only exercised by a string that does not fit.
 
 ### The corpus render sweep — the regression proof for any engine-wide change
 
-A change to loading, initialization, script startup or hit testing reaches every skin, so the proof
-that it broke none of them is a **before/after capture across all 36 installed archives**.
+A change to loading, initialization, script startup, hit testing or **drawing** reaches every skin,
+so the proof that it broke none of them is a before/after capture across the whole installed corpus.
 `WINAMP_MODERN_WAL` takes a **directory** as well as a single archive (B72, 2026-08-30) and loops the
-corpus inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has. Measured: **36 skins in
-64 seconds**, against ~25 minutes for the shell loop this replaces.
+corpus inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has. Measured: **69 skins in
+~100 seconds**, against ~25 minutes for the shell loop it replaces.
+
+It is a committed script. Do not paste a shell function out of this file:
 
 ```sh
-sweep() {  # $1 = output directory
-  WINAMP_MODERN_WAL=~/Library/Application\ Support/NullPlayer/WinampModernSkins \
-  WINAMP_MODERN_RENDER_DUMP="$1/png" WINAMP_MODERN_RENDER_BITMAPS=1 \
-    swift test --filter WinampModernRenderDumpTests 2>&1 \
-    | grep -E "^(SKIN |RENDER-DUMP (containers|catalog|skin windows|arrangement)|RENDER-DUMP [^ ]+/[^ ]+:|HOLDERS|VIS holder|VIDEO holder|PLAYLIST holder|BITMAPS)" \
-    > "$1/invariants.txt"
-}
-sweep curr   # after your change
-git stash -u && sweep base && git stash pop
-diff base/invariants.txt curr/invariants.txt
+scripts/wal_render_sweep.sh capture <outdir>        # one pass: raw.txt, invariants.txt, png/
+scripts/wal_render_sweep.sh compare <base> <curr>   # invariants diff + per-image maxdelta report
 ```
 
-**Redirect the run to a file and grep the *file*.** Piping the sweep straight into `grep` drops lines:
-the test binary's own stdout and the runner's interleave under a pipe, and whole blocks go missing
-without any error. Measured 2026-09-01 — Shield_Amp's `arrangement`/`containers`/`catalog`/`skin
-windows` lines and its entire `updateSystem` container vanished from a piped capture, reproducibly,
-and were present in the same build's redirected output. That reads exactly like a regression that
-dropped a container, and it is not one.
+`capture` takes `--allow-dirty` (see the freeze rule below) and `--corpus <dir>`, which is how you
+run **one skin alone** — point it at a directory holding just that archive. That check is worth
+knowing: if a skin's lines come back when it runs by itself, the sweep capture was the problem and
+not the code.
 
-```sh
-sweep() {  # $1 = output directory
-  mkdir -p "$1"
-  WINAMP_MODERN_WAL=~/Library/Application\ Support/NullPlayer/WinampModernSkins \
-  WINAMP_MODERN_RENDER_DUMP="$1/png" WINAMP_MODERN_RENDER_BITMAPS=1 \
-    swift test --filter WinampModernRenderDumpTests > "$1/raw.txt" 2>&1
-  grep -E "^(SKIN |RENDER-DUMP …)" "$1/raw.txt" > "$1/invariants.txt"
-}
-```
-
-Two more things worth checking before calling a sweep difference a regression:
-
-- **Run the one skin alone.** If its lines come back, the sweep capture is the problem, not the code.
-- **Run the same build twice.** Some skins are genuinely non-deterministic: Anexa's `main/shade`
-  draws an analogue clock from the wall clock, so it differs between two runs of one binary. Proving
-  that takes one extra sweep and settles it; assuming it does not.
-
-**Do not capture the baseline with `git stash`** — it relinks `.build` under the user's running app.
-Use a worktree (`git worktree add`), and copy the vendored `*.framework` and `*.dylib` from
-`.build/arm64-apple-macosx/debug/` into the worktree's matching directory or the test bundle will not
-load.
-
-Every archive prints **`SKIN <file.wal>`** first, which is what makes one flat capture readable: every
-other line is keyed by `<container>/<layout>`, and those are not unique across skins. A skin that
-fails to load prints `SKIN <file.wal> FAILED <error>` and the sweep carries on — one broken archive
-must not abandon the other 35, and the failure lands in the diff where you will see it.
+**`compare` does the half that used to be done by hand and mostly therefore not at all.** It diffs
+the invariant lines *and* compares every dumped PNG, reporting per image: identical, `maxdelta=N`
+over a pixel count and bounding box, or present on one side only. Read the magnitude before calling
+a difference a regression — a **maxdelta of 1** is one LSB (the tiling rewrite left 12 of 288 that
+way), and a handful of pixels at **≤5/255 with every full-coverage and every empty pixel unchanged**
+is a rasteriser difference, not a glyph that moved (the CoreText text conversion left 5 of 590 that
+way). A glyph in a different *place* moves hundreds of pixels and shows up as such.
 
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
-resolved/missing bitmap counts. **A clean run is byte-identical**, verified by running the sweep twice
-over an unchanged tree. One caveat when diffing: XCTest's own `Test Case … passed` banner runs into
-the final line, which carries no trailing newline — strip it, or ignore a one-line tail difference.
+resolved/missing bitmap counts. Every archive prints **`SKIN <file.wal>`** first, which is what makes
+one flat capture readable: every other line is keyed by `<container>/<layout>`, and those are not
+unique across skins. A skin that fails to load prints `SKIN <file.wal> FAILED <error>` and the sweep
+carries on — one broken archive must not abandon the other 68, and the failure lands in the diff
+where you will see it. In a directory run each skin gets **its own subdirectory** of PNGs, named for
+the archive, so skins cannot collide on a shared container name.
 
-In a directory run each skin gets **its own subdirectory** of PNGs, named for the archive, so 36 skins
-cannot collide on a shared container name. A single `.wal` still writes straight into the directory it
-was given, so every existing invocation in this document is unchanged.
+**Capture the baseline in a worktree, never with `git stash`** — a stash relinks `.build` under the
+user's running app:
 
-**The two traps that made this worth building, and one that survives:**
+```sh
+git worktree add ../nullplayer-base HEAD
+cp -R .build/arm64-apple-macosx/debug/*.framework \
+      .build/arm64-apple-macosx/debug/*.dylib ../nullplayer-base/.build/arm64-apple-macosx/debug/
+(cd ../nullplayer-base && scripts/wal_render_sweep.sh capture /tmp/sweep/base)
+```
+
+Copying the vendored frameworks and dylibs across is not optional; without them the test bundle will
+not load. When your own change is still uncommitted and `Sources/` is otherwise at `HEAD`, you do not
+need the worktree at all — capture the baseline *before* you start editing.
+
+**The traps, all of them paid for, and which ones the script now handles for you:**
 
 - **A sweep is a build. Freeze the tree.** Editing anything under `Sources/` or `Tests/` mid-run
-  invalidates the pass — and with the old shell loop it failed *silently*: a run whose binary would
+  invalidates the pass, and with the old shell loop it failed *silently*: a run whose binary would
   not compile wrote an **empty** capture, and an empty capture diffs as "everything changed." Adding
   one new test file during a baseline pass emptied 15 of 36 captures that way (2026-08-29). One
   invocation cannot be invalidated halfway, which is the real argument for directory mode — but the
-  rule still holds for the *pair* of passes, since the stash/build sits between them.
-- **`git stash` does not stash untracked files.** A new test file stays in the tree across the
-  baseline pass, which is exactly how the above happened. Use `git stash -u`.
-- **Still true: check for an empty capture** before believing any diff. It is one file now rather than
-  36, so `wc -l base/invariants.txt curr/invariants.txt` is the whole check — expect ~720 lines.
+  rule still holds for the *pair* of passes. *Handled:* `capture` refuses a dirty tree without
+  `--allow-dirty`, and fails loudly below ~10 invariant lines per archive.
+- **Redirect the run to a file and grep the file.** Piping the sweep straight into `grep` drops
+  lines, reproducibly and with no error. *Handled:* the script redirects, and keeps **stderr in its
+  own file** — `2>&1` is not enough, because the runner's banners reach fd 2 through a second file
+  offset and overwrite stdout mid-line.
+- **Interleaved writes still eat whole blocks of the log, and they look exactly like a dropped
+  container.** Splitting stderr helps and does not cure it. Measured 2026-09-02: one pass lost 25 of
+  BLAKK.wal's invariant lines and another lost 3 of Itemskin.wal's, while every one of their PNGs
+  stayed byte-identical and **both skins came back identical when run alone**. Re-running does not
+  reliably clear it — four consecutive passes over one build damaged the same skin every time.
+  *Handled:* `capture` attributes each collision to its owning `SKIN` line and writes the names to
+  `damaged.txt`; `compare` leaves those skins out of the invariants diff and tells you to run each
+  alone. Their PNGs are unaffected and are still compared.
+- **Run the same build twice before believing any diff.** Verified 2026-09-02 on this corpus: two
+  passes over one unchanged build were byte-identical on all 590 images and differed on the
+  invariants only where a runner banner landed (which `compare` sets aside and counts separately).
+  Some skins can be genuinely non-deterministic — Anexa's `main/shade` draws an analogue clock from
+  the wall clock — so record which images those are *before* the change, or every later diff is
+  unreadable.
 
 ### The golden images
 
