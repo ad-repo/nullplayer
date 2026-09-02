@@ -180,7 +180,7 @@ sample $(pgrep -f 'arm64-apple-macosx/release/NullPlayer') 10 -file /tmp/np.txt
 - **A `#if DEBUG` instrument reports nothing in release, and nothing looks like success.**
   `WINAMP_MODERN_VIS_STALL` cannot fire in a release build, so a release run shows zero dropped
   frames whether or not any occurred. Read a silent instrument as *not running* until proven
-  otherwise — the same rule as [Diagnostics that fail silently](#).
+  otherwise: prove the probe fires at all before believing a run that found nothing.
 - **Summing a recursive symbol multiplies it.** `sample` prints one frame per level, so aggregating
   by "every frame carrying this name" counts a tree walk once per depth: `append` read as **73%** of
   the main thread against a true **12.2%**. Inclusive share counts only the **outermost** occurrence
