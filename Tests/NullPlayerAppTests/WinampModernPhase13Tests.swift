@@ -496,6 +496,102 @@ final class WinampModernPhase13Tests: XCTestCase {
 
     /// An mmd3-shaped skin: a declared playlist window, a usable statusbar frame declared with the
     /// conventional id and *no* `xuitag`, and no equalizer or library window.
+    // MARK: - The skin's own About page
+
+    /// `skin.about.group` is the artwork Winamp instantiates on the "Skin" page of its About box. It
+    /// is a groupdef, not a window, so a skin that defines one gets a window built around it out of
+    /// its own standard frame — the route `TOGGLE guid:{D6201408-…}` and the Help menu both take.
+    func testSkinAboutGroupIsSynthesizedIntoItsOwnWindow() throws {
+        let loaded = try makeSkin(xml: Self.skinWithAnAboutPage)
+        XCTAssertEqual(loaded.surfaceSynthesis.aboutContainer, "nullplayer.about")
+
+        let containers = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+        let about = try XCTUnwrap(containers.first { $0.id == "nullplayer.about" })
+        XCTAssertTrue(about.isSynthesized)
+        XCTAssertTrue(about.isVisibleWindow)
+        XCTAssertNil(about.kind, "the About page is not a component surface")
+        XCTAssertFalse(about.opensByDefault, "it opens on request, never with the skin")
+        XCTAssertFalse(WinampModernContainerTopology.isListedInWindowMenu(about),
+                       "synthesized containers stay out of the Skin Windows list; the Help menu "
+                       + "is its route")
+
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost(),
+                                               containerID: "nullplayer.about")
+        addTeardownBlock { renderer.teardown() }
+        let frame = try XCTUnwrap(renderer.sceneNodes().first {
+            $0.object.typeName.caseInsensitiveCompare("Wasabi:StandardFrame:Status") == .orderedSame
+        })
+        XCTAssertEqual(frame.object.attributes["content"], "skin.about.group",
+                       "the frame is wrapped around the skin's own group, not a synthetic one")
+        XCTAssertEqual(frame.object.attributes["componentname"], "About")
+    }
+
+    /// Nullsoft 2000 SP4 Lite declares this window itself. Synthesizing a second one there would give
+    /// that skin two About windows and route its own button to the wrong one.
+    func testASkinDeclaringItsOwnAboutWindowIsNotGivenASecondOne() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <groupdef id="wasabi.standardframe.statusbar" background="wasabi.frame.basetexture">
+            <layer id="window.top" image="wasabi.frame.top" x="0" y="0" w="0" relatw="1" h="8"/>
+            <script id="standardframe.script" file="scripts/standardframe.maki"/>
+          </groupdef>
+          <groupdef id="skin.about.group" w="0" h="0" relatw="1" relath="1">
+            <layer id="about.bg" image="about.bg" x="0" y="0" w="371" h="321"/>
+          </groupdef>
+          <container id="main"><layout id="normal" default_w="400" default_h="200"/></container>
+          <container id="about" name="About the skin">
+            <layout id="normal" default_w="388" default_h="349">
+              <Wasabi:StandardFrame:Status content="skin.about.group" x="0" y="0" w="0" h="0"
+                                           relatw="1" relath="1"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        XCTAssertEqual(loaded.surfaceSynthesis.aboutContainer, "about",
+                       "the skin's own container is the route")
+        XCTAssertFalse(WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+            .contains { $0.id == "nullplayer.about" })
+    }
+
+    /// The common case: no About page at all, and the route is nil — which is what sends the About
+    /// GUID to NullPlayer's own panel and keeps the Help menu entry out of the menu.
+    func testASkinWithNoAboutPageHasNoAboutRoute() throws {
+        let loaded = try makeSkin(xml: Self.separateWindowSkin)
+        XCTAssertNil(loaded.surfaceSynthesis.aboutContainer)
+        XCTAssertFalse(WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+            .contains { $0.id == "nullplayer.about" })
+    }
+
+    /// A skin with an About page but no frame to put around it. The reason is recorded and the route
+    /// is nil, rather than a titleless empty box the user cannot read.
+    func testAnAboutPageWithNoUsableFrameFallsBackWithAReason() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <groupdef id="skin.about.group" w="0" h="0" relatw="1" relath="1">
+            <layer id="about.bg" image="about.bg" x="0" y="0" w="371" h="321"/>
+          </groupdef>
+          <container id="main"><layout id="normal" default_w="400" default_h="200"/></container>
+        </WasabiXML>
+        """)
+        XCTAssertNil(loaded.surfaceSynthesis.aboutContainer)
+        XCTAssertTrue(loaded.surfaceSynthesis.diagnostics.contains {
+            $0.message.contains("About page")
+        }, "the reason is recorded rather than the page vanishing")
+    }
+
+    private static let skinWithAnAboutPage = """
+    <WasabiXML>
+      <groupdef id="wasabi.standardframe.statusbar" background="wasabi.frame.basetexture">
+        <layer id="window.top" image="wasabi.frame.top" x="0" y="0" w="0" relatw="1" h="8"/>
+        <script id="standardframe.script" file="scripts/standardframe.maki"/>
+      </groupdef>
+      <groupdef id="skin.about.group" w="0" h="0" relatw="1" relath="1">
+        <layer id="about.bg" image="about.bg" x="0" y="0" w="371" h="321"/>
+      </groupdef>
+      <container id="main"><layout id="normal" default_w="400" default_h="200"/></container>
+    </WasabiXML>
+    """
+
     private static let separateWindowSkin = """
     <WasabiXML>
       <groupdef id="wasabi.standardframe.statusbar" background="wasabi.frame.basetexture">

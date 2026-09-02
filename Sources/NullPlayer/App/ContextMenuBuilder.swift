@@ -140,6 +140,17 @@ class ContextMenuBuilder {
                                keyEquivalent: "")
         about.target = NSApp.delegate
         menu.addItem(about)
+        // Winamp's own About box has two pages, and the second one is the skin's: `skin.about.group`
+        // is artwork the skin author drew about *this skin*, not about the player. So it gets its own
+        // entry rather than replacing the one above, and only where the loaded skin draws one — which
+        // is also the only route to it for a skin that binds no button of its own to the About GUID.
+        if WindowManager.shared.winampModernHasSkinAbout {
+            let skinAbout = NSMenuItem(title: "About This Skin",
+                                       action: #selector(MenuActions.showWinampModernSkinAbout),
+                                       keyEquivalent: "")
+            skinAbout.target = MenuActions.shared
+            menu.addItem(skinAbout)
+        }
         return menu
     }
 
@@ -3676,6 +3687,13 @@ class MenuActions: NSObject {
         WindowManager.shared.toggleWaveformTooltip()
     }
     
+    /// The loaded `.wal` skin's own About page, from the skin menu bar's Help menu. Answered by
+    /// `WindowManager`, which is gated on `.winampModern`; in any other mode the menu that offers
+    /// this is never built.
+    @objc func showWinampModernSkinAbout() {
+        WindowManager.shared.showWinampModernSkinAbout()
+    }
+
     // MARK: - About Playing
     
     @objc func showAboutPlaying() {

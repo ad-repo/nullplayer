@@ -2730,6 +2730,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             "switchskin": .init(argumentCount: 1, returnKind: .null),
             "getcurcfgval": .init(argumentCount: 0, returnKind: .integer),
             "getdate": .init(argumentCount: 0, returnKind: .integer),
+            // `System.random(max)` — one argument, settled from the bytecode rather than guessed
+            // (`WINAMP_MODERN_RENDER_DISASM=random`: every one of the eighteen call sites in the
+            // stock skin's `about.maki` pushes the receiver and exactly one value before `op24`).
+            "random": .init(argumentCount: 1, returnKind: .integer),
             "getdatedoy": .init(argumentCount: 1, returnKind: .integer),
             "getdateyear": .init(argumentCount: 1, returnKind: .integer),
             // ClassicPro `ClassicProFile` shell service (the entire native surface, P0B §1).
@@ -3287,6 +3291,13 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                                 section: "@public", key: arguments[0].stringValue)
             return .null
         case "getdate": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970)))
+        // Winamp's `random(max)` answers 0…max-1. A non-positive bound has no range to draw from and
+        // answers 0 rather than trapping — this is called from animation timers, where a crash would
+        // take the skin down. Without it the stock skin's About page aborted at its first statement
+        // and drew no text and no shooting stars at all.
+        case "random":
+            let bound = arguments[0].integerValue
+            return .integer(bound > 0 ? Int32.random(in: 0..<bound) : 0)
         case "getdatedoy":
             return .integer(Int32(Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
         case "playfile":

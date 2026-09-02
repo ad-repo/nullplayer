@@ -26,12 +26,18 @@ enum WasabiSurfaceSynthesizer {
         let unavailable: [WinampModernComponentKind: String]
         /// Routes for app-owned windows. These are descriptors, not synthesized graph containers.
         let hostedWindows: WinampModernHostedWindowCatalog
+        /// The container id that shows the skin's own About page — the one a `TOGGLE
+        /// guid:{D6201408-…}` opens. Either a container the skin declared around
+        /// `skin.about.group` or the one synthesized here; `nil` when the skin has no About page
+        /// at all, which is where NullPlayer's own panel takes over.
+        let aboutContainer: String?
         let diagnostics: [WalDiagnostic]
 
         static func unchanged(_ document: WalExpandedXMLDocument,
-                              hostedWindows: WinampModernHostedWindowCatalog) -> Result {
+                              hostedWindows: WinampModernHostedWindowCatalog,
+                              aboutContainer: String? = nil) -> Result {
             Result(document: document, synthesizedContainers: [:], unavailable: [:],
-                   hostedWindows: hostedWindows, diagnostics: [])
+                   hostedWindows: hostedWindows, aboutContainer: aboutContainer, diagnostics: [])
         }
     }
 
@@ -76,8 +82,8 @@ enum WasabiSurfaceSynthesizer {
                            limits: WalXMLLimits = .production) -> Result {
         let kinds = inventory.synthesizableKinds
         let definitions = groupDefinitions(in: document.roots)
-        let hostedWindows = hostedWindowCatalog(frame: usableFrame(in: definitions))
-        guard !kinds.isEmpty else { return .unchanged(document, hostedWindows: hostedWindows) }
+        let frame = usableFrame(in: definitions)
+        let hostedWindows = hostedWindowCatalog(frame: frame)
 
         var appended: [WalXMLNode] = []
         var synthesized: [WinampModernComponentKind: String] = [:]
@@ -85,9 +91,31 @@ enum WasabiSurfaceSynthesizer {
         var diagnostics: [WalDiagnostic] = []
         var budget = limits.maximumExpandedNodeCount - countNodes(document.roots)
 
+        // The skin's own About page, before the surfaces: it is the cheapest subtree of the three
+        // and the one a skin is likeliest to reach for (twenty of the measured seventy define
+        // `skin.about.group`), so it must not be the one the node budget runs out on.
+        let about = aboutRoute(document: document, definitions: definitions, frame: frame)
+        var aboutContainer = about.containerID
+        if !about.nodes.isEmpty {
+            let cost = countNodes(about.nodes)
+            if cost <= budget {
+                budget -= cost
+                appended.append(contentsOf: about.nodes)
+            } else {
+                aboutContainer = nil
+                diagnostics.append(WalDiagnostic(
+                    .expandedNodeLimitExceeded,
+                    "Synthesizing the About window would exceed the "
+                    + "\(limits.maximumExpandedNodeCount)-node budget; the skin's About page falls "
+                    + "back to NullPlayer's own panel.",
+                    severity: .warning, location: WalSourceLocation(path: sourcePath)))
+            }
+        }
+        diagnostics.append(contentsOf: about.diagnostics)
+
         for kind in kinds {
             guard let reference = componentReference(for: kind) else { continue }
-            switch usableFrame(in: definitions) {
+            switch frame {
             case .failure(let reason):
                 unavailable[kind] = reason
                 diagnostics.append(WalDiagnostic(
@@ -124,7 +152,7 @@ enum WasabiSurfaceSynthesizer {
         guard !appended.isEmpty else {
             return Result(document: document, synthesizedContainers: [:],
                           unavailable: unavailable, hostedWindows: hostedWindows,
-                          diagnostics: diagnostics)
+                          aboutContainer: aboutContainer, diagnostics: diagnostics)
         }
         return Result(document: WalExpandedXMLDocument(roots: document.roots + appended,
                                                        visitedPaths: document.visitedPaths,
@@ -132,7 +160,104 @@ enum WasabiSurfaceSynthesizer {
                       synthesizedContainers: synthesized,
                       unavailable: unavailable,
                       hostedWindows: hostedWindows,
+                      aboutContainer: aboutContainer,
                       diagnostics: diagnostics)
+    }
+
+    // MARK: - The skin's About page
+
+    /// The groupdef Winamp instantiates for the "Skin" page of its About box. It is not a window: a
+    /// skin defines the *contents* and Winamp supplies the frame around them, which is why twenty of
+    /// the measured seventy skins define this group and only one wraps it in a container of its own.
+    static let aboutGroupIdentifier = "skin.about.group"
+
+    /// Where the synthesized About window lands. Distinct from `containerIdentifier(for:)` because
+    /// the About page is not a component surface — it has no kind, no GUID, and no classic window.
+    static let aboutContainerIdentifier = "nullplayer.about"
+
+    /// The About page's canvas, in skin pixels. Every skin in the corpus draws its page fitparent
+    /// and cuts the artwork behind it at 371×321 (Big Bento and Nullsoft 2000 at 380×321), so the
+    /// size is the host's decision and this is Winamp's. The extra height is the standard frame's own
+    /// title bar and border — Nullsoft 2000, the one skin that declares this window itself, asks for
+    /// 388×349 around a 380×321 page.
+    private static let aboutGeometry = (defaultSize: CGSize(width: 380, height: 358),
+                                        minimumSize: CGSize(width: 240, height: 200))
+
+    private struct AboutRoute {
+        var containerID: String?
+        var nodes: [WalXMLNode] = []
+        var diagnostics: [WalDiagnostic] = []
+    }
+
+    /// Resolve the About page to a container, synthesizing a window for it only when the skin does
+    /// not already declare one. Nullsoft 2000 SP4 Lite declares
+    /// `<container id="about"><Wasabi:Standardframe:NoStatus content="skin.about.group"/></container>`
+    /// — synthesizing a second window there would give that skin two About windows and route the
+    /// skin's own button to the wrong one.
+    private static func aboutRoute(document: WalExpandedXMLDocument,
+                                   definitions: [String: WalXMLNode],
+                                   frame: FrameSelection) -> AboutRoute {
+        guard definitions[fold(aboutGroupIdentifier)] != nil else { return AboutRoute(containerID: nil) }
+        if let declared = containerHosting(group: aboutGroupIdentifier, in: document.roots) {
+            return AboutRoute(containerID: declared)
+        }
+        switch frame {
+        case .failure(let reason):
+            return AboutRoute(containerID: nil, nodes: [], diagnostics: [WalDiagnostic(
+                .missingGroupDefinition,
+                "No usable standard frame to host the skin's About page (\(reason)); it falls back "
+                + "to NullPlayer's own panel.",
+                severity: .warning, location: WalSourceLocation(path: sourcePath))])
+        case .success(let frame):
+            return AboutRoute(containerID: aboutContainerIdentifier,
+                              nodes: [makeAboutContainer(frame: frame)])
+        }
+    }
+
+    /// The id of a skin-declared container whose layout hands `group` to a frame as its `content`.
+    private static func containerHosting(group: String, in nodes: [WalXMLNode]) -> String? {
+        let wanted = fold(group)
+        func hostsGroup(_ node: WalXMLNode) -> Bool {
+            if let content = node.attribute("content"), fold(content) == wanted { return true }
+            return node.children.contains(where: hostsGroup)
+        }
+        // Containers are nested inside the document's own root element, so this walks rather than
+        // scanning the top level — the check that found nothing there let Nullsoft 2000 SP4 Lite,
+        // the one skin that declares this window itself, end up with two About windows.
+        func search(_ nodes: [WalXMLNode]) -> String? {
+            for node in nodes {
+                if node.name.caseInsensitiveCompare("container") == .orderedSame,
+                   let id = node.attribute("id"), !id.isEmpty, hostsGroup(node) {
+                    return id
+                }
+                if let found = search(node.children) { return found }
+            }
+            return nil
+        }
+        return search(nodes)
+    }
+
+    private static func makeAboutContainer(frame: Frame) -> WalXMLNode {
+        let location = WalSourceLocation(path: sourcePath)
+        let frameNode = WalXMLNode(name: frame.xuiTag, attributes: [
+            "id": "\(aboutContainerIdentifier).frame",
+            "content": aboutGroupIdentifier,
+            "componentname": "About",
+            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+        ], location: location)
+        let layout = WalXMLNode(name: "layout", attributes: [
+            "id": "normal",
+            "default_w": String(Int(aboutGeometry.defaultSize.width)),
+            "default_h": String(Int(aboutGeometry.defaultSize.height)),
+            "minimum_w": String(Int(aboutGeometry.minimumSize.width)),
+            "minimum_h": String(Int(aboutGeometry.minimumSize.height)),
+        ], location: location, children: [frameNode])
+        return WalXMLNode(name: "container", attributes: [
+            "id": aboutContainerIdentifier,
+            "name": "About",
+            "default_visible": "0",
+            WinampModernContainerTopology.synthesizedAttribute: "1",
+        ], location: location, children: [layout])
     }
 
     static func containerIdentifier(for kind: WinampModernComponentKind) -> String {

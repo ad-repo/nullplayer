@@ -24,8 +24,9 @@ By area:
   display containing the player (logical screen points, not Retina backing pixels); runtime/skin identity, integer/string/float
   conversion (`integerToString`, `stringToInteger`, `floatToString`, `stringToFloat`) and the casts
   (`Integer`, `Float`, `String`, `Boolean` — a script mixing a float with an int-typed API needs
-  them, which is where a volume handler lives), date helpers, per-skin
-  `getPublicInt`/`setPublicInt`
+  them, which is where a volume handler lives), date helpers, `random(max)` (0…max-1; a
+  non-positive bound answers 0 rather than trapping, because every call site is an animation timer),
+  per-skin `getPublicInt`/`setPublicInt`
 - **`PopupMenu`**: `addCommand(title, id, checked, disabled)`, `addSeparator`, `addSubMenu(child,
   title)`, `checkCommand`, `popAtMouse`, `popAtXY(x, y)` — shown as a real `NSMenu` through
   `popupPresenter`, which the main view installs. `popAtMouse` pops at the mouse; `popAtXY` at the

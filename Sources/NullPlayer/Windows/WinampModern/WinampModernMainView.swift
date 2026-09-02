@@ -129,6 +129,11 @@ final class WinampModernMainView: NSView {
     /// parameter on screen? Nil when no window of that name exists. Matches
     /// `containerWindowToggleRequested`'s routing, hosted windows included.
     var containerWindowVisibilityQuery: ((String) -> Bool?)?
+    /// The container that shows this skin's own About page, when it has one — either the container
+    /// the skin wrapped around `skin.about.group` or the one synthesized for it
+    /// (`WasabiSurfaceSynthesizer.aboutRoute`). Nil is the ordinary case for a skin that defines no
+    /// About page, and it is what sends `TOGGLE guid:{D6201408-…}` to NullPlayer's own panel.
+    var skinAboutContainerID: String?
     /// Re-entrancy guard for `toggleTargetIsVisible(parameter:)`.
     private var isResolvingToggleLamp = false
     /// The window commands a skin draws on its titlebar, routed to whoever owns the window layer.
@@ -2535,8 +2540,14 @@ final class WinampModernMainView: NSView {
                 // Winamp's **About Winamp** window. ClassicPro's corner bolt is a multi-button whose
                 // default command is this GUID (`player.m`'s `bolt.onLeftClick`, branch 0), so with
                 // nothing answering it the logo did nothing at all until the user picked one of the
-                // other five from its right-click menu. NullPlayer's own About panel is the same
-                // window in spirit and the only one it has to offer.
+                // other five from its right-click menu.
+                //
+                // Most skins draw this page themselves — twenty of the measured seventy define
+                // `skin.about.group`, the artwork Winamp instantiates on the "Skin" page of its own
+                // About box — so the skin's window is the answer wherever it exists, in the skin's
+                // own frame with the skin's own artwork. NullPlayer's AppKit panel is the fallback
+                // for a skin that draws none.
+                if let id = skinAboutContainerID, containerWindowToggleRequested?(id) == true { return }
                 NSApp.sendAction(#selector(AppDelegate.showAbout), to: nil, from: nil)
             } else if let kind = WinampModernComponentRegistry.kind(for: parameter) {
                 routeComponentToggle(kind)
@@ -2832,9 +2843,14 @@ final class WinampModernMainView: NSView {
         isResolvingToggleLamp = true
         defer { isResolvingToggleLamp = false }
         let upper = parameter.uppercased()
-        // Neither of these is a window: one opens the colour-theme popup, the other the About panel.
-        guard !upper.contains(Self.colorThemePreferencesGUID),
-              !upper.contains(Self.aboutWinampGUID) else { return nil }
+        // The colour-theme preferences GUID opens a popup, which is not a window and has no lamp.
+        guard !upper.contains(Self.colorThemePreferencesGUID) else { return nil }
+        // The About GUID is a window exactly when the skin draws its own About page; the AppKit
+        // panel it otherwise falls back to has no lamp to answer for either.
+        if upper.contains(Self.aboutWinampGUID) {
+            guard let id = skinAboutContainerID else { return nil }
+            return containerWindowVisibilityQuery?(id)
+        }
         if let kind = WinampModernComponentRegistry.kind(for: parameter) {
             // A surface this skin draws *inside* a window it already owns has no open/closed of its
             // own, and `routeComponentToggle` returns early for it — the query answers nil there.

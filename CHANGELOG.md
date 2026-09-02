@@ -4,6 +4,14 @@
 
 ### New Features
 
+- **Winamp Modern skins: About now opens the skin's own About page** — most Winamp 5.x skins draw
+  their own About screen, and asking for it (from the skin's logo, corner bolt, or wherever the skin
+  puts it) used to pop up NullPlayer's plain About panel instead. It now opens the skin's page, in a
+  window wearing that skin's own frame and artwork — 30 of the installed skins have one. The skin's
+  menu bar gains **Help > About This Skin** so it is reachable even on a skin that binds no button to
+  it, alongside **About nullPlayer**, which is unchanged and still shows the app's own panel. A skin
+  that draws no About page falls back to that panel exactly as before. As part of this, the stock
+  Winamp Modern skin's About screen now runs its own animation script, which had been failing.
 - **Winamp Modern skins: Big Bento Modern's waveform seeker now works** — the wide empty strip above
   the transport buttons was reserved for a plugin that only exists in a different player, so it has
   always sat blank. NullPlayer now fills it with the whole track's waveform: you can see the shape of

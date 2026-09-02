@@ -793,6 +793,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         skinView?.containerWindowToggleRequested = toggleContainer
         auxiliaryContainers.forEach { $0.view.containerWindowToggleRequested = toggleContainer }
+        // `TOGGLE guid:{D6201408-…}` — About Winamp. It resolves to the skin's own About page where
+        // the skin draws one, through the same container route as any other of its windows, so the
+        // AppKit panel is left for the skins that draw none. Nil unless the container actually became
+        // a window: a container whose renderer failed is dropped from `auxiliaryContainers`, and a
+        // dead id here would open nothing at all.
+        let aboutContainerID = loaded.surfaceSynthesis.aboutContainer.flatMap { id in
+            Self.matchingContainerID(id, in: auxiliaryContainers.map(\.containerID))
+        }
+        skinAboutContainerID = aboutContainerID
+        skinView?.skinAboutContainerID = aboutContainerID
+        auxiliaryContainers.forEach { $0.view.skinAboutContainerID = aboutContainerID }
         // And the read side of both, for the lamp on the button that does the toggling (BB36). Each
         // is the exact question its `toggle*` counterpart above acts on, so the two cannot drift.
         let surfaceVisible: (WinampModernComponentKind) -> Bool? = { [weak self] kind in
@@ -1980,6 +1991,23 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     /// The windows this skin declares that only the host can open: named, not `nomenu`, and not one
     /// of the NullPlayer surfaces the catalog already routes. Empty for a single-window SUI.
+    /// The container that draws this skin's own About page, when it has one. Set with the rest of
+    /// the routing in `makeSurfaceCoordinator`, and nil for a skin that draws none — where the Help
+    /// menu offers no entry and `TOGGLE guid:{D6201408-…}` falls back to NullPlayer's own panel.
+    private(set) var skinAboutContainerID: String?
+
+    /// Open the skin's About page and bring it forward. A menu item that says "About" must not close
+    /// the window when it is already open, which is the one thing `toggleSkinWindow` would do.
+    @discardableResult
+    func showSkinAbout() -> Bool {
+        guard let id = skinAboutContainerID,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+        else { return false }
+        if !container.window.isVisible { return toggleSkinWindow(id: id) }
+        container.window.orderFront(nil)
+        return true
+    }
+
     var skinWindows: [(id: String, name: String, isVisible: Bool)] {
         // The catalog's own containers are excluded here rather than in the markup rule: whether a
         // container is *routed* is a runtime fact (Defix's `pledit` carries no component GUID and is

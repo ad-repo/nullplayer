@@ -15,6 +15,12 @@ whole client area is built at runtime by `standardframe.maki` from its `content=
 - **The titlebar** — title centred on the window with a decorative streak flanking it either side, at
   every width. Phase 24, and the last of this skin's error-severity findings: the skin now loads at
   `degraded`, not `unsupported`.
+- **Its About page** (2026-09-01) — the skin defines `skin.about.group` and no window for it, as
+  Winamp's own About box supplies that; it now opens in a synthesized window wearing this skin's own
+  frame, from the corner logo or **Help → About This Skin**. Its `about.maki` had been aborting at
+  its first statement on a missing `random(max)`, so before that the page would have drawn neither
+  its text nor its shooting stars. See `reference/components.md` → *The About page is a group, not a
+  window*.
 - **Its host-action toolbars** (Phase 39) — 22 declarations, the widest demand in the corpus: the
   playlist window's ADD / REM / SEL / MISC / LIST (and its `PE_LISTOFLISTS`, which opens the same
   menu), the visualization window's Fullscreen / Prev / Next / Menu, and the video window's

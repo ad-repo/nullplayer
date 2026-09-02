@@ -89,6 +89,7 @@ This file is a router. Read the one focused reference your symptom names.
 | `setText`/search terms disappear through `embed_xui` | [reference/scripting.md](reference/scripting.md) |
 | Slider action families and `onSetPosition` | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
 | Playlist/EQ/library hosting, synthesis, topology | [reference/components.md](reference/components.md) |
+| A skin's own About page, `skin.about.group`, the About GUID | [reference/components.md](reference/components.md) → *The About page is a group, not a window* |
 | Embedded playlist/library text sizes disagree | [reference/components.md](reference/components.md) → *How large NullPlayer draws its own text* |
 | Hosted surface survives the wrong tab or remounts dead | [reference/components.md](reference/components.md) → *Unmounting is not teardown* |
 | `hold="none"`, flat holder slab, component routing | [reference/components.md](reference/components.md) → *Component hosting* |

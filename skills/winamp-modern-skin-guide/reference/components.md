@@ -544,6 +544,41 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
   own width on first materialization only — never re-applied, so a window the user has resized stays
   resized.
 
+#### The About page is a group, not a window (2026-09-01)
+
+**`skin.about.group` is the one surface where the skin draws the contents and the host supplies the
+window.** It is what Winamp instantiates on the "Skin" page of its own About box, so a skin defines
+the group and never a container around it — twenty of the seventy measured skins define the group and
+exactly one (Nullsoft 2000 SP4 Lite) also declares the window. Reading "no container" as "no About
+page" is what left `TOGGLE guid:{D6201408-476A-4308-BF1B-7BACA1124B12}` opening NullPlayer's AppKit
+panel over skins that had drawn their own.
+
+`WasabiSurfaceSynthesizer.aboutRoute` resolves it in the same pre-graph pass as the surfaces above,
+and answers one of three things:
+
+- **a container the skin declared**, when any container's subtree hands `skin.about.group` to a frame
+  as its `content` — that skin's own window is the route, and synthesizing a second one would give it
+  two About windows with its own button aimed at the wrong one;
+- **`nullplayer.about`**, a synthesized container holding one standard frame around the skin's group.
+  Unlike the surface containers it wraps the *skin's* groupdef directly, so there is no synthetic
+  content group to register;
+- **nil**, for a skin that defines no About page or has no usable frame to put one in (the reason is
+  recorded), which is what keeps NullPlayer's own panel as the fallback.
+
+Two consequences worth knowing before changing it:
+
+- **The size is the host's decision, and 380×358 is Winamp's.** Every corpus About group is
+  `fitparent`, so nothing in the markup says how big the window should be; the artwork behind them is
+  cut at 371×321 (Big Bento and Nullsoft 2000 at 380×321), and Nullsoft 2000 — the one skin that
+  declares the window itself — asks for 388×349 around a 380×321 page. The extra height over 321 is
+  the standard frame's own title bar and border, which differs per skin, so a page can sit a few
+  pixels short of or past its artwork. The window is resizable.
+- **It is deliberately not in the Skin Windows menu.** `isListedInWindowMenu` excludes every
+  synthesized container, so the routes are the skin's own button and the skin menu bar's
+  **Help → About This Skin**, which `ContextMenuBuilder.buildWinampModernHelpMenu` adds beside
+  "About nullPlayer" only when `WindowManager.winampModernHasSkinAbout` is true. The two entries are
+  Winamp's own two pages: one is about the player, the other about the skin.
+
 #### NullPlayer-owned hosted windows are lazy
 
 Spectrum, Cava, Flow, PeppyMeter, Audio Analysis, Waveform, ProjectM — and the fallback equalizer —

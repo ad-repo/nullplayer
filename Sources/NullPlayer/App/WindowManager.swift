@@ -967,6 +967,23 @@ class WindowManager {
         (mainWindowController as? WinampModernMainWindowController)?.toggleSkinWindow(id: id)
     }
 
+    /// Whether the loaded `.wal` skin draws its own About page — the `skin.about.group` Winamp puts
+    /// on the "Skin" tab of its About box, which twenty of the measured seventy skins define. Gated
+    /// on the mode like every other reader here: Classic and Original have no such page and answer
+    /// false, so nothing they show changes.
+    var winampModernHasSkinAbout: Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.skinAboutContainerID != nil
+    }
+
+    /// Open it. The skin's own window, in the skin's own frame — the same one
+    /// `TOGGLE guid:{D6201408-…}` reaches from a skin's button.
+    @discardableResult
+    func showWinampModernSkinAbout() -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.showSkinAbout() == true
+    }
+
     /// The loaded `.wal` skin's colour themes and the applied one (Phase 32). Safe default in every
     /// other mode, per the mode-guarding rule in CLAUDE.md.
     ///

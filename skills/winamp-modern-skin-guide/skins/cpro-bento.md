@@ -128,7 +128,7 @@ synthesized and nothing left to the classic fallback.
   | Show Quick Playlist | 2 | a script-built track menu over the live queue — works (empty with no queue, which is what the harness sees) |
   | Show Track Menu | 5 | `trackmenu` — works |
   | Show Send to Menu | 4 | `ML_SendTo`, **deliberately inert** — NullPlayer publishes no Send To targets |
-  | Open About Winamp | 0 | `TOGGLE guid:{D6201408-…}` → NullPlayer's own About panel (B62; nothing answered this GUID before, and it is the **default**, so out of the box the logo did nothing at all) |
+  | Open About Winamp | 0 | `TOGGLE guid:{D6201408-…}` → the **skin's own About window** since 2026-09-01: the ClassicPro engine supplies `skin.about.group`, so the cPro family gets a real About page in its own frame rather than NullPlayer's AppKit panel (which is now only the fallback for a skin that draws none — see `reference/components.md` → *The About page is a group, not a window*). B62 is what first made this GUID answer at all; it is the **default** command, so out of the box the logo did nothing |
 
 
 

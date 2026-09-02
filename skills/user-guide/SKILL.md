@@ -352,6 +352,14 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Portable Original skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Original > Load Skin...**
 - Bundled Original skins: NeonWave (default), Skulls
 
+### Winamp Modern (`.wal`) Mode
+- **Skins > Modern** lists installed Winamp 5.x `.wal` skins.
+- Many of these skins draw their own **About page** — the artwork the skin author wrote about the
+  skin. Where the skin has one, it opens in the skin's own window: from whatever control the skin
+  binds to it (often a logo or corner bolt), or from **Help > About This Skin** in the skin's own
+  menu bar. **About nullPlayer** stays where it is and still shows the app's own panel; a skin that
+  draws no About page falls back to it.
+
 ### UI Size Mode
 - **Original/Original-Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
 - **Classic UI**: choose context menu -> **UI Size** or use the classic size control to enlarge
