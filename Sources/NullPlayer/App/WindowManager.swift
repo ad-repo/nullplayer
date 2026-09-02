@@ -2287,6 +2287,18 @@ class WindowManager {
             }
         }
 
+        /// Prefer the per-feature controller; fall back to the routed path only when there is none,
+        /// which is the hosted `.wal` case. Keeps Classic and Original on the path they had before
+        /// the hosted surfaces existed.
+        func restoreCentreStackWindow(_ snapshot: WindowSnapshot?, controller: ModeDependentWindow?,
+                                      window: NSWindow?, show: (NSRect?) -> Void) {
+            if controller != nil {
+                restore(snapshot, controller: controller)
+            } else {
+                restoreRouted(snapshot, window: window, show: show)
+            }
+        }
+
         restore(snapshot.main, controller: mainWindowController)
         if equalizerWindowController != nil {
             restore(snapshot.equalizer, controller: equalizerWindowController)
@@ -2294,12 +2306,22 @@ class WindowManager {
             restoreRouted(snapshot.equalizer, window: equalizerWindow, show: showEqualizer)
         }
         restore(snapshot.playlist, controller: playlistWindowController)
-        restoreRouted(snapshot.spectrum, window: spectrumWindow, show: showSpectrum)
-        restoreRouted(snapshot.audioAnalysis, window: audioAnalysisWindow, show: showAudioAnalysis)
-        restoreRouted(snapshot.peppyMeter, window: peppyMeterWindow, show: showPeppyMeter)
-        restoreRouted(snapshot.networkMonitor, window: networkMonitorWindow, show: showNetworkMonitor)
-        restoreRouted(snapshot.cava, window: cavaWindow, show: showCava)
-        restoreRouted(snapshot.waveform, window: waveformWindow, show: showWaveform)
+        // The routed path exists for the hosted surfaces, whose windows are owned by the skin's graph
+        // rather than by a per-feature controller. Where a controller exists — which is every one of
+        // these in Classic and Original — the original `restore` runs, so Compact Mode gives back the
+        // frame it took and nothing else. `showX(at:)` does considerably more than that.
+        restoreCentreStackWindow(snapshot.spectrum, controller: spectrumWindowController,
+                                 window: spectrumWindow, show: showSpectrum)
+        restoreCentreStackWindow(snapshot.audioAnalysis, controller: audioAnalysisWindowController,
+                                 window: audioAnalysisWindow, show: showAudioAnalysis)
+        restoreCentreStackWindow(snapshot.peppyMeter, controller: peppyMeterWindowController,
+                                 window: peppyMeterWindow, show: showPeppyMeter)
+        restoreCentreStackWindow(snapshot.networkMonitor, controller: networkMonitorWindowController,
+                                 window: networkMonitorWindow, show: showNetworkMonitor)
+        restoreCentreStackWindow(snapshot.cava, controller: cavaWindowController,
+                                 window: cavaWindow, show: showCava)
+        restoreCentreStackWindow(snapshot.waveform, controller: waveformWindowController,
+                                 window: waveformWindow, show: showWaveform)
         restore(snapshot.projectM, controller: projectMWindowController)
         restore(snapshot.library, controller: plexBrowserWindowController)
         // Restart the Library Cava backdrop we stopped on entry (orderOutRegularWindows). Restoring
@@ -4703,12 +4725,35 @@ class WindowManager {
     func bringAllWindowsToFront(keepingWindowOnTop preferredTopWindow: NSWindow? = nil) {
         // Order all visible windows to front without making them key.
         // Keep a predictable base order, then re-raise the active window at the end.
-        let windows = managedWindowRecords.map(\.window)
+        //
+        // This order **is** the z-order — the windows are ordered front in sequence, so whatever
+        // comes last sits on top. It is therefore written out explicitly rather than taken from
+        // `managedWindowRecords`, whose order exists to describe docking membership and is free to
+        // change for reasons that have nothing to do with stacking. Reading it from there silently
+        // raised the equalizer above the playlist, and the video window above the visualizer and the
+        // library, in Classic.
+        //
+        // A `.wal` skin's own windows are not in this list because they are not stacked by it: the
+        // hosted graph orders them itself.
+        let windows: [NSWindow?] = [
+            mainWindowController?.window,
+            equalizerWindowController?.window,
+            playlistWindowController?.window,
+            spectrumWindowController?.window,
+            audioAnalysisWindowController?.window,
+            peppyMeterWindowController?.window,
+            networkMonitorWindowController?.window,
+            cavaWindowController?.window,
+            waveformWindowController?.window,
+            videoPlayerWindowController?.window,
+            projectMWindowController?.window,
+            plexBrowserWindowController?.window
+        ]
 
         let topWindow = preferredTopWindow ?? NSApp.keyWindow
 
         for window in windows {
-            if window.isVisible, window !== topWindow {
+            if let window = window, window.isVisible, window !== topWindow {
                 window.orderFront(nil)
             }
         }
