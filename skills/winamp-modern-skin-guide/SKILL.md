@@ -33,6 +33,15 @@ Classic's sub-windows too). Gate on the mode explicitly —
 `uiMode.controllerFamily == .winampModern` — so the other modes run the identical code path they ran
 before, and the claim is enforced by the compiler rather than by an argument.
 
+**The rule forbids side effects, not deliberate fixes.** It protects Classic from being changed *as a
+consequence of* `.wal` work; it does not mean a bug in shared code can never be fixed. 2026-09-03: the
+`.wal` video pass correctly kept the end-of-media session leak out of its own change — an additive
+flag only the `.wal` host reads — but the underlying bug hit Classic too (B107), and its sibling B108
+killed Plex/Jellyfin/Emby finish-scrobbling and video-playlist advance in **every** mode. Fixing those
+necessarily changed Classic, and that was legitimate as its own scoped change with the impact stated
+up front. Do not let the rule turn a shared bug into one nobody is allowed to fix — say plainly that
+it is separate work and let the user decide.
+
 Corollary: verify in the running app, not in your head. Window geometry has no useful armchair form,
 and B56 cost four confident statically-reasoned fixes — each wrong, two of them regressions — before
 anyone launched the app. The loop for measuring it is in the `testing` skill ("Window geometry:

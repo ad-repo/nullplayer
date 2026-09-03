@@ -289,6 +289,16 @@ so the proof that it broke none of them is a before/after capture across the who
 corpus inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has. Measured: **69 skins in
 ~100 seconds**, against ~25 minutes for the shell loop it replaces.
 
+**A clean sweep proves the default state and nothing else.** Every skin renders in its *stored
+default configuration*, so a change can pass 287 of 288 images and still break a skin badly, because
+the defect lives in a state the sweep never enters. 2026-08-24: a change to MAKI `onScriptLoaded`
+dispatch swept clean and still took the panel sizing out of Big Bento Modern — the affected path only
+runs on a non-default Multi Content View page, and the user found it in seconds. Read a clean sweep as
+"no regression in the default state", never as "verified". When a fix targets behaviour reached
+through a setting, a tab or a dragged splitter, reproduce *that* state explicitly
+(`WINAMP_MODERN_RENDER_CONFIG` / `RENDER_SET` seed it headlessly) and hand the build over to be
+checked on screen.
+
 It is a committed script. Do not paste a shell function out of this file:
 
 ```sh
@@ -594,6 +604,51 @@ The general negative-result rule lives in
 [the skill router](../SKILL.md#rules-for-extending-this-subsystem). `WINAMP_MODERN_TRACE_MAKI`
 remains the tiebreaker for **did this handler run** — it records handler entry whether or not the
 body does anything — but never for **is this on screen**, which only pixels answer.
+
+### Arm a draw-order dump *late*, never on the first draw
+
+A skin reveals layers **in response to the host**, so a dump armed on an object's first draw is taken
+before the skin has reacted to anything. BB18: the waveform-seeker strip was covered by
+`waveseeker.rounder.bg`, which Big Bento's own timer shows *because* the host claimed the component.
+The first-draw dump listed only a slider thumb and a 5 px end cap after it, read as "nothing
+overpaints this", and sent the investigation down several wrong paths over many rebuild cycles. Arm
+it after the skin's timers have run at least once.
+
+The sibling rule: a component box measuring a **uniform colour** means something painted over it,
+however empty the startup draw order looks. Identify the colour against the skin's own bitmaps (there
+it was `songticker.background.center2`) rather than treating it as "nothing drew".
+
+### Sharing the app with the user
+
+Live QA is a shared machine, and both halves of that go wrong in ways that look like code defects.
+
+**Own the launch, and redirect its output to a file.** `NSLog` from a binary started by
+`kill_build_run.sh` goes to *that process's* stderr — if the user launches, the log is on their screen
+and invisible to you. Launch it yourself with `> /tmp/np.log 2>&1`, wait for a known line before asking
+for anything, then ask only for what they alone can do (reproduce the state, click, press play).
+2026-08-25 (BB28): the loop stalled for several exchanges because each of us thought the other was
+driving — the user was clicking in an app my tooling had never started, while my `pgrep` checks
+"confirmed" a state that was never true.
+
+**Say which build the running app is, in the same sentence as the question.** 2026-08-30: the user
+judged three builds in quick succession, praising one a frame trace then proved wrong, and calling
+another a regression when it was the build they had liked — a relaunch had landed mid-message. Their
+perception and your `pkill`/relaunch cycle drift apart within seconds. When a fix is judged worse,
+revert and re-confirm the baseline before stacking another change on an unknown starting point.
+
+**Stop driving the moment the user starts testing.** 2026-09-03 (B107): after the user said *"I just
+tested with modern"* the synthetic clicks kept going, and their click on the skin's stop button landed
+in the middle of an automated repro — a film stopped 20 s short, which reads exactly like a code
+defect and cost a build, a backtrace probe and a wrong hypothesis before the stack showed a real
+`mouseUp`. Two drivers on one mouse manufactures evidence that looks like a bug. Once the user is in
+the app, hand the repro over and read the log they produce.
+
+**A report of current behaviour is not a change of requirements.** Same session: the task (B107) said a
+finished film must stop being the transport's target — the transport *resets*. The user reported a
+ghost thumb in Modern and added *"in classic mode there was no change and seek sits at the end"*. Read
+as a preference rather than a symptom, that aside produced the opposite of the task, shipped as a fix,
+and two wasted build-test cycles. Before reversing a decision the task already made, re-read the task
+entry; if an offhand remark seems to contradict it, quote the requirement back and ask.
 
 ### A measured value written into a doc goes stale silently (B50, 2026-08-26)
 

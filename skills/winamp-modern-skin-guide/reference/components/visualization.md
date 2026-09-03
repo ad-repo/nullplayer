@@ -122,6 +122,24 @@ still opens NullPlayer's own window.
 > Confirm a visualization holder **in the app** (`WINAMP-MODERN-VIS: resume`) before trusting a
 > headless zero.
 
+### Product intent: every visualization window runs its own engine
+
+**Wanted behaviour, confirmed by the user 2026-08-28 for Defix Hi-END 200**: its detached `VISCON`
+window and NullPlayer's own Visualizations window run **separate ProjectM instances on different
+presets**. The user's words: *"they can both work independently and I like that."*
+
+Write this down because it contradicts the instinct behind `makeVisualizationSurface()`'s
+one-surface-per-skin cache, and a future reader is otherwise likely to "fix" it back toward a single
+shared engine.
+
+**Big Bento is the next place to take it**, per the user on the same day — its several `{0000000A}`
+placements (stretched pane, mini, Visualization tab) currently resolve through
+`WinampModernVisualizationHolder`, where only the largest non-letterbox box gets the engine and the
+rest fall back to the analyzer. **Not started, and not to be started without being asked.** Before
+touching it, read the BB9 section above for the current rule and the `hold` section for the Defix
+precedent, and weigh the cost the present design exists to avoid: each engine is its own GL context,
+display link and spectrum consumer against the same audio.
+
 ### An unhosted pane is a surface with a choice of its own (BB9a, 2026-08-29)
 
 **A pane that draws the analyzer is not stuck with it.** Right-clicking one opens the same question a
