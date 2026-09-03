@@ -3848,8 +3848,10 @@ class AudioEngine {
                 if dur > 0 { fileDurations[item.id] = dur }
             }
             guard !fileDurations.isEmpty else { return }
+            // Snapshot before the actor hop: `MainActor.run`'s closure is @Sendable.
+            let durationUpdates = fileDurations
             await MainActor.run { [weak self] in
-                self?.applyDurationUpdates(fileDurations)
+                self?.applyDurationUpdates(durationUpdates)
             }
         }
     }

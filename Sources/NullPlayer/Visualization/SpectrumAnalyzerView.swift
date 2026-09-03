@@ -1867,10 +1867,7 @@ class SpectrumAnalyzerView: NSView {
     /// Called by display link at 60Hz
     /// Note: This is internal (not private) so the display link callback can access it
     func render() {
-        var modeForPacing: SpectrumQualityMode = .classic
-        dataLock.withLock {
-            modeForPacing = renderQualityMode
-        }
+        let modeForPacing = dataLock.withLock { renderQualityMode }
 
         // Throttle to a mode-appropriate FPS on high-refresh-rate displays.
         // Embedded vis_classic is capped lower to avoid high CPU cost in the main window.
@@ -1907,14 +1904,13 @@ class SpectrumAnalyzerView: NSView {
         
         // Update display spectrum and get render state in a single lock acquisition
         // This minimizes lock contention between the render thread and main thread
-        var hadData = false
-        var shouldStopDueToIdle = false
-        var shouldSkipFrame = false
-        var currentMode: SpectrumQualityMode = .classic
-        
-        dataLock.withLock {
+        let (_, shouldStopDueToIdle, shouldSkipFrame, currentMode) = dataLock.withLock {
+            () -> (Bool, Bool, Bool, SpectrumQualityMode) in
+            var hadData = false
+            var shouldStopDueToIdle = false
+            var shouldSkipFrame = false
             // Get current mode first so per-mode update/idle rules can be applied.
-            currentMode = renderQualityMode
+            let currentMode = renderQualityMode
 
             if currentMode == .visClassicExact {
                 // vis_classic uses waveform-driven frames and its own decay logic.
@@ -1944,6 +1940,7 @@ class SpectrumAnalyzerView: NSView {
                     hasClearedAfterIdle = false
                 }
             }
+            return (hadData, shouldStopDueToIdle, shouldSkipFrame, currentMode)
         }
         
         if shouldStopDueToIdle {
@@ -2052,10 +2049,7 @@ class SpectrumAnalyzerView: NSView {
         encoder.setRenderPipelineState(pipeline)
         
         // Get bar count for vertex calculation
-        var localBarCount: Int = 0
-        dataLock.withLock {
-            localBarCount = renderBarCount
-        }
+        let localBarCount = dataLock.withLock { renderBarCount }
         
         switch currentMode {
         case .enhanced:
@@ -2163,28 +2157,32 @@ class SpectrumAnalyzerView: NSView {
             flameBlurLastDrawableSize = drawableSize
         }
         guard let blurTex = flameBlurTexture else { inFlightSemaphore.signal(); return }
-        var localSpectrum: [Float] = []; var localStyle: FlameStyle = .inferno; var localTime: Float = 0
-        var localIntensity: FlameIntensity = .mellow
-        dataLock.withLock {
-            animationTime += 1.0 / 60.0; localTime = animationTime
-            localStyle = renderFlameStyle; localSpectrum = rawSpectrum
-            localIntensity = renderFlameIntensity
+        // Read before taking the lock: `bassAttenuation` is main-actor state, and the lock body is
+        // a @Sendable closure. Everything the body touches is nonisolated(unsafe) by design.
+        let bassAtten = bassAttenuation
+        let (localSpectrum, localStyle, localTime, localIntensity) = dataLock.withLock {
+            () -> ([Float], FlameStyle, Float, FlameIntensity) in
+            animationTime += 1.0 / 60.0
+            let localTime = animationTime
+            let localStyle = renderFlameStyle
+            let localSpectrum = rawSpectrum
+            let localIntensity = renderFlameIntensity
             var bass: Float = 0; var mid: Float = 0; var treble: Float = 0
             if !rawSpectrum.isEmpty {
                 for i in 0..<min(16, rawSpectrum.count) { bass += rawSpectrum[i] }; bass /= 16.0
                 for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }; mid /= 34.0
                 for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }; treble /= 25.0
             }
-            bass *= bassAttenuation
+            bass *= bassAtten
             let attack = localIntensity.attackSpeed
             let release = localIntensity.releaseSpeed
             flameSmoothBass += (bass - flameSmoothBass) * (bass > flameSmoothBass ? attack : release)
             flameSmoothMid += (mid - flameSmoothMid) * (mid > flameSmoothMid ? attack * 0.8 : release * 0.67)
             flameSmoothTreble += (treble - flameSmoothTreble) * (treble > flameSmoothTreble ? attack * 0.8 : release * 0.67)
+            return (localSpectrum, localStyle, localTime, localIntensity)
         }
         if let buf = flameSpectrumBuffer {
             let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
-            let bassAtten = bassAttenuation
             for i in 0..<75 {
                 var val: Float = i < localSpectrum.count ? localSpectrum[i] : 0
                 if i < 16 { val *= bassAtten }
@@ -2247,12 +2245,11 @@ class SpectrumAnalyzerView: NSView {
             inFlightSemaphore.signal(); return
         }
         
-        var localTime: Float = 0
-        var localScroll: Float = 0
-        
-        dataLock.withLock {
+        // Read before the lock: main-actor state, and the lock body is a @Sendable closure.
+        let bassAtten = bassAttenuation
+        let (localTime, localScroll) = dataLock.withLock { () -> (Float, Float) in
             animationTime += 1.0 / 60.0
-            localTime = animationTime
+            let localTime = animationTime
             
             // Compute band energies from raw spectrum
             var bass: Float = 0; var mid: Float = 0; var treble: Float = 0
@@ -2261,7 +2258,7 @@ class SpectrumAnalyzerView: NSView {
                 for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }; mid /= 34.0
                 for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }; treble /= 25.0
             }
-            bass *= bassAttenuation
+            bass *= bassAtten
             
             // Smooth audio values (fast attack, slower release)
             cosmicSmoothBass += (bass - cosmicSmoothBass) * (bass > cosmicSmoothBass ? 0.3 : 0.08)
@@ -2302,7 +2299,7 @@ class SpectrumAnalyzerView: NSView {
             let totalEnergy = (cosmicSmoothBass + cosmicSmoothMid + cosmicSmoothTreble) / 3.0
             let speed: Float = 0.08 + totalEnergy * 0.5
             cosmicScrollOffset += speed * (1.0 / 60.0)
-            localScroll = cosmicScrollOffset
+            return (localTime, cosmicScrollOffset)
         }
         
         // Update cosmic params (no spectrum buffer — pure atmospheric mode)
@@ -2339,8 +2336,7 @@ class SpectrumAnalyzerView: NSView {
         
         // Update spectrum buffer for frequency-aligned flares
         // Uses displaySpectrum (already normalized by AudioEngine) not rawSpectrum
-        var localSpectrum: [Float] = []
-        dataLock.withLock { localSpectrum = displaySpectrum }
+        let localSpectrum = dataLock.withLock { displaySpectrum }
         if let buf = flameSpectrumBuffer {
             let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
             let bassAtten = bassAttenuation
@@ -2369,11 +2365,11 @@ class SpectrumAnalyzerView: NSView {
             inFlightSemaphore.signal(); return
         }
         
-        var localTime: Float = 0
-        
-        dataLock.withLock {
+        // Read before the lock: main-actor state, and the lock body is a @Sendable closure.
+        let bassAtten = bassAttenuation
+        let localTime = dataLock.withLock { () -> Float in
             animationTime += 1.0 / 60.0
-            localTime = animationTime
+            let localTime = animationTime
             
             // Compute band energies from raw spectrum
             var bass: Float = 0; var mid: Float = 0; var treble: Float = 0
@@ -2382,7 +2378,7 @@ class SpectrumAnalyzerView: NSView {
                 for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }; mid /= 34.0
                 for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }; treble /= 25.0
             }
-            bass *= bassAttenuation
+            bass *= bassAtten
             
             // Smooth audio values — JWST-style gentle tracking
             electricitySmoothBass += (bass - electricitySmoothBass) * (bass > electricitySmoothBass ? 0.25 : 0.06)
@@ -2411,11 +2407,11 @@ class SpectrumAnalyzerView: NSView {
             }
             // Faster decay for less persistent dramatic activity
             electricityDramaticIntensity *= 0.986
+            return localTime
         }
         
         // Update spectrum buffer (reuse flameSpectrumBuffer like cosmic does)
-        var localSpectrum: [Float] = []
-        dataLock.withLock { localSpectrum = displaySpectrum }
+        let localSpectrum = dataLock.withLock { displaySpectrum }
         if let buf = flameSpectrumBuffer {
             let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
             let bassAtten = bassAttenuation
@@ -2452,8 +2448,7 @@ class SpectrumAnalyzerView: NSView {
         let totalE = (electricitySmoothBass + electricitySmoothMid + electricitySmoothTreble) / 3.0
         if let buf = electricityParamsBuffer {
             let p = buf.contents().bindMemory(to: ElectricityParams.self, capacity: 1)
-            var localColorScheme: Int32 = 0
-            dataLock.withLock { localColorScheme = renderLightningStyle.colorScheme }
+            let localColorScheme = dataLock.withLock { renderLightningStyle.colorScheme }
             p.pointee = ElectricityParams(
                 viewportSize: viewport,
                 time: localTime,
@@ -2502,14 +2497,12 @@ class SpectrumAnalyzerView: NSView {
             inFlightSemaphore.signal(); return
         }
         
-        var localTime: Float = 0
-        var localScroll: Float = 0
-        var localColorScheme: Int32 = 0
-        var localIntensityVal: Float = 1.0
-        
-        dataLock.withLock {
+        // Read before the lock: main-actor state, and the lock body is a @Sendable closure.
+        let bassAtten = bassAttenuation
+        let (localTime, localScroll, localColorScheme, localIntensityVal) = dataLock.withLock {
+            () -> (Float, Float, Int32, Float) in
             animationTime += 1.0 / 60.0
-            localTime = animationTime
+            let localTime = animationTime
             
             // Compute band energies from raw spectrum
             var bass: Float = 0; var mid: Float = 0; var treble: Float = 0
@@ -2518,7 +2511,7 @@ class SpectrumAnalyzerView: NSView {
                 for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }; mid /= 34.0
                 for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }; treble /= 25.0
             }
-            bass *= bassAttenuation
+            bass *= bassAtten
             
             // Get current intensity preset for attack/release speeds
             let intensityPreset = renderMatrixIntensity
@@ -2556,15 +2549,13 @@ class SpectrumAnalyzerView: NSView {
             let totalEnergy = (matrixSmoothBass + matrixSmoothMid + matrixSmoothTreble) / 3.0
             let speed: Float = 0.8 + totalEnergy * 0.6
             matrixScrollOffset += speed * (1.0 / 60.0)
-            localScroll = matrixScrollOffset
             
-            localColorScheme = renderMatrixColorScheme.colorScheme
-            localIntensityVal = renderMatrixIntensity.shaderValue
+            return (localTime, matrixScrollOffset,
+                    renderMatrixColorScheme.colorScheme, renderMatrixIntensity.shaderValue)
         }
         
         // Update spectrum buffer (reuse flameSpectrumBuffer like cosmic/electricity does)
-        var localSpectrum: [Float] = []
-        dataLock.withLock { localSpectrum = displaySpectrum }
+        let localSpectrum = dataLock.withLock { displaySpectrum }
         if let buf = flameSpectrumBuffer {
             let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
             let bassAtten = bassAttenuation
@@ -2626,15 +2617,12 @@ class SpectrumAnalyzerView: NSView {
             inFlightSemaphore.signal(); return
         }
         
-        var localTime: Float = 0
-        var localFallOffset: Float = 0
-        var localWindPhase: Float = 0
-        var localDensity: Float = 0.05
-        var localStormLevel: Float = 0
-
-        dataLock.withLock {
+        // Read before the lock: main-actor state, and the lock body is a @Sendable closure.
+        let bassAtten = bassAttenuation
+        let (localTime, localFallOffset, localWindPhase, localDensity, localStormLevel)
+            = dataLock.withLock { () -> (Float, Float, Float, Float, Float) in
             animationTime += 1.0 / 60.0
-            localTime = animationTime
+            let localTime = animationTime
 
             var bass: Float = 0
             var mid: Float = 0
@@ -2647,7 +2635,7 @@ class SpectrumAnalyzerView: NSView {
                 for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }
                 treble /= 25.0
             }
-            bass *= bassAttenuation
+            bass *= bassAtten
 
             snowSmoothBass += (bass - snowSmoothBass) * (bass > snowSmoothBass ? 0.34 : 0.05)
             snowSmoothMid += (mid - snowSmoothMid) * (mid > snowSmoothMid ? 0.28 : 0.045)
@@ -2743,10 +2731,7 @@ class SpectrumAnalyzerView: NSView {
             if snowFallOffset >= 20.0 { snowFallOffset -= 20.0 }
             if snowWindPhase >= 1024.0 { snowWindPhase -= 1024.0 }
 
-            localFallOffset = snowFallOffset
-            localWindPhase = snowWindPhase
-            localDensity = snowDensity
-            localStormLevel = snowStormLevel
+            return (localTime, snowFallOffset, snowWindPhase, snowDensity, snowStormLevel)
         }
         
         let viewport = drawableViewportSize(drawable)
@@ -3503,25 +3488,19 @@ class SpectrumAnalyzerView: NSView {
     
     private func updateBuffers() {
         // Get render-safe values inside lock
-        var localBarCount: Int = 0
-        var localColors: [SIMD4<Float>] = []
-        var localSpectrum: [Float] = []
-        var localPeakPositions: [Float] = []
-        var localCellBrightness: [[Float]] = []
-        var localUltraCellBrightness: [[Float]] = []
-        var localQualityMode: SpectrumQualityMode = .classic
-        var localAnimationTime: Float = 0
-        
-        dataLock.withLock {
-            localBarCount = renderBarCount
-            localColors = renderColorPalette
-            localSpectrum = displaySpectrum
-            // Use appropriate peak positions based on mode
-            localPeakPositions = renderQualityMode == .ultra ? ultraPeakPositions : peakHoldPositions
-            localCellBrightness = cellBrightness
-            localUltraCellBrightness = ultraCellBrightness
-            localQualityMode = renderQualityMode
-            localAnimationTime = animationTime
+        let (localBarCount, localColors, localSpectrum, localPeakPositions,
+             localCellBrightness, localUltraCellBrightness, localQualityMode, localAnimationTime)
+            = dataLock.withLock {
+                () -> (Int, [SIMD4<Float>], [Float], [Float], [[Float]], [[Float]], SpectrumQualityMode, Float) in
+                (renderBarCount,
+                 renderColorPalette,
+                 displaySpectrum,
+                 // Use appropriate peak positions based on mode
+                 renderQualityMode == .ultra ? ultraPeakPositions : peakHoldPositions,
+                 cellBrightness,
+                 ultraCellBrightness,
+                 renderQualityMode,
+                 animationTime)
         }
         
         let scale = metalLayer?.contentsScale ?? 1.0
