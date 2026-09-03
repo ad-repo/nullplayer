@@ -65,6 +65,121 @@ final class WinampModernPhase6Tests: XCTestCase {
         XCTAssertThrowsError(try LZMA1Decoder(stream: Data([0x5D, 0, 0])))
     }
 
+    // MARK: - 6.2a Fuzzing the installer boundary
+
+    // `NSISArchive` and `LZMA1Decoder` parse a **user-supplied installer executable** — the last
+    // untrusted-input parser in this subsystem that had only happy-path coverage. The guarantee
+    // fuzzed for is the same one the archive/XML/MAKI fuzzers assert: a bounded outcome, either a
+    // parse or a typed `WalFailure`, never a Swift trap, an unbounded allocation or a hang.
+
+    /// Random bytes almost never carry the Nullsoft signature, so this half only ever reaches
+    /// `findMagic`. Kept anyway: it is the shape a user actually hands us when they pick the wrong
+    /// `.exe`, and it must fail cheaply.
+    func testFuzzRandomBytesAsNSISArchiveNeverCrashes() {
+        var rng = SeededRNG(seed: 0x0451)
+        for _ in 0..<400 {
+            let length = Int(rng.next() % 4096)
+            var bytes = [UInt8](repeating: 0, count: length)
+            for index in 0..<length { bytes[index] = UInt8(rng.next() & 0xFF) }
+            expectBoundedOutcome { _ = try NSISArchive.extract(data: Data(bytes), limits: Self.fuzzArchiveLimits) }
+        }
+    }
+
+    /// The half that matters. The signature is *planted*, so every iteration gets past `findMagic`
+    /// and into the firstheader, the length-prefixed header block and the entry/string tables — the
+    /// code that indexes into attacker-chosen offsets. The 24-byte firstheader following the magic
+    /// is fuzzed too, which is what drives `headerSize` and therefore the decode target.
+    func testFuzzPlantedNSISSignatureNeverCrashes() {
+        // The signature `NSISArchive.findMagic` looks for, restated here so the fuzzer does not need
+        // access to the private constant.
+        let magic: [UInt8] = [0xEF, 0xBE, 0xAD, 0xDE] + Array("NullsoftInst".utf8)
+        var rng = SeededRNG(seed: 0x5153)
+        for _ in 0..<400 {
+            var bytes = [UInt8]()
+            // A little junk ahead of the signature, the way a real installer has its stub there.
+            let leading = Int(rng.next() % 64)
+            for _ in 0..<leading { bytes.append(UInt8(rng.next() & 0xFF)) }
+            bytes += magic
+            // The rest of the firstheader plus a payload of random bytes for the LZMA stream.
+            let trailing = 24 + Int(rng.next() % 2048)
+            for _ in 0..<trailing { bytes.append(UInt8(rng.next() & 0xFF)) }
+            expectBoundedOutcome { _ = try NSISArchive.extract(data: Data(bytes), limits: Self.fuzzArchiveLimits) }
+        }
+    }
+
+    /// The decoder underneath, driven directly. The property byte and the range-coder header are the
+    /// two fields that pick array sizes and the initial model state, so both are left fully random;
+    /// a stream that survives construction is then decoded against a small output cap, which is what
+    /// exercises `copyMatch`'s distance bound and the end-marker path.
+    func testFuzzRandomBytesAsLZMADecoderNeverCrashes() {
+        var rng = SeededRNG(seed: 0xC0FFEE)
+        for _ in 0..<600 {
+            let length = Int(rng.next() % 512)
+            var bytes = [UInt8](repeating: 0, count: length)
+            for index in 0..<length { bytes[index] = UInt8(rng.next() & 0xFF) }
+            expectBoundedOutcome {
+                var limits = LZMA1Decoder.Limits()
+                limits.maximumOutputBytes = 64 * 1_024
+                let decoder = try LZMA1Decoder(stream: Data(bytes), limits: limits)
+                try decoder.decode(untilOutputCount: 32 * 1_024)
+            }
+        }
+    }
+
+    /// Same, but with a **valid** 5-byte property header in front of random range-coded data, so the
+    /// construction guards cannot short-circuit the run and every iteration reaches `step()`.
+    func testFuzzValidLZMAHeaderWithGarbagePayloadNeverCrashes() {
+        var rng = SeededRNG(seed: 0xD15EA5E)
+        for _ in 0..<600 {
+            // props = (pb * 5 + lp) * 9 + lc, the encoding `init` decodes; every value < 9 * 5 * 5
+            // is legal, and each picks a different literal-table size.
+            var bytes: [UInt8] = [UInt8(rng.next() % UInt64(9 * 5 * 5))]
+            for _ in 0..<4 { bytes.append(UInt8(rng.next() & 0xFF)) }   // dictionary size, unread
+            bytes.append(0)                                             // the range coder's zero byte
+            let length = 4 + Int(rng.next() % 512)
+            for _ in 0..<length { bytes.append(UInt8(rng.next() & 0xFF)) }
+            expectBoundedOutcome {
+                var limits = LZMA1Decoder.Limits()
+                limits.maximumOutputBytes = 64 * 1_024
+                let decoder = try LZMA1Decoder(stream: Data(bytes), limits: limits)
+                try decoder.decode(untilOutputCount: 32 * 1_024)
+            }
+        }
+    }
+
+    /// Tight limits: a fuzzer that let the production 128 MB cap stand would spend its whole run
+    /// decompressing, and a runaway would look like a slow test rather than a failure.
+    private static let fuzzArchiveLimits: WalArchiveLimits = {
+        var limits = WalArchiveLimits()
+        limits.maximumTotalSize = 1 * 1_024 * 1_024
+        return limits
+    }()
+
+    /// The single assertion every fuzz case makes: the call returns or throws `WalFailure`. Anything
+    /// else is a bug in the parser, and a trap or a hang fails the run by taking the process down.
+    private func expectBoundedOutcome(_ body: () throws -> Void, file: StaticString = #filePath,
+                                      line: UInt = #line) {
+        do {
+            try body()
+        } catch is WalFailure {
+            // Expected for garbage input.
+        } catch {
+            XCTFail("expected a WalFailure or a clean parse, got \(error)", file: file, line: line)
+        }
+    }
+
+    /// Small deterministic PRNG (xorshift64) so fuzz runs reproduce across machines.
+    private struct SeededRNG {
+        private var state: UInt64
+        init(seed: UInt64) { state = seed == 0 ? 0xDEADBEEF : seed }
+        mutating func next() -> UInt64 {
+            state ^= state << 13
+            state ^= state >> 7
+            state ^= state << 17
+            return state
+        }
+    }
+
     // MARK: - 6.1 Directory resource provider
 
     func testDirectoryResourceProviderReadsAndBoundsTree() throws {

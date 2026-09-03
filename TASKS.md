@@ -198,7 +198,7 @@ The implementation and its automated coverage shipped; that record is in
 
 ### B106
 
-- [x] Memoize the string measurement in `WasabiTextMetrics.measuredWidth(of:font:)`, keyed on
+- **Done.** Memoize the string measurement in `WasabiTextMetrics.measuredWidth(of:font:)`, keyed on
       `(text, fontName, pointSize)` and shared by `width(of:text:)` and `surfaceTextWidth`.
 
 **Deliberately not done: the drawing half.** `drawText` is ~200 lines in which nearly every branch
@@ -268,7 +268,7 @@ is unmeasured. The release figure above is *with* every fix including the `frame
 
 ### B105
 
-- [x] Hoist the `CharacterSet` to a `static let`; return an already-safe component unchanged.
+- **Done.** Hoist the `CharacterSet` to a `static let`; return an already-safe component unchanged.
       Measured at **2.5%** before the fix; not yet re-measured after.
 
 **Remaining, measured but not fixed** (cPro Bento, drawer visualization up, playing, after B103-B105):
@@ -284,13 +284,13 @@ is unmeasured. The release figure above is *with* every fix including the `frame
 
 ### B104
 
-- [x] **1. `normalize` builds a `CharacterSet` per character.** `WinampModernComponents.swift:112`.
+- **Done.** **1. `normalize` builds a `CharacterSet` per character.** `WinampModernComponents.swift:112`.
       Hoist the hex test out of the closure — better, drop `CharacterSet` and test the UTF-8 byte
       directly, which is what "is this an ASCII hex digit" actually is. Measured at **14.6%** of the main thread, ~13.7% of it building and freeing `CharacterSet`s.
-- [x] **2. `surfaceID(of:)` is recomputed per object, per scan.** Nothing memoizes it, so every walk
+- **Done.** **2. `surfaceID(of:)` is recomputed per object, per scan.** Nothing memoizes it, so every walk
       re-derives the same answer for every object. Cache it on the object, dropped by `setAttribute`
       for the keys it reads.
-- [x] **3. `refreshWaveformDemand` walks `allObjectsUnordered` twice.** `WasabiRenderer.swift:3559`
+- **Done.** **3. `refreshWaveformDemand` walks `allObjectsUnordered` twice.** `WasabiRenderer.swift:3559`
       and `:3577` each want one boolean. One pass answers both.
 - [ ] **4. Re-measure, then decide about `isSceneNeutral`.** The memo on `sceneGeneration`
       (`WasabiRenderer.swift:3545`) misses every frame because cPro's `beatvis` `<animatedlayer>`s
@@ -328,13 +328,13 @@ also appears as `closure #4 in …` and `partial apply for closure #4 in …` on
 Four rebuilt-per-call tables on the main thread. Ranked by measured share; each is independent, so
 they land one at a time.
 
-- [x] **1. `signature(for:classGUID:)` builds a 311-entry dictionary literal per call.**
+- **Done.** **1. `signature(for:classGUID:)` builds a 311-entry dictionary literal per call.**
       `WinampModernScriptRuntime.swift:2283` declares `let signatures: [String: MakiMethodSignature] = [...]`
       as a **local**, so every method invocation the interpreter makes allocates and hashes 311
       entries. Above it, `classGUID.map(Self.canonicalGUID)` is evaluated up to **five separate
       times** in the same call. Hoist the table to a `static let` and compute the canonical GUID
       once into a local. Measured at **10.4%** of the main thread.
-- [x] **2. `MakiClassGUID.canonical` is O(n^2) with ~20 allocations, called 5x per dispatch.**
+- **Done.** **2. `MakiClassGUID.canonical` is O(n^2) with ~20 allocations, called 5x per dispatch.**
       `MakiBytecode.swift:58` walks a 32-character string with `String.index(_:offsetBy:)` in a
       `stride`, building 16 substrings, reversing them in groups of four and joining. Rewrite over
       `utf8` bytes and memoize on the raw string. Measured at **10.4%** (`canonical` +
@@ -342,7 +342,7 @@ they land one at a time.
       **Done without the memo:** one `Array(raw)` plus one `String` makes the function O(n) with two
       allocations instead of O(n²) with ~20, and a cache keyed on the raw string would spend a
       32-character hash to save what is now a 32-character loop. Result is character-identical.
-- [x] **3. The resolved `NSFont` is not cached; only the raw `CGFont` is.**
+- **Done.** **3. The resolved `NSFont` is not cached; only the raw `CGFont` is.**
       `WasabiTextMetrics.font(identifier:size:traits:)` (`WasabiTextMetrics.swift:33`) caches
       `CGFont` by path, so `CTFontCreateWithGraphicsFont`, `applying(traits:)` (an
       `NSFontManager.convert` round trip) and the whole `installedFont` branch - `NSFontManager`
@@ -350,7 +350,7 @@ they land one at a time.
       string, per frame**. Add a cache keyed on `(identifier, size, traits)`, which is what the
       signature already offers, and clear it beside `fonts` in `teardown`. Measured at **2.6%** on
       cPro Bento and **5.7%** on `cPro_T2T-by-MAC`, whose text is heavier.
-- [x] **4. `WalResourceRegistry.resolved(identifier:in:)` folds with ICU per lookup.**
+- **Done.** **4. `WalResourceRegistry.resolved(identifier:in:)` folds with ICU per lookup.**
       `WasabiSkinInitializer.swift:125` calls `Self.fold` - `String.folding(options:locale:)`, a full
       Unicode normalization - on every id, and allocates a fresh `Set<String>` for the alias
       cycle guard, per resource id, per frame. Memoize the fold. Measured at **3.4%**.
@@ -588,15 +588,15 @@ These are verification state, not implementation priorities.
 
 ## Backlog hygiene check
 
-Run this in CI or before committing backlog changes:
+Run this before committing backlog changes:
 
 ```bash
-if grep -n '^- \[x\]' TASKS.md; then
-  echo "closed item still in TASKS.md — archive it"
-  exit 1
-fi
-if grep -n '^| B' TASKS.md | grep -vE '\|[^|]*([0-9]+[^|]*skins?|[0-9]+ variants|—)[^|]*\|'; then
-  echo "open item missing Reach"
-  exit 1
-fi
+scripts/validate_winamp_modern_backlog.sh TASKS.md
 ```
+
+It checks two things: no closed (`- [x]`) item is still here rather than archived, and every open
+item in a **ranking** table carries a Reach. The Reach check is scoped to the five-column ranking
+tables — the three-column *Awaiting manual QA* table has no Reach column and is not asked for one —
+and it tests that the cell is non-blank rather than that it looks numeric, since "every `.wal` skin"
+is a true and common answer. The script had both faults until 2026-09-02 and, because `set -e` stops
+at the closed-item check, the Reach half had never actually run.

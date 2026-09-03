@@ -204,17 +204,27 @@ final class WasabiTextMetrics {
         }
         if let cgFont {
             let created = CTFontCreateWithGraphicsFont(cgFont, size, nil, nil)
-            // A font parsed out of a skin can be missing the name table CoreText expects; it then
-            // builds an attribute dictionary with a nil in it and aborts the process. A font with no
-            // PostScript name is not usable, so fall back rather than hand it on.
+            // A font parsed out of a skin can come back null from a constructor imported as
+            // non-optional. Put in an attributes dictionary, that null reaches the ObjC bridge as a
+            // real nil and aborts the **process** from inside `NSString.size(withAttributes:)`:
             //
-            // This tested `CTFontCopyPostScriptName(created) == nil` until 0.30.0, which the compiler
-            // reports as *always false* — the overlay returns a non-optional `CFString`, so the guard
-            // never fired and the hardening was inert. A nameless font reports an **empty** name, so
-            // that is what the check has to be.
-            let postScriptName = CTFontCopyPostScriptName(created) as String
-            let named: NSFont? = postScriptName.isEmpty ? nil : (created as NSFont)
-            if let named { return Self.applying(traits, to: named) }
+            //   -[__NSPlaceholderDictionary initWithObjects:forKeys:count:]: attempt to insert nil
+            //   object from objects[0]
+            //
+            // which is the 2026-08-16 cPro-Bento report exactly. Assigning to an `NSFont?` is the
+            // whole defence: a nil class reference lands as `.none`, so `if let` catches it and the
+            // caller's guaranteed fallback answers instead.
+            //
+            // **Do not reinstate a PostScript-name check here.** Two have been tried and neither
+            // could ever fire. `CTFontCopyPostScriptName(created) == nil` is *always false* — the
+            // overlay returns a non-optional `CFString`. Testing the name for `isEmpty` (0.30.0) is
+            // no better: CoreGraphics **synthesizes** a name (`font00000000308faa8`) for any font
+            // whose `name` table is missing, empty, or carries a zero-length nameID 6, and rejects
+            // outright anything malformed enough to have no name at all — so no font that reaches
+            // this line can have an empty name. Measured, not reasoned:
+            // `WinampModernNamelessFontTests`.
+            let bridged: NSFont? = created as NSFont
+            if let bridged { return Self.applying(traits, to: bridged) }
         }
         let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
         return fallback.flatMap { Self.applying(traits, to: $0) }

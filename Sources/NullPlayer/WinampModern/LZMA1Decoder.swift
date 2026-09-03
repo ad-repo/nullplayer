@@ -122,7 +122,7 @@ final class LZMA1Decoder {
     private func step() throws {
         let posState = output.count & posStateMask
         if decodeBit(&isMatch, (state << Self.kNumPosBitsMax) + posState) == 0 {
-            decodeLiteral()
+            try decodeLiteral()
             return
         }
         var len: Int
@@ -131,7 +131,7 @@ final class LZMA1Decoder {
                 if decodeBit(&isRep0Long, (state << Self.kNumPosBitsMax) + posState) == 0 {
                     // Short rep: repeat a single byte from the most recent distance.
                     state = state < 7 ? 9 : 11
-                    appendMatchByte(distance: rep0)
+                    try appendMatchByte(distance: rep0)
                     return
                 }
             } else {
@@ -165,12 +165,19 @@ final class LZMA1Decoder {
         try copyMatch(distance: rep0, length: len + Self.kMatchMinLen)
     }
 
-    private func decodeLiteral() {
+    private func decodeLiteral() throws {
         let prevByte = output.isEmpty ? 0 : Int(output[output.count - 1])
         let litState = ((output.count & literalPosMask) << lc) + (prevByte >> (8 - lc))
         let base = 0x300 * litState
         var symbol = 1
         if state >= 7 {
+            // Same history bound. `state >= 7` is only reachable after a match already validated
+            // `rep0`, so no fuzz case has reached here out of range — but this is an unchecked index
+            // driven by stream data, and one comparison is cheaper than trusting that reasoning.
+            guard rep0 < output.count else {
+                throw WalFailure(WalDiagnostic(.invalidArchive,
+                    "LZMA literal match distance \(rep0) exceeds the output history."))
+            }
             var matchByte = Int(output[output.count - rep0 - 1])
             repeat {
                 let matchBit = (matchByte >> 7) & 1
@@ -187,7 +194,16 @@ final class LZMA1Decoder {
         state = state < 4 ? 0 : (state < 10 ? state - 3 : state - 6)
     }
 
-    private func appendMatchByte(distance: Int) {
+    /// A short rep repeats one byte from `distance` back, and the distance comes off the stream, so
+    /// it needs the same history bound `copyMatch` applies. Without it a corrupt stream that opens
+    /// with a short rep indexes `output[-1]` and **traps** — found by
+    /// `testFuzzValidLZMAHeaderWithGarbagePayloadNeverCrashes`, which is the only path that reaches
+    /// here with an empty history.
+    private func appendMatchByte(distance: Int) throws {
+        guard distance < output.count else {
+            throw WalFailure(WalDiagnostic(.invalidArchive,
+                "LZMA short-rep distance \(distance) exceeds the output history."))
+        }
         output.append(output[output.count - distance - 1])
     }
 
