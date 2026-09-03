@@ -44,6 +44,39 @@ When debugging any "the hosted thing is the wrong size" report, **compare the fr
 (`video: box … refused, window took …`); it is the line that ended this defect after three wrong
 theories.
 
+#### A `refused` line on its own is not a defect — measured 2026-09-03
+
+The refusal still shows up in the log on every skin measured, and **that is expected**, not a
+regression. Recorded on 2026-09-03:
+
+| Skin | Box asked for | Window took |
+|---|---|---|
+| multipass | `{332, 113}` | `{395, 113}` |
+| cPro_MMD | `{278, 272}` | `{395, 272}` |
+| Enkera | `{308, 228}` | `{395, 228}` |
+
+**The picture is correct in all of them.** Checked in the running app on multipass and cPro_MMD —
+the latter the largest gap of the three at 117pt, which is the case that would show it worst — and
+the video sits in its window properly in both.
+
+The reading that fits: this is the **first** ask, made while the control bar is still in the
+hierarchy and its 395pt minimum still in force. That is precisely the refusal the retry above exists
+to absorb — the bar leaves, the frame is asked for again, and the second ask is the one that lands.
+A `refused` line is therefore evidence of the mechanism working, not of a mis-sized picture.
+
+Two things follow for anyone reading this log in future:
+
+- **Do not infer a visible defect from the `refused` line.** It was read that way once, and a
+  backlog entry was filed and then withdrawn on the strength of actually looking at the app. The
+  line reports one ask, not the final frame.
+- **The check is the frame *after* the retry**, not the refusal. If the picture really is wrong, the
+  window will still be 395 wide once the bar has left — that is the state worth capturing, and it is
+  not what was measured above.
+
+Aspect-fit is why a too-wide window is benign anyway: surplus width becomes letterboxing, never a
+clipped or stretched picture. multipass's box is a 2.9:1 slot that a 16:9 film is already
+height-constrained inside, so widening it changes nothing on screen.
+
 ### The picture's clock is not the audio engine's (B63)
 
 `WindowManager.videoPlaybackDidStart()` **pauses `AudioEngine`** for the whole of a film. So a host
@@ -70,6 +103,107 @@ all* reports a pause — so `WinampModernMainView.updateTime` compares the state
 paused film's play/pause artwork repainted and its `onPause` / `onResume` to the skin's scripts. The
 clock keeps ticking while a film is paused (the video view's time observer is a plain repeating
 timer), so the comparison is actually reached.
+
+### The skin's transport drives the **film**, not the engine behind it
+
+B63 substituted the *readouts*; the **commands** kept going straight to `AudioEngine`, so in every
+skin the play/pause button, the stop button, the seek slider and PREV/NEXT did nothing to the picture
+(cPro-Bento included — it looked closest only because its readout happened to bind the one substituted
+string). One seam fixes every skin at once: **every** `.wal` transport path funnels through the six
+`WinampModernHost` methods — `<button action="PLAY">`, MAKI `System.play()/pause()/stop()/seekTo()`,
+the seek slider drag and the waveform seeker — so `WinampModernAudioEngineHost.videoTransport` is
+consulted there and the engine is the fall-through:
+
+```swift
+func play() { if let v = videoTransport() { v.togglePlayPause() } else { engine.play() } }
+```
+
+- **Keyed on the session, not on `isVideoActivePlayback`** — the same key `videoSession` uses, so a
+  skin can never take commands for a session whose clock it is not reading, and a film left running
+  behind another tab (where `isVideoOutputVisible` is false) still takes its transport.
+- **PLAY and PAUSE both toggle.** That is what Classic does: a skin's single play/pause button sends
+  whichever of the two its artwork currently shows, and either has to flip the film.
+- **PREV/NEXT skip ∓10s**, mirroring Classic — which means a *video playlist* advances only on a
+  film's own end, never from the skin's NEXT button. An accepted parity limit, not an oversight.
+- The four commands map onto `WindowManager.toggleVideoPlayPause/stopVideo/skipVideoForward,Backward/
+  seekVideo(to:)`, each of which already forks cast-vs-local.
+
+**And the rest of the readouts follow the film too.** `trackDisplayTitle` is the important one: it is
+what `display="songname"` binds to, the readout most skins print, and it read `engine.currentTrack`
+with no substitution at all — so most skins showed the *previous audio track's* title through a whole
+film. Everything else (`trackInfo`, `trackArtist/Album`, `trackPath`, `decoderName`, `bitrateKbps`,
+`sampleRateHz`, `channelCount`, `trackMetadata`) answers **empty/zero** during a session, which makes
+a skin *hide* those lines rather than print a stale track's — the same "never invent a placeholder"
+rule `playItemMetadata` follows. `albumArtwork` and `isArtworkLoading` key on the video controller's
+`currentArtworkTrack` instead. Because `playItemMetadata` is table-driven off `trackTitle`/`trackArtist`/
+`trackAlbum`, all eighteen of Big Bento's file-info keys follow for free, as do
+`System.getPlayItemDisplayTitle()` and the two other `trackDisplayTitle` bindings.
+
+### A finished film is not a session — in `.wal` only
+
+Nothing clears `currentTitle` at natural end of media: `clearLoadedContentState()` has four call sites
+and end-of-media is not among them, and `videoPlaybackState` can never answer `.stopped` while a
+controller exists. So a dead film reads `.paused` **forever**. Before the transport was routed that
+was a stale readout; after it, it would be a permanent transport lockout — every `.wal` command
+driving a corpse, with no way to start audio from the skin again.
+
+**Clearing the session was rejected.** `currentTitle` and `isVideoActivePlayback` are shared state
+Classic and Original read, and their behaviour cannot change. So the session stays and the **`.wal`
+host alone disregards a finished film**, through an additive
+`VideoPlayerWindowController.didReachEndOfMedia` that no code outside `WinampModern/` reads:
+
+- set **true** in the existing `onPlaybackFinished` handler, and only for the non-playlist case;
+- set **false** in `updatePlayingState(true)` — the funnel every playing transition goes through,
+  which is what makes "seek back past the end and press play" restore the session;
+- set **false** in `clearLoadedContentState()`, so a new film never inherits the old one's end.
+
+Both `videoSession` and `videoTransport` guard on it. Classic keeps the phantom on purpose — recorded
+as **B107** in `TASKS.md`, not fixed under a `.wal` pass. Cast video is out of scope: `currentVideoTitle`
+forks to `CastManager.videoCastTitle` for a cast session, which the flag does not cover.
+
+One DEBUG line makes the re-host observable in a running build, and it is load-bearing when a report
+says "the picture did not follow the skin":
+
+- `WinampModern: re-hosting film after skin load hosted=<0/1>` — the re-offer below, and whether the
+  new skin took the picture.
+
+**There is deliberately no trace on the latch itself.** `updatePlayingState` is in
+`VideoPlayerWindowController`, which every mode shares, so a `#if DEBUG` `NSLog` there fires during
+Classic and Original playback too — noise in their logs for a `.wal` concern. One was added during
+the pass and removed on 2026-09-03 for that reason. If the latch needs instrumenting again, put the
+probe on the `.wal` side that reads the flag, not in the shared controller that sets it.
+
+### A skin switch has to re-offer the picture
+
+The only two routes that park a picture are a **play** call and a video holder *reappearing* (the tab
+switch). A skin switch is neither, so a film already running when a new skin loaded stayed in
+NullPlayer's own window while the new skin's video window sat empty beside it. Only cPro→cPro looked
+right, and only because a cPro tab strip re-creates its holder; a `declaredContainer` skin has no
+holder until its window opens, so that path never fires for it.
+
+`WinampModernMainWindowController.rehostVideoOutputIfPlaying()` closes it, from two call sites and no
+more — `hostVideoOutput()` already knows how to ask *any* skin what it declares, so nothing here is
+per-skin:
+
+- the end of `loadSkin(at:)`, for `.wal` → `.wal` switches (including into the placeholder on the
+  failure path, where "the skin declares no video" is the right answer);
+- `WindowManager.rehostWinampModernVideoOutput()`, gated on `controllerFamily == .winampModern` like
+  its four siblings, from `pushCurrentPresentationStateToRecreatedWindows()` — for `reloadUI` and mode
+  switches back into Winamp Modern.
+
+Three rules it obeys:
+
+- **Guarded on `currentTitle`, not on "is playing"** — a *paused* film re-hosts on the same terms —
+  and not on `isVideoActivePlayback`, whose `isVideoOutputVisible` term is false in exactly the
+  unparked state a mode switch leaves behind.
+- **Re-parented, never re-opened.** `VideoPlayerWindowController` and its VLC pipeline survive the
+  switch untouched, so the film keeps playing and the clock the skin reads carries straight on.
+- **One runloop turn after the load**, so the skin's own `onScriptLoaded` resizes and layout cascade
+  have settled — the same reason `hostVideoOutputInPlayer` re-places asynchronously.
+
+Switching *out* needs nothing: `tearDownSkin()` → `releaseVideoSurface()` → `prepareForUITeardown()`
+already unparks and reveals a still-running film, which is what makes the round trip through a
+no-video skin work.
 
 ### A holder leaving is a tab switch, not the end of the film (B63)
 

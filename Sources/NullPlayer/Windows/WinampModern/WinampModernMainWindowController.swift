@@ -387,6 +387,39 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // Posted on the failure path too: the placeholder has no palette, so those windows must fall
         // back to their classic drawing rather than keep painting a skin that is gone.
         NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
+        // A film that was running when this skin loaded has to be re-offered to it — see
+        // `rehostVideoOutputIfPlaying()`. Also on the failure path: the placeholder declares no video,
+        // so the answer there is "NullPlayer's own window keeps it", which is what that call arrives at.
+        rehostVideoOutputIfPlaying()
+    }
+
+    /// Re-offer a still-loaded film's picture to the skin that has just been put up.
+    ///
+    /// The only two routes that park a picture are a **play** call and a video holder *reappearing*
+    /// (`WinampModernMainView.reconcileHostedSurfaces`, which is the tab-switch case). A skin switch
+    /// is neither, so without this a film that is already running finds no one to ask for the
+    /// picture: it stays in NullPlayer's own free-floating window while the new skin's video window
+    /// sits empty beside it. The embedded case happened to work only because a cPro tab strip
+    /// re-creates its holder; a `declaredContainer` skin has no holder until its window opens.
+    ///
+    /// The film is re-*parented*, never re-opened — `VideoPlayerWindowController` and its VLC
+    /// pipeline survive the switch untouched, so playback and position carry straight on. Guarded on
+    /// `currentTitle`, deliberately not on "is playing": a **paused** film re-hosts on the same terms.
+    /// `hostVideoOutput()` already forks `.embedded` / `.declaredContainer` / neither, so a skin that
+    /// declares no video surface answers false and NullPlayer's window keeps the picture — the
+    /// correct outcome, not a fallback for a failure.
+    func rehostVideoOutputIfPlaying() {
+        guard WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
+        // One runloop turn after the load, so the skin's own `onScriptLoaded` resizes and layout
+        // cascade have settled — the same reason `hostVideoOutputInPlayer` re-places asynchronously.
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
+            let hosted = self.hostVideoOutput()
+            #if DEBUG
+            NSLog("WinampModern: re-hosting film after skin load hosted=%@", hosted ? "1" : "0")
+            #endif
+        }
     }
 
     /// Create one native window per visible non-main container. The main window owns the scripted

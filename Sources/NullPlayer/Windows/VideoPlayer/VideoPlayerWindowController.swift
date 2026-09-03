@@ -29,6 +29,38 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Current video title
     private(set) var currentTitle: String?
 
+    /// True from the moment a film reaches its own end until something plays again. Read by the
+    /// `.wal` host only (`WinampModernAudioEngineHost.videoSession` / `.videoTransport`), so a
+    /// finished film stops counting as a session there without changing what Classic and Original
+    /// see — they keep reading `currentTitle` and `isVideoActivePlayback` exactly as before.
+    ///
+    /// Nothing clears the session at natural end of media (`clearLoadedContentState()` is not among
+    /// the paths end-of-media takes), and clearing it would change Classic and Original. So the
+    /// phantom session is left in place and the `.wal` host learns to disregard it instead.
+    ///
+    /// **It cannot be driven from `.ended` alone.** Measured 2026-09-02 against the vendored VLCKit:
+    /// a local `.mp4` running out reports `VLCMediaPlayerState.paused`, and no `.ended` ever arrives
+    /// — the log goes `Playing` … `Paused` and stops. Making `.paused` fire `onPlaybackFinished`
+    /// instead was rejected: that handler scrobbles, records analytics and advances a playlist, all
+    /// of it shared with Classic and Original. So the position is read **at the stop transition**
+    /// and latched (`updatePlayingState`), with `.ended` kept as the backstop for the sources that
+    /// do report it. Latched rather than computed live: a film left parked at its end stops
+    /// reporting a position after a while, and a live check then reads the corpse as a fresh
+    /// session again.
+    private(set) var didReachEndOfMedia = false
+
+    /// How close to the end counts as the end. A film the user pauses inside the last moment reads
+    /// as finished, deliberately — it is the same dead transport, and pressing play clears it.
+    private static let endOfMediaTolerance: TimeInterval = 0.75
+
+    /// Whether the film is sitting at its own end *right now*. Only ever read at the moment playback
+    /// stops, while VLCKit's clock still answers.
+    private var isParkedAtEndOfMedia: Bool {
+        let duration = self.duration, time = self.currentTime
+        guard duration > 0, time > 0 else { return false }
+        return time >= duration - Self.endOfMediaTolerance
+    }
+
     /// Lightweight video track used by the main window for artwork lookup.
     private(set) var currentArtworkTrack: Track?
     
@@ -185,6 +217,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     private func clearLoadedContentState() {
         currentTitle = nil
+        // A newly loaded film must never inherit the previous one's ended state.
+        didReachEndOfMedia = false
         currentArtworkTrack = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
@@ -397,6 +431,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
             // Record analytics before advancing playlist
             self.recordVideoPlayEvent()
+
+            // A queued film's callback loads the next item and starts it, which clears the flag
+            // through `updatePlayingState(true)` anyway; the guard keeps it honest in between.
+            if !self.isFromPlaylist {
+                self.didReachEndOfMedia = true
+            }
 
             // Advance playlist if this video was from the playlist
             if self.isFromPlaylist {
@@ -1313,6 +1353,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Update playing state (called from VideoPlayerView)
     func updatePlayingState(_ playing: Bool) {
         isPlaying = playing
+        // The single funnel every playback transition goes through — which is what makes seeking an
+        // ended film back and pressing play restore the session the `.wal` host reads, and what
+        // catches the end of media that VLCKit reports as a plain pause.
+        if playing {
+            didReachEndOfMedia = false
+        } else if isParkedAtEndOfMedia {
+            didReachEndOfMedia = true
+        }
     }
     
     // MARK: - Video Casting

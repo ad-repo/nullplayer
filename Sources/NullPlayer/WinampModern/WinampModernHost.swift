@@ -304,6 +304,19 @@ struct WinampModernVideoSession {
     var title: String
 }
 
+/// The commands a `.wal` skin's transport sends to a running film. Injected as a closure beside
+/// `videoSession`, and for the same reason: the host has to be exercisable without a `WindowManager`.
+///
+/// Every `.wal` transport path — `<button action="PLAY">`, MAKI `System.play()`, the seek slider and
+/// the waveform seeker — funnels through the host's six transport methods, so routing them here is
+/// what makes the skin's buttons drive the picture in *every* skin at once, with no per-skin work.
+struct WinampModernVideoTransport {
+    var togglePlayPause: () -> Void
+    var stop: () -> Void
+    var skip: (TimeInterval) -> Void
+    var seek: (TimeInterval) -> Void
+}
+
 final class WinampModernAudioEngineHost: WinampModernHost {
     typealias ArtworkSnapshot = (trackID: UUID?, image: NSImage?)
 
@@ -423,8 +436,13 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     ///
     /// Keyed by track id: the cache has to be dropped when the track changes, or the previous
     /// track's cover stays on screen over the new one's title.
+    ///
+    /// During a film this is keyed on the video controller's own `currentArtworkTrack` — the
+    /// lightweight `Track` `WindowManager.showVideoPlayer` already creates and pushes through
+    /// `NowPlayingManager` — so the `<AlbumArt>` shows the film's poster rather than the last audio
+    /// track's cover. A key change, not new plumbing.
     var albumArtwork: CGImage? {
-        guard let trackID = engine.currentTrack?.id else { return nil }
+        guard let trackID = artworkTrackID else { return nil }
         if let artworkCache, artworkCache.trackID == trackID { return artworkCache.image }
         let snapshot = artworkSnapshot()
         // Only the art that belongs to *this* track. A load in flight for a track that has already
@@ -439,8 +457,23 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     /// True only while a fetch is actually in flight *and* this track has no cover yet — a cached
     /// cover is not "loading", and with nothing playing there is nothing to load.
     var isArtworkLoading: Bool {
-        guard engine.currentTrack != nil, albumArtwork == nil else { return false }
+        // Keyed the same way as `albumArtwork`: the engine has no track during a film, so guarding
+        // on `engine.currentTrack` here would answer `false` for the whole session and the skin's
+        // spinner would never appear.
+        guard artworkTrackID != nil, albumArtwork == nil else { return false }
         return artworkLoading()
+    }
+
+    /// Which track's cover the skin should be showing: the film's, while one is running.
+    private var artworkTrackID: UUID? {
+        if videoSession() != nil { return videoArtworkTrackID() }
+        return engine.currentTrack?.id
+    }
+
+    /// The film's artwork track id, behind a closure for the same reason `videoSession` is: so the
+    /// host can be exercised without a live `VideoPlayerWindowController`.
+    var videoArtworkTrackID: () -> UUID? = {
+        WindowManager.shared.currentVideoPlayerController?.currentArtworkTrack?.id
     }
 
     /// **A film is not the audio engine's clock.** `AudioEngine` is *paused* for the whole of a
@@ -455,13 +488,43 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     /// Keyed on the video's **title**, not on `isVideoActivePlayback`: that property's
     /// `isVideoOutputVisible` term goes false the moment the picture is unparked, which is precisely
     /// the state a film left running behind another tab is in.
+    ///
+    /// A film that has played to its **end** is not a session here. Nothing clears `currentTitle` at
+    /// natural end of media, and `videoPlaybackState` can never answer `.stopped` while a controller
+    /// exists, so the dead film would read `.paused` forever — a stale readout before the transport
+    /// was routed, and a permanent transport lockout after it. The session itself is not cleared:
+    /// that is shared state Classic and Original read, and their behaviour cannot change. So the
+    /// `.wal` host alone disregards it.
     var videoSession: () -> WinampModernVideoSession? = {
         let manager = WindowManager.shared
+        guard manager.currentVideoPlayerController?.didReachEndOfMedia != true else { return nil }
         guard let title = manager.currentVideoTitle else { return nil }
         return WinampModernVideoSession(state: manager.videoPlaybackState,
                                         currentTime: manager.videoCurrentTime,
                                         duration: manager.videoDuration,
                                         title: title)
+    }
+
+    /// Non-nil **only when `videoSession()` is non-nil** — the same key, so a skin can never take
+    /// commands for a session whose clock it is not reading. Gated on the session's title rather
+    /// than on `isVideoActivePlayback`: that property's `isVideoOutputVisible` term goes false for a
+    /// film left running behind another tab, which is exactly when the transport must still work.
+    var videoTransport: () -> WinampModernVideoTransport? = {
+        let manager = WindowManager.shared
+        guard manager.currentVideoPlayerController?.didReachEndOfMedia != true,
+              manager.currentVideoTitle != nil else { return nil }
+        // Each of these already forks cast-vs-local internally.
+        return WinampModernVideoTransport(
+            togglePlayPause: { WindowManager.shared.toggleVideoPlayPause() },
+            stop: { WindowManager.shared.stopVideo() },
+            skip: { seconds in
+                if seconds < 0 {
+                    WindowManager.shared.skipVideoBackward(-seconds)
+                } else {
+                    WindowManager.shared.skipVideoForward(seconds)
+                }
+            },
+            seek: { WindowManager.shared.seekVideo(to: $0) })
     }
 
     var playbackState: PlaybackState { videoSession()?.state ?? engine.state }
@@ -495,8 +558,20 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         set { engine.sweetFadeDuration = TimeInterval(newValue) }
     }
     var trackTitle: String { videoSession()?.title ?? engine.currentTrack?.title ?? "" }
-    var trackArtist: String { engine.currentTrack?.artist ?? "" }
-    var trackAlbum: String { engine.currentTrack?.album ?? "" }
+
+    /// **During a film, everything but the title and the clock answers empty.** A skin hides a line
+    /// that comes back `""` — the same "never invent a placeholder" rule `playItemMetadata` follows —
+    /// and the alternative is printing the *previous audio track's* artist, bitrate and path against
+    /// the film's title, which is what the readouts did before this.
+    var trackArtist: String {
+        guard videoSession() == nil else { return "" }
+        return engine.currentTrack?.artist ?? ""
+    }
+
+    var trackAlbum: String {
+        guard videoSession() == nil else { return "" }
+        return engine.currentTrack?.album ?? ""
+    }
     /// The library row for the playing track, looked up once per track rather than once per key —
     /// a file-info panel asks for a dozen fields in a row, and each one would otherwise take the
     /// library's queue. Keyed by track id, so it drops when the track changes.
@@ -508,6 +583,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     /// answers with what the `Track` itself knows and leaves the rest empty, which hides those
     /// lines instead of filling them with something invented.
     var trackMetadata: WinampModernTrackMetadata {
+        guard videoSession() == nil else { return .empty }
         guard let track = engine.currentTrack else { return .empty }
         let row = libraryRow(for: track)
         var metadata = WinampModernTrackMetadata()
@@ -592,27 +668,46 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         return row
     }
 
+    /// `display="songname"` — the readout most skins print, and the one `trackTitle` does *not*
+    /// cover: only cPro-Bento happens to bind the `songtitle` that already substituted the film.
     var trackDisplayTitle: String {
+        if let session = videoSession() { return session.title }
         guard let track = engine.currentTrack else { return "" }
         guard let artist = track.artist, !artist.isEmpty else { return track.title }
         return "\(artist) - \(track.title)"
     }
-    var bitrateKbps: Int { engine.currentTrack?.bitrate ?? 0 }
-    var sampleRateHz: Int { engine.currentTrack?.sampleRate ?? 0 }
-    var channelCount: Int { engine.currentTrack?.channels ?? 0 }
+
+    var bitrateKbps: Int {
+        guard videoSession() == nil else { return 0 }
+        return engine.currentTrack?.bitrate ?? 0
+    }
+
+    var sampleRateHz: Int {
+        guard videoSession() == nil else { return 0 }
+        return engine.currentTrack?.sampleRate ?? 0
+    }
+
+    var channelCount: Int {
+        guard videoSession() == nil else { return 0 }
+        return engine.currentTrack?.channels ?? 0
+    }
 
     /// The codec, from the track's own extension — the only thing available without opening the file
     /// again, and the same thing Winamp's readout is really telling the user. A stream with no
     /// recognisable extension answers with its scheme's transport ("HTTP Stream"), which is what the
     /// Decoder line says in Winamp for a radio station.
     var decoderName: String {
+        guard videoSession() == nil else { return "" }
         guard let url = engine.currentTrack?.url else { return "" }
         let named = Self.codecNames[url.pathExtension.lowercased()]
         if let named { return named }
         return url.isFileURL ? url.pathExtension.uppercased() : "HTTP Stream"
     }
 
+    /// The film's own URL is available (`currentArtworkTrack.url`) if a real path readout is wanted
+    /// later; it is deliberately empty here, with the rest of the non-title fields.
     var trackPath: String {
+        guard videoSession() == nil else { return "" }
         guard let url = engine.currentTrack?.url else { return "" }
         return url.isFileURL ? url.path : url.absoluteString
     }
@@ -625,6 +720,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     ]
 
     var trackInfo: String {
+        guard videoSession() == nil else { return "" }
         guard let track = engine.currentTrack else { return "" }
         return [track.artist, track.album].compactMap { value in
             guard let value, !value.isEmpty else { return nil }
@@ -632,12 +728,35 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         }.joined(separator: " - ")
     }
 
-    func play() { engine.play() }
-    func pause() { engine.pause() }
-    func stop() { engine.stop() }
-    func previous() { engine.previous() }
-    func next() { engine.next() }
-    func seek(to seconds: TimeInterval) { engine.seek(to: seconds) }
+    /// PLAY and PAUSE **both toggle** during a film, which is what Classic does
+    /// (`MainWindowView.performAction`): a skin's single play/pause button sends whichever of the
+    /// two its artwork currently shows, and either must flip the film.
+    func play() {
+        if let transport = videoTransport() { transport.togglePlayPause() } else { engine.play() }
+    }
+
+    func pause() {
+        if let transport = videoTransport() { transport.togglePlayPause() } else { engine.pause() }
+    }
+
+    func stop() {
+        if let transport = videoTransport() { transport.stop() } else { engine.stop() }
+    }
+
+    /// PREV/NEXT during a film skip ∓10s, mirroring Classic. This deliberately gives up "next item"
+    /// for a video *playlist* — a queued film advances only on its own end, never from the skin's
+    /// NEXT button. Classic has the same limit; matching it is the point.
+    func previous() {
+        if let transport = videoTransport() { transport.skip(-10) } else { engine.previous() }
+    }
+
+    func next() {
+        if let transport = videoTransport() { transport.skip(10) } else { engine.next() }
+    }
+
+    func seek(to seconds: TimeInterval) {
+        if let transport = videoTransport() { transport.seek(seconds) } else { engine.seek(to: seconds) }
+    }
     func openFiles() { MenuActions.shared.openFile() }
 
     func revealInFinder(_ path: String) {
