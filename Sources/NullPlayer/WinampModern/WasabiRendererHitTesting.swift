@@ -143,6 +143,17 @@ extension WasabiSceneRenderer {
         return value < 0
     }
 
+    /// The same question with the layer's **bitmap** in hand, which is the form the draw asks.
+    ///
+    /// A negative `sysregion` is a claim that the bitmap is a silhouette, and a bitmap that is one
+    /// flat translucent value is not one — it is artwork, and suppressing it leaves a hole where the
+    /// skin drew a border. `isFlatTranslucentFill` carries the rule and the corpus behind it; here
+    /// it only decides that such a layer paints like any other.
+    func isRegionOnly(_ object: WasabiObject, type: String, bitmapID: String?) -> Bool {
+        guard Self.isRegionOnly(object, type: type) else { return false }
+        return !resources.isFlatTranslucentFill(identifier: bitmapID ?? object.attributes["image"])
+    }
+
     /// One `sysregion` object's contribution to the window shape, and the key the cache turns on.
     ///
     /// Rebuilding the shape is a canvas-sized allocation and a pass over every pixel, and the graph's
@@ -182,6 +193,10 @@ extension WasabiSceneRenderer {
             guard let raw = node.object.attributes["sysregion"],
                   let value = Int(raw.trimmingCharacters(in: .whitespaces)), value != 0
             else { return nil }
+            // A flat translucent fill is artwork, not a silhouette, and the paint half of the rule
+            // has already let it through — so it must not cut either, or the border it draws would
+            // be composited away again. See `isFlatTranslucentFill`.
+            if value < 0, resources.isFlatTranslucentFill(identifier: node.bitmapID) { return nil }
             return WasabiRegionCut(object: node.object, frame: node.frame, clip: node.clip,
                                    bitmapID: node.bitmapID, additive: value > 0)
         }

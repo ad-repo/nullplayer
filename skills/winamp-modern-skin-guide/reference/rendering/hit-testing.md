@@ -186,8 +186,10 @@ is a signed combining mode against the region built so far, and only the sign is
 value is *region only* — it paints nothing and **subtracts** its silhouette from the window; a
 positive one paints as usual and **adds** its own shape back.
 
-The bitmap behind a negative layer is a silhouette, not artwork — Ujola Cat's `window-regions.png` is
-a magenta-and-white mask — and painting it puts a coloured slab across the window.
+The bitmap behind a negative layer is *usually* a silhouette rather than artwork — Ujola Cat's
+`window-regions.png` is a magenta-and-white mask — and painting one puts a coloured slab across the
+window. **Usually, not always: a bitmap with one alpha value everywhere is a fill, and it paints**
+(B78, below).
 `standardframe.xml` is where this bites: its `wasabi.frame.layout` carries five `sysregion="-2"`
 layers and is inherited by every `Wasabi:StandardFrame:*` flavour, so the mask landed on the playlist
 window, on the synthesized library window, and on anything else framed the same way — reported as
@@ -220,11 +222,47 @@ followed by the `player.main` group's `sysregion="1"` — subtracting every nega
 the left third of the window (**31,289 px, 16.6%** of the layout).
 
 **The cut is binary, at half coverage.** A region is a shape, not a translucency — Win32's own is —
-and a skin is entitled to hand over a silhouette that is neither opaque nor clear. Ebonite cuts its
-four frame strips with `wasabi.frame.dummybg`, a crop of the window's own *background texture* at
-alpha 179; as coverage that left the border of every framed window at 30% opacity, which reads as a
-rendering fault rather than as a shape. Half coverage is also the midpoint of an anti-aliased edge,
-so a rounded corner lands where the artwork draws it.
+and a skin is entitled to hand over a silhouette that is neither opaque nor clear: Shield_Amp's and
+Sony_Walkman's corners are anti-aliased. As coverage those left borders and corners at partial
+opacity, which reads as a rendering fault rather than as a shape. Half coverage is also the midpoint
+of an anti-aliased edge, so a rounded corner lands where the artwork draws it.
+
+#### A flat translucent fill is artwork, not a silhouette (B78)
+
+**A bitmap carrying one alpha value over every pixel cannot be a silhouette.** It has no edge, so
+under a binary cut it takes either all of the rect it is stretched over or none of it, decided by
+where its single value falls against the coverage floor — it says nothing about a shape. A negative
+`sysregion` on such a bitmap is a claim the bitmap does not support, and what it actually is, is a
+texture stretched over a strip.
+
+So a layer whose bitmap is a flat **translucent** fill paints like any other and is left out of
+`regionCuts` entirely. **Both halves are needed.** The cut composites over the finished scene, so
+letting it paint while still cutting erases what the paint just put there — the same hole, arrived at
+twice.
+
+Ebonite is the case. Its standard frame draws its four border strips as `sysregion="-2"` layers over
+`wasabi.frame.dummybg`, a 10x10 crop of the window's own background texture at a uniform **alpha
+179**. Read as a silhouette it took the whole border and painted nothing, so the client area of every
+framed window overhung a frame that was not there — reported as *"the window contents are bigger than
+the frame"*.
+
+**Translucent only, and deliberately.** A uniformly *opaque* crop is the idiom for a deliberate
+rectangular trim — meridian's 1px `C-Display-Mid` strips, Shield_Amp's 1px `region.png` edges — and
+repainting those would square off windows meant to be shaped. A uniformly *clear* one cuts nothing
+already.
+
+**Measured over the 61-skin corpus**, by the alpha profile of each negative layer's resolved bitmap
+crop: 352 declarations, 263 resolvable. 162 binary opaque/clear masks, 42 mixed-translucent, 28
+uniformly opaque, 19 uniformly clear, and **12 flat translucent fills — all 12 Ebonite's**. No other
+skin's shape moves; the render sweep agrees (6 of 590 images, five of them Ebonite's framed windows).
+`WasabiBitmap.uniformAlpha` answers the question and
+`WasabiResourceCache.isFlatTranslucentFill(identifier:)` caches it per bitmap for the skin's life —
+alpha is the one channel a colour theme leaves alone.
+
+This does **not** give Ebonite its right and bottom pads: 233x230 of a 250x250 window. That margin is
+reserved for `sc.alphaframe`, a separate overlay window the skin's own
+`standardframe.m` opens with `newDynamicContainer` and keeps on the client with `resize()` — a
+missing capability, not a drawing bug. See [components.md](../components.md).
 
 **A window is never shrunk by additions alone.** Winamp builds the region up from nothing; here it
 starts as the window's own rect and a layout that declares no negative `sysregion` keeps the

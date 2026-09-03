@@ -22,9 +22,16 @@ import ZIPFoundation
 ///    S7Reflex lays its config drawer *behind* the player in `main/normal`, and the drawer's two
 ///    350 and 251 px silhouettes are followed by the `player.main` group's `sysregion="1"` — so
 ///    subtracting every negative layer cut away the left third of the window (31,289 px, 16.6%).
-/// 3. **The cut is binary.** Ebonite's frame strips are cut from the window's own *background
-///    texture* at alpha 179; as coverage that left the border of every framed window at 30% opacity,
-///    which reads as a rendering fault rather than as a shape.
+/// 3. **The cut is binary.** A region is a shape, not a translucency, and a skin may hand over a
+///    silhouette that is neither opaque nor clear — Shield_Amp's and Sony_Walkman's anti-aliased
+///    corners are. As coverage those left borders and corners at partial opacity, which reads as a
+///    rendering fault rather than as a shape.
+///
+/// A fourth was found later, by Ebonite, and corrects what this phase concluded from it: **a bitmap
+/// with one alpha value everywhere is a fill, not a silhouette** (B78). It has no edge, so as a
+/// shape it can only take all of its rect or none of it; what it actually is, is a texture stretched
+/// over a strip. Phase 88 cut Ebonite's four border strips away and painted nothing in their place,
+/// leaving the client area of every framed window overhanging a frame that was not there.
 final class WinampModernPhase88Tests: XCTestCase {
 
     /// The colour of the always-opaque background art, so a kept pixel is identifiable.
@@ -70,18 +77,38 @@ final class WinampModernPhase88Tests: XCTestCase {
         XCTAssertEqual(alpha(pixels, x: 6, y: 6), 0, "the rest of the cut must survive it")
     }
 
-    /// Ebonite's case. `art.soft` is alpha 179 — as coverage it would leave 76 here.
-    func testAPartiallyTransparentSilhouetteCutsCompletely() throws {
+    /// **Ebonite's case, and the correction B78 made to it.** `art.soft` is one alpha — 179 — over
+    /// every pixel, which is Ebonite's `wasabi.frame.dummybg`: a 10x10 crop of the window's own
+    /// background texture that its standard frame stretches over each of the four border strips.
+    ///
+    /// A bitmap that never varies draws no edge and describes no shape, so it is not a silhouette at
+    /// all. Phase 88 read it as one and, the cut being binary, took the whole strip: the border of
+    /// every framed window went transparent and unpainted while the client area drawn over it kept
+    /// its full width, which is the overhang B78 was reported as. It has to paint, like the artwork
+    /// it is, and it must not cut — either half alone leaves the same hole, since a cut is
+    /// composited over the finished scene and would erase what the paint just put there.
+    func testAFlatTranslucentFillPaintsAndCutsNothing() throws {
         let pixels = try render(layout: """
             <layer id="bg" image="art.opaque" x="0" y="0" w="16" h="16"/>
             <layer id="trim" image="art.soft" x="0" y="0" w="4" h="4" sysregion="-2"/>
             """)
 
-        XCTAssertEqual(alpha(pixels, x: 1, y: 1), 0, "a region is a shape, not a translucency")
+        XCTAssertEqual(alpha(pixels, x: 1, y: 1), 255, "artwork must not be cut out of the window")
+        // Black at alpha 179 over the opaque red background: 255 x (1 - 179/255) = 76.
+        assertColor(pixels, x: 1, y: 1, equals: [76, 0, 0], "the fill must paint")
+        assertColor(pixels, x: 8, y: 8, equals: background, "and only inside its own box")
     }
 
+    /// The other side of that line: a **uniformly opaque** crop still cuts. It is the idiom skins use
+    /// for a deliberate rectangular trim — meridian's 1px `C-Display-Mid` strips, Shield_Amp's 1px
+    /// `region.png` edges — and repainting those would square off windows meant to be shaped. Only a
+    /// translucent flat fill is artwork; `testNegativeSysregionCutsItsSilhouetteOutOfTheWindow` is
+    /// that case, drawn with `art.opaque`.
+    ///
     /// A silhouette below the threshold is not a shape either, so the window keeps its rect: the
-    /// direction that cannot lose a window a skin meant to draw.
+    /// direction that cannot lose a window a skin meant to draw. `art.faint` carries two values —
+    /// alpha 32 and alpha 0 — so it is a silhouette by the rule above, and every covered pixel of it
+    /// still sits under the coverage floor.
     func testASilhouetteBelowTheCoverageFloorCutsNothing() throws {
         let pixels = try render(layout: """
             <layer id="bg" image="art.opaque" x="0" y="0" w="16" h="16"/>
@@ -122,8 +149,9 @@ final class WinampModernPhase88Tests: XCTestCase {
 
     // MARK: - Harness
 
-    /// 16×16, four 8×8 quadrants: opaque red (the artwork), opaque black, black at alpha 179
-    /// (Ebonite's texture), black at alpha 32 (below the floor).
+    /// 16×16 in 8×8 quadrants: opaque red (the artwork), black at a uniform alpha 179 (Ebonite's
+    /// texture — a flat fill, not a silhouette), and a faint *silhouette* whose left half is alpha 32
+    /// and right half clear, so it varies (a shape) while every covered pixel stays under the floor.
     private enum Quadrant {
         static let opaque = "0 0"
         static let soft = "8 0"
@@ -200,9 +228,9 @@ final class WinampModernPhase88Tests: XCTestCase {
         let side = 16
         var pixels = [UInt8](repeating: 0, count: side * side * 4)
         // Premultiplied: the colour components are scaled by the alpha they carry.
-        func fill(originX: Int, originY: Int, red: UInt8, alpha: UInt8) {
+        func fill(originX: Int, originY: Int, width: Int = 8, red: UInt8, alpha: UInt8) {
             for row in originY..<(originY + 8) {
-                for column in originX..<(originX + 8) {
+                for column in originX..<(originX + width) {
                     let offset = (row * side + column) * 4
                     pixels[offset] = UInt8(Int(red) * Int(alpha) / 255)
                     pixels[offset + 3] = alpha
@@ -211,7 +239,9 @@ final class WinampModernPhase88Tests: XCTestCase {
         }
         fill(originX: 0, originY: 0, red: 255, alpha: 255)   // art.opaque
         fill(originX: 8, originY: 0, red: 0, alpha: 179)     // art.soft — Ebonite's texture
-        fill(originX: 0, originY: 8, red: 0, alpha: 32)      // art.faint — below the floor
+        // art.faint — a silhouette (two values, so it has an edge) entirely below the floor. Its
+        // right half is left clear by drawing only the left one.
+        fill(originX: 0, originY: 8, width: 4, red: 0, alpha: 32)
         let image = try pixels.withUnsafeMutableBytes { bytes -> CGImage in
             let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: side, height: side,
                                                   bitsPerComponent: 8, bytesPerRow: side * 4,

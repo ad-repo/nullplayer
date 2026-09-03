@@ -32,6 +32,13 @@
 
 ### Bug Fixes
 
+- **Modern skins: a window's contents no longer overhang its frame** — some skins draw the border of
+  their playlist and library windows as a translucent wash of the window's own texture. NullPlayer
+  mistook that for one of the cut-out masks skins use to shape a window, so it erased the border
+  instead of drawing it and left the contents hanging over the edge of a frame that was not there.
+  Reported on Ebonite, whose playlist ran 19 pixels past its own frame; a mask still shapes a window
+  as before, because a wash of one flat colour cannot describe a shape.
+
 - **Modern skins: a panel no longer shows everything it was meant to hide** — a skin can size a panel
   by naming the artwork behind it instead of stating its width and height, and several use that panel
   as a peephole with content sliding through it. NullPlayer treated such a panel as having no size at
