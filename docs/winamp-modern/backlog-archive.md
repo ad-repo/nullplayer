@@ -2,6 +2,31 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B109 — a bitmap-font clock advances its colon by the whole atlas cell, so the seconds sit nine pixels away — closed 2026-09-03
+
+| B109 | **A bitmap-font clock advances its colon by the whole atlas cell.** Reported live 2026-09-03 against the cPro family: *"there is a space between the : and the seconds in elapsed time"* — the readout drew `1:03: 16`. A bitmap font is a fixed-pitch atlas and its colon is the one glyph a sheet routinely inks into only part of its cell; ClassicPro's `numfont.png` is 15px per glyph with its colon in the leftmost **6**, and the engine declares `timecolonwidth="6"` on `<text id="SongTime">` for exactly that reason. `WasabiSceneRenderer.drawBitmapText` never read the attribute — the Core Text path had honoured it since BB29 (`WasabiTextMetrics.clockRun`) — so the colon's nine unused columns became a gap before every following field | the whole cPro family through the engine, plus Enkera, TRON Legacy and impulse | S | Live-reported |
+
+      **Fixed as a cell, not as a trim.** The colon advances by its declared width and every other
+      glyph keeps `charwidth + hspacing`; the glyph is **cropped** to that cell rather than centred
+      in it, because a sheet's ink sits at its cell's left edge — which is also what the Core Text
+      path's per-cell clip does with a `timecolonwidth` narrower than the glyph. All four corpus
+      cases declare a cell *narrower* than the atlas advance (a 9 or 11px advance against a 5, 6 or
+      7px colon), so the two paths never disagree in practice.
+
+      Only a clock reads the attribute (`WasabiTextMetrics.bitmapColonWidth`, gated on the same
+      `display=` set as `clockRun`), so a label carrying a stray `timecolonwidth` is still one
+      fixed-pitch run. `width(of:)`'s bitmap branch sums per-glyph advances for the same reason
+      `getTextWidth()` goes through `clockRun` on the other path: a skin lays out the total time
+      from what it measures, and a measurement that kept the full-cell advance would put the
+      separator nine pixels off whatever the readout now draws.
+
+      Found by reading the atlas rather than the report — dumping `numfont.png` cell by cell
+      against the three-row glyph map put the colon at row 1 column 12 with 6 columns of ink, which
+      is the number the engine had already written down. Pinned by `WinampModernBitmapClockTests`:
+      a synthetic atlas of the engine's own geometry, drawn through the real renderer and read back
+      **column by column** — an extent cannot see a gap *inside* a run — with each assertion
+      confirmed to fail against the pre-fix code. Verified live by the user on a cPro skin.
+
 ## B108 — VLCKit reports the end of a film as `.paused`, so nothing downstream of `onPlaybackFinished` ever ran — closed 2026-09-03
 
 | B108 | **VLCKit reports the end of a film as `.paused`, not `.ended`, so nothing downstream of `onPlaybackFinished` ever runs.** Measured 2026-09-02 on the vendored VLCKit with a local H.264 `.mp4`: the log goes `VideoPlayerView: Playing` → `VideoPlayerView: Paused` at the film's end and no `.ended` ever arrives, and `.ended` is the only case that calls `onPlaybackFinished` (`VideoPlayerView.swift`). **User-reported 2026-09-03: the same happens for network/video streams**, so this is the VLCKit path generally and not a local-file quirk — the earlier "may still report `.ended` for network sources" hedge is retired, and the `.ended` backstop kept by the `.wal` pass is effectively dead code. Everything hung off that handler is therefore dead for **all** video: **Plex/Jellyfin/Emby finish-scrobbling**, the analytics play event, and **video-playlist advancement** (`onVideoFinishedForPlaylist`), so a queued film never starts the next one. **The scrobbling half is the costly one and it is server content, i.e. streamed**: a film watched to the end on Plex/Jellyfin/Emby is never reported finished — `.paused` fires `onPlaybackPaused` instead, so the server records a *pause at 100%* and the film is never marked watched. Local files do not scrobble at all, so reading this as a local-video issue understates it. Out of scope for the `.wal` video pass, which needed only its own end-of-session signal and takes it from the stop transition's position instead (`VideoPlayerWindowController.didReachEndOfMedia`) precisely so it changes nothing shared — but note that latch guards on `duration > 0`, so **a stream whose duration VLCKit reports late or not at all never latches either**, and the `.wal` session goes phantom for exactly that content; worth checking against a real server stream before the video pass merges. Fixing it properly means deciding what `.paused`-at-end should trigger for every mode, which necessarily changes Classic and Original — that is not a `.wal` side effect but a deliberate fix to shared behaviour, and it would restore scrobbling and playlist advance at the same time | all modes, all video, local and streamed | M | Live-reported |

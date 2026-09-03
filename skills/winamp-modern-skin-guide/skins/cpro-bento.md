@@ -39,6 +39,12 @@ synthesized and nothing left to the classic fallback.
 
 ### Working
 
+- **The elapsed-time readout spaces its own colon** (2026-09-03). The engine draws the time with the
+  `numfont.png` atlas, whose colon is inked into the leftmost 6 of a 15px cell, and declares
+  `timecolonwidth="6"` for it; the bitmap draw path ignored the attribute and the clock read
+  `1:03: 16`. Fixed engine-wide, so it covers every cPro skin at once — see
+  [reference/rendering/text.md](../reference/rendering/text.md) → *a bitmap-font clock's colon has a
+  cell of its own*.
 - **The framed surfaces** — `<grid>` nine-slice (Phase 24). The tab pills, the SUI sheet, the playlist
   box, the mini-view strip and the seek track are all grids; before this they drew *nothing* and read
   as flat black holes. 49 of them in this skin's include graph.

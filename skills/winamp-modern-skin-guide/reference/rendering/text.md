@@ -224,6 +224,41 @@ registers without one when that fails, so the identifier form still resolves thr
 The glyph map is Winamp's fixed three-row sheet layout. The two trailing spaces on row 0 are
 load-bearing: they map the space character onto a blank cell instead of onto the fallback glyph (0, 0).
 
+#### And a bitmap-font clock's colon has a cell of its own
+
+`timecolonwidth` is not only the Core Text path's business (BB29 above). A bitmap font is a
+**fixed-pitch atlas**, and its colon is the one glyph a sheet routinely inks into only part of its
+cell — so advancing the whole cell leaves the remainder as a gap *before the seconds*, which is what
+`WasabiSceneRenderer.drawBitmapText` did until this was fixed. ClassicPro's `numfont.png` is 15px per
+glyph with its colon in the leftmost **6**, and the engine says so on the object:
+
+```xml
+<bitmapfont id="player.bitmapfont.nums" file="player.bitmapfont.nums.source"
+            charwidth="15" charheight="31" hspacing="0" vspacing="-2"/>
+<text id="SongTime" font="player.bitmapfont.nums" timecolonwidth="6" display="time" .../>
+```
+
+Reported live 2026-09-03 across the cPro family — *"there is a space between the : and the seconds"* —
+and the readout drew `1:03: 16`, nine pixels of empty cell per colon.
+
+- **The colon advances by its declared cell; every other glyph keeps `charwidth + hspacing`.** The
+  glyph is **cropped** to that cell rather than centred in it, because a sheet's ink is at the cell's
+  left edge — which is also what the Core Text path's per-cell clip does with a `timecolonwidth`
+  narrower than the glyph. Every corpus case declares a cell narrower than the atlas advance, so the
+  two paths never disagree in practice.
+- **Only a clock reads it** (`WasabiTextMetrics.bitmapColonWidth`, gated on the same
+  `display=` set as `clockRun`), so a label carrying a stray `timecolonwidth` is still one
+  fixed-pitch run.
+- **`width(of:)`'s bitmap branch sums per-glyph advances** for the same reason `getTextWidth()` goes
+  through `clockRun` on the other path: a skin lays out the total time from what it measures, and a
+  measurement that kept the full-cell advance would put the separator nine pixels off the readout.
+
+Reach: the **whole cPro family**, through the engine, plus Enkera, TRON Legacy and impulse — the
+corpus's other bitmap-font clocks that declare a colon cell (9 or 11px atlas advance against a 5, 6
+or 7px colon). Everything else declares its `timecolonwidth` on a TrueType font and was already
+right. Pinned by `WinampModernBitmapClockTests`, which draws a synthetic atlas of the engine's own
+geometry and reads the run back column by column — an *extent* cannot see a gap inside a run.
+
 #### What a `<text>` shows
 
 Resolution order in `WasabiTextMetrics.content` — and `getText()` answers with the same string,

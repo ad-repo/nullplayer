@@ -32,6 +32,11 @@
 
 ### Bug Fixes
 
+- **Modern skins: the elapsed time no longer has a gap after its colon** — skins that draw the clock
+  with their own pixel-art digits, including every ClassicPro-based skin, showed the time as
+  `1:03: 16`. The colon was being given a full digit's worth of room even though the skin says how
+  wide it should be, and the seconds were pushed away from it.
+
 - **A film watched to the end is now marked watched on Plex, Jellyfin and Emby** — and a queued
   video playlist moves on to the next film by itself. The video engine reports a film running out as
   a pause rather than as an ending, and NullPlayer was taking it at its word: the server was told the

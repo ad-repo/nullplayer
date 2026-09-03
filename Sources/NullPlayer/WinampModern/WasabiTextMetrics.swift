@@ -345,6 +345,20 @@ final class WasabiTextMetrics {
         return ClockRun(cells: cells, layoutWidth: drawn - leadingField + leadingRoom)
     }
 
+    /// The cell a colon takes in a **bitmap-font** clock readout, or `nil` when the object is not
+    /// one or declares no `timecolonwidth`.
+    ///
+    /// A bitmap font is a fixed-pitch atlas, so its colon is inked into part of a full-width cell and
+    /// advancing the whole cell leaves the remainder as a gap before the next field. Only a clock has
+    /// fields, so only a clock reads the attribute — the same restriction `clockRun` puts on the Core
+    /// Text path. See `WasabiSceneRenderer.drawBitmapText`.
+    static func bitmapColonWidth(of object: WasabiObject) -> CGFloat? {
+        guard isClockDisplay(object),
+              let declared = object.attributes["timecolonwidth"].flatMap({ Double($0) }),
+              declared > 0 else { return nil }
+        return CGFloat(declared)
+    }
+
     /// The cell a digit needs: the widest of them, so any digit fits any column.
     private static func digitCell(_ font: NSFont) -> CGFloat {
         "0123456789".map {
@@ -615,7 +629,13 @@ final class WasabiTextMetrics {
            definition.kind == "bitmapfont" {
             let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
             let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
-            return CGFloat(text.count * max(1, charWidth + spacing)) + padding
+            let advance = CGFloat(max(1, charWidth + spacing))
+            // The colon's cell, on the one atlas glyph that has one — the same rule the bitmap draw
+            // path applies, because a skin lays out everything beside a clock from this measurement.
+            guard let colon = Self.bitmapColonWidth(of: object) else {
+                return CGFloat(text.count) * advance + padding
+            }
+            return text.reduce(padding) { $0 + ($1 == ":" ? max(1, colon.rounded()) : advance) }
         }
         let size = Self.pointSize(of: object)
         let font = font(identifier: object.attributes["font"], size: size,

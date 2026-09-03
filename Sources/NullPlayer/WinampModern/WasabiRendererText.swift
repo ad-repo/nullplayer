@@ -358,6 +358,7 @@ extension WasabiSceneRenderer {
         }
         drawBitmapText(text, definition: definition, frame: frame, alignment: alignment,
                        verticalAlignment: WasabiTextMetrics.verticalAlignment(of: object),
+                       colonWidth: WasabiTextMetrics.bitmapColonWidth(of: object),
                        ticker: object, context: context)
     }
 
@@ -366,6 +367,7 @@ extension WasabiSceneRenderer {
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition, frame: CGRect,
                                 alignment: NSTextAlignment,
                                 verticalAlignment: WasabiTextMetrics.VerticalAlignment = .center,
+                                colonWidth: CGFloat? = nil,
                                 ticker: WasabiObject?, context: CGContext) {
         guard let sheet = resources.fontSheet(for: definition) else { return }
         let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
@@ -373,7 +375,24 @@ extension WasabiSceneRenderer {
         let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
         let advance = max(1, charWidth + spacing)
         let positions = Self.bitmapGlyphPositions
-        let width = CGFloat(text.count * advance)
+        // `timecolonwidth` is the colon's own **cell**, and on a fixed-pitch atlas the colon is the
+        // only glyph that gets one. A sheet inks its colon into the left few columns of a
+        // full-width cell, so advancing the whole cell leaves the rest of it as a gap before the
+        // seconds: ClassicPro's `numfont.png` is 15px per glyph with a 6px colon and its engine
+        // declares `timecolonwidth="6"` for exactly that reason — without it every cPro clock reads
+        // `1:03: 16` (B-cPro colon gap). Enkera, TRON Legacy and impulse are the corpus's other
+        // bitmap-font clocks and all of them declare a cell *narrower* than the atlas advance, so
+        // the glyph is cropped to its cell rather than centred in it — which is also what the Core
+        // Text path's per-cell clip does with a `timecolonwidth` narrower than the glyph.
+        let colonAdvance = colonWidth.map { max(1, $0.rounded()) }
+        let colonCrop = colonAdvance.map { min(CGFloat(charWidth), $0) }
+        func cellWidth(of character: Character) -> CGFloat {
+            character == ":" ? (colonCrop ?? CGFloat(charWidth)) : CGFloat(charWidth)
+        }
+        func advanceWidth(of character: Character) -> CGFloat {
+            character == ":" ? (colonAdvance ?? CGFloat(advance)) : CGFloat(advance)
+        }
+        let width = text.reduce(CGFloat(0)) { $0 + advanceWidth(of: $1) }
         var startX: CGFloat
         switch alignment {
         case .center: startX = frame.midX - width / 2
@@ -405,17 +424,18 @@ extension WasabiSceneRenderer {
             var x = startX + origin
             for character in text.lowercased() {
                 let (column, row) = positions[character] ?? positions[" "] ?? (0, 0)
+                let cell = cellWidth(of: character)
                 // Top-left origin: `cropping(to:)` indexes pixel rows directly (see `bitmap(identifier:)`).
-                let cropRect = CGRect(x: column * charWidth, y: row * charHeight,
-                                      width: charWidth, height: charHeight)
-                if x + CGFloat(advance) >= frame.minX, x <= frame.maxX,
+                let cropRect = CGRect(x: CGFloat(column * charWidth), y: CGFloat(row * charHeight),
+                                      width: cell, height: CGFloat(charHeight))
+                if x + advanceWidth(of: character) >= frame.minX, x <= frame.maxX,
                    cropRect.maxY <= CGFloat(sheet.height), cropRect.maxX <= CGFloat(sheet.width),
                    let glyph = cropped(sheet.image, to: cropRect) {
                     drawImage(glyph, in: CGRect(x: x, y: top,
-                                                width: CGFloat(charWidth), height: CGFloat(charHeight)),
+                                                width: cell, height: CGFloat(charHeight)),
                               context: context)
                 }
-                x += CGFloat(advance)
+                x += advanceWidth(of: character)
             }
         }
         context.restoreGState()
