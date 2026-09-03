@@ -84,6 +84,9 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
     icon set for the thinger now, so the arrows scroll it by an icon and by a page
 - Containers, layouts, layers, sprite regions, buttons/toggles with state images, sliders (horizontal
   and vertical), text, `clipchildren` parent clipping
+- A `<group>` that declares no `w`/`h` is sized by its `background` bitmap, and that box clips its
+  children like a declared one; `drawbackground="0"` states the box without painting the artwork.
+  **Not implemented:** the background bitmap as the group's *region* — the shape is still rectangular
 - Bitmap fonts and TTF fonts (Core Text, not installed globally), colors, gamma groups. A
   `<bitmapfont file=…>` may name either a declared `<bitmap>` (Winamp Modern's form) or a path inside
   the archive (MMD3's form); both resolve, and the glyph sheet carries the font's own `gammagroup`

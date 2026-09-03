@@ -319,6 +319,16 @@ way), and a handful of pixels at **≤5/255 with every full-coverage and every e
 is a rasteriser difference, not a glyph that moved (the CoreText text conversion left 5 of 590 that
 way). A glyph in a different *place* moves hundreds of pixels and shows up as such.
 
+> **`compare` was half-blind until 2026-09-03, and silently.** Every dump is RGBA, and Pillow 9.5
+> made `Image.getbbox()` on an image *with* an alpha channel consider the **alpha alone**. The
+> difference image's bbox therefore came back `None` for any change that repainted a pixel without
+> changing its opacity, and the pair was counted **identical**. Measured on B109: BLAKK's boombox
+> moved a 191x10 volume bar and the sweep reported all 590 images clean; the true count for that
+> change was 14. It now passes `alpha_only=False`. Two lessons, both already in this file and both
+> paid for again: a comparison that cannot fail is not a proof, and **check the instrument against a
+> change you can see** before trusting it about the ones you cannot. If a sweep of a drawing change
+> comes back perfectly clean, that is a reason to suspect the compare, not to relax.
+
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
 resolved/missing bitmap counts. Every archive prints **`SKIN <file.wal>`** first, which is what makes
@@ -380,6 +390,7 @@ synthetic skins rendered **whole** and compared against committed PNGs in
 | Scene | Guards against |
 |---|---|
 | `group-clipping` | a sized `<group>` letting its children spill (Defix's reels over the song ticker) |
+| `group-background-box` | a `<group>` sized by its `background` bitmap losing that box, or painting a backing it said `drawbackground="0"` about (BLAKK's spectrum/volume drawer) |
 | `frame-collapsed` | a `<Wasabi:Frame>` pane's geometry or its clip (cPro-Bento's closed mini view over the volume slider) |
 | `animated-layer` | the wrong cell of an animation sheet — column, **row**, or a frame that will not advance against the clock |
 | `text-placement` | bitmap-font `align` × `valign`, and `leftpadding` |
@@ -404,6 +415,10 @@ becomes the expectation.
 > feature"). Each of these five was checked to fail under a deliberately reintroduced regression —
 > `isSizedGroup` → `false`, the animation row → `0`, the bitmap-font `valign` offset → top,
 > `WasabiFrame.dividerHalfThickness` → 2 — and to fail nowhere else. Do the same for a scene you add.
+> `group-background-box` was added that way and it earned its keep immediately: its first draft put
+> the oversized child at the group's origin, where it covered the backing exactly, so the
+> `drawbackground` half passed with the flag disabled. A scene that cannot see half of what it claims
+> to cover is the same blind instrument, one layer in.
 
 What they do **not** cover: the window layer. A defect that only exists once a scene is inside an
 `NSWindow` (Phase 42's playlist window opening and shutting on one click) measures clean here, and

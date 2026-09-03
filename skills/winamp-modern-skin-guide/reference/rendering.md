@@ -827,6 +827,51 @@ empty clip is built as an explicit zero-size rect pinned inside the parent clip 
 The same bug was quietly damaging `211786-Cpro_Winamp_Modern`, whose beat-vis bars spilled out of
 their box across the window chrome; it is not a cPro2-only shape.
 
+## A `<group>`'s `background` bitmap states its box (B109, 2026-09-03)
+
+A group that declares no `w`/`h` is the size of its **`background`** bitmap. That is a *declaration*,
+not an inference, so it satisfies `isSizedGroup` and the group clips its children — which is the whole
+point of the attribute for the many groups that pair it with `drawbackground="0"`, where the bitmap is
+never painted and exists only to say how big the group is. Read with the section above: the two
+together are "a group clips to the box its author gave it, however the author gave it."
+
+**BLAKK's boombox is the measured case, and it is a drawer.** `blakk.bb.group.SpecVol` is
+`background="player.bb-SpecVol-map"` (192x14) at (122,84), holding two child groups that slide
+*through* it: the spectrum sits at `y=0` and the volume bar at `y=14`, and `boombox2.maki`'s
+`moveDrawer` shifts both up by 14 on mouse-over, so the volume takes the spectrum's place while the
+spectrum leaves through the top. The aperture **is** the effect. With the group resolving 0x0 it
+clipped nothing, so both halves drew at once — the volume bar parked permanently over the seek bar as
+a second, wrong progress bar (the reported symptom) — and hovering the player sent the spectrum
+climbing out over the song ticker and the timer instead of disappearing.
+
+**Per axis, and only where nothing more specific answered.** `autowidthsource`/`autoheightsource` name
+a *child* to size to and beat the backing artwork, because a backing is often a narrow tile meant to
+stretch: mmd3's component title bar is `background="component.titlebg" autowidthsource="titlebar"`,
+and taking the tile's width clipped every hosted component's title to `CO`. The background fills in an
+axis whose intrinsic size is still zero, never one already answered.
+
+**`drawbackground="0"` suppresses the paint**, and had been a no-op until now purely because a group's
+box resolved to 0x0 and the draw was free. impulse is the corpus's heaviest user: its display, mini
+and stick vis groups each name a dot-matrix `...vis.region` mask, which we were painting as if it were
+artwork — a static LCD grid that looked plausible and was never in the skin's picture.
+
+**Corpus reach**, measured before the change: 102 group instances across 37 of the 69 installed skins
+carry a `background` and no `w`/`h`. The before/after sweep moved **13 of 590 images across 7 skins**,
+every one an improvement or a 1px edge: BLAKK fixed, **Styx's notifier went from an empty gold band to
+its full Now Playing text** (its rows are relative children of a group that had no box to be relative
+to), Anexa lost stray fragments outside the player's body and gained the rings around its two dials,
+impulse stopped painting its three region masks, and mmd3/MMD3-4-5/corneramp/Styx-normal moved a
+single column or a diagonal's antialiasing.
+
+**Knowingly not implemented: the background is also the group's *region*.** In Wasabi that bitmap
+shapes the group as well as sizing it — impulse's dot matrix is a mask its vis is meant to show
+*through*, which is how that skin gets its LCD look. We clip rectangularly. Nothing in the corpus is
+visibly wrong for it today; it is the next step if a skin turns up whose group is a non-rectangle.
+
+Golden scene: `group-background-box` ([harness.md](harness.md) -> *The golden images*). Both halves —
+the box, and `drawbackground` — were checked to fail under a deliberately reintroduced regression and
+to fail nowhere else.
+
 ## `autoheightsource` sizes a plain `<group>`, not only a `<Wasabi:TitleBox>`
 
 It was read for the title box alone, so every other group carrying it resolved to **no height**. That

@@ -1951,6 +1951,34 @@ final class WasabiSceneRenderer {
            let bottom = contentBottom(of: object), bottom > 0 {
             intrinsic.height = Double(bottom)
         }
+        // A `<group>` draws no artwork of its own, so it had no intrinsic size at all — but Wasabi
+        // sizes a group that declares no `w`/`h` to its **`background`** bitmap, and that box is the
+        // whole point of the attribute for a group that says `drawbackground="0"`: the bitmap is
+        // never painted, it only states how big the group is.
+        //
+        // BLAKK's boombox is the measured case, and it is a drawer. `blakk.bb.group.SpecVol` is
+        // `background="player.bb-SpecVol-map"` (192x14) at (122,84) holding two child groups that
+        // slide through it: the spectrum sits at y=0 and the volume bar at y=14, and hovering the
+        // player moves both up by 14 so the volume takes the spectrum's place while the spectrum
+        // leaves through the top. The aperture *is* the effect. With the group resolving 0x0 it
+        // clipped nothing, so both halves drew at once — the volume bar parked permanently over the
+        // seek bar as a second, wrong progress bar — and on mouseover the spectrum climbed out over
+        // the song ticker and the timer instead of disappearing.
+        //
+        // Per axis, and only where nothing more specific has already answered: `autowidthsource` and
+        // `autoheightsource` above name a *child* to size to, and that beats the backing artwork —
+        // mmd3's component title bar is `background="component.titlebg" autowidthsource="titlebar"`,
+        // where the backing is a narrow tile meant to stretch, so taking its width clipped every
+        // hosted component's title to "CO".
+        if object.typeName.caseInsensitiveCompare("group") == .orderedSame,
+           let background = backgroundBitmap(of: object) {
+            if object.attributes["w"] == nil, intrinsic.width == 0 {
+                intrinsic.width = Double(background.width)
+            }
+            if object.attributes["h"] == nil, intrinsic.height == 0 {
+                intrinsic.height = Double(background.height)
+            }
+        }
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
@@ -2118,7 +2146,11 @@ final class WasabiSceneRenderer {
         context.setAlpha(effectiveAlpha)
         applyFlip(of: object, frame: node.frame, context: context)
 
-        if let background = object.attributes["background"] {
+        // `drawbackground="0"` means the `background` bitmap states the object's box and nothing
+        // else — the skin does not want it painted. Free until now, because a group's box resolved
+        // to 0x0 and the draw was a no-op; the moment the box is the bitmap's, honouring the flag is
+        // what keeps BLAKK's region map off the front of its display.
+        if let background = object.attributes["background"], drawsBackground(object) {
             if let bitmap = resources.bitmap(background: background, declaredIn: object.source) {
                 drawImage(bitmap.image, in: node.frame, context: context)
             } else if type == "layout" {
@@ -4150,6 +4182,12 @@ final class WasabiSceneRenderer {
         return value != "0" && value != "false" && value != "no"
     }
 
+    /// Whether a `background` bitmap is painted. Defaults to on, as Wasabi does.
+    private func drawsBackground(_ object: WasabiObject) -> Bool {
+        guard let value = object.attributes["drawbackground"]?.lowercased() else { return true }
+        return value != "0" && value != "false" && value != "no"
+    }
+
     private func clipsChildren(_ object: WasabiObject) -> Bool {
         let value = object.attributes["clipchildren"]?.lowercased()
         if value == "1" || value == "true" { return true }
@@ -4170,7 +4208,21 @@ final class WasabiSceneRenderer {
     private func isSizedGroup(_ object: WasabiObject) -> Bool {
         guard object.typeName.caseInsensitiveCompare("group") == .orderedSame else { return false }
         if object.attributes["fitparent"] == "1" { return true }
+        // A `background` bitmap is a declaration, not a guess: the skin named the artwork the group
+        // is the size of, on both axes, so the box it produces is as much the author's as `w`/`h`.
+        // It is what makes BLAKK's spectrum/volume drawer an aperture rather than a pile.
+        if backgroundBitmap(of: object) != nil { return true }
         return object.geometry.width != nil && object.geometry.height != nil
+    }
+
+    /// The bitmap a `<group>` states its box with, when it states one.
+    ///
+    /// Only for a group: a `<layout>`'s background is the window's backing and is sized separately
+    /// (`defaultSize`), and every other object type is sized by its `image`.
+    private func backgroundBitmap(of object: WasabiObject) -> WasabiBitmap? {
+        guard object.typeName.caseInsensitiveCompare("group") == .orderedSame,
+              let background = object.attributes["background"] else { return nil }
+        return resources.bitmap(background: background, declaredIn: object.source)
     }
 
     /// Whether this object is one of the two panes of a `<Wasabi:Frame>`.

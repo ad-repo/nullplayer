@@ -17,6 +17,7 @@ import ZIPFoundation
 /// | Scene | What a regression here looks like in a real skin |
 /// |---|---|
 /// | `group-clipping` | Defix's cassette reels spilling 53px over the song ticker below them |
+/// | `group-background-box` | BLAKK's volume bar parked over its seek bar, and its spectrum climbing out over the song ticker |
 /// | `frame-collapsed` | cPro-Bento's closed mini view painting its strip over the volume slider |
 /// | `animated-layer` | a meter piling on frame 0, or cutting the wrong row of its sheet |
 /// | `text-placement` | a readout pinned to `valign="top"`, or a right-aligned run off its box |
@@ -58,6 +59,34 @@ final class WinampModernGoldenImageTests: XCTestCase {
               </group>
               <group id="fitted" fitparent="1">
                 <layer id="corner" image="sprite.blue" x="32" y="32" w="32" h="32"/>
+              </group>
+              <layer id="marker" image="sprite.green" x="0" y="48" w="16" h="16"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+    }
+
+    /// A `<group>` that states no `w`/`h` is the size of its **`background`** bitmap, that box clips
+    /// its children like any declared one, and `drawbackground="0"` means the bitmap states the box
+    /// without being painted.
+    ///
+    /// `boxed` is 16x16 from a green backing it must not paint, and the red sprite inside it is both
+    /// oversized and offset, so it fills the box's bottom-right quarter and nothing else — the three
+    /// quarters left transparent are what a wrongly painted backing would turn green. `painted`
+    /// takes the same box from a blue backing it *does* paint, under a white sprite offset the same
+    /// way, so both survive in the frame. Drop the sizing and each group is 0x0, clips nothing, and
+    /// both oversized sprites paint whole.
+    func testGroupSizedByBackgroundGolden() throws {
+        try assertGolden(named: "group-background-box", xml: """
+        \(Self.elements)
+          <container id="Main">
+            <layout id="normal" w="64" h="64">
+              <group id="boxed" x="0" y="0" background="sprite.green" drawbackground="0">
+                <layer id="overhang" image="sprite.red" x="8" y="8" w="32" h="32"/>
+              </group>
+              <group id="painted" x="32" y="0" background="sprite.blue">
+                <layer id="offset" image="sprite.white" x="8" y="8" w="32" h="32"/>
               </group>
               <layer id="marker" image="sprite.green" x="0" y="48" w="16" h="16"/>
             </layout>

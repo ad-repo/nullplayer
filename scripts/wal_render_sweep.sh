@@ -256,7 +256,17 @@ for name in shared:
             # difference, not a regression — the tiling rewrite left 12 of 288 that way. This
             # reports the number; a human reads it.
             delta = ImageChops.difference(ia, ib)
-            bbox = delta.getbbox()
+            # `alpha_only=False` is load-bearing, not tidiness. Pillow 9.5 made `getbbox()` on an
+            # image *with* an alpha channel look at the alpha alone, and every dump here is RGBA —
+            # so a difference that changed only colour reported a bbox of `None` and the pair was
+            # counted **identical**. Measured 2026-09-03: BLAKK's boombox moved a 191x10 volume bar
+            # and the sweep called all 590 images clean. A comparison that cannot see a repaint is
+            # not a regression proof, and it had been silently passing changes for as long as the
+            # dumps have carried alpha.
+            try:
+                bbox = delta.getbbox(alpha_only=False)
+            except TypeError:                                     # Pillow < 9.5 has no such flag
+                bbox = delta.getbbox()
             if bbox is None:
                 identical += 1
             else:

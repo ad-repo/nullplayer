@@ -32,6 +32,14 @@
 
 ### Bug Fixes
 
+- **Modern skins: a panel no longer shows everything it was meant to hide** — a skin can size a panel
+  by naming the artwork behind it instead of stating its width and height, and several use that panel
+  as a peephole with content sliding through it. NullPlayer treated such a panel as having no size at
+  all, so nothing was hidden. In BLAKK's boombox that put a second, wrong progress bar permanently on
+  top of the seek bar and sent the spectrum climbing over the song title on mouse-over; Styx's pop-up
+  notifier drew empty, and Anexa left stray fragments outside the player's body. Artwork a skin names
+  only to state a size, and asks not to be drawn, is no longer painted.
+
 - **Modern skins: the elapsed time no longer has a gap after its colon** — skins that draw the clock
   with their own pixel-art digits, including every ClassicPro-based skin, showed the time as
   `1:03: 16`. The colon was being given a full digit's worth of room even though the skin says how
