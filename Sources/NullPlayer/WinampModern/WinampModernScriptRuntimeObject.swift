@@ -38,11 +38,19 @@ extension WinampModernScriptRuntime {
             return method == "onaction" ? .integer(0) : .null
         }
         switch method {
+        // A layout Winamp has not created yet does not answer. Winamp builds a container's layouts
+        // on demand, so `getContainer("main").getLayout("shade")` is NULL until the window is shaded
+        // — and a skin whose scripts branch on that (`if (normal) {…} if (shade) {…}`, two blocks
+        // meant to be mutually exclusive) has both blocks run here, because we build every layout up
+        // front. Big Bento Modern is the measured case: 89 of its bindings were overwritten by the
+        // second block and landed in the shade layout, which is why its normal layout had no working
+        // volume control. See `WinampModernScriptRuntime.realizedLayouts`.
         case "getlayout":
-            return objectValue(object.children.first {
+            guard let match = object.children.first(where: {
                 $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
                 $0.xmlID?.caseInsensitiveCompare(arguments[0].stringValue) == .orderedSame
-            } ?? descendant(of: object, xmlID: arguments[0].stringValue))
+            }) ?? descendant(of: object, xmlID: arguments[0].stringValue) else { return .null }
+            return isLayoutCreated(match, askedBy: program) ? objectValue(match) : .null
         case "getobject":
             return objectValue(descendant(of: object, xmlID: arguments[0].stringValue))
         // `findObject` is the *wide* lookup and `getObject` the narrow one — Wasabi searches the
@@ -68,6 +76,7 @@ extension WinampModernScriptRuntime {
                       $0.xmlID?.caseInsensitiveCompare(arguments[0].stringValue) == .orderedSame
                   }) else { return .null }
             activeLayoutByContainer[object.stableID] = next.stableID
+            realizedLayouts.insert(next.stableID)
             _ = layoutSwitchRequested?(object.stableID, arguments[0].stringValue)
             _ = try dispatch(object: object, event: "onswitchtolayout", arguments: [objectValue(next)])
             return .null
@@ -1021,6 +1030,44 @@ extension WinampModernScriptRuntime {
             if let match = descendant(of: child, xmlID: xmlID) { return match }
         }
         return nil
+    }
+
+    /// Whether `getLayout` may hand this layout back to `program`.
+    ///
+    /// A script that **lives inside a layout** is asking from inside one window state, and Winamp
+    /// builds a container's layouts on demand, so from there the layouts that are not on screen do
+    /// not exist yet. We build them all up front, which breaks a script written against that: Big
+    /// Bento Modern wires its volume, mute, play/pause animation and display with
+    ///
+    /// ```maki
+    /// if (normal) { vol = normal.findObject("vol.on"); ... }
+    /// if (shade)  { vol = shade.findObject("vol.on");  ... }
+    /// ```
+    ///
+    /// — two blocks over **the same variables**, meant to be mutually exclusive. Both ran and the
+    /// second won, so 89 of the skin's bindings pointed into `layout#shade`; 57 of those belong to
+    /// the layout on screen, and the visible player had no working volume control at all.
+    ///
+    /// Narrow on purpose. A script with **no layout scope** — a skin-level `<scripts>` block — is
+    /// unaffected, because such a script is often the only place a skin wires its *other* layouts
+    /// from: multipass's `skin.xml` wires normal and shade together, from one program, into separate
+    /// variables. Gating it too cost 236 (event, object) pairs across the corpus's shade and stick
+    /// layouts to buy nothing. A layout already shown once also still answers, so a script that
+    /// reaches across after the user has been there keeps working.
+    func isLayoutCreated(_ layout: WasabiObject, askedBy program: MakiProgram) -> Bool {
+        let owner = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:))
+        return Self.layoutIsCreated(layout,
+                                    forScriptIn: owner.flatMap { ancestor(of: $0, type: "layout") },
+                                    realized: realizedLayouts)
+    }
+
+    /// The rule itself, as a pure function of the two layouts and the realized set — so it can be
+    /// asserted against a real object graph without a compiled MAKI program to carry it.
+    static func layoutIsCreated(_ layout: WasabiObject,
+                                forScriptIn ownLayout: WasabiObject?,
+                                realized: Set<WasabiObjectID>) -> Bool {
+        guard let ownLayout else { return true }
+        return ownLayout === layout || realized.contains(layout.stableID)
     }
 
     func ancestor(of object: WasabiObject, type: String) -> WasabiObject? {

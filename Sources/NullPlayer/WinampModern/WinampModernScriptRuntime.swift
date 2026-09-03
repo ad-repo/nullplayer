@@ -294,6 +294,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     var dynamicObjects: [UInt64: DynamicObjectState] = [:]
     var activeTargetAnimations: [WasabiObjectID: TargetAnimationState] = [:]
     var activeLayoutByContainer: [WasabiObjectID: WasabiObjectID] = [:]
+
+    /// Layouts that have actually been *created*.
+    ///
+    /// Winamp builds a container's layouts on demand — only the one on screen exists — so
+    /// `getContainer("main").getLayout("shade")` answers NULL until the user shades the window, and
+    /// skins are written against exactly that. Big Bento Modern's volume, mute, play/pause animation
+    /// and album-art scripts all open with
+    ///
+    /// ```maki
+    /// if (normal) { vol = normal.findObject("vol.on"); ... }
+    /// if (shade)  { vol = shade.findObject("vol.on");  ... }
+    /// ```
+    ///
+    /// — two blocks meant to be mutually exclusive. We build every layout up front, so both blocks
+    /// ran and the second overwrote the first: **89 of the skin's bindings pointed into
+    /// `layout#shade`**, including the click that opens its volume panel, which is why the normal
+    /// layout had no working volume control at all. See `isLayoutCreated`.
+    var realizedLayouts: Set<WasabiObjectID> = []
     let preferenceNamespace: String
 
     /// Script bindings already parsed into `programs`, so a runtime-instantiated group's scripts are
@@ -474,12 +492,29 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         self.boundScriptPaths = Set(loadedSkin.runtime.scriptBindings)
         self.scriptFailures = Array(parseFailures.prefix(Self.maximumRecordedScriptFailures))
         for root in loadedSkin.runtime.graph.roots where root.typeName.caseInsensitiveCompare("container") == .orderedSame {
-            if let normal = root.children.first(where: {
-                $0.typeName.caseInsensitiveCompare("layout") == .orderedSame &&
-                ($0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame || root.children.count == 1)
-            }) {
-                activeLayoutByContainer[root.stableID] = normal.stableID
+            let layouts = root.children.filter {
+                $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
             }
+            // The layout a container comes up in: the one Winamp names `normal`, or its only one.
+            // The first is the fallback rather than nothing, so a container that names neither still
+            // has *a* realized layout — `getLayout` answers only for realized ones, and a container
+            // with no entry at all would answer NULL for every layout it has.
+            if let opening = layouts.first(where: { $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame })
+                ?? layouts.first {
+                activeLayoutByContainer[root.stableID] = opening.stableID
+                realizedLayouts.insert(opening.stableID)
+            }
+        }
+    }
+
+    /// Record that a layout has been created — the host switching a window to it, as against a
+    /// script's own `switchToLayout`. See `realizedLayouts`.
+    func markLayoutRealized(_ layout: WasabiObject) {
+        guard layout.typeName.caseInsensitiveCompare("layout") == .orderedSame else { return }
+        realizedLayouts.insert(layout.stableID)
+        if let container = layout.parent,
+           container.typeName.caseInsensitiveCompare("container") == .orderedSame {
+            activeLayoutByContainer[container.stableID] = layout.stableID
         }
     }
 
@@ -963,6 +998,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
         }) {
             activeLayoutByContainer[root.stableID] = layout.stableID
+            realizedLayouts.insert(layout.stableID)
         }
         try startScripts(addedBeneath: root)
     }
@@ -3366,6 +3402,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         pendingRuntimeGroups.removeAll()
         dynamicObjects.removeAll()
         activeLayoutByContainer.removeAll()
+        realizedLayouts.removeAll()
         metrics.teardown()
         isTornDown = true
     }

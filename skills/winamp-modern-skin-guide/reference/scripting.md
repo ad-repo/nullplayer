@@ -828,6 +828,43 @@ Answered from the graph (`activeLayoutByContainer`) rather than from the host, s
 headless harness too, where no container visibility is reported at all. A container with no recorded
 active layout keeps the old behaviour rather than answering "invisible" for everything it owns.
 
+### `getLayout()` answers NULL for a layout that has never been shown
+
+Winamp builds a container's layouts **on demand** — only the one on screen exists — so from a script
+running inside `normal`, `getContainer("main").getLayout("shade")` is NULL until the user shades the
+window. Skins are written against exactly that, and the idiom is everywhere:
+
+```maki
+normal = getContainer("main").getLayout("normal");
+shade  = getContainer("main").getLayout("shade");
+if (normal) { vol = normal.findObject("vol.on"); ... }   // block 1
+if (shade)  { vol = shade.findObject("vol.on");  ... }   // block 2
+```
+
+Two blocks over **the same variables**, guarded so only one can run. We build every layout up front,
+so both ran, block 2 won, and the bindings landed on objects in a layout the user cannot see. Big
+Bento Modern is the measured case (BB37): **89 of its bindings pointed into `layout#shade`**,
+including the click that opens its volume panel, its mute buttons, its play/pause animation and its
+album-art wiring — the visible player had no working volume control at all, and a
+`RENDER_CLICK` on the volume icon reported `hits button#vol.on bindings=false`.
+
+So a layout answers a script only when it has been **realized** — the container's opening layout at
+load, plus any layout since switched to (`switchToLayout`, or the host shading the window). The gate
+is scoped two ways, and both matter:
+
+- **Only a script that lives inside a layout is gated.** That script is speaking from one window
+  state, so the others do not exist for it yet. Its *own* layout always answers, which is what keeps
+  the shade copy of the same script resolving shade's objects — otherwise the fix would just move the
+  dead control from one layout to the other.
+- **A skin-level `<scripts>` block is never gated.** It has no layout to speak from, and it is often
+  the only place a skin wires its *other* layouts from: multipass's `skin.xml` wires normal and shade
+  together, from one program, into separate variables. Gating it too cost **236 (event, object) pairs**
+  across the corpus's shade and stick layouts to buy nothing.
+
+Measured against a baseline worktree over all 62 archives: 14 (event, object) pairs gained, none
+lost; 547 of 552 rendered PNGs byte-identical. Read a suspect binding with
+`WINAMP_MODERN_RENDER_SCRIPTS=bindings`, whose targets carry their ancestor chain.
+
 ### `onPostedPosition` goes to every `<slider action="SEEK">`, not to an id
 
 The play clock used to post to `graph.objects(xmlID: "HiddenSeek")` — stock Winamp Modern's own name

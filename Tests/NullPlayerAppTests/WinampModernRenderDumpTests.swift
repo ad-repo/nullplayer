@@ -573,7 +573,10 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         case .system: bound = "System"
                         case .gui(let id):
                             let object = loaded.runtime.graph.object(withID: id)
-                            bound = "\(object?.typeName ?? "?")#\(object?.xmlID ?? "-")"
+                            var chainText = ""
+                            var walk = object?.parent
+                            while let cur = walk { chainText += "<\(cur.typeName)#\(cur.xmlID ?? "-")"; walk = cur.parent }
+                            bound = "\(object?.typeName ?? "?")#\(object?.xmlID ?? "-")\(chainText)"
                         case .playlistEditor: bound = "PlEdit"
                         case .colorManager: bound = "ColorMgr"
                         case .playlistManager: bound = "MLPlaylists"

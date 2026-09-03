@@ -32,6 +32,15 @@
 
 ### Bug Fixes
 
+- **Modern skins: Big Bento Modern's volume control works again** — the player had no way to change
+  the volume at all. Clicking the volume icon, which is meant to slide a volume panel out of the
+  player, did nothing, and neither did the mute buttons. The skin resolves those controls with two
+  alternative blocks — one for the normal window, one for shade mode — and NullPlayer was running
+  both, so every one of them ended up wired to the shaded window's copy of the control instead of the
+  one on screen. The same fault had quietly taken the play/pause animation and part of the album-art
+  panel with it. Layouts a skin has not opened yet are no longer visible to scripts running inside
+  another one, which is what Winamp itself does.
+
 - **Modern skins: the big visualization pane can now be an oscilloscope, Cava or vis_classic** — a
   Winamp 5.x skin draws its visualization in two different kinds of box, and only one of them had a
   choice. The skin's own `<vis>` boxes (Big Bento Modern's butterfly beside the transport) could

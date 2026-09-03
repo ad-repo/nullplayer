@@ -36,6 +36,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
 | B71 | A layout script loads before the frame beside it has a client area | — · seen on Defix's detached visualizer (2026-08-29); corpus reach unmeasured | L | Live-reported |
+| BB37 | Big Bento Modern had no working volume control | **Fixed 2026-09-02.** `getLayout()` answered for a layout that has never been shown, so the skin's `if (normal) {…} if (shade) {…}` wiring ran both blocks and 89 bindings landed in `layout#shade`. See `skins/big-bento-modern.md` and `reference/scripting.md` | S | Live-reported |
 | BB34 | An embedded visualization pane's engine never starts | — · seen on Big Bento Modern's Multi Content View mini pane (2026-08-29) | M | Live-reported |
 | B74 | T800's five memory slots share one storage key | 1 skin / 5 buttons collapsing to 1 slot ([M22]) | L | Live-reported |
 | B75 | A skin that includes the same script twice runs every handler twice | 1 skin measured (T800); corpus reach unmeasured | M | Live-reported |

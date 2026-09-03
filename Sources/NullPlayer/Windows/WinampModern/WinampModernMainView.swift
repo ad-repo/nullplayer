@@ -286,6 +286,9 @@ final class WinampModernMainView: NSView {
     @discardableResult
     func activateLayout(id: String) -> Bool {
         guard (try? renderer.activateLayout(id: id)) != nil else { return false }
+        // Winamp creates a layout the first time it is shown, and scripts branch on `getLayout()`
+        // answering NULL before that; record the creation so a later lookup can find it.
+        scripts.markLayoutRealized(renderer.layout)
         invalidateRectCaches()
         // A different layout is a different subtree with its own splitters, and `persistableFrames()`
         // only ever sees the active one — so without this a divider dragged in the shade layout would
