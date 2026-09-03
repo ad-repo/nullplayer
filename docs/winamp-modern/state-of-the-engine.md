@@ -132,7 +132,18 @@ playback survives a switch. UI Size works by scaling at the drawing/input bounda
 decoder — no external tools, no temp files, **no code execution**. Validated, SHA-256 hashed, stored as
 one private read-only mount. Validated byte-for-byte against the real installer (309/309 files match a
 reference oracle). Its entire native surface is three shell methods, none on the render path.
-`NSISArchive` and `LZMA1Decoder` are **not fuzzed** — reasonable future hardening.
+`NSISArchive` and `LZMA1Decoder` are **fuzzed as of 2026-09-02** (`WinampModernPhase6Tests`, four
+fuzzers) for the same bounded-outcome guarantee as the archive/XML/MAKI paths: a parse or a typed
+`WalFailure`, never a Swift trap or a hang. The fuzzers found and fixed one real trap —
+`LZMA1Decoder.appendMatchByte` indexed the output history without the bound `copyMatch` applies, so a
+corrupt stream opening with a short rep read `output[-1]`.
+
+> **Random bytes alone were not enough, and a follow-up fuzzer here should not repeat the mistake.**
+> Both parsers reject garbage early — `findMagic` for NSIS, the property-byte and range-coder-header
+> guards for LZMA — so a purely random corpus never reaches the interesting code. The two fuzzers that
+> matter plant just enough structure to get past those: a **planted** Nullsoft signature, and a
+> **valid** 5-byte LZMA property header in front of random range-coded data. The latter is what found
+> the trap.
 
 ### Per-skin state (the honest scoreboard)
 
@@ -146,14 +157,38 @@ want of Layer FX, which Phase 29 shipped). It has one home:
 
 ## 3. What is *not* verified
 
-- **Casting continuity, Compact Mode, window docking** from this mode. Playback and casting are
-  `AudioEngine`-owned and proven for the other three families, but have never been driven from a
-  `.wal` skin's own controls.
+- **Chromecast continuity** from this mode. **Sonos and window docking are verified as of
+  2026-09-02** — both driven live from a `.wal` skin's own controls on `cPro_Insomnis_by_zrco`,
+  including a mid-cast `winampModern → Classic → winampModern` round trip that preserved playback,
+  the cast session and every window origin. Chromecast has not been driven from a `.wal` skin and is
+  the one casting surface still owed. (Sonos control is fire-and-forget SOAP that **`lsof` sampling
+  misses**; confirm a live cast with `nettop -p <pid> -x -J bytes_out -l N` grepped for `:1400|:1443`.
+  Do not assume that recipe transfers to Chromecast, which holds a long-lived connection instead.)
+- **Compact Mode is not unverified — it is excluded by design.** Both sites in
+  `ContextMenuBuilder.swift`, and the menu-bar Windows menu, gate *Compact Mode* and *Compact Window*
+  on `controllerFamily != .winampModern`: a `.wal` skin supplies its own compact/shade layouts, so
+  NullPlayer's would be a second, unrelated compact-window model.
 - **Pixel-exact fidelity against real Winamp.** The bar is "matches the skin author's own
   `screenshot.png`", not "matches Winamp".
-- **One open crash report** (2026-08-16, cPro-Bento, `drawText` → `NSString.size(withAttributes:)` with
-  a nil attribute). The text boundary is hardened; neither the dump harness nor `WinampModernCrashRepro`
-  reproduces it with or without the hardening reverted. **Treat the fix as plausible, not proven.**
+- ~~One open crash report~~ **Closed 2026-09-02.** (2026-08-16, cPro-Bento, `drawText` →
+  `NSString.size(withAttributes:)` with a nil attribute.) Resolved by inspection with the **mechanism
+  identified**, not by reproduction: that abort string
+  (`__NSPlaceholderDictionary initWithObjects:forKeys:count:`) is produced only by a real nil reaching
+  the ObjC dictionary bridge — a value whose static type is non-optional and whose runtime value is
+  null — where a Swift `Optional.none` boxed in `Any` bridges to `NSNull` and aborts differently.
+  Every `attributes` dictionary in `WinampModern/` is a literal `[.font: font]` over a non-optional
+  `NSFont`, and the only source of a lying non-optional is the font constructor path, which is guarded
+  by `font(identifier:size:traits:)` returning `NSFont?` and assigning every constructor result to an
+  optional. `WinampModernCrashRepro` still does not reproduce it, which is now expected: a harness that
+  drives the object graph cannot manufacture a null from a font constructor.
+
+  > **Do not reinstate a PostScript-name guard in `WasabiTextMetrics`.** Two versions shipped and
+  > neither could ever fire: `CTFontCopyPostScriptName(created) == nil` is always false (the overlay
+  > returns a non-optional), and testing the name for `isEmpty` is no better, because CoreGraphics
+  > **synthesizes** a `font<hex>` name for a font whose `name` table is empty, absent, or carries a
+  > zero-length nameID 6, and refuses outright anything malformed enough to have no name at all.
+  > Measured, not reasoned: `WinampModernNamelessFontTests`, which also builds real nameless fonts and
+  > drives one through resolution and measurement.
 - **Defix's speaker cones.** They get their `onSetVisible` so the `getVisBand` timer starts, but
   whether they actually animate has never been seen. Auxiliary containers do not install their own
   repaint hooks — a mutation in a speaker window repaints the *main* view — which is the likeliest
