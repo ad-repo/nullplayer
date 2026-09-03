@@ -2876,8 +2876,16 @@ final class WasabiSceneRenderer {
         let normalized: CGFloat
         if action == "volume" {
             normalized = CGFloat(host.volume)
-        } else if action == "seek", host.duration > 0 {
-            normalized = CGFloat(host.currentTime / host.duration)
+        } else if action == "seek" {
+            // **Terminal, clock or no clock.** A seek slider reads the playback clock and nothing
+            // else; with no duration it stands at zero. Falling through to the generic `value`
+            // branch when the duration went away is what drew two thumbs: cPro_MMD stacks two seek
+            // sliders on one frame (`seeker` and `seeker2`, both {{10,434},{480,20}}), a script
+            // writes `setValue` on one of them as it plays, and the moment the clock disappeared
+            // the written one read back its own stored value while its twin read zero. They agreed
+            // for as long as they shared the clock, so the split only ever showed at the end of a
+            // film — and any other moment a duration goes to zero would have done it too.
+            normalized = host.duration > 0 ? CGFloat(host.currentTime / host.duration) : 0
         } else if WinampModernPanAction.matches(action: action) {
             // Read back from the host, not from the drag, so a balance changed anywhere else moves
             // the skin's thumb — and so a skin that draws two balance sliders (multipass ships a real

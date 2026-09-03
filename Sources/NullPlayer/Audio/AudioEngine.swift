@@ -4237,7 +4237,10 @@ class AudioEngine {
         // Stop local video playback before loading audio track.
         // Skip when casting — cast() handles video→audio teardown via mismatch check,
         // so calling stopVideo() here would race with castNewTrack.
-        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback && !isAnyCastingActive {
+        // `isVideoContentActive`, not `isVideoActivePlayback`: the latter goes false at end of
+        // media, and a film that has run out still owns its window — it has to be torn down here
+        // or it is left hanging over the app while the new audio track plays.
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoContentActive && !isAnyCastingActive {
             NSLog("loadTrack: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }
@@ -4280,7 +4283,10 @@ class AudioEngine {
 
         // Stop local video playback before loading audio track.
         // Skip when casting — cast() handles video→audio teardown via mismatch check.
-        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback && !isAnyCastingActive {
+        // `isVideoContentActive`, not `isVideoActivePlayback`: the latter goes false at end of
+        // media, and a film that has run out still owns its window — it has to be torn down here
+        // or it is left hanging over the app while the new audio track plays.
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoContentActive && !isAnyCastingActive {
             NSLog("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }

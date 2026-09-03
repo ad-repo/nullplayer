@@ -489,12 +489,11 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     /// `isVideoOutputVisible` term goes false the moment the picture is unparked, which is precisely
     /// the state a film left running behind another tab is in.
     ///
-    /// A film that has played to its **end** is not a session here. Nothing clears `currentTitle` at
-    /// natural end of media, and `videoPlaybackState` can never answer `.stopped` while a controller
-    /// exists, so the dead film would read `.paused` forever — a stale readout before the transport
-    /// was routed, and a permanent transport lockout after it. The session itself is not cleared:
-    /// that is shared state Classic and Original read, and their behaviour cannot change. So the
-    /// `.wal` host alone disregards it.
+    /// A film that has played to its **end** is not a session. The session is not cleared —
+    /// `currentTitle` still names the loaded film, so the picture can be seeked back and replayed —
+    /// so the flag is what has to be asked. Every mode now asks it (`isVideoActivePlayback`,
+    /// `videoPlaybackState`); this seam keys on it directly because it reads `currentVideoTitle`,
+    /// which is the raw title and not gated on the session.
     var videoSession: () -> WinampModernVideoSession? = {
         let manager = WindowManager.shared
         guard manager.currentVideoPlayerController?.didReachEndOfMedia != true else { return nil }

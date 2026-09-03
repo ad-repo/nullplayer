@@ -2,6 +2,75 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B108 — VLCKit reports the end of a film as `.paused`, so nothing downstream of `onPlaybackFinished` ever ran — closed 2026-09-03
+
+| B108 | **VLCKit reports the end of a film as `.paused`, not `.ended`, so nothing downstream of `onPlaybackFinished` ever runs.** Measured 2026-09-02 on the vendored VLCKit with a local H.264 `.mp4`: the log goes `VideoPlayerView: Playing` → `VideoPlayerView: Paused` at the film's end and no `.ended` ever arrives, and `.ended` is the only case that calls `onPlaybackFinished` (`VideoPlayerView.swift`). **User-reported 2026-09-03: the same happens for network/video streams**, so this is the VLCKit path generally and not a local-file quirk — the earlier "may still report `.ended` for network sources" hedge is retired, and the `.ended` backstop kept by the `.wal` pass is effectively dead code. Everything hung off that handler is therefore dead for **all** video: **Plex/Jellyfin/Emby finish-scrobbling**, the analytics play event, and **video-playlist advancement** (`onVideoFinishedForPlaylist`), so a queued film never starts the next one. **The scrobbling half is the costly one and it is server content, i.e. streamed**: a film watched to the end on Plex/Jellyfin/Emby is never reported finished — `.paused` fires `onPlaybackPaused` instead, so the server records a *pause at 100%* and the film is never marked watched. Local files do not scrobble at all, so reading this as a local-video issue understates it. Out of scope for the `.wal` video pass, which needed only its own end-of-session signal and takes it from the stop transition's position instead (`VideoPlayerWindowController.didReachEndOfMedia`) precisely so it changes nothing shared — but note that latch guards on `duration > 0`, so **a stream whose duration VLCKit reports late or not at all never latches either**, and the `.wal` session goes phantom for exactly that content; worth checking against a real server stream before the video pass merges. Fixing it properly means deciding what `.paused`-at-end should trigger for every mode, which necessarily changes Classic and Original — that is not a `.wal` side effect but a deliberate fix to shared behaviour, and it would restore scrobbling and playlist advance at the same time | all modes, all video, local and streamed | M | Live-reported |
+
+      **Fixed by asking a different question.** The first attempt compared the clock to the
+      duration, and it was measured wrong: against a real Plex `.mkv` the end-of-film pause arrives
+      at `t=5054.42 dur=5056.06 pos=0.9997`, so a tight window (0.75 s) misses the very content the
+      entry is about, and how far VLCKit's clock lags the last frame depends on the stream's
+      keyframe spacing. The rule now rests on something the app knows for certain:
+      `togglePlayPause()` and `stop()` are the only two calls that pause on purpose, whoever drove
+      them, so a pause arriving while the film plays that **nothing asked for** is VLCKit's own —
+      and the vendored build sends exactly one of those, at the end of a film, where it should be
+      sending `.ended` (`VideoPlayerView.isEndOfFilmPause`). The clock stays on only as a generous
+      sanity check (`endOfMediaTolerance`, 5 s, or `position < 0.98`), and an **unknown** duration
+      is treated as unknown rather than as "not finished" — which is what the entry's
+      server-stream half needed, since that is precisely the content whose duration is reported
+      late or not at all. `.ended` and the new path share one latched
+      `reportPlaybackFinished()`, so a source that reports both scrobbles and advances once.
+
+      Verified live 2026-09-03 against a Plex stream played out to its end:
+      `PlexVideoPlaybackReporter: Video stopped at 5054.4s (finished: yes)` where the old build
+      reported `paused`. That restores Plex/Jellyfin/Emby finish-scrobbling, the analytics play
+      event and video-playlist advance in one change, for local files and streams alike.
+
+      One defect found on the way: VLCKit blanks `time` while a seek is in flight, and reading that
+      zero as "no clock" let a seek near the end latch the session as finished mid-film.
+
+## B107 — a film that has played to its end is still the transport's target in Classic and Original — closed 2026-09-03
+
+| B107 | **A film that has played to its end is still the transport's target in Classic and Original.** Nothing clears `VideoPlayerWindowController.currentTitle` at natural end of media — `clearLoadedContentState()` has four call sites and end-of-media is not among them — and `WindowManager.videoPlaybackState` can never answer `.stopped` while a controller exists, so a finished film reads `.paused` forever. `isVideoActivePlayback` carries the same phantom, so Classic's readout keeps the dead film's title and its transport keeps driving the corpse. **Pre-existing and unchanged**: the `.wal` video pass (2026-09-02) fixed only its own side, with an additive `didReachEndOfMedia` flag the `.wal` host alone reads, precisely because clearing the session would have altered Classic. Fixing it properly means deciding what Classic should do at end of media, which is not a `.wal` decision | Classic and Original, every video | M | Live-reported |
+
+      **What Classic should do at end of media, decided: the transport resets.** The session ends —
+      `WindowManager.isVideoActivePlayback` goes false and `videoPlaybackState` answers `.stopped`,
+      both from `didReachEndOfMedia` — and the content stays loaded, so the picture is still up on
+      its last frame and can be seeked back and replayed. `clearLoadedContentState()` is still not
+      on this path; it belongs to the routes that also close the window.
+
+      Answering was not enough. **Classic and Original only repaint what something pushes to them**,
+      so with nothing pushed the seek thumb sat at the end of a finished film indefinitely — the
+      defect looked fixed from the code and was not fixed on screen.
+      `WindowManager.videoPlaybackDidReachEndOfMedia()` is the push: it clears the video clock and
+      title, stops the audio engine the film had paused (as `videoPlaybackDidStop` does, and for
+      the same reason — a paused engine reads as a paused session under a 0:00 clock), and pushes
+      time, track info and playback state to the main window. It runs from one funnel in the
+      controller, once per film, however the end was noticed.
+
+      `AudioEngine`'s two video-teardown gates moved to `isVideoContentActive`, which does **not**
+      go false at end of media: a finished film still owns its window and still has to be torn down
+      before an audio track loads, or it is left hanging over the app. That split — "is video the
+      transport" versus "is there a video window holding content" — is what the two properties now
+      mean.
+
+      **A second seek thumb, found on the way and fixed as its own defect.**
+      `WasabiRenderer.normalizedValue(of:)` treated `action="seek"` as conditional on
+      `host.duration > 0` and fell through to the generic `value` / `cfgattrib` branch when the
+      duration went away. cPro_MMD stacks **two** seek sliders on one frame (`seeker` and
+      `seeker2`, both `{{10,434},{480,20}}`); a script writes `setValue` on one of them as it
+      plays, so the moment the clock disappeared the written one read back its own stored value
+      while its twin read zero, and the skin drew a thumb at each end. They agreed for exactly as
+      long as they shared the clock, which is why it only ever showed at the end of a film — any
+      other moment a duration goes to zero would have done it too. The seek case is now terminal:
+      a seek slider reads the playback clock and nothing else, and stands at zero without one.
+      Found with `WINAMP_MODERN_SEEK_TRACE=1`, added in the same change
+      (`reference/harness.md`). `WinampModernMainView.updateTime` also posts `onPostedPosition`
+      **on change including the zero** rather than skipping the post when there is no duration, so
+      a script that draws its own seek fill hears the reset too.
+
+      Verified live by the user in both Modern and Classic 2026-09-03. `swift test`: 1729 passed.
+
 ## B97 — a video window the skin declares `default_visible="0"` opens with the skin, empty — closed 2026-09-01
 
 - [x] **B97. A video window the skin declares as `default_visible="0"` opens with the skin, empty.**

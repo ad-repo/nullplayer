@@ -3119,6 +3119,30 @@ class WindowManager {
         }
     }
 
+    /// A film has played to its own end.
+    ///
+    /// The session is already over as far as anything that *asks* is concerned —
+    /// `isVideoActivePlayback` and `videoPlaybackState` both answer from `didReachEndOfMedia`. But
+    /// Classic and Original only repaint what something pushes to them, so with nothing pushed the
+    /// transport keeps the dead film's position and title on screen indefinitely: the seek thumb
+    /// parked at the end of a film that is over. This is the push that resets them.
+    ///
+    /// The paused audio engine is stopped for the same reason `videoPlaybackDidStop` stops it — the
+    /// engine was paused *by* the film starting, and leaving it paused reads as a paused session
+    /// with a 0:00 clock. Not shared with that method: the compact window's floating level, which
+    /// belongs to the video window actually going away. The film stays loaded and on screen here.
+    func videoPlaybackDidReachEndOfMedia() {
+        videoCurrentTime = 0
+        videoDuration = 0
+        videoTitle = nil
+        if audioEngine.state == .paused {
+            audioEngine.stop()
+        }
+        mainWindowController?.clearVideoTrackInfo()
+        mainWindowController?.updateTime(current: 0, duration: 0)
+        mainWindowController?.updatePlaybackState()
+    }
+
     /// Called by video player to update time (for main window display)
     func videoDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
         videoCurrentTime = current
@@ -3144,11 +3168,21 @@ class WindowManager {
         guard let controller = videoPlayerWindowController, controller.isVideoOutputVisible else {
             return false
         }
+        // A film that has played to its end is not a session. Without this the readout keeps the
+        // dead film's title and every transport keeps driving the corpse — the play button toggles
+        // a finished player, the seek bar scrubs it, and audio can never take the transport back.
+        // The content stays loaded (the picture is still up, and seeking back and pressing play
+        // revives it); what ends here is the session. `isVideoContentActive` is the other question
+        // — "is there a video window holding content" — and deliberately still answers yes.
+        if controller.didReachEndOfMedia { return false }
         return controller.currentTitle != nil
     }
 
     /// True if a video is actively loaded in the player window or CastManager is video casting.
-    /// Unlike isVideoActivePlayback, does NOT rely on VideoPlayerWindowController.isCastingVideo.
+    /// Unlike isVideoActivePlayback, does NOT rely on VideoPlayerWindowController.isCastingVideo,
+    /// and does NOT go false at end of media: a film that has run out still holds the window and
+    /// still has to be torn down before audio takes over. This is the "is there content" question;
+    /// `isVideoActivePlayback` is the "is video the transport" one.
     var isVideoContentActive: Bool {
         if case .video = CastManager.shared.currentCast { return true }
         guard let controller = videoPlayerWindowController, controller.isVideoOutputVisible else {
@@ -3163,6 +3197,9 @@ class WindowManager {
             return CastManager.shared.isVideoCastPlaying ? .playing : .paused
         }
         guard let controller = videoPlayerWindowController else { return .stopped }
+        // A finished film is stopped, not paused. Nothing else could ever answer `.stopped` while a
+        // controller exists, so without this a film that ran out reads `.paused` for good.
+        if controller.didReachEndOfMedia { return .stopped }
         return controller.isPlaying ? .playing : .paused
     }
     

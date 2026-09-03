@@ -308,6 +308,29 @@ Skins pair the two and give the slider a thumb that is deliberately invisible: L
 window. Drawing nothing for the grid left its seek bar an empty white box — which reads as a blank
 text field, not as a seek bar.
 
+#### A seek slider reads the clock and nothing else
+
+`action="SEEK"` is **terminal** in `normalizedValue(of:)`: with a duration it is
+`currentTime / duration`, and without one it is **zero**. It must never fall through to the generic
+`value` / `cfgattrib` branch beneath it, however plausible that reads as a fallback.
+
+A seek bar is routinely **more than one object stacked on one frame** — cPro_MMD declares two
+sliders, `seeker` and `seeker2`, both at `{{10,434},{480,20}}`; stock Winamp Modern declares a
+`Seeker` and a `SeekerGhost`. A script writes `setValue` on some of them as the film plays. While
+they all read the clock they agree and the skin draws one thumb, so a per-object value looks right
+under every kind of inspection. The moment the duration went to zero the written slider read back
+its own stored 255 while its twin read 0, and the bar drew **a thumb at each end**. Nothing about
+that is specific to the end of a film — any moment without a duration does it — and nothing about it
+is visible from a single object's value, which is what `WINAMP_MODERN_SEEK_TRACE=1` exists to print
+(`reference/harness.md`).
+
+The general lesson, and it is not about sliders: **a value that silently changes its source when a
+clock goes away is correct for exactly as long as anyone is looking at it.** Two readers of the same
+quantity agree while they share a source and split when one of them falls back, and the split shows
+up as a drawing defect nowhere near the code that caused it.
+
+Pinned by `WinampModernB107Tests`.
+
 #### A skin's own right-click menus
 
 A script builds them with `new PopupMenu`, `addCommand(title, id, checked, disabled)`,

@@ -29,36 +29,40 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Current video title
     private(set) var currentTitle: String?
 
-    /// True from the moment a film reaches its own end until something plays again. Read by the
-    /// `.wal` host only (`WinampModernAudioEngineHost.videoSession` / `.videoTransport`), so a
-    /// finished film stops counting as a session there without changing what Classic and Original
-    /// see — they keep reading `currentTitle` and `isVideoActivePlayback` exactly as before.
+    /// True from the moment a film reaches its own end until something plays again. **Read by every
+    /// mode**: `WindowManager.isVideoActivePlayback` and `.videoPlaybackState` answer from it, so a
+    /// finished film stops being the transport's target and stops reading `.paused` forever in
+    /// Classic and Original too, and the `.wal` host (`WinampModernAudioEngineHost.videoSession` /
+    /// `.videoTransport`) keys its session on the same flag.
     ///
-    /// Nothing clears the session at natural end of media (`clearLoadedContentState()` is not among
-    /// the paths end-of-media takes), and clearing it would change Classic and Original. So the
-    /// phantom session is left in place and the `.wal` host learns to disregard it instead.
+    /// The session itself is deliberately *not* cleared. `clearLoadedContentState()` belongs to the
+    /// paths that also close the window; end of media leaves the picture up on its last frame with
+    /// the film still loaded, so it can be seeked back and replayed. What ends is the session, not
+    /// the content.
     ///
     /// **It cannot be driven from `.ended` alone.** Measured 2026-09-02 against the vendored VLCKit:
     /// a local `.mp4` running out reports `VLCMediaPlayerState.paused`, and no `.ended` ever arrives
-    /// — the log goes `Playing` … `Paused` and stops. Making `.paused` fire `onPlaybackFinished`
-    /// instead was rejected: that handler scrobbles, records analytics and advances a playlist, all
-    /// of it shared with Classic and Original. So the position is read **at the stop transition**
-    /// and latched (`updatePlayingState`), with `.ended` kept as the backstop for the sources that
-    /// do report it. Latched rather than computed live: a film left parked at its end stops
-    /// reporting a position after a while, and a live check then reads the corpse as a fresh
-    /// session again.
+    /// — the log goes `Playing` … `Paused` and stops. The view now reads that pause for what it is
+    /// (`VideoPlayerView.isAtEndOfMedia`) and fires `onPlaybackFinished` from it, which is what
+    /// restores finish-scrobbling and playlist advance. This flag additionally latches at the stop
+    /// transition (`updatePlayingState`), which covers a film parked at its end by any other route.
+    /// Latched rather than computed live: a film left parked at its end stops reporting a position
+    /// after a while, and a live check then reads the corpse as a fresh session again.
     private(set) var didReachEndOfMedia = false
 
-    /// How close to the end counts as the end. A film the user pauses inside the last moment reads
-    /// as finished, deliberately — it is the same dead transport, and pressing play clears it.
-    private static let endOfMediaTolerance: TimeInterval = 0.75
-
     /// Whether the film is sitting at its own end *right now*. Only ever read at the moment playback
-    /// stops, while VLCKit's clock still answers.
-    private var isParkedAtEndOfMedia: Bool {
-        let duration = self.duration, time = self.currentTime
-        guard duration > 0, time > 0 else { return false }
-        return time >= duration - Self.endOfMediaTolerance
+    /// stops, while VLCKit's clock still answers. One rule, owned by the view, so the flag and the
+    /// finished-callback can never disagree about where the end is.
+    private var isParkedAtEndOfMedia: Bool { videoPlayerView.isAtEndOfMedia }
+
+    /// The one place the flag goes true, so the readout is reset exactly once per film however the
+    /// end was noticed — the end-of-film pause, a source that really does report `.ended`, or the
+    /// stop-transition latch below.
+    private func markReachedEndOfMedia() {
+        guard !didReachEndOfMedia else { return }
+        NSLog("VideoPlayerWindowController: reached end of media (t=%.2f dur=%.2f)", currentTime, duration)
+        didReachEndOfMedia = true
+        WindowManager.shared.videoPlaybackDidReachEndOfMedia()
     }
 
     /// Lightweight video track used by the main window for artwork lookup.
@@ -435,7 +439,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             // A queued film's callback loads the next item and starts it, which clears the flag
             // through `updatePlayingState(true)` anyway; the guard keeps it honest in between.
             if !self.isFromPlaylist {
-                self.didReachEndOfMedia = true
+                self.markReachedEndOfMedia()
             }
 
             // Advance playlist if this video was from the playlist
@@ -1359,7 +1363,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         if playing {
             didReachEndOfMedia = false
         } else if isParkedAtEndOfMedia {
-            didReachEndOfMedia = true
+            markReachedEndOfMedia()
         }
     }
     

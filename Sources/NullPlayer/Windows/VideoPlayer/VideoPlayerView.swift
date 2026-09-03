@@ -141,6 +141,65 @@ class VideoPlayerView: NSView {
     /// Public accessors for playback time
     var currentPlaybackTime: TimeInterval { currentTime }
     var totalPlaybackDuration: TimeInterval { totalDuration }
+
+    /// How close to the end still counts as the end of the film.
+    ///
+    /// **Measured, not guessed.** A Plex `.mkv` playing out on 2026-09-03 reported its end-of-film
+    /// pause at t=5054.4 against a 5056 s duration — VLCKit's clock stops updating over a second
+    /// before the last frame, and how far before depends on the stream's keyframe spacing. A tight
+    /// window (0.75 s was the first attempt) therefore misses real content. The window can afford to
+    /// be this loose because it is only ever the *sanity check* on `isEndOfFilmPause`, which already
+    /// knows the app did not ask for the pause; on its own it decides nothing.
+    static let endOfMediaTolerance: TimeInterval = 5.0
+
+    /// Whether the film is somewhere other than its own end — the negative, because that is the
+    /// question that can be answered honestly. A film with a clock and time left on it is positively
+    /// not at its end; a film whose duration VLCKit has not reported (a server stream, in practice)
+    /// is *unknown*, and unknown must not read as "not finished" or that content never finishes at
+    /// all, which is the shape of B108's server-stream half.
+    private var isFarFromEndOfMedia: Bool {
+        Self.isFarFromEndOfMedia(currentTime: currentTime, totalDuration: totalDuration,
+                                 position: Double(mediaPlayer?.position ?? 0))
+    }
+
+    /// The rule itself, pure, so the cases that only ever occur against a live VLCKit — a seek in
+    /// flight, a stream with no duration — can be pinned in a test.
+    static func isFarFromEndOfMedia(currentTime: TimeInterval, totalDuration: TimeInterval,
+                                    position: Double) -> Bool {
+        if totalDuration > 0 {
+            // A zero clock against a known duration is the start of a film or a seek still in
+            // flight, never its end — VLCKit blanks `time` for a moment while it seeks, and reading
+            // that as "no clock" let a seek near the end latch the session as finished mid-film.
+            return currentTime < totalDuration - Self.endOfMediaTolerance
+        }
+        // No clock: the normalized position is the only remaining witness, and its absence is not
+        // evidence either.
+        guard position > 0 else { return false }
+        return position < 0.98
+    }
+
+    /// Whether the film is sitting at its own end. Read by `VideoPlayerWindowController` at the stop
+    /// transition, so the end-of-session flag and the finished-callback share one rule.
+    var isAtEndOfMedia: Bool { !isFarFromEndOfMedia && (currentTime > 0 || mediaPlayer?.position ?? 0 > 0) }
+
+    /// **Whether a `.paused` is the film ending rather than the user pausing.**
+    ///
+    /// The app is the only thing that can pause on purpose — `togglePlayPause()` and `stop()` are
+    /// the two calls, whoever drove them (the skin's transport, the video window's own bar, the menu
+    /// bar, a media key). So a pause that arrives while the film is playing and that *nothing asked
+    /// for* is VLCKit's, and the vendored build sends exactly one of those: the end of the film,
+    /// where it should be sending `.ended`. The clock is kept on as a sanity check, generously
+    /// (`endOfMediaTolerance`), so a stall that somehow surfaced as a pause mid-film is not scrobbled
+    /// as a completed watch.
+    private var isEndOfFilmPause: Bool { !didRequestPause && !isFarFromEndOfMedia }
+
+    /// Set by the two calls that pause on purpose, and consumed by the next `.paused`.
+    private var didRequestPause = false
+
+    /// Latched for the span of one film, so a source that reports both `.ended` and the end-of-film
+    /// `.paused` scrobbles and advances the playlist once. Re-armed on the transition into playing,
+    /// which is what lets a film seeked back and resumed finish again.
+    private var didReportPlaybackFinished = false
     var isPlaying: Bool { mediaPlayer?.isPlaying == true }
 
     /// Volume level (0.0 - 1.0)
@@ -781,6 +840,8 @@ class VideoPlayerView: NSView {
         mediaPlayer = nil
         previousState = nil
         isActivelyPlaying = false
+        didReportPlaybackFinished = false
+        didRequestPause = false
         availableAudioTracks = []
         availableSubtitleTracks = []
         // Clear Plex external-subtitle entries so a stale set can't carry into
@@ -822,6 +883,7 @@ class VideoPlayerView: NSView {
     func stop() {
         controlsHideTimer?.invalidate()
         isActivelyPlaying = false
+        didRequestPause = true
         mediaPlayer?.pause()
         mediaPlayer?.stop()
         showLoading(false)
@@ -871,6 +933,8 @@ class VideoPlayerView: NSView {
         NSLog("VideoPlayerView: Playing")
         let wasPaused = (previousState == .paused)
         isActivelyPlaying = true
+        didReportPlaybackFinished = false
+        didRequestPause = false
         resetControlsHideTimer()
         applyAudioOutput()
         onPlaybackStateChanged?(true)
@@ -885,6 +949,7 @@ class VideoPlayerView: NSView {
         guard let player = mediaPlayer else { return }
 
         if player.isPlaying {
+            didRequestPause = true
             player.pause()
             controlBarView.updatePlayState(isPlaying: false)
             centerOverlayView?.updatePlayState(isPlaying: false)
@@ -1199,6 +1264,22 @@ class VideoPlayerView: NSView {
     }
 }
 
+extension VideoPlayerView {
+    /// The one end-of-film path, reached from `.ended` and from the `.paused` VLCKit sends in its
+    /// place. Everything downstream of `onPlaybackFinished` — Plex/Jellyfin/Emby finish-scrobbling,
+    /// the analytics play event, video-playlist advance — runs from here, once per film.
+    fileprivate func reportPlaybackFinished() {
+        guard !didReportPlaybackFinished else { return }
+        didReportPlaybackFinished = true
+        isActivelyPlaying = false
+        showLoading(false)
+        controlBarView.updatePlayState(isPlaying: false)
+        showControls()
+        onPlaybackStateChanged?(false)
+        onPlaybackFinished?(currentTime)
+    }
+}
+
 // MARK: - VLCMediaPlayerDelegate
 
 extension VideoPlayerView: VLCMediaPlayerDelegate {
@@ -1235,8 +1316,22 @@ extension VideoPlayerView: VLCMediaPlayerDelegate {
                 self.applyAudioOutput()
                 if player.isPlaying { self.markPlaying() }
             case .paused:
-                NSLog("VideoPlayerView: Paused")
                 let wasPlaying = self.isActivelyPlaying
+                let endOfFilm = wasPlaying && self.isEndOfFilmPause
+                self.didRequestPause = false
+                // **This is where a film ends.** The vendored VLCKit reports a film running out as
+                // a plain `.paused` and never sends `.ended` — measured on a local `.mp4`, and
+                // reported for server streams too — so a handler that trusts `.ended` alone leaves
+                // finish-scrobbling, the analytics event and video-playlist advance permanently
+                // dead.
+                if endOfFilm {
+                    NSLog("VideoPlayerView: Paused at end of media (t=%.2f dur=%.2f pos=%.4f) — played to end",
+                          self.currentTime, self.totalDuration, Double(player.position))
+                    self.reportPlaybackFinished()
+                    break
+                }
+                NSLog("VideoPlayerView: Paused (t=%.2f dur=%.2f pos=%.4f)",
+                      self.currentTime, self.totalDuration, Double(player.position))
                 self.isActivelyPlaying = false
                 self.showLoading(false)
                 self.controlBarView.updatePlayState(isPlaying: false)
@@ -1247,13 +1342,7 @@ extension VideoPlayerView: VLCMediaPlayerDelegate {
                 }
             case .ended:
                 NSLog("VideoPlayerView: Played to end")
-                self.isActivelyPlaying = false
-                self.showLoading(false)
-                self.controlBarView.updatePlayState(isPlaying: false)
-                self.showControls()
-                self.onPlaybackStateChanged?(false)
-                // Report finished
-                self.onPlaybackFinished?(self.currentTime)
+                self.reportPlaybackFinished()
             case .stopped:
                 NSLog("VideoPlayerView: Stopped")
                 self.isActivelyPlaying = false

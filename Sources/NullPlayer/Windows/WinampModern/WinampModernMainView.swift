@@ -95,6 +95,38 @@ final class WinampModernMainView: NSView {
     private var lastPlaybackState: PlaybackState = .stopped
     /// Last volume the scripts were told about, 0…255. −1 until the first update.
     private var lastPostedVolume: Int32 = -1
+
+    /// Last value sent to `onPostedPosition`, so the post happens on change rather than ten times a
+    /// second. -1 is "never posted", which no real position can be.
+    private var lastPostedPosition: Int32 = -1
+
+    /// `WINAMP_MODERN_SEEK_TRACE=1` — every object the seek bar is made of, and the value each one
+    /// resolves to, each time the posted position moves.
+    ///
+    /// A seek bar is routinely more than one object: a `<slider action="SEEK">` the renderer places
+    /// from the host clock, and beside it a ghost or fill layer a script places from
+    /// `onPostedPosition`. When the two disagree the skin draws two thumbs, and which of them is
+    /// stale is invisible from any single value — so this prints all of them together.
+    static let seekTrace = ProcessInfo.processInfo.environment["WINAMP_MODERN_SEEK_TRACE"] == "1"
+
+    private func traceSeekObjects(posted: Int32) {
+        guard Self.seekTrace else { return }
+        NSLog("SEEK_TRACE posted=%d hostTime=%.2f hostDuration=%.2f state=%@",
+              posted, host.currentTime, host.duration, String(describing: host.playbackState))
+        for node in renderer.sceneNodes() {
+            let object = node.object
+            let type = object.typeName.lowercased()
+            let action = object.attributes["action"]?.lowercased() ?? "-"
+            let id = object.attributes["id"] ?? object.attributes["xuitag"] ?? "-"
+            let looksRelevant = action == "seek" || type == "slider" || type == "progressgrid"
+                || id.lowercased().contains("seek")
+            guard looksRelevant else { continue }
+            NSLog("SEEK_TRACE   id=%@ type=%@ action=%@ value=%@ normalized=%.4f frame=%@",
+                  id, type, action, object.attributes["value"] ?? "-",
+                  Double(renderer.normalizedValue(of: object)),
+                  NSStringFromRect(NSRectFromCGRect(node.frame)))
+        }
+    }
     /// Last title the scripts were told about, so `onTitleChange` fires per track rather than per
     /// redraw. `nil` until the first update, which is not the same as the empty "no track" title.
     private var lastPostedTitle: String?
@@ -1789,11 +1821,21 @@ final class WinampModernMainView: NSView {
         // that the film paused or resumed. One enum compare per tick, and `updatePlaybackState` does
         // nothing unless the state actually moved.
         if host.playbackState != lastPlaybackState { updatePlaybackState() }
-        if duration > 0 {
-            let posted = Int32(max(0, min(255, current / duration * 255)))
+        // **A duration that goes away has to be posted too, as a zero.** Stock Winamp Modern's seek
+        // bar is two objects — a `Seeker` and a `SeekerGhost` — and the ghost's thumb is placed by
+        // the script that hears `onPostedPosition`, not by the clock the renderer draws the slider
+        // from. Skipping the post when there is no duration froze the ghost on its last value while
+        // the drawn slider went to zero, and the two thumbs came apart: one at the start, the
+        // abandoned one still parked at the end. Seen on MMD3 the moment a finished film stopped
+        // being the session (2026-09-03); the same split waits for anything else that ends a
+        // clock. Posted on change only, so an idle scene still dispatches nothing.
+        let posted = duration > 0 ? Int32(max(0, min(255, current / duration * 255))) : 0
+        if posted != lastPostedPosition {
+            lastPostedPosition = posted
             for object in positionListeners {
                 _ = try? scripts.dispatch(object: object, event: "onpostedposition", arguments: [.integer(posted)])
             }
+            traceSeekObjects(posted: posted)
         }
         let rects = timeDependentRects()
         // An *empty* set means this scene has nothing the renderer draws from the clock, which is a

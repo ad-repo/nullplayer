@@ -32,6 +32,24 @@
 
 ### Bug Fixes
 
+- **A film watched to the end is now marked watched on Plex, Jellyfin and Emby** — and a queued
+  video playlist moves on to the next film by itself. The video engine reports a film running out as
+  a pause rather than as an ending, and NullPlayer was taking it at its word: the server was told the
+  film had been *paused* at 100% and never that it had been finished, so it stayed unwatched, nothing
+  was recorded, and a queued film simply sat there instead of starting the next one. This affected
+  every video, local or streamed.
+
+- **The transport resets when a film finishes** — in every skin mode. A film that had played to its
+  end went on counting as the thing the player was playing: the readout kept its title, the position
+  bar stayed parked at the end, and the play, stop and seek controls went on driving a film that was
+  over, so the player could not be handed back to your music without closing the video window. The
+  picture stays where it is, on its last frame, and can be played again from the start.
+
+- **Modern skins: a finished film no longer leaves a second marker on the seek bar** — some skins
+  build their seek bar from more than one control stacked in the same place, and when playback ended
+  they stopped agreeing with each other: one marker dropped back to the start while the other stayed
+  behind at the end.
+
 - **Modern skins: Big Bento Modern's volume control works again** — the player had no way to change
   the volume at all. Clicking the volume icon, which is meant to slide a volume panel out of the
   player, did nothing, and neither did the mute buttons. The skin resolves those controls with two
