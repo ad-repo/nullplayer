@@ -39,6 +39,11 @@
   Reported on Ebonite, whose playlist ran 19 pixels past its own frame; a mask still shapes a window
   as before, because a wash of one flat colour cannot describe a shape.
 
+- **Modern skins: no more flickering patch of noise at a window's corner** — a skin can declare a web
+  panel it never shows, and an empty one was being left switched on at the top of the window, where
+  it painted a band of random pixels that shifted as the window was dragged. It only ever showed
+  through on a skin whose artwork does not cover its whole window.
+
 - **Modern skins: a panel no longer shows everything it was meant to hide** — a skin can size a panel
   by naming the artwork behind it instead of stating its width and height, and several use that panel
   as a peephole with content sliding through it. NullPlayer treated such a panel as having no size at

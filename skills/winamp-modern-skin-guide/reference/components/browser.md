@@ -53,6 +53,29 @@ elements eagerly and create surfaces for all of them at first layout. Each surfa
 `view.isHidden` tracks whether the element is currently visible in `sceneNodes()`, so the surface
 is ready the moment the tab becomes visible.
 
+#### A holder with no area is not a surface (B78's sibling, 2026-09-03)
+
+Visibility is `isBrowserVisible()` **and a non-empty frame**. The first alone answers "the element is
+in the scene", which a `<browser>` can be while resolving to nothing: Ebonite declares
+`<browser id="brw" fitparent="1"/>` in its Pledit, Video and Library layouts with no box of its own,
+and it resolves to **0x0** at the layout's origin.
+
+A zero-sized `WKWebView` is not merely invisible. Its content is composited by another process, and
+an empty one left unhidden at the window's top edge drew a band of **uninitialized pixels** into the
+top 12 rows of the window — random saturated colours at random alphas, re-randomised as the two
+backing surfaces alternated, so it flickered while the window was dragged.
+
+It was invisible in every skin whose artwork covers its whole window, and showed up the moment one
+did not: Ebonite's frame paints 233x230 of a 250x250 window, so the 17px right margin was left
+exposed. Reported as a corner artifact and first mistaken for a stale backing store.
+
+**How it was found, because no probe shows it.** The headless dump renders the scene with no
+component host, so it has no `WKWebView` and the pad comes out clean; only the running app has one.
+Bisected there: `screencapture -o -l <windowID>` grabs one window's **own buffer** (a transparent
+region reads as alpha 0, so junk in it is unambiguous), and with `draw(_:)` made to clear and return
+without drawing anything at all, the band was still there — which is what ruled the scene out.
+Suppressing browser surfaces alone took it from 200 junk pixels to 0.
+
 ### Independent surfaces and lazy loading
 
 Each `<browser>` gets its own **non-cached** `WinampModernBrowserSurface` via

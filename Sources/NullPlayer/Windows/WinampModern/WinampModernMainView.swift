@@ -1011,7 +1011,16 @@ final class WinampModernMainView: NSView {
                       let view = browserSurfaces[id]?.view {
                 addSubview(view)
             }
-            let visible = renderer.isBrowserVisible(browser.object)
+            // **A holder with no area is not a surface.** `isBrowserVisible` answers "the element is
+            // in the scene", which a `<browser>` can be while resolving to nothing — Ebonite declares
+            // `<browser id="brw" fitparent="1"/>` in its Pledit, Video and Library layouts with no box
+            // of its own, and it resolves to 0x0 at the layout's origin. A `WKWebView` there is not
+            // merely invisible: its content is composited by another process, and an empty one parked
+            // at the window's top edge drew a band of uninitialized pixels into the top 12 rows of the
+            // window. That was invisible in every skin whose artwork covers its whole window and
+            // showed up the moment one did not — reported on Ebonite as a corner artifact that
+            // flickered while the window was dragged.
+            let visible = renderer.isBrowserVisible(browser.object) && !browser.frame.isEmpty
             browserSurfaces[id]?.setVisible(visible)
             if visible, let request = pendingBrowserRequests.removeValue(forKey: id) {
                 browserSurfaces[id]?.navigate(request)
