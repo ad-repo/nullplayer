@@ -1277,18 +1277,6 @@ class WindowManager {
         (mainWindowController as? WinampModernMainWindowController)?.detachVideoOutput()
     }
 
-    /// Re-offer a still-loaded film's picture to a freshly created Winamp Modern main window — the
-    /// `reloadUI` / mode-switch counterpart of the same call at the end of `loadSkin(at:)`.
-    ///
-    /// Guarded on `currentTitle`, not on `isVideoActivePlayback` its neighbour in
-    /// `pushCurrentPresentationStateToRecreatedWindows` uses: that property's `isVideoOutputVisible`
-    /// term is false for a film whose picture is unparked, which is precisely the state a mode switch
-    /// leaves it in.
-    func rehostWinampModernVideoOutput() {
-        guard uiMode.controllerFamily == .winampModern else { return }
-        (mainWindowController as? WinampModernMainWindowController)?.rehostVideoOutputIfPlaying()
-    }
-
     /// `VID_1X` / `VID_2X` — size the skin's video window from the stream's own dimensions.
     @discardableResult
     func sizeWinampModernVideoSurface(toNativeMultiple multiple: CGFloat) -> Bool {
@@ -6916,10 +6904,6 @@ class WindowManager {
             )
             mainWindowController?.updatePlaybackState()
         }
-
-        // A film survives the rebuild, but nothing re-offers its picture to the new main window —
-        // a no-op in every mode but Winamp Modern, by the guard inside.
-        rehostWinampModernVideoOutput()
     }
 
     #if DEBUG

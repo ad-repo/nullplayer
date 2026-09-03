@@ -181,15 +181,29 @@ NullPlayer's own window while the new skin's video window sat empty beside it. O
 right, and only because a cPro tab strip re-creates its holder; a `declaredContainer` skin has no
 holder until its window opens, so that path never fires for it.
 
-`WinampModernMainWindowController.rehostVideoOutputIfPlaying()` closes it, from two call sites and no
-more — `hostVideoOutput()` already knows how to ask *any* skin what it declares, so nothing here is
-per-skin:
+`WinampModernMainWindowController.rehostVideoOutputIfPlaying()` closes it, from **one** call site —
+the end of `loadSkin(at:)` — and `hostVideoOutput()` already knows how to ask *any* skin what it
+declares, so nothing here is per-skin. That single site covers `.wal` → `.wal` switches (including
+into the placeholder on the failure path, where "the skin declares no video" is the right answer)
+**and** `reloadUI` / mode switches back into Winamp Modern, because a recreated controller loads its
+skin: `showMainWindow` builds a fresh `WinampModernMainWindowController` when the controller is nil,
+and touching `.window` forces the load whether or not the window is revealed.
 
-- the end of `loadSkin(at:)`, for `.wal` → `.wal` switches (including into the placeholder on the
-  failure path, where "the skin declares no video" is the right answer);
-- `WindowManager.rehostWinampModernVideoOutput()`, gated on `controllerFamily == .winampModern` like
-  its four siblings, from `pushCurrentPresentationStateToRecreatedWindows()` — for `reloadUI` and mode
-  switches back into Winamp Modern.
+**Do not add a second call from `WindowManager`.** One was written and removed on 2026-09-03. Inside
+`recreateModeDependentLayout` everything below runs in a single runloop turn:
+
+1. `showMainWindow(reveal:)` — the fresh controller loads its skin, which schedules the re-host **one
+   turn later**;
+2. the main window's `setFrame` for the incoming mode;
+3. the sub-windows are restored;
+4. `pushCurrentPresentationStateToRecreatedWindows()`;
+5. `makeKeyAndOrderFront` / `orderOut`.
+
+A call placed at (4) is therefore the *early* one, not a safety net: it asks before the window is
+ordered front and before the skin's own resize and layout cascade have settled — the exact condition
+the async hook exists to avoid — so it either answers `false` or parks a mis-sized box, and the
+`loadSkin` hook silently corrects it afterwards. Keeping the single async site also keeps the whole
+re-host inside `WinampModern/`, with no shared-code touch at all.
 
 Three rules it obeys:
 
