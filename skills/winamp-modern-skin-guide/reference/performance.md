@@ -234,6 +234,14 @@ that pass reached, and the thread is 23.7% busy:
   uncached `NSString.size(withAttributes:)` calls, per clock object, per frame. It is a `static func`,
   so it cannot reach the instance-level width memo B106 added.
 
+One more was measured beside them and is a **visual decision rather than a free win**, which is why
+it is recorded here and not scheduled: every blit runs through the **16-bit float** pipeline
+(`ripc_DrawImage` → `RGBAf16_image` → `RGBAf16_sample_RGBAf_inner`, plus
+`vCGCompositePixelShape_ARGB16F_vec`), ~7% on cPro Bento. Nothing in the app sets `contentsFormat`,
+`colorSpace` or a depth limit, so that is the system default on a wide-gamut display. Skin art is
+8-bit PNG and `RGBA8Uint` would be lossless *for the artwork* — but the renderer also synthesizes
+gradients (`$gradient`), which could band. Measure and look at it before adopting.
+
 Fixing both would plausibly move 23.7% to ~20%, which nobody can perceive. Take them if you are in
 these files anyway; do not schedule them.
 

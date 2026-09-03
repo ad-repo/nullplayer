@@ -2,6 +2,124 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B78 — a negative `sysregion` suppresses real frame artwork, so the content overhangs the frame — closed 2026-09-03
+
+| B78 | **A negative `sysregion` suppresses real frame artwork, so the content overhangs the frame.** Reported on Ebonite_2_1 (2026-08-31) as "the window contents are bigger than the frame"; reproduced and root-caused 2026-08-31. `WasabiRenderer.isRegionOnly` drops any layer whose `sysregion` is negative, which deletes the four border layers of Ebonite's standard frame and leaves only its `inner` layer — 19px narrower than the client area drawn over it. The rule is right for the silhouette masks it was written for (Ujola Cat) and wrong for real artwork | 308 layers / **37 of 53 skins** currently suppressed ([M26]) | M | Live-reported |
+
+### B78
+
+- [ ] **B78. A negative `sysregion` suppresses real frame artwork, so the window's content overhangs
+      the frame.** Reported on Ebonite_2_1 (2026-08-31) as "the window contents are bigger than the
+      frame". **Reproduced live and root-caused the same day** — the two causes the entry originally
+      proposed are both wrong and are recorded below so they are not re-derived.
+
+      **What is on screen.** Ebonite's Playlist window, moved clear of every other window and
+      measured per row against the renderer's own 250x250 output:
+
+      ```
+      y=  0..16   fully transparent
+      y= 17..29   opaque x = 11..213     <- 203 wide
+      y= 30..219  opaque x = 10..232     <- 223 wide
+      y=220..226  opaque x = 11..213     <- 203 wide
+      y=227..249  fully transparent
+      ```
+
+      The content is 223px wide and overhangs the only frame artwork that draws by **19px to the
+      right and 9px below**. There is no border at all: the outer 10px left, 17px right, 17px top and
+      23px bottom of the window are fully transparent.
+
+      **The cause.** Ebonite's `wasabi.frame.dummy` groupdef
+      (`wasabi/standardframe/standardframe.xml:134`) draws its frame as five layers — `top`, `left`,
+      `right`, `bottom` over `wasabi.frame.dummybg` with `sysregion="-2"`, and `inner` over
+      `wasabi.frame.inner` with `sysregion="1"`. `WasabiRenderer.isRegionOnly` (`:2398`) answers true
+      for any negative `sysregion` and such a layer is never painted, so the four border layers are
+      dropped and only `inner` survives — `x=11 y=17 w=203 h=210`, which is the measured opaque box
+      exactly. The frame's script then instantiates the content group at `(10, 30, 223, 190)` on top
+      of it, and that is the overhang.
+
+      **The suppressed bitmap is not a mask.** `gfx/standardframe/window/background.png` is 10x10
+      solid black at a uniform **alpha 179** — a translucent border fill. The rule exists for a real
+      defect (Ujola Cat's `window-regions.png` silhouettes painting magenta and white slabs over the
+      title strips) but keys on the sign alone, which is too coarse.
+
+      **Two corrections to how this was filed.** The `.playlist` holder has **no NSView surface**:
+      `layoutHostedSubviews` (`WinampModernMainView.swift:1058`) positions only `.library`,
+      `.visualization`, `.video`, `.hostWindow` and browser surfaces, and the embedded playlist is
+      drawn by `WasabiRenderer.drawPlaylistComponent` (`:4744`), which clips to the holder before
+      drawing a row — so the `surface.view.frame` sentence described a path this surface never takes.
+      And the row metrics are innocent: `auto` resolves to **100%** here (`text=11.0px row=12.0px`,
+      14 rows in 172px), because `WinampModernTextScale.autoDivisor` is 48 and anything under a 528px
+      window sits on the 11px floor. Holder size is not the reach number; [M26] is.
+
+      **Also ruled out, do not re-try.** Container-level `default_w`/`default_h`/`minimum_w`/
+      `minimum_h` are read nowhere — `WinampModernContainerTopology.analyze` takes sizes only from the
+      layout (`:86-94`) while reading the container's `default_x`/`default_y` (`:244`) — and 37 such
+      declarations across 20 skins are ignored. **Honouring them would be a regression.** Ebonite
+      disproves them itself: its `<container id="equalizer" default_w="346" default_h="192">` sits
+      over a layout locked at `w/h/minimum/maximum = 147x106`, and its `<container id="main"
+      minimum_h="300" maximum_h="300">` over layouts 40 to 297 tall. The numbers are cargo-culted from
+      Winamp Modern and Winamp evidently ignores them too.
+
+      **Before changing the rule:** it is shared, and 37 of 53 skins have layers behind it ([M26]), so
+      this wants the corpus render sweep behind it rather than a live poke at one window. Ujola Cat is
+      the named regression case — a fix that repaints its five masks puts magenta and white slabs back
+      over its title strips. The candidate discriminator is the bitmap's alpha profile (uniform
+      translucent fill vs. colour-keyed mask); it is a candidate, not yet a rule.
+
+- <a id="m26"></a>**M26:** over the 53 extracted skin trees, count `<layer>` / `<animatedlayer>` declarations whose `sysregion` parses as a negative integer — these are exactly the ones `WasabiRenderer.isRegionOnly` refuses to paint. Measured 2026-08-31: **308 layers across 37 of the 53 skins**, led by winampmodern566 (26), Styx (23), Nullsoft.Winamp.2000.SP4.Lite (20), S7Reflex (18), Anaheim_Player_01 (16) and Ebonite_2_1 (16). The recurring four-layer `top`/`left`/`right`/`bottom` shape — the standard frame's own border — accounts for most of the ~25 skins that declare exactly 4. To see what a suppressed layer would have painted, read its `image=` bitmap's alpha profile: Ebonite's `gfx/standardframe/window/background.png` is 10x10 solid black at a uniform **alpha 179** (a fill), while Ujola Cat's `window-regions.png` is a magenta-and-white mask. That difference is the candidate discriminator and is not yet a rule.
+
+  M23, the playlist-holder size sweep this row used to cite, is **deleted rather than archived**: it measured the wrong thing. Its finding is kept here because it is still true and still not the bug — the holder Ebonite allots is 227x172, the smallest in the corpus is micro at 140x69, and 27 of the 44 skins that expose one are under 260x180. See B78 for why holder size is innocent.
+
+**Closed by a rule about the bitmap, not about the sign: a flat translucent fill is artwork.**
+`sysregion` being negative is a *claim* that the bitmap is a silhouette, and a bitmap carrying one
+alpha value over every pixel cannot be one — it has no edge, so under a binary cut it can only take
+all of its rect or none of it. What it is instead is a texture stretched over a strip. Such a layer
+now paints like any other and is dropped from `regionCuts`; **both halves are needed**, because the
+cut composites over the finished scene and would erase what the paint had just put there.
+
+**Translucent only, and deliberately.** A uniformly *opaque* crop is the idiom skins use for a
+deliberate rectangular trim — meridian's 1px `C-Display-Mid` strips, Shield_Amp's 1px `region.png`
+edges — and repainting those would square off windows meant to be shaped. A uniformly *clear* one
+already cuts nothing.
+
+**The reach, measured over the 61-skin corpus** (the sweep [M26] asked for, redone with the alpha
+profile of each layer's resolved bitmap crop): 352 negative-`sysregion` layers, 263 of them
+resolvable to a bitmap. 162 are binary opaque/clear masks, 42 mixed-translucent (anti-aliased
+corners), 28 uniformly opaque, 19 uniformly clear — and **12 are flat translucent fills, all 12 of
+them Ebonite's** `wasabi.frame.dummybg` at alpha 179. No other skin's shape moves. Corpus render
+sweep, 69 skins / 590 images: 6 differ — Ebonite's five framed windows (Pledit, Video, cover, about,
+library) and `Anexa/main-shade`, which was confirmed to differ run-to-run on the *same* build (a
+clock, not a regression).
+
+Ebonite's playlist, measured per row against the renderer's own 250x250 output, before and after:
+
+```
+before  y= 17..29   x=11..213      after  y=  0..229  x=0..232
+        y= 30..219  x=10..232             y=230..249  transparent
+        y=220..226  x=11..213
+        y=227..249  transparent
+```
+
+The content group is `(10, 30, 223, 190)`, so it now sits flush inside the painted frame where it
+used to overhang it by 19px to the right and 9px below.
+
+**Phase 88's third property is corrected, not overturned.** `testAPartiallyTransparentSilhouetteCutsCompletely` had pinned the opposite rule using Ebonite's own alpha-179 texture as its fixture; it is
+now `testAFlatTranslucentFillPaintsAndCutsNothing`. The coverage-floor test beside it kept its name
+and its point, but its fixture became a real two-valued silhouette (alpha 32 over clear) so that it
+still tests the floor rather than this new rule.
+
+**What this did *not* fix, and is not the same defect.** Ebonite's window still has no right or
+bottom pad: 233x230 of a 250x250 window. That is not clipping and not `sysregion` — the skin draws
+its visible border in a **separate overlay window**. `wasabi/standardframe/standardframe.m` (shipped
+as MAKI source) opens `frame_cont = newDynamicContainer("sc.alphaframe")` and keeps it on the client
+with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(),
+comp_layout.getHeight())`, which is exactly why the client group is declared `w="-17" relatw="1"
+h="-20" relath="1"` — the skin is reserving the margin its overlay fills. `newDynamicContainer`
+answers with the already-instantiated container and nothing materializes it as a tracking window, so
+no such window exists. Filed separately; at least four corpus skins depend on the idiom (Ebonite
+`sc.alphaframe`, MoonLight and Itemskin `cont.clear.*`, 4-drelictionreleasepic
+`resizable_status`/`resizable_nostatus`).
+
 ## B109 — a bitmap-font clock advances its colon by the whole atlas cell, so the seconds sit nine pixels away — closed 2026-09-03
 
 | B109 | **A bitmap-font clock advances its colon by the whole atlas cell.** Reported live 2026-09-03 against the cPro family: *"there is a space between the : and the seconds in elapsed time"* — the readout drew `1:03: 16`. A bitmap font is a fixed-pitch atlas and its colon is the one glyph a sheet routinely inks into only part of its cell; ClassicPro's `numfont.png` is 15px per glyph with its colon in the leftmost **6**, and the engine declares `timecolonwidth="6"` on `<text id="SongTime">` for exactly that reason. `WasabiSceneRenderer.drawBitmapText` never read the attribute — the Core Text path had honoured it since BB29 (`WasabiTextMetrics.clockRun`) — so the colon's nine unused columns became a gap before every following field | the whole cPro family through the engine, plus Enkera, TRON Legacy and impulse | S | Live-reported |
@@ -95,6 +213,207 @@ Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below
       a script that draws its own seek fill hears the reset too.
 
       Verified live by the user in both Modern and Classic 2026-09-03. `swift test`: 1729 passed.
+
+## BB37 — Big Bento Modern had no working volume control — closed 2026-09-02
+
+| BB37 | Big Bento Modern had no working volume control | **Fixed 2026-09-02.** `getLayout()` answered for a layout that has never been shown, so the skin's `if (normal) {…} if (shade) {…}` wiring ran both blocks and 89 bindings landed in `layout#shade`. See `skins/big-bento-modern.md` and `reference/scripting.md` | S | Live-reported |
+
+      Closed with the fix recorded in
+      [`skins/big-bento-modern.md`](../../skills/winamp-modern-skin-guide/skins/big-bento-modern.md)
+      and [`reference/scripting.md`](../../skills/winamp-modern-skin-guide/reference/scripting.md) →
+      *`getLayout()` answers NULL for a layout that has never been shown*. Commit `979c46a5`.
+      Confirmed live.
+
+## B106 — string width was measured with a full CoreText typesetting pass on the layout path — closed 2026-09-02
+
+| B106 | **String width is measured with a full CoreText typesetting pass on the layout path.** `autoWidth(of:)` is reached from `append`, so every `<text>` sized from its own content ran `NSString.size(withAttributes:)` on **every scene rebuild** - `__NSStringDrawingEngine` -> `TTypesetterAttrString` - to answer a question whose answer never changes. Measured 2026-09-01 on cPro Bento (drawer visualization up, playing): the walk from `append` alone was 4.7%, and `__NSStringDrawingEngine` totalled **13.6%** across three call sites (`append`/`autoWidth`, `drawPlaylistComponent`/`drawSurfaceText`, and `drawText`'s own measure). Fixed for the two sites that measure with exactly `[.font:]`, which makes the memo key provably complete: `WasabiTextMetrics.measuredWidth(of:font:)`. `width(of:text:)` 5.1% -> 0.3%, `autoWidth` 5.5% -> 0.8%, `sizeWithAttributes` 7.8% -> 2.4% | every `.wal` skin with `autowidth` text; worst where the graph is largest | S | Live-reported |
+
+- **Done.** Memoize the string measurement in `WasabiTextMetrics.measuredWidth(of:font:)`, keyed on
+      `(text, fontName, pointSize)` and shared by `width(of:text:)` and `surfaceTextWidth`.
+
+**Deliberately not done: the drawing half.** `drawText` is ~200 lines in which nearly every branch
+documents a specific skin defect it exists to fix (B87's clip rule, the `offsetx` sliver, cPro2's
+4px tuck, the clock cells). Converting it to cached CoreText lines is the real remaining win and is
+exactly the change that quietly breaks one of those cases - it wants the corpus render sweep as a
+safety net first. `drawText`'s own `measured` call is also left alone: it passes the full attribute
+dictionary (font + colour + paragraph), so routing it through a font-only cache is only safe if
+paragraph style cannot affect a single-line width, which is believed but not established.
+
+**The drawing half was taken later, 2026-09-02** — text now draws from cached CoreText lines
+(`WasabiTextMetrics.line(for:font:)`), behind the corpus render sweep this paragraph asked for. See
+[`reference/performance.md`](../../skills/winamp-modern-skin-guide/reference/performance.md) →
+*The drawing half of `drawText`*.
+
+**The result that matters more than the table, measured 2026-09-01.** Main-thread *busy* fraction
+across the three runs on identical state:
+
+| | busy |
+|---|---:|
+| before B104 | 95.3% |
+| after B104 | 93.8% |
+| after B105 + B106 | 91.1% |
+
+**The main thread is still saturated.** Per-frame work fell a long way - the named functions dropped
+by 5-20x - but the animation and visualization clocks simply take the freed capacity and run more
+frames, so the busy fraction barely moves. Chasing individual leaf costs has reached diminishing
+returns: what is left is dominated by `draw` (41.4%, mostly text drawing and image compositing),
+`refreshLayerFXMeshes`, and the scene walk.
+
+**Item 4 is done (2026-09-01).** `frame` joined `alpha` in `isSceneNeutral`. It is evidenced rather
+than predicted:
+`append` (13.4%) + `sceneNodes` (12.4%) are rebuilding a scene that mostly did not change, because
+`sceneGeneration` still moves every frame from cPro's `beatvis` `<animatedlayer>`s writing `frame`.
+Verified when B103 was investigated: `append` never reads `frame`, and the sprite is picked at draw
+time by `animatedFrameImage` -> `WasabiAnimation.state` on the live object, downstream of the scene
+cache - so exempting it cannot freeze the animation. Measured effect in the debug build: `append`
+13.4% -> 3.0%, `layoutNodes` 8.6% -> 2.1%, `layout()` 10.5% -> 3.8%.
+
+**It did not improve the frame rate, and the reason matters more than the change.** With the
+exemption in, the debug build's visualization clock still stalled at the same cadence: 8.6 -> 8.1
+late ticks/s, median gap 47ms -> 49ms against a 33ms target. The freed capacity was absorbed rather
+than turned into frames.
+
+### The debug build was the constraint (2026-09-01)
+
+Main-thread **busy** fraction, cPro Bento with the drawer visualization up and audio playing:
+
+| build | busy | idle |
+|---|---:|---:|
+| debug, before B103 | 98.6% | 1.4% |
+| debug, after B103-B106 | 94.4% | 5.6% |
+| debug, + `frame` exempt | 96.2% | 3.8% |
+| **release, all of it** | **60.7%** | **39.3%** |
+
+**Profile the build the user runs before optimizing past the algorithmic fixes.** Everything after
+B106 - the 46ms frames, the 21.7 fps, "still saturated after freeing 23%" - was a debug-build
+artifact. B103-B106 were worth doing at any optimization level because they are *algorithmic* (a
+311-entry dictionary rebuilt per call, a `CharacterSet` per character, a CoreText pass to re-answer
+a constant); ordinary code executed often is the category where debug-vs-release decides whether
+there is a problem at all.
+
+**`WINAMP_MODERN_VIS_STALL` is `#if DEBUG`.** It cannot fire in a release build, so a release run
+reports zero stalls whether or not any occurred. Read a silent instrument as "not running" until
+proven otherwise. The cross-build metric that does work is the busy fraction from `sample`: count
+leaf frames sitting in `mach_msg2_trap` / `semaphore_wait` / `__psynch_cvwait` as idle.
+
+**No pre-fix release baseline was captured**, so how much of that 39% headroom these changes bought
+is unmeasured. The release figure above is *with* every fix including the `frame` exemption.
+
+## B105 — `WinampModernConfiguration.safeComponent` rebuilt a `CharacterSet` on every call — closed 2026-09-01
+
+| B105 | **`WinampModernConfiguration.safeComponent` rebuilds `CharacterSet.alphanumerics.union(_:)` on every call.** That union is not a cheap constant - it materializes Unicode bitmap planes (`CFUniCharGetBitmapForPlane`). It runs **twice per `storageKey`**, and a `storageKey` per config read, which puts it on the frame path for every `cfgattrib` in the scene. Measured **2.5%** of the main thread on cPro Bento, 2026-09-01. Fixed: the set is a `static let`, and an already-safe name is returned as-is instead of being rebuilt one `Character` at a time | every `.wal` skin with `cfgattrib` bindings | S | Live-reported |
+
+- **Done.** Hoist the `CharacterSet` to a `static let`; return an already-safe component unchanged.
+      Measured at **2.5%** before the fix; not yet re-measured after.
+
+**Remaining, measured but not fixed** (cPro Bento, drawer visualization up, playing, after B103-B105):
+
+| candidate | share | note |
+|---|---:|---|
+| ~~`drawText`~~ | ~~8.8%~~ | **Done 2026-09-02.** Text draws from cached CoreText lines (`WasabiTextMetrics.line(for:font:)`), and four tables that were rebuilt per string per frame are memos. Headless, `WINAMP_MODERN_RENDER_TIME` ×2 scale: cPro Bento `main/normal` **5.51 -> 5.06-5.11 ms/frame (-8%)**, its `notifier` -41%, `widgets.manager` -14%; Big Bento Modern `main/normal` 30.47 -> 30.2 (-0.7%, at the edge of noise - that layout is not spending its 30 ms on text). Corpus sweep over all 69 archives: invariants identical, 585/590 PNGs byte-identical and the other 5 antialiasing at <=5/255. In the **release** build (cPro Bento, drawer vis up, playing, 51.5% busy) `drawText` is now **2.5%** of the main thread. See `reference/performance.md` -> *The drawing half of `drawText`* |
+| playlist row truncation | 3.2% (release) | **The whole of the remaining text cost**, measured 2026-09-02: every `__NSStringDrawingEngine` sample in a release profile is `drawPlaylistComponent` -> `drawSurfaceText` -> `drawFlippedText`'s fallback for a row too long for its column. Winamp draws a row's title and its time into the *same* rect, so the title's box is the whole row and most rows overflow it. The fallback exists because `.byTruncatingTail` tightens inter-character spacing before it cuts and a `CTLine` reproduces the cut and not the tightening. Closing it means setting `tighteningFactorForTruncation = 0` on that path and accepting that rows AppKit currently squeezes to fit truncate one character earlier - **a visible playlist change, so a decision rather than a free win** |
+| float16 image compositing | ~7% | `ripc_DrawImage` -> `RGBAf16_image` -> `RGBAf16_sample_RGBAf_inner` plus `vCGCompositePixelShape_ARGB16F_vec`: every blit runs through the **16-bit float** pipeline. Nothing in the app sets `contentsFormat`, `colorSpace` or a depth limit, so this is the system default on a wide-gamut display. Skin art is 8-bit PNG, so `RGBA8Uint` would be lossless *for the artwork* - but the renderer also synthesizes gradients (`$gradient`), which could band. **A visual decision, not a free win**: measure and look at it before adopting |
+| `refreshLayerFXMeshes` | 20.0% | The MAKI interpreter evaluating cPro's warp mesh per tick. Genuine work; bounded by B103's dispatch fixes. Would need a cheaper interpreter or a coarser mesh, both of which change behaviour |
+
+## B104 — a `CharacterSet` rebuilt once per character, on a scan over every object, twice a frame — closed 2026-09-01
+
+| B104 | **A `CharacterSet` is rebuilt once per character, on a scan over every object in the graph, twice a frame.** `WinampModernComponents.swift:112` builds `CharacterSet(charactersIn:)` **inside** a `filter` closure, so CoreFoundation runs `CFCharacterSetCreateWithCharactersInString` -> `qsort` (and the matching dealloc) once per scalar to answer "is this character hex". It is reached from `refreshWaveformDemand`, which walks `allObjectsUnordered` **twice** calling `componentKind(of:)` on every object. Measured 2026-09-01 on cPro Bento with the drawer visualization up and audio playing (7991 main-thread samples): `normalize` **14.6%** of the main thread (~13.7% of it building and freeing `CharacterSet`s), `refreshWaveformDemand` **32.8%**, `surfaceID(of:)` **32.0%**. Nothing in the line is cPro-specific - the **reach** is: the cost is per object, and cPro's graph (ClassicPro engine + CentroSUI + tabs + widgets + drawer) is the corpus's largest, which is also why adding the drawer made it worse | every `.wal` skin; scales with object count, so worst by far on cPro | S | Live-reported |
+
+- **Done.** **1. `normalize` builds a `CharacterSet` per character.** `WinampModernComponents.swift:112`.
+      Hoist the hex test out of the closure — better, drop `CharacterSet` and test the UTF-8 byte
+      directly, which is what "is this an ASCII hex digit" actually is. Measured at **14.6%** of the main thread, ~13.7% of it building and freeing `CharacterSet`s.
+- **Done.** **2. `surfaceID(of:)` is recomputed per object, per scan.** Nothing memoizes it, so every walk
+      re-derives the same answer for every object. Cache it on the object, dropped by `setAttribute`
+      for the keys it reads.
+- **Done.** **3. `refreshWaveformDemand` walks `allObjectsUnordered` twice.** `WasabiRenderer.swift:3559`
+      and `:3577` each want one boolean. One pass answers both.
+- [ ] **4. Re-measure, then decide about `isSceneNeutral`.** The memo on `sceneGeneration`
+      (`WasabiRenderer.swift:3545`) misses every frame because cPro's `beatvis` `<animatedlayer>`s
+      write `frame` on every tick (B103's mutation trace). With 1-3 done the miss may stop mattering.
+      **Do not add `frame` to the exemption set on a prediction** — measure first.
+
+**Order matters here.** 1 and 3 are exact and carry no invalidation risk; 2 introduces a cache and
+should be judged on measurement after 1 and 3, not before.
+
+**Result, measured 2026-09-01** — three samples on identical state (cPro Bento, drawer visualization
+up, audio playing), true inclusive share of the main thread:
+
+| symbol | before | after 1+3 | after 1+2+3 |
+|---|---:|---:|---:|
+| `refreshWaveformDemand` | 32.8% | 18.5% | **1.7%** |
+| `surfaceID(of:)` | 32.0% | 17.8% | **0.7%** |
+| `componentKind(of:)` | 31.9% | 17.7% | **0.7%** |
+| `normalize` | 14.6% | 2.6% | **0.0%** |
+| `WinampModernMainView.draw` | 55.1% | 46.1% | **36.2%** |
+
+Item 2 earned its place: 1+3 alone left `componentKind` at 17.7%.
+
+**Measurement pitfall this exposed — `append` is recursive.** Aggregating a `sample` tree by summing
+every frame that carries a symbol counts a recursive function once per level, so `append` read as
+**73%** of the main thread when its true inclusive share is **12.2%**, and `normalize` read as 28.3%
+against a true 14.6%. Inclusive share has to count only the **outermost** occurrence of a symbol on
+each stack. Two figures were reported from the inflated form before this was caught. Anything derived
+from a `sample` tree by substring matching is suspect for the same reason: `refreshWaveformDemand`
+also appears as `closure #4 in …` and `partial apply for closure #4 in …` on the same stack.
+
+## B103 — the script-dispatch and per-frame resolution paths rebuilt their lookup tables on every call — closed 2026-09-01
+
+| B103 | **The script-dispatch and per-frame resolution paths rebuild their lookup tables on every call.** Measured 2026-09-01 on `2222-cPro__Bento`, debug build, **idle with nothing playing**: the process sits at **58-65% CPU** and `sample` puts ~64% of it on the main thread - 32.1% in `animationTick` -> `refreshLayerFXMeshes` -> `evaluateLayerFXMesh`, 30.8% in the `draw` that tick asks for. The mesh is not the cost: `WINAMP_MODERN_FX_TRACE=1` shows **one** realtime layer, `layer#animationscreen`, at `fx_setgridsize(10,1)` - an 11x2 vertex mesh, 44 MAKI calls per tick, 1320/sec. That works out to **~240 us per script dispatch**, and the four causes are all rebuilt-per-call tables; see the detail section | every `.wal` skin (items 1, 2, 4 are shared script/resource code); worst on cPro, which runs a 30 Hz realtime FX layer | M | Live-reported |
+
+Four rebuilt-per-call tables on the main thread. Ranked by measured share; each is independent, so
+they land one at a time.
+
+- **Done.** **1. `signature(for:classGUID:)` builds a 311-entry dictionary literal per call.**
+      `WinampModernScriptRuntime.swift:2283` declares `let signatures: [String: MakiMethodSignature] = [...]`
+      as a **local**, so every method invocation the interpreter makes allocates and hashes 311
+      entries. Above it, `classGUID.map(Self.canonicalGUID)` is evaluated up to **five separate
+      times** in the same call. Hoist the table to a `static let` and compute the canonical GUID
+      once into a local. Measured at **10.4%** of the main thread.
+- **Done.** **2. `MakiClassGUID.canonical` is O(n^2) with ~20 allocations, called 5x per dispatch.**
+      `MakiBytecode.swift:58` walks a 32-character string with `String.index(_:offsetBy:)` in a
+      `stride`, building 16 substrings, reversing them in groups of four and joining. Rewrite over
+      `utf8` bytes and memoize on the raw string. Measured at **10.4%** (`canonical` +
+      `canonicalGUID`); item 1 removes four of the five calls, this removes the cost of the fifth.
+      **Done without the memo:** one `Array(raw)` plus one `String` makes the function O(n) with two
+      allocations instead of O(n²) with ~20, and a cache keyed on the raw string would spend a
+      32-character hash to save what is now a 32-character loop. Result is character-identical.
+- **Done.** **3. The resolved `NSFont` is not cached; only the raw `CGFont` is.**
+      `WasabiTextMetrics.font(identifier:size:traits:)` (`WasabiTextMetrics.swift:33`) caches
+      `CGFont` by path, so `CTFontCreateWithGraphicsFont`, `applying(traits:)` (an
+      `NSFontManager.convert` round trip) and the whole `installedFont` branch - `NSFontManager`
+      `font(withFamily:)` -> `CTFontDescriptorCreateMatchingFontDescriptorsWithOptions` - run **per
+      string, per frame**. Add a cache keyed on `(identifier, size, traits)`, which is what the
+      signature already offers, and clear it beside `fonts` in `teardown`. Measured at **2.6%** on
+      cPro Bento and **5.7%** on `cPro_T2T-by-MAC`, whose text is heavier.
+- **Done.** **4. `WalResourceRegistry.resolved(identifier:in:)` folds with ICU per lookup.**
+      `WasabiSkinInitializer.swift:125` calls `Self.fold` - `String.folding(options:locale:)`, a full
+      Unicode normalization - on every id, and allocates a fresh `Set<String>` for the alias
+      cycle guard, per resource id, per frame. Memoize the fold. Measured at **3.4%**.
+
+**Constraints.** Items 1, 2 and 4 are shared `.wal` code and item 3 is `WinampModern/` only, so
+Classic and Original are untouched by construction - no mode gate is needed because no shared *app*
+code is involved. None of the four changes what is drawn, so the render sweep must come back
+byte-identical.
+
+**Corrected figures (2026-09-01).** The per-symbol drops first reported for these four were derived
+by substring-matching the `sample` tree, which counts a symbol once per frame that carries it and so
+double-counts closures and recursion (see B104's measurement-pitfall note). True inclusive share,
+outermost occurrence only — and note the two runs are **not** the same app state (idle vs. playing),
+so read each row as an order-of-magnitude drop, not a controlled A/B:
+
+| symbol | before (idle) | after (playing) |
+|---|---:|---:|
+| `signature(for:classGUID:)` | 10.4% | 0.4% |
+| `MakiClassGUID.canonical` | 5.1% | 0.3% |
+| `WasabiTextMetrics.font` | 2.6% | 1.2% |
+| `WalResourceRegistry.resolved` | 3.4% | 0.6% |
+
+**Caveat on the numbers.** All of the above was measured on a **debug** build, so the absolute
+percentages are inflated. The two largest are algorithmic rather than optimizer-sensitive, so the
+shape holds in release, but the win should be re-measured with `sample` on a release build before
+the figures are written into `reference/performance.md`.
+
+**Not measured yet:** the profile above is **idle**. Playing adds B51's vis clock on top of it.
 
 ## B97 — a video window the skin declares `default_visible="0"` opens with the skin, empty — closed 2026-09-01
 
@@ -334,6 +653,8 @@ order mark decides the encoding*.
       `wasabi/standardframe/Copy of standardframe.xml`, which no `<include>` names, so it never
       reaches the graph. Tests: `WinampModernB96Tests`. Rule written up in
       [`reference/loading.md`](../../skills/winamp-modern-skin-guide/reference/loading.md).
+
+      **Reach command (was M30 in `TASKS.md`).** per skin tree, case-fold the `id=` of every `<container>` and keep the duplicates. Measured 2026-08-31: **Ebonite_2_1** (`sc.alphaframe`) and **WMP11-BlueVU** (`meter`). That grep finds only the literal-duplicate half; the **double-include** half does not show up in it and must be found from the render dump, where one declaration prints twice in `RENDER-DUMP containers` — **jvc.tape.v0.5**, whose `xml/pledit.xml` is included from both `skin.xml:17` and `xml/amp.xml:9`. Three skins between the two shapes. **Corrected 2026-09-01 while closing B96:** the live reach is **2**. Ebonite's second `sc.alphaframe` is in `wasabi/standardframe/Copy of standardframe.xml`, an authoring leftover no `<include>` names, so it never reaches the graph — a reminder that this grep reads the *tree*, not the include closure.
 
 ## B94 — a path-shaped `image=` resolves nothing, so a skin draws none of its own art — closed 2026-09-01
 
