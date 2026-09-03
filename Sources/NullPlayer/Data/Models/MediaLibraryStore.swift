@@ -1651,7 +1651,7 @@ final class MediaLibraryStore {
         do {
             try db.transaction {
                 for item in items {
-                    try self.upsertPlaylistInternal(item.playlist, sig: item.sig, connection: db)
+                    _ = try self.upsertPlaylistInternal(item.playlist, sig: item.sig, connection: db)
                 }
             }
         } catch {
@@ -1981,8 +1981,7 @@ final class MediaLibraryStore {
     private func movieFromRow(_ row: Row) -> LocalVideo? {
         guard let id = UUID(uuidString: row[colID]),
               let url = Self.urlFromStoredString(row[colURL]) else { return nil }
-        var movie = LocalVideo(url: url)
-        // Override generated UUID with stored one
+        // Override the generated UUID with the stored one
         return LocalVideo(
             id: id,
             url: url,

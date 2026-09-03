@@ -207,7 +207,13 @@ final class WasabiTextMetrics {
             // A font parsed out of a skin can be missing the name table CoreText expects; it then
             // builds an attribute dictionary with a nil in it and aborts the process. A font with no
             // PostScript name is not usable, so fall back rather than hand it on.
-            let named: NSFont? = CTFontCopyPostScriptName(created) == nil ? nil : (created as NSFont)
+            //
+            // This tested `CTFontCopyPostScriptName(created) == nil` until 0.30.0, which the compiler
+            // reports as *always false* — the overlay returns a non-optional `CFString`, so the guard
+            // never fired and the hardening was inert. A nameless font reports an **empty** name, so
+            // that is what the check has to be.
+            let postScriptName = CTFontCopyPostScriptName(created) as String
+            let named: NSFont? = postScriptName.isEmpty ? nil : (created as NSFont)
             if let named { return Self.applying(traits, to: named) }
         }
         let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)

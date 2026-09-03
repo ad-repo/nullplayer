@@ -141,7 +141,7 @@ class LocalRadioHistory {
             try db.run(table.insert(
                 or: .replace,
                 colTrackUrl <- trackUrl,
-                colTitle <- (track.title ?? ""),
+                colTitle <- track.title,
                 colArtist <- track.artist,
                 colAlbum <- track.album,
                 colPlayedAt <- playedAt,
@@ -180,13 +180,13 @@ class LocalRadioHistory {
                 let url = track.url.absoluteString
                 if trackUrls.contains(url) {
                     NSLog("LocalRadioHistory: Filtered out '%@' by '%@' (url match: %@)",
-                          track.title ?? "", track.artist ?? "", url)
+                          track.title, track.artist ?? "", url)
                     return false
                 }
                 let nk = LocalRadioHistory.normalizedKey(title: track.title, artist: track.artist)
                 if normalizedKeys.contains(nk) {
                     NSLog("LocalRadioHistory: Filtered out '%@' by '%@' (normalized key match: %@)",
-                          track.title ?? "", track.artist ?? "", nk)
+                          track.title, track.artist ?? "", nk)
                     return false
                 }
                 return true

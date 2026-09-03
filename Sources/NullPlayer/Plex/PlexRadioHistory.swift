@@ -144,7 +144,7 @@ class PlexRadioHistory {
             try db.run(table.insert(
                 or: .replace,
                 colRatingKey <- ratingKey,
-                colTitle <- (track.title ?? ""),
+                colTitle <- track.title,
                 colArtist <- track.artist,
                 colAlbum <- track.album,
                 colServerId <- serverId,
@@ -183,13 +183,13 @@ class PlexRadioHistory {
             return tracks.filter { track in
                 if let rk = track.plexRatingKey, ratingKeys.contains(rk) {
                     NSLog("PlexRadioHistory: Filtered out '%@' by '%@' (rating key match: %@)",
-                          track.title ?? "", track.artist ?? "", rk)
+                          track.title, track.artist ?? "", rk)
                     return false
                 }
                 let nk = PlexRadioHistory.normalizedKey(title: track.title, artist: track.artist)
                 if normalizedKeys.contains(nk) {
                     NSLog("PlexRadioHistory: Filtered out '%@' by '%@' (normalized key match: %@)",
-                          track.title ?? "", track.artist ?? "", nk)
+                          track.title, track.artist ?? "", nk)
                     return false
                 }
                 return true
