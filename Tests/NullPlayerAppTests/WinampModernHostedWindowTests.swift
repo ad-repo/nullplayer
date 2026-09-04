@@ -120,6 +120,49 @@ final class WinampModernHostedWindowTests: XCTestCase {
                        "a failed id becomes a deterministic fallback and is not rebuilt")
     }
 
+    // MARK: - A hosted window is a window the skin's script can address (B110)
+
+    /// **The reveal is the announcement.** A hosted window is materialized, placed by
+    /// `WindowManager`, and only then ordered in — every one of those moves happens while the window
+    /// is off screen, where AppKit posts no `windowDidMove`. A skin that draws this window's chrome
+    /// in a *second* window is therefore told nothing at all unless the reveal itself says so, and
+    /// its frame stays at the origin it was created at while the window docks under the player.
+    /// Measured live on Ebonite, whose Flow frame came up 220px from its own contents.
+    func testRevealAnnouncesTheWindowAndHidingDoesNot() throws {
+        var settled: [WinampModernHostedWindowID] = []
+        let parts = try makeMaterializer { settled.append($0.id) }
+
+        XCTAssertTrue(parts.materializer.show(.spectrum))
+        XCTAssertEqual(settled, [.spectrum], "revealing a hosted window must announce it")
+
+        parts.materializer.hide(.spectrum)
+        XCTAssertEqual(settled, [.spectrum], "hiding announces nothing — there is nowhere to be")
+
+        XCTAssertTrue(parts.materializer.show(.spectrum))
+        XCTAssertEqual(settled, [.spectrum, .spectrum], "every reveal announces, not just the first")
+    }
+
+    /// A hosted window's view is keyed by its **synthesized container's** stable id, which is the
+    /// whole of what lets a script's `resize()` find it: `moveContainerWindow` resolves a container
+    /// id to a window through `auxiliaryContainers`, `skinView` and then this table, and a hosted
+    /// window is in none of the first two.
+    ///
+    /// Ebonite's frame answers its own drag with `syncContent()` —
+    /// `comp_layout.resize(frame.getLeft(), frame.getTop(), …)` — so while that lookup failed the
+    /// frame came away in the user's hand and left its contents behind. Dragging the *client* always
+    /// worked, because a frame is an auxiliary container.
+    func testAHostedWindowIsAddressableByItsContainerStableID() throws {
+        let parts = try makeMaterializer()
+        XCTAssertTrue(parts.materializer.show(.spectrum))
+        let instance = try XCTUnwrap(parts.materializer.materializedWindows.first)
+
+        XCTAssertEqual(instance.view.containerID, instance.graphRoot.stableID)
+        XCTAssertEqual(instance.graphRoot.xmlID,
+                       WinampModernHostedWindowID.spectrum.containerIdentifier)
+        XCTAssertTrue(parts.materializer.materializedWindows
+            .first { $0.view.containerID == instance.graphRoot.stableID }?.window === instance.window)
+    }
+
     private struct MaterializerParts {
         let loaded: WinampModernLoadedSkin
         let scripts: WinampModernScriptRuntime
@@ -127,14 +170,18 @@ final class WinampModernHostedWindowTests: XCTestCase {
         let materializer: WinampModernHostedWindowMaterializer
     }
 
-    private func makeMaterializer() throws -> MaterializerParts {
+    private func makeMaterializer(
+        windowDidSettle: @escaping (WinampModernHostedWindowMaterializer.MaterializedWindow) -> Void
+            = { _ in }
+    ) throws -> MaterializerParts {
         let loaded = try makeSkin()
         let host = Host()
         let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
         try scripts.start()
         let components = ComponentHost(makeSurfaces: true)
         let materializer = makeMaterializer(loaded: loaded, host: host, scripts: scripts,
-                                            components: components) { _, _ in }
+                                            components: components,
+                                            windowDidSettle: windowDidSettle) { _, _ in }
         addTeardownBlock { materializer.teardown(); scripts.teardown() }
         return MaterializerParts(loaded: loaded, scripts: scripts,
                                  components: components, materializer: materializer)
@@ -145,6 +192,8 @@ final class WinampModernHostedWindowTests: XCTestCase {
         host: Host,
         scripts: WinampModernScriptRuntime,
         components: ComponentHost,
+        windowDidSettle: @escaping (WinampModernHostedWindowMaterializer.MaterializedWindow) -> Void
+            = { _ in },
         fallback: @escaping (WinampModernHostedWindowID, Bool) -> Void
     ) -> WinampModernHostedWindowMaterializer {
         WinampModernHostedWindowMaterializer(
@@ -154,6 +203,7 @@ final class WinampModernHostedWindowTests: XCTestCase {
             componentHost: components,
             skinScale: { 1.25 },
             classicFallback: fallback,
+            windowDidSettle: windowDidSettle,
             testContentInstaller: { root, id in
                 func frame(in object: WasabiObject) -> WasabiObject? {
                     if object.attributes["content"] == id.contentGroupIdentifier { return object }

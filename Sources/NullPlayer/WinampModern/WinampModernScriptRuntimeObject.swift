@@ -67,6 +67,13 @@ extension WinampModernScriptRuntime {
             guard let root = ancestor(of: object, type: "container") else { return .null }
             return objectValue(descendant(of: root, xmlID: wanted))
         case "getcontainer": return objectValue(ancestor(of: object, type: "container"))
+        // A container the skin *declared* is static; one a script asked `newDynamicContainer` for is
+        // dynamic, and Wasabi marks the declaration itself `dynamic="1"` for the ones meant to be
+        // instantiated that way. Ebonite's standard frame branches on it —
+        // `if (!comp_layout.getContainer().isDynamic()) system.onScriptLoaded();` — to rebuild the
+        // frame overlay it closed on the last hide, and until this answered, the unsupported call
+        // aborted the whole `onSetVisible` handler before `frame_layout.show()` (B110).
+        case "isdynamic": return .boolean(object.attributes["dynamic"] == "1")
         case "getcurlayout":
             return objectValue(activeLayoutByContainer[object.stableID].flatMap(loadedSkin.runtime.graph.object(withID:)))
         case "switchtolayout":

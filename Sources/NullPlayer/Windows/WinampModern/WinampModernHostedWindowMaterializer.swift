@@ -20,6 +20,10 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
     private let instanceDidMaterialize: (MaterializedWindow) -> Void
     private let instanceWillTeardown: (MaterializedWindow) -> Void
     private let visibilityDidChange: (WinampModernHostedWindowID, Bool, NSRect) -> Void
+    /// This window is now somewhere, and whatever the skin draws around it has to hear about it
+    /// (B110). Called when one is revealed and on every move afterwards; see the controller's
+    /// implementation for why an announcement is owed at *both* moments.
+    private let windowDidSettle: (MaterializedWindow) -> Void
     /// Synthetic tests use a no-op MAKI fixture and install the content group at the exact point a
     /// real standard-frame script would. Nil in every application construction.
     private let testContentInstaller: ((WasabiObject, WinampModernHostedWindowID) throws -> Void)?
@@ -37,6 +41,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
          instanceDidMaterialize: @escaping (MaterializedWindow) -> Void = { _ in },
          instanceWillTeardown: @escaping (MaterializedWindow) -> Void = { _ in },
          visibilityDidChange: @escaping (WinampModernHostedWindowID, Bool, NSRect) -> Void = { _, _, _ in },
+         windowDidSettle: @escaping (MaterializedWindow) -> Void = { _ in },
          testContentInstaller: ((WasabiObject, WinampModernHostedWindowID) throws -> Void)? = nil) {
         self.loadedSkin = loadedSkin
         self.host = host
@@ -47,6 +52,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         self.instanceDidMaterialize = instanceDidMaterialize
         self.instanceWillTeardown = instanceWillTeardown
         self.visibilityDidChange = visibilityDidChange
+        self.windowDidSettle = windowDidSettle
         self.testContentInstaller = testContentInstaller
     }
 
@@ -279,6 +285,13 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         if visible {
             instance.view.setSceneVisible(true)
             updateConsumerState(for: instance)
+            // **The reveal is the announcement.** A hosted window is materialized, then placed by
+            // `WindowManager`, and only then ordered in — and every one of those moves happens while
+            // the window is off screen, where AppKit posts no `windowDidMove`. So a skin that draws
+            // this window's chrome in a second window had been told nothing at all, and its frame
+            // stayed at the origin it was created at while the window itself docked under the
+            // player. Ebonite's Flow window, 220px away from its own border (B110).
+            windowDidSettle(instance)
         }
         visibilityDidChange(instance.id, visible, transitionFrame)
     }
@@ -308,6 +321,11 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: origin)
         WindowManager.shared.postWindowLayoutDidChange()
+        // This delegate is the hosted windows' own, so the controller's `windowDidMove` — which is
+        // what tells a skin's script its window moved — never sees one of these. Nothing else in the
+        // path does either, which is why the defect was exactly "NullPlayer's own windows, and only
+        // those".
+        if let instance = instance(for: window) { windowDidSettle(instance) }
     }
 
     func windowDidResize(_ notification: Notification) {
@@ -335,6 +353,8 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
               let instance = instance(for: window) else { return }
         instance.view.needsDisplay = true
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+        // Raising this window put any frame glued over it behind it; the controller puts it back.
+        windowDidSettle(instance)
     }
 
     func windowDidResignKey(_ notification: Notification) {

@@ -666,8 +666,12 @@ class WindowManager {
         add(videoPlayerWindowController?.window, modeDependent: false)
 
         if let controller = winampModernHostedController {
+            // `.wal`-only: this whole branch is gated on the Winamp Modern controller existing, so no
+            // other UI mode reaches it. A `newDynamicContainer` copy (B110) is still managed — levels,
+            // minimize — but is not a snap target: it is a frame glued to another window's rect.
+            let instances = Set(controller.dynamicInstanceAuxiliaryWindows.map(ObjectIdentifier.init))
             for window in controller.materializedAuxiliaryWindows {
-                add(window, snapTarget: true)
+                add(window, snapTarget: !instances.contains(ObjectIdentifier(window)))
             }
             for hosted in controller.materializedHostedWindows {
                 let stack = WinampModernHostedWindowRegistry.entry(id: hosted.id)?

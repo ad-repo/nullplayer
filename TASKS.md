@@ -28,7 +28,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We answer `newDynamicContainer` with the already-instantiated container and materialize no window for it, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad" | 4 skins measured ([M31]); Big Bento wants instancing for a different purpose | L | Live-reported |
+| B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
 | B65 | A division by zero abandons the whole handler | 1 skin / 2 sites measured (Shield_Amp); corpus reach unmeasured | S | Live-reported |
@@ -72,7 +72,7 @@ resolve to a live citation above.
 - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
 - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases — and 50, 100, 150, 200, 250, 300 are integral. To check a *full* draw at either, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests` renders the scene the way the view does; count rows whose alpha is strictly between transparent and opaque to find partial-coverage seams objectively rather than by eye. The harness has no partial-repaint mode, which is why it cannot reproduce the live defect — adding one is most of this task.
 - <a id="m24"></a>**M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: **The_Nokia_5220_XpressMusic 12 of 12** and **winampmodern566 12 of 18**; no other skin in the 53 points one at a bitmap. Both are Menu-bar skins, which is why the symptom shows up there first.
-- <a id="m31"></a>**M31:** over the 61-skin corpus, `strings` every `.maki` for `newDynamicContainer` and pair the hits with the `dynamic="1"` containers the tree declares. Measured 2026-09-03: **12 skins call it**, and **4 use it for the per-window frame-overlay idiom** — Ebonite_2_1 (`sc.alphaframe`), MoonLight and Itemskin (`cont.clear.pl` / `.ml` / `.dl` / `.vd`, one per hosted window kind), 4-drelictionreleasepic (`resizable_status` / `resizable_nostatus`). All four descend from the same leech-derived `standardframe`, and MoonLight and Itemskin also appear in B78's alpha sweep with the same short client group and 1x1-texture border strips. The other callers want instancing for their own windows rather than for chrome: Big Bento (`searchresults`, `Hsearchresults`, `browserpro`), jvc.tape, multipass, the two Love is War Miku variants, hatsune_miku_5 and winampmodern566.
+- <a id="m31"></a>**M31:** over the **70-skin corpus** (66 net of byte-identical re-adds), `strings` every `.maki` for `newDynamicContainer` and pair the hits with the `dynamic="1"` containers the tree declares. **Re-measured 2026-09-03 while closing B110, correcting the first pass:** **16 skins call it**, not 12, and **5 use it for the per-window frame-overlay idiom**, not 4 — Ebonite_2_1 (`sc.alphaframe`), MoonLight, Itemskin, **K-jr** and **Pure Inspired** (`cont.clear.pl` / `.ml` / `.dl` / `.vd`, one per hosted window kind; K-jr's and Pure Inspired's `standardframe*.maki` are byte-identical to MoonLight's, `cmp` exit 0). All five descend from the same leech-derived `standardframe`, and MoonLight and Itemskin also appear in B78's alpha sweep with the same short client group and 1x1-texture border strips. **4-drelictionreleasepic is not one of them** — the first pass listed it in error: its `scripts/standardframe.m` contains no `newDynamicContainer` at all and does `content = newGroup(groupid); content.init(frameGroup)`, so its frame draws **inline in the same window**; its only `newDynamicContainer` is in `scripts/notifier.maki`. The other callers want instancing for their own windows rather than for chrome: Big Bento (`searchresults`, `Hsearchresults`, `browserpro`), jvc.tape, multipass, the two Love is War Miku variants, hatsune_miku_5, winampmodern566, Defix Hi-END 200, impulse_by_a_t_o_m_i_c and 4-dreliction's notifier. **After B110 landed, 8 archives actually build a live copy** in the render sweep — Ebonite (4), cPro2 Dark Aluminum (2, `searchresults`), Defix Hi-END 200 (2, `browserpro`), the four Big Bento Modern variants and WMP11-BlueVU (1 each) — the rest keep aliasing the declared container because only one program per id ever asks.
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
 
 For grep-derived rows, “skins” is the number of distinct first path components and “uses” is the
@@ -172,11 +172,13 @@ The implementation and its automated coverage shipped; that record is in
       window's own group is short by exactly that margin (`w="-17" relatw="1" h="-20" relath="1"` —
       233x230 inside a 250x250 window), because the overlay is what fills it.
 
-      **What we do.** `System.newDynamicContainer(id)` answers with the **already-instantiated**
-      container of that id (`compatibility/maki-surface.md`), and nothing materializes it as a
-      window that tracks another window. `CGWindowListCopyWindowInfo` on the running app shows no
-      such window, and the margin is simply empty — which is also what exposed the zero-area browser
-      surface closed alongside B78.
+      **What we did.** `System.newDynamicContainer(id)` answered with the **already-instantiated**
+      container of that id, so all five of Ebonite's frame programs drove one container. The window
+      itself **was** created — `setupAuxiliaryContainers` builds one per declared non-main container —
+      and simply never shown: `CGWindowListCopyWindowInfo` showing nothing is what an ordered-out
+      window looks like, not a missing one. (The first draft of this entry said we materialize no
+      window for it; that was wrong.) The margin was simply empty — which is also what exposed the
+      zero-area browser surface closed alongside B78.
 
       **Two halves, and the second is the harder one.**
       1. **Instancing.** A fresh instance per call, addressed by the object the script holds rather
@@ -189,14 +191,131 @@ The implementation and its automated coverage shipped; that record is in
          Classic-safety rule: gate on `uiMode.controllerFamily == .winampModern` and change no shared
          placement path without saying so.
 
-      **Reach: 4 skins ([M31])**, all from the same leech-derived standardframe — Ebonite,
-      MoonLight, Itemskin, 4-drelictionreleasepic. Itemskin's frames were already noticed from the
+      **Reach: 5 skins ([M31])**, all from the same leech-derived standardframe — Ebonite,
+      MoonLight, Itemskin, K-jr and Pure Inspired. Itemskin's frames were already noticed from the
       other side and closed as B69 ("its frames are a *second* container per window"), which is this
-      same idiom seen through the hosted-surface probe.
+      same idiom seen through the hosted-surface probe. **4-drelictionreleasepic is not one of them**
+      — it draws its frame inline in the same window; see the corrected [M31].
 
       **Before starting:** write the plan to `~/.claude/plans/` and have it reviewed. Window geometry
       has no useful armchair form (B56), so the loop is the `testing` skill's measure-it-live one,
       with `WINAMP_MODERN_PLACE_TRACE=1`.
+
+      **Plan:** `~/.claude/plans/write-the-plan-do-tender-island.md` (revised 2026-09-03 after a
+      fact-check; it corrects the reach and the "we materialize no window" claim above). Gated —
+      step 1 is a candidate whole fix and scopes the rest.
+
+      - [x] 1. `isDynamic()` on a container, then **measure on Ebonite**. **Measured 2026-09-03:**
+            `isDynamic` alone was not enough — the next statement is `system.onScriptLoaded()`, a
+            script calling its **own** startup body, which had no dispatchable arity, so the handler
+            still died one statement before `frame_layout.show()`. With both landed the frame window
+            **is on screen and drawn**: border, "Playlist Editor" title, close button and both
+            resizer grips (`WinampModernContainer_sc.alphaframe`, exactly over the client's rect).
+            It also settles the decision point: Ebonite runs **five** standardframe programs against
+            the one aliased container, so the playlist, library and frame windows all end up at one
+            rect (320x250 @ 822,561). Instancing is required.
+      - [x] 2. Real instancing for `newDynamicContainer` — **per calling program**. The first program
+            to ask keeps the declared container (so every single-holder caller is unchanged); a second
+            program asking for the same id gets a live copy built from the container's own XML, with a
+            distinct id (`sc.alphaframe#2`) and its opening layout realized. The same program asking
+            twice gets the copy it already holds, so Ebonite's close-on-hide/rebuild-on-show cycle
+            leaks nothing. Cap 12 per id
+      - [x] 3. Window identity: **not** the planned re-key of `auxiliaryContainers` to `WasabiObjectID`.
+            A copy is given a distinct container *id* instead, so all 17 `first(where: { $0.containerID
+            == id })` sites keep working unchanged and accessibility ids are unique — the plan's stated
+            reasons for the re-key, at a fraction of the risk it flagged ("where a silent misroute
+            would hide"). Copies carry `nullplayer_dynamic_instance=<declared id>`, the sibling of
+            `nullplayer_synthesized`
+      - [x] 4. A window per copy: the recipe is factored out of `setupAuxiliaryContainers` into
+            `makeAuxiliaryContainer`, and the hook that calls it is wired in `wireContainerCallbacks`,
+            **before** `scripts.start()` — Ebonite asks for all five copies from `onScriptLoaded`, and
+            wired with the surface coordinator (after `start()`) every copy came up windowless. Copies
+            are excluded from `arrangeWindows()`, `place()`, `snapTargetWindows()`, the window menu and
+            visibility persistence
+      - [x] 5. Client -> frame sync via B69's `borrowedWindowOrigin` — worked as the plan predicted.
+            Measured: dragging the frame's title bar moved both windows to (875,688) together
+      - [x] 6. `onUserResize` (arity 4), fired from `windowDidResize` only while `inLiveResize`, and the
+            ±1 clamp — handled with a **one-pixel tolerance** in `borrowedWindowOrigin`, the offset
+            carried through to the desktop origin so the jiggle still happens. Measured: growing by the
+            grip took both windows to 385x377; shrinking past the clamp took both to 258x258 **in
+            place**, with no jump to the screen corner
+      - [x] 7. Z-order: clicking the client buried its own frame (title strip went black, border
+            survived only where the client's group does not reach). The pairing is the skin's, so it is
+            learned from the `frame.resize(client.getLeft(), …)` idiom itself (`windowsGluedOver`) and
+            `windowDidBecomeKey` re-raises the follower one runloop turn later — inside the
+            notification the raise is undone by the rest of that pass. Alpha and `isActive` needed
+            nothing: both already resolve per window id
+      - [x] 8. Click-through measured, not assumed: a click in the frame's transparent middle reached
+            the library client and switched it to Albums
+      - [x] 9. Correct the B110/M31 backlog facts (reach 5 of 70, not 4 of 61; 4-drelictionreleasepic
+            draws its frame inline; K-jr and Pure Inspired are in the cohort; 16 skins call
+            `newDynamicContainer`; the frame window is created and never shown)
+
+      **Verification (2026-09-03).** `swift test` 1743 pass + 12 new B110 tests. Corpus render sweep
+      over 70 archives against a worktree baseline: every invariant change is an additive `#N` copy
+      line, 588 of 590 images identical; `Ebonite_2_1/sc.alphaframe-scdef.png` changed size 640x400 ->
+      250x250 (the declared container is now the *playlist's* frame rather than whichever program wrote
+      last, which is the fix), and `Anexa/main-shade.png` differs **against a second capture of the same
+      build**, the run-to-run flake `reference/harness.md` already records. The four already-working
+      pair skins — MoonLight, Itemskin, K-jr, Pure Inspired — build no copies and their dumps are
+      unchanged. Ten open/close cycles of the playlist leave the window count where it started.
+
+      **Two defects the reporter's own session found that none of the above caught (2026-09-03), both
+      fixed:**
+
+      - **The playlist frame did not appear at all** ("all others do"). The first program to ask is
+        answered with the *declared* container, so Ebonite's playlist frame is the one frame that is
+        not a copy — and the load-time visibility hook was keyed on "is a copy". Its client is restored
+        visible at launch and its `frame_layout.show()` runs inside `scripts.start()`, so that one show
+        was dropped. The test is now **"has a script claimed this container through
+        `newDynamicContainer`"**, asked of the runtime. It must *not* be the `dynamic="1"` attribute:
+        a corpus scan found several skins declaring their real `Pledit`, `MLibrary` and `AVS` windows
+        that way, and excluding those from tiling, snapping and the window menu would lose windows
+        people open.
+      - **The client was drawn over its own frame** ("1/2 of the window is one style and the other
+        half is another"), and this took **two** passes. First: re-raising the frame on
+        `windowDidBecomeKey` alone is not enough, because at launch the frame is shown *before* the
+        client — `restackGluedWindows()` now runs on every window open, on every key change and once
+        after launch settles. That still looked identical, and `WINAMP_MODERN_GLUE_TRACE=1` (added for
+        it, documented in `reference/harness.md`) named the real cause in one run: a standard frame
+        writes the origin **both** ways — `syncFrame()` puts the frame on the client and `syncContent()`
+        puts the client back on the frame — so `borrowedWindowOrigin` recorded the pair in *both*
+        directions and the restack loop fought itself, whichever direction it handled last winning. The
+        record is now written in one direction only: the follower must be a container a script claimed
+        through `newDynamicContainer`, the leader must not be.
+
+      **Three further defects from the reporter's live session (2026-09-03), all fixed and confirmed
+      by them:**
+
+      - **The top and left borders read flat black** where the right and bottom read as glossy
+        chrome. Not a window problem: the client window was painting under those two borders because
+        B78 (`d14504f1`) had made Ebonite's four `sysregion="-2"` frame strips paint as artwork
+        instead of cutting the region. That commit's own message says why — *"the client area drawn
+        over it overhung a frame that was not there"* — and *"this does not give Ebonite its right and
+        bottom pads; that margin is reserved for an overlay window the skin opens itself, filed as
+        B110"*. B110 built that window, so the premise is gone and the commit is reverted: read as
+        silhouettes those strips cut the client to exactly the frame's opening (top 30, left 10, right
+        17, bottom 30 — that frame's inner rect to the pixel).
+      - **An opaque bar across the frame's titlebar and under its status row**, each stopping short of
+        the right edge. The group's `sysregion="1"` backdrop layer was restoring region its own
+        siblings had just cut. **A group's own cut-out is not undone from inside it** — the
+        cross-group restore S7Reflex needs is untouched. Written up in
+        `reference/rendering/hit-testing.md`; the corpus sweep moves one other image, Shield_Amp's
+        notifier by 125 px, in the same direction.
+      - **The frame came away from NullPlayer's own windows** (Flow, Cava, PeppyMeter) when dragged by
+        the frame — dragging the contents always worked. Two causes, both in the hosted-window path
+        and written up in `reference/components.md`: the materializer is its own window delegate and
+        never announced a move to the skin's script (nor did the reveal, where the placement actually
+        happens, off screen); and `moveContainerWindow` could not resolve a hosted window at all, so
+        `syncContent()` — the write that pulls the client along — landed nowhere.
+
+      **Verification of those three (2026-09-03):** `swift test` full suite green, with two new
+      `WinampModernHostedWindowTests` and a new `WinampModernPhase88Tests` case for the sibling rule
+      (its S7Reflex fixture corrected to nest the cut in a group, which is that skin's actual shape).
+      Corpus sweep over 69 skins: 582 of 590 images identical — Ebonite's five framed windows plus its
+      frame, the known `Anexa/main-shade` flake, and Shield_Amp's 125 px corner. Live: frame dragged,
+      client followed to (895,682); window opened, closed, reopened and dragged, frame glued each
+      time.
 
 ---
 

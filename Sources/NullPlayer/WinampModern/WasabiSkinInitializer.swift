@@ -475,6 +475,23 @@ final class WasabiSkinRuntime {
     /// reachable from MAKI and accepts only the typed NullPlayer hosted-window description.
     var instantiateHostedWindow: ((WinampModernHostedWindowInstantiation) throws -> WasabiObject)?
 
+    /// A **second live copy** of a container the skin declared `dynamic="1"`, for MAKI's
+    /// `System.newDynamicContainer` (B110). Winamp builds a fresh instance per call so a skin can
+    /// have several of the same window at once; Ebonite's standard frame needs one overlay per framed
+    /// window, and answering all five with the one declared root put its playlist, library and frame
+    /// windows at a single rect. Answers `nil` when the id names no `dynamic="1"` container.
+    ///
+    /// The instance is a real root in the graph with its own `stableID` and a **distinct** `id`
+    /// (`sc.alphaframe#2`), which is what keeps one window per container id true for everything that
+    /// looks a window up by that id — see `dynamicInstanceAttribute`.
+    var instantiateContainer: ((_ declaredID: String) throws -> WasabiObject?)?
+
+    /// Marks a container root built by `instantiateContainer` rather than declared by the skin, and
+    /// carries the id it was declared under. The sibling of `WinampModernContainerTopology`'s
+    /// `synthesizedAttribute`: a window that exists because a script asked for it is not part of the
+    /// skin's own arrangement, so it is not tiled, not a snap target, not persisted and not in a menu.
+    static let dynamicInstanceAttribute = "nullplayer_dynamic_instance"
+
     func isTrustedHostedHolder(_ object: WasabiObject) -> Bool {
         var node: WasabiObject? = object
         while let current = node {
@@ -654,6 +671,13 @@ final class WasabiSkinInitializer {
             runtime.registerHostedWindow(root)
             return root
         }
+        let dynamicNodes = Self.dynamicContainerNodes(in: document.roots)
+        runtime.instantiateContainer = { [self] declaredID in
+            guard let node = dynamicNodes[declaredID.lowercased()] else { return nil }
+            return try instantiateContainerAtRuntime(node, declaredID: declaredID, graph: graph,
+                                                     types: types, createdCount: &createdCount,
+                                                     documentOrder: documentOrder)
+        }
         return runtime
     }
 
@@ -689,6 +713,87 @@ final class WasabiSkinInitializer {
                                   definitionStack: [], createdCount: &createdCount,
                                   documentOrder: documentOrder, enclosingOrder: nil)
             }
+        }
+    }
+
+    /// Every `<container dynamic="1">` in the document, by lowercased id — the only ones a script may
+    /// ask `newDynamicContainer` for a second copy of. Kept as **XML**, not as a graph clone: an
+    /// instance has to go through the same groupdef expansion and script binding the declared one did,
+    /// or its own `standardframe.maki` would never run.
+    private static func dynamicContainerNodes(in roots: [WalXMLNode]) -> [String: WalXMLNode] {
+        var found: [String: WalXMLNode] = [:]
+        func walk(_ nodes: [WalXMLNode]) {
+            for node in nodes {
+                if node.name.caseInsensitiveCompare("container") == .orderedSame,
+                   node.attributes["dynamic"] == "1",
+                   let id = node.attributes["id"]?.lowercased(), !id.isEmpty,
+                   found[id] == nil {
+                    found[id] = node
+                }
+                walk(node.children)
+            }
+        }
+        walk(roots)
+        return found
+    }
+
+    /// How many live copies of one declared container a skin may have. Ebonite wants five (one per
+    /// framed window); the cap is here because the id a script passes is skin input and the call sits
+    /// on a show/hide path, so a skin that never releases one must not be able to grow the graph a
+    /// window at a time.
+    private static let maximumDynamicContainerInstances = 12
+
+    private func instantiateContainerAtRuntime(_ node: WalXMLNode, declaredID: String,
+                                               graph: WasabiObjectGraph, types: WasabiTypeRegistry,
+                                               createdCount: inout Int,
+                                               documentOrder: [ObjectIdentifier: Int]) throws -> WasabiObject {
+        let existing = graph.roots.filter {
+            $0.typeName.caseInsensitiveCompare("container") == .orderedSame &&
+            ($0.xmlID?.caseInsensitiveCompare(declaredID) == .orderedSame ||
+             $0.attributes[WasabiSkinRuntime.dynamicInstanceAttribute]?
+                .caseInsensitiveCompare(declaredID) == .orderedSame)
+        }
+        guard existing.count < Self.maximumDynamicContainerInstances else {
+            throw WalFailure(WalDiagnostic(.unsupportedScriptCapability,
+                                           "Skin asked for more than \(Self.maximumDynamicContainerInstances) "
+                                               + "live copies of container '\(declaredID)'.",
+                                           location: node.location))
+        }
+        var attributes = node.attributes
+        attributes["id"] = "\(declaredID)#\(existing.count + 1)"
+        attributes[WasabiSkinRuntime.dynamicInstanceAttribute] = declaredID
+        // Never opened by the arrangement: the script that asked for this copy is the only thing that
+        // knows where it belongs, and it shows it itself.
+        attributes["default_visible"] = "0"
+        let instanceNode = WalXMLNode(name: node.name, attributes: attributes, location: node.location,
+                                      children: node.children, attributeOrder: node.attributeOrder)
+        let rootsBefore = Set(graph.roots.map(\.stableID))
+        var pendingScripts: [PendingScript] = []
+        var pendingMetaCommands: [PendingMetaCommand] = []
+        do {
+            try createObjects(from: [instanceNode], parent: nil, graph: graph, types: types,
+                              pendingScripts: &pendingScripts,
+                              pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: [], createdCount: &createdCount,
+                              documentOrder: documentOrder, enclosingOrder: nil)
+            applyMetaCommands(pendingMetaCommands)
+            let bindings = try bindScripts(pendingScripts)
+            for (pending, binding) in zip(pendingScripts, bindings) {
+                pending.owner?.addScriptBinding(binding)
+            }
+            guard let root = graph.roots.first(where: {
+                !rootsBefore.contains($0.stableID) && $0.xmlID == attributes["id"]
+            }) else {
+                throw WalFailure(WalDiagnostic(.malformedXML,
+                                               "Dynamic container '\(declaredID)' created no container.",
+                                               location: node.location))
+            }
+            return root
+        } catch {
+            for root in graph.roots where !rootsBefore.contains(root.stableID) {
+                graph.discardSubtree(root)
+            }
+            throw error
         }
     }
 

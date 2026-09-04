@@ -78,35 +78,6 @@ struct WasabiBitmap {
         let restore: (UInt8) -> UInt8 = { UInt8(min(255, Int($0) * 255 / Int(alpha))) }
         return (restore(red), restore(green), restore(blue), alpha)
     }
-
-    /// The one alpha value every pixel of this bitmap carries, or `nil` when it carries more than
-    /// one.
-    ///
-    /// This is how a **silhouette** is told from a **fill**. A window region is a shape, so the
-    /// bitmap behind a `sysregion` layer has to distinguish inside from outside; a bitmap whose
-    /// alpha never varies draws no edge and describes no shape. See
-    /// `WasabiResourceCache.isFlatTranslucentFill(identifier:)` for what is done with the answer.
-    ///
-    /// One pass over the decoded pixels, and it stops at the second distinct value — which for a
-    /// real mask is usually the second pixel. `alpha(at:)` is not used for this: its fallback
-    /// sampler builds a `CGContext` per pixel.
-    var uniformAlpha: UInt8? {
-        var rgba = [UInt8](repeating: 0, count: width * height * 4)
-        var drew = false
-        rgba.withUnsafeMutableBytes { bytes in
-            guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
-                                          bitsPerComponent: 8, bytesPerRow: width * 4,
-                                          space: CGColorSpaceCreateDeviceRGB(),
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-            else { return }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            drew = true
-        }
-        guard drew else { return nil }
-        let first = rgba[3]
-        for index in 1..<(width * height) where rgba[index * 4 + 3] != first { return nil }
-        return first
-    }
 }
 
 /// A colour-theme adjustment: a per-channel amount plus the model it is applied under.
@@ -334,11 +305,6 @@ final class WasabiResourceCache {
     /// them.
     private var regionMasks: [String: CGImage] = [:]
     private static let maximumCachedRegionMasks = 256
-    /// Which bitmaps are flat translucent fills, keyed as `bitmaps` is. Derived from the file's
-    /// alpha channel, which nothing at runtime changes — a colour theme moves the colour channels
-    /// and leaves alpha alone — so this is computed once per bitmap and kept for the skin's life
-    /// even when the bitmap itself is evicted.
-    private var flatTranslucentFills: [String: Bool] = [:]
     /// Fonts and text measurement live in one shared place so a script's `getAutoWidth()` and this
     /// renderer's drawing agree on how wide a string is. See `WasabiTextMetrics`.
     let metrics: WasabiTextMetrics
@@ -387,35 +353,6 @@ final class WasabiResourceCache {
         currentCost += cost
         evictIfNeeded(protecting: key)
         return bitmap
-    }
-
-    /// Is this bitmap a flat translucent fill — one alpha value everywhere, and that value neither
-    /// opaque nor clear?
-    ///
-    /// Such a bitmap cannot be a region silhouette. A region is a shape and the cut is binary, so a
-    /// bitmap that never varies takes either all of the rect it is drawn into or none of it, on the
-    /// strength of where its single value falls against the coverage floor — it draws no edge and
-    /// says nothing about a shape. What it is instead is artwork: a texture stretched over a strip.
-    ///
-    /// Ebonite is the corpus's case and the reason this exists (B78). Its standard frame draws its
-    /// four border strips as `sysregion="-2"` layers over `wasabi.frame.dummybg`, a 10x10 crop of
-    /// the window's own background texture at a uniform **alpha 179**. Read as a silhouette that cut
-    /// the whole border away and painted nothing, which left the client area of every framed window
-    /// — playlist, media library — overhanging a frame that was not there.
-    ///
-    /// **Translucent only, and deliberately.** A uniformly *opaque* crop is the idiom skins use for
-    /// a deliberate rectangular cut, and repainting those would square off windows that are meant to
-    /// be trimmed: meridian's 1px `C-Display-Mid` strips and Shield_Amp's 1px `region.png` edges are
-    /// exactly that. A uniformly *clear* one cuts nothing already. Measured over the 61-skin corpus,
-    /// 263 resolvable negative-`sysregion` layers: 12 are flat translucent fills and all 12 are
-    /// Ebonite's, so no other skin's shape moves.
-    func isFlatTranslucentFill(identifier: String?) -> Bool {
-        guard !isTornDown, let identifier, !identifier.isEmpty else { return false }
-        let key = identifier.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-        if let cached = flatTranslucentFills[key] { return cached }
-        let answer = bitmap(identifier: identifier).flatMap(\.uniformAlpha).map { $0 > 0 && $0 < 255 } ?? false
-        flatTranslucentFills[key] = answer
-        return answer
     }
 
     /// A `background=` value, which Winamp accepts in **either** form — the id of a declared
@@ -2188,7 +2125,7 @@ final class WasabiSceneRenderer {
                       pressed: WasabiObjectID?, hovered: WasabiObjectID?) {
         let object = node.object
         let type = object.typeName.lowercased()
-        guard !isRegionOnly(object, type: type, bitmapID: node.bitmapID) else { return }
+        guard !Self.isRegionOnly(object, type: type) else { return }
         // Fully transparent draws nothing, so don't pay to composite it. Setting `alpha(0)` on the
         // context and drawing anyway costs full price: Big Bento Modern lays
         // `<layer id="player.resizer.disable" … alpha="0">` over its **entire** 1526×868 window as a

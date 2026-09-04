@@ -644,6 +644,31 @@ skin's script does the pairing. What it needs from the engine is that a window c
 window's position and that `onMove()` reaches a script at all; both are in
 [scripting.md](scripting.md) → *Writing back the position a window just read* (B69).
 
+#### A NullPlayer-owned hosted window is one of those windows too (B110, 2026-09-03)
+
+Ebonite frames **everything**, including the windows NullPlayer synthesizes — Flow, Cava, PeppyMeter,
+the waveform, the analyzer. Two things make that work, and neither was true when the frames first
+went in; both were reported as *"the frame came off the contents"*.
+
+- **A hosted window's own delegate is the materializer, not the controller.** `windowDidMove` in
+  `WinampModernHostedWindowMaterializer` is the one that fires for these, and only the *controller's*
+  `windowDidMove` announces a move to the skin's script — so the frame heard nothing about any of
+  them. That is why the defect was exactly "NullPlayer's own windows, and only those". The
+  materializer now calls a `windowDidSettle` closure from both `windowDidMove` **and** the reveal in
+  `setVisible(true:)` — the reveal because materialize → place → order-in all move the window while
+  it is off screen, where AppKit posts no move notification at all.
+- **A hosted window is addressable by a script.** Its container is synthesized into the same graph as
+  the skin's own, so a script names it the same way, but it is in neither `auxiliaryContainers` nor
+  `skinView` — so `moveContainerWindow` fell off the end of its lookup chain and every `resize()`
+  aimed at one did nothing. Ebonite's frame answers its own drag with `syncContent()`
+  (`comp_layout.resize(frame.getLeft(), frame.getTop(), …)`), so while that lookup failed, dragging
+  the *frame* left the contents behind — while dragging the contents worked, because a frame **is** an
+  auxiliary container. Any new container-addressed callback needs the same third branch; the
+  measured symptom is always one direction of a pair working and the other not.
+
+`WinampModernHostedWindowTests` pins both, and `WINAMP_MODERN_GLUE_TRACE=1` prints every glued pair,
+every restack and every `.wal` window move — it is what found both halves of this in one launch.
+
 #### A frame supplies chrome, not a drag surface (B57)
 
 The rule: **a hosted surface passes a press it does not consume to the window drag.** The frame's

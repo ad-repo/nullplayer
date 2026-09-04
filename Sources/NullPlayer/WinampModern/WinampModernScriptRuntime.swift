@@ -165,6 +165,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// not only on a change, because the window can be closed while the attribute still says visible;
     /// the host is the one that knows, and ignores a request that asks for the state it is already in.
     var containerVisibilityRequested: ((String, Bool) -> Void)?
+    /// A second live copy of a `dynamic="1"` container has just been grafted into the graph and needs
+    /// a window of its own before the script that asked for it shows it (B110). See
+    /// `dynamicContainer(named:for:)`.
+    var containerInstanceCreated: ((WasabiObject) -> Void)?
+    /// Which copy of a `dynamic="1"` container each program was handed, keyed by lowercased declared
+    /// id and then by the calling program. Per program because that is the grain Winamp instances at:
+    /// one included copy of a frame script is one window's frame, and asking twice from the same
+    /// script means "the one I already have", not "another window".
+    var dynamicContainerInstances: [String: [ObjectIdentifier: WasabiObjectID]] = [:]
     /// The other half of the pair: what the container's window state *is*, asked of the host, for
     /// `toggle()` and `isVisible()`. The graph's `visible` attribute cannot answer it — the window is
     /// shown and hidden by routes that never write the attribute — so a script that asks drifts out
@@ -381,6 +390,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // made itself, `tagviewer.m` does the same, and a script that reuses its `onSetVisible` or
         // `onTitleChange` body is the same idiom `onSetPosition` already had.
         "onresize": 4,
+        // `onUserResize` is **not** `onResize`: it fires only for a resize the *user* dragged, which
+        // is the whole difference a standard frame is built on. Ebonite's frame writes the client's
+        // new box from it (through a 1 ms timer) and would otherwise fight its own `onResize`.
+        // Four arguments, the same box `onResize` carries.
+        "onuserresize": 4,
         "onsetvisible": 1,
         // The wheel. **Two** arguments, not one — read off two independent skins' bytecode (Big Bento
         // Modern's `config_vscrollbars` at `@638` and cPro-Bento's `centro.multidrawer` at `@1091`
@@ -407,6 +421,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // dispatch either way.
         "onkeydown": 1,
         "onshownotification": 0,
+        // `System.onScriptLoaded()` called as a method — a script re-running its **own** startup body.
+        // Ebonite's standard frame is built around it: it closes its frame container on every hide and
+        // rebuilds it on the next show with
+        // `if (!comp_layout.getContainer().isDynamic()) system.onScriptLoaded();`, so without an arity
+        // the call abandoned `onSetVisible` one statement before `frame_layout.show()` and the frame
+        // never came back (B110). Zero arguments — Winamp's load event carries none.
+        // `invokeSystem` scopes this one to the calling program; see there for why.
+        "onscriptloaded": 0,
         // `System.onSeek(int newpos)` — the position the player moved to, in the same milliseconds
         // `getPosition()` answers. It is in this table because Anexa *calls* it: both its main and
         // shade progress bars are a `<layer>` clipped by a region map, and the only thing that fills
@@ -1225,14 +1247,53 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     func borrowedWindowOrigin(matching requested: CGPoint,
                                       writtenOn object: WasabiObject) -> CGPoint? {
         guard Self.isWindowObject(object), let read = lastWindowOriginRead,
-              read.objectID != object.stableID,
-              Int(requested.x.rounded()) == Int(read.reported.x.rounded()),
-              Int(requested.y.rounded()) == Int(read.reported.y.rounded())
+              read.objectID != object.stableID
         else { return nil }
+        // A **one-pixel** tolerance, not an exact match, and only because the idiom demands it:
+        // Wasabi's standard frame nudges its minimum-size clamp by ±1 to force a re-layout —
+        // `frame.resize(content.getLeft()+1, content.getTop()+1, 258, 258)` then the same with −1
+        // (`standardframe.m:501-517`). Read exactly, both writes miss by one, degrade to plain moves,
+        // and park the frame in the corner of the display (B110). The tolerance is safe because the
+        // coordinate was demonstrably *just read* off another window object; the offset is carried
+        // through to the desktop origin, so the 1px jiggle the script asked for is what happens.
+        let deltaX = Int(requested.x.rounded()) - Int(read.reported.x.rounded())
+        let deltaY = Int(requested.y.rounded()) - Int(read.reported.y.rounded())
+        guard abs(deltaX) <= 1, abs(deltaY) <= 1 else { return nil }
         // Consumed: each of these writes is preceded by its own pair of reads, so a stale record
         // must not be able to pin a later write that only happens to name the same coordinates.
         lastWindowOriginRead = nil
-        return read.desktop
+        // The pairing this idiom *is*: the window being written follows the window that was read.
+        // Nothing else in the host knows it — the relationship lives entirely in the skin's script —
+        // and the window layer needs it to keep a frame from being buried by the client it is drawn
+        // on (B110). Recorded by container, because that is what owns a window.
+        //
+        // **Directional, and the direction has to be decided here.** A standard frame writes *both*
+        // ways: `syncFrame()` puts the frame on the client's origin and `syncContent()` puts the
+        // client back on the frame's, so taken at face value this idiom records A-over-B and
+        // B-over-A. Recorded both ways the window layer fought itself and whichever pair it restacked
+        // last won — which is exactly how the client came back on top of its own chrome. The frame is
+        // the one of the two a script asked `newDynamicContainer` for; the client is a window the
+        // skin declares and the user opens. So only that direction is kept.
+        if let follower = Self.enclosingContainer(of: object) ?? (Self.isWindowObject(object) ? object : nil),
+           let leaderObject = loadedSkin.runtime.graph.object(withID: read.objectID),
+           let leader = Self.enclosingContainer(of: leaderObject)
+            ?? (Self.isWindowObject(leaderObject) ? leaderObject : nil),
+           follower.stableID != leader.stableID,
+           isDynamicallyClaimed(follower.stableID), !isDynamicallyClaimed(leader.stableID) {
+            windowsGluedOver[leader.stableID] = follower.stableID
+        }
+        return CGPoint(x: read.desktop.x + CGFloat(deltaX), y: read.desktop.y + CGFloat(deltaY))
+    }
+
+    /// Which container's window is kept parked on which other container's window — leader → follower,
+    /// learned from the `follower.resize(leader.getLeft(), leader.getTop(), …)` idiom above. The
+    /// follower is drawn *over* the leader (it is the leader's border and title), so the window layer
+    /// re-raises it whenever the leader comes forward.
+    private(set) var windowsGluedOver: [WasabiObjectID: WasabiObjectID] = [:]
+
+    /// The window drawn on top of `container`'s, if a script has glued one there.
+    func windowGluedOver(_ container: WasabiObjectID) -> WasabiObjectID? {
+        windowsGluedOver[container]
     }
 
     /// Exactly what `getLeft()`/`getTop()` would answer for this object right now, in whatever space
@@ -1682,6 +1743,26 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         for object in (container === layout ? [container] : [container, layout]) {
             guard hasBinding(for: object, event: "onmove") else { continue }
             if (try? dispatch(object: object, event: "onmove")) != nil { dispatched += 1 }
+        }
+        return dispatched
+    }
+
+    /// Wasabi's `onUserResize` — a resize the user dragged, as against every other way a window's box
+    /// can change. Addressed at the container and its active layout, the way `onMove` is: a skin
+    /// binds it on the layout (Ebonite's standard frame does) and the box is the layout's own, so `x`
+    /// and `y` are its canvas origin exactly as `onResize` reports them.
+    @discardableResult
+    func dispatchWindowUserResize(container: WasabiObject, layout: WasabiObject,
+                                  size: CGSize) -> Int {
+        let arguments: [MakiValue] = [.integer(0), .integer(0),
+                                      .integer(Int32(clamping: Int(size.width.rounded()))),
+                                      .integer(Int32(clamping: Int(size.height.rounded())))]
+        var dispatched = 0
+        for object in (container === layout ? [container] : [container, layout]) {
+            guard hasBinding(for: object, event: "onuserresize") else { continue }
+            if (try? dispatch(object: object, event: "onuserresize", arguments: arguments)) != nil {
+                dispatched += 1
+            }
         }
         return dispatched
     }
@@ -2171,6 +2252,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private static let generalSignatures: [String: MakiMethodSignature] = [
         "getcontainer": .init(argumentCount: 1, returnKind: .object),
         "newdynamiccontainer": .init(argumentCount: 1, returnKind: .object),
+        // `Container.isDynamic()` — was this container created by `newDynamicContainer`, or is it one
+        // the skin declared? Ebonite's standard frame asks it of the *client* container to decide
+        // whether to rebuild its frame overlay on every re-show, and an unimplemented method aborts
+        // the whole handler, so without this its `onSetVisible` never reaches `frame_layout.show()`.
+        "isdynamic": .init(argumentCount: 0, returnKind: .boolean),
         "getlayout": .init(argumentCount: 1, returnKind: .object),
         "getobject": .init(argumentCount: 1, returnKind: .object),
         "findobject": .init(argumentCount: 1, returnKind: .object),

@@ -801,6 +801,40 @@ carries the flag. Clamping it is what pulled Itemskin's library frame 82px off i
 tiler had already put the content window's right edge past the screen, and only the frame — the one of
 the pair a script moves — was pushed back.
 
+**The match carries a one-pixel tolerance, and it is not slack** (B110). Wasabi's own standard frame
+nudges its minimum-size clamp by ±1 to force a re-layout:
+
+```c
+frame_layout.resize(comp_layout.getLeft()+1, comp_layout.getTop()+1, 258, 258);
+frame_layout.resize(comp_layout.getLeft()-1, comp_layout.getTop()-1, 258, 258);
+```
+
+Read exactly, both writes miss by one, degrade to plain moves, and park the frame in the corner of the
+display. The tolerance is safe because the coordinate was demonstrably *just read* off another window
+object, and the offset is carried through to the desktop origin — so the 1px jiggle the script asked
+for is what happens, rather than being swallowed. Verified live on Ebonite 2026-09-03: dragging the
+frame's grip below 258 clamps both windows to 258x258 **in place**.
+
+**The idiom is also the only place the host learns which window is glued over which** (B110). Nothing
+else knows: the relationship lives entirely in the skin's script. `borrowedWindowOrigin` records the
+pair (leader = the window read, follower = the window written) as `windowsGluedOver`, and
+`WinampModernMainWindowController.restackGluedWindows` uses it to re-raise the follower — otherwise the
+client buries its own border and title, and what is left on screen is a bare client box with the
+frame's right edge and one resizer grip poking out past it. It runs on every window open, on every key
+change and once after launch settles (keying it to `windowDidBecomeKey` alone missed the case that
+matters: at launch the frame is shown *before* the client). The re-raise is one runloop turn late on
+purpose — a `windowDidBecomeKey` notification is delivered *during* the ordering that raised the
+window, and an `order(.above:)` issued inside it is undone by the rest of that pass.
+
+**The record is directional, and the direction has to be chosen when it is written.** A standard frame
+writes *both* ways — `syncFrame()` puts the frame on the client's origin, `syncContent()` puts the
+client back on the frame's — so taken at face value the idiom says A-over-B *and* B-over-A. Recorded
+both ways the restack fought itself and whichever pair it handled last won, which is how the client
+came back on top of its own chrome after it had already been fixed once. The frame is the one of the
+two a script asked `newDynamicContainer` for (`isDynamicallyClaimed`); the client is a window the skin
+declares and the user opens. Only that direction is kept. `WINAMP_MODERN_GLUE_TRACE=1` prints the
+pairs and every restack — see [harness.md](harness.md).
+
 ### `System.onShowLayout` / `onHideLayout` — the only signal a layout script gets
 
 Winamp shows the main player's layout as the last step of loading a skin, and a script that lays the

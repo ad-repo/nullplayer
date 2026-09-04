@@ -291,11 +291,38 @@ By area:
 - **`System.hasVideoSupport()`** — **false**. A `.wal` video holder gets the neutral backing every
   unhosted component kind gets, so a skin that asks is told the truth and lays itself out without a
   video tab. Phase 25
-- **`System.newDynamicContainer(id)`** — answered with the **already-instantiated** container of that
-  id rather than a fresh instance. Every declared container exists from load, and a script's next move
-  is always to reach into the one it asked for
-  (`newDynamicContainer("browserpro").getLayout(…).findObject(…)`). A skin that wants two copies of one
-  window gets one. Phase 25
+- **`System.newDynamicContainer(id)`** — **implemented, per calling program** (B110, 2026-09-03).
+  Winamp builds a fresh instance of a declared container so a skin can have several of the same window
+  at once. Here the **first program** to ask for an id is answered with the declared container, exactly
+  as every caller was before; a **second program** asking for the same id gets a live copy of its own —
+  a real root in the graph, with its own `stableID`, its own window, and a distinct container id
+  (`sc.alphaframe#2`) so everything that addresses a window by id still finds one window. The same
+  program asking twice gets back the copy it already holds, which is what keeps a skin that closes and
+  re-opens its frame on every hide from leaking a window per toggle. A container the skin declared
+  `dynamic="0"` is never copied. `getContainer(id)` is unchanged and always names the declared one.
+
+  The copy is built from the container's own **XML**, not cloned from the graph, so it goes through the
+  same groupdef expansion and script binding the declared one did; its opening layout is realized (or
+  `getLayout` answers NULL for it, and the caller's next statement is always
+  `frame_cont.getLayout(…)`). Copies are excluded from the window arrangement, from snap/dock targets,
+  from the window menu and from visibility persistence: where a copy goes is the script's business, and
+  Ebonite's is parked on its client's exact rect. Cap: 12 live copies per declared id.
+
+  Measured reach after the change (2026-09-03 corpus sweep, 70 archives): **8 skins** build at least one
+  copy — Ebonite (4), cPro2 Dark Aluminum (2, `searchresults`), Defix Hi-END 200 (2, `browserpro`), the
+  four Big Bento Modern variants and WMP11-BlueVU (1 each, `searchresults`).
+- **`<container>.isDynamic()`** — **implemented** (B110): `dynamic="1"` on the declaration. Ebonite's
+  standard frame branches on it — `if (!comp_layout.getContainer().isDynamic()) system.onScriptLoaded();`
+  — and an unimplemented method aborts the whole handler, so until this answered its
+  `onSetVisible` died two statements before `frame_layout.show()`.
+- **`System.onScriptLoaded()` called as a method** — **dispatchable** (B110), and **scoped to the
+  calling program**. It means "run my own startup body again", which is how a frame closed on hide is
+  rebuilt on the next show. Broadcast like the other system events it would re-initialise every program
+  in the archive — 44 of them in Ebonite — on every re-show.
+- **`onUserResize(x, y, w, h)`** — **dispatchable** (B110), fired only for a resize the user is actually
+  dragging (`NSWindow.inLiveResize`). Distinct from `onResize`, which fires on any box change: a
+  standard frame answers `onUserResize` by resizing the window it is glued to, so firing it on a
+  programmatic resize would have the two windows resizing each other.
 - **`<object>.setFontSize(px)`** — writes the same pixel height the XML attribute carries. Phase 25
 - **Layer FX** (`fx_setEnabled/Wrap/Rect/BgFx/Clear/Realtime/Localized/Bilinear/AlphaMode/Speed`,
   `fx_setGridSize(w, h)`, `fx_update`, `fx_restart`, and the `fx_get*` readbacks) — **implemented**,

@@ -10,21 +10,25 @@ extension WinampModernScriptRuntime {
     func invokeSystem(method: String, arguments: [MakiValue], program: MakiProgram) throws -> MakiValue {
         // A script may call a *system* event handler as a method to reuse it, exactly as it may an
         // object's (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
+        // `System.onScriptLoaded()` is the one system event a script calls **at itself**, not at the
+        // skin: it means "run my startup body again". Broadcast like the others it would re-initialise
+        // every program in the archive — 46 of them in Ebonite, each re-creating its timers and its
+        // objects — every time a framed window is re-shown. Scoped to the caller it is what the skin
+        // asks for: Ebonite's standard frame nulls its frame container on hide and rebuilds it here.
+        if method == "onscriptloaded" {
+            _ = try dispatch(target: MakiObjectReference(.system), event: method,
+                             arguments: arguments, in: [program])
+            return .null
+        }
         if Self.dispatchableEventArity[method] != nil {
             _ = try dispatchSystem(event: method, arguments: arguments)
             return method == "onaction" ? .integer(0) : .null
         }
         switch method {
-        case "getcontainer", "newdynamiccontainer":
-            // Winamp's `newDynamicContainer` builds a *fresh instance* of a declared container so a
-            // skin can have several of the same window. Every container the skin declares is already
-            // instantiated here, and a script's next move is always to reach into the one it just
-            // asked for (`newDynamicContainer("browserpro").getLayout("resultslayout")
-            // .findObject("BrowserPro.list")`), so it is answered with that container. One instance
-            // rather than N is a real limit — but refusing the method took Defix's *global* script
-            // down in `onScriptLoaded`, along with the playlist window's, the mini browser's and the
-            // notifier's, which is most of the skin for the sake of a duplicate window.
+        case "getcontainer":
             return objectValue(findRoot(type: "container", xmlID: arguments[0].stringValue))
+        case "newdynamiccontainer":
+            return objectValue(dynamicContainer(named: arguments[0].stringValue, for: program))
         case "getscriptgroup":
             return objectValue(program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)))
         case "getparam": return .string(program.parameter ?? "")
@@ -531,6 +535,73 @@ extension WinampModernScriptRuntime {
             return refuse("not an existing regular file")
         }
         return url
+    }
+
+    /// `System.newDynamicContainer(id)` — Winamp builds a **fresh instance** of a declared container
+    /// so a skin can have several of the same window at once.
+    ///
+    /// The copy is made **per calling program**, and that is the whole rule. The first program to ask
+    /// gets the declared root, exactly as every caller did before B110, so Big Bento's search popups,
+    /// MoonLight's four frames and every other single-holder caller behave as they did. A *second*
+    /// program asking for the same id is the case that was broken: Ebonite includes
+    /// `standardframe.maki` five times, once per framed window, and answering all five with the one
+    /// declared root left its playlist, library and frame windows sharing a rect, because every
+    /// `frame_layout.resize(…)` wrote to the same container. A program that asks twice — Ebonite does,
+    /// on every re-show, since it closes its frame on hide — gets back the copy it already holds
+    /// rather than another window.
+    ///
+    /// A container the skin did not declare `dynamic="1"` is never copied: `dynamic="0"` is the skin
+    /// saying this window is a singleton, and a copy of it would be a window nothing can address.
+    private func dynamicContainer(named id: String, for program: MakiProgram) -> WasabiObject? {
+        let key = id.lowercased()
+        let owner = ObjectIdentifier(program)
+        if let held = dynamicContainerInstances[key]?[owner],
+           let object = loadedSkin.runtime.graph.object(withID: held), !object.isTornDown {
+            return object
+        }
+        guard let declared = findRoot(type: "container", xmlID: id) else { return nil }
+        let takenIDs = Set(dynamicContainerInstances[key]?.values ?? [:].values)
+        let root: WasabiObject
+        if !takenIDs.contains(declared.stableID) {
+            root = declared
+        } else if declared.attributes["dynamic"] == "1",
+                  let instance = (try? loadedSkin.runtime.instantiateContainer?(id)) ?? nil {
+            // The same two things `start()` does for every declared container, in the same order: the
+            // opening layout has to be *realized* before anything else touches the instance, because
+            // `getLayout` answers only for realized layouts — and the caller's very next statement is
+            // `frame_cont.getLayout("scdef")`. Without it the whole rebuild ran against a null layout
+            // and the second framed window came up with no chrome at all.
+            let layouts = instance.children.filter {
+                $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+            }
+            if let opening = layouts.first(where: {
+                $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame
+            }) ?? layouts.first {
+                markLayoutRealized(opening)
+            }
+            containerInstanceCreated?(instance)
+            // A copy carrying its own `<script>` (a notifier, say) starts it exactly as a runtime
+            // group's is started. Ebonite's frame is pure markup and adds none.
+            try? startScripts(addedBeneath: instance)
+            root = instance
+        } else {
+            // Out of copies (or a singleton container): the declared root is still the right answer —
+            // a shared window is a worse result than a working one, and it is what shipped before.
+            root = declared
+        }
+        dynamicContainerInstances[key, default: [:]][owner] = root.stableID
+        return root
+    }
+
+    /// Whether a script has taken this container as a `newDynamicContainer` — a window Winamp creates
+    /// **on demand**, whether it turned out to be the declared container (the first caller) or a copy.
+    ///
+    /// The distinction the window layer needs, and the reason it cannot read `dynamic="1"` instead:
+    /// several corpus skins declare their real `Pledit`, `MLibrary` and `AVS` windows `dynamic="1"`,
+    /// and those are ordinary skin windows — tiled, snapped to, listed in the menu, remembered. What
+    /// makes Ebonite's `sc.alphaframe` different is not the attribute, it is that a script asked for it.
+    func isDynamicallyClaimed(_ container: WasabiObjectID) -> Bool {
+        dynamicContainerInstances.values.contains { $0.values.contains(container) }
     }
 
     /// The complete native surface ClassicPro's MAKI invokes (P0B §1): three `ClassicProFile`

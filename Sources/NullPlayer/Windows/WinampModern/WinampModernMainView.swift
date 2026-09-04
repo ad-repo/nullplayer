@@ -442,6 +442,14 @@ final class WinampModernMainView: NSView {
         scripts.dispatchWindowMove(container: renderer.container, layout: renderer.layout)
     }
 
+    /// Wasabi's `onUserResize()` — the resize the user dragged, which a standard frame answers by
+    /// resizing the window it is glued to. See `WinampModernScriptRuntime.dispatchWindowUserResize`.
+    func dispatchWindowUserResized() {
+        guard !isTornDown else { return }
+        scripts.dispatchWindowUserResize(container: renderer.container, layout: renderer.layout,
+                                         size: renderer.canvasSize)
+    }
+
     /// Resolved frames at the last dispatch, so only an object whose own box actually moved is told
     /// about it — Wasabi does not resize what did not change.
     private var lastResizeFrames: [WasabiObjectID: CGRect] = [:]

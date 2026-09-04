@@ -143,17 +143,6 @@ extension WasabiSceneRenderer {
         return value < 0
     }
 
-    /// The same question with the layer's **bitmap** in hand, which is the form the draw asks.
-    ///
-    /// A negative `sysregion` is a claim that the bitmap is a silhouette, and a bitmap that is one
-    /// flat translucent value is not one — it is artwork, and suppressing it leaves a hole where the
-    /// skin drew a border. `isFlatTranslucentFill` carries the rule and the corpus behind it; here
-    /// it only decides that such a layer paints like any other.
-    func isRegionOnly(_ object: WasabiObject, type: String, bitmapID: String?) -> Bool {
-        guard Self.isRegionOnly(object, type: type) else { return false }
-        return !resources.isFlatTranslucentFill(identifier: bitmapID ?? object.attributes["image"])
-    }
-
     /// One `sysregion` object's contribution to the window shape, and the key the cache turns on.
     ///
     /// Rebuilding the shape is a canvas-sized allocation and a pass over every pixel, and the graph's
@@ -189,16 +178,33 @@ extension WasabiSceneRenderer {
     /// winampmodern566's and S7Reflex's config drawer — and the non-numeric forms a skin writes
     /// (`"AND"`, which Anexa uses 15 times) shape nothing, as they have never painted.
     private func regionCuts() -> [WasabiRegionCut] {
-        sceneNodes().compactMap { node in
+        let all: [WasabiRegionCut] = sceneNodes().compactMap { node in
             guard let raw = node.object.attributes["sysregion"],
                   let value = Int(raw.trimmingCharacters(in: .whitespaces)), value != 0
             else { return nil }
-            // A flat translucent fill is artwork, not a silhouette, and the paint half of the rule
-            // has already let it through — so it must not cut either, or the border it draws would
-            // be composited away again. See `isFlatTranslucentFill`.
-            if value < 0, resources.isFlatTranslucentFill(identifier: node.bitmapID) { return nil }
             return WasabiRegionCut(object: node.object, frame: node.frame, clip: node.clip,
                                    bitmapID: node.bitmapID, additive: value > 0)
+        }
+        // **A group's own cut-out is not undone from inside it.** A restore that crosses groups is a
+        // real idiom — S7Reflex's player is laid over the config drawer's silhouettes and puts back
+        // what they took, which is why the order above is read at all — but siblings inside one
+        // group are describing *one* shape between them, and an author who writes both a cut and a
+        // fill there means "this box, less its border, and here is the backing", not "put the border
+        // back".
+        //
+        // Ebonite's standard frame is the measured case. `wasabi.frame.dummy` carries four
+        // `sysregion="-2"` strips that cut the client window down to exactly the opening in the
+        // frame window the skin opens over it — top 30, left 10, right 17, bottom 30, which is that
+        // frame's inner rect to the pixel — and beside them a `sysregion="1"` backdrop layer,
+        // `inner`, whose box overhangs that opening by 13px into the title bar and 7px into the
+        // bottom bar. Restoring it printed an opaque black bar across the frame's own glossy
+        // titlebar, stopping 19px short of the right edge where the backdrop's own box ends.
+        let cutParents = Set(all.lazy.filter { !$0.additive }
+            .compactMap { $0.object.parent.map(ObjectIdentifier.init) })
+        guard !cutParents.isEmpty else { return all }
+        return all.filter { cut in
+            guard cut.additive, let parent = cut.object.parent else { return true }
+            return !cutParents.contains(ObjectIdentifier(parent))
         }
     }
 

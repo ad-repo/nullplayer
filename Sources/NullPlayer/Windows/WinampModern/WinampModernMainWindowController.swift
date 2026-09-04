@@ -57,6 +57,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let isNotifier: Bool
         /// `noactivation="1"`: the window must not steal focus when shown.
         let noActivation: Bool
+        /// A second live copy of a `dynamic="1"` container, built because a script asked
+        /// `newDynamicContainer` for one (B110). It is not part of the skin's arrangement: the script
+        /// that made it is the only thing that knows where it goes — Ebonite's frame is parked on its
+        /// client's exact rect — so it is never tiled, never a snap target, and never persisted.
+        let isDynamicInstance: Bool
     }
 
     /// Every container this controller hosts, main included, addressed the way a script addresses it.
@@ -226,7 +231,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // same thinger whichever container each of them lives in.
             let bucket = loaded.runtime.componentBucket
             WasabiTextMetrics.componentBucketTextProvider = { bucket.focusedTitle }
-            wireContainerCallbacks(scripts: scripts)
+            wireContainerCallbacks(scripts: scripts, loaded: loaded, host: host,
+                                   componentBridge: componentBridge)
             try scripts.start()
             // After `start()`, so the skin's own `switchToLayout` at load has already had its say and
             // this is the last word: a window the user left shaded comes back shaded (B44a). Before
@@ -437,82 +443,99 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let playerOrigin = all.first(where: \.isMainPlayer)?.defaultOrigin ?? .zero
         let containers = all.filter { !$0.isMainPlayer }
         for info in containers {
-            let renderer: WasabiSceneRenderer
-            do {
-                renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, containerID: info.id)
-            } catch {
-                // A dropped container is a whole window the user can never reach — Lobe's Colour
-                // Themes screen was lost this way — so it goes in the compatibility report instead of
-                // vanishing into a bare `continue`.
-                loaded.runtime.record(WalDiagnostic(
-                    .malformedXML,
-                    "container '\(info.id)' has no window and is unreachable: "
-                        + "\(error.localizedDescription)",
-                    severity: .warning))
-                continue
-            }
-            renderer.componentHost = componentBridge
-            renderer.textScale = WinampModernSkinState.textScale(in: loaded.configuration)
-            renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
-            renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
-            renderer.settingStateProvider = { [weak scripts] section, key in
-                scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
-            }
-            renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
-            let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
-                                            componentHost: componentBridge, drivesScripts: false)
-            view.skinScale = skinScale
-            let auxWindow = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
-                                     styleMask: [.borderless, .resizable, .miniaturizable],
-                                     backing: .buffered, defer: false)
-            auxWindow.isReleasedWhenClosed = false
-            auxWindow.isOpaque = false
-            auxWindow.backgroundColor = .clear
-            auxWindow.hasShadow = false
-            auxWindow.contentView = view
-            auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
-            auxWindow.setAccessibilityLabel(info.object.attributes["name"] ?? info.id)
-            auxWindow.delegate = self
-            auxWindow.orderOut(nil)
-            // A script resizing *this* container resizes this window, not the player's.
-            view.didClickInWindow = { [weak self] id in self?.dismissTransientContainers(except: id) }
-            view.canvasSizeDidChange = { [weak self, weak auxWindow] size in
-                guard let auxWindow else { return }
-                self?.resize(window: auxWindow, to: size)
-                self?.applyLayoutConstraints()
-            }
-            // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
-            // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
-            // `default_visible="1"` on a window we cannot fill is recorded, once, rather than acted
-            // on — so a compatibility report says why Rika's HOME window did not open with the skin.
-            let suppression = WinampModernContainerTopology.defaultVisibilitySuppression(of: info)
-            if let suppression {
-                loaded.runtime.record(WalDiagnostic(
-                    .unsupportedElement,
-                    "container '\(info.id)' declares default_visible=\"1\" and is not opened with "
-                        + "the skin: \(suppression.reason).",
-                    severity: .warning))
-            }
-            let lowID = info.id.lowercased()
-            let isNotifier = lowID == "notifier" || lowID.hasPrefix("notifier.")
-            let noActivation = info.object.attributes["noactivation"] == "1" || isNotifier
-            if isNotifier {
-                auxWindow.level = .floating
-                auxWindow.hidesOnDeactivate = false
-            }
-            auxiliaryContainers.append(AuxiliaryContainer(
-                window: auxWindow, view: view, kind: info.kind, containerID: info.id,
-                displayName: WinampModernContainerTopology.displayName(of: info),
-                isListedInWindowMenu: WinampModernContainerTopology.isListedInWindowMenu(info),
-                autoCloses: info.object.attributes["autoclose"] == "1",
-                opensByDefault: info.opensByDefault && suppression == nil,
-                defaultOffset: info.defaultOrigin.map {
-                    CGPoint(x: $0.x - playerOrigin.x, y: $0.y - playerOrigin.y)
-                },
-                isNotifier: isNotifier,
-                noActivation: noActivation))
-            viewsByContainer[view.containerID] = view
+            makeAuxiliaryContainer(info: info, playerOrigin: playerOrigin, loaded: loaded, host: host,
+                                   scripts: scripts, componentBridge: componentBridge)
         }
+    }
+
+    /// One native window for one container, and the only place that recipe lives. Called for every
+    /// declared container at load, and again for each extra copy of a `dynamic="1"` container a
+    /// script asks `newDynamicContainer` for (B110) — a copy is a real window with a real scene, so
+    /// it must be built exactly as its declared original was, not approximated.
+    @discardableResult
+    private func makeAuxiliaryContainer(info: WinampModernContainerInfo, playerOrigin: CGPoint,
+                                        loaded: WinampModernLoadedSkin,
+                                        host: WinampModernAudioEngineHost,
+                                        scripts: WinampModernScriptRuntime,
+                                        componentBridge: WinampModernComponentBridge) -> Bool {
+        let renderer: WasabiSceneRenderer
+        do {
+            renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, containerID: info.id)
+        } catch {
+            // A dropped container is a whole window the user can never reach — Lobe's Colour
+            // Themes screen was lost this way — so it goes in the compatibility report instead of
+            // vanishing into a bare `continue`.
+            loaded.runtime.record(WalDiagnostic(
+                .malformedXML,
+                "container '\(info.id)' has no window and is unreachable: "
+                    + "\(error.localizedDescription)",
+                severity: .warning))
+            return false
+        }
+        renderer.componentHost = componentBridge
+        renderer.textScale = WinampModernSkinState.textScale(in: loaded.configuration)
+        renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
+        renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
+        renderer.settingStateProvider = { [weak scripts] section, key in
+            scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
+        }
+        renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
+                                        componentHost: componentBridge, drivesScripts: false)
+        view.skinScale = skinScale
+        let auxWindow = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
+                                 styleMask: [.borderless, .resizable, .miniaturizable],
+                                 backing: .buffered, defer: false)
+        auxWindow.isReleasedWhenClosed = false
+        auxWindow.isOpaque = false
+        auxWindow.backgroundColor = .clear
+        auxWindow.hasShadow = false
+        auxWindow.contentView = view
+        auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
+        auxWindow.setAccessibilityLabel(info.object.attributes["name"] ?? info.id)
+        auxWindow.delegate = self
+        auxWindow.orderOut(nil)
+        // A script resizing *this* container resizes this window, not the player's.
+        view.didClickInWindow = { [weak self] id in self?.dismissTransientContainers(except: id) }
+        view.canvasSizeDidChange = { [weak self, weak auxWindow] size in
+            guard let auxWindow else { return }
+            self?.resize(window: auxWindow, to: size)
+            self?.applyLayoutConstraints()
+        }
+        // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
+        // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
+        // `default_visible="1"` on a window we cannot fill is recorded, once, rather than acted
+        // on — so a compatibility report says why Rika's HOME window did not open with the skin.
+        let suppression = WinampModernContainerTopology.defaultVisibilitySuppression(of: info)
+        if let suppression {
+            loaded.runtime.record(WalDiagnostic(
+                .unsupportedElement,
+                "container '\(info.id)' declares default_visible=\"1\" and is not opened with "
+                    + "the skin: \(suppression.reason).",
+                severity: .warning))
+        }
+        let lowID = info.id.lowercased()
+        let isNotifier = lowID == "notifier" || lowID.hasPrefix("notifier.")
+        let noActivation = info.object.attributes["noactivation"] == "1" || isNotifier
+        let isDynamicInstance = info.object.attributes[WasabiSkinRuntime.dynamicInstanceAttribute] != nil
+        if isNotifier {
+            auxWindow.level = .floating
+            auxWindow.hidesOnDeactivate = false
+        }
+        auxiliaryContainers.append(AuxiliaryContainer(
+            window: auxWindow, view: view, kind: info.kind, containerID: info.id,
+            displayName: WinampModernContainerTopology.displayName(of: info),
+            isListedInWindowMenu: WinampModernContainerTopology.isListedInWindowMenu(info) && !isDynamicInstance,
+            autoCloses: info.object.attributes["autoclose"] == "1",
+            opensByDefault: info.opensByDefault && suppression == nil,
+            defaultOffset: info.defaultOrigin.map {
+                CGPoint(x: $0.x - playerOrigin.x, y: $0.y - playerOrigin.y)
+            },
+            isNotifier: isNotifier,
+            noActivation: noActivation,
+            isDynamicInstance: isDynamicInstance))
+        viewsByContainer[view.containerID] = view
+        return true
     }
 
     /// Surface routing for this skin: menus, skin buttons, and restoration all resolve through it.
@@ -711,6 +734,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 WindowManager.shared.hostedWindowVisibilityDidChange(
                     id: id, visible: visible, transitionFrame: frame)
                 self?.refreshToggleLamps()
+            },
+            // A hosted window is a *client* — NullPlayer's own content in the skin's chrome — so it
+            // is told where it is on exactly the terms `scheduleFramePositionReassert` sets out for
+            // the skin's own windows, and never told it is a frame. The skin's script answers by
+            // moving whatever it draws around this window onto it; every skin that draws its chrome
+            // inline hears nothing and does nothing.
+            windowDidSettle: { [weak self] instance in
+                instance.view.dispatchWindowMoved()
+                self?.restackGluedWindows()
             }
         )
     }
@@ -756,6 +788,27 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Already-created skin-owned windows only. Reading this never materializes a hosted window.
     var materializedAuxiliaryWindows: [NSWindow] {
         auxiliaryContainers.map(\.window)
+    }
+
+    /// A window Winamp would only create **on demand** — one a script took as a `newDynamicContainer`,
+    /// whether it got the declared container (the first caller does) or a copy.
+    ///
+    /// Asked of the runtime rather than read off `dynamic="1"`, and the difference is not academic:
+    /// several corpus skins declare their real `Pledit` / `MLibrary` / `AVS` windows `dynamic="1"`, and
+    /// excluding those from the arrangement and from the window menu would lose windows people open.
+    /// Claiming is what separates them. It also fixes the frame this rule was first written too
+    /// narrowly for: Ebonite's playlist program is the *first* to ask, so its frame is the declared
+    /// container and a copies-only test left that one window — and only that one — with no chrome.
+    private func isDynamicWindow(_ container: AuxiliaryContainer) -> Bool {
+        container.isDynamicInstance
+            || container.view.scripts.isDynamicallyClaimed(container.view.containerID)
+    }
+
+    /// The subset of those that must never be snapped or docked to: a `newDynamicContainer` copy is
+    /// a frame parked on another window's exact rect (B110), which is the last thing a drag should
+    /// stick to. They stay in `materializedAuxiliaryWindows` so level management still reaches them.
+    var dynamicInstanceAuxiliaryWindows: [NSWindow] {
+        auxiliaryContainers.filter(isDynamicWindow).map(\.window)
     }
 
     private func makeSurfaceCoordinator(loaded: WinampModernLoadedSkin,
@@ -1014,7 +1067,29 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     private func scheduleFramePositionReassert() {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.framePositionReassertDelay) { [weak self] in
-            self?.reassertPersistedFramePositions()
+            guard let self else { return }
+            reassertPersistedFramePositions()
+            // Tell every window's script where its window ended up, once the load has settled (B110).
+            //
+            // A skin that draws one window's chrome in a second window only ever moves the frame from
+            // `onMove` — Ebonite's `syncFrame()` is called from nothing else at rest. On a **cold
+            // launch** that arrives for free, because placing each window fires `windowDidMove`. On a
+            // **skin switch** it does not: the windows come up at their remembered positions with no
+            // move to report, so the frames were built, shown, and left at the origin they were
+            // created at — empty shells stacked in the corner of the display while their clients sat
+            // elsewhere. Re-announcing the position every window already has is what a real move
+            // would have said, and it is a no-op for every skin that does not listen.
+            //
+            // **Clients only.** The announcement has to go one way. A frame's own `onMove` runs
+            // `syncContent()` — the reverse write, which drags the *client* onto the frame — so
+            // telling a frame where it is moved the playlist onto the frame's unset origin instead of
+            // the other way round, and both windows ended up in the corner together.
+            skinView?.dispatchWindowMoved()
+            for container in auxiliaryContainers where !isDynamicWindow(container) {
+                container.view.dispatchWindowMoved()
+            }
+            // After the moves, so the pairs the announcements just established are ordered.
+            restackGluedWindows()
         }
     }
 
@@ -1578,6 +1653,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             container.window.orderOut(nil)
         }
         container.view.setSceneVisible(visible)
+        // A window that just opened is above (or below) whatever it is glued to; put the pair back in
+        // order. See `restackGluedWindows`.
+        restackGluedWindows()
         if record { rememberContainerVisibility(id: id, visible: visible) }
         refreshToggleLamps()
     }
@@ -1646,6 +1724,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// `show()`/`hide()` and the startup default deliberately do **not** write here: a skin that
     /// opens one of its own windows from a timer is describing this run, not the next one.
     private func rememberContainerVisibility(id: String, visible: Bool) {
+        // A dynamic instance has nothing to persist: it exists only while the script that asked for
+        // it is holding one, and its geometry is derived from the window it is glued to.
+        guard !auxiliaryContainers.contains(where: {
+            $0.containerID == id && isDynamicWindow($0)
+        }) else { return }
         guard let configuration = loadedSkin?.configuration else { return }
         WinampModernSkinState.setWindowIsVisible(visible, container: id, in: configuration)
     }
@@ -1695,7 +1778,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         for container in auxiliaryContainers where container.window.isVisible {
             // A notifier is a corner toast, host-driven and transient. It is not part of the
             // arrangement and keeps the corner it was given.
-            guard !container.isNotifier else { continue }
+            guard !container.isNotifier, !isDynamicWindow(container) else { continue }
             let slot = tiler.nextSlot(for: container.window.frame.size)
             if trace {
                 NSLog("[place/tile] %@ %@ -> %@", container.containerID,
@@ -1725,6 +1808,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Defix's put `pledit` at x 822–1228 and the media library at x 1120–1920, overlapping by 108px
     /// before any of NullPlayer's own windows are counted.
     private func place(_ container: AuxiliaryContainer) {
+        // Same reason the tiler skips it: a dynamic instance's geometry is written by the script that
+        // asked for it, and a tiled origin would be overwritten a frame later — or, worse, would win.
+        guard !isDynamicWindow(container) else { return }
         guard !placedAuxiliaryWindows.contains(container.containerID) else { return }
         placedAuxiliaryWindows.insert(container.containerID)
         let size = container.window.frame.size
@@ -1769,6 +1855,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             target = auxiliary.window
         } else if skinView?.containerID == container {
             target = window
+        } else if let hosted = hostedWindowMaterializer?.materializedWindows
+            .first(where: { $0.view.containerID == container }) {
+            // **A hosted window is a window a script can move, and only this branch says so** (B110).
+            // Its container is synthesized into the same graph the skin's own containers live in, so
+            // a script addresses it exactly like one — but it is owned by the materializer and is in
+            // neither `auxiliaryContainers` nor `skinView`, so every `resize()` aimed at one fell off
+            // the end of this chain and did nothing at all.
+            //
+            // Dragging Ebonite's frame is the case. `frame_layout.onMove` answers with
+            // `syncContent()` — `comp_layout.resize(frame.getLeft(), frame.getTop(), …)`, the write
+            // that pulls the client along — and for Flow, Cava, PeppyMeter and the rest that write
+            // landed nowhere: the frame came away in the user's hand and left its contents behind.
+            // The other direction already worked, because a frame *is* an auxiliary container.
+            target = hosted.window
         } else {
             target = nil
         }
@@ -1806,7 +1906,37 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     /// One installation of the two container-addressed callbacks, owned by the controller rather than
     /// by whichever view was created last.
-    private func wireContainerCallbacks(scripts: WinampModernScriptRuntime) {
+    private func wireContainerCallbacks(scripts: WinampModernScriptRuntime,
+                                        loaded: WinampModernLoadedSkin,
+                                        host: WinampModernAudioEngineHost,
+                                        componentBridge: WinampModernComponentBridge) {
+        // A script asking `newDynamicContainer` for a second copy of a `dynamic="1"` container gets a
+        // real root in the graph, and a real root needs a real window before the script shows it
+        // (B110). Wired **here** rather than beside the other container callbacks in
+        // `makeSurfaceCoordinator`: Ebonite asks for all five of its copies from `onScriptLoaded`,
+        // which runs inside `scripts.start()`, and the coordinator is not built until after that —
+        // every instance came up windowless.
+        scripts.containerInstanceCreated = { [weak self, weak scripts] root in
+            guard let self, let scripts else { return }
+            guard let info = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+                .first(where: { $0.object === root }) else { return }
+            _ = makeAuxiliaryContainer(info: info, playerOrigin: .zero, loaded: loaded, host: host,
+                                       scripts: scripts, componentBridge: componentBridge)
+        }
+        // The **instances-only** half of `containerVisibilityRequested`, live from here so it covers
+        // `scripts.start()`. The full hook is installed with the surface coordinator, which is built
+        // after `start()` returns — fine for a declared container, which has
+        // `applyDefaultContainerVisibility` to settle its opening state, and useless for a copy
+        // created and shown inside `onScriptLoaded`: Ebonite shows its library frame there and it
+        // stayed off screen for the rest of the session. Restricted to instances so a skin calling
+        // `show()` from `onScriptLoaded` on one of its *own* windows is still ignored at load, exactly
+        // as it is today.
+        scripts.containerVisibilityRequested = { [weak self] id, visible in
+            guard let self,
+                  let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+                  isDynamicWindow(container), container.window.isVisible != visible else { return }
+            setAuxiliaryWindow(id: id, visible: visible, activate: false)
+        }
         // `PlEdit` is a host singleton, not part of the skin's graph, so the runtime needs the same
         // bridge the renderer draws the playlist from — otherwise the two disagree about the queue.
         scripts.componentHost = componentBridge
@@ -2361,6 +2491,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func windowDidMove(_ notification: Notification) {
         guard let moved = notification.object as? NSWindow,
               let view = moved.contentView as? WinampModernMainView else { return }
+        if Self.tracesGlue {
+            NSLog("GLUE-TRACE moved %@ -> %@", moved.accessibilityIdentifier() ?? "-",
+                  NSStringFromRect(moved.frame))
+        }
         view.dispatchWindowMoved()
     }
 
@@ -2384,7 +2518,79 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if size != content { resize(window: resized, to: size) }
         if size != view.frame.size { view.setFrameSize(size) }
         view.needsDisplay = true
+        // `onUserResize`, and only for a resize the user is actually dragging — `inLiveResize` is what
+        // separates that from the tiler, a restored frame and a script's own `resize()`, all of which
+        // come through here too. A standard frame answers it by writing the *client's* new box, so
+        // firing it on a programmatic resize would have the two windows resizing each other (B110).
+        if resized.inLiveResize {
+            view.dispatchWindowUserResized()
+        }
     }
+
+    /// A window a skin has glued a frame over must not be able to bury it (B110).
+    ///
+    /// Ebonite draws each framed window's border, title and resizer grips in a **second** window
+    /// parked on the first one's exact rect. Clicking the client raises the client — which is right,
+    /// and which put the frame behind it: the border survived only where the client's own group does
+    /// not reach, and the title strip went black. The pairing is the skin's, not ours, so it comes
+    /// from the runtime, which learns it from the `frame.resize(client.getLeft(), …)` idiom itself.
+    func windowDidBecomeKey(_ notification: Notification) {
+        restackGluedWindows()
+    }
+
+    /// Put every script-glued frame back on top of the window it is drawn on.
+    ///
+    /// Idempotent and cheap — a skin has a handful of these — so it is run from every moment that can
+    /// disturb the order rather than from a guessed subset: a window opening, a window taking the
+    /// keyboard, and once after launch has settled. Keying it to `windowDidBecomeKey` alone was not
+    /// enough and produced the exact half-and-half window the reporter saw: at launch the frame is
+    /// created and shown first and the client is shown *after* it, so the client sat on top with only
+    /// the frame's right edge and bottom-right grip showing past the client's own box — one half of
+    /// the window in the skin's grey chrome, the other a bare black client.
+    ///
+    /// One runloop turn late on purpose: a `windowDidBecomeKey` notification is delivered *during* the
+    /// ordering that raised the window, and an `order(.above:)` issued inside it is undone by the rest
+    /// of that pass.
+    private func restackGluedWindows() {
+        guard let scripts = skinView?.scripts, !scripts.windowsGluedOver.isEmpty else {
+            if Self.tracesGlue { NSLog("GLUE-TRACE restack: no pairs recorded") }
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for (leaderID, followerID) in scripts.windowsGluedOver {
+                if Self.tracesGlue {
+                    let leaderWindow = viewsByContainer[leaderID]?.window
+                    let followerWindow = viewsByContainer[followerID]?.window
+                    let leaderName: String = leaderWindow?.accessibilityIdentifier() ?? "none"
+                    let followerName: String = followerWindow?.accessibilityIdentifier() ?? "none"
+                    NSLog("GLUE-TRACE pair leader=%@(%@) follower=%@(%@)",
+                          leaderName, leaderWindow?.isVisible == true ? "visible" : "hidden",
+                          followerName, followerWindow?.isVisible == true ? "visible" : "hidden")
+                }
+                guard let leader = viewsByContainer[leaderID]?.window,
+                      let follower = viewsByContainer[followerID]?.window,
+                      leader !== follower, leader.isVisible, follower.isVisible else { continue }
+                // Whichever of the pair the user is in stays where it is and the other joins it, so
+                // clicking the frame's title bar does not leave its client stranded behind something.
+                if follower.isKeyWindow {
+                    leader.order(.below, relativeTo: follower.windowNumber)
+                } else {
+                    follower.order(.above, relativeTo: leader.windowNumber)
+                }
+                if Self.tracesGlue {
+                    let followerName: String = follower.accessibilityIdentifier() ?? "-"
+                    let leaderName: String = leader.accessibilityIdentifier() ?? "-"
+                    NSLog("GLUE-TRACE restacked %@ over %@ (levels %ld/%ld)",
+                          followerName, leaderName, follower.level.rawValue, leader.level.rawValue)
+                }
+            }
+        }
+    }
+
+    /// `WINAMP_MODERN_GLUE_TRACE=1` — the script-glued window pairs and every restack, live. See
+    /// `restackGluedWindows`.
+    static let tracesGlue = ProcessInfo.processInfo.environment["WINAMP_MODERN_GLUE_TRACE"] != nil
 
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let restored = notification.object as? NSWindow else { return }
