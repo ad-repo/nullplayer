@@ -79,11 +79,15 @@ enum WasabiSurfaceSynthesizer {
 
     static func synthesize(document: WalExpandedXMLDocument,
                            inventory: WinampModernSurfaceInventory,
-                           limits: WalXMLLimits = .production) -> Result {
+                           limits: WalXMLLimits = .production,
+                           scriptReader: ScriptReader? = nil) -> Result {
         let kinds = inventory.synthesizableKinds
         let definitions = groupDefinitions(in: document.roots)
-        let frame = usableFrame(in: definitions)
+        let frame = usableFrame(in: definitions, document: document, scriptReader: scriptReader)
         let hostedWindows = hostedWindowCatalog(frame: frame)
+
+        // The skin's own library window, re-framed in the same frame our windows wear.
+        overrideDeclaredLibraryFrame(in: document, frame: frame)
 
         var appended: [WalXMLNode] = []
         var synthesized: [WinampModernComponentKind: String] = [:]
@@ -239,19 +243,18 @@ enum WasabiSurfaceSynthesizer {
 
     private static func makeAboutContainer(frame: Frame) -> WalXMLNode {
         let location = WalSourceLocation(path: sourcePath)
-        let frameNode = WalXMLNode(name: frame.xuiTag, attributes: [
-            "id": "\(aboutContainerIdentifier).frame",
-            "content": aboutGroupIdentifier,
-            "componentname": "About",
-            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
-        ], location: location)
+        let children = frameNodes(frame: frame, frameID: "\(aboutContainerIdentifier).frame",
+                                  contentGroupID: aboutGroupIdentifier, componentName: "About",
+                                  location: location)
+        let floor = frame.floor(under: aboutGeometry.minimumSize)
+        let opening = frame.floor(under: aboutGeometry.defaultSize)
         let layout = WalXMLNode(name: "layout", attributes: [
             "id": "normal",
-            "default_w": String(Int(aboutGeometry.defaultSize.width)),
-            "default_h": String(Int(aboutGeometry.defaultSize.height)),
-            "minimum_w": String(Int(aboutGeometry.minimumSize.width)),
-            "minimum_h": String(Int(aboutGeometry.minimumSize.height)),
-        ], location: location, children: [frameNode])
+            "default_w": String(Int(opening.width)),
+            "default_h": String(Int(opening.height)),
+            "minimum_w": String(Int(floor.width)),
+            "minimum_h": String(Int(floor.height)),
+        ], location: location, children: children)
         return WalXMLNode(name: "container", attributes: [
             "id": aboutContainerIdentifier,
             "name": "About",
@@ -266,11 +269,70 @@ enum WasabiSurfaceSynthesizer {
 
     // MARK: - Frame selection
 
+    /// Reads the body of a `<script file=…>` the way `WasabiSkinInitializer` resolves one. Nil where
+    /// there is no VFS to read from — synthetic documents in tests — which falls the frame test back
+    /// to the weaker XML-only form.
+    typealias ScriptReader = (_ rawPath: String, _ source: WalSourceLocation) -> Data?
+
     struct Frame {
-        let flavour: WasabiStandardFrames.Flavour
         let groupIdentifier: String
         let xuiTag: String
         let hasArtwork: Bool
+        /// How the skin itself lays this frame out in one of its own windows, when it does. Nil for
+        /// the ordinary case, where the frame's own script builds its client area from `content=`.
+        let exemplar: FrameExemplar?
+
+        /// What this frame's border costs the window, from the exemplar's own content rect: a
+        /// `w="-66" h="-92"` client area is a 66x92 border around it.
+        var chromeInset: CGSize {
+            guard let exemplar else { return .zero }
+            let width = Double(exemplar.content["w"] ?? "") ?? 0
+            let height = Double(exemplar.content["h"] ?? "") ?? 0
+            return CGSize(width: max(0, -width), height: max(0, -height))
+        }
+
+        /// `size` as a **client** size: grown by the border this frame draws around it, then raised to
+        /// the floor the exemplar window declares. The identity without an exemplar, where the frame
+        /// sizes its own client area.
+        ///
+        /// Every number in the hosted-window registry is the size of the *contents* — the spectrum's
+        /// 343x145 is the bars. Treating it as the window's size instead left Itemskin's 33x55 border
+        /// eating most of the window and reading as chrome far too thick for what it framed.
+        func floor(under size: CGSize) -> CGSize {
+            guard let exemplar else { return size }
+            let grown = CGSize(width: size.width + chromeInset.width,
+                               height: size.height + chromeInset.height)
+            return CGSize(width: max(grown.width, exemplar.minimumSize.width),
+                          height: max(grown.height, exemplar.minimumSize.height))
+        }
+    }
+
+    /// One of the skin's own windows, read as a template.
+    ///
+    /// A standard frame is *supposed* to instantiate `content=` from its own `standardframe.maki`,
+    /// and where it does, that is the whole contract and this is nil. Itemskin does it the other way
+    /// round in every window it ships: the frame draws chrome only, and the content sits beside it as
+    /// a **sibling** of the frame in the same layout —
+    ///
+    /// ```xml
+    /// <Wasabi:StandardFrame:ML x="-8" y="7" w="15" h="3" relatw="1" relath="1"/>
+    /// <component x="33" y="55" w="-66" h="-92" relatw="1" relath="1" …/>
+    /// ```
+    ///
+    /// — written identically in `mlibrary.xml`, `pledit-normal.xml` and `dlibrary.xml`. Those two
+    /// rects are the only statement of where the client area of such a frame goes, and guessing
+    /// instead is what produced a window whose chrome and contents were in different places.
+    struct FrameExemplar {
+        /// Rect attributes for the `<Wasabi:StandardFrame:*>` node itself.
+        let frame: [String: String]
+        /// Rect attributes for our content group, placed as that frame's sibling.
+        let content: [String: String]
+        /// The floor the skin's own window declares. A frame of this kind draws its chrome in a
+        /// *second* window that the script keeps the same size as this one, and that window has a
+        /// minimum of its own: K-jr's `layout.clear.ml` will not go below 403x231, so a 343x145 Cava
+        /// window would wear a frame bigger than itself. Our windows therefore inherit the floor the
+        /// skin proved its own chrome is drawable at.
+        let minimumSize: CGSize
     }
 
     private enum FrameSelection {
@@ -286,7 +348,8 @@ enum WasabiSurfaceSynthesizer {
             route = .skinFrame(WinampModernHostedFrameDescriptor(
                 groupIdentifier: frame.groupIdentifier,
                 xuiTag: frame.xuiTag,
-                hasArtwork: frame.hasArtwork
+                hasArtwork: frame.hasArtwork,
+                exemplar: frame.exemplar
             ))
         case .failure(let reason):
             route = .classicFallback(reason: reason)
@@ -298,7 +361,19 @@ enum WasabiSurfaceSynthesizer {
 
     /// Prefer a status bar, then no status bar, then a static frame — but only accept one the skin
     /// can actually build a window out of.
-    private static func usableFrame(in definitions: [String: WalXMLNode]) -> FrameSelection {
+    ///
+    /// Two shapes qualify, in this order:
+    ///
+    /// 1. **The frame builds its own client area** from `content=` in its own script. This is the
+    ///    Wasabi contract and every skin that follows it takes this branch unchanged.
+    /// 2. **The skin lays the frame out itself**, chrome and content side by side, and we copy that
+    ///    layout (`FrameExemplar`). Itemskin is the measured case and it declares no frame of the
+    ///    first kind at all: its `wasabi.standardframe.static` runs a script that draws chrome and
+    ///    never touches `content`, so left to the first rule every one of NullPlayer's own windows
+    ///    materialized with no client area and fell back to NullPlayer's own chrome.
+    private static func usableFrame(in definitions: [String: WalXMLNode],
+                                    document: WalExpandedXMLDocument,
+                                    scriptReader: ScriptReader?) -> FrameSelection {
         var reasons: [String] = []
         for flavour in WasabiStandardFrames.Flavour.allCases {
             guard let definition = definitions[fold(flavour.groupIdentifier)] else {
@@ -308,30 +383,358 @@ enum WasabiSurfaceSynthesizer {
             // A frame builds its client area from `content=` in its own script. Without that script
             // the window would be chrome around an empty hole — exactly what the artwork-less Wasabi
             // shells produce.
-            guard hasContentScript(definition, definitions: definitions, depth: 0) else {
+            guard hasContentScript(definition, definitions: definitions, depth: 0,
+                                   scriptReader: scriptReader) else {
                 reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' has no frame script "
-                               + "to instantiate its content")
+                               + "that instantiates its content")
                 continue
             }
-            return .success(Frame(flavour: flavour,
-                                  groupIdentifier: flavour.groupIdentifier,
+            return .success(Frame(groupIdentifier: flavour.groupIdentifier,
                                   xuiTag: flavour.xuiTag,
-                                  hasArtwork: hasArtwork(definition, definitions: definitions, depth: 0)))
+                                  hasArtwork: hasArtwork(definition, definitions: definitions, depth: 0),
+                                  exemplar: nil))
         }
+        // Nothing follows the contract. Copy one of the skin's own windows instead, if it has one:
+        // its own layout is proof of where this frame's content goes, which nothing else here is.
+        let candidates = exemplarCandidates(in: definitions)
+        let ranked = frameExemplars(in: document).compactMap { exemplar -> (Int, Int, Int, Frame)? in
+            guard let index = candidates.firstIndex(where: {
+                $0.xuiTag.caseInsensitiveCompare(exemplar.tag) == .orderedSame
+            }) else { return nil }
+            let candidate = candidates[index]
+            guard let definition = definitions[fold(candidate.groupIdentifier)] else { return nil }
+            return (Int(borderWeight(exemplar)), exemplar.rank, index,
+                    Frame(groupIdentifier: candidate.groupIdentifier,
+                          xuiTag: candidate.xuiTag,
+                          hasArtwork: hasArtwork(definition, definitions: definitions, depth: 0),
+                          exemplar: FrameExemplar(frame: exemplar.frame, content: exemplar.content,
+                                                  minimumSize: exemplar.minimumSize)))
+        }.sorted { ($0.0, $0.1, $0.2) < ($1.0, $1.1, $1.2) }
+        if let best = ranked.first { return .success(best.3) }
         return .failure(reasons.joined(separator: "; "))
+    }
+
+    /// Every `wasabi.standardframe.*` the skin declares, canonical flavours first, then the rest in a
+    /// fixed order. Only reached once no frame follows the `content=` contract, and only a candidate
+    /// the skin lays out around a component of its own is ever selected, so a frame invented for one
+    /// specific window is never taken on faith. `wasabi.standardframe.modal` stays excluded as it
+    /// always was: a modal frame hides its system menu.
+    private static func exemplarCandidates(in definitions: [String: WalXMLNode])
+        -> [(groupIdentifier: String, xuiTag: String)] {
+        var candidates = WasabiStandardFrames.Flavour.allCases.map {
+            (groupIdentifier: $0.groupIdentifier, xuiTag: $0.xuiTag)
+        }
+        let canonical = Set(candidates.map { fold($0.groupIdentifier) }
+                            + [fold("wasabi.standardframe.modal")])
+        let prefix = fold("wasabi.standardframe.")
+        for key in definitions.keys.sorted() where key.hasPrefix(prefix) && !canonical.contains(key) {
+            guard let definition = definitions[key],
+                  let identifier = definition.attribute("id"), !identifier.isEmpty,
+                  let tag = definition.attribute("xuitag"), !tag.isEmpty else { continue }
+            candidates.append((groupIdentifier: identifier, xuiTag: tag))
+        }
+        return candidates
+    }
+
+    private struct DiscoveredExemplar {
+        let tag: String
+        let frame: [String: String]
+        let content: [String: String]
+        let minimumSize: CGSize
+        /// Which of the skin's windows this came from. Lower is better.
+        let rank: Int
+    }
+
+    /// Every window the skin builds as a standard frame beside a component, with the frame's rect and
+    /// the component's rect taken from the same `<layout>`.
+    ///
+    /// **The thinnest border wins.** All of Itemskin's frames are laid out the same way and every one
+    /// of them is control-free *as artwork*, but they are not the same weight: its playlist/library
+    /// frame is 33px sides and a 55px band (drawn for a 660x274 library and far too heavy around a
+    /// 343x145 meter), while its visualizer/video frame is 26/40 of thin dark border. Nothing about
+    /// the contents of those windows carries over — the controls that live inside the thin frame's
+    /// chrome are hidden in our copy of it, in
+    /// `WinampModernScriptRuntime.adoptChromeForHostedWindow` — so the only thing left to choose on
+    /// is how much of the window the border eats.
+    ///
+    /// The tie-break is the skin's own window kind (library, playlist, then the rest), which only
+    /// decides between frames of identical weight.
+    private static func frameExemplars(in document: WalExpandedXMLDocument) -> [DiscoveredExemplar] {
+        let libraryGUID = "6b0edf80-c9a5-11d3-9f26-00c04f39ffc6"
+        let playlistGUID = "45f3f7c1-a6f3-4ee6-a15e-125e92fc3f8d"
+        var found: [DiscoveredExemplar] = []
+        func rank(container: WalXMLNode?, component: WalXMLNode) -> Int {
+            let reference = (component.attribute("param")
+                             ?? container?.attribute("component") ?? "").lowercased()
+            if reference.contains(libraryGUID) { return 0 }
+            if reference.contains(playlistGUID) { return 1 }
+            return 2
+        }
+        func walk(_ nodes: [WalXMLNode], container: WalXMLNode?) {
+            for node in nodes {
+                let isContainer = node.name.caseInsensitiveCompare("container") == .orderedSame
+                if node.name.caseInsensitiveCompare("layout") == .orderedSame {
+                    let frame = node.children.first {
+                        fold($0.name).hasPrefix(fold(standardFrameTagPrefix))
+                    }
+                    let content = node.children.first {
+                        $0.name.caseInsensitiveCompare("component") == .orderedSame
+                    }
+                    // A full-bleed component (`w="0" h="0" relatw="1" relath="1"`, MoonLight's video
+                    // window) states nothing about where the client area goes: it fills the window and
+                    // the chrome overlaps it from a window of its own size. Reading that as a
+                    // zero-thickness border made it the "thinnest" candidate and gave Cava a frame
+                    // 410x281 clipped into a 343x220 window. Only a real inset is an exemplar.
+                    if let frame, let content, insetsClient(content) {
+                        let floor = chromeFloor(forExemplarLayout: node, in: document)
+                        found.append(DiscoveredExemplar(tag: frame.name,
+                                                        frame: rectAttributes(of: frame),
+                                                        content: rectAttributes(of: content),
+                                                        minimumSize: floor,
+                                                        rank: rank(container: container,
+                                                                   component: content)))
+                    }
+                }
+                walk(node.children, container: isContainer ? node : container)
+            }
+        }
+        walk(document.roots, container: nil)
+        return found
+    }
+
+    /// Whether this component rect actually leaves room for a border on both axes.
+    private static func insetsClient(_ node: WalXMLNode) -> Bool {
+        let width = Double(node.attribute("w") ?? "") ?? 0
+        let height = Double(node.attribute("h") ?? "") ?? 0
+        return width < 0 && height < 0
+    }
+
+    /// Put the skin's own **library** window in the thinner frame, when the skin has one.
+    ///
+    /// This is the one place the pass rewrites a window the skin declares rather than adding one of
+    /// our own, and it is deliberate. The library window is the only skin window whose entire contents
+    /// are NullPlayer's and whose rows are dense with information, so a frame drawn for a picture —
+    /// Itemskin puts a 33px surround and a 55px band around its `MLibrary`, the same frame it gives
+    /// its playlist — costs real rows on every screen. Every other window the author framed keeps the
+    /// frame the author chose.
+    ///
+    /// It only ever *reduces* the border: a skin whose library already wears its thinnest frame, or
+    /// which has no second frame to offer, is left exactly as written. `frame` here is the frame
+    /// selection the rest of the pass already made, which is the thinnest the skin declares.
+    private static func overrideDeclaredLibraryFrame(in document: WalExpandedXMLDocument,
+                                                     frame: FrameSelection) {
+        guard case .success(let frame) = frame, let exemplar = frame.exemplar,
+              let layout = declaredLibraryLayout(in: document),
+              let existing = layout.children.first(where: {
+                  fold($0.name).hasPrefix(fold(standardFrameTagPrefix))
+              }),
+              existing.name.caseInsensitiveCompare(frame.xuiTag) != .orderedSame,
+              let component = layout.children.first(where: {
+                  $0.name.caseInsensitiveCompare("component") == .orderedSame
+              }),
+              weight(of: exemplar.content) < weight(of: rectAttributes(of: component))
+        else { return }
+        component.setAttributes(exemplar.content)
+        var frameAttributes = existing.attributes
+        for name in rectAttributeNames { frameAttributes[name] = nil }
+        frameAttributes.merge(exemplar.frame) { _, new in new }
+        let replacement = WalXMLNode(name: frame.xuiTag, attributes: frameAttributes,
+                                     location: existing.location, children: existing.children)
+        layout.replaceChildren(layout.children.map { $0 === existing ? replacement : $0 })
+    }
+
+    /// The `<layout>` of the window the skin declares for the media library, if it declares one.
+    private static func declaredLibraryLayout(in document: WalExpandedXMLDocument) -> WalXMLNode? {
+        let libraryGUID = "6b0edf80-c9a5-11d3-9f26-00c04f39ffc6"
+        var found: WalXMLNode?
+        func walk(_ nodes: [WalXMLNode], container: WalXMLNode?) {
+            for node in nodes {
+                if found != nil { return }
+                let isContainer = node.name.caseInsensitiveCompare("container") == .orderedSame
+                if node.name.caseInsensitiveCompare("layout") == .orderedSame,
+                   let component = node.children.first(where: {
+                       $0.name.caseInsensitiveCompare("component") == .orderedSame
+                   }) {
+                    let reference = (component.attribute("param")
+                                     ?? container?.attribute("component") ?? "").lowercased()
+                    if reference.contains(libraryGUID) { found = node; return }
+                }
+                walk(node.children, container: isContainer ? node : container)
+            }
+        }
+        walk(document.roots, container: nil)
+        return found
+    }
+
+    private static func weight(of rect: [String: String]) -> Double {
+        let width = Double(rect["w"] ?? "") ?? 0
+        let height = Double(rect["h"] ?? "") ?? 0
+        return max(0, -width) + max(0, -height)
+    }
+
+    /// How much of the window this exemplar's border takes up, as one number to order by.
+    private static func borderWeight(_ exemplar: DiscoveredExemplar) -> Double {
+        let width = Double(exemplar.content["w"] ?? "") ?? 0
+        let height = Double(exemplar.content["h"] ?? "") ?? 0
+        return max(0, -width) + max(0, -height)
+    }
+
+    /// The floor a window built from this exemplar has to obey.
+    ///
+    /// It is the **chrome window's** minimum, not the exemplar's own. A frame of this kind draws in a
+    /// second `dynamic="1"` container that the script keeps the same size as the window, and that
+    /// container has a floor of its own that the content window's does not mention: K-jr's
+    /// `layout.clear.ml` will not go below 403x231 while its `MLibrary` layout says 213 wide and
+    /// mis-spells its own `minimum_h`. Left at the registry's 343x145, Cava wore a frame larger than
+    /// itself with the top border off the window entirely.
+    ///
+    /// The chrome container is matched by **default size**: the skin sizes the pair together, so
+    /// Itemskin's `layout.clear.ml` is 660x274 exactly like its `MLibrary`, and K-jr's is 213x246
+    /// exactly like its own. Nothing else in the markup names the pairing — the script does it by id
+    /// at runtime.
+    private static func chromeFloor(forExemplarLayout layout: WalXMLNode,
+                                    in document: WalExpandedXMLDocument) -> CGSize {
+        // A layout states its size as `default_w`/`default_h` or as plain `w`/`h`, and the two halves
+        // of a pair need not agree on which: Itemskin's `AVS_window` writes both, its
+        // `layout.clear.avs` only `w`/`h`. Reading one form alone found no chrome for the pair, and
+        // the window came up smaller than the frame around it.
+        func size(_ node: WalXMLNode, _ prefix: String) -> CGSize {
+            func number(_ name: String) -> Double? { node.attribute(name).flatMap(Double.init) }
+            return CGSize(width: number("\(prefix)_w") ?? (prefix == "default" ? number("w") : nil) ?? 0,
+                          height: number("\(prefix)_h") ?? (prefix == "default" ? number("h") : nil) ?? 0)
+        }
+        let own = size(layout, "minimum")
+        let wanted = size(layout, "default")
+        guard wanted.width > 0, wanted.height > 0 else { return own }
+        var best = own
+        func walk(_ nodes: [WalXMLNode], dynamicContainer: Bool) {
+            for node in nodes {
+                let isContainer = node.name.caseInsensitiveCompare("container") == .orderedSame
+                let isDynamic = isContainer ? node.attribute("dynamic") == "1" : dynamicContainer
+                if dynamicContainer, node.name.caseInsensitiveCompare("layout") == .orderedSame,
+                   size(node, "default") == wanted {
+                    let floor = size(node, "minimum")
+                    best = CGSize(width: max(best.width, floor.width),
+                                  height: max(best.height, floor.height))
+                }
+                walk(node.children, dynamicContainer: isDynamic)
+            }
+        }
+        walk(document.roots, dynamicContainer: false)
+        return best
+    }
+
+    private static let standardFrameTagPrefix = "wasabi:standardframe:"
+
+    /// The frame node, plus the content group beside it when the skin lays its own windows out that
+    /// way. One place, because the About window, a synthesized component surface and a hosted window
+    /// must all be built the same way or they disagree about where the client area is.
+    ///
+    /// With an exemplar the frame carries **no `content=`**: the script would instantiate it at its
+    /// own idea of the rect (Itemskin's `standardframe.maki` param is `0,0,-42,-80`, which lands the
+    /// contents in the top-left corner, outside the chrome the same script draws), and the skin's own
+    /// layout is the better answer.
+    static func frameNodes(frame: Frame, frameID: String, contentGroupID: String,
+                           componentName: String, location: WalSourceLocation) -> [WalXMLNode] {
+        let fullBleed = ["x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1"]
+        guard let exemplar = frame.exemplar else {
+            return [WalXMLNode(name: frame.xuiTag, attributes: fullBleed.merging([
+                "id": frameID,
+                "content": contentGroupID,
+                "componentname": componentName,
+            ]) { _, new in new }, location: location)]
+        }
+        return [
+            WalXMLNode(name: frame.xuiTag,
+                       attributes: exemplar.frame.merging([
+                           "id": frameID,
+                           "componentname": componentName,
+                       ]) { _, new in new },
+                       location: location),
+            WalXMLNode(name: "group",
+                       attributes: bled(exemplar.content).merging(["id": contentGroupID]) { _, new in new },
+                       location: location),
+        ]
+    }
+
+    /// How far the client area tucks *under* the border, in skin pixels.
+    ///
+    /// A frame of this kind draws in a second window parked over this one, and the two rects the skin
+    /// writes need not meet exactly: Itemskin's visualizer frame states its client at `x="27"` while
+    /// the hole in `cont.clear.avs` starts at 26, leaving a one-pixel seam down the left edge and none
+    /// on the other three. It never shows on the skin's own window because that window's content is
+    /// black on a black border. Ours is not, so the client is grown to pass beneath the border, which
+    /// is what the skin does deliberately elsewhere — its download window puts content at `36,36`
+    /// under a hole at `33,55`.
+    static let clientBleed = 2.0
+
+    private static func bled(_ rect: [String: String]) -> [String: String] {
+        var result = rect
+        func adjust(_ name: String, by delta: Double) {
+            guard let value = rect[name].flatMap(Double.init) else { return }
+            result[name] = String(Int(value + delta))
+        }
+        adjust("x", by: -clientBleed)
+        adjust("y", by: -clientBleed)
+        adjust("w", by: 2 * clientBleed)
+        adjust("h", by: 2 * clientBleed)
+        return result
+    }
+
+    private static let rectAttributeNames = ["x", "y", "w", "h",
+                                             "relatx", "relaty", "relatw", "relath"]
+
+    private static func rectAttributes(of node: WalXMLNode) -> [String: String] {
+        var result: [String: String] = [:]
+        for name in rectAttributeNames {
+            if let value = node.attribute(name) { result[name] = value }
+        }
+        return result
     }
 
     private static let maximumInheritanceDepth = 16
 
+    /// Whether this frame's own script can build its client area — that is, whether it calls
+    /// `newGroup`, which is how `standardframe.maki` instantiates the group named by `content=`.
+    ///
+    /// The bytecode is read rather than the markup because *declaring a script* turned out not to
+    /// mean the frame instantiates anything. Itemskin's `wasabi.standardframe.static` declares
+    /// `standardframeStatic.maki`, which draws the window's chrome and calls neither `getParam` nor
+    /// `newGroup`; accepting it gave every hosted window a frame around an empty hole, which fails at
+    /// materialization and drops the window into NullPlayer's own chrome.
+    ///
+    /// A script whose body cannot be read or parsed keeps the old, weaker answer, so a resolution
+    /// difference here can only ever leave a skin where it already was.
     private static func hasContentScript(_ definition: WalXMLNode,
-                                         definitions: [String: WalXMLNode], depth: Int) -> Bool {
+                                         definitions: [String: WalXMLNode], depth: Int,
+                                         scriptReader: ScriptReader?) -> Bool {
         guard depth <= maximumInheritanceDepth else { return false }
-        if contains(definition, where: { $0.name.caseInsensitiveCompare("script") == .orderedSame }) {
-            return true
+        for script in scriptNodes(in: definition) {
+            guard let scriptReader,
+                  let rawPath = script.attribute("file"), !rawPath.isEmpty,
+                  let data = scriptReader(rawPath, script.location),
+                  let program = try? MakiBytecodeParser().parse(data, source: script.location) else {
+                return true
+            }
+            if program.methods.contains(where: { $0.name == contentInstantiationMethod }) { return true }
         }
         guard let parent = definition.attribute("inherit_group"),
               let inherited = definitions[fold(parent)] else { return false }
-        return hasContentScript(inherited, definitions: definitions, depth: depth + 1)
+        return hasContentScript(inherited, definitions: definitions, depth: depth + 1,
+                                scriptReader: scriptReader)
+    }
+
+    /// The MAKI method a standard frame calls to build its client area out of `content=`. Method
+    /// names are lowercased by the parser.
+    private static let contentInstantiationMethod = "newgroup"
+
+    private static func scriptNodes(in node: WalXMLNode) -> [WalXMLNode] {
+        var found: [WalXMLNode] = []
+        for child in node.children {
+            if child.name.caseInsensitiveCompare("script") == .orderedSame { found.append(child) }
+            found.append(contentsOf: scriptNodes(in: child))
+        }
+        return found
     }
 
     private static func hasArtwork(_ definition: WalXMLNode,
@@ -363,19 +766,18 @@ enum WasabiSurfaceSynthesizer {
         let contentGroup = WalXMLNode(name: "groupdef", attributes: ["id": contentGroupID],
                                       location: location, children: [component])
 
-        let frameNode = WalXMLNode(name: frame.xuiTag, attributes: [
-            "id": "\(contentGroupID).frame",
-            "content": contentGroupID,
-            "componentname": name,
-            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
-        ], location: location)
+        let children = frameNodes(frame: frame, frameID: "\(contentGroupID).frame",
+                                  contentGroupID: contentGroupID, componentName: name,
+                                  location: location)
+        let floor = frame.floor(under: geometry.minimumSize)
+        let opening = frame.floor(under: geometry.defaultSize)
         let layout = WalXMLNode(name: "layout", attributes: [
             "id": "normal",
-            "default_w": String(Int(geometry.defaultSize.width)),
-            "default_h": String(Int(geometry.defaultSize.height)),
-            "minimum_w": String(Int(geometry.minimumSize.width)),
-            "minimum_h": String(Int(geometry.minimumSize.height)),
-        ], location: location, children: [frameNode])
+            "default_w": String(Int(opening.width)),
+            "default_h": String(Int(opening.height)),
+            "minimum_w": String(Int(floor.width)),
+            "minimum_h": String(Int(floor.height)),
+        ], location: location, children: children)
         let container = WalXMLNode(name: "container", attributes: [
             "id": containerIdentifier(for: kind),
             "name": name,

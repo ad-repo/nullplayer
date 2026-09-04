@@ -75,6 +75,9 @@ final class WalXMLNode {
         }
     }
     func replaceChildren(_ newChildren: [WalXMLNode]) { children = newChildren }
+    func setAttributes(_ values: [String: String]) {
+        for (name, value) in values { attributes[name] = value }
+    }
     func appendChild(_ child: WalXMLNode) { children.append(child) }
 }
 

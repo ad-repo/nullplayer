@@ -148,8 +148,23 @@ final class WinampModernDragProbe: XCTestCase {
                                                        containerID: definition.id.containerIdentifier)
                 let view = WinampModernMainView(renderer: renderer, scripts: runtime, host: host,
                                                 componentHost: nil, drivesScripts: false)
+                let rootsBefore = Set(loaded.runtime.graph.roots.map(\.stableID))
                 try runtime.startTrustedHostedWindowScripts(beneath: graphRoot)
-                let size = renderer.canvasSize
+                for root in loaded.runtime.graph.roots where !rootsBefore.contains(root.stableID) {
+                    print("  NEWROOT \(root.typeName) id=\(root.xmlID ?? "-")")
+                }
+                func dumpTree(_ object: WasabiObject, depth: Int) {
+                    guard depth < 3 else { return }
+                    for child in object.children {
+                        print("  TREE \(String(repeating: "  ", count: depth))\(child.typeName) "
+                              + "id=\(child.xmlID ?? "-")")
+                        dumpTree(child, depth: depth + 1)
+                    }
+                }
+                if ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_HOSTED_TREE"] != nil {
+                    dumpTree(graphRoot, depth: 0)
+                }
+                var size = renderer.canvasSize
                 view.setFrameSize(size)
                 view.scriptsDidStart()
                 view.needsLayout = true
@@ -191,6 +206,82 @@ final class WinampModernDragProbe: XCTestCase {
                              surfaceRects.count))
                 if ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_MAP"] != nil {
                     for row in map { print("  MAP |\(row)|") }
+                }
+                // A skin whose chrome is a second window (Itemskin) builds it as a new dynamic
+                // container while the frame script starts. Composite it over the content window at
+                // the frame object's own offset — which is exactly what the glue does live — so the
+                // dump is a picture of the finished window rather than of half of it.
+                var chrome: (renderer: WasabiSceneRenderer, origin: CGPoint, size: CGSize)?
+                if let newRoot = loaded.runtime.graph.roots.first(where: {
+                    !rootsBefore.contains($0.stableID)
+                        && $0.typeName.caseInsensitiveCompare("container") == .orderedSame
+                }) {
+                    // The chrome window *is* the content window: Itemskin's `layout.clear.ml`
+                    // is 660x274, exactly its `MLibrary` layout, and the script keeps one over
+                    // the other. The frame object's own rect inside the layout is not its
+                    // placement.
+                    // The materializer grows the window to the chrome's own floor; the probe has no
+                    // window, so it does the same to the renderer before measuring.
+                    if let floor = runtime.hostedChromeFloor(of: graphRoot) {
+                        let grown = CGSize(width: max(size.width, floor.width),
+                                           height: max(size.height, floor.height))
+                        if grown != size {
+                            _ = renderer.resize(to: grown)
+                            view.setFrameSize(renderer.canvasSize)
+                            size = renderer.canvasSize
+                        }
+                    }
+                    if let chromeRenderer = try? WasabiSceneRenderer(
+                        loadedSkin: loaded, host: host, containerID: newRoot.xmlID ?? "") {
+                        chrome = (chromeRenderer, .zero, size)
+                    }
+                }
+                if let dump = ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_HOSTED_PNG"] {
+                    let scale = 2
+                    // Room for chrome that overhangs the content window on any side, so the dump is
+                    // the whole window rather than the part of it our own container covers.
+                    let pad = chrome.map {
+                        (left: max(0, -$0.origin.x), top: max(0, -$0.origin.y),
+                         right: max(0, $0.origin.x + $0.size.width - size.width),
+                         bottom: max(0, $0.origin.y + $0.size.height - size.height))
+                    } ?? (left: 0, top: 0, right: 0, bottom: 0)
+                    let canvas = CGSize(width: size.width + pad.left + pad.right,
+                                        height: size.height + pad.top + pad.bottom)
+                    let pixels = CGSize(width: canvas.width * CGFloat(scale),
+                                        height: canvas.height * CGFloat(scale))
+                    if let context = CGContext(data: nil, width: Int(pixels.width),
+                                               height: Int(pixels.height), bitsPerComponent: 8,
+                                               bytesPerRow: 0,
+                                               space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                               bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) {
+                        context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+                        // Canvas is bottom-left, skin space top-left: put the content window where
+                        // the padding leaves room for it.
+                        context.translateBy(x: pad.left, y: pad.bottom)
+                        let previous = NSGraphicsContext.current
+                        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+                        renderer.draw(in: context)
+                        if let chrome {
+                            _ = chrome.renderer.resize(to: chrome.size)
+                            context.saveGState()
+                            context.translateBy(x: chrome.origin.x,
+                                                y: -(chrome.origin.y + (chrome.size.height - size.height)))
+                            chrome.renderer.draw(in: context)
+                            context.restoreGState()
+                            chrome.renderer.teardown()
+                        }
+                        NSGraphicsContext.current = previous
+                        if let image = context.makeImage() {
+                            let directory = URL(fileURLWithPath: dump, isDirectory: true)
+                            try? FileManager.default.createDirectory(at: directory,
+                                                                     withIntermediateDirectories: true)
+                            let url = directory.appendingPathComponent(
+                                "\(wal.deletingPathExtension().lastPathComponent)-\(definition.id.rawValue).png")
+                            try? NSBitmapImageRep(cgImage: image)
+                                .representation(using: .png, properties: [:])?.write(to: url)
+                            print("HOSTED-PNG \(url.path)")
+                        }
+                    }
                 }
             } catch {
                 print("HOSTED \(wal.deletingPathExtension().lastPathComponent) \(definition.id.rawValue) FAILED \(error)")

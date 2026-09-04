@@ -32,6 +32,30 @@
 
 ### Bug Fixes
 
+- **Modern skins: NullPlayer's own windows now wear the skin's frame on skins that draw one their own
+  way** — Cava, Flow, PeppyMeter, the spectrum analyzer, the waveform, Audio Analysis, projectM and
+  the fallback equalizer opened in NullPlayer's plain chrome on Itemskin, K-jr, MoonLight and Pure
+  Inspired, even though those skins have perfectly good window frames. They build a window differently
+  from the rest: the frame draws the border and the contents sit beside it rather than inside it, so
+  NullPlayer now builds its own windows the way each of those skins builds its own. They also pick the
+  skin's *thinnest* frame, and leave behind any buttons that belonged to the window it was borrowed
+  from.
+
+- **Modern skins: no hairline of desktop down the edge of a window** — a skin can place its contents a
+  pixel inside the border drawn around them, which left a transparent line the desktop showed through.
+  It is covered on every window that shows a picture, a visualization or the library.
+
+- **Modern skins: a window no longer comes apart from its frame while you drag it** — on a skin that
+  draws a window's border in a second window, dragging by the contents made the border race away and
+  snap back when the drag ended.
+
+- **Modern skins: the media library window wears the skin's lighter frame** — where a skin has one, so
+  the border stops eating rows of the list.
+
+- **Modern skins: switching skins re-asks where each window belongs** — a feature window left open in
+  NullPlayer's own chrome stayed that way under the next skin, even one that frames it perfectly well
+  from a fresh launch. It now changes chrome with the skin, in both directions.
+
 - **Modern skins: no more flickering patch of noise at a window's corner** — a skin can declare a web
   panel it never shows, and an empty one was being left switched on at the top of the window, where
   it painted a band of random pixels that shifted as the window was dragged. It only ever showed

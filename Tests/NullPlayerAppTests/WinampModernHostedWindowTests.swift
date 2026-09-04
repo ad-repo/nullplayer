@@ -277,14 +277,19 @@ final class WinampModernHostedWindowTests: XCTestCase {
         }
         u16(0x0403); u32(23); u32(1)
         data.append(contentsOf: repeatElement(UInt8(0), count: 16))
-        let methods = ["onscriptloaded", "onsetxuiparam"]
+        // The two handlers this fixture binds, plus `newGroup`: synthesis reads a frame's method
+        // table to tell one that builds its client area from `content=` from one that only draws
+        // (`WasabiSurfaceSynthesizer.hasContentScript`), and this fixture stands in for the former.
+        // Nothing binds it, so the fixture still runs only its two observable handlers.
+        let handlers = ["onscriptloaded", "onsetxuiparam"]
+        let methods = handlers + ["newGroup"]
         u32(UInt32(methods.count))
         for method in methods { u16(0); u16(0); string(method) }
         u32(1)
         u8(0); u8(1); u16(0); u16(0); u16(0); u16(0); u16(0); u8(1); u8(1)
         u32(0)
-        u32(UInt32(methods.count))
-        for method in 0..<methods.count { u32(0); u32(UInt32(method)); u32(0) }
+        u32(UInt32(handlers.count))
+        for method in 0..<handlers.count { u32(0); u32(UInt32(method)); u32(0) }
         u32(1); u8(33)
         return data
     }

@@ -141,6 +141,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
 
     func loadSkin(at url: URL) {
+        // Before the teardown, because the teardown is what makes them unreadable: which of
+        // NullPlayer's own feature windows the user has open, in whichever chrome the outgoing skin
+        // gave them. The incoming skin gets asked about each of them again once it is up.
+        let reopenHostedWindows = WindowManager.shared.openWinampModernHostedWindowIDs()
         tearDownSkin()
         // A `setScale` that arrives while the skin is loading cannot be acted on: `loadSkin` runs
         // from this controller's own initializer, so `WindowManager.mainWindowController` is not
@@ -269,6 +273,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             refreshBoundText()
             startBoundTextPolling()
             scheduleFramePositionReassert()
+            // After the materializer exists, so `handlesHostedWindow` answers for *this* skin.
+            WindowManager.shared.rehomeWinampModernHostedWindows(reopenHostedWindows)
             #if DEBUG
             // `WINAMP_MODERN_DEBUG_CLICK=x,y[;x,y…]` drives clicks at skin points a few seconds after
             // launch — the only way to reproduce a click-path defect that lives in the *window* layer,

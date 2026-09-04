@@ -823,8 +823,8 @@ final class WasabiSkinInitializer {
 
         var layoutAttributes: [String: String] = [
             "id": "normal",
-            "default_w": String(Int(request.definition.defaultSize.width)),
-            "default_h": String(Int(request.definition.defaultSize.height)),
+            "default_w": String(Int(request.defaultSize.width)),
+            "default_h": String(Int(request.defaultSize.height)),
             "minimum_w": String(Int(request.minimumSize.width)),
             "minimum_h": String(Int(request.minimumSize.height)),
         ]
@@ -832,14 +832,17 @@ final class WasabiSkinInitializer {
             if maximum.width.isFinite { layoutAttributes["maximum_w"] = String(Int(maximum.width)) }
             if maximum.height.isFinite { layoutAttributes["maximum_h"] = String(Int(maximum.height)) }
         }
-        let frame = WalXMLNode(name: request.frame.xuiTag, attributes: [
-            "id": "\(id.contentGroupIdentifier).frame",
-            "content": id.contentGroupIdentifier,
-            "componentname": request.definition.title,
-            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
-        ], location: location)
+        let frameNodes = WasabiSurfaceSynthesizer.frameNodes(
+            frame: WasabiSurfaceSynthesizer.Frame(groupIdentifier: request.frame.groupIdentifier,
+                                                  xuiTag: request.frame.xuiTag,
+                                                  hasArtwork: request.frame.hasArtwork,
+                                                  exemplar: request.frame.exemplar),
+            frameID: "\(id.contentGroupIdentifier).frame",
+            contentGroupID: id.contentGroupIdentifier,
+            componentName: request.definition.title,
+            location: location)
         let layout = WalXMLNode(name: "layout", attributes: layoutAttributes,
-                                location: location, children: [frame])
+                                location: location, children: frameNodes)
         let containerNode = WalXMLNode(name: "container", attributes: [
             "id": id.containerIdentifier,
             "name": request.definition.title,

@@ -1111,18 +1111,49 @@ final class WinampModernMainView: NSView {
         renderer.componentHolders().first { $0.kind == .video }?.frame
     }
 
+    /// How far a video or visualization surface passes under the skin's surrounding artwork, in skin
+    /// pixels.
+    ///
+    /// Unconditional, and deliberately not gated on the glued-chrome pair being *recorded*. The pair
+    /// is learned from one particular script idiom (`chrome.resize(content.getLeft(), …)`, see
+    /// `borrowedWindowOrigin`), and a frame script that positions its chrome any other way is glued in
+    /// fact but unrecorded — Itemskin's video window records the pair and its visualizer does not, so
+    /// gating on it fixed one of the two and left the other with the seam.
+    ///
+    /// The cost is that on a skin that draws its border *inline* these two surfaces cover two skin
+    /// pixels of it. That is the right trade for these two only: both are opaque rectangles of
+    /// picture whose own edge carries no information, both sit inside a border that is tens of pixels
+    /// wide in every measured skin, and a transparent line down the edge of a window is far more
+    /// visible than two pixels of border. The library is in for the same reason once its window wears
+    /// a frame of this kind: two pixels of a list view's own padding is nothing, a hairline of desktop
+    /// down the window edge is not.
+    private var mountedSurfaceBleed: CGFloat { CGFloat(WasabiSurfaceSynthesizer.clientBleed) }
+
     /// Position live host surfaces at their skin-provided holder frames, converting from top-left
     /// skin coordinates to the view's bottom-left ones. Positioning only — nothing is created here.
     private func layoutHostedSubviews(browsers: [(object: WasabiObject, frame: CGRect)]) {
         guard !isTornDown else { return }
         let holders = cachedHolders ?? renderer.componentHolders()
+        // Where the skin's border is a **second window** parked on this one, a client rect that stops
+        // a pixel short of the border's hole leaves a transparent gap the desktop shows through. The
+        // skin never sees it: Winamp's own video and visualization components draw black inside a
+        // black border. Ours do not, so the surface is grown to pass under the border — safe by
+        // construction, because the border is drawn over it from a window in front. Itemskin's
+        // visualizer states its client at `x="27"` against a hole that starts at 26.
+        let bleed = mountedSurfaceBleed
+        let canvas = CGRect(origin: .zero, size: renderer.canvasSize)
+        func placed(_ frame: CGRect) -> CGRect {
+            // Never past the window's own edge: a surface that already reaches it has no border to
+            // hide under, and growing it there would only push picture off the window.
+            viewRect(fromSkin: frame.insetBy(dx: -bleed, dy: -bleed).intersection(canvas))
+        }
         for holder in holders where holder.kind == .library {
             guard let surface = librarySurfaces[holder.object.stableID] else { continue }
-            surface.view.frame = viewRect(fromSkin: holder.frame)
+            surface.view.frame = placed(holder.frame)
         }
         for holder in holders where holder.kind == .visualization {
             guard let surface = visualizationSurfaces[holder.object.stableID] else { continue }
-            surface.view.frame = viewRect(fromSkin: holder.frame)
+            surface.view.frame = placed(holder.frame)
             if Self.surfaceTrace {
                 let line = "[surf/vis] layout \(holder.object.xmlID ?? "-")"
                     + "#\(holder.object.stableID)"
@@ -1133,7 +1164,7 @@ final class WinampModernMainView: NSView {
         }
         for holder in holders where holder.kind == .video {
             guard let surface = videoSurfaces[holder.object.stableID] else { continue }
-            surface.view.frame = viewRect(fromSkin: holder.frame)
+            surface.view.frame = placed(holder.frame)
             // The picture is a child window parked on that box, and a child window follows its
             // parent's moves but not a resize of the box inside it.
             surface.updateOutputPlacement()

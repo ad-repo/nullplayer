@@ -174,6 +174,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// one included copy of a frame script is one window's frame, and asking twice from the same
     /// script means "the one I already have", not "another window".
     var dynamicContainerInstances: [String: [ObjectIdentifier: WasabiObjectID]] = [:]
+    /// Per hosted window, the floor its borrowed chrome imposes — see `adoptChromeForHostedWindow`.
+    var hostedChromeFloors: [WasabiObjectID: CGSize] = [:]
     /// The other half of the pair: what the container's window state *is*, asked of the host, for
     /// `toggle()` and `isVisible()`. The graph's `visible` attribute cannot answer it — the window is
     /// shown and hidden by routes that never write the attribute — so a script that asks drifts out

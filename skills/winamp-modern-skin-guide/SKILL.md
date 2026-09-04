@@ -42,6 +42,16 @@ necessarily changed Classic, and that was legitimate as its own scoped change wi
 up front. Do not let the rule turn a shared bug into one nobody is allowed to fix — say plainly that
 it is separate work and let the user decide.
 
+Corollary: **a structural probe is not a picture.** `surfaces=1` from the hosted-window sweep says a
+client area exists and is reachable; it says nothing about where it is drawn. 2026-09-04 a hosted-frame
+fix was reported as working on `surfaces=1, strip=48px, drag=88%` and a corpus diff of exactly one
+skin, and the user's screenshot showed the chrome and the contents in different places — every number
+the probe measured was right and blind to the only thing that mattered. Render it
+(`WINAMP_MODERN_DRAG_HOSTED_PNG`, [reference/harness.md](reference/harness.md)) or run it, then hand it
+over. The same session then took five more rounds because each new symptom was answered with a
+plausible mechanism instead of a measurement; the ones that landed came from reading pixels out of the
+reporter's own screenshot and window frames out of the accessibility API.
+
 Corollary: verify in the running app, not in your head. Window geometry has no useful armchair form,
 and B56 cost four confident statically-reasoned fixes — each wrong, two of them regressions — before
 anyone launched the app. The loop for measuring it is in the `testing` skill ("Window geometry:

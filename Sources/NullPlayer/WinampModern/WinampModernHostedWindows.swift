@@ -247,6 +247,17 @@ struct WinampModernHostedFrameDescriptor {
     let groupIdentifier: String
     let xuiTag: String
     let hasArtwork: Bool
+    /// Set when the skin lays its own windows out around this frame rather than letting the frame's
+    /// script build them — see `WasabiSurfaceSynthesizer.FrameExemplar`.
+    let exemplar: WasabiSurfaceSynthesizer.FrameExemplar?
+
+    init(groupIdentifier: String, xuiTag: String, hasArtwork: Bool,
+         exemplar: WasabiSurfaceSynthesizer.FrameExemplar? = nil) {
+        self.groupIdentifier = groupIdentifier
+        self.xuiTag = xuiTag
+        self.hasArtwork = hasArtwork
+        self.exemplar = exemplar
+    }
 }
 
 enum WinampModernHostedWindowRoute {
@@ -278,9 +289,24 @@ struct WinampModernHostedWindowInstantiation {
     /// player width is proof that width is legible in that skin, so it caps the width floor. The
     /// height floor is the registry's, untouched: only the width follows the player.
     var minimumSize: CGSize {
-        guard let playerWidth, playerWidth >= 1 else { return definition.minimumSize }
-        return CGSize(width: min(definition.minimumSize.width, playerWidth.rounded()),
-                      height: definition.minimumSize.height)
+        guard let playerWidth, playerWidth >= 1 else { return raised(definition.minimumSize) }
+        return raised(CGSize(width: min(definition.minimumSize.width, playerWidth.rounded()),
+                             height: definition.minimumSize.height))
+    }
+
+    /// The size this window opens at. The registry's, unless the skin's own exemplar window declares
+    /// a larger floor — a frame whose chrome is a second window cannot be drawn below it.
+    var defaultSize: CGSize { raised(definition.defaultSize) }
+
+    /// The registry's numbers are the size of the window's *contents*, so a frame that draws its
+    /// border around them makes the window that much bigger — see
+    /// `WasabiSurfaceSynthesizer.Frame.floor(under:)`, which is the same rule for the skin's own
+    /// synthesized surfaces.
+    private func raised(_ size: CGSize) -> CGSize {
+        WasabiSurfaceSynthesizer.Frame(groupIdentifier: frame.groupIdentifier,
+                                       xuiTag: frame.xuiTag,
+                                       hasArtwork: frame.hasArtwork,
+                                       exemplar: frame.exemplar).floor(under: size)
     }
 }
 

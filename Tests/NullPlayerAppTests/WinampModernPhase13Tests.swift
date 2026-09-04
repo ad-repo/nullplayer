@@ -1277,8 +1277,12 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(componentHost.surfaceRequests, 1)
         XCTAssertEqual(surface.scaleUpdates, 1)
         XCTAssertEqual(surface.paletteUpdates, 1)
-        // Positioned at the holder's frame, converted from top-left skin space.
-        XCTAssertEqual(surface.view.frame, NSRect(x: 10, y: 200 - 70, width: 100, height: 50))
+        // Positioned at the holder's frame, converted from top-left skin space — and two skin pixels
+        // wider on every side. A mounted surface tucks under whatever the skin draws around it: a
+        // client rect that stops a pixel short of the border's hole leaves a transparent hairline the
+        // desktop shows through, which is what a `.wal` frame drawn in a second window produces
+        // (`WinampModernMainView.mountedSurfaceBleed`).
+        XCTAssertEqual(surface.view.frame, NSRect(x: 8, y: 200 - 72, width: 104, height: 54))
 
         // A layout switch removes the holder; the surface leaves the hierarchy and is told so — but
         // it must **not** be torn down, because the host hands this same instance back next time.
@@ -1387,7 +1391,9 @@ final class WinampModernPhase13Tests: XCTestCase {
         view.layoutSubtreeIfNeeded()
         XCTAssertEqual(surface.scaleUpdates, 2, "UI Size reaches the hosted browser")
         XCTAssertEqual(surface.lastScale, 2)
-        XCTAssertEqual(surface.view.frame, NSRect(x: 0, y: 400 - 200, width: 200, height: 200),
+        // The 2px bleed is in skin pixels, so it doubles with UI Size like everything else; the left
+        // edge is clamped to the canvas, which is why only the far side grows here.
+        XCTAssertEqual(surface.view.frame, NSRect(x: 0, y: 400 - 204, width: 204, height: 204),
                        "and its geometry scales with the rest of the scene")
 
         loaded.themeCoordinator.activate("Blue")
@@ -1593,12 +1599,19 @@ final class WinampModernPhase13Tests: XCTestCase {
         appendUInt32(23)
         appendUInt32(1)                                            // classes
         data.append(contentsOf: repeatElement(UInt8(0), count: 16))
-        appendUInt32(1)                                            // methods
-        appendUInt16(0)
-        appendUInt16(0)
-        let name = Array("getid".utf8)
-        appendUInt16(UInt16(name.count))
-        data.append(contentsOf: name)
+        // `newGroup` is in the table because that is what makes this a *standard frame* script:
+        // synthesis reads the method table to tell a frame that builds its client area from
+        // `content=` from one that only draws (`WasabiSurfaceSynthesizer.hasContentScript`). No
+        // binding references it — the fixture still runs nothing.
+        let methods = ["getid", "newGroup"]
+        appendUInt32(UInt32(methods.count))                        // methods
+        for method in methods {
+            appendUInt16(0)
+            appendUInt16(0)
+            let name = Array(method.utf8)
+            appendUInt16(UInt16(name.count))
+            data.append(contentsOf: name)
+        }
         appendUInt32(0)                                            // variables
         appendUInt32(0)                                            // constants
         appendUInt32(0)                                            // bindings

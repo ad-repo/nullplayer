@@ -560,7 +560,12 @@ extension WinampModernScriptRuntime {
             return object
         }
         guard let declared = findRoot(type: "container", xmlID: id) else { return nil }
-        let takenIDs = Set(dynamicContainerInstances[key]?.values ?? [:].values)
+        var takenIDs = Set(dynamicContainerInstances[key]?.values ?? [:].values)
+        // A NullPlayer-owned window borrowing this skin's frame never takes the **declared**
+        // container: that object is the skin's own window's chrome, and the borrowed frame has to be
+        // a copy we may adapt without touching it. See `adoptChromeForHostedWindow`.
+        let hostedCaller = hostedWindowContainer(of: program)
+        if hostedCaller != nil { takenIDs.insert(declared.stableID) }
         let root: WasabiObject
         if !takenIDs.contains(declared.stableID) {
             root = declared
@@ -583,6 +588,7 @@ extension WinampModernScriptRuntime {
             // A copy carrying its own `<script>` (a notifier, say) starts it exactly as a runtime
             // group's is started. Ebonite's frame is pure markup and adds none.
             try? startScripts(addedBeneath: instance)
+            if let hostedCaller { adoptChromeForHostedWindow(instance, for: hostedCaller) }
             root = instance
         } else {
             // Out of copies (or a singleton container): the declared root is still the right answer —
@@ -591,6 +597,67 @@ extension WinampModernScriptRuntime {
         }
         dynamicContainerInstances[key, default: [:]][owner] = root.stableID
         return root
+    }
+
+    /// Whether this `newDynamicContainer` call is coming from the frame script of one of NullPlayer's
+    /// own hosted windows. Those subtrees are the only ones synthesis creates, and they are the only
+    /// ones `startTrustedHostedWindowScripts` will start, so the source path identifies them exactly.
+    private func hostedWindowContainer(of program: MakiProgram) -> WasabiObject? {
+        guard let owner = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)),
+              let container = ancestor(of: owner, type: "container") ?? (
+                  owner.typeName.caseInsensitiveCompare("container") == .orderedSame ? owner : nil),
+              container.source.path == WasabiSurfaceSynthesizer.sourcePath
+        else { return nil }
+        return container
+    }
+
+    /// Make a borrowed frame fit a window it was not drawn for.
+    ///
+    /// A skin's chrome window is drawn for one specific window and can carry that window's own
+    /// controls inside the border: Itemskin's thin frame is the one its visualizer and video windows
+    /// wear, and `cont.clear.avs` holds `VIS_Prev`, `VIS_Next`, a Random toggle, `Vis_Menu` and a
+    /// close button bound to `TOGGLE guid:avs`. Around Cava or Flow every one of those is wrong, and
+    /// the close button would shut the skin's visualizer instead of the window it sits on.
+    ///
+    /// So the controls are hidden in **our copy** and the border artwork is kept. A control is
+    /// anything the skin gave an `action` or a `cfgattrib`; layers, including the mover grip, carry
+    /// neither and stay. The skin's own window is untouched — it holds the declared container, which
+    /// a hosted caller is never given.
+    private func adoptChromeForHostedWindow(_ container: WasabiObject, for hosted: WasabiObject) {
+        func hideControls(_ object: WasabiObject) {
+            for child in object.children {
+                if child.attributes["action"] != nil || child.attributes["cfgattrib"] != nil {
+                    _ = child.setAttribute("visible", value: "0")
+                }
+                hideControls(child)
+            }
+        }
+        hideControls(container)
+        // …and record the floor the chrome itself will not go below, which is the only reliable
+        // statement of how big a window wearing it has to be. It cannot be found in the markup ahead
+        // of time: which chrome container a frame script instantiates is the script's decision, made
+        // here, and a skin need not size the pair alike (MoonLight's video chrome is 410x281 around a
+        // 330x220 window). Read at the one moment it is knowable, and applied by the materializer.
+        let layouts = container.children.filter {
+            $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+        }
+        guard let layout = layouts.first else { return }
+        func number(_ names: [String]) -> Double {
+            for name in names {
+                if let value = layout.attributes[name].flatMap(Double.init) { return value }
+            }
+            return 0
+        }
+        let floor = CGSize(width: number(["minimum_w", "w", "default_w"]),
+                           height: number(["minimum_h", "h", "default_h"]))
+        guard floor.width > 0 || floor.height > 0 else { return }
+        hostedChromeFloors[hosted.stableID] = floor
+    }
+
+    /// The size floor the chrome a hosted window's frame script built imposes on it, once that script
+    /// has run. Nil for a window whose frame draws inline.
+    func hostedChromeFloor(of container: WasabiObject) -> CGSize? {
+        hostedChromeFloors[container.stableID]
     }
 
     /// Whether a script has taken this container as a `newDynamicContainer` — a window Winamp creates

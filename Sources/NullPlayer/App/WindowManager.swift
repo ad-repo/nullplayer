@@ -1211,6 +1211,62 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
+    // MARK: - Re-homing NullPlayer's own windows across a `.wal` skin change
+
+    /// The standalone window a hosted id falls back to, whether or not it is on screen. Read
+    /// directly rather than through `isCavaVisible` and its siblings, which answer for the *hosted*
+    /// route first and would report the incoming skin's unopened window instead of this one.
+    private func classicHostedFallbackWindow(for id: WinampModernHostedWindowID) -> NSWindow? {
+        switch id {
+        case .spectrum: return spectrumWindowController?.window
+        case .equalizer: return equalizerWindowController?.window
+        case .cava: return cavaWindowController?.window
+        case .flow: return networkMonitorWindowController?.window
+        case .peppyMeter: return peppyMeterWindowController?.window
+        case .audioAnalysis: return audioAnalysisWindowController?.window
+        case .waveform: return waveformWindowController?.window
+        case .projectM: return projectMWindowController?.window
+        }
+    }
+
+    /// Which of NullPlayer's own feature windows are open right now, in either chrome. Captured by
+    /// the `.wal` controller immediately *before* it tears a skin down.
+    func openWinampModernHostedWindowIDs() -> Set<WinampModernHostedWindowID> {
+        guard uiMode.controllerFamily == .winampModern else { return [] }
+        return Set(WinampModernHostedWindowID.allCases.filter { id in
+            winampModernHostedController?.isHostedWindowVisible(id) == true
+                || classicHostedFallbackWindow(for: id)?.isVisible == true
+        })
+    }
+
+    /// Re-ask the route for each of those windows now that a different skin is up.
+    ///
+    /// A skin switch is not a fresh launch: the outgoing skin's hosted windows are torn down with it,
+    /// but a window that fell back to NullPlayer's own chrome is a plain `NSWindow` nothing touches,
+    /// so it simply stayed there — wearing the fallback under a skin that hosts it perfectly well
+    /// from a cold start. This closes it and opens the skin-framed one instead (and the reverse: a
+    /// hosted window whose new skin has no usable frame comes back as the fallback rather than
+    /// vanishing).
+    ///
+    /// Called only from the `.wal` controller, and gated on the mode besides: no other UI family
+    /// runs a line of it.
+    func rehomeWinampModernHostedWindows(_ ids: Set<WinampModernHostedWindowID>) {
+        guard uiMode.controllerFamily == .winampModern, !ids.isEmpty,
+              let controller = winampModernHostedController else { return }
+        for id in WinampModernHostedWindowID.allCases where ids.contains(id) {
+            let fallbackIsUp = classicHostedFallbackWindow(for: id)?.isVisible == true
+            guard controller.handlesHostedWindow(id) else {
+                // The new skin cannot host it. Whatever the old one did, the fallback is the answer.
+                if !fallbackIsUp { showClassicHostedWindowForWinampModern(id, showOnly: true) }
+                continue
+            }
+            // Close the standalone first — the two must never be up at once — through the classic
+            // toggle, which is what stops its rendering and slides the stack back up behind it.
+            if fallbackIsUp { showClassicHostedWindowForWinampModern(id, showOnly: false) }
+            routeWinampModernHostedWindow(id, toggle: false)
+        }
+    }
+
     /// The materializer's deterministic fallback. The recursion guard makes the existing public
     /// paths construct exactly their old standalone controllers without consulting the failed route.
     func showClassicHostedWindowForWinampModern(_ id: WinampModernHostedWindowID, showOnly: Bool) {

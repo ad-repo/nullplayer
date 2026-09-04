@@ -91,8 +91,19 @@ final class WinampModernSkinLoader {
         // *before* initialization, so synthetic XML is registered, validated, instantiated, and
         // script-bound by exactly the same passes as everything the skin wrote (Phase 13.2).
         let inventory = WinampModernSurfaceInventory.build(document: loaded)
-        let synthesis = WasabiSurfaceSynthesizer.synthesize(document: loaded, inventory: inventory,
-                                                            limits: xmlLimits)
+        let synthesis = WasabiSurfaceSynthesizer.synthesize(
+            document: loaded, inventory: inventory, limits: xmlLimits,
+            // Choosing a standard frame means asking whether its script actually builds a client
+            // area, and that answer is in the compiled MAKI rather than in the markup. Resolution
+            // mirrors `WasabiSkinInitializer.resolveSkinResource`: XML-relative first, then the
+            // fixed `@SKINPATH@` mount.
+            scriptReader: { rawPath, source in
+                let resolved = (try? vfs.resolve(rawPath, relativeTo: source.path, location: source))
+                    ?? (try? vfs.resolve("@SKINPATH@/\(rawPath)", relativeTo: source.path,
+                                         location: source))
+                guard let resolved else { return nil }
+                return try? vfs.data(at: resolved.logicalPath, location: source)
+            })
         let document = synthesis.document
         let runtime = try WasabiSkinInitializer(vfs: vfs,
                                                 maximumObjectCount: xmlLimits.maximumExpandedNodeCount)

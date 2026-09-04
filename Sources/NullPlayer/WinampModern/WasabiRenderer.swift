@@ -3133,7 +3133,7 @@ final class WasabiSceneRenderer {
         case .equalizer: drawEqualizerComponent(frame: frame, context: context)
         case .visualization:
             context.setFillColor(NSColor.black.cgColor)
-            context.fill(frame)
+            context.fill(bledHostComponentRect(frame))
             // A holder the view layer has filled with the host's own engine (B20a) draws itself, in
             // an OpenGL view over this box: bars underneath it would be a second visualization
             // nobody can see, costing a repaint every frame. Black is what shows before its first
@@ -3147,13 +3147,34 @@ final class WasabiSceneRenderer {
             // corpus skins that draw one, and while a film is playing this is what shows in the
             // letterbox margins around the hosted picture (B20).
             context.setFillColor(NSColor.black.cgColor)
-            context.fill(frame)
+            context.fill(bledHostComponentRect(frame))
         // Deferred to the overlay pass below — see `deferredHostComponents`.
         case .waveformSeeker: deferredHostComponents.append((kind, frame))
-        case .library, .other:
+        case .library:
+            context.setFillColor(palette.contentBackground.cgColor)
+            context.fill(bledHostComponentRect(frame))
+        case .other:
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(frame)
         }
+    }
+
+    /// A video or visualization box, grown to pass under the artwork around it.
+    ///
+    /// A skin can state the box a pixel inside the hole its own border leaves — Itemskin's visualizer
+    /// component is at `x="27"` against a chrome whose hole starts at 26 — and that column is painted
+    /// by nothing at all: the border is a second window and is transparent there, and the box starts a
+    /// pixel later. It reads as a hairline of desktop down the edge of the window. Winamp never shows
+    /// it because its own component draws black inside a black border.
+    ///
+    /// The same two pixels the view layer gives a *mounted* surface
+    /// (`WinampModernMainView.mountedSurfaceBleed`), and needed here as well because the box is not
+    /// always a mounted view: this fill is what shows wherever the host has no engine surface in the
+    /// holder, which is every skin-drawn analyzer and every letterbox margin.
+    private func bledHostComponentRect(_ frame: CGRect) -> CGRect {
+        let bleed = CGFloat(WasabiSurfaceSynthesizer.clientBleed)
+        return frame.insetBy(dx: -bleed, dy: -bleed).intersection(
+            CGRect(origin: .zero, size: canvasSize))
     }
 
     /// The seeker strip a WACUP-era skin reserves and the host fills (BB18).

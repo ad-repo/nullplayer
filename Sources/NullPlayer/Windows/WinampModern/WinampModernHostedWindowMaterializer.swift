@@ -230,6 +230,25 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
             }
 
             try scripts.startTrustedHostedWindowScripts(beneath: createdRoot)
+            // The frame script has now built whatever chrome it draws, and a skin whose chrome is a
+            // second window states that window's own floor there and nowhere else — MoonLight's video
+            // chrome is 410x281 around a 330x220 window, so nothing in the markup pairs the two sizes
+            // ahead of time. A window smaller than its own frame renders with the border clipped off
+            // it, so it is grown here, once, before anything measures the canvas.
+            if let floor = scripts.hostedChromeFloor(of: createdRoot) {
+                let canvas = renderer.canvasSize
+                let grown = CGSize(width: max(canvas.width, floor.width),
+                                   height: max(canvas.height, floor.height))
+                if grown != canvas {
+                    _ = renderer.resize(to: grown)
+                    let scale = max(skinScale(), 0.01)
+                    let limits = renderer.userResizeLimits
+                    window.contentMinSize = NSSize(width: limits.minimum.width * scale,
+                                                   height: limits.minimum.height * scale)
+                    window.setContentSize(createdView.scaledCanvasSize)
+                    createdView.setFrameSize(createdView.scaledCanvasSize)
+                }
+            }
             try testContentInstaller?(createdRoot, id)
             createdView.scriptsDidStart()
             createdView.needsLayout = true
@@ -318,8 +337,18 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
-        let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
-        WindowManager.shared.applySnappedPosition(window, to: origin)
+        // **Not while the user is dragging this window.** `WinampModernMainView.mouseDragged` has
+        // already put the drag through `windowWillMove` and set the origin itself, so running it
+        // again from the delegate applies the same delta to the whole docked group a *second* time,
+        // once per mouse event. A skin whose chrome is a second window parked on this one is in that
+        // group, so the frame accelerated away from its own contents for the length of the drag and
+        // snapped back the moment it ended — and left the pair a few pixels apart afterwards. The
+        // skin's own windows never had this: the controller's `windowDidMove` only announces the move
+        // (`WinampModernMainWindowController.windowDidMove`), and this is now the same shape.
+        if !WindowManager.shared.isWindowDragInProgress {
+            let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
+            WindowManager.shared.applySnappedPosition(window, to: origin)
+        }
         WindowManager.shared.postWindowLayoutDidChange()
         // This delegate is the hosted windows' own, so the controller's `windowDidMove` — which is
         // what tells a skin's script its window moved — never sees one of these. Nothing else in the

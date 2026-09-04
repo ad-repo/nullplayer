@@ -634,6 +634,114 @@ every skin-owned step has declined (B55, above).
   `SkinElements` constants are untouched, so Classic and Original keep their 275.
   **When a geometry rule appears to do nothing, check the clamp before the arithmetic.**
 
+#### Borrowing a window the skin already built (2026-09-04)
+
+Some skins never follow the `content=` contract at all. Itemskin and its siblings (K-jr, MoonLight,
+Pure Inspired, and their duplicate archives) draw chrome from their frame scripts and place the
+contents themselves, as a **sibling of the frame in the same layout**:
+
+```xml
+<Wasabi:StandardFrame:ML x="-8" y="7" w="15" h="3" relatw="1" relath="1"/>
+<component x="33" y="55" w="-66" h="-92" relatw="1" relath="1" …/>
+```
+
+written identically in `mlibrary.xml`, `pledit-normal.xml` and `dlibrary.xml`. Those two rects are the
+only statement of where such a frame's client area goes. So when no frame builds its own content,
+synthesis copies one of the skin's own windows — `WasabiSurfaceSynthesizer.FrameExemplar`, applied by
+`frameNodes`, which emits the frame with **no `content=`** and our content group beside it. Before
+this, all eight NullPlayer-owned windows on those five skins fell back to NullPlayer's own chrome.
+
+Four rules, each learned from a render that came out wrong first:
+
+- **Do not guess the client rect from the frame groupdef's inner group.** That group is the artwork
+  *behind* the client, not the client. Itemskin's `.static` names one at `42,48,-75,-132` while the
+  chrome's hole is `24,55,-64,-91`; hosting there drew our contents across the chrome's own title
+  band. The exemplar is the skin's own answer and the only reliable one.
+- **The thinnest border wins, and the controls come off.** These frames are interchangeable in layout
+  but not in weight — the playlist/library frame is 33/55 against the visualizer/video frame's 26/40 —
+  and the thin one's chrome carries that window's own controls (`cont.clear.avs` holds `VIS_Prev`,
+  `VIS_Next`, a Random toggle, `Vis_Menu` and a close bound to `TOGGLE guid:avs`, which would shut the
+  skin's visualizer). A hosted caller is therefore never handed the **declared** chrome container,
+  only a copy, and in that copy every object carrying an `action` or a `cfgattrib` is hidden
+  (`WinampModernScriptRuntime.adoptChromeForHostedWindow`). Border layers and the mover grip carry
+  neither and stay.
+- **A full-bleed component states nothing.** MoonLight's video window is `w="0" h="0" relatw="1"
+  relath="1"`: the contents fill the window and the chrome overlaps them. Read as a zero-thickness
+  border it won "thinnest" and gave Cava a 410x281 frame clipped into a 343x220 window. An exemplar
+  needs `w < 0 && h < 0`.
+- **The chrome's floor is the window's floor, and it is only knowable at runtime.** Which chrome
+  container a frame script instantiates is the script's decision, and a skin need not size the pair
+  alike (MoonLight's video chrome is 410x281 around a 330x220 window), so no static rule pairs them.
+  `adoptChromeForHostedWindow` records the created container's minimum and the materializer grows the
+  window to it before anything measures the canvas. Two earlier attempts to derive it from the markup
+  were both wrong and are gone.
+
+**The window carries the border on top of the contents.** Every size in the hosted-window registry is
+the size of the *client* — the spectrum's 343x145 is the bars — so a frame drawn around them makes the
+window that much bigger (`Frame.floor(under:)`, `WinampModernHostedWindowInstantiation`). Treating them
+as window sizes left Itemskin's 33x55 border eating most of a 343x145 window and reading as chrome far
+too heavy for what it framed.
+
+**The one skin-declared window this pass rewrites is the library.** `overrideDeclaredLibraryFrame` puts
+it in the same thin frame: its contents are entirely NullPlayer's and its rows are dense with
+information, where a frame drawn for a picture costs rows on every screen. It only ever *reduces* the
+border, and playlist, video and visualizer keep the frames their authors chose.
+
+#### A client area tucks under the border (2026-09-04)
+
+A skin can state its client a pixel inside the hole its own border leaves — Itemskin's visualizer
+component is at `x="27"` against a chrome whose hole starts at 26 — and that column is painted by
+nothing at all: the border is a second window and is transparent there, and the contents start a pixel
+later. It reads as a hairline of desktop down the window's edge. Winamp never shows it because its own
+components draw black inside a black border.
+
+So a client area is grown by two skin pixels on every side, in three places that must agree:
+
+| Where | What it covers |
+|---|---|
+| `WasabiSurfaceSynthesizer.clientBleed`, applied by `frameNodes` | the content group of a window we synthesize |
+| `WinampModernMainView.mountedSurfaceBleed` | a mounted video, visualization or library surface, in *any* container |
+| `WasabiRenderer.bledHostComponentRect` | the fill behind those boxes, for the case where no view is mounted at all |
+
+The third exists because the second is not enough: a video box is a mounted `NSView` and moved with the
+view-layer fix, while the visualizer box in the same skin is painted by `drawHostComponent` and did
+not — one window of the two was fixed and the other was not. **Do not gate this on the glued-chrome
+pair being recorded.** That pair is learned from one script idiom (`chrome.resize(content.getLeft(),
+…)`, see `borrowedWindowOrigin`); Itemskin's video frame uses it and its visualizer frame does not, so
+gating on it fixed exactly one of the two. The cost of applying it unconditionally is two skin pixels
+of an inline border, which for a picture box or a list is nothing.
+
+#### A skin change re-asks the route for every window that is open (2026-09-04)
+
+Switching `.wal` skins is not a fresh launch, and the difference was visible: a window that fell back
+to NullPlayer's own chrome under skin A is a plain `NSWindow` that nothing in `tearDownSkin` touches,
+so it stayed exactly where it was under skin B — wearing the fallback under a skin that hosts it
+perfectly well from a cold start. Meanwhile skin A's *hosted* windows are torn down with the skin and
+nothing brought them back.
+
+`WinampModernMainWindowController.loadSkin` therefore captures
+`WindowManager.openWinampModernHostedWindowIDs()` **before** `tearDownSkin()` — every id open in either
+chrome — and calls `rehomeWinampModernHostedWindows(_:)` once the new materializer exists, so
+`handlesHostedWindow` answers for the incoming skin. Per id: hosted now → close the standalone through
+the classic toggle (which is what stops its rendering and slides the stack back up) and open the
+skin-framed one; not hosted now → make sure the fallback is up. Both helpers are gated on
+`uiMode.controllerFamily == .winampModern`, and the capture reads the standalone controllers *directly*
+rather than through `isCavaVisible` and its siblings, which consult the hosted route first and would
+answer for the incoming skin's unopened window.
+
+#### Dragging a hosted window must not re-run the drag (2026-09-04)
+
+`WinampModernMainView.mouseDragged` already puts a drag through `WindowManager.windowWillMove` and sets
+the origin itself, and the controller's `windowDidMove` — which serves the skin's own windows — does
+nothing but announce the move. The **materializer's** delegate, serving NullPlayer-owned windows, also
+re-ran `windowWillMove` + `applySnappedPosition` on every move notification, so each mouse event applied
+the drag delta to the whole docked group a *second* time. A skin whose chrome is a second window parked
+on ours is in that group: the frame accelerated away from its contents for the length of the drag,
+snapped back when it ended, and left the pair a few pixels apart. It now skips that path while
+`WindowManager.isWindowDragInProgress`. **When a hosted window behaves differently from one of the
+skin's own, compare the two delegates first** — they are different objects and were never the same
+shape.
+
 #### A skin's chrome can live in a *second* window
 
 Itemskin is the measured case: `PLEdit`, `Video`, `MLibrary` and `AVS_window` are bare boxes holding
