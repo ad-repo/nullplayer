@@ -62,6 +62,32 @@ struct WasabiLayerFXMesh: Equatable {
     /// takes its source from the bilinear interpolation of the four grid vertices around it: a
     /// rotation is affine in x/y, so even a 1×1 grid (Defix's cassette reels) reproduces one exactly,
     /// and a genuinely non-affine warp gets the fidelity of the grid the skin asked for.
+    ///
+    /// **This is a per-frame `width × height` loop on the main thread** for any layer whose mesh
+    /// moves — B118 measured the `Double` form this replaces at **24.1%** of a release build's main
+    /// thread on WMP11-BlueVU, against a control skin's 0.0% — so the shape below is deliberate, and
+    /// each part of it is worth a measured 264×264 frame (Defix's needle size, the corpus's largest):
+    ///
+    /// | | ms/frame |
+    /// |---|---|
+    /// | `Double`, four-corner lerp per pixel, `accumulate` closure | 2.05 |
+    /// | `Float` | 1.53 |
+    /// | fixed-point channels | 1.22 |
+    /// | + `SIMD4` channels (this) | **0.73** |
+    ///
+    /// The three changes are:
+    ///
+    /// - **The mesh is interpolated once per destination row** into `rowU`/`rowV`, and the walk along
+    ///   each axis is incremental — `column0` advances with a `while` that steps at most once per
+    ///   mesh column per row — so the inner loop has two lerps and no divide, where the four-corner
+    ///   form had eight lerps, two divides and two float→`Int` conversions per pixel.
+    /// - **The four channels are one `SIMD4`**, gathered from the four taps with an unaligned load
+    ///   each. The old code accumulated into a tuple of `Double` through a local function taking it
+    ///   `inout`, which is four separate round-trips per pixel.
+    /// - **The blend is fixed-point**, weights in 10 bits, so the hot path has no float→integer
+    ///   conversion (each of which is bounds-checked and traps) and no per-channel clamp: the four
+    ///   weights sum to exactly `1 << 20`, so the rounded sum of four bytes is a byte by
+    ///   construction. Against the `Double` form this moves 4% of channels by exactly 1.
     func resample(source: [UInt8], width: Int, height: Int) -> [UInt8]? {
         guard columns >= 2, rows >= 2, sources.count == columns * rows,
               width > 0, height > 0, source.count == width * height * 4 else { return nil }
@@ -70,71 +96,105 @@ struct WasabiLayerFXMesh: Equatable {
         let rows = self.rows
         let wrap = self.wrap
         let bilinear = self.bilinear
-        sources.withUnsafeBufferPointer { vertices in
-            source.withUnsafeBufferPointer { source in
-                destination.withUnsafeMutableBufferPointer { destination in
-                    /// One source pixel, with the layer's own wrap/clamp rule at the edges.
-                    func accumulate(_ x: Int, _ y: Int, into channels: inout (Double, Double, Double, Double),
-                                    weight: Double) {
-                        let sampleX = wrap ? ((x % width) + width) % width : min(width - 1, max(0, x))
-                        let sampleY = wrap ? ((y % height) + height) % height : min(height - 1, max(0, y))
-                        let index = (sampleY * width + sampleX) * 4
-                        channels.0 += Double(source[index]) * weight
-                        channels.1 += Double(source[index + 1]) * weight
-                        channels.2 += Double(source[index + 2]) * weight
-                        channels.3 += Double(source[index + 3]) * weight
-                    }
+        let widthAsFloat = Float(width)
+        let heightAsFloat = Float(height)
+        // Destination pixel → mesh coordinate is linear on both axes, so the walk below is one add
+        // per pixel from a step computed here rather than a divide per pixel.
+        let columnStep = Float(columns - 1) / widthAsFloat
+        let rowStep = Float(rows - 1) / heightAsFloat
 
-                    for y in 0..<height {
-                        let v = (Double(y) + 0.5) / Double(height)
-                        let meshY = min(Double(rows - 1) - 1e-9, max(0, v * Double(rows - 1)))
-                        let row0 = min(rows - 2, Int(meshY))
-                        let ty = meshY - Double(row0)
-                        for x in 0..<width {
-                            let u = (Double(x) + 0.5) / Double(width)
-                            let meshX = min(Double(columns - 1) - 1e-9, max(0, u * Double(columns - 1)))
-                            let column0 = min(columns - 2, Int(meshX))
-                            let tx = meshX - Double(column0)
-                            let topLeft = vertices[row0 * columns + column0]
-                            let topRight = vertices[row0 * columns + column0 + 1]
-                            let bottomLeft = vertices[(row0 + 1) * columns + column0]
-                            let bottomRight = vertices[(row0 + 1) * columns + column0 + 1]
-                            let sourceU = (Double(topLeft.x) * (1 - tx) + Double(topRight.x) * tx) * (1 - ty)
-                                + (Double(bottomLeft.x) * (1 - tx) + Double(bottomRight.x) * tx) * ty
-                            let sourceV = (Double(topLeft.y) * (1 - tx) + Double(topRight.y) * tx) * (1 - ty)
-                                + (Double(bottomLeft.y) * (1 - tx) + Double(bottomRight.y) * tx) * ty
-                            guard sourceU.isFinite, sourceV.isFinite else { continue }
-                            // Sampling past the edge of a layer that does not wrap draws nothing:
-                            // clamping instead would smear the edge pixel across everything the warp
-                            // sweeps, and a needle would trail a comb of streaks behind it.
-                            if !wrap, sourceU < 0 || sourceU > 1 || sourceV < 0 || sourceV > 1 { continue }
-                            let sampleX = sourceU * Double(width) - 0.5
-                            let sampleY = sourceV * Double(height) - 0.5
-                            var channels = (0.0, 0.0, 0.0, 0.0)
-                            if bilinear {
-                                let x0 = Int(sampleX.rounded(.down))
-                                let y0 = Int(sampleY.rounded(.down))
-                                let fx = sampleX - Double(x0)
-                                let fy = sampleY - Double(y0)
-                                accumulate(x0, y0, into: &channels, weight: (1 - fx) * (1 - fy))
-                                accumulate(x0 + 1, y0, into: &channels, weight: fx * (1 - fy))
-                                accumulate(x0, y0 + 1, into: &channels, weight: (1 - fx) * fy)
-                                accumulate(x0 + 1, y0 + 1, into: &channels, weight: fx * fy)
-                            } else {
-                                accumulate(Int(sampleX.rounded()), Int(sampleY.rounded()),
-                                           into: &channels, weight: 1)
-                            }
-                            let index = (y * width + x) * 4
-                            destination[index] = UInt8(min(255, max(0, channels.0.rounded())))
-                            destination[index + 1] = UInt8(min(255, max(0, channels.1.rounded())))
-                            destination[index + 2] = UInt8(min(255, max(0, channels.2.rounded())))
-                            destination[index + 3] = UInt8(min(255, max(0, channels.3.rounded())))
-                        }
+        // The vertices flattened to `Float`, so the loop never converts a `CGPoint`'s `Double` again.
+        var vertexU = [Float](repeating: 0, count: columns * rows)
+        var vertexV = [Float](repeating: 0, count: columns * rows)
+        for index in 0..<(columns * rows) {
+            vertexU[index] = Float(sources[index].x)
+            vertexV[index] = Float(sources[index].y)
+        }
+        /// The mesh row under the destination row being filled, already interpolated in y.
+        var rowU = [Float](repeating: 0, count: columns)
+        var rowV = [Float](repeating: 0, count: columns)
+
+        vertexU.withUnsafeBufferPointer { vertexU in
+        vertexV.withUnsafeBufferPointer { vertexV in
+        rowU.withUnsafeMutableBufferPointer { rowU in
+        rowV.withUnsafeMutableBufferPointer { rowV in
+        source.withUnsafeBufferPointer { sourceBuffer in
+        destination.withUnsafeMutableBufferPointer { destinationBuffer in
+            let sourceBytes = UnsafeRawPointer(sourceBuffer.baseAddress!)
+            let destinationBytes = UnsafeMutableRawPointer(destinationBuffer.baseAddress!)
+            var meshY = 0.5 * rowStep
+            var row0 = 0
+            for y in 0..<height {
+                defer { meshY += rowStep }
+                while row0 < rows - 2 && meshY >= Float(row0 + 1) { row0 += 1 }
+                let ty = max(0, meshY - Float(row0))
+                let top = row0 * columns
+                let bottom = top + columns
+                for column in 0..<columns {
+                    rowU[column] = vertexU[top + column] + (vertexU[bottom + column] - vertexU[top + column]) * ty
+                    rowV[column] = vertexV[top + column] + (vertexV[bottom + column] - vertexV[top + column]) * ty
+                }
+
+                var destinationIndex = y * width * 4
+                var meshX = 0.5 * columnStep
+                var column0 = 0
+                for _ in 0..<width {
+                    defer { destinationIndex += 4; meshX += columnStep }
+                    while column0 < columns - 2 && meshX >= Float(column0 + 1) { column0 += 1 }
+                    let tx = max(0, meshX - Float(column0))
+                    let leftU = rowU[column0], leftV = rowV[column0]
+                    let sourceU = leftU + (rowU[column0 + 1] - leftU) * tx
+                    let sourceV = leftV + (rowV[column0 + 1] - leftV) * tx
+                    guard sourceU.isFinite, sourceV.isFinite else { continue }
+                    // Sampling past the edge of a layer that does not wrap draws nothing:
+                    // clamping instead would smear the edge pixel across everything the warp
+                    // sweeps, and a needle would trail a comb of streaks behind it.
+                    if !wrap, sourceU < 0 || sourceU > 1 || sourceV < 0 || sourceV > 1 { continue }
+                    let sampleX = sourceU * widthAsFloat - 0.5
+                    let sampleY = sourceV * heightAsFloat - 0.5
+                    // A wrapping mesh may answer with a coordinate arbitrarily far outside the layer,
+                    // and float→`Int` traps rather than saturating. `tap` folds anything inside this
+                    // bound back into the layer; past it there is no meaningful pixel to fetch.
+                    guard abs(sampleX) < 1e7, abs(sampleY) < 1e7 else { continue }
+
+                    let pixel: SIMD4<UInt8>
+                    if bilinear {
+                        let flooredX = sampleX.rounded(.down)
+                        let flooredY = sampleY.rounded(.down)
+                        let fx = UInt32((sampleX - flooredX) * 1024)
+                        let fy = UInt32((sampleY - flooredY) * 1024)
+                        let left = Self.tap(Int(flooredX), width, wrap)
+                        let right = Self.tap(Int(flooredX) + 1, width, wrap)
+                        let above = Self.tap(Int(flooredY), height, wrap) * width
+                        let below = Self.tap(Int(flooredY) + 1, height, wrap) * width
+                        var total = Self.tapPixel(sourceBytes, (above + left) * 4) &* SIMD4(repeating: (1024 - fx) * (1024 - fy))
+                        total &+= Self.tapPixel(sourceBytes, (above + right) * 4) &* SIMD4(repeating: fx * (1024 - fy))
+                        total &+= Self.tapPixel(sourceBytes, (below + left) * 4) &* SIMD4(repeating: (1024 - fx) * fy)
+                        total &+= Self.tapPixel(sourceBytes, (below + right) * 4) &* SIMD4(repeating: fx * fy)
+                        pixel = SIMD4<UInt8>(truncatingIfNeeded: (total &+ SIMD4(repeating: 1 << 19)) &>> SIMD4(repeating: 20))
+                    } else {
+                        let index = (Self.tap(Int(sampleY.rounded()), height, wrap) * width
+                                     + Self.tap(Int(sampleX.rounded()), width, wrap)) * 4
+                        pixel = sourceBytes.loadUnaligned(fromByteOffset: index, as: SIMD4<UInt8>.self)
                     }
+                    destinationBytes.storeBytes(of: pixel, toByteOffset: destinationIndex, as: SIMD4<UInt8>.self)
                 }
             }
-        }
+        }}}}}}
         return destination
+    }
+
+    /// One sample coordinate brought inside the layer, with the layer's own wrap/clamp rule.
+    @inline(__always)
+    private static func tap(_ coordinate: Int, _ extent: Int, _ wrap: Bool) -> Int {
+        wrap ? ((coordinate % extent) + extent) % extent : min(extent - 1, max(0, coordinate))
+    }
+
+    /// One RGBA8 source pixel widened to the lanes the fixed-point blend accumulates in. The source
+    /// raster is an `[UInt8]`, whose base address carries no four-byte alignment guarantee.
+    @inline(__always)
+    private static func tapPixel(_ source: UnsafeRawPointer, _ byteOffset: Int) -> SIMD4<UInt32> {
+        SIMD4<UInt32>(truncatingIfNeeded: source.loadUnaligned(fromByteOffset: byteOffset, as: SIMD4<UInt8>.self))
     }
 
     /// A mesh that samples every destination pixel from its own position — the layer drawn as-is.
