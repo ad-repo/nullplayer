@@ -332,6 +332,12 @@ way). A glyph in a different *place* moves hundreds of pixels and shows up as su
 > change you can see** before trusting it about the ones you cannot. If a sweep of a drawing change
 > comes back perfectly clean, that is a reason to suspect the compare, not to relax.
 
+**One corpus image is nondeterministic, and it is not your change.** Anexa's `main-shade` draws an
+analog clock from wall time, so it differs between two runs of the *same* build — measured 2026-09-04
+at `maxdelta=130 over 83 px`, a bbox that moves every pass. Any sweep of a drawing change will report
+it. Confirm it the cheap way before spending a thought on it: capture twice off one build with
+`--corpus` a directory holding just that archive, and compare those two.
+
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
 resolved/missing bitmap counts. Every archive prints **`SKIN <file.wal>`** first, which is what makes

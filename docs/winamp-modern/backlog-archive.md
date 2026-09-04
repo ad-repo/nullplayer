@@ -2,6 +2,68 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B114 — a `desktopalpha="0"` layout has no opaque backing — closed 2026-09-04
+
+| B114 | **A `desktopalpha="0"` layout has no opaque backing, so a skin that paints only a translucent sheen shows the window's own light backing.** Reported 2026-09-04 on WMP11-BlueVU as *"missing backgrounds on the timer and track display"*. The skin ships **deliberately empty** spacers for that area — `glass_bg_left_left.png`, `glass_bg_left_right.png`, `glass_bg_right.png` are alpha 0/0/0 across every pixel — and `RENDER_PROBE main/normal` confirms no node covers `x 8…196, y 25…78`. The dumped pixel at (20,30) is `(180,180,180, a=112)`: the `Glass.Left` sheen composited over nothing. In Winamp the black comes from the *window*: `<layout id="normal" desktopalpha="0">` means no per-pixel alpha, so unpainted pixels are black and the skin leans on that. `desktopalpha` appears nowhere in the renderer — only as a MAKI method name in `WinampModernScriptRuntimeSystem.swift:326`. **Verified:** compositing the existing dump over black reproduces the skin's shipped `screenshot.png`. **The trap:** an opaque fill makes the window's *shape* matter, and this layout is `sysregion`-shaped with rounded corners — fill the whole rect and every region-shaped player in the corpus squares off. So the fill has to respect the region, and the change wants the corpus render sweep (`scripts/wal_render_sweep.sh`), not a one-skin check. The nearby precedent is the `background=` fallback at `WasabiRenderer.swift:2154`, whose two bounds ("only when the skin asked", "only a layout") are the shape to copy | 26 of 69 corpus skins declare `desktopalpha="0"` somewhere ([M32]); how many *rely* on it for a backing is unmeasured | M | Live-reported |
+
+### B114
+
+- [x] **B114. A `desktopalpha="0"` layout has no per-pixel alpha.** Fixed 2026-09-04.
+
+      **What it is.** `<layout desktopalpha="0">` says the window has no per-pixel alpha, so what the
+      skin paints is opaque and what it does not paint is not there at all. WMP11-BlueVU leans on
+      that: `glass_bg_left_left.png`, `glass_bg_left_right.png` and `glass_bg_right.png` are alpha 0
+      in **every** pixel, deliberately, and `Glass.Left` paints a translucent sheen over them. With
+      nothing behind it the sheen composited over the window's own light backing, which is the
+      reported *"missing backgrounds on the timer and track display"*.
+
+      **It is a shape, not a fill, and the first fix got that wrong.** Filling the layout's rect black
+      and letting the `sysregion` cut carve it passed its tests, reproduced the skin's shipped
+      `screenshot.png`, and was accepted on WMP11 — and it blacked out the gap between EPS High-End's
+      speaker feet, which the reporter caught on screen. **EPS is the control experiment**: it
+      declares its two speakers from the *same* artwork (`background="speaker"`) with
+      `desktopalpha="0"` on the left and `desktopalpha="1"` on the right. The two are meant to look
+      identical and do in Winamp, so a pixel the skin left empty must stay **outside the window**
+      rather than going black. The rule is Win32's region: non-zero alpha is inside and opaque,
+      alpha 0 is outside.
+
+      The sweep had already said so and it was misread. The first fix moved **34 of 590** images;
+      only 2 of the 34 were the reported area, and the other 32 were whole-window surrounds that were
+      rationalised as "the black a glass frame is laid over" instead of being taken as the
+      counter-evidence they were. The number that settled it was there from the start: over the
+      reported area **9829 of 9831** changed pixels were *partially* transparent and only 2 were
+      empty — the defect only ever lived in the pixels the skin actually painted.
+
+      **How it is done.** The scene is rendered into a readable buffer and its alpha channel is
+      promoted — every non-zero alpha to 255, zero left alone. In a premultiplied buffer the colours
+      are *already* the composite over black, so that one channel is the whole fix. The window
+      context cannot be read back, which is why there is a buffer at all; it is held across frames
+      and sized to the caller's clip, so a targeted repaint pays for its own rect.
+
+      **Three performance traps, all measured on `main/normal` at 2x, baseline 2.81 ms/frame:**
+
+      - A hand-written Swift loop over the alpha byte cost **7.5 ms**, and "optimising" it into a
+        word-at-a-time loop made it **22.4** — an unoptimised build is exactly where a per-pixel loop
+        is worst, and a debug build is what live QA runs. `vImageTableLookUp_ARGB8888` does it in
+        **0.19 ms**.
+      - BGRA is the window server's native layout and the **wrong** buffer format here: the skin's
+        artwork is RGBA, so the scene pass paid a swizzle per bitmap and went 2.8 -> **4.8 ms**. One
+        conversion at the blit beats one per bitmap.
+      - `NSGraphicsContext.current` has to be rebound to the buffer. `WinampModernSurfaceStyle` draws
+        its labels with `NSString.draw`, which takes its destination from that global and not from
+        the context it is handed — impulse's Configuration window lost its slider labels and its
+        "Hold Time" caption, 841 pixels of text the sweep caught and no assertion would have.
+
+      Final cost: **3.63 ms/frame** against 2.81, in a debug build.
+
+      **Corpus render sweep: 2 of 590 images change.** WMP11-BlueVU's `main/normal` display area
+      (9829 px, the report), and **7 pixels at maxdelta 2** on EPS High-End's left speaker — the
+      anti-aliased fringe of the silhouette going opaque. Nothing else in the corpus moves. (A third
+      image, Anexa's `main-shade`, differs between two runs of the *same* build: its analog clock
+      reads wall time. Recorded in `reference/harness.md` so the next sweep does not chase it.)
+
+      Verified live on WMP11-BlueVU and EPS High-End by the reporter. `swift test`: all green.
+
 ## B113 — every window's text and displays read as a dark, muddy olive on Itemskin — closed 2026-09-04
 
 | B113 | **Itemskin draws every window's text and displays in a dark olive nobody can read.** Reported 2026-09-04 as "is there a filter in front of the displays?" — the library list, the visualization and the readouts on every window are all the same muted olive. There is no filter; there is a **missing amplification**. The skin gets almost all of its colour from gamma sets: `wasabi.list.text` is declared `80,70,0` with `gammagroup="text"` and `wasabi.list.background` `220,175,0` with `gammagroup="Display2"`, and the theme we activate is the **first `<gammaset>` in the document**, which for this skin is `(default)` and is **empty** — an identity transform, so every such colour stays at its raw, deliberately-dark declared value. Measured with `WINAMP_MODERN_RENDER_PALETTE=1` (2026-09-04): `theme=(default)`, `listText -> rgb(80,70,0)` on `contentBackground -> rgb(42,42,42)` — a contrast ratio near 1.5, and B48's legibility guard does not lift it. The skin ships **15** sets and selects none: no `default=` attribute on any `<gammaset>`, no `<ColorThemes:List>` picker, and no theme name anywhere in its 20 `.maki` files. So the open question is what Winamp actually activates for a skin whose first set is empty — measure that before choosing a rule, and check the reach of "first gammaset is empty" across the corpus | 1 skin measured; reach of the empty-first-gammaset shape unmeasured | M | Live-reported |

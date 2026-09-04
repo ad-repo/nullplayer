@@ -240,6 +240,54 @@ Two bounds keep the fill honest, and both are pinned in `WinampModernB90Tests`:
 Corpus sweep, 441 renders: **15 changed**, and 8 of those are Big Bento dialogs already opaque where
 the fill landed underneath existing chrome.
 
+#### `desktopalpha="0"` — the window is a region, not a rectangle (B114, 2026-09-04)
+
+`<layout desktopalpha="0">` says the window has **no per-pixel alpha**. The rule is Win32's region:
+every pixel the skin painted is inside the window and **opaque**, every pixel at alpha 0 is
+**outside** it. `desktopalpha="1"` is the opt in to per-pixel alpha and a layout that says nothing
+keeps the transparency it has always had.
+
+WMP11-BlueVU is the reported case, and its shape is worth recognising: `glass_bg_left_left.png`,
+`glass_bg_left_right.png` and `glass_bg_right.png` are **alpha 0 in every pixel**, deliberately, and
+`Glass.Left` paints a translucent sheen over them. `RENDER_PROBE main/normal` correctly reports no
+node covering the display area — because there is nothing to cover it with. **Composite the dump over
+black before theorising about any report of this shape**; for this skin that reproduces its own
+shipped `screenshot.png`.
+
+**It is a shape, not a fill, and EPS High-End is the control experiment.** The first fix filled the
+layout's rect black and let the `sysregion` cut carve it — and blacked out the gap between that
+skin's speaker feet. EPS declares its two speakers from the *same* artwork (`background="speaker"`)
+with `desktopalpha="0"` on the left and `desktopalpha="1"` on the right; they are meant to look
+identical and do in Winamp, so an empty pixel must stay out of the window rather than going black.
+The measurement said so from the start and was misread: over the reported area **9829 of 9831**
+changed pixels were *partially* transparent and only 2 were empty.
+
+`WasabiSceneRenderer` renders the scene into a readable buffer and promotes its alpha — non-zero to
+255, zero left alone. In a premultiplied buffer the colours are *already* the composite over black,
+so that one channel is the whole fix; the window context cannot be read back, which is why there is a
+buffer. It is held across frames and sized to the caller's clip, so a targeted repaint pays for its
+own rect.
+
+Three traps in that buffer, all measured on `main/normal` at 2x against a 2.81 ms/frame baseline, and
+all of them things to copy rather than rediscover:
+
+- **Do the pixel pass in vImage.** A Swift loop over the alpha byte cost **7.5 ms**, and rewriting it
+  a word at a time made it **22.4** — an unoptimised build is where a per-pixel loop is worst, and a
+  debug build is what live QA runs. `vImageTableLookUp_ARGB8888` with an identity table on the three
+  colour channels does it in **0.19 ms**.
+- **RGBA, not BGRA.** BGRA is the window server's native layout and the wrong destination here: the
+  skin's artwork is RGBA, so the scene pass paid a swizzle per bitmap and went to **4.8 ms**. One
+  conversion at the blit beats one per bitmap.
+- **Rebind `NSGraphicsContext.current`.** Not every string goes through CoreText —
+  `WinampModernSurfaceStyle` draws its labels with `NSString.draw`, which takes its destination from
+  that global. Left pointing at the caller's context, impulse's Configuration window lost its slider
+  labels and its "Hold Time" caption: 841 pixels of text drawn into the wrong buffer and then buried
+  by the blit.
+
+Cost after all three: **3.63 ms/frame** against 2.81, debug. Corpus sweep, 590 renders: **2 changed**
+— WMP11-BlueVU's display area, and 7 pixels at maxdelta 2 on EPS's left speaker where the
+silhouette's anti-aliased fringe goes opaque.
+
 #### Layer fill modes
 
 - **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome

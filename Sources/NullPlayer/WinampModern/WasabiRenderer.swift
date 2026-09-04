@@ -1,3 +1,4 @@
+import Accelerate
 import AppKit
 import CoreImage
 import CoreGraphics
@@ -1163,8 +1164,149 @@ final class WasabiSceneRenderer {
         return nodes
     }
 
+    /// `<layout desktopalpha="0">` — the window has **no per-pixel alpha**, so what the skin paints
+    /// is opaque and what it does not paint is not there at all (B114).
+    ///
+    /// WMP11-BlueVU is the reported case: its display area is covered by `glass_bg_left_left.png`,
+    /// `glass_bg_left_right.png` and `glass_bg_right.png`, all of which are **alpha 0 in every
+    /// pixel** — deliberately empty spacers over which `Glass.Left` paints a translucent sheen. With
+    /// nothing behind it the sheen composited over the window's own light backing and the timer and
+    /// track display read as *"missing their background"*; over black it reproduces the skin's
+    /// shipped `screenshot.png`. Over the whole reported area **9829 of 9831** changed pixels were
+    /// *partially* transparent and only 2 were empty, which is what makes this a composite against
+    /// the wrong ground rather than a missing bitmap.
+    ///
+    /// **It is a shape, not a fill, and EPS High-End is the proof.** Filling the layout's rect black
+    /// and letting the `sysregion` cut carve it was the first fix, and it blacked out the gap between
+    /// that skin's speaker feet. EPS declares its two speakers from the *same* artwork
+    /// (`background="speaker"`) with `desktopalpha="0"` on the left one and `desktopalpha="1"` on the
+    /// right — an author slip that is also a control experiment, because the two are meant to be
+    /// identical and are identical in Winamp. They can only be identical if a pixel the skin left
+    /// empty stays **out of the window** rather than going black.
+    ///
+    /// So the rule is Win32's: every pixel with a non-zero alpha is inside the region and opaque,
+    /// every pixel at alpha 0 is outside it. In a premultiplied buffer that is one byte per pixel —
+    /// the colours are *already* the composite over black, and only the alpha channel has to be
+    /// promoted. Which is why this needs a buffer it can read, and the window context is not one.
+    private var layoutWantsOpaqueBacking: Bool {
+        guard let raw = layout.attributes["desktopalpha"] else { return false }
+        return Int(raw.trimmingCharacters(in: .whitespaces)) == 0
+    }
+
+    /// The scratch buffer the opaque path renders through, kept across frames.
+    ///
+    /// One canvas-sized allocation per frame is 2.5 MB at Retina scale on a 752x414 player, and this
+    /// runs on every repaint including the per-object ones the animation path fires — so it is held
+    /// and cleared rather than made and thrown away. Keyed on the pixel size it was made for, which
+    /// is the clip's, so a targeted repaint pays for its own rect and not for the window.
+    private var opaqueBackingBuffer: (context: CGContext, width: Int, height: Int,
+                                      appKit: NSGraphicsContext?)?
+
+    /// Channel maps for that pass: one that leaves a channel alone, and one that promotes every
+    /// non-zero alpha to fully opaque — the window's region, as a lookup table.
+    private static let identityChannelTable: [UInt8] = (0...255).map(UInt8.init)
+    private static let opaqueAlphaTable: [UInt8] = [0] + [UInt8](repeating: 255, count: 255)
+
     func draw(in context: CGContext, pressed: WasabiObjectID? = nil,
               hovered: WasabiObjectID? = nil) {
+        guard layoutWantsOpaqueBacking,
+              let backed = drawSceneOpaquely(in: context, pressed: pressed, hovered: hovered)
+        else {
+            drawScene(in: context, pressed: pressed, hovered: hovered)
+            return
+        }
+        context.saveGState()
+        // The buffer was rasterised at this context's own device scale and snapped to its pixel
+        // grid, so this is a copy. Interpolating it would soften every edge in the window.
+        context.interpolationQuality = .none
+        context.draw(backed.image, in: backed.rect)
+        context.restoreGState()
+    }
+
+    /// Render the scene into a readable buffer and promote its alpha, returning the picture and the
+    /// rect it belongs in. Nil whenever the buffer cannot be made, which falls back to drawing
+    /// straight into the caller's context — a window that is merely translucent beats no window.
+    private func drawSceneOpaquely(in context: CGContext, pressed: WasabiObjectID?,
+                                   hovered: WasabiObjectID?) -> (image: CGImage, rect: CGRect)? {
+        // A partial repaint must not rasterise the whole window: the animation path invalidates one
+        // object's box at a time, and Big Bento's is 1526x868.
+        let clip = context.boundingBoxOfClipPath.intersection(CGRect(origin: .zero, size: canvasSize))
+        guard !clip.isNull, !clip.isEmpty else { return nil }
+        let transform = context.ctm
+        let scale = min(max((abs(transform.a * transform.d - transform.b * transform.c)).squareRoot(), 1), 8)
+
+        // Snap out to whole device pixels, so the blit back lands on the grid it was drawn on.
+        let left = Int((clip.minX * scale).rounded(.down))
+        let bottom = Int((clip.minY * scale).rounded(.down))
+        let width = Int((clip.maxX * scale).rounded(.up)) - left
+        let height = Int((clip.maxY * scale).rounded(.up)) - bottom
+        guard width > 0, height > 0, width * height <= Self.maximumPrescaledPixels else { return nil }
+        let rect = CGRect(x: CGFloat(left) / scale, y: CGFloat(bottom) / scale,
+                          width: CGFloat(width) / scale, height: CGFloat(height) / scale)
+
+        let buffer: CGContext
+        if let held = opaqueBackingBuffer, held.width == width, held.height == height {
+            buffer = held.context
+            buffer.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        } else {
+            // **RGBA, and measured rather than assumed.** BGRA is the layout the window server
+            // composites natively, and it is the *wrong* choice here: the skin's own artwork is
+            // RGBA, so the scene draw pays a swizzle per bitmap and `main/normal` went from 2.8 to
+            // **4.8 ms/frame** on the scene pass alone. The one conversion at the blit is cheaper
+            // than one per bitmap. `bytesPerRow: 0` lets CoreGraphics pick its own aligned stride,
+            // which the alpha pass below reads back rather than assuming.
+            guard let made = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                       bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return nil }
+            opaqueBackingBuffer = (made, width, height,
+                                   NSGraphicsContext(cgContext: made, flipped: false))
+            buffer = made
+        }
+
+        buffer.saveGState()
+        buffer.scaleBy(x: scale, y: scale)
+        buffer.translateBy(x: -rect.minX, y: -rect.minY)
+        // **Rebind the AppKit context with the CoreGraphics one.** Not every string goes through
+        // CoreText: `WinampModernSurfaceStyle` draws its labels with `NSString.draw`, which takes its
+        // destination from `NSGraphicsContext.current` and not from the context it is handed. Leave
+        // that pointing at the caller's context and those strings are drawn *there*, then buried by
+        // the blit — impulse's Configuration window lost its slider labels and its "Hold Time"
+        // caption exactly that way, 841 pixels of text that the sweep caught and no assertion would.
+        let hostContext = NSGraphicsContext.current
+        NSGraphicsContext.current = opaqueBackingBuffer?.appKit
+        drawScene(in: buffer, pressed: pressed, hovered: hovered)
+        NSGraphicsContext.current = hostContext
+        buffer.restoreGState()
+
+        // The window's region, applied to the one channel that carries it. The colours are already
+        // the composite over black — that is what premultiplication *is* — so an opaque window is
+        // this pass and nothing else, and a pixel the skin never touched keeps the alpha 0 that puts
+        // it outside the window.
+        guard let data = buffer.data else { return nil }
+        // **Through vImage, not a Swift loop.** This runs on every repaint of every window that
+        // declares the flag, and a hand-written pass over the alpha byte measured **7.5 ms/frame**
+        // on a 354x147 player at 2x — an unoptimised build is exactly where a per-pixel loop is
+        // worst, and a debug build is what live QA runs. `vImageTableLookUp_ARGB8888` is one
+        // vectorised pass: identity tables for the three colour channels, and a table that maps 0 to
+        // 0 and everything else to 255 for the fourth. The tables go in *memory* channel order, so
+        // for an RGBA buffer alpha is the last one — the parameter this ARGB-named call spells
+        // `blue`.
+        var image = vImage_Buffer(data: data, height: vImagePixelCount(height),
+                                  width: vImagePixelCount(width), rowBytes: buffer.bytesPerRow)
+        Self.identityChannelTable.withUnsafeBufferPointer { identity in
+            Self.opaqueAlphaTable.withUnsafeBufferPointer { saturate in
+                _ = vImageTableLookUp_ARGB8888(&image, &image, identity.baseAddress,
+                                               identity.baseAddress, identity.baseAddress,
+                                               saturate.baseAddress, vImage_Flags(kvImageDoNotTile))
+            }
+        }
+        guard let image = buffer.makeImage() else { return nil }
+        return (image, rect)
+    }
+
+    private func drawScene(in context: CGContext, pressed: WasabiObjectID? = nil,
+                           hovered: WasabiObjectID? = nil) {
         // Whether the host's PCM tap needs to run is a property of the graph, and the frame is where
         // every route that can change it — a menu, a script's `setMode`, a scene rebuild — has
         // certainly landed. Cached against the graph's generation, so this is a `UInt64` compare on
@@ -1787,6 +1929,7 @@ final class WasabiSceneRenderer {
         sceneNodeCache = nil
         warpSourceCache.removeAll()
         warpedImageCache.removeAll()
+        opaqueBackingBuffer = nil
         clearPrescaledCache()
     }
 
