@@ -29,7 +29,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two defects.** (b) streaming analyzer starvation **fixed and live-confirmed 2026-09-04**; (a) the ~7 fps repaint is **open with its cause established by B118** — the per-frame CPU warp in `WasabiLayerFXMesh.resample`, 24.1% of the main thread on a *release* build against cPro-Bento's 0.0%; the fix is **B119**. Measured, with the disproved hypotheses recorded so they are not re-tried. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
-| B119 | **Cut WMP11-BlueVU's per-frame warp cost — the CPU resample *and* the f16 composite behind it.** Unblocked; **B118 closed 2026-09-04** and located both. On a *release* build WMP11 is **77.9%** main-thread busy against cPro-Bento's **49.6%**, and the gap is two disjoint subtrees: `WasabiLayerFXMesh.resample`, a scalar `Double` bilinear warp, at **24.1%** vs **0.0%**; and the display-list replay's f16 image marking at **21.3%** vs **4.4%**, which is CoreGraphics re-converting a brand-new `CGImage` the warp mints every frame. Note `warpSourceCache` already caches the source mesh-independently and `warpedImageCache` correctly misses every frame — neither is the lever. Shared path (Defix warps too), so it wants a corpus sweep | 1 skin measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
+| B119 | **Cut WMP11-BlueVU's per-frame warp cost — the CPU resample *and* the f16 composite behind it.** Unblocked; **B118 closed 2026-09-04** and located both. On a *release* build WMP11 is **77.9%** main-thread busy against cPro-Bento's **49.6%**, and the gap is two disjoint subtrees: `WasabiLayerFXMesh.resample`, a scalar `Double` bilinear warp, at **24.1%** vs **0.0%**; and the display-list replay's f16 image marking at **21.3%** vs **4.4%**, whose cause is **an unproven hypothesis** (CoreGraphics re-converting a brand-new `CGImage` the warp mints every frame) — the 21.3% is measured, the reason is not; **Step 0 of the item is proving it**. Note `warpSourceCache` already caches the source mesh-independently and `warpedImageCache` correctly misses every frame — neither is the lever. Shared path (Defix warps too), so it wants a corpus sweep | 1 skin measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
 | B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Awaiting the reporter's live confirmation** | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
 | B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
@@ -334,13 +334,31 @@ The implementation and its automated coverage shipped; that record is in
         means WMP11's FX layer moves a vertex on essentially every frame, so every frame is a genuine
         miss, correctly.
 
+      **Step 0 — prove (2)'s cause before optimizing against it.** The **21.3%** is measured and
+      solid; the *reason* for it is an **unproven hypothesis inferred from the call ancestry**, and
+      this item has already mis-read this same subtree once. Do not write a fix against it until one
+      of these settles it:
+
+      - Check the window's backing store. If it is f16 for EDR/deep-colour reasons, the conversion is
+        structural, and the question is whether the warp can emit that format directly rather than
+        whether the `CGImage` is fresh.
+      - Test the freshness claim directly: keep the warped pixels in a **reused** buffer/context
+        across frames while changing nothing else, and re-`sample`. If `RGBAf16_*` does not move, the
+        per-frame `CGImage` was not the cause and the hypothesis is dead.
+      - Confirm the subtree is the warped layer at all, not other image compositing that happens to
+        share the replay. `RENDER_FX` says which layers are warping; a skin with the FX layer hidden
+        is the cleanest control.
+
+      If (2)'s cause turns out to be structural, **(1) alone is still worth doing** — 24.1% against a
+      control's 0.0% stands on its own.
+
       **Candidate fixes:**
 
       - **Take the resample off `Double`.** `Float`, or better `vImage`/Accelerate for the bilinear
         gather, and drop the tuple-of-`Double` accumulator that forces four separate calls per pixel.
         Addresses (1).
-      - **Stop minting a fresh `CGImage` per frame.** Warp into a reused buffer and hand CoreGraphics
-        something it can composite cheaply — a reused `CGLayer`/`IOSurface`-backed context, or a
+      - **Stop minting a fresh `CGImage` per frame** — *only if Step 0 confirms that is the cause*.
+        Warp into a reused buffer and hand CoreGraphics something it can composite cheaply — a reused `CGLayer`/`IOSurface`-backed context, or a
         raster already in the destination's format so `RGBAf16_sample_RGBAf_inner` has nothing to
         convert. Addresses (2), which is nearly as large as (1) and has not been attempted at all.
       - **Bound the destination.** Check whether WMP11's FX layer is warped at a larger extent than
