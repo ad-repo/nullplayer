@@ -29,8 +29,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two defects.** (b) streaming analyzer starvation **fixed and live-confirmed 2026-09-04**; (a) the ~7 fps repaint is **open with no established cause**. Measured, with the disproved hypotheses recorded so they are not re-tried. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
-| B118 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Establish WMP11-BlueVU's repaint cost on a *release* build before anyone optimizes it.** Blocks B119 and any B117(a) work. Every number in the B117 investigation is from `--debug`, and `71ffd874` records debug at 96.2% main-thread busy against release's 60.7%, with the whole post-B106 chase turning out to be a debug artifact. `WINAMP_MODERN_VIS_STALL` is `#if DEBUG` and cannot fire in release, so this needs `sample`, not the probe. May collapse B117(a) entirely | 2 skins to compare; the debug/release gap affects every perf item | S | Live-reported |
-| B119 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Attribute WMP11-BlueVU's per-frame draw cost, now that B116 is fixed.** Blocked on B118 only — B116 landed and was live-confirmed 2026-09-04, removing the duplicated frame subtree, so re-measure before profiling. `WINAMP_MODERN_DRAW_PROFILE=1` has never been run on this skin; prior art puts `draw` at 41.4% of the main thread, mostly text and image compositing, and WMP11 has a marquee plus `net.png`/`net_mask.png` compositing over its vis. The duplicated frame objects are already gone, so the open question is what repaint cost survives them | 1 skin reported | M | Live-reported |
+| B119 | **Make WMP11-BlueVU's per-frame layer-FX warp cheap.** Unblocked — **B118 is closed (2026-09-04)** and it attributed the cost: `WasabiLayerFXMesh.resample` is **24.1%** of WMP11's main thread on a *release* build against **0.0%** on cPro-Bento, and it is the whole of the 77.9%-vs-49.6% busy gap. No profiling is needed to find it any more; what is open is the fix. The loop is a scalar `Double` bilinear warp over `w x h` destination pixels x 4 taps x 4 channels on the main thread, and `drawWarped`'s mesh-keyed cache misses every frame because WMP11's FX layer moves a vertex every frame | 1 skin measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
 | B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Awaiting the reporter's live confirmation** | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
 | B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
@@ -255,7 +254,8 @@ The implementation and its automated coverage shipped; that record is in
       `pendingSpectrumUpdate` and `pendingPcmUpdate` feed the Classic spectrum and PeppyMeter through
       the identical block and have **not** been measured.
 
-- [ ] **B117(a). The ~7 fps repaint, and the low-fps marquee with it. Cause unknown.** The frame
+- [ ] **B117(a). The ~7 fps repaint, and the low-fps marquee with it. Cause found (B118), not yet fixed.**
+      The frame
       interval is directly measured and is not in dispute: `elapsed` clusters at 120–145 ms against an
       expected 33 ms, and after B117(b) `WM-VIS-STALL` is still median 131 ms / p90 300 / max 6395.
       cPro-Bento on the same build is median 60 / p90 68 / max 122, so this is skin-specific. The
@@ -277,68 +277,51 @@ The implementation and its automated coverage shipped; that record is in
       and its top-writer list as separate lines. Do not `grep` them independently and pair the
       results — read whole windows.
 
-      Next steps are split out as **B118** (release baseline, blocks this) and **B119** (draw
-      attribution). **B116 — the duplicated frame subtree this was suspected of being — is fixed and
-      live-confirmed (2026-09-04)**, so re-take these numbers before treating any of them as current.
-
-### B118
-
-- [ ] **B118. Take WMP11-BlueVU's repaint cost on a release build.** **Run this as a live session with the reporter
-      driving the UI** — a skin must be loaded and a track playing before `sample` means anything.
-      That is the efficient path here, not a limitation: it is how B117(b) was measured and confirmed
-      in one sitting. It is only unattended *background* agents that cannot do it. Blocks B119 and any B117(a)
-      work, and may collapse B117(a) entirely.
-
-      Every number in the B117 investigation came from `./scripts/kill_build_run.sh --debug`.
-      `71ffd874`'s own record states debug ran **96.2%** main-thread busy against release's **60.7%**,
-      and that *"everything chased after B106 — the 46 ms frames, the 21.7 fps, 'still saturated after
-      freeing 23%' — was a debug-build artifact."* The reporter's original complaint was against a
-      release build, so the symptom is real; its **magnitude** is not established.
-
-      `WINAMP_MODERN_VIS_STALL` is `#if DEBUG` and cannot fire in release, so this needs `sample`:
-
-      ```bash
-      ./scripts/kill_build_run.sh          # release
-      # load WMP11-BlueVU, play a local track, let it settle, then:
-      sample NullPlayer 10 -f /tmp/wmp11-release.txt
-      ```
-
-      Read the main-thread **busy** fraction, counting `mach_msg2_trap` / `semaphore_wait` /
-      `__psynch_cvwait` leaves as idle, and repeat on cPro-Bento as the control. Beware the `sample`
-      aggregation trap: count the outermost occurrence of a symbol, not every frame carrying it.
-      If release sits near 60% on both skins, the 7 fps is largely a debug artifact and the open
-      question becomes whatever the reporter still sees on screen.
+      **The cause, from B118's release `sample` (2026-09-04):** the per-frame CPU warp in
+      `WasabiLayerFXMesh.resample` (`WasabiLayerFX.swift:88-133`). It is **24.1%** of WMP11-BlueVU's
+      main thread and **0.0%** of cPro-Bento's on the same build and source — the whole of the
+      skin-specific 77.9% vs 49.6% busy gap. The measurement is release, so it is not a debug
+      artifact, and it is post-B116, so it is not the duplicated frame subtree either. It is also not
+      text: `drawText` is 1.3%. What remains open here is the **fix**, tracked as B119.
 
 ### B119
 
-- [ ] **B119. Attribute WMP11-BlueVU's per-frame draw cost; confirm or kill B116 as the cause.**
-      Live session with the reporter driving, same as B118.
-      Blocked on **B118** only — **B116 is fixed and live-confirmed (2026-09-04)**, so the duplicate
-      frame subtree is gone and this item's leading hypothesis has already been acted on. Measure only
-      what survives that: re-take B117(a)'s repaint numbers before profiling anything, because the
-      cost this item was written to attribute may no longer exist.
+- [ ] **B119. Make WMP11-BlueVU's per-frame layer-FX warp cheap.** **No longer an attribution item** —
+      **B118 closed 2026-09-04** and answered it from a release `sample`. Do not re-run
+      `WINAMP_MODERN_DRAW_PROFILE` to find the hotspot; it is found.
 
-      `WINAMP_MODERN_DRAW_PROFILE=1` (`WasabiRenderer.swift:649`, with `_DRAW_PROFILE_TOP=<n>` to
-      widen it) attributes time per object and has never been run on this skin. The prior art records
-      `draw` at 41.4% of the main thread, *"mostly text drawing and image compositing"* — and WMP11
-      has a text marquee plus `net.png`/`net_mask.png` compositing over its 71x41 `<vis>`.
+      **What B118 measured.** WMP11-BlueVU 77.9% main-thread busy against cPro-Bento's 49.6%, same
+      build (`563085fb`, B116 and B117(b) both in), same local file, 10 s windows. The delta is one
+      symbol: `WasabiLayerFXMesh.resample` at **24.1%** of the main thread (WMP11) vs **0.0%**
+      (cPro-Bento), with `drawWarped` at 25.0% vs 0.1%. `drawText` is 1.3%, so the prior art's
+      *"mostly text drawing and image compositing"* does not describe this skin.
 
-      ```bash
-      pkill -x NullPlayer
-      WINAMP_MODERN_DRAW_PROFILE=1 WINAMP_MODERN_DRAW_PROFILE_TOP=30 \
-      WINAMP_MODERN_VIS_STALL=50 \
-        .build/arm64-apple-macosx/debug/NullPlayer > /tmp/wmp11-draw.log 2>&1 &
-      ```
+      **Why it costs what it does** (`WasabiLayerFX.swift:88-133`): for every destination pixel it
+      interpolates the mesh in `Double`, then makes four `accumulate` calls, each doing four
+      `Double` multiply-accumulates out of a `UInt8` source — a scalar `w x h x 16` inner loop, on
+      the main thread, capped only by `maximumWarpExtent` (1024). Beneath it CoreGraphics'
+      `RGBAf16_sample_RGBAf_inner` (7.3%) and `RGBAf16_image_mark` (4.4%) are `warpSourcePixels`
+      fetching the f16 source raster.
 
-      **The hypothesis that has already been acted on:** WMP11-BlueVU was one of the three same-`id`
-      `inherit_group` skins in **B116**, and `RENDER_PROBE main/normal` used to show both a `354x135`
-      and a `354x78` frame layout, each dragging a duplicate `frame.top.middle` subtree — edge strips,
-      titlebar, caption buttons — **drawn every frame**. A cost that scales with *drawing* fits the
-      evidence better than one that scales with mutation, which is why B116 was fixed first; the probe
-      now shows one layout. Whether that closed B117(a) is unmeasured, and is the first question here.
+      **Why the existing cache does not save it.** `drawWarped` keys `warpedImageCache` on
+      `WarpSourceKey` **and** mesh equality precisely so an unrelated repaint does not re-warp a
+      still layer. A 24% cost means WMP11's FX layer moves a vertex on essentially every frame, so
+      every frame is a genuine miss. Widening that cache is the wrong lever.
 
-      Success criterion against the existing baseline: `WM-VIS-STALL` median 131 ms → cPro-Bento's
-      ~60 ms, p90 300 → ~68, max 6395 → ~122.
+      **Candidate fixes, cheapest first:**
+
+      - **Hoist the source fetch.** `warpSourcePixels` is re-fetched per warp; the f16 CoreGraphics
+        path under it is 11.7% combined and the source raster does *not* change when only the mesh
+        moves. Cache the `UInt8` source keyed on `WarpSourceKey` alone, independent of the mesh.
+      - **Take the loop off `Double`.** `Float`, or better `vImage`/Accelerate for the bilinear
+        gather, and drop the tuple-of-`Double` accumulator that forces four separate calls per pixel.
+      - **Bound the destination.** The warp runs at the node's on-screen size; check whether WMP11's
+        FX layer is being warped at a larger extent than it is drawn.
+
+      Confirm any fix the way B118 measured the problem: a release `sample`, WMP11-BlueVU against
+      cPro-Bento, hands off the UI, and report the busy split plus `drawWarped`/`resample` shares.
+      Success is WMP11's busy fraction converging on the control's ~50%, and it should close
+      **B117(a)** with it.
 
       Also worth a look only if the profile points there: `sceneNodes()` allocates two full node
       arrays per call on the **cache-hit** path (`cache.nodes.map(withRefreshedBitmapID)` then

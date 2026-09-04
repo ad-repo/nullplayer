@@ -2,6 +2,50 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B118 — WMP11-BlueVU's repaint cost on a release build — closed 2026-09-04
+
+| B118 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Establish WMP11-BlueVU's repaint cost on a *release* build before anyone optimizes it.** Blocks B119 and any B117(a) work. Every number in the B117 investigation is from `--debug`, and `71ffd874` records debug at 96.2% main-thread busy against release's 60.7%, with the whole post-B106 chase turning out to be a debug artifact. `WINAMP_MODERN_VIS_STALL` is `#if DEBUG` and cannot fire in release, so this needs `sample`, not the probe. May collapse B117(a) entirely | 2 skins to compare; the debug/release gap affects every perf item | S | Live-reported |
+
+### B118
+
+- [x] **B118. WMP11-BlueVU's release repaint cost, measured 2026-09-04.** Live session, reporter
+      driving; release build at `563085fb` (B116 and B117(b) both in), local file playing, two 10 s
+      `sample` windows with WMP11-BlueVU and cPro-Bento as the control, hands off the UI in both.
+
+      **The symptom survives the debug/release correction.** Main-thread busy, counting
+      `mach_msg2_trap` / `semaphore_wait*` / `__psynch_cvwait` / `__workq_kernreturn` / `kevent`
+      leaves as idle:
+
+      | | WMP11-BlueVU | cPro-Bento (control) |
+      |---|---|---|
+      | main-thread samples | 7643 | 8157 |
+      | **busy** | **77.9%** | **49.6%** |
+      | `WinampModernMainView.draw` | 85.5% | 62.4% |
+      | `WasabiSceneRenderer.drawScene` | 52.8% | 31.1% |
+      | `drawWarped` | **25.0%** | 0.1% |
+      | `WasabiLayerFXMesh.resample` | **24.1%** | 0.0% |
+      | `WinampModernScriptRuntime.dispatch` | 7.9% | 4.3% |
+
+      So B117(a) does **not** collapse: release sits at 77.9%, well above the 60.7% `71ffd874`
+      recorded, and 28 points above the control on the same build and the same source. What *is*
+      corrected is the attribution — the prior art's *"mostly text drawing and image compositing"*
+      does not hold here. `drawText` is 1.3% and no text symbol reaches 1%.
+
+      **One hotspot accounts for the entire skin-specific delta:** `WasabiLayerFXMesh.resample`
+      (`WasabiLayerFX.swift:88-133`) — a scalar per-destination-pixel bilinear warp in `Double`,
+      on the CPU, on the main thread — is 24.1% of WMP11's main thread and 0.0% of cPro-Bento's.
+      Underneath it CoreGraphics' `RGBAf16_sample_RGBAf_inner` (7.3%) and `RGBAf16_image_mark`
+      (4.4%) are the f16 source fetch feeding it. `drawWarped` already caches on
+      `WarpSourceKey` + mesh equality, so a miss on every frame means WMP11's FX layer moves a
+      vertex every frame and the cache cannot help it. The loop is `width x height` (capped at
+      `maximumWarpExtent` 1024) x 4 `accumulate` calls x 4 channels, all in `Double`.
+
+      **Method notes.** `WINAMP_MODERN_VIS_STALL` is `#if DEBUG` and reports nothing in release,
+      which is why this is a `sample` item. When parsing `sample` output, cut the thread block at
+      the next `Thread_<id>:` line — reading to the next blank line swallows every other thread and
+      inflates the leaf sum (here 106202 against a true 7643). Sum **leaves** for the busy split and
+      the **outermost** occurrence for a subtree total; never sum every frame carrying a symbol.
+
 ## B116 — `inherit_group` concatenated the base's children instead of letting a same-`id` child replace them — closed 2026-09-04
 
 | B116 | **`inherit_group` concatenates the base's children with the derived group's instead of letting a same-`id` child replace the inherited one, so the window frame is built twice.** Found by inspection while investigating WMP11-BlueVU 2026-09-04, not reported. `WasabiSkinInitializer.swift:350-372` merges *attributes* with the derived winning (`attributes.merge(definition.defaultAttributes) { _, new in new }`) but appends *children* twice — `children.append(contentsOf: parent.templateChildren)` then `children.append(contentsOf: definition.templateChildren)` — with nothing keyed on `id`. WMP11's `<groupdef id="wasabi.standardframe.my" inherit_group="wasabi.standardframe.nostatusbar">` redeclares `wasabi.frame.layout` at `h="-69"` to leave room for its 69px panel; the base's is `h="-12"`. `RENDER_PROBE main/normal` shows **both** — 354x135 *and* 354x78 — each dragging a duplicate `frame.top.middle` subtree (edge strips, titlebar, caption buttons) drawn every frame. Visually subtle because the duplicates land mostly on top of each other; structurally wrong and wasted draw work. Note only the same-`id` child is meant to be replaced — a base child the derived group does not redeclare (WMP11's `frame.bottom`) still draws, which is why the reference screenshot keeps its bottom border | **3 of 69 skins, 8 same-id overrides** — Sony_Walkman (6), canum_winamp (1), WMP11-BlueVU (1), all in `wasabi.standardframe.*` ([M33]). Lower bound: the probe resolves one level of inheritance only | M | Live-reported |

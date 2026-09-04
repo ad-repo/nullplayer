@@ -479,6 +479,26 @@ question is what limits the repaint, not what the repaint costs. Two full graph 
 way that no headless probe could have shown; see
 [performance.md](performance.md) → *Profile the process, don't reason about the frame*.
 
+**A perf number is only a perf number on a `release` build, and `sample` is the only instrument that
+survives there.** Every `WINAMP_MODERN_*` probe is `#if DEBUG`, so a release build answers "no
+problem found" whether or not there was one — and debug is not a fixed offset from release, it is a
+different verdict: `71ffd874` recorded 96.2% main-thread busy in debug where release was 60.7%, and
+the whole post-B106 chase turned out to be that gap. Build with `./scripts/kill_build_run.sh` (no
+`--debug`) and take the numbers with `sample`. It is still a **live** session with the reporter
+driving — a skin has to be loaded and a track playing — so it obeys *The measurement loop that
+works* below, control window included.
+
+**Cut the thread block at the next `Thread_<id>:` line when you parse the output.** `sample` prints
+every thread into one indented tree and the blocks are not blank-line separated, so a parser that
+reads to the next empty line swallows all of them: B118 measured a leaf sum of 106202 against the
+main thread's true 7643 — a "1200% idle" that looks like a bug in the arithmetic and is a bug in the
+windowing. Then keep the two aggregations distinct. **Busy/idle is a sum over leaves** (they are
+disjoint), counting `mach_msg2_trap` / `semaphore_wait*` / `__psynch_cvwait` / `__workq_kernreturn` /
+`kevent` as idle. **A subtree cost is the outermost occurrence** of the symbol only — summing every
+frame that carries it multiplies recursion and closures. B118's WMP11-BlueVU numbers came out of
+exactly this shape: 77.9% busy, `drawScene` 52.8%, `drawWarped` 25.0%, against cPro-Bento's 49.6% /
+31.1% / 0.1% on the same build and the same local file.
+
 ### Driving a click in the *running app*
 
 `WINAMP_MODERN_DEBUG_CLICK=[<container>@]<x>,<y>[;…]` (DEBUG builds) clicks skin points a few seconds
