@@ -257,8 +257,54 @@ posted, so judge it on screen before keeping it.
 
 This does **not** explain any reported symptom on its own, and was not found by chasing one: it came
 out of checking this section against the code after WMP11-BlueVU's spectrum was reported slow
-(2026-09-04), where the section was quoted as the cause without being verified. The cadence numbers
-above are also still from 2026-08-30 and have not been re-measured since.
+(2026-09-04), where the section was quoted as the cause without being verified.
+
+#### Re-measured 2026-09-04: the cadence above is a *local-playback* number, and it is not B117
+
+`WINAMP_MODERN_VIS_GAPS=1` re-run on WMP11-BlueVU, debug build, two 30 s windows. Local playback
+still matches the 2026-08-30 figures. **Streaming does not**, and the difference is not in this
+section's subject at all:
+
+| | inter-arrival gap | analyzer reads that were silence |
+|---|---|---|
+| local | ~100 ms, regular | 2.3 % |
+| stream | median **318 ms**, p90 **1045 ms**, max **5981 ms** | **57.6 %** |
+
+Every streaming arrival logged `frames=2048` — so the `frameCount >= 2048` guard is **not** dropping
+short buffers, and that hypothesis is dead. The gaps alternate long/short
+(`gap=2430ms` → `gap=323ms` → `gap=2558ms` → `gap=328ms`), which is the signature of
+`StreamingAudioPlayer`'s `pendingFullStereoPcmUpdate` coalescer: it is cleared only on the main
+queue, so every buffer produced while the main thread is stalled is **discarded rather than
+queued**, and exactly one gets through the moment main runs again. `AudioEngine`'s local path posts
+through `NotificationCenter` with no coalescer, so a stalled main thread delays its buffers instead
+of dropping them — which is the whole of the local/stream asymmetry.
+
+The analyzer then answers `[0,0,…]` because the newest buffer is older than
+`WinampModernLevelMeter.silenceTimeout` (**150 ms**, `WinampModernLevelMeter.swift:80`), giving a
+band sequence of `0.820 0.000 1.000 1.000 1.000 0.000 0.774 0.000 0.000 0.000 0.962 …` — full scale
+to floor and back, several times a second. That is the reported "jumping up and down", and it is a
+**starvation** symptom, not a smoothing or an input-rate one.
+
+**The hop alone is not enough, and the control run proves it.** Same stream, same session, same
+probes, cPro-Bento instead of WMP11-BlueVU:
+
+| | WMP11-BlueVU | cPro-Bento |
+|---|---|---|
+| arrival gap | median 318 ms, p90 1045, max 5981 | median **111 ms**, p90 131, max 187 |
+| `silence` lines | 480 | **0** |
+| draws reading zero | 481 / 621 (58 %) | **0 / 2765** |
+| `WM-VIS-STALL` | median 157 ms, p90 948, max 18042 | median 60 ms, p90 68, max 122 |
+
+So the dropout needs **two** conditions: the thread hop (latent on every skin) *and* a main thread
+stalled past the 150 ms timeout. WMP11-BlueVU supplies the second with a ~7 fps repaint whose **cause is not
+established** — the scene-memo explanation first written here was disproved (`frame` is already
+scene-neutral; 148 of 150 beat-only mutation windows resolve the scene zero times), and every
+number is from a debug build. See B117 in `TASKS.md`. On a skin that repaints normally the coalescer clears every frame and buffers are merely
+late. That is why this reads as skin-specific and got filed against the renderer. See B117 in
+`TASKS.md`.
+
+Do not read the 10 Hz cadence in this section as the cause of a choppy analyzer again without
+checking `WM-VIS-STALL` first — two sessions have now done exactly that.
 
 #### The white line across the bar tops (B54)
 

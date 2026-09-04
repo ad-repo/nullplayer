@@ -50,8 +50,8 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_CLICK_EVENTS=<event>[,<event>]` | narrow `RENDER_CLICK` to the events a *plain* click sends (`onleftbuttondown,onleftbuttonup`). The default is all seven, which includes the double-click and both right-button halves — so a skin that hangs a command off one of those makes an ordinary click unreadable: cPro-Bento's tab strip maximizes the window from its `onLeftButtonDblClk`, and every probe of a tab click reported that expansion as if the click had caused it |
 | `WINAMP_MODERN_RENDER_CLICK_PICK=<command>` | answer a `RENDER_CLICK` right-click menu with that command id instead of `0` ("the user picked nothing"), and print `CLICK menu pick: <id>`. For a menu whose choice only takes effect on a *later* click, `0` is the same as never opening it: ClassicPro's corner bolt is a multi-button whose right-click menu merely records which of six commands the **left** click will run, so all six were unmeasurable until this existed. Drive the two clicks in one run (`@x,y;x,y`) and read the second one's `CLICK action:` |
 | `WINAMP_MODERN_RENDER_CLICK_WATCH=<id>,<id>` | where those objects ended up after the click, changed or not — for "it opened, but in the wrong place" |
-| `WINAMP_MODERN_RENDER_SIZE=<W>x<H>` | resize the layout (clamped, as a drag is) before measuring, so a defect can be reproduced at the user's window size. It resizes the *canvas* only — the app dispatches `onResize` on a real drag, so pair it with `RENDER_EVENTS=onresize` (applied after the resize) or a script-driven layout stays at its old width |
-| `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **A `RENDER_SETTLE` is applied after the last one** (BB27): a skin routinely does an event's *work* from a timer the handler starts rather than in the handler — Big Bento's notifier starts a 30 ms poll from `onTitleChange` and lays the toast out on its first tick — so without one the scene is measured a frame too early and a working layout routine reads as one that never ran. **`onshownotification`** is drivable (arity 0, `.system`, exactly what `showNotifier` dispatches); it is the only entry into a notifier script, and without it every notifier in the corpus measured as a window whose script does nothing. **`onresize` first** for any ClassicPro skin: much of its state is only ever assigned there. `onmousewheelup`/`onmousewheeldown` are addressed at the **layout** with two arguments (where every corpus binding lands) — but they call `dispatch` directly rather than going through the view, and `isMouseOverRect` answers `false` with no window, so a `handlers=` count proves the bindings and the arity, **not** that anything scrolled |
+| `WINAMP_MODERN_RENDER_SIZE=<W>x<H>` | resize the layout (clamped, as a drag is) before measuring, so a defect can be reproduced at the user's window size. It resizes the *canvas* only — the app dispatches `onResize` on a real drag, so pair it with `RENDER_EVENTS=onresize` (applied after the resize) or a script-driven layout stays at its old width. The automatic seed happens at `start()`, before this resize, so it does not cover you here |
+| `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **A `RENDER_SETTLE` is applied after the last one** (BB27): a skin routinely does an event's *work* from a timer the handler starts rather than in the handler — Big Bento's notifier starts a 30 ms poll from `onTitleChange` and lays the toast out on its first tick — so without one the scene is measured a frame too early and a working layout routine reads as one that never ran. **`onshownotification`** is drivable (arity 0, `.system`, exactly what `showNotifier` dispatches); it is the only entry into a notifier script, and without it every notifier in the corpus measured as a window whose script does nothing. **`onresize`** is seeded automatically at `start()` now, so drive it here only to *re*-apply after `RENDER_SIZE`. `onmousewheelup`/`onmousewheeldown` are addressed at the **layout** with two arguments (where every corpus binding lands) — but they call `dispatch` directly rather than going through the view, and `isMouseOverRect` answers `false` with no window, so a `handlers=` count proves the bindings and the arity, **not** that anything scrolled |
 | `WINAMP_MODERN_RENDER_SCRIPTS=1` (or `=bindings`) | per program: owner, source, declared handlers, which events actually **ran**, and which failed with what. `=bindings` adds what every handler is bound to *right now*, its entry point (`@<index>`), whether the dispatcher **shadows** it as a repeat of an earlier body, and each script group's ancestor chain. A bound object is printed with **its own ancestor chain** (`button#vol.on<group#player.cbuttons<layout#normal<container#main`), which is what makes a binding that resolved into the *wrong layout* visible at a glance — the whole of BB37 was found by reading that one field. The entry point is what tells two same-named bindings apart: a program may declare one (object, event) pair twice with *different* bodies, and which body a dispatch reaches is then the whole question |
 | `WINAMP_MODERN_RENDER_DISASM=<method>` | the instructions around every call site of a method — how an unknown **arity** is settled, by counting the net pushes between the receiver and the call |
 | `WINAMP_MODERN_TRACE_MAKI=1` | **runs in the app as well as the harness.** Every handler entry, subroutine call and return (`MAKI enter <script> @<entry>` / `MAKI call … -> <target>` / `MAKI return … at <instruction>`), plus every timer arm and cancel with the handler that did it (`MAKI timer start id=996 delay=700 by=<script>@<entry>`). It also stamps `by=` onto the `SETVISIBLE` line, which is the whole point: every skin's shows and hides arrive through one method, so *which handler did this* is unanswerable without it. A guard that returns at the third instruction and a handler that never ran look identical from outside — the `return … at <instruction>` is what tells them apart, and reading it against `RENDER_DISASM=@<source>` names the branch. Pair the two **for the skin that is actually loaded**: entry points are per-program and do not carry across variants (BB28 was chased through the base skin's listing while the app ran the Windows 10 Light overlay, and none of the numbers matched). Added for BB28 |
@@ -121,7 +121,20 @@ The harness owns no windows, so everything a script can ask about one is answere
 - `show()` / `hide()` / `toggle()` from a script move it, so a second `isVisible()` in the same run —
   including one after a driven `RENDER_CLICK` — answers what the first call left behind;
 - the **main player** is not an auxiliary, so it answers `nil` and falls back to the graph attribute,
-  exactly as `WinampModernMainWindowController.containerVisibilityQuery` does.
+  exactly as `WinampModernMainWindowController.containerVisibilityQuery` does;
+- every container is **seeded with `onResize`** immediately after `runtime.start()`, where the app
+  puts `WinampModernMainView.scriptsDidStart()`. Each seeded container prints
+  `SEED onresize <container> -> N handlers`, and the per-container settle compares against those
+  frames, so a later settle still reports only what actually moved.
+
+**Why the seed is not optional.** It was missing until 2026-09-04, and it produced the same false
+report twice: B87 ("cPro's tab strip never runs its fit pass") and B115 ("a group's `onResize` is not
+dispatched at initial layout"). Both were written off a dump in which a skin's whole layout routine
+had genuinely never run — because the *harness* never ran it, not the app. WMP11-BlueVU is the clean
+case: `MainWindow.m` hangs its entire display band on `content.onResize`, every object in it is
+visible by markup default, and unseeded the probe showed `Songticker` and `SongInfo` at the identical
+frame while the app drew one clean string. The seed fires **130** dispatches across **70** containers
+in the corpus, so this was never one skin's problem.
 
 **Why it is not simply left uninstalled.** It was, until 2026-08-31, and that is what B83 turned out
 to be: with no `containerVisibilityQuery` the runtime falls back to the object's `visible` attribute,
@@ -674,6 +687,65 @@ as a preference rather than a symptom, that aside produced the opposite of the t
 and two wasted build-test cycles. Before reversing a decision the task already made, re-read the task
 entry; if an offhand remark seems to contradict it, quote the requirement back and ask.
 
+### The measurement loop that works: mark, window, control (B117, 2026-09-04)
+
+The division of labour that measured, fixed and confirmed B117(b) in one sitting: **the agent owns
+the process and the log; the reporter owns the mouse.** The reporter is happy to drive — treat a
+task needing live QA as an interactive session, not as blocked work.
+
+**1. Arm the probes at launch, and know you cannot change your mind.** Every probe is
+`ProcessInfo.processInfo.environment[...]` read **once**, in a `static let`, at process start. There
+is no toggling one on later, and an app already running reports nothing no matter what you export.
+Decide the full set before launching, and prefer too many over a relaunch. All of them are
+`#if DEBUG`, so a release build answers "no problem found" whether or not there was one.
+
+**2. Launch it yourself, not through `kill_build_run.sh`.** That script does not redirect `NSLog`
+and — the trap that cost 10 minutes here — **does not exit after building**; it stays attached to the
+app it launched, so a "timeout" is the app running, not a slow compile. Build with it if you need the
+vendored frameworks ad-hoc signed, then relaunch the binary directly with the env set:
+
+```bash
+pkill -x NullPlayer
+WINAMP_MODERN_VIS_GAPS=1 WINAMP_MODERN_VIS_STALL=50 \
+  .build/arm64-apple-macosx/debug/NullPlayer > <scratchpad>/run.log 2>&1 &
+```
+
+**3. Mark the log before every run.** One log accumulates many runs, and "the last N lines" is not a
+window — the reporter's setup clicks are in there too. Record the line count and the wall clock:
+
+```bash
+wc -l < run.log > mark_A ; date "+%H:%M:%S"
+# ... the run ...
+tail -n +$(( $(cat mark_A) + 1 )) run.log > run_A.txt
+```
+
+**4. Ask for one precise thing, then time it yourself.** Name the skin, the *source kind* (local file
+vs stream — they are different code paths and the difference was the whole of B117(b)), the duration,
+and **"hands off the UI"** — a click mid-window writes mutations that pollute the comparison. Then
+run `sleep <n>` as a background command rather than asking the reporter to report back; the harness
+re-invokes you when it exits. Allow for skin load and stream buffering: 30 s of playback wants a
+50 s timer.
+
+**5. Always take a control.** One window proves nothing. Change exactly one variable and re-run: the
+same stream on a different skin is what turned "streaming is broken" into "streaming is broken behind
+a stalled main thread", and it is what the two-condition diagnosis rests on. A before/after on the
+same skin and source is the other required pair — B117(b)'s fix is credible because 58% → 1.0%
+dropouts was measured on the identical setup.
+
+**6. Report distributions, never samples.** `n / min / median / p90 / max` over the window. A
+median of 139 ms and a max of 18042 ms are different findings, and a tail of eight log lines shows
+neither. `awk` over the extracted numbers, not eyeballing.
+
+**7. Read whole log lines, never independently-grepped halves.** `MUTATION_TRACE` prints its
+`writes=…/resolves:…` summary and its top-writer list as separate lines. Grepping each with its own
+`grep -o` and pairing the results *manufactured a causal claim that was false* — the top-writer list
+came from a `writers=12` window and the resolve counts from a `writers=41` one. Partition by window
+and count, or you will invent a mechanism. The same applies to any probe with a multi-line report.
+
+**8. Hand the fix back for on-screen judgment before writing anything down.** The reporter's *"it
+looks much better now"* comes first; the confirming numbers come second; `TASKS.md`, the skill docs
+and any test come last. See `verify-before-investing`.
+
 ### A measured value written into a doc goes stale silently (B50, 2026-08-26)
 
 The `PLAYLIST holder` row above carried the sentence *"Measured: Big Bento `text=22`"*. It was true
@@ -858,7 +930,7 @@ and the last row is the mirror of the same fault, an instrument reporting a feat
 | No windows, so a doubled window **toggle** cancels invisibly | Defix's playlist button measured as one clean action while flashing open/shut in the app | `WINAMP_MODERN_DEBUG_CLICK` in the app |
 | `RENDER_SCRIPTS` prints `ran=`/`failed=` **before** `RENDER_EVENTS` drives anything | Big Bento Modern's `animbutton` reported `failed=-` while its `onPause` aborted on every pause (BB23) | `CALL_TRACE` + `RENDER_EVENTS`; read `failed=` as *load-time* only |
 | **A draw-order dump taken at startup cannot see a layer the skin reveals later** | BB18: the waveform-seeker strip was covered by `waveseeker.rounder.bg`, which Big Bento's own timer shows *because* the host claimed the component — so the dump, armed on the strip's first draw, listed only a slider thumb and a 5px end cap after it and read as "nothing overpaints this" | Arm the dump **late**, after the skin's timers have run at least once, whenever the object under investigation is one the skin reacts to. A uniform fill over a component box (`rgb(40,42,48)` there — `songticker.background.center2`) means something painted over it, however empty the startup order looks |
-| **The mirror: a dump read without the events the app seeds reports a *working* feature as broken** | B87 was first filed as "cPro's tab strip never runs its fit pass — tab 4 clipped to 6px, tabs 5-7 absent", straight off a `RENDER_DUMP`. The fit pass hangs off `onResize`, which `WinampModernMainView.scriptsDidStart()` seeds in the app and the dump does not; with `RENDER_EVENTS=onresize` all seven tabs are there at 32px, exactly as on screen. A whole entry was written against an artifact, and the real defect (the labels inside those tabs) had to be found again | `RENDER_EVENTS=onresize` **first** for any ClassicPro skin, per the row in the table above — and a defect reported at a window size needs `RENDER_SIZE` too, or the fit pass has nothing to fit |
+| **The mirror: a dump read without the events the app seeds reports a *working* feature as broken** | B87 was first filed as "cPro's tab strip never runs its fit pass — tab 4 clipped to 6px, tabs 5-7 absent", straight off a `RENDER_DUMP`. The fit pass hangs off `onResize`, which `WinampModernMainView.scriptsDidStart()` seeds in the app and the dump did not; with `RENDER_EVENTS=onresize` all seven tabs are there at 32px, exactly as on screen. A whole entry was written against an artifact, and the real defect (the labels inside those tabs) had to be found again. **B115 was the same mistake again** — the seeding gap is now closed in the harness itself (see *What the probe models about windows*), so this particular lie is no longer available | The seed is automatic now; `RENDER_EVENTS=onresize` is only needed to **re**-drive after `RENDER_SIZE`, or the fit pass has nothing to fit. The general rule stands: before filing a defect off a dump, ask which event the app seeds that the probe did not |
 | **A handler that ran and took *no* branch looks exactly like a handler that worked** | Bento's tab strip: `ran=onscriptloaded failed=-` on all three tab scripts while none of them laid anything out, because its three-way mode `if` has no `else` and every member of the radio group read `"0"` (BB29) | `RENDER_SETTINGS=1` — a radio group sitting at `0 (default 0)` on *every* member is the tell, and it is one line. `RENDER_DISASM=@<xml>` is what then shows the missing `else` |
 
 The general visibility rule lives in

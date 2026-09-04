@@ -160,7 +160,6 @@ class StreamingAudioPlayer {
     private var fullStereoPcmLeft = [Float](repeating: 0, count: 2048)
     private var fullStereoPcmRight = [Float](repeating: 0, count: 2048)
     /// Flag to coalesce full-rate stereo PCM main queue dispatches
-    private var pendingFullStereoPcmUpdate = false
     private var waveformLeftU8 = [UInt8](repeating: 128, count: 576)
     private var waveformRightU8 = [UInt8](repeating: 128, count: 576)
     private var waveformUserInfo: [String: Any] = [:]
@@ -554,18 +553,26 @@ class StreamingAudioPlayer {
                 vDSP_vsmul(fullStereoPcmRight, 1, &compensation, &fullStereoPcmRight, 1, vDSP_Length(pcmSize))
             }
 
-            // Coalesce full-rate stereo PCM updates to prevent main queue buildup
-            if !pendingFullStereoPcmUpdate {
-                pendingFullStereoPcmUpdate = true
-                let leftCopy = Array(fullStereoPcmLeft)
-                let rightCopy = Array(fullStereoPcmRight)
-                let sampleRateDouble = Double(buffer.format.sampleRate)
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.pendingFullStereoPcmUpdate = false
-                    self.delegate?.streamingPlayerDidUpdateFullStereoPCM(left: leftCopy, right: rightCopy, sampleRate: sampleRateDouble)
-                }
-            }
+            // **Delivered on the audio thread, matching `AudioEngine`'s local path** — which posts
+            // this same notification straight from its tap callback. The main-queue hop that used to
+            // be here did two things, and the coalescing flag it needed was the worse of them: the
+            // flag was cleared only *inside* the dispatched block, so every buffer the audio thread
+            // produced while main was stalled was **discarded rather than queued**, and exactly one
+            // got through each time main came back. Measured on WMP11-BlueVU, whose beat layers stall
+            // main for hundreds of ms (B117): arrivals alternating `gap=2430ms` / `gap=323ms`, median
+            // 318 ms against `WinampModernLevelMeter.silenceTimeout` of 150 ms — so 58% of analyzer
+            // reads returned all-zero bands on a track that was playing fine, and the spectrum
+            // slammed between full scale and the floor several times a second. It also put the
+            // analyzer's 2048-point FFT on the main thread, on top of whatever stalled it.
+            //
+            // Both consumers of `.audioStereoPCMFullDataUpdated` already expect the posting thread to
+            // be the tap, because local playback has always delivered that way:
+            // `WinampModernAnalyzerTap.receive` is a lock, three stores and an unlock with the FFT on
+            // its own queue, and `CavaRenderModel` hops to main itself.
+            let leftCopy = Array(fullStereoPcmLeft)
+            let rightCopy = Array(fullStereoPcmRight)
+            delegate?.streamingPlayerDidUpdateFullStereoPCM(
+                left: leftCopy, right: rightCopy, sampleRate: Double(buffer.format.sampleRate))
         }
 
         // The FFT runs when spectrum OR raw magnitudes are demanded; the 75-band spectrum

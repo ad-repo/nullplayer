@@ -28,9 +28,10 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B115 | **A group's `onResize` is not dispatched at initial layout, and a skin can hang its whole show/hide state on it.** Same 2026-09-04 WMP11-BlueVU report — the garbled right-hand band. `scripts/MainWindow.m` puts *all* of the display's visibility logic in one handler: `content.onResize(x,y,w,h)` picks between `TSongTicker`/`TSongInfo`, `songinfo.group`/`song.name` and the two fade layers on `w < 140`. Every one of those is visible by markup default, so until the handler runs they all draw at once — `RENDER_PROBE` shows `text#Songticker` and `text#SongInfo` at the *identical* frame `(209, 61, 131, 20)`, with `song.name` over the kbps row. **Verified:** `WINAMP_MODERN_RENDER_EVENTS=main/normal@onresize` renders one clean string in the band and clears the kbps row; the correct branch here is `w < 140`, the `Info` group being 98px wide. **What is NOT yet established, and is the first job:** whether the *app* dispatches `onResize` to a group at initial layout or only on a user drag. The harness deliberately does not drive it (see `reference/harness.md`), so a headless repro proves the handler works, **not** that the app fails to call it — read `WinampModernMainView.scriptsDidStart()` and the seeding pass B82 describes before assuming a defect. Related but distinct from B82, which is about a *runtime-instantiated* subtree missing playback state | unmeasured; any skin whose layout state lives in `onResize`. Reach command wanted | M | Live-reported |
 | B116 | **`inherit_group` concatenates the base's children with the derived group's instead of letting a same-`id` child replace the inherited one, so the window frame is built twice.** Found by inspection while investigating WMP11-BlueVU 2026-09-04, not reported. `WasabiSkinInitializer.swift:350-372` merges *attributes* with the derived winning (`attributes.merge(definition.defaultAttributes) { _, new in new }`) but appends *children* twice — `children.append(contentsOf: parent.templateChildren)` then `children.append(contentsOf: definition.templateChildren)` — with nothing keyed on `id`. WMP11's `<groupdef id="wasabi.standardframe.my" inherit_group="wasabi.standardframe.nostatusbar">` redeclares `wasabi.frame.layout` at `h="-69"` to leave room for its 69px panel; the base's is `h="-12"`. `RENDER_PROBE main/normal` shows **both** — 354x135 *and* 354x78 — each dragging a duplicate `frame.top.middle` subtree (edge strips, titlebar, caption buttons) drawn every frame. Visually subtle because the duplicates land mostly on top of each other; structurally wrong and wasted draw work. Note only the same-`id` child is meant to be replaced — a base child the derived group does not redeclare (WMP11's `frame.bottom`) still draws, which is why the reference screenshot keeps its bottom border | **3 of 69 skins, 8 same-id overrides** — Sony_Walkman (6), canum_winamp (1), WMP11-BlueVU (1), all in `wasabi.standardframe.*` ([M33]). Lower bound: the probe resolves one level of inheritance only | M | Live-reported |
-| B117 | **WMP11-BlueVU's spectrum is reported slow/choppy and is still unexplained.** Reported 2026-09-04 alongside B114/B115. **Ruled out:** render cost — `WINAMP_MODERN_RENDER_TIME=120 _SCALE=2` gives **2.81 ms/frame** for `main/normal`, and the `<vis>` path already carries `barAttackSeconds` and the Moderate falloff (`WasabiVisPainter.swift`). **Not established:** anything else. The session that filed this first blamed the open item in [`reference/rendering/vis.md`](skills/winamp-modern-skin-guide/reference/rendering/vis.md) -> *the analyzer's input arrives ten times a second* **without measuring it**; those cadence numbers date from 2026-08-30 and have not been re-taken. Do the measurement first: `WINAMP_MODERN_VIS_GAPS=1` for the real arrival cadence on the reporter's machine, `WINAMP_MODERN_VIS_FRAMES=<band>` for the per-draw level-vs-bar sequence — per `reference/harness.md` that sequence is the **only** thing separating an input-rate problem from a smoothing one, and reasoning about the arithmetic instead already got it wrong once. Both are live-only, so this needs a debug build with the skin loaded. **One real code-level lead, found in the tree and not yet a proven cause:** `WinampModernAnalyzerTap.analyze` computes `offset = max(0, available - fftSize)` to take the *newest* window, but never receives a buffer longer than the window — `AudioEngine.swift:1731` (and the identical block at `StreamingAudioPlayer.swift:532`) copies `channelData[c][i] for i in 0..<2048`, the **front** of the tap buffer, before posting `.audioStereoPCMFullDataUpdated`. So `available` is always 2048, `offset` is always 0, and the documented staleness fix is inert. That is a latency defect, not obviously a choppiness one; fix it in the two posting blocks, not in the tap, and judge it on screen (an earlier attempt at that seam was reverted for being worse). Recorded in vis.md under *Correction (2026-09-04)*. **A WMP11-specific hypothesis nobody has tested:** its `<vis>` is 71x41 behind the `net.png`/`net_mask.png` dot grid, so a step that a large box hides may land as a whole-dot jump here | 1 skin reported; the analyzer path is engine-wide | M | Live-reported |
+| B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two defects.** (b) streaming analyzer starvation **fixed and live-confirmed 2026-09-04**; (a) the ~7 fps repaint is **open with no established cause**. Measured, with the disproved hypotheses recorded so they are not re-tried. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
+| B118 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Establish WMP11-BlueVU's repaint cost on a *release* build before anyone optimizes it.** Blocks B119 and any B117(a) work. Every number in the B117 investigation is from `--debug`, and `71ffd874` records debug at 96.2% main-thread busy against release's 60.7%, with the whole post-B106 chase turning out to be a debug artifact. `WINAMP_MODERN_VIS_STALL` is `#if DEBUG` and cannot fire in release, so this needs `sample`, not the probe. May collapse B117(a) entirely | 2 skins to compare; the debug/release gap affects every perf item | S | Live-reported |
+| B119 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Attribute WMP11-BlueVU's per-frame draw cost, and confirm or kill B116 as its cause.** Blocked on B118, and on B116 being fixed first — B116 is headless work and may remove the cost outright. `WINAMP_MODERN_DRAW_PROFILE=1` has never been run on this skin; prior art puts `draw` at 41.4% of the main thread, mostly text and image compositing, and WMP11 has a marquee plus `net.png`/`net_mask.png` compositing over its vis. If the profile names duplicated frame objects, B117(a) is a duplicate of **B116** and is fixed in `WasabiSkinInitializer.swift:350-372`, not in the scene cache | 1 skin reported; B116's same-`id` `inherit_group` bug reaches 3 skins | M | Live-reported |
 | B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Awaiting the reporter's live confirmation** | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
 | B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
@@ -201,6 +202,179 @@ The implementation and its automated coverage shipped; that record is in
       bug, which does not clear itself. Raise the volume once, confirm it holds through a drag and
       survives a relaunch, and confirm playback is audible. See the checklist entry in
       `manual-qa-checklist.md`.
+
+### B116
+
+- [ ] **B116. `inherit_group` appends the base's children instead of letting a same-`id` child
+      replace them.** The diagnosis is in the table row; this section is the part an agent needs to
+      act on it. **This is the agent-ready item in the WMP11 cluster** — static code, headless
+      verification, no live QA — and it is the leading hypothesis for **B117(a)**, so it comes first.
+
+      **The change.** `WasabiSkinInitializer.swift:350-372` already merges *attributes* with the
+      derived group winning (`attributes.merge(definition.defaultAttributes) { _, new in new }`) but
+      appends *children* twice — `children.append(contentsOf: parent.templateChildren)` then
+      `children.append(contentsOf: definition.templateChildren)` — with nothing keyed on `id`. Make
+      the children merge follow the same rule the attributes already do: a derived child with the
+      same `id` replaces the inherited one; a base child the derived group does not redeclare still
+      draws. That second half is load-bearing — WMP11 does not redeclare `frame.bottom`, and the
+      reference screenshot keeps its bottom border.
+
+      **Verify headlessly, before any live check.** `RENDER_PROBE main/normal` on WMP11-BlueVU
+      currently shows **both** a `354x135` and a `354x78` `wasabi.frame.layout`, each dragging a
+      duplicate `frame.top.middle` subtree. After the fix it should show one, at the derived `h="-69"`
+      (354x78), with `frame.bottom` still present. Then run the full corpus sweep — the probe resolves
+      **one level of inheritance only**, so its 8 same-`id` overrides across Sony_Walkman (6),
+      canum_winamp (1) and WMP11-BlueVU (1) are a **lower bound**, and a regression can surface in a
+      skin the probe never counted.
+
+      **Regression risk to check explicitly:** the three affected skins are all
+      `wasabi.standardframe.*`, i.e. window chrome. A wrong merge removes a border rather than
+      doubling it, and both failures are subtle on screen — compare rendered output, do not eyeball
+      the object graph.
+
+      **If it lands, re-measure B117(a) before touching B118/B119.** The duplicate subtree is drawn
+      every frame; removing it may close the repaint item outright.
+
+### B117
+
+- [x] **B117(b). Streaming starved the `.wal` analyzer, and the spectrum slammed to the floor several
+      times a second.** Reported 2026-09-04 as WMP11-BlueVU's spectrum being slow/choppy.
+      **Fixed and live-confirmed 2026-09-04** (*"it looks much better now"*).
+
+      `StreamingAudioPlayer.processAudioBuffer` delivered full-stereo PCM through
+      `DispatchQueue.main.async`, so the analyzer's 2048-point FFT ran on **main** — and the
+      `pendingFullStereoPcmUpdate` coalescing flag was cleared only *inside* that dispatched block.
+      While main was stalled every buffer the audio thread produced was therefore **discarded rather
+      than queued**, and exactly one got through each time main came back. Past
+      `WinampModernLevelMeter.silenceTimeout` (150 ms) `WinampModernAnalyzerTap.swift:166` answers
+      all-zero bands, so band 3 read `0.820 0.000 1.000 1.000 1.000 0.000 0.774 0.000 …` — full scale
+      to floor, several times a second. `AudioEngine` posts the same notification straight from its
+      tap callback with no coalescer, so **local playback was merely late, not starved**, which is the
+      whole of the local/stream asymmetry the reporter noticed.
+
+      Fixed by posting from the audio thread, matching `AudioEngine`, and deleting the coalescer. Both
+      consumers already expect the posting thread: `WinampModernAnalyzerTap.receive` is a lock, three
+      stores and an unlock with the FFT on its own queue, and `CavaRenderModel` hops to main itself.
+
+      | | before | after |
+      |---|---|---|
+      | arrival gap | median 318 ms, p90 1045, max 5981 | median **106 ms** (min/p90/max all 106) |
+      | `WM-VIS-GAP silence` | 480 | **0** |
+      | draws reading zero | 481/621 (58%) | **9/900 (1.0%)**, matching local's 2.3% baseline |
+
+      Thread ids confirm the hop is gone: arrivals now land on 10 rotating audio threads with drawing
+      alone on its own, where before all four probe kinds shared one id.
+
+      **Two hypotheses died here — do not re-try them.** The `frameCount >= 2048` short-buffer theory
+      is dead (every streaming arrival logged `frames=2048`), and so is the
+      `offset = max(0, available - fftSize)` staleness lead in
+      [`rendering/vis.md`](skills/winamp-modern-skin-guide/reference/rendering/vis.md) — that is a
+      latency defect, not this one. `vis.md`'s 10 Hz cadence section was quoted as the cause by two
+      sessions without being measured; it now carries the re-taken numbers and a warning.
+
+      **Note for whoever touches that block next:** `processAudioBuffer` writes the shared
+      `fullStereoPcmLeft/Right` instance buffers before copying out, and the coalescer used to mask
+      that seam. The strict 106 ms arrival spacing says the calls are sequential — thread migration,
+      not concurrency — so this is a note, not a known defect.
+
+      **Underlying, and why this class recurs:** the delivery thread of
+      `.audioStereoPCMFullDataUpdated` and its siblings is undocumented at `AudioEngine.swift:15-30`
+      and in `audio-system/SKILL.md` (both document `userInfo` shape only), while
+      `WinampModernAnalyzerTap` asserts *"the posting thread — the real-time audio tap"* as fact, and
+      `StreamingAudioPlayer` hops to main in **six** places — four of them the same coalesce-and-drop
+      block. Because the coalescer drops rather than queues, the failure presents as *missing data*
+      and gets filed against the renderer. Same seam as `780541ea`, `3b9721af`, `bc4253eb`. Worth
+      stating the contract where the notifications are declared and auditing the other five hops;
+      `pendingSpectrumUpdate` and `pendingPcmUpdate` feed the Classic spectrum and PeppyMeter through
+      the identical block and have **not** been measured.
+
+- [ ] **B117(a). The ~7 fps repaint, and the low-fps marquee with it. Cause unknown.** The frame
+      interval is directly measured and is not in dispute: `elapsed` clusters at 120–145 ms against an
+      expected 33 ms, and after B117(b) `WM-VIS-STALL` is still median 131 ms / p90 300 / max 6395.
+      cPro-Bento on the same build is median 60 / p90 68 / max 122, so this is skin-specific. The
+      marquee shares the repaint, which is why the symptom is not audio-shaped.
+
+      **Disproved — do not re-file.** A first pass blamed scene-memo thrash from the twelve
+      `animatedlayer#beatleft/beatright` in `WMP11-BlueVU/xml/player-normal-group.xml` that write
+      `frame` ~100x/s. That claim was manufactured by pairing a `writes=…/writers=12` line with a
+      `resolves:` line from a **different** `MUTATION_TRACE` window (the `scene=312` window is
+      `writers=41`). Partitioning all 169 windows: **148 of 150 `writers=12` windows report
+      `resolves=0`**, and the few scene resolves that occur follow an explicit
+      `drop(updatePlaybackState())` hand-drop, not the writes. `frame` is already scene-neutral —
+      `71ffd874` put it in `WasabiObjectGraph.isSceneNeutral` (`WasabiObjectGraph.swift:282`) and the
+      path is intact — so the scene walk is not the bottleneck and changing invalidation granularity
+      would optimize something already costing nothing. `RESIZE_TRACE` is clean (`noop=true` count 0),
+      so it is not B52's resize storm either.
+
+      **Method note for the next agent:** `MUTATION_TRACE` prints its `writes=`/`resolves=` summary
+      and its top-writer list as separate lines. Do not `grep` them independently and pair the
+      results — read whole windows.
+
+      Next steps are split out as **B118** (release baseline, blocks this) and **B119** (draw
+      attribution, and whether this is a duplicate of **B116**).
+
+### B118
+
+- [ ] **B118. Take WMP11-BlueVU's repaint cost on a release build.** **Run this as a live session with the reporter
+      driving the UI** — a skin must be loaded and a track playing before `sample` means anything.
+      That is the efficient path here, not a limitation: it is how B117(b) was measured and confirmed
+      in one sitting. It is only unattended *background* agents that cannot do it. Blocks B119 and any B117(a)
+      work, and may collapse B117(a) entirely.
+
+      Every number in the B117 investigation came from `./scripts/kill_build_run.sh --debug`.
+      `71ffd874`'s own record states debug ran **96.2%** main-thread busy against release's **60.7%**,
+      and that *"everything chased after B106 — the 46 ms frames, the 21.7 fps, 'still saturated after
+      freeing 23%' — was a debug-build artifact."* The reporter's original complaint was against a
+      release build, so the symptom is real; its **magnitude** is not established.
+
+      `WINAMP_MODERN_VIS_STALL` is `#if DEBUG` and cannot fire in release, so this needs `sample`:
+
+      ```bash
+      ./scripts/kill_build_run.sh          # release
+      # load WMP11-BlueVU, play a local track, let it settle, then:
+      sample NullPlayer 10 -f /tmp/wmp11-release.txt
+      ```
+
+      Read the main-thread **busy** fraction, counting `mach_msg2_trap` / `semaphore_wait` /
+      `__psynch_cvwait` leaves as idle, and repeat on cPro-Bento as the control. Beware the `sample`
+      aggregation trap: count the outermost occurrence of a symbol, not every frame carrying it.
+      If release sits near 60% on both skins, the 7 fps is largely a debug artifact and the open
+      question becomes whatever the reporter still sees on screen.
+
+### B119
+
+- [ ] **B119. Attribute WMP11-BlueVU's per-frame draw cost; confirm or kill B116 as the cause.**
+      Live session with the reporter driving, same as B118.
+      Blocked on **B118**, and **fix B116 first**. B116 is static, headless, agent-executable work
+      and is this item's leading hypothesis: if the duplicated subtree is the cost, fixing it removes
+      the cost and B119 never needs to run. Measure only what survives that.
+
+      `WINAMP_MODERN_DRAW_PROFILE=1` (`WasabiRenderer.swift:649`, with `_DRAW_PROFILE_TOP=<n>` to
+      widen it) attributes time per object and has never been run on this skin. The prior art records
+      `draw` at 41.4% of the main thread, *"mostly text drawing and image compositing"* — and WMP11
+      has a text marquee plus `net.png`/`net_mask.png` compositing over its 71x41 `<vis>`.
+
+      ```bash
+      pkill -x NullPlayer
+      WINAMP_MODERN_DRAW_PROFILE=1 WINAMP_MODERN_DRAW_PROFILE_TOP=30 \
+      WINAMP_MODERN_VIS_STALL=50 \
+        .build/arm64-apple-macosx/debug/NullPlayer > /tmp/wmp11-draw.log 2>&1 &
+      ```
+
+      **The hypothesis to test first:** WMP11-BlueVU is one of the three same-`id` `inherit_group`
+      skins in **B116**, and `RENDER_PROBE main/normal` already shows both a `354x135` and a `354x78`
+      frame layout, each dragging a duplicate `frame.top.middle` subtree — edge strips, titlebar,
+      caption buttons — **drawn every frame**. A cost that scales with *drawing* fits the evidence
+      better than one that scales with mutation. If the draw profile names those duplicates, B117(a)
+      is a duplicate of B116 and is fixed in `WasabiSkinInitializer.swift:350-372`, not in the scene
+      cache.
+
+      Success criterion against the existing baseline: `WM-VIS-STALL` median 131 ms → cPro-Bento's
+      ~60 ms, p90 300 → ~68, max 6395 → ~122.
+
+      Also worth a look only if the profile points there: `sceneNodes()` allocates two full node
+      arrays per call on the **cache-hit** path (`cache.nodes.map(withRefreshedBitmapID)` then
+      `withRefreshedAlpha`), which the resolve counter cannot see.
 
 ### B110
 
