@@ -241,6 +241,40 @@ final class WinampModernConfigBridgeTests: XCTestCase {
                        "the silent setter stays silent")
     }
 
+    /// B111 — and a `setActivated` that changes **nothing** notifies nobody.
+    ///
+    /// This is the silence Itemskin depends on. Its `onVolumeChanged` deactivates two buttons that
+    /// are already off, and each of their `onToggle` handlers answers a false with
+    /// `setVolume(savedVolume)` — a variable that is `0` until a real mute fills it in. Dispatching
+    /// the unchanged write drove the host volume to zero at load, `setVolume` re-raised
+    /// `onVolumeChanged`, and the zero was persisted: the app came up silent on that skin and no
+    /// other, because it is the only archive in the corpus that binds `onToggle` to the volume.
+    func testAnUnchangedSetActivatedNotifiesNobody() throws {
+        let (runtime, _, program) = try makeRuntime()
+        let plain = try object(runtime, "plain")
+        runtime.recordsDispatchedEventsForTesting = true
+
+        // The button is already off, which is the state the skin writes.
+        XCTAssertNotEqual(plain.attributes["activated"], "1")
+        _ = try runtime.invoke(method: "setActivated", on: reference(plain),
+                               arguments: [.boolean(false)], program: program)
+        XCTAssertEqual(plain.attributes["activated"], "0", "the state is still written")
+        XCTAssertTrue(runtime.dispatchedEventsForTesting.isEmpty,
+                      "an unchanged write is not an event — this is what keeps a skin that calls "
+                      + "setActivated from inside its own notification out of its own handler")
+
+        // A write that *does* move it is an event, exactly as before.
+        _ = try runtime.invoke(method: "setActivated", on: reference(plain),
+                               arguments: [.boolean(true)], program: program)
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.filter { $0.event == "ontoggle" }.count, 1)
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.filter { $0.event == "onactivate" }.count, 1)
+
+        // And repeating it does not send a second one.
+        _ = try runtime.invoke(method: "setActivated", on: reference(plain),
+                               arguments: [.boolean(true)], program: program)
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.filter { $0.event == "ontoggle" }.count, 1)
+    }
+
     // MARK: - Changes made from outside the skin
 
     /// A `.wal` indicator is written once from `onActivate` and never polled, so a shuffle toggled

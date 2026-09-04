@@ -28,6 +28,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
+| B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Awaiting the reporter's live confirmation** | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
 | B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
 | B60 | Hosted library and video surfaces have no body drag | — · every skin with a usable standard frame | M | Live-reported |
@@ -147,6 +148,54 @@ The implementation and its automated coverage shipped; that record is in
   pane absorbs the extra width — see B38 below.
 
 ---
+
+### B111
+
+- [ ] **B111. An unchanged `setActivated` dispatched `onToggle`.** Reported 2026-09-04: *"in the
+      itemskin skin the audio does not work"*, and only that skin. Root-caused the same day from
+      `WINAMP_MODERN_CALL_TRACE=1` in the running app.
+
+      **What the skin does.** `scripts/playerVolumeExtra.maki`, on the main and mini layouts:
+
+      ```c
+      onVolumeChanged(v) { if (!muted) { att.setActivated(0); mute.setActivated(0); } muted = 0; }
+      mute.onToggle(on)  { if (on) { savedVolume = getVolume(); setVolume(0); }
+                           else      setVolume(savedVolume); }
+      ```
+
+      Both buttons are already off, so in Winamp those two writes do nothing. `volume.mute` is
+      declared `<Togglebutton id="volume.mute" />` — no image, no action, no coordinates, a 0×0
+      object a user cannot click — so nothing else in the skin ever reaches that handler.
+
+      **What we did.** `WinampModernScriptRuntimeObject.swift`'s `setactivated` case wrote the state
+      and then dispatched `ontoggle` + `onactivate` unconditionally. Every volume change therefore ran
+      both `onToggle`s' false branch, `setVolume(savedVolume)` with `savedVolume` still `0`; `setVolume`
+      re-raised `onVolumeChanged` (bounded by the re-entrancy guard, but the write had landed). Trace
+      from the app, on a fresh launch:
+
+      ```
+      AppStateManager: Restoring settings state - volume: 0.00
+      CALL-TRACE setxmlparam(ghost,0) on Togglebutton#volume.att
+      CALL-TRACE setvolume(0)             <- nobody asked
+      CALL-TRACE setactivated(0) on Togglebutton#volume.att
+      CALL-TRACE setvolume(0)
+      ```
+
+      **The fix.** `setActivated` compares the wanted activation against the object's own `activated`
+      and notifies only when it moves. `toggleActivation` (a real click) always changes state and is
+      unaffected; `setActivatedNoCallback` keeps its job, the silent write for a state that *did*
+      move. Documented in `compatibility/maki-surface.md` → *A write that changes nothing is not an
+      event*, with the reporting lesson in `skins/itemskin.md`.
+
+      **Verification (2026-09-04).** `swift test --filter WinampModern`: 1290 pass, 12 skipped, 0
+      failures — including the two tests that pin `setActivated`'s notification, both of which drive a
+      real state change. Debug build relaunched on Itemskin: the `setvolume(0)` cascade is gone
+      (`grep -c setvolume` on the call trace: **0**, against 4 before).
+
+      **Remaining live check.** The reporter's persisted volume is still `0.00` — residue saved by the
+      bug, which does not clear itself. Raise the volume once, confirm it holds through a drag and
+      survives a relaunch, and confirm playback is audible. See the checklist entry in
+      `manual-qa-checklist.md`.
 
 ### B110
 

@@ -2,7 +2,8 @@
 
 A glass-framed skin whose component windows are built in an unusual way, and the reason B69 exists.
 Loads as of Phase 35; its notifier preferences draw as of B66, on their own background as of B90; its
-frames find their content as of B69 (2026-08-29).
+frames find their content as of B69 (2026-08-29); **its audio is audible as of B111 (2026-09-04)** —
+until then it silenced the player, and it is the only skin in the corpus that could.
 
 ## The shape of this skin
 
@@ -68,6 +69,18 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   takes either form; see [`reference/rendering.md`](../reference/rendering.md).
 - **`<include file="xml/eq.xml">` names a file the archive does not ship.** Skipped with a warning
   since Phase 35; Winamp does the same. This skin and Overdrive_2 are why B1 was closed.
+- **It is the corpus's only skin that can mute the host, and it did.** `scripts/playerVolumeExtra.maki`
+  binds `onToggle` on `volume.mute` and `volume.att` to `setVolume`, and its `onVolumeChanged`
+  deactivates both buttons on **every** volume change. They are already off, so in Winamp those writes
+  are silent; dispatching `onToggle` unconditionally ran the false branch —
+  `setVolume(savedVolume)`, an uninitialised `0` — and `setVolume` re-raised `onVolumeChanged`. The
+  host volume went to zero at load, the slider could not lift it, and the zero was persisted. B111
+  fixed the rule (`setActivated` notifies only on an actual change); see
+  [`compatibility/maki-surface.md`](../compatibility/maki-surface.md) → *A write that changes nothing
+  is not an event*. **Reporting note:** the symptom is "audio does not work", the markup is innocent
+  (`<Togglebutton id="volume.mute" />` has no image, action or coordinates — a 0×0 object nobody can
+  click), and the disassembly is innocent too, because the skin never calls `setVolume` at load.
+  `WINAMP_MODERN_CALL_TRACE=1` in the running app is what named it.
 - **Its compatibility level reads `unsupported` although the skin draws.** The notifier script wants
   `getPath` and `setChecked`; the player is unaffected.
 

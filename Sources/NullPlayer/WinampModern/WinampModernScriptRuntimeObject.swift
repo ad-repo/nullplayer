@@ -251,10 +251,24 @@ extension WinampModernScriptRuntime {
             _ = object.setAttribute("enabled", value: arguments[0].truthy ? "1" : "0")
             notifyObjectDidMutate(object)
             return .null
+        // Wasabi notifies from `setActivated` only when the activation actually **changes**. An
+        // unchanged write is silent, and that is what lets a skin call it from inside the very event
+        // its `onToggle` would answer. Itemskin is the measured case and the reason this guard
+        // exists: its `onVolumeChanged` deactivates the mute and ATT buttons on every volume change,
+        // and each of their `onToggle` handlers answers a *false* with `setVolume(savedVolume)` — a
+        // variable that is 0 until a real mute fills it in. Dispatching unconditionally drove the
+        // volume to zero at load, `setVolume` re-raised `onVolumeChanged`, and the zero was then
+        // persisted: the app came up silent on that skin, the slider could not lift it, and no other
+        // skin in the corpus binds `onToggle` to the volume. `setActivatedNoCallback` remains the
+        // deliberate silent write for a state that *did* move.
         case "setactivated":
-            setActivated(object, arguments[0].truthy)
-            _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(arguments[0].truthy)])
-            notifyActivated(object, activated: arguments[0].truthy)
+            let wanted = arguments[0].truthy
+            let activationChanged = (object.attributes["activated"] == "1") != wanted
+            setActivated(object, wanted)
+            if activationChanged {
+                _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(wanted)])
+                notifyActivated(object, activated: wanted)
+            }
             return .null
         case "setactivatednocallback":
             setActivated(object, arguments[0].truthy)

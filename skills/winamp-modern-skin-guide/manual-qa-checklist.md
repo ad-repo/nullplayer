@@ -191,6 +191,13 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
       same pass and read its display text: the ticker, time, KBPS and KHZ must be tinted with the rest
       of the player, not grey — that is the `fontSheet` bound, and a corpus render sweep catches it
       only because those two skins are in it.
+- [ ] **Itemskin: the player makes sound, and the volume slider holds** (B111) — load Itemskin and
+      play a track. It must be **audible**, and dragging the volume bar on the display must move it
+      and leave it there; before the fix the host volume was driven to 0 at load and every drag was
+      immediately undone, so the skin played silently with the clock running. Check the volume
+      survives a relaunch on this skin, because the zero used to be persisted. This is the one
+      corpus skin that binds `onToggle` to `setVolume`, so no other skin substitutes for it and no
+      render sweep can see it — it needs the app, with sound.
 - [ ] **Itemskin and EPS High-End: the Notifier Preferences window has a background** (B90) — open
       it from **Skin Windows** on each. Itemskin shows its own `config.png` panel artwork behind the
       six title boxes; EPS shows a black panel, against which its near-white controls are legible.

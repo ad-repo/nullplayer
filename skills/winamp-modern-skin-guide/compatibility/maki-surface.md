@@ -148,7 +148,8 @@ By area:
   Localization page's own script ran and aborted here. BB7
 - **`ToggleButton.setActivatedNoCallback(bool)`** — `setActivated` without the `onToggle` it would
   otherwise send. A skin uses it to follow state it is already reacting to; the plain setter there
-  re-enters its own notification. Phase 33
+  re-enters its own notification. Phase 33. Note this is the silent write for a state that **did**
+  move — a `setActivated` that changes nothing is already silent on its own (B111, below)
 - **`GuiObject.getClassName()`** — the object's Wasabi class (`layer`, `button`, `togglebutton`,
   `slider`…). multipass's style switcher walks one list of mixed objects and branches on
   `strUpper(getClassName())` to decide which artwork attributes to swap. Phase 33
@@ -483,8 +484,8 @@ By area:
 | mouse down/up/click/move, `onEnterArea`/`onLeaveArea`, `onRightButtonUp` | yes | with the click's x/y |
 | `onVolumeChanged` | yes | `setVolume`, and any change made outside the skin |
 | `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |
-| `onToggle` | yes | from `setActivated` **and, since Phase 33, from a user click**: a togglebutton flips its own `activated` and then notifies, as in Wasabi. Until then the only sender was a script talking to itself, so a togglebutton a person clicked was inert however completely the skin implemented it — multipass's bottom drawer opens from this event and from nothing else. `setActivatedNoCallback` is the deliberate silent write. A `cfgattrib`-bound control is excluded: the stored preference *is* its state, and it has `onDataChanged` as its route |
-| `onActivate(activated)` | yes (B32) | the **indicator's** event, not `onToggle`'s twin: raised whenever a button's activation changes, whoever changed it. Sent from `toggleActivation`, `setActivated` (never `setActivatedNoCallback`), a `cfgattrib` write — and, unlike `onToggle`, a bound control is **not** excluded, because for it the stored preference *is* the activation. A `cfgattrib` write reaches every object bound to that attribute, since a skin declares the same switch once per layout. It had no sender at all before, so no skin could show a toggle's state: mmd3 gives Crossfade/Shuffle/Repeat identical `image` and `activeImage` and does the whole indication with six `ghost="1"` layers at `activated * 255`. 8 of 30 skins declare a handler. A change made **outside** the skin (NullPlayer's Playback menu, a restored session) arrives through `refreshBridgedConfigState()` on `.audioPlaybackOptionsChanged` — an indicator is written once and never polled |
+| `onToggle` | yes | from `setActivated` **when the activation actually changes** (B111) **and, since Phase 33, from a user click**: a togglebutton flips its own `activated` and then notifies, as in Wasabi. Until then the only sender was a script talking to itself, so a togglebutton a person clicked was inert however completely the skin implemented it — multipass's bottom drawer opens from this event and from nothing else. `setActivatedNoCallback` is the deliberate silent write **for a state that moved**; an unchanged `setActivated` sends nothing at all, and that is what lets a skin call it from inside the very event its own handler answers. Dispatching it unconditionally is how Itemskin came up silent — see *A write that changes nothing is not an event* below. A `cfgattrib`-bound control is excluded: the stored preference *is* its state, and it has `onDataChanged` as its route |
+| `onActivate(activated)` | yes (B32) | the **indicator's** event, not `onToggle`'s twin: raised whenever a button's activation changes, whoever changed it — and **only** when it changes (B111). Sent from `toggleActivation`, `setActivated` (never `setActivatedNoCallback`), a `cfgattrib` write — and, unlike `onToggle`, a bound control is **not** excluded, because for it the stored preference *is* the activation. A `cfgattrib` write reaches every object bound to that attribute, since a skin declares the same switch once per layout. It had no sender at all before, so no skin could show a toggle's state: mmd3 gives Crossfade/Shuffle/Repeat identical `image` and `activeImage` and does the whole indication with six `ghost="1"` layers at `activated * 255`. 8 of 30 skins declare a handler. A change made **outside** the skin (NullPlayer's Playback menu, a restored session) arrives through `refreshBridgedConfigState()` on `.audioPlaybackOptionsChanged` — an indicator is written once and never polled |
 | `onDataChanged` | yes | from every write through `setConfigAttribute`, to every object bound to that attribute in creation order — **and as a method** (`attribute.onDataChanged()`), which is how a skin applies its stored settings at load. The method receiver was added 2026-08-26 (BB32); until then the call was inert and a skin's whole settings pass was skipped at launch. See `reference/scripting.md` → *An event handler is also a method* |
 | `onSeek(newpos)` | callable, never sent (B64) | Winamp raises it on a seek; nothing here does, because the one corpus handler does not need it. It is in `dispatchableEventArity` so a skin can **call** it, which is how Anexa fills both its progress bars — a 99 ms timer whose whole body is `System.onSeek(getPosition())`. `newpos` is milliseconds, like `getPosition` |
 | `onKeyDown(key)` | yes (Phase 43) | a **System** event carrying Winamp's own accelerator **string** — `"alt+g"`, `"ctrl+w"`, `"esc"` — not a virtual keycode, and **lowercase**: two of the three handlers compare without normalising first. Reaches every program whatever window is focused, as in Winamp, which is why a skin that means one window gates on `isActive()`. macOS modifiers map literally (Control→`ctrl`, Option→`alt`, Shift→`shift`, in that order); **Command is not folded onto `ctrl`**, so a ⌘ event is no accelerator at all and the app's menu equivalents keep working. A handler that reaches MAKI's `complete;` consumes the key; anything else falls back to the responder chain. Three of the 17 skins bind one: multipass and winampmodern566 toggle their EQ drawer on `alt+g`, winampmodern566 also shades its playlist on `ctrl+w` and its album-art window on `alt+a`, Defix closes its playlist search line on `esc`. Rika and T800 ship Winamp's stock `playlisteditor.maki`, whose `onKeyDown(Int vkcode)` is the **edit control's** — a GUI receiver and an integer, a different event — and neither loads that program. Drive it with `WINAMP_MODERN_RENDER_KEY` (harness) or `WINAMP_MODERN_DEBUG_KEY` (the app) |
@@ -493,6 +494,39 @@ By area:
 | `onShowLayout` / `onHideLayout` (2 / 2) | **no** | shade↔normal transitions |
 | `onMouseWheelUp` / `Down` (2 / 2) | **no** | the wheel is consumed by the embedded playlist |
 | `onCreateLayout`, `onNotify`, `onOpenUrl` (1–2 each) | **no** | minor. `onTextChanged` *is* dispatched — see the bullet above this table |
+
+### A write that changes nothing is not an event
+
+`setActivated`, and every setter shaped like it, notifies only when the value **actually moves**. An
+unchanged write is silent, and that silence is load-bearing: it is what lets a skin call the setter
+from inside the very event its own handler answers, without arming itself.
+
+Itemskin is the measured case (B111, 2026-09-04) and the reason this is written down. Its
+`onVolumeChanged` deactivates the mute and ATT buttons on every volume change —
+
+```
+onVolumeChanged(v) { if (!muted) { att.setActivated(0); mute.setActivated(0); } muted = 0; }
+mute.onToggle(on)  { if (on) { savedVolume = getVolume(); setVolume(0); } else setVolume(savedVolume); }
+```
+
+— and both buttons are *already* off, so in Winamp those two calls do nothing at all. Dispatching
+them unconditionally ran each `onToggle`'s **false** branch, which answers with
+`setVolume(savedVolume)` — a variable that stays `0` until a real mute fills it in. `setVolume` then
+re-raised `onVolumeChanged`, so the skin zeroed the host volume at load, the slider could not lift it
+(every drag re-entered the same loop), and the zero was persisted into the next launch. The app came
+up **silent on that skin and no other**: it is the only archive in the corpus that binds `onToggle`
+to the volume, which is why one wrong dispatch rule read as one broken skin.
+
+Two things generalise from it:
+
+- **The corpus does not sample this rule evenly.** Nothing else in 70 skins hangs an audible side
+  effect off `onToggle`, so a full render sweep is green either way. The failure is only reachable
+  through the *app*, with sound.
+- **The symptom was two removes from the cause.** "Audio does not work" is not a scripting report,
+  and the mute never appears in the skin's markup — `<Togglebutton id="volume.mute" />` is declared
+  with no image, no action and no coordinates, a 0×0 object a user can never click.
+  `WINAMP_MODERN_CALL_TRACE=1` named it in one line (`setvolume(0)` with nobody asking) where the
+  markup and the disassembly both read as innocent.
 
 **Script events callable as methods.** A script may invoke one of its own handlers directly to reuse
 it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —
