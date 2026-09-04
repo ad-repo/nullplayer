@@ -230,7 +230,18 @@ artwork, or a cPro skin with no engine, must say so rather than half-load.
 
 Group semantics worth knowing:
 
-- `inherit_group` **is** the inheritance edge (depth limit 64, cycle-detected).
+- `inherit_group` **is** the inheritance edge (depth limit 64, cycle-detected). The derived group
+  wins on **children** as well as attributes: a derived child that redeclares an inherited `id`
+  replaces that child **in the base's slot**, so the base's draw order survives, and any other
+  derived child appends. An inherited child the derived group is silent about still draws.
+  Appending both lists instead built the whole subtree twice (B116): WMP11-BlueVU redeclares
+  `wasabi.frame.layout` at `h="-69"` where `wasabi.standardframe.nostatusbar` has `h="-12"`, and
+  `RENDER_PROBE main/normal` showed both — 354x135 *and* 354x78 — each dragging a duplicate
+  `frame.top.middle` (edge strips, titlebar, caption buttons) drawn every frame. The duplicates
+  landed mostly on top of each other, which is why it read as cost rather than as a visible
+  defect. Keeping the un-redeclared children is load-bearing in the other direction: that skin
+  never redeclares `frame.bottom`, and dropping the base's children would take its bottom border
+  with them. `WasabiSkinInitializer.merging(inherited:with:)`.
 - `embed_xui` is retained as metadata and is **not** an inheritance edge. It does two jobs: the
   instance's children are created under the object it names, **and** that object *is* the XUI, so the
   pointer events it receives are forwarded to the embedding group. Defix's `bento.tabbutton` embeds a

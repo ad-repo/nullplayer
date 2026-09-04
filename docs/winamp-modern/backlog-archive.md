@@ -2,6 +2,43 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B116 — `inherit_group` concatenated the base's children instead of letting a same-`id` child replace them — closed 2026-09-04
+
+| B116 | **`inherit_group` concatenates the base's children with the derived group's instead of letting a same-`id` child replace the inherited one, so the window frame is built twice.** Found by inspection while investigating WMP11-BlueVU 2026-09-04, not reported. `WasabiSkinInitializer.swift:350-372` merges *attributes* with the derived winning (`attributes.merge(definition.defaultAttributes) { _, new in new }`) but appends *children* twice — `children.append(contentsOf: parent.templateChildren)` then `children.append(contentsOf: definition.templateChildren)` — with nothing keyed on `id`. WMP11's `<groupdef id="wasabi.standardframe.my" inherit_group="wasabi.standardframe.nostatusbar">` redeclares `wasabi.frame.layout` at `h="-69"` to leave room for its 69px panel; the base's is `h="-12"`. `RENDER_PROBE main/normal` shows **both** — 354x135 *and* 354x78 — each dragging a duplicate `frame.top.middle` subtree (edge strips, titlebar, caption buttons) drawn every frame. Visually subtle because the duplicates land mostly on top of each other; structurally wrong and wasted draw work. Note only the same-`id` child is meant to be replaced — a base child the derived group does not redeclare (WMP11's `frame.bottom`) still draws, which is why the reference screenshot keeps its bottom border | **3 of 69 skins, 8 same-id overrides** — Sony_Walkman (6), canum_winamp (1), WMP11-BlueVU (1), all in `wasabi.standardframe.*` ([M33]). Lower bound: the probe resolves one level of inheritance only | M | Live-reported |
+
+### B116
+
+- [x] **B116. `inherit_group` appended the base's children instead of letting a same-`id` child
+      replace them.** Fixed and live-confirmed 2026-09-04 (*"they look good"*).
+
+      `WasabiSkinInitializer` merged a derived group's *attributes* with the derived winning and then
+      appended both **child** lists with nothing keyed on `id`, so a derived group that redeclared an
+      inherited child got two of it. WMP11-BlueVU's
+      `<groupdef id="wasabi.standardframe.my" inherit_group="wasabi.standardframe.nostatusbar">`
+      redeclares `wasabi.frame.layout` at `h="-69"` to leave room for its 69px panel where the base
+      has `h="-12"`, and `RENDER_PROBE main/normal` showed **both** — 354x135 and 354x78 — each
+      dragging a duplicate `frame.top.middle` subtree (edge strips, titlebar, caption buttons) drawn
+      every frame. The duplicates landed mostly on top of each other, so it read as wasted draw work
+      rather than a visible defect.
+
+      **The fix.** `merging(inherited:with:)` now lays the derived children over the inherited ones
+      the way the attribute merge beside it always did: a derived child that redeclares an inherited
+      `id` (case-folded, the same `fold` the identifier lookups use) **replaces** that child *in the
+      base's slot*, so the base's draw order survives, and any other derived child appends. The
+      un-redeclared inherited children stay — that half is load-bearing in the other direction, since
+      WMP11 never redeclares `frame.bottom` and the reference screenshot keeps its bottom border.
+
+      **Verified.** `RENDER_PROBE main/normal` on WMP11-BlueVU now shows one `wasabi.frame.layout`, at
+      the derived `354x78`, with `frame.bottom` still at `(0, 135, 354, 12)`. Corpus render sweep: 69
+      skins, 590 PNGs, no failures. Full suite 1782 tests green, including three new ones in
+      `WinampModernB116Tests` — the replacement, the survival of an un-redeclared child, and the
+      inherited draw order. Live-confirmed on all three affected skins (WMP11-BlueVU, Sony Walkman,
+      canum), which was the check that mattered: a wrong merge *removes* a border, and both failures
+      are subtle on screen.
+
+      **Follow-on.** B119 was blocked on this and is now unblocked; the duplicate subtree was drawn
+      every frame, so B117(a)'s repaint cost wants re-measuring before anything is optimized.
+
 ## B115 — a group's `onResize` *is* dispatched at initial layout; the harness was not — closed 2026-09-04
 
 | B115 | **A group's `onResize` is not dispatched at initial layout, and a skin can hang its whole show/hide state on it.** Same 2026-09-04 WMP11-BlueVU report — the garbled right-hand band. `scripts/MainWindow.m` puts *all* of the display's visibility logic in one handler: `content.onResize(x,y,w,h)` picks between `TSongTicker`/`TSongInfo`, `songinfo.group`/`song.name` and the two fade layers on `w < 140`. Every one of those is visible by markup default, so until the handler runs they all draw at once — `RENDER_PROBE` shows `text#Songticker` and `text#SongInfo` at the *identical* frame `(209, 61, 131, 20)`, with `song.name` over the kbps row. **Verified:** `WINAMP_MODERN_RENDER_EVENTS=main/normal@onresize` renders one clean string in the band and clears the kbps row; the correct branch here is `w < 140`, the `Info` group being 98px wide. **What is NOT yet established, and is the first job:** whether the *app* dispatches `onResize` to a group at initial layout or only on a user drag. The harness deliberately does not drive it (see `reference/harness.md`), so a headless repro proves the handler works, **not** that the app fails to call it — read `WinampModernMainView.scriptsDidStart()` and the seeding pass B82 describes before assuming a defect. Related but distinct from B82, which is about a *runtime-instantiated* subtree missing playback state | unmeasured; any skin whose layout state lives in `onResize`. Reach command wanted | M | Live-reported |

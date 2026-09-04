@@ -356,7 +356,7 @@ final class WasabiTypeRegistry {
                 }
                 let parent = try resolve(definition: base, stack: stack + [key])
                 attributes.merge(parent.defaultAttributes) { _, new in new }
-                children.append(contentsOf: parent.templateChildren)
+                children = parent.templateChildren
             } catch let failure as WalFailure
                 where failure.diagnostics.allSatisfy({ $0.code == .missingGroupDefinition }) {
                 // Real skins/engines inherit from predefined Wasabi standard-library groups
@@ -370,7 +370,7 @@ final class WasabiTypeRegistry {
             }
         }
         attributes.merge(definition.defaultAttributes) { _, new in new }
-        children.append(contentsOf: definition.templateChildren)
+        children = Self.merging(inherited: children, with: definition.templateChildren)
 
         let result = WasabiResolvedGroupDefinition(identifier: definition.identifier,
                                                    embeddedXUITag: definition.embeddedXUITag,
@@ -378,6 +378,31 @@ final class WasabiTypeRegistry {
                                                    templateChildren: children)
         resolvedCache[cacheKey] = result
         return result
+    }
+
+    /// Lay a derived group's template children over the ones it inherited, the way the attribute
+    /// merge beside it already works: a derived child that redeclares an inherited `id` **replaces**
+    /// that child, in the base's place so the draw order is the base's, and any other derived child
+    /// appends. An inherited child the derived group does not redeclare still draws — WMP11-BlueVU
+    /// never redeclares `frame.bottom`, and its bottom border is meant to stay. Appending both lists
+    /// instead built the whole window frame twice.
+    private static func merging(inherited: [WalXMLNode], with derived: [WalXMLNode]) -> [WalXMLNode] {
+        guard !inherited.isEmpty else { return derived }
+        var merged = inherited
+        var indexByIdentifier: [String: Int] = [:]
+        for (index, child) in merged.enumerated() {
+            guard let identifier = child.attribute("id"), !identifier.isEmpty else { continue }
+            indexByIdentifier[fold(identifier)] = index
+        }
+        for child in derived {
+            if let identifier = child.attribute("id"), !identifier.isEmpty,
+               let index = indexByIdentifier[fold(identifier)] {
+                merged[index] = child
+            } else {
+                merged.append(child)
+            }
+        }
+        return merged
     }
 
     /// What a `<groupdef>` *is* — its XUI tag, what it inherits, the XUI it embeds, its defaults and

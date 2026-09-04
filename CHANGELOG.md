@@ -32,6 +32,12 @@
 
 ### Bug Fixes
 
+- **Modern skins: a window frame built on another one is no longer drawn twice** — a skin can define
+  its frame by extending one of Winamp's, changing only the parts it cares about. NullPlayer kept
+  both versions of every part it changed, so skins like WMP11-BlueVU, Sony Walkman and canum built
+  their border, titlebar and caption buttons twice and redrew the spare copy on every frame. The
+  skin's own version now replaces the one it is based on, and the parts it leaves alone still draw.
+
 - **Modern skins: NullPlayer's own windows now wear the skin's frame on skins that draw one their own
   way** — Cava, Flow, PeppyMeter, the spectrum analyzer, the waveform, Audio Analysis, projectM and
   the fallback equalizer opened in NullPlayer's plain chrome on Itemskin, K-jr, MoonLight and Pure

@@ -28,10 +28,9 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B116 | **`inherit_group` concatenates the base's children with the derived group's instead of letting a same-`id` child replace the inherited one, so the window frame is built twice.** Found by inspection while investigating WMP11-BlueVU 2026-09-04, not reported. `WasabiSkinInitializer.swift:350-372` merges *attributes* with the derived winning (`attributes.merge(definition.defaultAttributes) { _, new in new }`) but appends *children* twice — `children.append(contentsOf: parent.templateChildren)` then `children.append(contentsOf: definition.templateChildren)` — with nothing keyed on `id`. WMP11's `<groupdef id="wasabi.standardframe.my" inherit_group="wasabi.standardframe.nostatusbar">` redeclares `wasabi.frame.layout` at `h="-69"` to leave room for its 69px panel; the base's is `h="-12"`. `RENDER_PROBE main/normal` shows **both** — 354x135 *and* 354x78 — each dragging a duplicate `frame.top.middle` subtree (edge strips, titlebar, caption buttons) drawn every frame. Visually subtle because the duplicates land mostly on top of each other; structurally wrong and wasted draw work. Note only the same-`id` child is meant to be replaced — a base child the derived group does not redeclare (WMP11's `frame.bottom`) still draws, which is why the reference screenshot keeps its bottom border | **3 of 69 skins, 8 same-id overrides** — Sony_Walkman (6), canum_winamp (1), WMP11-BlueVU (1), all in `wasabi.standardframe.*` ([M33]). Lower bound: the probe resolves one level of inheritance only | M | Live-reported |
 | B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two defects.** (b) streaming analyzer starvation **fixed and live-confirmed 2026-09-04**; (a) the ~7 fps repaint is **open with no established cause**. Measured, with the disproved hypotheses recorded so they are not re-tried. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
 | B118 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Establish WMP11-BlueVU's repaint cost on a *release* build before anyone optimizes it.** Blocks B119 and any B117(a) work. Every number in the B117 investigation is from `--debug`, and `71ffd874` records debug at 96.2% main-thread busy against release's 60.7%, with the whole post-B106 chase turning out to be a debug artifact. `WINAMP_MODERN_VIS_STALL` is `#if DEBUG` and cannot fire in release, so this needs `sample`, not the probe. May collapse B117(a) entirely | 2 skins to compare; the debug/release gap affects every perf item | S | Live-reported |
-| B119 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Attribute WMP11-BlueVU's per-frame draw cost, and confirm or kill B116 as its cause.** Blocked on B118, and on B116 being fixed first — B116 is headless work and may remove the cost outright. `WINAMP_MODERN_DRAW_PROFILE=1` has never been run on this skin; prior art puts `draw` at 41.4% of the main thread, mostly text and image compositing, and WMP11 has a marquee plus `net.png`/`net_mask.png` compositing over its vis. If the profile names duplicated frame objects, B117(a) is a duplicate of **B116** and is fixed in `WasabiSkinInitializer.swift:350-372`, not in the scene cache | 1 skin reported; B116's same-`id` `inherit_group` bug reaches 3 skins | M | Live-reported |
+| B119 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Attribute WMP11-BlueVU's per-frame draw cost, now that B116 is fixed.** Blocked on B118 only — B116 landed and was live-confirmed 2026-09-04, removing the duplicated frame subtree, so re-measure before profiling. `WINAMP_MODERN_DRAW_PROFILE=1` has never been run on this skin; prior art puts `draw` at 41.4% of the main thread, mostly text and image compositing, and WMP11 has a marquee plus `net.png`/`net_mask.png` compositing over its vis. The duplicated frame objects are already gone, so the open question is what repaint cost survives them | 1 skin reported | M | Live-reported |
 | B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Awaiting the reporter's live confirmation** | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
 | B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
@@ -203,38 +202,6 @@ The implementation and its automated coverage shipped; that record is in
       survives a relaunch, and confirm playback is audible. See the checklist entry in
       `manual-qa-checklist.md`.
 
-### B116
-
-- [ ] **B116. `inherit_group` appends the base's children instead of letting a same-`id` child
-      replace them.** The diagnosis is in the table row; this section is the part an agent needs to
-      act on it. **This is the agent-ready item in the WMP11 cluster** — static code, headless
-      verification, no live QA — and it is the leading hypothesis for **B117(a)**, so it comes first.
-
-      **The change.** `WasabiSkinInitializer.swift:350-372` already merges *attributes* with the
-      derived group winning (`attributes.merge(definition.defaultAttributes) { _, new in new }`) but
-      appends *children* twice — `children.append(contentsOf: parent.templateChildren)` then
-      `children.append(contentsOf: definition.templateChildren)` — with nothing keyed on `id`. Make
-      the children merge follow the same rule the attributes already do: a derived child with the
-      same `id` replaces the inherited one; a base child the derived group does not redeclare still
-      draws. That second half is load-bearing — WMP11 does not redeclare `frame.bottom`, and the
-      reference screenshot keeps its bottom border.
-
-      **Verify headlessly, before any live check.** `RENDER_PROBE main/normal` on WMP11-BlueVU
-      currently shows **both** a `354x135` and a `354x78` `wasabi.frame.layout`, each dragging a
-      duplicate `frame.top.middle` subtree. After the fix it should show one, at the derived `h="-69"`
-      (354x78), with `frame.bottom` still present. Then run the full corpus sweep — the probe resolves
-      **one level of inheritance only**, so its 8 same-`id` overrides across Sony_Walkman (6),
-      canum_winamp (1) and WMP11-BlueVU (1) are a **lower bound**, and a regression can surface in a
-      skin the probe never counted.
-
-      **Regression risk to check explicitly:** the three affected skins are all
-      `wasabi.standardframe.*`, i.e. window chrome. A wrong merge removes a border rather than
-      doubling it, and both failures are subtle on screen — compare rendered output, do not eyeball
-      the object graph.
-
-      **If it lands, re-measure B117(a) before touching B118/B119.** The duplicate subtree is drawn
-      every frame; removing it may close the repaint item outright.
-
 ### B117
 
 - [x] **B117(b). Streaming starved the `.wal` analyzer, and the spectrum slammed to the floor several
@@ -311,7 +278,8 @@ The implementation and its automated coverage shipped; that record is in
       results — read whole windows.
 
       Next steps are split out as **B118** (release baseline, blocks this) and **B119** (draw
-      attribution, and whether this is a duplicate of **B116**).
+      attribution). **B116 — the duplicated frame subtree this was suspected of being — is fixed and
+      live-confirmed (2026-09-04)**, so re-take these numbers before treating any of them as current.
 
 ### B118
 
@@ -345,9 +313,10 @@ The implementation and its automated coverage shipped; that record is in
 
 - [ ] **B119. Attribute WMP11-BlueVU's per-frame draw cost; confirm or kill B116 as the cause.**
       Live session with the reporter driving, same as B118.
-      Blocked on **B118**, and **fix B116 first**. B116 is static, headless, agent-executable work
-      and is this item's leading hypothesis: if the duplicated subtree is the cost, fixing it removes
-      the cost and B119 never needs to run. Measure only what survives that.
+      Blocked on **B118** only — **B116 is fixed and live-confirmed (2026-09-04)**, so the duplicate
+      frame subtree is gone and this item's leading hypothesis has already been acted on. Measure only
+      what survives that: re-take B117(a)'s repaint numbers before profiling anything, because the
+      cost this item was written to attribute may no longer exist.
 
       `WINAMP_MODERN_DRAW_PROFILE=1` (`WasabiRenderer.swift:649`, with `_DRAW_PROFILE_TOP=<n>` to
       widen it) attributes time per object and has never been run on this skin. The prior art records
@@ -361,13 +330,12 @@ The implementation and its automated coverage shipped; that record is in
         .build/arm64-apple-macosx/debug/NullPlayer > /tmp/wmp11-draw.log 2>&1 &
       ```
 
-      **The hypothesis to test first:** WMP11-BlueVU is one of the three same-`id` `inherit_group`
-      skins in **B116**, and `RENDER_PROBE main/normal` already shows both a `354x135` and a `354x78`
-      frame layout, each dragging a duplicate `frame.top.middle` subtree — edge strips, titlebar,
-      caption buttons — **drawn every frame**. A cost that scales with *drawing* fits the evidence
-      better than one that scales with mutation. If the draw profile names those duplicates, B117(a)
-      is a duplicate of B116 and is fixed in `WasabiSkinInitializer.swift:350-372`, not in the scene
-      cache.
+      **The hypothesis that has already been acted on:** WMP11-BlueVU was one of the three same-`id`
+      `inherit_group` skins in **B116**, and `RENDER_PROBE main/normal` used to show both a `354x135`
+      and a `354x78` frame layout, each dragging a duplicate `frame.top.middle` subtree — edge strips,
+      titlebar, caption buttons — **drawn every frame**. A cost that scales with *drawing* fits the
+      evidence better than one that scales with mutation, which is why B116 was fixed first; the probe
+      now shows one layout. Whether that closed B117(a) is unmeasured, and is the first question here.
 
       Success criterion against the existing baseline: `WM-VIS-STALL` median 131 ms → cPro-Bento's
       ~60 ms, p90 300 → ~68, max 6395 → ~122.
