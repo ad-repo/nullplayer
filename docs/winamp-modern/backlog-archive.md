@@ -34,8 +34,12 @@ Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below
       **One hotspot accounts for the entire skin-specific delta:** `WasabiLayerFXMesh.resample`
       (`WasabiLayerFX.swift:88-133`) — a scalar per-destination-pixel bilinear warp in `Double`,
       on the CPU, on the main thread — is 24.1% of WMP11's main thread and 0.0% of cPro-Bento's.
-      Underneath it CoreGraphics' `RGBAf16_sample_RGBAf_inner` (7.3%) and `RGBAf16_image_mark`
-      (4.4%) are the f16 source fetch feeding it. `drawWarped` already caches on
+      Beside it — a **disjoint** subtree, corrected after this item first mis-filed it — CoreGraphics'
+      f16 image marking costs another **21.3%** against the control's 4.4%, under
+      `CGDisplayListDrawInContextDelegate`: the display list being replayed into an f16 backing store
+      *after* `draw(_:)` returns, re-converting the fresh `CGImage` the warp mints each frame. It is
+      not the source fetch — `warpSourcePixels` already caches mesh-independently
+      (`WasabiRendererLayerFX.swift:52-74`). `drawWarped` already caches on
       `WarpSourceKey` + mesh equality, so a miss on every frame means WMP11's FX layer moves a
       vertex every frame and the cache cannot help it. The loop is `width x height` (capped at
       `maximumWarpExtent` 1024) x 4 `accumulate` calls x 4 channels, all in `Double`.
