@@ -45,6 +45,12 @@
   pixel inside the border drawn around them, which left a transparent line the desktop showed through.
   It is covered on every window that shows a picture, a visualization or the library.
 
+- **Modern skins: Itemskin's playlist window opens properly** — it came up as an empty box with no
+  frame around it and no way to make it paint. A skin's script can close its own window in response to
+  being told the window is hidden, and NullPlayer never undid that when the window was opened again,
+  so the playlist stayed shut behind an open window. Reopening a window now brings it back whole, and
+  a window that has never been shown is no longer announced to the skin as one that just closed.
+
 - **Modern skins: a window no longer comes apart from its frame while you drag it** — on a skin that
   draws a window's border in a second window, dragging by the contents made the border race away and
   snap back when the drag ended.

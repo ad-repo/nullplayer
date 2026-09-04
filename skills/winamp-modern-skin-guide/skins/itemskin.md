@@ -2,7 +2,8 @@
 
 A glass-framed skin whose component windows are built in an unusual way, and the reason B69 exists.
 Loads as of Phase 35; its notifier preferences draw as of B66, on their own background as of B90; its
-frames find their content as of B69 (2026-08-29); **its audio is audible as of B111 (2026-09-04)** —
+frames find their content as of B69 (2026-08-29); **its playlist window opens as of B112 (2026-09-04)**;
+**its audio is audible as of B111 (2026-09-04)** —
 until then it silenced the player, and it is the only skin in the corpus that could.
 
 ## The shape of this skin
@@ -47,6 +48,22 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   logging `video=declared:Video` was the correct answer, not the discrepancy it looked like. (B97's
   actual cause was a remembered window state; see
   [`reference/components.md`](../reference/components.md) → *`default_visible="1"`*.)
+- **Its PL frame script closes its own content window, and only that one does.** Of the six
+  `standardframe*.maki`, `standardframePL.maki` alone answers `onSetVisible(0)` with
+  `PLEdit.normal.hide()` *as well as* `cont.clear.pl.hide()` + `Timer.stop()`. That made it the skin
+  that found B112: `hide()` writes `visible="0"` on the layout, the host never cleared it when the
+  window was reopened, and because the flag also gates the `onSetVisible` walk the frame script was
+  never told the window came back — an empty, frameless box with no way to recover. Read the
+  bytecode, not the symptom: the missing `cont.clear.pl` looked like a `newDynamicContainer` seam
+  (B110) and was not — that call was answered correctly throughout. See
+  [`reference/scripting.md`](../reference/scripting.md) → *`onSetVisible` — a window a script closes
+  has to be reopened*.
+- **Its library now wears the *AVS* frame, and `cont.clear.ml` is dead.** The borrowed-frame pass
+  (3edf3765, 2026-09-04) rewrote `MLibrary`'s `Wasabi:StandardFrame:ML` to `:AVS` because the ML
+  frame costs rows on every screen for a window whose contents are entirely ours. So a probe that
+  expects `MLibrary`↔`cont.clear.ml` reads this skin wrong today: the live pairing is
+  `MLibrary`↔`cont.clear.avs`, `AVS_window`↔`cont.clear.avs#2`, and our own hosted windows take
+  further copies.
 - **Two windows per component is not a defect.** A probe that counts windows, or that expects a
   component window to have chrome of its own, reads this skin wrong. `PLEdit/normal` having 6 scene
   nodes is correct; its 40-node frame is a different container.
@@ -85,6 +102,17 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   `getPath` and `setChecked`; the player is unaffected.
 
 ## Knowingly missing
+
+- **Every window's text and displays read as a dark, muddy olive** (B113, reported 2026-09-04). Not a
+  filter over the scene — a missing amplification. This skin takes almost all of its colour from gamma
+  sets (`wasabi.list.text` is `80,70,0 gammagroup="text"`, `wasabi.list.background` is
+  `220,175,0 gammagroup="Display2"`), and the theme we activate is the first `<gammaset>` in the
+  document, which here is `(default)` and is **empty** — an identity transform, so those colours stay
+  at their raw declared values. `WINAMP_MODERN_RENDER_PALETTE=1` (2026-09-04): `theme=(default)`,
+  `listText -> rgb(80,70,0)` on `contentBackground -> rgb(42,42,42)`. It ships 15 sets and selects
+  none — no `default=` attribute, no `<ColorThemes:List>`, no theme name in any of its `.maki`. What
+  Winamp activates for a skin whose first set is empty is the open question; measure it before
+  choosing a rule.
 
 - The library frame's inner `wasabi.frame.layout.mlibrary` group paints a `basetexture` strip over the
   left of the hosted library surface, and the group's background tints the rest of it. Its two layers

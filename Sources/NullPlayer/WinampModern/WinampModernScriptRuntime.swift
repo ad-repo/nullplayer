@@ -1917,11 +1917,42 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     ///
     /// Bounded by the object's own state: an object inside a hidden group is not on screen, so it is
     /// not told it is, and a container told the same thing twice dispatches once.
+    ///
+    /// **A window that has never been shown is not a window that closed** (B112). Every auxiliary
+    /// container is announced once at `scripts.start()` with whatever its window says, and for the
+    /// ones a skin ships `default_visible="0"` that first announcement is `false` — a statement of
+    /// the starting state, not the event Winamp fires when a window is ordered out. Dispatched as an
+    /// event it runs the script's *closing* branch against a window nobody has opened, and a handler
+    /// is entitled to tear its own scene down there: Itemskin's `standardframePL.maki` answers
+    /// `onSetVisible(0)` with `PLEdit.normal.hide()` + `cont.clear.pl.hide()` + `Timer.stop()`, so
+    /// the playlist window's own layout came up marked hidden, its frame window was never created,
+    /// and the timer that pairs the two was stopped before it ever ran — an empty, frameless box the
+    /// user cannot make paint. Recorded and not dispatched, so the *next* announcement is the real
+    /// change.
     func notifyContainerVisibility(containerID: WasabiObjectID, visible: Bool) {
         guard !isTornDown else { return }
         guard let container = loadedSkin.runtime.graph.object(withID: containerID) else { return }
         guard containerVisibility[containerID] != visible else { return }
+        let firstAnnouncement = containerVisibility[containerID] == nil
         containerVisibility[containerID] = visible
+        guard visible || !firstAnnouncement else { return }
+        // **Opening a container shows the layout it is on** (B112). A skin's script may have called
+        // `hide()` on that layout itself — Itemskin's playlist frame does, from the `onSetVisible(0)`
+        // above — and `visible="0"` is written on the layout object, where nothing but another
+        // script call clears it. Winamp has no such residue: `Container::setVisible(1)` re-enters
+        // the current layout, so a window the user reopens comes back whole.
+        //
+        // Left standing it is terminal rather than cosmetic, because the flag feeds the walk below:
+        // the layout reads not-visible, so **nothing inside it hears `onSetVisible(1)`** and the very
+        // handler that would rebuild the window's chrome is never reached. Itemskin's playlist opened
+        // as an empty box with no frame and no way back — the scene drew nothing, `cont.clear.pl` was
+        // never created, and the 10 ms timer that keeps the pair together stayed stopped.
+        if visible, let layoutID = activeLayoutByContainer[containerID],
+           let layout = loadedSkin.runtime.graph.object(withID: layoutID), !isVisible(layout) {
+            _ = layout.setAttribute("visible", value: "1")
+            scriptClosedObjects.remove(layout.stableID)
+            noteGeometryChange()
+        }
         func walk(_ object: WasabiObject, ancestorsVisible: Bool) {
             let selfVisible = ancestorsVisible && isVisible(object)
             if selfVisible || !visible {

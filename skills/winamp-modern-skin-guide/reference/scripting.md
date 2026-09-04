@@ -835,6 +835,46 @@ two a script asked `newDynamicContainer` for (`isDynamicallyClaimed`); the clien
 declares and the user opens. Only that direction is kept. `WINAMP_MODERN_GLUE_TRACE=1` prints the
 pairs and every restack — see [harness.md](harness.md).
 
+### `onSetVisible` — a window a script closes has to be *reopened*, not just ordered in
+
+`onSetVisible` is dispatched per container by `notifyContainerVisibility`, and two rules about it are
+not obvious until a skin closes its own scene from that handler. Itemskin's playlist frame is the
+measured case (B112, 2026-09-04) and it does exactly that:
+
+```
+--- onsetvisible ---          ; standardframePL.maki, WINAMP_MODERN_RENDER_DISASM=@window.xml
+239: op16 -> 246              ; if (!visible)
+240:   v34.start()            ;   the 10 ms timer that keeps chrome parked on content
+243:   call @362              ;   chrome.resize(content.getLeft/Top/Width/Height)
+246:   v21.hide()             ; ← PLEdit.normal, the playlist window's OWN layout
+249:   v19.hide()             ; ← layout.clear.pl, its frame window
+252:   v34.stop()
+```
+
+**Opening a container shows the layout it is on.** `hide()` writes `visible="0"` on the layout object,
+where nothing but another script call clears it; Winamp has no such residue, because
+`Container::setVisible(1)` re-enters the current layout. Ordering the native window in is not enough.
+Left standing the flag is terminal rather than cosmetic, because it is read in **two** places: the
+renderer skips the layout (the window paints nothing) *and* the `onSetVisible` walk skips it, so
+nothing inside hears `onSetVisible(1)` and the handler that would undo the hide is never reached. The
+playlist opened as an empty box with no frame and no way back, and because the frame window was the
+missing half it read as a chrome-creation defect — `newDynamicContainer` was answering correctly the
+whole time.
+
+**A window that has never been shown is not a window that closed.** Every auxiliary container is
+announced once at `scripts.start()` with whatever its window says, and for one a skin ships
+`default_visible="0"` that first announcement is `false`. That is a statement of the starting state,
+not the event Winamp fires when a window is ordered out, and a handler is entitled to tear its scene
+down on it. Recorded, not dispatched. Same class as *a write that changes nothing is not an event*
+([../compatibility/maki-surface.md](../compatibility/maki-surface.md)).
+
+A third symptom rode along and is worth recognising on sight: with the frame window never on screen,
+the sync above read `getLeft()/getTop()` off a layout that has no desktop origin, got `0,0`, and
+parked the client at the screen's bottom-left corner — AX `(0, 943)` on a 1080-tall display, exactly
+`(0, screenHeight - windowHeight)`. A window in a screen corner is the signature of a cross-window
+coordinate read whose source window does not exist yet; see *Writing back the position a window just
+read* above.
+
 ### `System.onShowLayout` / `onHideLayout` — the only signal a layout script gets
 
 Winamp shows the main player's layout as the last step of loading a skin, and a script that lays the

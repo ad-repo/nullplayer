@@ -219,6 +219,48 @@ final class WinampModernPhase28Tests: XCTestCase {
         XCTAssertEqual(mutations, 2)
     }
 
+    /// **A window that has never been shown is not a window that closed** (B112). Every auxiliary
+    /// container is announced once at `scripts.start()` with whatever its window says, and for one a
+    /// skin ships `default_visible="0"` that is `false` — the starting state, not Winamp's
+    /// ordered-out event. A script is entitled to tear its own scene down in that handler, and
+    /// Itemskin's playlist frame does.
+    func testTheFirstAnnouncementOfAClosedWindowIsNotAnEvent() throws {
+        let (runtime, _, _) = try makeFXRuntime()
+        var mutations = 0
+        runtime.graphDidMutate = { mutations += 1 }
+        let container = try XCTUnwrap(runtime.loadedSkin.runtime.graph.roots.first {
+            $0.typeName.caseInsensitiveCompare("container") == .orderedSame
+        })
+        runtime.notifyContainerVisibility(containerID: container.stableID, visible: false)
+        XCTAssertEqual(mutations, 0, "the starting state is recorded, not dispatched")
+        runtime.notifyContainerVisibility(containerID: container.stableID, visible: true)
+        XCTAssertEqual(mutations, 1, "and the next announcement is the real change")
+    }
+
+    /// **Opening a container shows the layout it is on** (B112). A skin's script may have hidden that
+    /// layout itself — Itemskin's `standardframePL.maki` answers `onSetVisible(0)` with
+    /// `PLEdit.normal.hide()` — and `visible="0"` is written on the layout object, where nothing but
+    /// another script call clears it. Winamp has no such residue.
+    ///
+    /// Terminal rather than cosmetic, because the flag gates the walk below it: the layout reads
+    /// not-visible, so nothing inside it hears `onSetVisible(1)` and the handler that would rebuild
+    /// the window's chrome is never reached. Itemskin's playlist opened as an empty box with no
+    /// frame and no way back.
+    func testReopeningAContainerRestoresTheLayoutItsOwnScriptHid() throws {
+        let (runtime, _, _) = try makeFXRuntime()
+        let container = try XCTUnwrap(runtime.loadedSkin.runtime.graph.roots.first {
+            $0.typeName.caseInsensitiveCompare("container") == .orderedSame
+        })
+        let layout = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "normal").first)
+        runtime.activeLayoutByContainer[container.stableID] = layout.stableID
+        runtime.notifyContainerVisibility(containerID: container.stableID, visible: true)
+        runtime.notifyContainerVisibility(containerID: container.stableID, visible: false)
+        _ = layout.setAttribute("visible", value: "0")   // what the skin's own `hide()` writes
+        runtime.notifyContainerVisibility(containerID: container.stableID, visible: true)
+        XCTAssertNotEqual(layout.attributes["visible"], "0",
+                          "the window the user reopened comes back whole")
+    }
+
     // MARK: - The frame budget (Phase 29)
 
     /// The renderer memoizes its scene walk against the graph's mutation counter. Correctness first:

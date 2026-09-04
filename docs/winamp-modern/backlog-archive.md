@@ -2,6 +2,72 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B112 — Itemskin's playlist window opens as an empty, frameless box — closed 2026-09-04
+
+| B112 | **Itemskin's playlist window opens as an empty, frameless box.** Reported 2026-09-04. `WinampModernContainer_PLEdit` is present, correctly sized (330x137) and reachable — accessibility lists it beside the other windows — but it paints **nothing** live, and it is the only content window with no chrome partner: `MLibrary`↔`cont.clear.avs`, `AVS_window`↔`cont.clear.avs#2`, `Video`↔`cont.clear.vd` and our hosted Flow window↔`cont.clear.avs#3` all pair up, while `cont.clear.pl` is never created at all. So `scripts/standardframePL.maki` alone, of that skin's five frame scripts, does not build its chrome. **The same container renders correctly headlessly** — the render harness draws its component box — so the markup and the graph are sound and both halves live in the live path. Two defects, not one: the missing chrome, and a scene that draws nothing with a component host attached. A forced resize through the accessibility API does not make it paint, and `rememberedLayoutID` already validates the stored layout against the container, so a stale saved layout is ruled out. Long-standing, not a regression from the borrowed-frame work | 1 skin measured; the chrome half is the same `newDynamicContainer` seam as B110, which 5 skins depend on | M | Live-reported |
+
+### B112
+
+- [x] **B112. Itemskin's playlist window opens as an empty, frameless box.** Root-caused and fixed
+      2026-09-04, confirmed live by the reporter.
+
+      **The entry's own framing was wrong in one way worth recording:** it read this as *two* defects
+      — a missing chrome window and a scene that draws nothing — and as a `newDynamicContainer` seam
+      like B110. It is one defect, in neither of those places. `newDynamicContainer("cont.clear.pl")`
+      was answered correctly all along; `CALL_TRACE` shows it returning the container and the frame
+      script resolving both layouts.
+
+      **What it is.** `scripts/standardframePL.maki` is the only one of the skin's six frame scripts
+      whose `onSetVisible` closes its own scene. Its bytecode, `WINAMP_MODERN_RENDER_DISASM=@window.xml`:
+
+      ```
+      --- onsetvisible ---            ; v53 = the visible flag
+      239: op16 -> 246                ; if (!visible)
+      240:   v34.start()              ;   the 10 ms timer that keeps chrome on content
+      243:   call @362                ;   chrome.resize(content.getLeft/Top/Width/Height)
+      245: goto 255
+      246:   v21.hide()               ; ← PLEdit.normal — the playlist window's OWN layout
+      249:   v19.hide()               ; ← layout.clear.pl — its frame window
+      252:   v34.stop()
+      ```
+
+      `hide()` writes `visible="0"` on the graph object, and **nothing cleared it when the host
+      reopened the window**. Winamp has no such residue: `Container::setVisible(1)` re-enters the
+      current layout. Two ways the flag then bites, and the second is why it never recovered:
+
+      1. `WasabiSceneRenderer.isVisible` reads it, so the layout drew nothing — the empty box.
+      2. `notifyContainerVisibility`'s walk reads it too, so with the layout marked hidden **nothing
+         inside it heard `onSetVisible(1)`** — and that handler is the only thing that restarts the
+         timer and shows `cont.clear.pl`. The chrome could never come back, which is what made this
+         look like a chrome-creation defect.
+
+      A third symptom came from the same place: with the frame window never on screen, the sync at
+      @362 read `getLeft()/getTop()` off a layout that has no desktop origin and got `0,0`, parking
+      PLEdit at the screen's bottom-left corner — measured at AX `(0, 943)` on a 1080-tall display,
+      exactly `(0, screenHeight - 137)`.
+
+      **The fix** (`WinampModernScriptRuntime.notifyContainerVisibility`), two rules:
+
+      - Opening a container re-shows its active layout, whatever the skin's own script did to it.
+      - **A window that has never been shown is not a window that closed.** Every auxiliary container
+        is announced once at `scripts.start()` with whatever its window says, and for one shipped
+        `default_visible="0"` that first announcement is `false` — the starting state, not Winamp's
+        ordered-out event. Recorded, not dispatched. Same class as B111's *an unchanged `setActivated`
+        is not an event*.
+
+      Not a regression from the borrowed-frame work, as the entry said: `notifyContainerVisibility`
+      has dispatched that opening `false` since 996cd85c (2026-08-19).
+
+      **Verified.** `swift test` 1765 pass, plus two new properties in `WinampModernPhase28Tests`,
+      each checked to fail with its half of the fix removed. Live on Itemskin 2026-09-04: the playlist
+      opens with its own chrome (`cont.clear.pl` and `PLEdit` both at `(822,401) 415x172`, glued), the
+      pane lands at the declared `(33, 55, W-66, H-92)`, and the reporter confirmed it.
+
+      **What this pass also established about the skin, for the next reader:** `3edf3765` rewrote
+      `MLibrary`'s frame from `Wasabi:StandardFrame:ML` to `:AVS`, so the library now wears the AVS
+      chrome and `cont.clear.ml` is dead for this skin. And the muted palette reported alongside this
+      is *not* related — it is the empty `(default)` gammaset, filed as B113.
+
 ## B78 — a negative `sysregion` suppresses real frame artwork, so the content overhangs the frame — closed 2026-09-03
 
 | B78 | **A negative `sysregion` suppresses real frame artwork, so the content overhangs the frame.** Reported on Ebonite_2_1 (2026-08-31) as "the window contents are bigger than the frame"; reproduced and root-caused 2026-08-31. `WasabiRenderer.isRegionOnly` drops any layer whose `sysregion` is negative, which deletes the four border layers of Ebonite's standard frame and leaves only its `inner` layer — 19px narrower than the client area drawn over it. The rule is right for the silhouette masks it was written for (Ujola Cat) and wrong for real artwork | 308 layers / **37 of 53 skins** currently suppressed ([M26]) | M | Live-reported |
