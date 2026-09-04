@@ -3544,8 +3544,9 @@ final class WasabiSceneRenderer {
             break
         case .edit:
             // Winamp fills an edit with a native child window, which is why a skin draws no box for
-            // one. `drawEdit` paints the string and the caret straight after this.
-            context.setFillColor(palette.contentBackground.cgColor)
+            // one. `drawEdit` paints the string and the caret straight after this. The plate is
+            // `editBackground` — `wasabi.edit.background` names *this* surface, not the lists (B113).
+            context.setFillColor(palette.editBackground.cgColor)
             context.fill(frame)
             context.setStrokeColor(color.withAlphaComponent(0.55).cgColor)
             context.setLineWidth(1)
@@ -3645,7 +3646,7 @@ final class WasabiSceneRenderer {
     /// pick from its `onTextChanged`, and drawing it as well would print the selection twice.
     private func drawDropDownList(_ object: WasabiObject, frame: CGRect, color: NSColor,
                                   context: CGContext) {
-        context.setFillColor(palette.contentBackground.cgColor)
+        context.setFillColor(palette.editBackground.cgColor)
         context.fill(frame)
         context.setStrokeColor(color.withAlphaComponent(0.55).cgColor)
         context.setLineWidth(1)
@@ -3663,16 +3664,18 @@ final class WasabiSceneRenderer {
         let label = WasabiFormWidgets.selection(of: object)
         guard !label.isEmpty else { return }
         // The plate is ours, so the text on it has to be legible against it rather than merely
-        // declared: Itemskin's list colour is nearly its own content background, and the selection
+        // declared: Itemskin's list colour is nearly its own edit background, and the selection
         // came out dark on dark — the same guarantee `legibleRowColor` gives the rows this renderer
-        // draws, needed again because this surface never passes through one.
+        // draws, needed again because this surface never passes through one. Judge it against
+        // `editBackground`, the plate filled above: judging the *list* colour a drop-down is not
+        // drawn on is how a legible label turns dark-on-dark again (B113).
         drawText(label, object: object,
                  frame: CGRect(x: frame.minX + 4, y: frame.minY,
                                width: max(0, frame.width - arrowWidth - 6), height: frame.height),
                  context: context,
                  undeclaredColor: WinampModernSurfaceStyle.legible(
                     preferring: [palette.listText, palette.currentText, palette.selectionText],
-                    on: palette.contentBackground))
+                    on: palette.editBackground))
     }
 
     /// Winamp's own "m:ss" for a playlist row's running time.

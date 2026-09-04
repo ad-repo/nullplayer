@@ -89,6 +89,53 @@ applies to any quiet-by-design skin — Lobe, micro.
 defaults to `currentText`, which is exactly what the draw sites read before it existed. Classic `.wsz`
 skins are a zero-pixel change by construction and `SkinLoader` needed no edit.
 
+#### A list plate and a text-field plate are different surfaces (B113, 2026-09-04)
+
+`WasabiPalette` resolves each role from its own chain, and `contentBackground` — the plate under
+every list NullPlayer draws inside a skin — used to lead with **`wasabi.edit.background`**. That id
+names a *text field*, not a list, and a skin that declares both means them differently. **11 of the
+69 corpus skins do**, and six were drawing plain row text below 3:1 on the wrong plate:
+
+| Skin | old plate | new plate | row text | contrast |
+|---|---|---|---|---|
+| Itemskin | 42,42,42 | 220,175,0 | 80,70,0 | 1.52 → 4.59 |
+| K-jr, k_jr_…_d329ymw | 42,42,42 | 255,255,255 | 0,0,0 | 1.46 → 21.0 |
+| Pure Inspired ×2 | 42,42,42 | 74,74,74 | 0,0,0 | 1.46 → 2.37 |
+| WMP11-BlueVU | 96,96,96 | 10,10,10 | 40,113,233 | 1.39 → 4.36 |
+| micro | 96,96,96 | 24,24,24 | 140,140,140 | 1.87 → 5.28 |
+| Nullsoft 2000 SP4 Lite | 0,0,180 | 255,255,255 | 0,0,0 | 1.66 → 21.0 |
+| Lobe | 75,75,75 | 124,131,124 | 0,0,0 | 2.41 → 5.39 |
+| multipass | 75,75,75 | 38,38,38 | 106,206,255 | 4.94 → 8.57 |
+| MoonLight | 42,42,42 | 246,246,246 | 140,140,140 | 4.27 → 3.11 |
+
+Itemskin was the live report — *"is there a filter in front of the displays?"*, everything a muddy
+olive. There was no filter and no missing gamma (see the empty-`(default)`-gammaset note below,
+which is what the first diagnosis blamed): the skin's rows are dark olive **on gold**, which is its
+whole display language, and we were painting them on its charcoal edit colour. B48 cannot save this
+— `legibleRowColor` deliberately leaves *unselected* rows alone, and unselected-row-on-plate is
+exactly the pairing that was wrong.
+
+**The check that decides which id a skin means, without launching it:** `wasabi.list.column.background`,
+the header strip, is unambiguously part of the list. In all 11 it sits in the same lightness family
+as `wasabi.list.background` and not as `wasabi.edit.background` — MoonLight's column is 233,233,233
+beside a 246,246,246 list and a 42,42,42 edit, so its near-white playlist inside a dark skin is the
+author's design, not our regression, even though it is the one skin whose contrast *falls*.
+
+**The role is split, because the fix would otherwise break the other half.** `<Wasabi:EditBox>` and
+`<Wasabi:DropDownList>` are the surface `wasabi.edit.background` names, and they are drawn by us
+(`drawStandardFormWidget`, `drawDropDownList`) — promoting the list colour alone moved Itemskin's
+settings dropdowns onto the gold plate. `WasabiPalette.editBackground` keeps them where they were,
+falling back to `contentBackground` for a skin that names no edit colour. **A legibility guard must
+judge against the plate its own draw filled**: the drop-down label's `legible(preferring:on:)` was
+still weighed against `contentBackground`, so the first pass turned a white label dark-on-dark on
+the very skin it was fixing.
+
+Proof for a change of this shape: `WINAMP_MODERN_RENDER_PALETTE=1` over the corpus reports every
+link of every chain in one pass, so the old and new winner can be read off **without** rebuilding —
+the chain lines list each id's resolution regardless of order. Then the render sweep: invariants
+identical, 565 of 590 images identical, and the 25 that moved are these 11 skins' list surfaces plus
+`Anexa/main-shade`, which is nondeterministic by nature.
+
 #### Colour themes (`gammaset` / `gammagroup`)
 
 A theme is a set of per-channel adjustments keyed by `gammagroup` id, which bitmaps and `<color>`
@@ -132,6 +179,13 @@ resources opt into with `gammagroup="…"`. Three rules:
     `boost="2"` target that is bright artwork (avg RGB 200), where the two models diverge most.
 - The **default** theme is the first gammaset in the document (skins name it freely — "clean | orange
   (default)"), not the alphabetically first name.
+- **An empty first gammaset is a theme, not a gap** (B113, measured 2026-09-04). 6 of the 47 corpus
+  skins that ship gammasets lead with one that declares no groups — Bio-Nid, Firefox, Formamp,
+  Itemskin, Rika, T800 — and every one of them *names* it `default` / `(default)` / `.default`. An
+  empty set is an identity transform, which is the author saying "the artwork as drawn"; only 4 of
+  the 6 even have another set to pick instead. Do not add a rule that skips it. Itemskin looked
+  wrong for an unrelated reason (see *A list plate and a text-field plate are different surfaces*),
+  and "the theme is empty" is the plausible-mechanism answer that cost that report its first pass.
 
 `WasabiColorThemeCatalog` reads the gammasets straight from the document, so `gammagroup` is
 deliberately *not* registered as a resource: its id is scoped to its gammaset, and registering it made

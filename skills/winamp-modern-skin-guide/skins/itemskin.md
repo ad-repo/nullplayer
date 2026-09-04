@@ -98,21 +98,21 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   (`<Togglebutton id="volume.mute" />` has no image, action or coordinates — a 0×0 object nobody can
   click), and the disassembly is innocent too, because the skin never calls `setVolume` at load.
   `WINAMP_MODERN_CALL_TRACE=1` in the running app is what named it.
+- **Its gold list colour is the tell for B113.** Reported 2026-09-04 as *"is there a filter in front
+  of the displays?"* — library, playlist and readouts all a dark, muddy olive. Two wrong answers
+  before the right one: the skin's first `<gammaset>` is an empty `(default)`, which looks like a
+  missing amplification and is not (an empty set named "default" is the author asking for the
+  artwork as drawn — 6 corpus skins do it). The real cause was one link of one chain:
+  `wasabi.list.text` `80,70,0` is drawn for `wasabi.list.background` **`220,175,0`**, gold, and we
+  were painting it on `wasabi.edit.background` `42,42,42` — 1.52:1. **Fixed 2026-09-04**, engine-wide
+  (11 corpus skins), see [`../reference/rendering/colour.md`](../reference/rendering/colour.md) →
+  *A list plate and a text-field plate are different surfaces*. This skin is also the reason the
+  `editBackground` role exists: its settings page is the corpus's best drop-down fixture, and the
+  first pass recoloured it gold and then flipped its labels dark-on-dark.
 - **Its compatibility level reads `unsupported` although the skin draws.** The notifier script wants
   `getPath` and `setChecked`; the player is unaffected.
 
 ## Knowingly missing
-
-- **Every window's text and displays read as a dark, muddy olive** (B113, reported 2026-09-04). Not a
-  filter over the scene — a missing amplification. This skin takes almost all of its colour from gamma
-  sets (`wasabi.list.text` is `80,70,0 gammagroup="text"`, `wasabi.list.background` is
-  `220,175,0 gammagroup="Display2"`), and the theme we activate is the first `<gammaset>` in the
-  document, which here is `(default)` and is **empty** — an identity transform, so those colours stay
-  at their raw declared values. `WINAMP_MODERN_RENDER_PALETTE=1` (2026-09-04): `theme=(default)`,
-  `listText -> rgb(80,70,0)` on `contentBackground -> rgb(42,42,42)`. It ships 15 sets and selects
-  none — no `default=` attribute, no `<ColorThemes:List>`, no theme name in any of its `.maki`. What
-  Winamp activates for a skin whose first set is empty is the open question; measure it before
-  choosing a rule.
 
 - The library frame's inner `wasabi.frame.layout.mlibrary` group paints a `basetexture` strip over the
   left of the hosted library surface, and the group's background tints the rest of it. Its two layers

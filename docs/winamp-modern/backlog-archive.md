@@ -2,6 +2,53 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B113 — every window's text and displays read as a dark, muddy olive on Itemskin — closed 2026-09-04
+
+| B113 | **Itemskin draws every window's text and displays in a dark olive nobody can read.** Reported 2026-09-04 as "is there a filter in front of the displays?" — the library list, the visualization and the readouts on every window are all the same muted olive. There is no filter; there is a **missing amplification**. The skin gets almost all of its colour from gamma sets: `wasabi.list.text` is declared `80,70,0` with `gammagroup="text"` and `wasabi.list.background` `220,175,0` with `gammagroup="Display2"`, and the theme we activate is the **first `<gammaset>` in the document**, which for this skin is `(default)` and is **empty** — an identity transform, so every such colour stays at its raw, deliberately-dark declared value. Measured with `WINAMP_MODERN_RENDER_PALETTE=1` (2026-09-04): `theme=(default)`, `listText -> rgb(80,70,0)` on `contentBackground -> rgb(42,42,42)` — a contrast ratio near 1.5, and B48's legibility guard does not lift it. The skin ships **15** sets and selects none: no `default=` attribute on any `<gammaset>`, no `<ColorThemes:List>` picker, and no theme name anywhere in its 20 `.maki` files. So the open question is what Winamp actually activates for a skin whose first set is empty — measure that before choosing a rule, and check the reach of "first gammaset is empty" across the corpus | 1 skin measured; reach of the empty-first-gammaset shape unmeasured | M | Live-reported |
+
+### B113
+
+- [x] **B113. Itemskin's text and displays read as a dark, muddy olive.** Root-caused and fixed
+      2026-09-04.
+
+      **The entry's own diagnosis was wrong, and the way it was wrong is the lesson.** It blamed the
+      empty first `<gammaset>` — a real, measured fact (`theme=(default)`, an identity transform) that
+      is not a defect. An author who ships a set named `(default)` with no groups is asking for the
+      artwork as drawn, and **6 of the 47** corpus skins that declare gammasets do exactly that
+      (Bio-Nid, Firefox, Formamp, Itemskin, Rika, T800; only 4 even have another set to pick). Every
+      number in the entry was correct and none of them pointed at the cause. A plausible mechanism
+      that explains the symptom is not the cause until something else rules the alternatives out.
+
+      **What it is.** One link of one chain. `WasabiPalette.Role.contentBackground` — the plate under
+      every list we draw inside a skin — led with `wasabi.edit.background`, which names a *text
+      field*. Itemskin's rows are `wasabi.list.text` `80,70,0` drawn for `wasabi.list.background`
+      `220,175,0`, gold, its whole display language; we painted them on its `42,42,42` edit colour at
+      **1.52:1**. B48's guard cannot reach it — `legibleRowColor` deliberately leaves unselected rows
+      alone.
+
+      **Reach: 11 of the 69 corpus skins** declare both ids and mean them differently, six of them
+      below 3:1 (Itemskin 1.52, K-jr ×2 and Pure Inspired ×2 at 1.46, WMP11-BlueVU 1.39, micro 1.87).
+      All 11 improve except MoonLight, 4.27 → 3.11 onto the near-white list its author declared. The
+      independent check, without launching anything: `wasabi.list.column.background` — the header
+      strip, unambiguously part of the list — is in the same lightness family as the list background
+      and not the edit background in all 11.
+
+      **The fix is two halves.** `contentBackground` leads with `wasabi.list.background`, and a new
+      `editBackground` role keeps `<Wasabi:EditBox>`/`<Wasabi:DropDownList>` on the colour their
+      author named (falling back to `contentBackground` where none is named). Without the split the
+      fix dragged Itemskin's settings dropdowns onto the gold plate; with the plate moved but the
+      drop-down's legibility guard still judging against `contentBackground`, their labels then went
+      dark-on-dark. **A legibility guard must judge against the plate its own draw filled.**
+
+      **Verified.** `swift test` 1773 pass, including six new properties in `WinampModernB113Tests`
+      (the pixel one checked to fail with the split removed). Corpus render sweep against a worktree
+      baseline: invariants identical, 565 of 590 images identical, and the 25 that moved are these 11
+      skins' list surfaces plus `Anexa/main-shade`, which is nondeterministic by nature. **Confirmed
+      live by the reporter across all 11 affected skins, 2026-09-04** — which no headless pass could
+      have done for them: the dump harness attaches no component host, so it draws the plate and
+      never a row of library or playlist text. The recurring check is in `manual-qa-checklist.md`. Detail in
+      [`../../skills/winamp-modern-skin-guide/reference/rendering/colour.md`](../../skills/winamp-modern-skin-guide/reference/rendering/colour.md).
+
 ## B112 — Itemskin's playlist window opens as an empty, frameless box — closed 2026-09-04
 
 | B112 | **Itemskin's playlist window opens as an empty, frameless box.** Reported 2026-09-04. `WinampModernContainer_PLEdit` is present, correctly sized (330x137) and reachable — accessibility lists it beside the other windows — but it paints **nothing** live, and it is the only content window with no chrome partner: `MLibrary`↔`cont.clear.avs`, `AVS_window`↔`cont.clear.avs#2`, `Video`↔`cont.clear.vd` and our hosted Flow window↔`cont.clear.avs#3` all pair up, while `cont.clear.pl` is never created at all. So `scripts/standardframePL.maki` alone, of that skin's five frame scripts, does not build its chrome. **The same container renders correctly headlessly** — the render harness draws its component box — so the markup and the graph are sound and both halves live in the live path. Two defects, not one: the missing chrome, and a scene that draws nothing with a component host attached. A forced resize through the accessibility API does not make it paint, and `rememberedLayoutID` already validates the stored layout against the container, so a stale saved layout is ruled out. Long-standing, not a regression from the borrowed-frame work | 1 skin measured; the chrome half is the same `newDynamicContainer` seam as B110, which 5 skins depend on | M | Live-reported |

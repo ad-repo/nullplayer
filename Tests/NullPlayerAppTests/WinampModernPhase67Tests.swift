@@ -158,9 +158,11 @@ final class WinampModernPhase67Tests: XCTestCase {
         for role in WasabiPalette.Role.allCases {
             XCTAssertFalse(role.identifiers.isEmpty, "\(role.rawValue) has no identifiers")
         }
+        // B113: the list background outranks the edit-field background, which is a different
+        // surface — eleven corpus skins declare both and mean them differently.
         XCTAssertEqual(WasabiPalette.Role.contentBackground.identifiers,
-                       ["wasabi.edit.background", "studio.list.column.background",
-                        "wasabi.list.background", "common.labelwnd.background"])
+                       ["wasabi.list.background", "wasabi.edit.background",
+                        "studio.list.column.background", "common.labelwnd.background"])
     }
 
     func testASkinThatDeclaresNothingStillLandsOnTheDocumentedFallbacks() throws {

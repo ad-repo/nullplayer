@@ -17,6 +17,11 @@ struct WasabiPalette: Equatable {
     let selectionText: NSColor
     let selectionBackground: NSColor
     let contentBackground: NSColor
+    /// The plate behind a `<Wasabi:EditBox>` and a `<Wasabi:DropDownList>` — a *text field*, not a list.
+    /// Split from `contentBackground` by B113: both used to resolve from one chain led by
+    /// `wasabi.edit.background`, so fixing the lists would have dragged the form widgets onto the
+    /// list colour with them. Eleven corpus skins declare the two ids differently and mean it.
+    let editBackground: NSColor
     let treeText: NSColor
     let treeSelection: NSColor
 
@@ -38,12 +43,14 @@ struct WasabiPalette: Equatable {
     /// to defend itself.
     init(listText: NSColor, currentText: NSColor, selectionText: NSColor,
          selectionBackground: NSColor, contentBackground: NSColor,
+         editBackground: NSColor? = nil,
          treeText: NSColor, treeSelection: NSColor) {
         self.listText = Self.rgb(listText)
         self.currentText = Self.rgb(currentText)
         self.selectionText = Self.rgb(selectionText)
         self.selectionBackground = Self.rgb(selectionBackground)
         self.contentBackground = Self.rgb(contentBackground)
+        self.editBackground = Self.rgb(editBackground ?? contentBackground)
         self.treeText = Self.rgb(treeText)
         self.treeSelection = Self.rgb(treeSelection)
     }
@@ -61,6 +68,7 @@ struct WasabiPalette: Equatable {
         selectionText: listTextFallback,
         selectionBackground: selectionBackgroundFallback,
         contentBackground: contentBackgroundFallback,
+        editBackground: contentBackgroundFallback,
         treeText: listTextFallback,
         treeSelection: selectionBackgroundFallback)
 
@@ -71,7 +79,7 @@ struct WasabiPalette: Equatable {
     /// drifting from them the first time one changes (BB2a).
     enum Role: String, CaseIterable {
         case listText, currentText, selectionText, selectionBackground, contentBackground
-        case treeText, treeSelection
+        case editBackground, treeText, treeSelection
 
         var identifiers: [String] {
             switch self {
@@ -81,8 +89,21 @@ struct WasabiPalette: Equatable {
             case .selectionBackground: return ["studio.list.item.selected",
                                                "wasabi.list.text.selected.background",
                                                "pledit.currentoutline"]
-            case .contentBackground: return ["wasabi.edit.background", "studio.list.column.background",
-                                             "wasabi.list.background", "common.labelwnd.background"]
+            // `wasabi.list.background` comes first (B113). `wasabi.edit.background` is a *text
+            // field's* colour, and a skin that declares both means them differently: Itemskin's list
+            // is gold (220,175,0 — what its dark-olive `wasabi.list.text` was drawn for) and its
+            // edit fields are near-black 42,42,42. Asking for the edit colour first painted our rows
+            // on the wrong surface in **11 of the 69** corpus skins, and left the plain (unselected)
+            // row text below 3:1 on six of them — Itemskin's 1.52:1 olive-on-charcoal was the live
+            // report, K-jr and Pure Inspired were black-on-charcoal at 1.46:1. Every one of the 11
+            // improves except MoonLight, which goes 4.27:1 → 3.11:1 onto the near-white list
+            // background its author declared. B48's legibility guard cannot reach any of this:
+            // `legibleRowColor` deliberately leaves *unselected* rows alone.
+            case .contentBackground: return ["wasabi.list.background", "wasabi.edit.background",
+                                             "studio.list.column.background",
+                                             "common.labelwnd.background"]
+            case .editBackground: return ["wasabi.edit.background", "studio.list.column.background",
+                                          "common.labelwnd.background"]
             case .treeText: return ["studio.tree.text"]
             case .treeSelection: return ["studio.tree.selected", "studio.tree.hilited"]
             }
@@ -95,6 +116,7 @@ struct WasabiPalette: Equatable {
             case .listText: return "literal 0,255,0"
             case .selectionBackground: return "literal 0,0,199"
             case .contentBackground: return "literal 0,0,0"
+            case .editBackground: return "role contentBackground"
             case .currentText, .selectionText, .treeText: return "role listText"
             case .treeSelection: return "role selectionBackground"
             }
@@ -108,6 +130,7 @@ struct WasabiPalette: Equatable {
         case .selectionText: return selectionText
         case .selectionBackground: return selectionBackground
         case .contentBackground: return contentBackground
+        case .editBackground: return editBackground
         case .treeText: return treeText
         case .treeSelection: return treeSelection
         }
@@ -126,12 +149,14 @@ struct WasabiPalette: Equatable {
         }
         let listText = first(.listText, default: listTextFallback)
         let selectionBackground = first(.selectionBackground, default: selectionBackgroundFallback)
+        let contentBackground = first(.contentBackground, default: contentBackgroundFallback)
         return WasabiPalette(
             listText: listText,
             currentText: first(.currentText, default: listText),
             selectionText: first(.selectionText, default: listText),
             selectionBackground: selectionBackground,
-            contentBackground: first(.contentBackground, default: contentBackgroundFallback),
+            contentBackground: contentBackground,
+            editBackground: first(.editBackground, default: contentBackground),
             treeText: first(.treeText, default: listText),
             treeSelection: first(.treeSelection, default: selectionBackground))
     }

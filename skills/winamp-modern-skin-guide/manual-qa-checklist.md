@@ -198,6 +198,15 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
       survives a relaunch on this skin, because the zero used to be persisted. This is the one
       corpus skin that binds `onToggle` to `setVolume`, so no other skin substitutes for it and no
       render sweep can see it — it needs the app, with sound.
+- [ ] **Itemskin, MoonLight and Nullsoft 2000 SP4 Lite: list rows are readable on the plate behind
+      them** (B113) — open the library and the playlist with tracks in them on each. Itemskin's rows
+      are dark olive on **gold**, MoonLight's grey on **near-white** (a light list inside a dark
+      skin, which is what its author declared — 233,233,233 column headers beside a 246,246,246
+      list), SP4 Lite's black on **white** rather than on a slab of selection blue. Then open
+      Itemskin's **Notifier Preferences** in the same pass: its drop-downs must stay near-black with
+      white labels — they are the other half of the fix, and gold boxes or dark-on-dark labels there
+      mean the `editBackground` split has come undone. No render sweep can see any of this: the dump
+      harness attaches no component host, so it draws the plate and never a row of text.
 - [ ] **Itemskin and EPS High-End: the Notifier Preferences window has a background** (B90) — open
       it from **Skin Windows** on each. Itemskin shows its own `config.png` panel artwork behind the
       six title boxes; EPS shows a black panel, against which its near-white controls are legible.
