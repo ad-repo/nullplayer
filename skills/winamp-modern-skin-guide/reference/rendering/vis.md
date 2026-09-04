@@ -230,7 +230,7 @@ adds a millisecond of latency, and together they are what makes a 10 Hz input re
 
 - The window is taken from the **newest** `fftSize` frames of the buffer rather than the oldest, so
   a spectrum is no longer up to 54 ms stale before it is drawn — half the interval between two
-  spectra, previously spent for nothing.
+  spectra, previously spent for nothing. **This one is inert, and has been all along — see below.**
 - The `{0000000A}` holder's bar falloff is **`Moderate` (4/s), not `Faster` (10/s)**. At 10/s a bar
   falls 0.33 of the box in one 30 Hz frame — more than a step of the input ever is — so every
   downward move landed whole in a single frame and the row stepped at the input's rate on the way
@@ -238,6 +238,27 @@ adds a millisecond of latency, and together they are what makes a 10 Hz input re
 
 The bands still change ten times a second; what changed is that the bars no longer arrive at each
 new value in one frame.
+
+**Correction (2026-09-04): the "newest frames" half never ran.** Read in the tree, not measured.
+`WinampModernAnalyzerTap.analyze` does compute `offset = max(0, available - fftSize)` and carries a
+comment explaining why the front of the buffer was the wrong window — but it never receives a buffer
+longer than the window. The truncation happens **upstream, before the notification is posted**:
+`AudioEngine.processAudioBuffer` (`if fullStereoNeeded && frameCount >= 2048`) copies
+`channelData[c][i] for i in 0..<2048` — the *front* of the tap buffer — into `fullStereoPcmLeft/Right`
+and posts those, discarding the rest; `StreamingAudioPlayer` has the identical block. So `available`
+is always exactly 2048, `offset` is always 0, and the tap's choice of window is a choice between one
+option. The up-to-54 ms staleness the bullet claims to have removed is still there, one layer up.
+
+Whoever picks this up: the fix is to post the whole buffer (or its newest `fftSize` frames) from the
+two `fullStereoNeeded` blocks, **not** to re-touch the tap. Both blocks feed
+`.audioStereoPCMFullDataUpdated`, which `WinampModernAnalyzerTap` is the only consumer of, so the
+blast radius is that tap alone — but the reverted attempt above also began as a change to what gets
+posted, so judge it on screen before keeping it.
+
+This does **not** explain any reported symptom on its own, and was not found by chasing one: it came
+out of checking this section against the code after WMP11-BlueVU's spectrum was reported slow
+(2026-09-04), where the section was quoted as the cause without being verified. The cadence numbers
+above are also still from 2026-08-30 and have not been re-measured since.
 
 #### The white line across the bar tops (B54)
 
