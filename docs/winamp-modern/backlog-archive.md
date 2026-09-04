@@ -2,6 +2,49 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B115 — a group's `onResize` *is* dispatched at initial layout; the harness was not — closed 2026-09-04
+
+| B115 | **A group's `onResize` is not dispatched at initial layout, and a skin can hang its whole show/hide state on it.** Same 2026-09-04 WMP11-BlueVU report — the garbled right-hand band. `scripts/MainWindow.m` puts *all* of the display's visibility logic in one handler: `content.onResize(x,y,w,h)` picks between `TSongTicker`/`TSongInfo`, `songinfo.group`/`song.name` and the two fade layers on `w < 140`. Every one of those is visible by markup default, so until the handler runs they all draw at once — `RENDER_PROBE` shows `text#Songticker` and `text#SongInfo` at the *identical* frame `(209, 61, 131, 20)`, with `song.name` over the kbps row. **Verified:** `WINAMP_MODERN_RENDER_EVENTS=main/normal@onresize` renders one clean string in the band and clears the kbps row; the correct branch here is `w < 140`, the `Info` group being 98px wide. **What is NOT yet established, and is the first job:** whether the *app* dispatches `onResize` to a group at initial layout or only on a user drag. The harness deliberately does not drive it (see `reference/harness.md`), so a headless repro proves the handler works, **not** that the app fails to call it — read `WinampModernMainView.scriptsDidStart()` and the seeding pass B82 describes before assuming a defect. Related but distinct from B82, which is about a *runtime-instantiated* subtree missing playback state | unmeasured; any skin whose layout state lives in `onResize`. Reach command wanted | M | Live-reported |
+
+### B115
+
+- [x] **B115. Not a defect in the app. The render harness never seeded `onResize`.** Closed 2026-09-04.
+
+      **The premise was false, and checking it was the entry's own first job.** The app dispatches the
+      seeding `onResize` to every container immediately after `scripts.start()`, in
+      `WinampModernMainView.scriptsDidStart()`, exactly as written. Measured live on WMP11-BlueVU with
+      a temporary trace in `WinampModernMainView.dispatchResize`:
+
+      ```
+      B115 dispatchResize seeding=true container=main layout=normal targets=42 dispatched=4
+      B115   target group#Info frame=(94.0, 61.0, 98.0, 0.0)
+      ```
+
+      `Info` is a resize target, its resolved width is the 98 that selects `w < 140`, and the handler
+      runs. Dumping the objects it touches straight after the dispatch shows the branch applied in
+      full — all six statements, not an abort partway:
+      `songticker=1 songinfo=0 songinfo.group=1 song.name=0 fade.main.left=0 fade.main.right=0`.
+      A screenshot of the running app agrees: one clean band, no `song.name` over the kbps row.
+
+      **What was actually broken.** `WinampModernRenderDumpTests` started the runtime and never
+      performed that seeding dispatch, so any skin whose state is *only* assigned in `onResize`
+      measured headlessly as one whose handler had never run. That is the artifact this entry was
+      written from — `RENDER_PROBE` showing `Songticker` and `SongInfo` at the identical frame
+      `(209, 61, 131, 20)` — and it is the **second** entry filed against it, after B87's cPro tab
+      strip. The fix is in the instrument: after `runtime.start()` the harness seeds every container's
+      renderer with `dispatchResize(targets:previous: nil)` and primes the per-container settle's
+      `lastFrames` from the result, so a later settle still reports only what actually moved. Each
+      seeded container prints `SEED onresize <container> -> N handlers`.
+
+      **Reach of the blind spot.** The seed fires **130** dispatches across **70** containers over the
+      corpus, so this was never one skin's problem. Corpus render sweep passes with no failures; the
+      WMP11 probe now reports `SEED onresize main -> 4 handlers` and a scene containing only
+      `Songticker`, matching the app. `RENDER_EVENTS=onresize` is still wanted to *re*-drive after
+      `RENDER_SIZE`, and `reference/harness.md` now says so in place of its old advice.
+
+      No app code changed. Written up in `reference/harness.md` under *What the probe models about
+      windows*, and the *mirror* row in the pitfalls table now points at the closed gap.
+
 ## B114 — a `desktopalpha="0"` layout has no opaque backing — closed 2026-09-04
 
 | B114 | **A `desktopalpha="0"` layout has no opaque backing, so a skin that paints only a translucent sheen shows the window's own light backing.** Reported 2026-09-04 on WMP11-BlueVU as *"missing backgrounds on the timer and track display"*. The skin ships **deliberately empty** spacers for that area — `glass_bg_left_left.png`, `glass_bg_left_right.png`, `glass_bg_right.png` are alpha 0/0/0 across every pixel — and `RENDER_PROBE main/normal` confirms no node covers `x 8…196, y 25…78`. The dumped pixel at (20,30) is `(180,180,180, a=112)`: the `Glass.Left` sheen composited over nothing. In Winamp the black comes from the *window*: `<layout id="normal" desktopalpha="0">` means no per-pixel alpha, so unpainted pixels are black and the skin leans on that. `desktopalpha` appears nowhere in the renderer — only as a MAKI method name in `WinampModernScriptRuntimeSystem.swift:326`. **Verified:** compositing the existing dump over black reproduces the skin's shipped `screenshot.png`. **The trap:** an opaque fill makes the window's *shape* matter, and this layout is `sysregion`-shaped with rounded corners — fill the whole rect and every region-shaped player in the corpus squares off. So the fill has to respect the region, and the change wants the corpus render sweep (`scripts/wal_render_sweep.sh`), not a one-skin check. The nearby precedent is the `background=` fallback at `WasabiRenderer.swift:2154`, whose two bounds ("only when the skin asked", "only a layout") are the shape to copy | 26 of 69 corpus skins declare `desktopalpha="0"` somewhere ([M32]); how many *rely* on it for a backing is unmeasured | M | Live-reported |

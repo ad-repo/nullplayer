@@ -236,6 +236,25 @@ final class WinampModernRenderDumpTests: XCTestCase {
 
         try runtime.start()
 
+        // Immediately after `start()`, exactly where `WinampModernMainWindowController` puts
+        // `WinampModernMainView.scriptsDidStart()`: every scene tells its scripts their geometry
+        // once, before anything is measured or drawn.
+        //
+        // The app has always done this and the harness never did, so a skin whose state is *only*
+        // assigned in `onResize` measured here as one whose handler never ran — and the difference
+        // reads as an app defect that is not there. WMP11-BlueVU is the case that found it (B115):
+        // `MainWindow.m` hangs the whole display band on `content.onResize`, and without the seed
+        // `Songticker` and `SongInfo` both probe at the identical frame while the app draws one.
+        var seededFrames: [String: [WasabiObjectID: CGRect]] = [:]
+        for (id, renderer) in renderersByContainer {
+            let dispatched = runtime.dispatchResize(targets: renderer.resizeTargets(), previous: nil)
+            // Recorded *after* the handlers ran, like the view's: a script that re-solves its own
+            // geometry from `onResize` has already moved things.
+            seededFrames[id] = Dictionary(renderer.resizeTargets().map { ($0.object.stableID, $0.frame) },
+                                          uniquingKeysWith: { _, latest in latest })
+            if dispatched > 0 { print("SEED onresize \(id) -> \(dispatched) handlers") }
+        }
+
         if let settle = env["WINAMP_MODERN_RENDER_SETTLE"].flatMap(Double.init) {
             RunLoop.current.run(until: Date().addingTimeInterval(settle))
             // The harness has no component host, so `PE_Info` reads empty and a skin that drives its
@@ -855,7 +874,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
             renderer.componentHost = playlistHost
             // And the same settle the window layer drives, so a script that collapses a pane sees the
             // `onResize` it is waiting on — cPro's side-view buttons swap from it.
-            var lastFrames: [WasabiObjectID: CGRect] = [:]
+            // Primed from the seeding pass, so a settle only reports what has actually moved since —
+            // the app compares against its own last dispatch too.
+            var lastFrames: [WasabiObjectID: CGRect] = seededFrames[info.id] ?? [:]
             runtime.geometryDidSettle = {
                 let targets = renderer.resizeTargets()
                 runtime.dispatchResize(targets: targets, previous: lastFrames)
