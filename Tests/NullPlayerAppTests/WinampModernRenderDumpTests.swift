@@ -970,14 +970,34 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 // WINAMP_MODERN_RENDER_MINIMUM names the objects that make the protective minimum
                 // what it is: those overflowing one pixel below it but not at the skin's own size.
                 if env["WINAMP_MODERN_RENDER_MINIMUM"] != nil {
-                    let below = CGSize(width: max(1, minimum.width - 1), height: minimum.height)
-                    let failures = renderer.fitFailures(atCanvas: below)
                     let baseline = renderer.fitFailures(atCanvas: size)
-                    let culprits = failures.overflowing.subtracting(baseline.overflowing)
-                    let named = renderer.sceneNodes().filter { culprits.contains($0.object.stableID) }
-                    print("MINIMUM \(info.id)/\(layoutID) below=\(Int(below.width)): "
-                          + named.map { "\($0.object.typeName)#\($0.object.xmlID ?? "-")" }
-                            .joined(separator: " "))
+                    for (axis, below) in [
+                        ("w", CGSize(width: max(1, minimum.width - 1), height: minimum.height)),
+                        ("h", CGSize(width: minimum.width, height: max(1, minimum.height - 1)))
+                    ] {
+                        let failures = renderer.fitFailures(atCanvas: below)
+                        let culprits = failures.overflowing.subtracting(baseline.overflowing)
+                        let named = renderer.sceneNodes().filter { culprits.contains($0.object.stableID) }
+                        for node in renderer.sceneNodesForTesting(canvas: below)
+                            where culprits.contains(node.object.stableID) {
+                            var chain: [String] = []
+                            var cur = node.object.parent
+                            while let c = cur { chain.append("\(c.typeName)#\(c.xmlID ?? "-")"); cur = c.parent }
+                            print("MINIMUM   culprit \(node.object.typeName)#\(node.object.xmlID ?? "-") "
+                                  + "frame=\(node.frame) parentFrame=\(node.parentFrame) clip=\(node.clip) "
+                                  + "chain=\(chain.joined(separator: "<"))")
+                        }
+                        print("MINIMUM \(info.id)/\(layoutID) \(axis)below="
+                              + "\(Int(axis == "w" ? below.width : below.height)) "
+                              + "declared=\(Int(renderer.declaredMinimumSize.width))x"
+                              + "\(Int(renderer.declaredMinimumSize.height)) "
+                              + "content=\(renderer.contentFittedFloor.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
+                              + "protective=\(Int(renderer.protectiveMinimumSizeForTesting.width))x"
+                              + "\(Int(renderer.protectiveMinimumSizeForTesting.height)) "
+                              + "authored=\(renderer.layoutForTesting.scriptAuthoredMinimumAxes.sorted().joined(separator: ",")): "
+                              + named.map { "\($0.object.typeName)#\($0.object.xmlID ?? "-")" }
+                                .joined(separator: " "))
+                    }
                 }
                 // WINAMP_MODERN_RENDER_CLICKABLE lists objects the markup-only hit test rejects but
                 // a script hooks the mouse on — the ClassicPro SUI tabs are the measured case.

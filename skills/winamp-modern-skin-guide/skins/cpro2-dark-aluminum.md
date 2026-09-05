@@ -27,7 +27,8 @@ arrangement=singleWindowSUI  catalog: playlist=embedded equalizer=embedded libra
 main/normal        two.screen(0,28,800,70) · cpro.sui(8,98,784,494) — contiguous (B124, 2026-09-04)
 containers: main (player) · notifier · browserpro · searchresults · widgets.manager
             main.aerosnap · main.tooltip · main.shadow
-main/normal        800×600   147 nodes   min 240×115   declared 240×106   max 1920×1080
+main/normal        800×600   147 nodes   min 240×106   declared 240×106   max 1920×1080
+                             (min read 240×352 until B127, 2026-09-05)
 main/shade         800×22     72 nodes   min 240×22    declared 240×22    max 16384×22
 widgets.manager    321×400    36 nodes   min 321×400   declared 100×400
 notifier           128×80     13 nodes  (normal + desktopalpha layouts)
@@ -45,7 +46,7 @@ VIS box            main/normal two.playback.visobject(14,74,71,17) mode=1 Spectr
 PLAYLIST holder    PlaylistPro.wdh(596,116,196,457) text=12.5px row=14px scale=auto(114%)
 ```
 
-**`min 240×115` / `declared 240×106` are runtime values, not the XML's.** The XML says
+**`min` / `declared 240×106` are runtime values, not the XML's.** The XML says
 `minimum_h="200"`; `layout.m`'s `fullScreen(false)` lowers it to `i_titlebar+i_info+i_playback+8` =
 106 once it runs. A dump taken before that ran reads 200, and that difference is the quickest check
 that the cold-start chain below is alive.
@@ -75,6 +76,10 @@ Visualization, Web Reader, Now Playing.
   command the *left* click will run, so drive two clicks to measure it (`WINAMP_MODERN_RENDER_CLICK_PICK`).
 - **F9–F12 preset positions** — `two/scripts/presetpos.m` calls `getCurAppLeft/Top/Width/Height()`;
   all four now answer, in Winamp's screen space.
+
+- **The small player.** Dragged to its floor the window is titlebar + info band + transport and
+  nothing else — the SUI collapses to zero height and its tabs go with it, as in the author's own
+  render. Fixed 2026-09-05 (B127); see the trap below.
 
 ### Not implemented
 
@@ -117,6 +122,19 @@ Visualization, Web Reader, Now Playing.
   `viewportHeight − 20`) beside it — each a bare rectangle of lines, because a nine-slice with no
   centre and a 4px border grid are all either window draws. The sizes are the identification: no
   probe names these windows, and the accessibility API's frame list does. Suppressed by B101.
+- **The floor of the window is set by a search bar the skin would have hidden.** `min 240x352`
+  against the `declared 240x106` two lines above it in the dump is the defect, and the two numbers
+  sitting side by side is the check. The protective minimum resolves a *hypothetical* canvas without
+  dispatching `onResize`, so ClassicPro's 19px playlist search bar
+  (`xui/PlaylistPro/_v2/PlaylistPro.xml`, `visible="0"` and shown by its own script) was still
+  standing at every size the probe tried; below a 19px pane it overhung its parent by **one pixel**,
+  and that one pixel pinned the whole player three times taller than its author's floor — the small
+  player stopped with the tab strip and the library still on screen. `PlaylistPro.m`'s own
+  `frameGroup.onResize` opens `if (h < 102 || …) topbar.hide()`, so in the app it is never there.
+  Fixed by letting a script-written `minimum_h` stand the probe down (B127); the general rule is in
+  [reference/loading.md](../reference/loading.md) → *The protective window minimum*.
+  `WINAMP_MODERN_RENDER_MINIMUM=1` names the culprit and prints its frame beside its parent's.
+
 - **The snap preview fires with the pointer nowhere near a screen edge.** `layout.m` tests
   `System.getMousePosX() < 1` — the *screen's* left edge in Winamp — and ours answers in the window's
   canvas space, so it is true whenever the pointer is left of the player. B123.

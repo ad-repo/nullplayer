@@ -32,6 +32,14 @@
 
 ### Bug Fixes
 
+- **Modern skins: the small player is small again** — dragged down to its shortest size, cPro2 Dark
+  Aluminum now shows just the title bar, the song display and the transport row, the way the skin's
+  author drew it; before, the window refused to shrink past its tab strip and library and stopped
+  three times too tall. NullPlayer works out a safe floor for a skin's window, because a Modern skin
+  is written for a renderer that crops overflowing artwork more aggressively than ours — but a skin
+  whose own script *computes* its minimum size has already answered that question better, so
+  NullPlayer now takes the skin at its word.
+
 - **Modern skins: cPro2's song title, seek bar and transport row sit in their own band again** — on
   cPro2 Dark Aluminum the whole display band was drawn on top of the title bar, with an empty strip
   left beneath it. Behind it was a comparison bug in the skin scripting engine: a skin object was

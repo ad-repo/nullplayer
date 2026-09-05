@@ -799,12 +799,24 @@ final class WasabiSceneRenderer {
     /// The active layout's own `minimum_w`/`minimum_h`, in skin pixels, raised to the protective
     /// minimum below. Every window hosting this renderer takes its `minSize` from here, so a restored
     /// or dragged frame can never ask the scene for a size the skin does not describe.
+    /// A skin's script may state the floor itself, and where it does that beats the probe — per
+    /// axis, and only for the axis it wrote. The probe resolves a *hypothetical* canvas without
+    /// telling the scripts about it, so it measures a scene the skin would never draw: ClassicPro's
+    /// playlist hides its 19px search bar from `onResize` below 102px of pane, and with that bar
+    /// left standing its 1px overhang pinned cPro2's whole player at 352px tall against the 106 its
+    /// own `layout.m` had just computed and written (B125).
     var layoutMinimumSize: CGSize {
         let declared = declaredMinimumSize
         let protective = protectiveMinimumSize
         let content = contentFittedFloor ?? .zero
-        return CGSize(width: max(max(declared.width, protective.width), content.width),
-                      height: max(max(declared.height, protective.height), content.height))
+        let authored = layout.scriptAuthoredMinimumAxes
+        let width = authored.contains("minimum_w")
+            ? declared.width
+            : max(max(declared.width, protective.width), content.width)
+        let height = authored.contains("minimum_h")
+            ? declared.height
+            : max(max(declared.height, protective.height), content.height)
+        return CGSize(width: width, height: height)
     }
 
     private var contentFloorCache: CGSize??
@@ -881,6 +893,12 @@ final class WasabiSceneRenderer {
     /// centres its thumb on its track, and thumb sheets routinely overhang). Overflow present *only*
     /// after shrinking is the failure, so the probe searches for the smallest size whose overflow set
     /// is still a subset of that baseline, per axis, bounded by the default size.
+    /// The active layout object, for the harness.
+    var layoutForTesting: WasabiObject { layout }
+
+    /// The probe's own answer, for the harness: `layoutMinimumSize` may decline to use it.
+    var protectiveMinimumSizeForTesting: CGSize { protectiveMinimumSize }
+
     private var protectiveMinimumSize: CGSize {
         let key = activeLayoutID
         if let cached = protectiveMinimumCache[key] { return cached }
@@ -1135,6 +1153,9 @@ final class WasabiSceneRenderer {
     /// on screen made that unreachable — closing the playlist hid it permanently.
     /// `layoutNodes()` for the harness: the geometry probe has to see inside a closed tab.
     func layoutNodesForTesting() -> [WasabiSceneNode] { layoutNodes() }
+
+    /// The scene as it resolves at a hypothetical canvas — what `fitFailures` measures.
+    func sceneNodesForTesting(canvas: CGSize) -> [WasabiSceneNode] { sceneNodes(canvas: canvas) }
 
     /// `resolvedBitmapID` under a pointer the scene cannot be put into: `sceneNodes()` always asks
     /// with `pressed: false, hovered: false`, so the ordering between press, hover and activation is

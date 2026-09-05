@@ -543,6 +543,22 @@ renderer therefore probes for the smallest size at which the scene still lays ou
 drew it, and raises the declared floor to it (`computeProtectiveMinimumSize`). Every window's
 `contentMinSize`, `resize()`, and `clampRestoredFrame` go through the same number.
 
+**A script that writes its own floor stands the probe down, on the axis it wrote** (B127). The probe
+resolves a *hypothetical* canvas without telling the scripts about it, so it measures a scene the
+skin would never draw — and a skin that computes `minimum_w`/`minimum_h` at runtime has stated
+precisely what the probe can only infer. cPro2 Dark Aluminum is the case: `two/scripts/layout.m`
+writes `minimum_h` = `i_titlebar + i_info + i_playback + 8` = **106** from `fullScreen(false)`, while
+the probe answered **352** because ClassicPro's playlist search bar (19px, `visible="0"` in the XML
+and shown by its own script) overhung its pane by one pixel as the canvas shrank. It would never
+have been standing there in the app: `xui/PlaylistPro/_v2/PlaylistPro.m` opens its `onResize` with
+`if (h < 102 …) topbar.hide()`. The user-visible symptom was that the small player could not be
+dragged down past its SUI tabs, three times taller than Winamp's. Recorded on the object itself
+(`WasabiObject.scriptAuthoredMinimumAxes`, written from `setXmlParam`) rather than derived from the
+attribute, because the XML value and the script's are the same key — and the XML value alone is *not*
+a statement, since it is exactly the number written for Winamp that the probe exists to correct.
+Across the installed corpus (69 skins, 2026-09-05) two layouts write one at all: this player, and
+Ebonite's `sc.alphaframe/scdef`, whose 250x250 already equals its protective floor.
+
 A layout that declares **no** range at all (none of `minimum_w`/`minimum_h`/`maximum_w`/`maximum_h`)
 is a different case: it is fixed at its own size, and `userResizeLimits` reports that size as both
 limits so the window cannot be dragged or restored to anything else. Only the user-facing range is

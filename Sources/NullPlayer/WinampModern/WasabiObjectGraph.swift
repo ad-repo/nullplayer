@@ -59,6 +59,18 @@ final class WasabiObject {
 
     var xmlID: String? { attributes["id"] }
 
+    /// `minimum_w` / `minimum_h` a **script** wrote on this layout, as lowercased keys.
+    ///
+    /// A skin that computes its own resize floor at runtime has stated the author's intent far more
+    /// precisely than the renderer's protective probe can infer it, so the probe stands down on that
+    /// axis — see `WasabiSceneRenderer.layoutMinimumSize`. Recorded here rather than derived from the
+    /// attribute because the XML value and the script's are the same key.
+    private(set) var scriptAuthoredMinimumAxes: Set<String> = []
+
+    func noteScriptAuthoredMinimum(_ key: String) {
+        scriptAuthoredMinimumAxes.insert(key.lowercased())
+    }
+
     /// The graph's structure counter, for callers memoizing something that depends on this object's
     /// position in the tree rather than only on the object itself.
     var graphStructureGeneration: UInt64 { graph?.structureGeneration ?? 0 }

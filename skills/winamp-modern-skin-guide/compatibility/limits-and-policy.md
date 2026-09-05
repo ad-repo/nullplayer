@@ -168,6 +168,13 @@ stops the offending object being counted — and answered "the declared minimum 
 every skin in the corpus. ~2·log₂(range) scene builds per axis, cached per layout; the result never
 exceeds the layout's default size.
 
+**A runtime-written floor beats the probe** (B127). The probe never tells the scripts about the
+canvas it is measuring, so it sees a scene the skin would never draw; a skin that *writes*
+`minimum_w`/`minimum_h` from a script has said what the probe is inferring, and the probe stands down
+on that axis. Only two layouts in the installed corpus write one, and only one is changed by it —
+cPro2 Dark Aluminum's player, 240x352 back down to the 240x106 its own `layout.m` computes. Full
+account in [reference/loading.md](../reference/loading.md) → *The protective window minimum*.
+
 Measured across the installed corpus (2026-08-31, 36 skins / 306 layouts): **169 layouts lowered,
 none raised**, every one of them to its own declared minimum. All five cPro skins go 495×324
 (das-skin-prev 483×324) → **317×174** against a declared 317×168; Big Bento Modern `main/normal`

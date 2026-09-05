@@ -146,6 +146,13 @@ extension WinampModernScriptRuntime {
             else { return .null }
             let reportedBeforeWrite = reportedOrigin(of: object)
             _ = object.setAttribute(key, value: value)
+            // A layout that computes its own resize floor has said what the protective minimum can
+            // only guess at (B125: ClassicPro engine two writes `minimum_h` = titlebar+info+playback
+            // from `fullScreen(false)`, and our inferred floor was three times it).
+            if object.typeName.caseInsensitiveCompare("layout") == .orderedSame,
+               ["minimum_w", "minimum_h"].contains(key.lowercased()) {
+                object.noteScriptAuthoredMinimum(key)
+            }
             if Self.geometryKeys.contains(key.lowercased()) {
                 // A container or a layout is a *window*: its box is not read back out of the graph at
                 // the next repaint, it has to be pushed to AppKit. `resize()` already did this; the
