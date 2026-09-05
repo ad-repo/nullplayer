@@ -905,6 +905,18 @@ info + transport band only from `fullScreen()`, whose sole cold-start caller is 
 `ColorMgr.onLoaded`. Every other container opens on request, and telling a skin that a window it has
 not been asked to show is on screen is a worse answer than silence.
 
+**Dispatching the event was not enough to make the handler work**, and the second blocker was two
+sections down: `_layout==shade` answered *true* for the normal layout, so cPro2 kept taking the wrong
+branch for three days after the event started firing. See *An object is never equal to NULL* (B124).
+
+**It is announced at cold start only.** `dispatchColdStartLayoutShown` is the single
+`onshowlayout` dispatch site in the codebase, and **`onHideLayout` has none at all** —
+`WinampModernMainView.activateLayout` records the new layout with `markLayoutRealized` and dispatches
+neither event. So a shade↔normal round trip runs neither handler: cPro2 never calls `saveSkinPos()`
+on the way into shade, and never re-runs `fullScreen()` on the way out, so the window geometry the
+skin saved for you is not restored. The band itself survives, because `fullScreen`'s writes are
+`setXmlParam`s that persist across a layout switch. Open work, `TASKS.md` B125.
+
 ### `isVisible()` on a *layout* means "is this the container's active one"
 
 A container shows exactly **one** layout at a time, so `normal` and `shade` must never both report
@@ -953,6 +965,37 @@ is scoped two ways, and both matter:
 Measured against a baseline worktree over all 62 archives: 14 (event, object) pairs gained, none
 lost; 547 of 552 rendered PNGs byte-identical. Read a suspect binding with
 `WINAMP_MODERN_RENDER_SCRIPTS=bindings`, whose targets carry their ancestor chain.
+
+### An object is never equal to NULL, and `!= NULL` is not always false
+
+The direct consequence of the section above: a skin only branches on `getLayout()` answering NULL if
+`==` can *tell*. Until 2026-09-04 it could not. `MakiValue.object`'s `stringValue` is `""` and so is
+`.null`'s, and the `==`/`!=` opcode fell through to a string comparison for every pair it had no
+explicit case for — so **every live object compared equal to NULL**, and `x != NULL` was permanently
+**false**.
+
+Both halves were live defects, in opposite directions:
+
+- **`== NULL` matching everything** took the wrong branch. cPro2's cold start is
+  `if(_layout==shade && …) saveSkinPos(); else if(_layout==normal && !shade.isVisible()) fullScreen(…)`,
+  with `shade` legitimately NULL on a cold start. The *normal* layout matched the shade branch, so
+  `fullScreen()` — the only cold-start caller that places `two.screen` — never ran, the info and
+  transport band drew on top of the titlebar, and a 28px dead strip opened above the SUI. B124.
+- **`!= NULL` never matching** skipped guarded work entirely. Every `while (t != NULL)` walk exited
+  before its first iteration — ClassicPro's `CproTabs.m` is built out of them — and every
+  `if (x != NULL)` guard was passed over. The corpus sweep for B124 caught Big Bento Modern's
+  Windows 10 edition drawing the **restore** glyph on a window that was not maximized, from exactly
+  such a guard.
+
+The rule is now one function, `MakiInterpreter.valuesAreEqual`, so it can be asserted without a
+compiled program: an object is equal to nothing but an identical object, `NULL` still compares equal
+to the integer 0 it compiles from (MAKI has no null literal — see `coerced`), and the object cases are
+ordered *before* the fallback so identity still decides two objects.
+
+**Watch the direction when this kind of change lands.** It does not make scripts do less; it makes
+guarded blocks that never ran start running. That is why the regression proof was a full 69-skin
+render sweep rather than the one reported skin — the only other visible change in the corpus was in a
+skin nobody had reported.
 
 ### `onPostedPosition` goes to every `<slider action="SEEK">`, not to an id
 

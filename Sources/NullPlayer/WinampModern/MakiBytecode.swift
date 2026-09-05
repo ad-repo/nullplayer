@@ -785,6 +785,36 @@ final class MakiInterpreter {
         }
     }
 
+    /// MAKI's `==` / `!=`, as a pure function of the two values — so the rule can be asserted
+    /// directly instead of through a compiled program that happens to exercise it.
+    ///
+    /// **An object is equal to nothing but another object.** The string fallback could not say so:
+    /// `.object`'s `stringValue` is `""` and so is `.null`'s, so every live object compared **equal
+    /// to NULL**. That is not an academic case — `getLayout` legitimately answers NULL for a layout
+    /// the window has not switched to yet (Winamp builds them on demand; see `isLayoutCreated`), and
+    /// skins branch on it. ClassicPro engine two opens `System.onShowLayout` with
+    /// `if(_layout==shade && …)` against a `shade` that is null on a cold start, so cPro2's *normal*
+    /// layout took the shade branch and `fullScreen()` — the only cold-start caller that places
+    /// `two.screen`, the entire info + transport band — never ran: the title, seek bar and transport
+    /// drew on top of the titlebar and a 28px dead strip opened above the SUI.
+    ///
+    /// The same fallback made `x != NULL` permanently **false**, so every `while (t != NULL)` walk in
+    /// the corpus (ClassicPro's `CproTabs.m` is full of them) exited before its first iteration, and
+    /// every `if (x != NULL)` guard was skipped. Big Bento Modern's Windows 10 edition drew the
+    /// *restore* glyph on a window that was not maximized for exactly that reason.
+    static func valuesAreEqual(_ lhs: MakiValue, _ rhs: MakiValue) -> Bool {
+        switch (lhs, rhs) {
+        case (.string(let a), .string(let b)): return a.caseInsensitiveCompare(b) == .orderedSame
+        case (.object(let a), .object(let b)): return a == b
+        // Ordered after the object/object case above, so identity still decides two objects.
+        case (.object, _), (_, .object): return false
+        case (.null, .null): return true
+        // MAKI has no null literal: `NULL` compiles to integer 0 (see `coerced`).
+        case (.null, .integer(let b)), (.integer(let b), .null): return b == 0
+        default: return lhs.stringValue == rhs.stringValue
+        }
+    }
+
     /// Run one handler and answer with **what it returned**.
     ///
     /// Every event before Phase 28 was a notification, so the value a handler left behind was thrown
@@ -882,14 +912,7 @@ final class MakiInterpreter {
             case 8, 9:
                 let rhs = try pop().value
                 let lhs = try pop().value
-                let equal: Bool
-                switch (lhs, rhs) {
-                case (.string(let a), .string(let b)): equal = a.caseInsensitiveCompare(b) == .orderedSame
-                case (.object(let a), .object(let b)): equal = a == b
-                case (.null, .null): equal = true
-                case (.null, .integer(let b)), (.integer(let b), .null): equal = b == 0
-                default: equal = lhs.stringValue == rhs.stringValue
-                }
+                let equal = Self.valuesAreEqual(lhs, rhs)
                 try push(.temporary(.boolean(instruction.opcode == 8 ? equal : !equal)))
             case 10, 11, 12, 13:
                 let rhs = try pop().value.doubleValue

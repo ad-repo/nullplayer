@@ -24,6 +24,7 @@ inert without it. `sha256 33d1c9f52cbaca9b63ae3aeed33174fe862519885683d5fc9ea5a2
 ```
 arrangement=singleWindowSUI  catalog: playlist=embedded equalizer=embedded library=embedded
                              video=embedded visualization=classic (skin declares no vis surface)
+main/normal        two.screen(0,28,800,70) · cpro.sui(8,98,784,494) — contiguous (B124, 2026-09-04)
 containers: main (player) · notifier · browserpro · searchresults · widgets.manager
             main.aerosnap · main.tooltip · main.shadow
 main/normal        800×600   147 nodes   min 240×115   declared 240×106   max 1920×1080
@@ -129,6 +130,17 @@ Visualization, Web Reader, Now Playing.
   time, so `normal` and `shade` must never both report visible. Answering `isVisible` for the whole
   window made them both true and the branch never ran — a second, independent blocker behind the
   first.
+- **And a *third*, which is why the symptom outlived both fixes: `_layout==shade` was true for the
+  normal layout.** `layout.m` reads `if(shade == NULL) shade = player.getLayout("shade")`, and on a
+  cold start that answers NULL correctly — but an object compared equal to NULL, so the handler took
+  the `saveSkinPos()` branch and never reached the `fullScreen()` one. Reported 2026-09-04 with the
+  author's reference render alongside; the engine-wide cause and its `!= NULL` mirror are B124, in
+  [reference/scripting.md](../reference/scripting.md) → *An object is never equal to NULL*. **The
+  three stacked**, so each correct fix in turn changed nothing on screen — the shape the skill's
+  "look for the next fault before reverting it" rule exists for. `two.screen frame=(0,28,800,70)` and
+  `declared=240x106` are the check; `y=0` and `240x200` are the defect.
+- **Neither `onShowLayout` nor `onHideLayout` fires on a shade round trip**, so `saveSkinPos()` and
+  the `normal.resize(cPro2.x, …)` restore never run when you shade the window and come back. B125.
 - **`two.playback` declares no `h`, only `autoheightsource`.** A group that resolves 0 tall is not a
   resize target, so `playback-layout.maki`'s `g.onResize` never runs and the transport strip stays
   hard left at its declared `x=8` with the visualization sitting on top of it at the same x and no

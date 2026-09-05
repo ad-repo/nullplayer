@@ -32,6 +32,15 @@
 
 ### Bug Fixes
 
+- **Modern skins: cPro2's song title, seek bar and transport row sit in their own band again** — on
+  cPro2 Dark Aluminum the whole display band was drawn on top of the title bar, with an empty strip
+  left beneath it. Behind it was a comparison bug in the skin scripting engine: a skin object was
+  treated as equal to "nothing", so a script asking "does this window have a shade mode open yet?"
+  got the wrong answer and skipped the routine that positions the band. The same bug meant scripts
+  could never take an "if this exists" branch at all, so some skins skipped work they should have
+  done — Big Bento Modern's Windows 10 edition, for one, showed the restore icon on a window that was
+  not maximized.
+
 - **Modern skins: the play button works on skins that declare the same button twice** — some skins
   leave an unused copy of a button in the markup, pointing at artwork the skin no longer ships. The
   skin's own play/pause script could end up controlling that leftover instead of the button you can
