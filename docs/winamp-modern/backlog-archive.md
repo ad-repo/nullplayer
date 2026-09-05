@@ -2,6 +2,50 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B132 — Windows font filenames used as `font=` names — closed 2026-09-05
+
+| B132 | **Windows font *filenames* used as `font=` names resolve to nothing.** A skin writes what it has on disk, so `ariblk`, `micross`, `trebuc`, `tahoma.ttf`, `UNVR67X.ttf` and `SUPERGLU.ttf` appear where a family name belongs — none of which macOS can match, though the *faces* behind three of them ship with the system (Arial Black, MS Sans Serif→Helvetica, Trebuchet MS). A filename→family map applied before `installedFont` gives those skins their intended type back for the cost of a dictionary. Measured 2026-09-05 in the same sweep as B131; the map only helps names whose face exists here, so Calibri/Segoe UI/Century Gothic stay substituted and stay diagnosed | 9 skins measured (Enkera, TomK, Capsule_II, Nullsoft SP4 Lite ×2, MoonLight, dewytears ×3, Bio-Nid, EPS) | S | Measured |
+
+### B132
+
+- [x] **B132. A skin that names a font by its Windows *filename* now gets the typeface back. Fixed
+      and live-confirmed 2026-09-05.**
+
+      Measured in the same corpus sweep as B131, then re-measured against the 61 `.wal` files on hand
+      before the change: `ariblk` (Enkera), `micross` (both Nullsoft SP4 Lites), `trebuc` (TomK),
+      `tahoma.ttf` (EPS), `UNVR67X` / `UNVR67X.ttf` (MoonLight), `SUPERGLU.ttf` (dewytears), plus a
+      bare `tahoma` in six more skins. An author names the font they *have*, and what they have is a
+      file.
+
+      **This is not Winamp behaviour being reproduced.** GDI cannot match those names either — it
+      substitutes, exactly as B131 now does. What the map honours is the declaration's *intent*, and
+      it is worth honouring only because the faces behind three of them ship on macOS under a
+      different name: Arial Black, Trebuchet MS, and MS Sans Serif's stand-in Helvetica.
+
+      `WasabiTextMetrics.systemFont(namedBySkin:size:traits:)` sits in the plain-family branch and
+      tries three things, in the order that lets a real name always win:
+
+      1. the name as written — an installed family or PostScript name is what it says it is;
+      2. the name with a `.ttf`/`.ttc`/`.otf`/`.fon` extension removed, which is its own step and not
+         part of the map: it is what makes EPS's `tahoma.ttf` reach the same face as the bare
+         `tahoma` six other skins write;
+      3. `windowsFontFileFamilies`, the Windows core-fonts filename → family dictionary.
+
+      Two things the map deliberately does not do. A filename's own **weight is not a trait** —
+      `arialbd` maps to plain Arial, because `bold="1"` on the object is what decides that, and a file
+      the skin happened to name must not set one it never asked for. And the map **does not invent a
+      face**: `UNVR67X` and `SUPERGLU` are not Windows core fonts, and Calibri and Segoe UI are mapped
+      honestly and simply are not installed here — all four stay on B131's Arial substitute and stay
+      reported as `.unresolvedFont`, which is the diagnostic that made this entry measurable in the
+      first place.
+
+      Verified on this system before and after: `ariblk`, `micross` and `trebuc` all resolved to
+      nothing, while Arial Black, Helvetica and Trebuchet MS were all present. Tests in
+      `WinampModernB130Tests` (the font-resolution file, B130 → B131 → B132); the extension-strip test
+      uses Helvetica rather than Tahoma on purpose, since Tahoma is an Office install here and not
+      stock.
+
+
 ## B100 — the pointer's own handlers were not callable — closed 2026-09-04
 
 | B100 | **`onLeaveArea` is unimplemented.** `xui/CentroSUI/_v2/CentroSUI.xml` binds it (×1). The paired `onEnterArea` decides what a hover reveals, so the leave half is what puts it away again — expect something in the SUI to stay lit after the pointer goes | 1 skin measured (cPro2) | S | Measured |

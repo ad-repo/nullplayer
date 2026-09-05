@@ -50,6 +50,14 @@
   the skin's compatibility report instead of being announced in the artwork. A skin that genuinely
   asks for a monospaced font still gets one.
 
+- **Modern skins: a skin that names a font by its Windows *filename* gets the right typeface back.**
+  Skin authors write the name of the font file they have on disk — `ariblk`, `micross`, `trebuc`,
+  `tahoma.ttf` — where a typeface name belongs, and none of those mean anything to a Mac, so those
+  skins drew in the fallback face. NullPlayer now recognises the standard Windows font filenames and
+  uses the typeface each one holds, which gives Enkera, TomK, both Nullsoft SP4 Lites and EPS their
+  intended Arial Black, Trebuchet MS, MS Sans Serif and Tahoma. Filenames for fonts that genuinely
+  aren't installed still fall back to Arial and are still noted in the compatibility report.
+
 - **Modern skins: the seek bar and volume slider light up under the pointer, like every other
   control.** On cPro2 and its ClassicPro siblings both bars sat inert: the volume bar never even
   filled, the elapsed portion of the seek bar never brightened, and a seek left the stretch you

@@ -122,6 +122,18 @@ render is the ground truth for this kind of thing):
   it expects the system to have (`font="Arial"`), exactly as it asks GDI. Resolving only declared
   resources drew every such string in the monospaced fallback. `bold="1"`/`italic="1"` are their own
   attributes, not part of the name.
+- **…or a Windows font *filename*, and that is worth catching** (B132). An author names the font they
+  have, and what they have is a file: `ariblk`, `micross`, `trebuc`, `tahoma.ttf`, `UNVR67X.ttf`,
+  `SUPERGLU.ttf` all appear where a family belongs, across 9 corpus skins. GDI cannot match those
+  either, so this is not Winamp behaviour being reproduced — it is the *intent* being honoured, and
+  the three whose faces ship here (Arial Black, Trebuchet MS, and MS Sans Serif's stand-in Helvetica)
+  are the whole return. `WasabiTextMetrics.systemFont(namedBySkin:)` tries three things in the order
+  that lets a real name always win: the name as written, the name with a `.ttf`/`.ttc`/`.otf`/`.fon`
+  extension removed (so EPS's `tahoma.ttf` reaches the same face as the bare `tahoma` in five other
+  skins), then `windowsFontFileFamilies`. A filename's own weight is **not** a trait — `arialbd` maps
+  to plain Arial, because the object's `bold="1"` is what decides that. The map only helps a name
+  whose face exists on this system: `UNVR67X`, `SUPERGLU`, Calibri and Segoe UI stay substituted and,
+  more usefully, stay reported as `.unresolvedFont`.
 - **Text is centred in its box**, not drawn from the top edge that string drawing starts at. On a
   30px-tall readout that is a whole line's leading; on a tight one it is the difference between a
   ticker inside its slot and one sitting on whatever is under it.

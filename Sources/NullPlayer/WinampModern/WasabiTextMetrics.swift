@@ -183,8 +183,8 @@ final class WasabiTextMetrics {
             // names one it expects the system to have ("Arial", "Tahoma"), which is what Winamp asks
             // GDI for — resolving only declared resources drew every such string in the monospaced
             // fallback (the whole of Love is War Miku's display).
-            if let identifier, let installed = Self.installedFont(named: identifier, size: size,
-                                                                 traits: traits) {
+            if let identifier, let installed = Self.systemFont(namedBySkin: identifier, size: size,
+                                                                traits: traits) {
                 return installed
             }
             if let identifier {
@@ -284,6 +284,72 @@ final class WasabiTextMetrics {
             "font=\"\(identifier)\" \(reason); it draws in \(Self.substituteFamily) instead.",
             severity: .warning))
     }
+
+    /// A system face for a name a skin wrote where a family belongs (B132).
+    ///
+    /// A skin author names the font they have, and what they have is a *file*: `ariblk`, `micross`,
+    /// `trebuc`, `tahoma.ttf`, `UNVR67X.ttf`, `SUPERGLU.ttf` all appear as `font=` values in the
+    /// corpus. GDI cannot match those either — this is not Winamp behaviour being reproduced, it is
+    /// the intent behind the declaration being honoured, since the *faces* behind three of them do
+    /// ship here (Arial Black, Trebuchet MS, and MS Sans Serif's stand-in Helvetica).
+    ///
+    /// Two cheap steps, in the order that lets a real name always win:
+    ///
+    /// 1. the name as written — an installed family or PostScript name is what it says it is;
+    /// 2. the name with a font-file extension removed, so `tahoma.ttf` reaches Tahoma the same way
+    ///    the bare `tahoma` in five other skins does;
+    /// 3. the Windows filename → family map below.
+    ///
+    /// The map only helps names whose face exists on this system: `UNVR67X` and `SUPERGLU` are not
+    /// Windows core fonts and stay substituted and stay diagnosed, as do Calibri and Segoe UI, which
+    /// are mapped honestly and simply are not installed here.
+    private static func systemFont(namedBySkin name: String, size: CGFloat,
+                                   traits: NSFontTraitMask) -> NSFont? {
+        if let installed = installedFont(named: name, size: size, traits: traits) { return installed }
+        let stem = windowsFontFileStem(of: name)
+        if stem != name, let installed = installedFont(named: stem, size: size, traits: traits) {
+            return installed
+        }
+        guard let family = windowsFontFileFamilies[stem.lowercased()] else { return nil }
+        return installedFont(named: family, size: size, traits: traits)
+    }
+
+    private static func windowsFontFileStem(of name: String) -> String {
+        let extensions = ["ttf", "ttc", "otf", "fon"]
+        guard let dot = name.lastIndex(of: "."),
+              extensions.contains(name[name.index(after: dot)...].lowercased()) else { return name }
+        return String(name[name.startIndex..<dot])
+    }
+
+    /// Windows font filenames to the families they hold. Bold/italic variants map to the same family
+    /// because `bold="1"`/`italic="1"` are their own attributes here — the file the skin happened to
+    /// name does not get to set a trait the object did not ask for.
+    private static let windowsFontFileFamilies: [String: String] = [
+        "arial": "Arial", "arialbd": "Arial", "ariali": "Arial", "arialbi": "Arial",
+        "ariblk": "Arial Black",
+        "calibri": "Calibri", "calibrib": "Calibri", "calibrii": "Calibri", "calibriz": "Calibri",
+        "comic": "Comic Sans MS", "comicbd": "Comic Sans MS",
+        "consola": "Consolas", "consolab": "Consolas", "consolai": "Consolas", "consolaz": "Consolas",
+        "cour": "Courier New", "courbd": "Courier New", "couri": "Courier New", "courbi": "Courier New",
+        "framd": "Franklin Gothic Medium", "framdit": "Franklin Gothic Medium",
+        "georgia": "Georgia", "georgiab": "Georgia", "georgiai": "Georgia", "georgiaz": "Georgia",
+        "impact": "Impact",
+        "lucon": "Lucida Console",
+        // MS Sans Serif is the Windows UI face of the era and ships nowhere here; Helvetica is what
+        // it substitutes to, and is the reason this entry earns its place at all.
+        "micross": "Helvetica",
+        "pala": "Palatino", "palab": "Palatino", "palai": "Palatino", "palabi": "Palatino",
+        "segoeui": "Segoe UI", "segoeuib": "Segoe UI", "segoeuii": "Segoe UI", "segoeuiz": "Segoe UI",
+        "symbol": "Symbol",
+        "tahoma": "Tahoma", "tahomabd": "Tahoma",
+        "times": "Times New Roman", "timesbd": "Times New Roman", "timesi": "Times New Roman",
+        "timesbi": "Times New Roman",
+        "trebuc": "Trebuchet MS", "trebucbd": "Trebuchet MS", "trebucit": "Trebuchet MS",
+        "trebucbi": "Trebuchet MS",
+        "verdana": "Verdana", "verdanab": "Verdana", "verdanai": "Verdana", "verdanaz": "Verdana",
+        "webdings": "Webdings",
+        "wingding": "Wingdings",
+    ]
 
     /// A font installed on the system, by family or PostScript name. Optional for the same reason as
     /// everything else here: the name comes from the skin, and a null must never reach CoreText.

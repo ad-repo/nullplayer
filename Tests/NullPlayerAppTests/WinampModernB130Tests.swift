@@ -121,6 +121,90 @@ final class WinampModernB130Tests: XCTestCase {
         XCTAssertTrue(loaded.runtime.diagnostics.allSatisfy { $0.code != .unresolvedFont })
     }
 
+    // MARK: - B132 — a Windows font *filename* written where a family belongs
+
+    /// A skin author names the font they have, and what they have is a file. `ariblk`, `micross` and
+    /// `trebuc` are the three measured cases whose *faces* ship on macOS under a different name, so
+    /// the map is the difference between the skin's intended type and B131's substitute.
+    func testWindowsFontFilenamesResolveToTheFamiliesTheyHold() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML><container id="main"><layout id="normal" w="80" h="20"/></container></WasabiXML>
+        """)
+        let metrics = WasabiTextMetrics(loadedSkin: loaded)
+        addTeardownBlock { metrics.teardown() }
+
+        // Enkera writes `ariblk`, TomK `trebuc`, both Nullsoft SP4 Lites `micross` — MS Sans Serif,
+        // which ships nowhere here and substitutes to Helvetica.
+        for (declared, family) in [("ariblk", "Arial Black"), ("trebuc", "Trebuchet MS"),
+                                   ("micross", "Helvetica")] {
+            let font = try XCTUnwrap(metrics.font(identifier: declared, size: 12))
+            XCTAssertEqual(font.familyName, family,
+                           "font=\"\(declared)\" is a Windows filename for \(family)")
+        }
+        XCTAssertTrue(loaded.runtime.diagnostics.allSatisfy { $0.code != .unresolvedFont },
+                      "a name the map resolves is not a skin defect")
+    }
+
+    /// EPS writes `tahoma.ttf` where five other skins write the bare `tahoma`. Stripping a font-file
+    /// extension and retrying is its own step, before the map — it is what makes the two spellings
+    /// reach the same face. Checked against a face macOS always has, since Tahoma is an Office
+    /// install here and not stock.
+    func testAFontFileExtensionIsStrippedBeforeTheNameIsLookedUp() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML><container id="main"><layout id="normal" w="80" h="20"/></container></WasabiXML>
+        """)
+        let metrics = WasabiTextMetrics(loadedSkin: loaded)
+        addTeardownBlock { metrics.teardown() }
+
+        for declared in ["Helvetica.ttf", "Helvetica.TTF", "Helvetica.otf"] {
+            let font = try XCTUnwrap(metrics.font(identifier: declared, size: 12))
+            XCTAssertEqual(font.familyName, "Helvetica", "\(declared) names Helvetica")
+        }
+        // Only a *font*-file extension is stripped; anything else is still part of the name.
+        let unstripped = try XCTUnwrap(metrics.font(identifier: "Helvetica.bogus", size: 12))
+        XCTAssertEqual(unstripped.familyName, WasabiTextMetrics.substituteFamily,
+                       "a non-font extension is not stripped, so the name resolves to nothing")
+    }
+
+    /// `bold="1"`/`italic="1"` are the object's own attributes. The file a skin happened to name does
+    /// not get to set a trait it never asked for, so every weight variant maps to the plain family.
+    func testAFilenamesWeightDoesNotBecomeATrait() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML><container id="main"><layout id="normal" w="80" h="20"/></container></WasabiXML>
+        """)
+        let metrics = WasabiTextMetrics(loadedSkin: loaded)
+        addTeardownBlock { metrics.teardown() }
+
+        let plain = try XCTUnwrap(metrics.font(identifier: "arialbd", size: 12))
+        XCTAssertEqual(plain.familyName, "Arial")
+        XCTAssertFalse(plain.fontDescriptor.symbolicTraits.contains(.bold),
+                       "the object asked for no trait, so the filename's weight is not applied")
+
+        let asked = try XCTUnwrap(metrics.font(identifier: "arialbd", size: 12, traits: .boldFontMask))
+        XCTAssertTrue(asked.fontDescriptor.symbolicTraits.contains(.bold),
+                      "a trait the object *did* ask for still lands")
+    }
+
+    /// The map only helps names whose face exists here. MoonLight's `UNVR67X.ttf` and dewytears'
+    /// `SUPERGLU.ttf` are not Windows core fonts, and Calibri and Segoe UI are mapped honestly and
+    /// simply are not installed — all of them stay substituted and, more to the point, stay reported.
+    func testAnUnmappableFilenameStillSubstitutesAndIsStillDiagnosed() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML><container id="main"><layout id="normal" w="80" h="20"/></container></WasabiXML>
+        """)
+        let metrics = WasabiTextMetrics(loadedSkin: loaded)
+        addTeardownBlock { metrics.teardown() }
+
+        for declared in ["UNVR67X.ttf", "SUPERGLU.ttf"] {
+            let font = try XCTUnwrap(metrics.font(identifier: declared, size: 12))
+            XCTAssertEqual(font.familyName, WasabiTextMetrics.substituteFamily)
+        }
+        let recorded = loaded.runtime.diagnostics.filter { $0.code == .unresolvedFont }
+        XCTAssertEqual(recorded.count, 2, "one per unresolvable name, reported under its own spelling")
+        XCTAssertTrue(recorded.contains { $0.message.contains("UNVR67X.ttf") })
+        XCTAssertTrue(recorded.contains { $0.message.contains("SUPERGLU.ttf") })
+    }
+
     // MARK: - The size
 
     /// The GDI ratio is measured against a shipped reference render (Love is War Miku's own
