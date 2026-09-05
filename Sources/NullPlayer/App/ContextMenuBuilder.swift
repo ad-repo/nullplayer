@@ -1036,6 +1036,13 @@ class ContextMenuBuilder {
             openFolder.target = MenuActions.shared
             winampModernMenu.addItem(openFolder)
 
+            // The other half of "where do skins come from": the folder is where they land, this is
+            // where they are found. WinampHeritage is the archive that still hosts `.wal` skins.
+            let getMoreItem = NSMenuItem(title: "Get More Skins...",
+                                         action: #selector(MenuActions.getMoreWinampModernSkins), keyEquivalent: "")
+            getMoreItem.target = MenuActions.shared
+            winampModernMenu.addItem(getMoreItem)
+
             // Everything configured for the **loaded skin**, in one block: what it can be coloured
             // as and what it lets the user configure. Window-related controls live together in the
             // Windows menu: Text Size sits beside UI Size, and skin-defined windows follow the
@@ -4550,6 +4557,11 @@ class MenuActions: NSObject {
     
     @objc func getMoreClassicSkins() {
         guard let url = URL(string: "https://skins.webamp.org") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc func getMoreWinampModernSkins() {
+        guard let url = URL(string: "https://winampheritage.com/skins") else { return }
         NSWorkspace.shared.open(url)
     }
     
