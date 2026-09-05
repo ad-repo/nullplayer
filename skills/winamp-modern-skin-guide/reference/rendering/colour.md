@@ -136,6 +136,53 @@ the chain lines list each id's resolution regardless of order. Then the render s
 identical, 565 of 590 images identical, and the 25 that moved are these 11 skins' list surfaces plus
 `Anexa/main-shade`, which is nondeterministic by nature.
 
+#### A marker only marks when it differs from what surrounds it (B122, 2026-09-04)
+
+Reported on **Firefox** as *"the playlist current playing track loses highlight when the track is
+advanced"*, and *"I don't see this on all skins"*. Firefox declares no playlist window, so its
+playlist is the container we synthesize and `drawPlaylistComponent` draws — where two of its
+declarations collide:
+
+| Role | Firefox id | Value | On the plate |
+|---|---|---|---|
+| `contentBackground` | `wasabi.list.background` | `7,92,129` | — |
+| `selectionBackground` | `studio.list.item.selected` | `7,92,129` | **1.00:1** |
+| `currentText` | `wasabi.list.text.current` | `37,122,159` | **1.53:1** |
+| `selectionText` | `wasabi.list.text.selected` | `223,115,29` | 2.31:1 |
+| `listText` | `wasabi.list.text` | `97,185,209` | 3.28:1 |
+
+The selection bar fills the plate onto the plate, so nothing is drawn; and B48's guard rejects the
+current colour and walks on — to `listText`, **the colour every ordinary row is drawn in**. The guard
+that made the row readable also made it anonymous, so after an advance the playing row had no marker
+of any kind. Skins whose bar differs from their plate never reach this, which is the "not on all
+skins" signature.
+
+Two additions in `WasabiRendererColour`, both `.wal`-only by construction — nothing outside
+`WasabiRenderer` calls them:
+
+- **`rowSelectionBackground`** is the bar a row is actually *filled* with. Below **1.15:1** against
+  the plate the skin's bar cannot be seen at all, and one derived from the skin's own two ends
+  (`blend(plate, toward: listText, by: 0.35)`, the way `WinampModernSurfaceStyle` derives every other
+  piece of chrome) takes its place. A skin whose bar already differs keeps it untouched. The
+  threshold is far below `minimumContrast` on purpose: it asks *is anything drawn at all*, not *can
+  text be read on it*. `legibleRowColor` now judges against this bar rather than the one the skin
+  named — B113's rule that **a guard must judge against the plate its own draw filled**.
+- **`legibleCurrentRowColor(on:plain:)`** drops the plain row colour from the candidate list, so the
+  readability walk can no longer end on it; the black/white extreme is then the last resort, and it
+  can never collide by construction. Called only when the skin *named* a current colour
+  (`currentText != listText`) — a skin that named none is marked by its bar, as Winamp marks it.
+
+**Where this stops, measured in the test.** Once every colour a skin owns is unreadable on the
+derived bar, the *selected* plain colour and the current colour both land on the same white extreme:
+there is no third colour left to invent from a palette that collapsed. A selected row is then marked
+by the bar and the playing row by neither — which is fine, because the selection follows playback
+(`playlistFollowCurrentTrack`), so the playing row is normally the only selected one and its
+neighbours are unselected rows in `listText`. The invariant worth asserting is *the playing row never
+looks like the rows around it*, not *the playing row differs from a selected one*.
+
+The same pairing drives `<ColorThemes:List>`, where the applied theme is the "current" row, so both
+guards are applied there too.
+
 #### Colour themes (`gammaset` / `gammagroup`)
 
 A theme is a set of per-channel adjustments keyed by `gammagroup` id, which bitmaps and `<color>`

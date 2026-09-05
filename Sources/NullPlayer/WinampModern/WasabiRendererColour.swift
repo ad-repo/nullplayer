@@ -146,7 +146,44 @@ extension WasabiSceneRenderer {
         return WinampModernSurfaceStyle.legible(
             preferring: [preferred, palette.selectionText, palette.currentText, palette.listText,
                          palette.contentBackground],
-            on: palette.selectionBackground)
+            on: rowSelectionBackground)
+    }
+
+    /// The bar a selected row is actually **filled** with, which is not always the one the skin
+    /// named (B122).
+    ///
+    /// `selectionBackground` only marks a row when it can be told apart from the plate it sits on.
+    /// Firefox declares `studio.list.item.selected` at `7,92,129` — the same value as its
+    /// `wasabi.list.background` — so the fill paints the plate onto the plate and nothing appears.
+    /// A bar derived from the skin's own two ends, the way `WinampModernSurfaceStyle` derives every
+    /// other piece of chrome, is the smallest thing that gives such a skin a visible selection
+    /// without inventing a colour from outside its palette. A skin whose bar already differs keeps
+    /// it untouched.
+    ///
+    /// The threshold is deliberately far below `minimumContrast`: this asks "is anything drawn at
+    /// all", not "can text be read on it".
+    var rowSelectionBackground: NSColor {
+        let plate = palette.contentBackground
+        guard WinampModernSurfaceStyle.contrastRatio(palette.selectionBackground, plate) < 1.15 else {
+            return palette.selectionBackground
+        }
+        return WinampModernSurfaceStyle.blend(plate, toward: palette.listText, by: 0.35)
+    }
+
+    /// The playing row's colour, which has to stay distinguishable from an ordinary row's.
+    ///
+    /// `legible` walks to the skin's *other* colours when the preferred one cannot be read, and on a
+    /// skin whose current colour is unreadable that walk ends on `listText` — the very colour every
+    /// other row is drawn in. The guard that made the row readable also made it anonymous, which is
+    /// how Firefox's playlist ended up with no marker on the playing track at all. Dropping the plain
+    /// colour from the candidates leaves the black/white extreme as the last resort, which always
+    /// clears the threshold and can never collide with the row colour it exists to differ from.
+    ///
+    /// Only called when the skin actually named a current colour; a skin that named none is marked by
+    /// its selection bar, as Winamp marks it.
+    func legibleCurrentRowColor(on background: NSColor, plain: NSColor) -> NSColor {
+        let candidates = [palette.currentText, palette.selectionText].filter { $0 != plain }
+        return WinampModernSurfaceStyle.legible(preferring: candidates, on: background)
     }
 
     /// The `r,g,b` a resource declares, or `nil` when it declares no colour at all.

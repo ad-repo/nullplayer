@@ -3480,14 +3480,19 @@ final class WasabiSceneRenderer {
             guard index < names.count else { break }
             let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * rowHeight,
                                  width: frame.width, height: rowHeight)
-            if index == state.selectedIndex {
-                context.setFillColor(palette.selectionBackground.cgColor)
+            let selected = index == state.selectedIndex
+            let bar = rowSelectionBackground
+            if selected {
+                context.setFillColor(bar.cgColor)
                 context.fill(rowRect)
             }
-            let selected = index == state.selectedIndex
-            let color = legibleRowColor(index == active ? palette.currentText
-                                            : (selected ? palette.selectionText : palette.listText),
+            // Same pairing as the playlist's rows, and the same two guards: read on the bar that was
+            // filled, and keep the applied theme apart from the rows around it (B122).
+            let plain = legibleRowColor(selected ? palette.selectionText : palette.listText,
                                         selected: selected)
+            let color = index == active && palette.currentText != palette.listText
+                ? legibleCurrentRowColor(on: selected ? bar : palette.contentBackground, plain: plain)
+                : plain
             drawSurfaceText(names[index], in: rowRect.insetBy(dx: 3, dy: 1), color: color,
                             alignment: .left, pointSize: 9, context: context)
         }
@@ -3923,18 +3928,22 @@ final class WasabiSceneRenderer {
             let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * rowHeight,
                                  width: frame.width, height: rowHeight)
             let selected = snapshot.isSelected(index)
+            let bar = rowSelectionBackground
             if selected {
-                context.setFillColor(palette.selectionBackground.cgColor)
+                context.setFillColor(bar.cgColor)
                 context.fill(rowRect)
             }
             // A current row keeps its own colour over the selection bar, as Winamp's playlist does —
             // but only when the skin actually named one. `currentText` falls back to `listText`, and
             // list text over the selection background is what `selectionText` exists to avoid.
             let hasCurrentColor = palette.currentText != palette.listText
-            let color = legibleRowColor(row.isCurrent && (hasCurrentColor || !selected)
-                                            ? palette.currentText
-                                            : (selected ? palette.selectionText : palette.listText),
+            let plain = legibleRowColor(selected ? palette.selectionText : palette.listText,
                                         selected: selected)
+            // The guard runs against the bar this row actually filled, never the one the skin named
+            // (B113's rule), and the playing row is additionally kept apart from `plain` (B122).
+            let color = row.isCurrent && hasCurrentColor
+                ? legibleCurrentRowColor(on: selected ? bar : palette.contentBackground, plain: plain)
+                : plain
             let textRect = rowRect.insetBy(dx: 3, dy: 1)
             let columns = playlistRowColumns(text: textRect, duration: row.duration,
                                              pointSize: pointSize)

@@ -95,6 +95,7 @@ This file is a router. Read the one focused reference your symptom names.
 | A menu a **double-click** opens never appears | [reference/rendering.md](reference/rendering.md) → *A skin's own right-click menus* |
 | Colour resolution, themes, unreadable selections/titles | [reference/rendering/colour.md](reference/rendering/colour.md) |
 | Selected row or title text matches its background | [reference/rendering/colour.md](reference/rendering/colour.md) → *A resolved colour is not yet readable* |
+| The playing playlist row has no marker, or the selection bar never appears | [reference/rendering/colour.md](reference/rendering/colour.md) → *A marker only marks when it differs* |
 | Bitmap icons/borders look blurry at an integer UI Size | [reference/rendering.md](reference/rendering.md) → *Bitmap interpolation follows UI Size × backing scale* |
 | `cfgattrib`, `onActivate`, album art, alpha, fill, sliders, `ProgressGrid`, animation | [reference/rendering.md](reference/rendering.md) |
 | Slow rendering, CPU, repaint storms | [reference/performance.md](reference/performance.md) |
