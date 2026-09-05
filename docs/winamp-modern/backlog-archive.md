@@ -2,6 +2,59 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B133 — `@SKINSPATH@` font references — closed 2026-09-05, not a defect
+
+| B133 | **`@SKINSPATH@/<Other Skin>/…` font references are not expanded, so an overlay skin loses every face it borrows.** Big Bento Modern Light and its Windows 10 sibling declare all three of their faces (`oxygen.ttf`, `swis721bdcn_bt_numbers.ttf`, `swis721lt_cn_bt_light.ttf`) as `file="@SKINSPATH@/Big Bento Modern/fonts/…"` — they are written against the base Big Bento skin rather than shipping copies. The loader already understands the macro for a *mount* (`missingRequiredMount` exists and is deliberately not `resourceMissing`), so the question is whether a `<truetypefont file=>` goes through the same expansion; measured 2026-09-05, these six targets do not resolve. Until it does, both Light variants draw entirely in the B131 substitute and are indistinguishable from a skin that named a font nobody has | 2 skins measured; every overlay skin written against an installed base | M | Measured |
+
+### B133
+
+- [x] **B133. Closed 2026-09-05 as not a defect: `@SKINSPATH@` font references already expand, and
+      the Light skins already draw in the faces they borrow.**
+
+      The item was filed off B131's sweep, which matched declared ids by literal string over `*.xml`
+      and never ran the loader — and it carried B131's own written caveat that some of its names
+      "may resolve at runtime by a path the sweep did not walk". These did. A `<truetypefont file=>`
+      goes through `WasabiSkinInitializer.resolveSkinResource` → `WalVirtualFileSystem.resolve`,
+      the same expansion every `<bitmap>` and `<include>` takes, and the lazy sibling mount
+      (`mountSiblingIfNeeded`) brings the base archive in exactly as it does for the six includes
+      the Light skins pull out of it.
+
+      Measured 2026-09-05 by loading all 73 installed `.wal` files and asking
+      `WasabiTextMetrics.font(identifier:size:)` for a face, so the evidence is a **produced
+      typeface**, not a resolved path:
+
+      | Skin | id | `file=` | face produced |
+      |---|---|---|---|
+      | Big Bento Modern Light | `oxygen` | `@SKINSPATH@/Big Bento Modern/fonts/oxygen.ttf` | `Oxygen-Regular` |
+      | Big Bento Modern Light | `numbers` / `numbers-font` / `swis721` | `…/swis721bdcn_bt_numbers.ttf` | `Swiss721BT-BoldCondensed` |
+      | Big Bento Modern Light | `numbers-font-lt` | `…/swis721lt_cn_bt_light.ttf` | `Swiss721BT-LightCondensed` |
+      | Big Bento Modern W10 edition Light | same five | `@SKINSPATH@/Big Bento Modern Windows 10 edition/fonts/…` | same five faces |
+
+      **What the string sweep had actually caught is the skins' own mistakes, and the base skin has
+      them too** — which is the tell that it was never an overlay problem:
+
+      - `swis721lt` → `…/fonts/swis721ltcn_bt.ttf`. Declared by **all four** Big Bento archives and
+        shipped by none of them. The base skin loses this face identically.
+      - `swis721` in the W10 **Light** edition only → `@SKINSPATH@/Big Bento Modern/fonts Windows 10
+        edition/swis721bdcn_bt_numbers.ttf`. The skin transposed its own directory name: the base is
+        `Big Bento Modern Windows 10 edition/fonts`, not `Big Bento Modern/fonts Windows 10 edition`.
+        Its non-Light sibling writes the path correctly.
+
+      Both are `.unresolvedFont` warnings drawing in the B131 substitute, which is what Winamp does
+      with them too. Nothing to fix in the engine.
+
+      **The one adjacent gap was measured and is also empty.** B132's filename→family map is applied
+      to the `font=` *name*; it is not applied to the `file=` of a declaration whose file is absent.
+      Trying it on all 14 such declarations in the corpus (`SUPERGLU.ttf`, `player/Beware.ttf`,
+      `font/HANDGOTB.TTF`, `font/calibrib.ttf` ×4, `fonts\VGA.ttf`, `fonts\TrebuchetSource.ttf`,
+      `fonts/Bolstbo_.ttf`, `fonts/HATTEN.TTF`) recovers **zero** installed faces — none of those
+      families is on macOS, and the one family-shaped `file=` in the corpus (Itemskin's
+      `<truetypefont id="digiface" file="Arial">`) already lands on Arial because Arial *is* the
+      substitute. Do not extend the map on this evidence.
+
+      No source change. The probe was a throwaway; the sweep that reproduces it is in
+      `reference/rendering/text.md`.
+
 ## B132 — Windows font filenames used as `font=` names — closed 2026-09-05
 
 | B132 | **Windows font *filenames* used as `font=` names resolve to nothing.** A skin writes what it has on disk, so `ariblk`, `micross`, `trebuc`, `tahoma.ttf`, `UNVR67X.ttf` and `SUPERGLU.ttf` appear where a family name belongs — none of which macOS can match, though the *faces* behind three of them ship with the system (Arial Black, MS Sans Serif→Helvetica, Trebuchet MS). A filename→family map applied before `installedFont` gives those skins their intended type back for the cost of a dictionary. Measured 2026-09-05 in the same sweep as B131; the map only helps names whose face exists here, so Calibri/Segoe UI/Century Gothic stay substituted and stay diagnosed | 9 skins measured (Enkera, TomK, Capsule_II, Nullsoft SP4 Lite ×2, MoonLight, dewytears ×3, Bio-Nid, EPS) | S | Measured |

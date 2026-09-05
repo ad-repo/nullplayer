@@ -509,12 +509,50 @@ that name so the two defaults cannot drift apart.
 reads "you named a font nobody has", which is the opposite of what happened and is the commonest case
 in the corpus. `resolvedFont` re-checks the definition's kind to tell them apart.
 
-> **A caveat on those counts.** The sweep matched declared ids by literal string over `*.xml` only, so
-> some id-shaped names in it may resolve at runtime by a path the sweep did not walk — several look
-> like Wasabi *standard-framework* ids we do not ship (`wasabi.font.default` ×5 skins,
-> `wasabi.button.font` ×3, `component.title`, `studio.component.statusbar`), which would be our gap
-> and not the skin's. The Windows-family and filename cases are certain. Tracked as **B132**
-> (filename→family map) and **B133** (`@SKINSPATH@` font references).
+> **A caveat on those counts, and it cashed in.** The sweep matched declared ids by literal string
+> over `*.xml` only, so some id-shaped names in it may resolve at runtime by a path the sweep did not
+> walk — several look like Wasabi *standard-framework* ids we do not ship (`wasabi.font.default` ×5
+> skins, `wasabi.button.font` ×3, `component.title`, `studio.component.statusbar`), which would be
+> our gap and not the skin's. The Windows-family and filename cases are certain, and became **B132**
+> (filename→family map, fixed). The `@SKINSPATH@` cases were filed as **B133** and were the caveat
+> coming true: they *do* resolve, and closing B133 cost a load of the whole corpus to find that out.
+> See below.
+
+#### A declared font path is resolved like any other resource (B133, not a defect)
+
+`<truetypefont file=>` goes through `WasabiSkinInitializer.resolveSkinResource` →
+`WalVirtualFileSystem.resolve`, the same expansion a `<bitmap>` or an `<include>` takes, lazy sibling
+mount included. So an **overlay** skin's `file="@SKINSPATH@/<Base Skin>/fonts/…"` resolves through the
+base archive whenever the base is installed — which it must be anyway, or the skin's includes fail
+first with `missingRequiredMount`. Measured 2026-09-05 by loading all 73 installed `.wal` files and
+asking `WasabiTextMetrics.font(identifier:size:)` for a face: both Big Bento Modern Light editions
+produce `Oxygen-Regular`, `Swiss721BT-BoldCondensed` and `Swiss721BT-LightCondensed` from the base
+skin's `fonts/` directory.
+
+The three macro references in that family that *don't* resolve are the skins' own errors, and the
+**base skin has the same ones** — the tell that it was never an overlay problem. All four archives
+declare `swis721ltcn_bt.ttf` and none ships it; the W10 Light edition alone transposes its own
+directory (`Big Bento Modern/fonts Windows 10 edition` for `Big Bento Modern Windows 10
+edition/fonts`) while its non-Light sibling writes it correctly. Both draw in the B131 substitute,
+which is what Winamp does with them too.
+
+**Do not extend B132's filename→family map to a missing `file=`.** Tried against all 14 such
+declarations in the corpus (`SUPERGLU.ttf`, `player/Beware.ttf`, `font/calibrib.ttf` ×4, `VGA.ttf`,
+`HATTEN.TTF`, …) it recovers **zero** installed faces, and the one family-shaped `file=`
+(Itemskin's `<truetypefont id="digiface" file="Arial">`) already lands on Arial because Arial is the
+substitute.
+
+The sweep, which prints the produced face rather than the resolved path:
+
+```swift
+let loaded = try WinampModernSkinLoader(engineStore: .shared).load(from: wal)
+let metrics = WasabiTextMetrics(loadedSkin: loaded)
+for def in loaded.runtime.resources.definitions where def.kind == "truetypefont" {
+    print(def.identifier ?? "-", def.attributes["file"] ?? "-",
+          def.logicalFile == nil ? "UNRESOLVED" : "resolved",
+          metrics.font(identifier: def.identifier, size: 12)?.fontName ?? "nil")
+}
+```
 
 Two things not to undo: **a skin that genuinely names a monospaced face still gets one** — the
 substitution only fires when nothing resolves — and the host's own request for the substitute family
