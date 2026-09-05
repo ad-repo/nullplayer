@@ -187,6 +187,75 @@ string.
 The contract this puts on the user: **the installed filename must match the skin name the overlay
 asks for.** `Big Bento Modern.wal` renamed is `Big Bento Modern Light` failing to load.
 
+### The bundled default skin (2026-09-04)
+
+**NullPlayer ships one `.wal` skin, and it is our own.** No Winamp skin is bundled and none ever
+will be — the rule is unchanged. What ships is a deliberately plain placeholder so Modern mode has a
+working window on a first run instead of the "Import a .wal skin from the Winamp Modern menu"
+message it used to come up on. It is a starting point users replace, not a skin anyone is meant to
+keep.
+
+| | |
+|---|---|
+| Source | `scripts/generate_default_wal_skin.swift` — the `skin.xml` lives inside the script |
+| Artifact | `Sources/NullPlayer/Resources/Skins/NullPlayer-Black.wal` (committed, ~3 KB) |
+| Menu title | **Default Skin (Black)** |
+| Regenerate | `swift scripts/generate_default_wal_skin.swift` from the repo root |
+
+**Edit the script, never the archive.** The `.wal` is generated output; a hand-edited archive is lost
+the next time anyone runs the generator, and the XML in the script is the only reviewable copy.
+
+**The filename is the identity, the title is not.** `installedSkins()` and `bundledDefaultSkin()`
+both derive a skin's name from its filename stem, and that stem is what `selectSkin` persists under
+`winampModernSkinName`. So `WinampModernSkinImporter.bundledDefaultSkinName` (`NullPlayer-Black`)
+must match the generator's `skinName`, while `bundledDefaultSkinTitle` is a separate constant. This
+is Classic's arrangement exactly — `NullPlayer-Silver.wsz` under the title "Default Skin (Silver)" —
+and the Modern menu copies its shape too: the default is its own entry above the user's library, not
+a row inside it, because it is neither imported nor removable.
+
+**Resolution vs. listing.** `installedSkins()` stays the *user's* library (files in Application
+Support) and nothing else — the Phase 2 importer test pins that. `availableSkins()` is the
+resolution list (installed + bundled) that `selectedSkin()` matches a stored name against, and a
+skin the user imported under the same name wins. The bundle is searched on the same three paths
+`WindowManager.findBundledClassicSkin` uses, because SwiftPM's resource bundle, the raw
+`swift build` output, and the assembled `.app` put resources in three different places.
+
+**It is artwork-less by construction, and that is the interesting part.** The whole skin is one 8×8
+PNG plus `skin.xml`, because every control is a drawn fallback this engine already has: artwork-less
+`<Wasabi:Button text="…">` for the transport and window buttons (see
+[rendering.md](rendering.md) → *Artwork-less `<Wasabi:Button text="…">`*) and `<Wasabi:HSlider>` for
+seek and volume, which falls back to a flat track and drawn thumb when the skin ships no
+`wasabi.slider.horizontal.*` (→ *The Wasabi standard form widgets are the primitives they wrap*).
+The one bitmap is the layout `background=`, and it is a real swatch on purpose: a layout whose
+background does not resolve falls back to the palette's `contentBackground`, but that path exists for
+skins referencing Winamp's own base skin, and reaching it deliberately would record a
+`resourceMissing` diagnostic against our own default.
+
+**What it deliberately does not do.** It declares no `wasabi.standardframe.*`, so the playlist,
+equalizer and library are `catalog: …=classic` — the classic windows, not skin-framed ones — and it
+declares no `<vis>` box. Both are correct for a placeholder; neither is a defect to fix without
+being asked.
+
+**The check before committing a change to it.** Render it through the dump harness with a corpus
+directory holding just that archive ([harness.md](harness.md) → the corpus render sweep):
+
+```
+WINAMP_MODERN_WAL=<dir with only NullPlayer-Black.wal> \
+WINAMP_MODERN_RENDER_DUMP=<out> WINAMP_MODERN_RENDER_BITMAPS=1 \
+  swift test --filter WinampModernRenderDumpTests
+```
+
+Two lines have to hold, and **look at the PNG** — they are structural and say nothing about what was
+drawn:
+
+```
+RENDER-DUMP compatibility level=full
+BITMAPS main/normal: resolved=1 missing=
+```
+
+Anything less than `full`, or a non-empty `missing=`, means our own default skin is exercising a
+degraded path — which is exactly the thing a user's first run must not do.
+
 ### `@DEFAULTSKINPATH@` is an optional mount, and the only one
 
 `@DEFAULTSKINPATH@` means Winamp's **stock Modern skin**, which sits beside the user's own skins in a

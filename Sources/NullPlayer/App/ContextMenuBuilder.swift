@@ -1043,6 +1043,23 @@ class ContextMenuBuilder {
             getMoreItem.target = MenuActions.shared
             winampModernMenu.addItem(getMoreItem)
 
+            // The bundled placeholder, in the same place and shape Classic gives its bundled
+            // Silver: its own entry between "where skins come from" and the user's own library,
+            // rather than a row inside that library. It is not a skin they installed and they
+            // cannot remove it, so listing it among the ones they can would misdescribe it.
+            if let bundled = WinampModernSkinImporter.shared.bundledDefaultSkin() {
+                winampModernMenu.addItem(NSMenuItem.separator())
+                let defaultItem = NSMenuItem(title: WinampModernSkinImporter.bundledDefaultSkinTitle,
+                                             action: #selector(MenuActions.selectWinampModernSkin(_:)),
+                                             keyEquivalent: "")
+                defaultItem.target = MenuActions.shared
+                defaultItem.representedObject = bundled.archiveURL
+                if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == bundled.archiveURL {
+                    defaultItem.state = .on
+                }
+                winampModernMenu.addItem(defaultItem)
+            }
+
             // Everything configured for the **loaded skin**, in one block: what it can be coloured
             // as and what it lets the user configure. Window-related controls live together in the
             // Windows menu: Text Size sits beside UI Size, and skin-defined windows follow the

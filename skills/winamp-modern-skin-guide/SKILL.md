@@ -82,6 +82,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Symptom / question | Read |
 |---|---|
 | Load, mounts, `@VARS@`, include/glob, sibling skins | [reference/loading.md](reference/loading.md) |
+| The bundled default skin, or Modern mode has nothing to load | [reference/loading.md](reference/loading.md) → *The bundled default skin* |
 | Geometry, anchors, y-origin, collapsed windows | [reference/loading.md](reference/loading.md) |
 | Where a skin's windows open, overlapping windows, the tiling | [reference/components.md](reference/components.md) |
 | Dead mouse target, clipping, regions, drag policy, `sysregion` | [reference/rendering/hit-testing.md](reference/rendering/hit-testing.md) |

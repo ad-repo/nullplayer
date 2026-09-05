@@ -8,6 +8,10 @@ in completely different ways while the compatibility report says the same thing 
 Nothing third-party is committed — every skin here is user-supplied. See
 [manual-qa-checklist.md](manual-qa-checklist.md) for how to run one.
 
+The one `.wal` the repo *does* commit is **NullPlayer-Black**, the bundled placeholder we generate
+ourselves; it is not a compatibility fixture and has no row below. See
+[reference/loading.md](reference/loading.md) → *The bundled default skin*.
+
 **How a skin's file gets written.** Run `/wal-skin-report <skin.wal>` (`skills/wal-skin-report`) — it
 measures the skin in a fixed order and emits the full structured report; `skins/<skin>.md` is the
 durable summary distilled from it, not a second measurement. The report is a snapshot and lives
