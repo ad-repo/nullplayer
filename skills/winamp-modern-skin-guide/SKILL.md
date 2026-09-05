@@ -170,6 +170,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Config/EQ drawer or custom list will not scroll | [reference/scripting.md](reference/scripting.md) → *The mouse wheel is a layout event* |
 | Album art, animated layer, or image parameter draws stale/wrong | [reference/rendering.md](reference/rendering.md) |
 | Skin-opened window appears in the wrong place | [reference/components.md](reference/components.md) → *default_visible* |
+| A bare outline rectangle opens beside the player (drop shadow, snap preview) | [reference/components.md](reference/components.md) → *A window that only fakes a Windows desktop effect* |
 | Mode switch teardown crashes or leaks a hosted surface | [reference/components.md](reference/components.md) → *Teardown order* |
 | Current open work | `TASKS.md` — the only live backlog; closed history is [the archive](../../docs/winamp-modern/backlog-archive.md) |
 

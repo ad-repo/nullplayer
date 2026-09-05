@@ -2,6 +2,45 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B101 — Aero-snap and the engine-two drop shadow — closed 2026-09-04
+
+| B101 | **Aero-snap and the engine-two drop shadow are inert, by decision rather than by omission.** `snapAdjust` is accepted and returns `.null`; `main.aerosnap` renders as a 2-node stub. `load-two_alpha.xml` declares a `main.shadow` container (830×630) that nothing instantiates. Both are Windows shell behaviours with macOS counterparts already provided by the window server, so this is filed to record the decision, not to schedule work. Close it as *won't do* unless a skin turns out to draw something into either | every engine-`two` skin | L | Measured |
+
+### B101
+
+- [x] **B101. Both windows stopped being inert and opened beside the player. Suppressed 2026-09-04,
+      live-confirmed by the reporter the same day.**
+
+      Reported on cPro2 Dark Aluminum as *"large outlines of windows only that launch alongside the
+      main window — these are just rectangles made from lines, there is no real window component"*,
+      then *"like a second ghost outline of the main window and a line pulse animation going the
+      length of the screen"*. Measured with the accessibility API against the running build: three
+      windows, the player at 800×600 and two unnamed ones at **830×630** and **950×1060**.
+
+      Both numbers name their container exactly. 830×630 is `main.shadow` — the player's 800×600 plus
+      `shadow.maki`'s `-15,-15,+30,+30` parameters — and it sat at (0,30) rather than 15px outside the
+      player, because it opened and was never placed. 950×1060 is `main.aerosnap` at
+      `layout.m`'s LEFT SNAP rect, `(10, 10, getViewportWidth()/2 − 10, getViewportHeight() − 20)` on
+      a 1920×1080 display. Neither draws any of the skin's own UI: the shadow is a nine-slice of
+      `frame_alpha.png` and the aerosnap a 4px line grid from `aerosnap.png`, which is what "a
+      rectangle made from lines" is.
+
+      **The premise of this entry expired rather than being wrong.** It was filed when
+      `newDynamicContainer` could not build a window, so `shadow.m`'s
+      `mainLayout.onSetVisible(1) → newDynamicContainer(shadowContID) → shadowLayout.show()` reached
+      nothing. B110 (2026-09-03) gave dynamic containers real windows, and both scripts promptly got
+      what they asked for. The decision itself is unchanged and is now enforced rather than assumed:
+      `WinampModernContainerTopology.isHostProvidedDesktopEffect` marks a container whose id's last
+      dotted component is `shadow` or `aerosnap`, and `setAuxiliaryWindow` refuses to show one
+      whoever asked — a script's `show()`, `default_visible`, or the menu. The container, its scene
+      and its script keep working, so `close()`, `resize()` and the handlers around them are
+      undisturbed. Corpus-measured 2026-09-04 across all 69 archives: `aerosnap` occurs twice (both
+      the engine's own copy) and no container in any skin ends in `shadow`, so nothing else is caught.
+
+      **Why the snap preview appeared with no drag anywhere near a screen edge** is a second defect,
+      filed as **B123**: `layout.m` opens it on `System.getMousePosX() < 1`, which in Winamp means the
+      cursor is at the left edge of the *screen*, and ours answers in the window's canvas space.
+
 ## B120 — T800's jaw play button ran `pause` — closed 2026-09-04
 
 | B120 | **A script asking its group for a duplicated id got the copy-paste corpse, and it cost T800 its play button.** Reported 2026-09-04 as *"in t800 skin the play button on the jaw does not work properly"*. **Fixed and live-confirmed the same day** | 1 skin reported; 6 lookups corpus-wide | S | Live-reported |

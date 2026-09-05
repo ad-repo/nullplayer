@@ -32,7 +32,8 @@ widgets.manager    321×400    36 nodes   min 321×400   declared 100×400
 notifier           128×80     13 nodes  (normal + desktopalpha layouts)
 searchresults      200×200     6 nodes  ·  browserpro 200×200 4 nodes
 main.aerosnap      275×116     2 nodes  ·  main.tooltip 275×116 2 nodes
-main.shadow        830×630     2 nodes  (declared by load-two_alpha.xml; nothing instantiates it)
+main.shadow        830×630     2 nodes  (declared by load-two_alpha.xml; shadow.m instantiates it,
+                                        and B101 keeps it off screen)
 bitmaps            main/normal: 80 resolved, 1 unresolved (beatvis.overlay)
                    main/shade:  42 resolved, 1 unresolved (s.button.mute.over.0)
 compatibility      unsupported — 4 error findings, all one class: unimplemented MAKI methods
@@ -77,11 +78,13 @@ Visualization, Web Reader, Now Playing.
   list with them. Highest measured demand this skin has.
 - **`enumItem`** — `xml/widgets-manager-cpro2.xml`.
 - **`onLeaveArea`** — `CentroSUI/_v2/CentroSUI.xml`.
-- **Aero-snap is inert by design.** `snapAdjust` is accepted and returns `.null`; the
-  `main.aerosnap` container is declared and drawn as a 2-node stub. Snapping a window to a screen
-  edge is a Windows shell behaviour with no macOS counterpart worth emulating.
-- **The drop shadow is inert by design.** `load-two_alpha.xml` declares `main.shadow` (830×630) and
-  nothing instantiates it. macOS draws its own window shadow.
+- **Aero-snap is inert by design.** `snapAdjust` is accepted and returns `.null`. Snapping a window
+  to a screen edge is a Windows shell behaviour with no macOS counterpart worth emulating.
+- **The drop shadow is inert by design.** macOS draws its own window shadow.
+- **Neither window is allowed on screen** (B101, 2026-09-04). Both containers are real and their
+  scripts run; `setAuxiliaryWindow` refuses to show a container
+  `WinampModernContainerTopology.isHostProvidedDesktopEffect` matches. Before that they opened —
+  see the trap below.
 - **`beatvis.overlay`** is unresolved, as on every cPro skin — the skin ships no such bitmap.
 
 ### Working (continued)
@@ -94,6 +97,18 @@ Visualization, Web Reader, Now Playing.
   See [reference/rendering/vis.md](../reference/rendering/vis.md).
 
 ### Traps this skin sets
+
+- **The two glue windows open the moment dynamic containers work.** `shadow.m` builds `main.shadow`
+  from `mainLayout.onSetVisible(1)` and `layout.m` builds `main.aerosnap` from `normal.onMove()`, and
+  both were dead only because `newDynamicContainer` could not make a window. B110 made one, and the
+  skin came up with a **830×630** outline (the player plus `shadow.maki`'s `-15,-15,+30,+30`, unplaced
+  in a screen corner) and a **950×1060** one (the LEFT SNAP rect, `viewportWidth/2 − 10` by
+  `viewportHeight − 20`) beside it — each a bare rectangle of lines, because a nine-slice with no
+  centre and a 4px border grid are all either window draws. The sizes are the identification: no
+  probe names these windows, and the accessibility API's frame list does. Suppressed by B101.
+- **The snap preview fires with the pointer nowhere near a screen edge.** `layout.m` tests
+  `System.getMousePosX() < 1` — the *screen's* left edge in Winamp — and ours answers in the window's
+  canvas space, so it is true whenever the pointer is left of the player. B123.
 
 - **Nothing lays out until `System.onShowLayout` fires.** This was never dispatched anywhere in the
   codebase, and the failure is silent and total: `two.screen` keeps its declared `y=0`, so the title

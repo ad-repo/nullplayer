@@ -73,6 +73,29 @@ Shield_Amp, S7Reflex and Defix enter this same path rather than being parsed as 
   invisible to a fresh profile. `defaults read NullPlayer | grep '_nullplayer_windows'` is the state
   to read before believing a window opened itself.
 
+#### A window that only fakes a Windows desktop effect never opens (B101, 2026-09-04)
+
+Two containers in the corpus draw no UI at all: they exist to supply something the Windows shell did
+not, and the macOS window server already does. ClassicPro engine two declares both — `main.shadow`,
+a nine-slice of `frame_alpha.png` glued 15px outside the player, and `main.aerosnap`, the 4px line
+grid Winamp's snap preview outlines a half-screen with.
+
+`WinampModernContainerTopology.isHostProvidedDesktopEffect` matches a container whose id's last
+dotted component is `shadow` or `aerosnap`, and `setAuxiliaryWindow` refuses to show one **whoever
+asked** — a script's `show()`, `default_visible`, or the menu. The container, its scene and its
+scripts are otherwise untouched, so `close()`, `resize()` and every handler around them run as the
+skin wrote them.
+
+The reason it is a *rule* and not a fixed skin: this cost nothing until B110 gave dynamic containers
+real windows, at which point `shadow.m`'s `onSetVisible → newDynamicContainer → show()` chain and
+`layout.m`'s snap branch both got what they had always asked for, and cPro2 Dark Aluminum came up
+with two bare outline rectangles beside the player — one unplaced in a screen corner, one across half
+the desktop. A decision recorded only in prose is a decision that expires the moment the engine
+around it improves.
+
+Measured across the 69-skin corpus 2026-09-04: `aerosnap` appears twice (both the engine's own copy)
+and no container in any skin ends in `shadow`.
+
 #### `visible` on a container answers two questions, and only the declared one classifies it (B16)
 
 `WinampModernContainerTopology` drops a container that is an **SUI-collapsed stub** — a window a skin

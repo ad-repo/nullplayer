@@ -163,6 +163,30 @@ enum WinampModernContainerTopology {
         return nil
     }
 
+    /// A container that exists only to fake a **Windows desktop-shell effect** the macOS window
+    /// server already draws, and must therefore never reach the screen.
+    ///
+    /// ClassicPro's engine "two" declares both: `main.shadow` is a bitmap drop shadow glued behind
+    /// the player (`shadow.m` opens it from `mainLayout.onSetVisible(1)`), and `main.aerosnap` is the
+    /// Aero-snap preview rectangle `layout.m` opens while the player is dragged to a screen edge.
+    /// Neither draws any of the skin's own UI: the shadow is a nine-slice of `frame_alpha.png` and
+    /// the aerosnap a 4px line grid, so each comes up as a bare rectangle of lines around nothing.
+    ///
+    /// They were harmless while dynamic containers were inert (B101 recorded the decision to leave
+    /// them so); B110 made `newDynamicContainer` build real windows, and both promptly opened — the
+    /// shadow unplaced in a screen corner and the snap preview across half the desktop, because
+    /// `System.getMousePosX` answers in the window's canvas space and reads as "at the left edge"
+    /// whenever the pointer is left of the player. The suppression is the decision, not a workaround
+    /// for that: macOS draws the window shadow itself and has no Aero-snap for the preview to promise.
+    ///
+    /// Matched on the id's last dotted component, which is the only name Wasabi gives these — there
+    /// is no component GUID for a shadow. Measured across the 69-skin corpus 2026-09-04: `aerosnap`
+    /// occurs twice (both the engine copy) and nothing else in any skin ends in `shadow`.
+    static func isHostProvidedDesktopEffect(id: String) -> Bool {
+        let leaf = id.lowercased().split(separator: ".").last.map(String.init) ?? ""
+        return leaf == "shadow" || leaf == "aerosnap"
+    }
+
     /// The container's own display name, which is what the menu shows.
     static func displayName(of info: WinampModernContainerInfo) -> String {
         info.object.attributes["name"] ?? info.id

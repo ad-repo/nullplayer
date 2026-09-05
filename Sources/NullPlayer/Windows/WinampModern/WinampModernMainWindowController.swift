@@ -1617,6 +1617,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private func setAuxiliaryWindow(id: String, visible: Bool, record: Bool = false,
                                     activate: Bool = true) {
         guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return }
+        // A window that only fakes a Windows desktop effect never opens, whoever asked — a script's
+        // `show()`, `default_visible`, or the menu. cPro2's drop shadow and Aero-snap preview each
+        // draw a bare rectangle of lines and nothing else, and both showed up beside the player once
+        // B110 gave dynamic containers real windows.
+        if visible, WinampModernContainerTopology.isHostProvidedDesktopEffect(id: id) { return }
         if visible {
             container.view.needsDisplay = true
             // Lay the scene out *before* choosing a slot. The window is created at the view's canvas
