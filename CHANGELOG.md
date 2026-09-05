@@ -32,6 +32,16 @@
 
 ### Bug Fixes
 
+- **Modern skins: the playlist, library and tab text no longer draw in a console font.** Every list
+  NullPlayer draws inside a `.wal` skin — playlist rows, the embedded Media Library, tab labels,
+  status lines — was falling back to a fixed-pitch system font, in every Modern skin, because none of
+  them declares a font for those surfaces and an absent choice was being treated as a failed one.
+  They now draw in Arial, which is what Winamp uses there and what the skins ask for in their own
+  text beside these lists. Rows are also a size larger: the text size was being run through a Windows
+  compatibility conversion meant for a skin's own labels, which shrank it by a further quarter. The
+  Text Size setting keeps working exactly as before, and row heights are unchanged, so no skin
+  reflows.
+
 - **Modern skins: the seek bar and volume slider light up under the pointer, like every other
   control.** On cPro2 and its ClassicPro siblings both bars sat inert: the volume bar never even
   filled, the elapsed portion of the seek bar never brightened, and a seek left the stretch you

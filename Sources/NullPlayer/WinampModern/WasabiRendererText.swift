@@ -451,8 +451,7 @@ extension WasabiSceneRenderer {
                            ticker: nil, context: context)
             return
         }
-        let font = resources.font(identifier: surfaceFont?.identifier, size: pointSize)
-            ?? NSFont.systemFont(ofSize: pointSize)
+        let font = surfaceTextFont(pointSize: pointSize)
         drawFlippedText(text, in: rect, font: font, color: color, alignment: alignment, context: context)
     }
 
@@ -465,10 +464,39 @@ extension WasabiSceneRenderer {
             let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
             return CGFloat(text.count * max(1, charWidth + spacing))
         }
-        let font = resources.font(identifier: surfaceFont?.identifier, size: pointSize)
-            ?? NSFont.systemFont(ofSize: pointSize)
+        let font = surfaceTextFont(pointSize: pointSize)
         return resources.textWidth(of: text, font: font)
     }
+
+    /// The face a NullPlayer-owned surface draws in, for a skin whose list font is not a bitmap
+    /// sheet.
+    ///
+    /// **A skin that declares no list font at all is not the same case as one naming a face that
+    /// cannot be resolved**, and it is the common case: cPro Bento, cPro2 Dark Aluminum and Anaheim
+    /// Player all declare the `wasabi.list.*`/`studio.list.*` *colours* and no list font whatsoever.
+    /// Passing that nil id down lands on `WasabiTextMetrics`' monospaced fallback, which is the right
+    /// *diagnostic* for a name that resolved to nothing and the wrong *default* for silence — every
+    /// playlist row in those skins drew in a console face.
+    ///
+    /// Winamp does not leave the list unfonted there: the Modern framework supplies the default, a
+    /// proportional UI face, which is also what these skins ask for themselves everywhere they do
+    /// name one (Anaheim's playlist window says `font="Arial"` on all four of its own `<text>`
+    /// objects). So an undeclared list font resolves as `Arial` — through the same installed-family
+    /// branch a skin naming it gets — and only a system without it falls back to the proportional
+    /// system font. A *declared* font keeps whatever it resolves to, monospaced fallback included.
+    private func surfaceTextFont(pointSize: CGFloat) -> NSFont {
+        if let identifier = surfaceFont?.identifier,
+           let declared = resources.font(identifier: identifier, size: pointSize) {
+            return declared
+        }
+        let installed = resources.font(identifier: Self.defaultSurfaceFontFamily, size: pointSize)
+        if let installed, !installed.isFixedPitch { return installed }
+        let system: NSFont? = .systemFont(ofSize: pointSize)
+        return system ?? installed ?? NSFont.systemFont(ofSize: pointSize)
+    }
+
+    /// The face an undeclared list font resolves to, matching Winamp's own default.
+    private static let defaultSurfaceFontFamily = "Arial"
 
     private func drawFlippedText(_ text: String, in frame: CGRect, font: NSFont, color: NSColor,
                                  alignment: NSTextAlignment, context: CGContext) {

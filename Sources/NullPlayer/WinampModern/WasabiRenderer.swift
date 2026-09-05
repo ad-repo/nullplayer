@@ -1792,6 +1792,29 @@ final class WasabiSceneRenderer {
         textScale.cellPixelHeight(canvasHeight: canvasSize.height)
     }
 
+    /// The point size the embedded playlist draws at, from its cell height.
+    ///
+    /// **Deliberately not `pixelHeightToPointSize`.** That 0.8 is a *GDI compatibility* rule — it
+    /// exists because a skin's `fontsize=` is a Windows pixel height that draws an em a quarter
+    /// smaller, measured against Love is War Miku's own screenshot — and a host-drawn list has no
+    /// `fontsize` for it to correct. `defaultPixelHeight` is a number *we* chose for a cell, so
+    /// pushing it through a conversion meant for someone else's units shrank it twice: an 11px cell
+    /// came out at 8.8pt. That went unnoticed while the fallback face was the monospaced system font,
+    /// whose x-height at a given point size is far larger than Arial's; the moment an undeclared list
+    /// font started resolving to Arial the double conversion became visible as a list a size too
+    /// small.
+    ///
+    /// 0.9 rather than 1.0 because the cell has to hold the line, not just the em: `playlistRowHeight`
+    /// is the same cell plus 10%, so a point size equal to the cell leaves a 12px row drawing an
+    /// ~12.7px line and the descenders meet the row under them.
+    func playlistTextPointSize(in holder: WasabiObject? = nil) -> CGFloat {
+        CGFloat(playlistTextPixelHeight(in: holder) * Self.playlistCellToPointSize)
+    }
+
+    /// Cell height to point size for host-drawn list text. See `playlistTextPointSize`.
+    /// Not private: `WinampModernB130Tests` checks the resulting line against `playlistRowHeight`.
+    static let playlistCellToPointSize = 0.9
+
     /// Row height of the embedded playlist, in skin pixels. One cell plus the gap the 12px rows of
     /// the original fixed metric had at 11px text.
     func playlistRowHeight(in holder: WasabiObject? = nil) -> CGFloat {
@@ -3950,8 +3973,7 @@ final class WasabiSceneRenderer {
         // Keep the scroll offset in range as the list changes.
         let maxOffset = max(0, snapshot.rows.count - visible)
         let offset = max(0, min(maxOffset, playlistScrollOffset))
-        let pointSize = CGFloat(playlistTextPixelHeight(in: holder)
-                                * WasabiTextMetrics.pixelHeightToPointSize)
+        let pointSize = playlistTextPointSize(in: holder)
         context.saveGState()
         context.clip(to: frame)
         for slot in 0..<visible {

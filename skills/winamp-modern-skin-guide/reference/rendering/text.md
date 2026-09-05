@@ -396,3 +396,74 @@ belongs to. Shield_Amp's `kbps :320` → `kbps: 320` is the same correction.
 right-margin *number* (`display="4"` = "move the text 4px away from the right side") and reads it back
 with `getXmlParam("display")`. So a ClassicPro time readout is `forcefixed` but is **not** a clock
 run, and anything keyed on `isClockDisplay` will not see it.
+
+
+## Host-drawn text is not skin-declared text (B130)
+
+The playlist rows, the library rows, the tab-sheet labels and the status lines are **NullPlayer's**
+surfaces inside the skin's frame. They go through `WasabiSceneRenderer.drawSurfaceText` /
+`surfaceTextWidth`, and neither the face nor the size comes from anywhere the skin stated. Both were
+wrong in the same direction, and the second was hidden by the first.
+
+#### No skin declares a list font. Not one.
+
+`surfaceFont` looks up `pledit.font`, `wasabi.list.font` and `studio.list.font`. Swept across the
+**73 `.wal` files on hand — zero declare any of the three**, and the sweep is worth repeating rather
+than trusting, because the negative is the whole finding:
+
+```bash
+for f in ~/Downloads/*.wal; do
+  unzip -p "$f" '*.xml' 2>/dev/null |
+    grep -oiE '<(bitmapfont|truetypefont)[^>]*id="(pledit|wasabi\.list|studio\.list)\.font"'
+done
+```
+
+That is not a corpus of small skins ducking the question: it includes Winamp's own
+`winampmodern566.wal`, Big Bento, the whole cPro family, Anaheim — and NullPlayer's bundled
+`NullPlayer-Black.wal`. They all declare the matching **colours** (`wasabi.list.text`,
+`wasabi.list.background`, `studio.list.text`) and no font whatsoever. Two consequences:
+
+- **An absent declaration is not a failed one.** The `nil` identifier fell through to the same
+  monospaced fallback `resolvedFont` keeps for a name that resolved to nothing, so every host surface
+  in every skin drew in a console face. That fallback is the right *diagnostic* for a stated name
+  that could not be found (a cPro skin naming the `font.ttf` it forgot to ship, above) and the wrong
+  *default* for silence: Winamp's Modern framework supplies a proportional default there, and these
+  skins ask for one themselves everywhere they do name a face — Anaheim's `xml/pledit.xml` says
+  `font="Arial"` on all four of its own `<text>` objects while the list underneath them was
+  monospaced. `surfaceTextFont` resolves the undeclared case as **Arial**, through the same
+  installed-family branch a skin naming it gets, and only a system without Arial falls to the
+  proportional system font. A *declared* font keeps whatever it resolves to.
+- **The bitmapfont branch of `drawSurfaceText` has never fired.** No skin reaches it, so the
+  sheet-drawn path for host rows — and the `charwidth * count` estimate in `surfaceTextWidth` — is
+  unexercised by the corpus. Do not read a claim about how a host row draws in a skin's bitmap sheet
+  as something that has been observed.
+
+Reach: everything host-drawn, in all 73 skins. Arial is 18–36% narrower than the monospaced system
+font at the same point size (`Playlist` −36%, a long `Artist - Title` −31%, `3:45` −21%), and
+`surfaceTextWidth` feeds both the SUI tab-strip fit pass and the playlist title/time column split, so
+the change moves measured geometry corpus-wide — in the benign direction (less truncation, more tabs
+fitting), but it moves it.
+
+#### And its point size was converted twice
+
+`pixelHeightToPointSize` (0.8) is a **GDI compatibility rule**: it exists because a skin's `fontsize=`
+is a Windows pixel height whose em draws a quarter smaller, and it is calibrated against Love is War
+Miku's shipped `screenshot.png`. A host-drawn list has no `fontsize` — there is nothing on a
+`<windowholder>` to read — so `WinampModernTextScale` decides a **cell height**, and
+`defaultPixelHeight` (11) is a number *we* chose. Running our own number through someone else's unit
+conversion made an 11px cell draw at **8.8pt**.
+
+`WasabiSceneRenderer.playlistTextPointSize` uses its own `playlistCellToPointSize` (0.9) instead, so
+`auto` on a small skin draws 9.9pt where it drew 8.8, and Big Bento's 18px cap draws 16.2 where it
+drew 14.4. Two things fix the constants in place:
+
+- **0.9, not 1.0**, because `playlistRowHeight` is the same cell plus 10%: at 1.0 an 11px cell draws
+  an ~12.7px line into a 12px row and the descenders meet the row beneath. `WinampModernB130Tests`
+  checks the line against the row across the whole range `auto` can reach.
+- **The 0.8 does not move.** It is measured against a skin's own reference render and governs every
+  `<text>` the skin declares. Fixing a host surface by retuning it would break the corpus to fix the
+  playlist.
+
+The order matters for anyone re-deriving this: the double conversion had been there all along and was
+invisible, because the monospaced system font's x-height at a given point size is far larger than
+Arial's. Fixing the face is what made the size look wrong.

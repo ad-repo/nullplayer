@@ -92,6 +92,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Visualization timing, stepped motion, pause freeze | [reference/performance.md](reference/performance.md) → *The visualization has a clock of its own* |
 | Text metrics, fonts, clocks, bitmap fonts, missing height, offsets | [reference/rendering/text.md](reference/rendering/text.md) |
 | A paragraph draws as one clipped line, or `wrap=`/`<Wasabi:Text>` layout | [reference/rendering/text.md](reference/rendering/text.md) → *A paragraph is not a line* |
+| Playlist/library/tab text draws in a console font, or a size too small | [reference/rendering/text.md](reference/rendering/text.md) → *Host-drawn text is not skin-declared text* |
 | A menu a **double-click** opens never appears | [reference/rendering.md](reference/rendering.md) → *A skin's own right-click menus* |
 | Colour resolution, themes, unreadable selections/titles | [reference/rendering/colour.md](reference/rendering/colour.md) |
 | Selected row or title text matches its background | [reference/rendering/colour.md](reference/rendering/colour.md) → *A resolved colour is not yet readable* |
