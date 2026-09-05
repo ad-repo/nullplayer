@@ -599,6 +599,20 @@ a whole script):
   writes the dragged slider's 0…255 `value=` and dispatches `onSetPosition` with it, so a skin whose
   only feedback is that handler — multipass prints "Balance: Left +40%" on its song ticker from it —
   works under the mouse and not only under a script.
+- `getPosition()` on a **host-bound** slider answers the host, not the object's `value=` (B129). The
+  renderer has always drawn the thumb from `host.volume`, the playback clock, the balance or the EQ
+  snapshot; the script side read an attribute that nothing writes until the user drags *that* slider,
+  so a skin sizing its own artwork from the position it reads back got 0 at load and after every
+  change made anywhere else. ClassicPro's `sc_sliderbar.m` runs cPro2's volume fill *and* its hover
+  glow off `max*mySlider.getPosition()/255`, and with 0 for the position both layers were the right
+  artwork zero pixels wide. Answered in the slider's own `low…high`, the same unit `onSetPosition`
+  carries; a slider with no action, or one bound to a `cfgattrib`, is unchanged.
+- `onSetFinalPosition(pos)` is dispatched when a slider drag **ends**, once, after the last
+  `onSetPosition` and wherever the pointer was released — the drag belongs to the object that was
+  pressed (B129). A skin can hang real cleanup off it: cPro2's seek bar draws a "finder" overlay that
+  follows the pointer from `onSetPosition` and clears it *only* there, so while this went undispatched
+  the overlay stayed standing at the width of the last seek — the bar came out in two colours, the
+  seeked-to stretch in the darker `down` artwork and the rest filling normally behind it.
 - Event dispatch is **re-entrancy guarded** per (object, event): the interpreter's own call-depth
   budget cannot see native recursion through dispatch, and an unguarded pair overflowed the stack.
 

@@ -238,6 +238,24 @@ resources opt into with `gammagroup="…"`. Three rules:
 deliberately *not* registered as a resource: its id is scoped to its gammaset, and registering it made
 each of MMD3's 83 themes "replace" the previous one's groups (1404 bogus duplicate-id warnings).
 
+##### A theme is the measurement's frame of reference, not a detail (B129, 2026-09-05)
+
+**A colour reading taken on the default theme is void against a screen taken on another**, and this
+is a whole-afternoon trap rather than a nicety: cPro2 Dark Aluminum ships **61** gammasets, and its
+default one is identity — every group `0,0,0` — so the harness renders the skin's raw artwork while
+the reporter is looking at a set that recolours half of it. Four rounds of "the bar is muted / no it
+is not" came from comparing numbers across that gap. `WINAMP_MODERN_RENDER_THEME=<name>` renders a
+named theme and `RENDER_THEMES=1` lists them ([harness.md](../harness.md)); ask which theme is
+selected *before* quoting a colour at anyone.
+
+The same skin also shows why the grouping matters more than the values. Its themes carry **two**
+hover tints — `n.playback.button.hoverdown` (a `gray="2"` desaturate plus a heavy channel bias: the
+saturated glow the play controls light up with) and the muted `n.infoseek.seek.hover` /
+`n.playback.volume.active`, which most of the sixty sets leave as a plain darkening with no tint at
+all. Two controls can therefore be *correctly* themed and still look unrelated, and no amount of
+alpha or artwork work closes that gap: which group a bitmap declares is the whole answer. When a
+report says "this does not glow like that", check the two gammagroups against each other first.
+
 ##### The picker: `<ColorThemes:List>` and the `colorthemes_*` actions (Phase 32)
 
 The catalog is only half the feature. The screen a user picks a theme from is

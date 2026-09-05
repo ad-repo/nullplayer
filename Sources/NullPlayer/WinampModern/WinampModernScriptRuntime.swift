@@ -1336,6 +1336,34 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return nil
     }
 
+    /// Where a host-bound control stands, 0…1 — the script-side twin of the renderer's
+    /// `normalizedValue(of:)`, and deliberately the same four families in the same order, so the
+    /// number a skin reads back can never disagree with the thumb that is drawn for it. `nil` for
+    /// everything else: a slider with no action, or one bound to a `cfgattrib`, keeps reading the
+    /// setting or its own `value` exactly as before.
+    func hostBoundValue(of object: WasabiObject) -> CGFloat? {
+        switch object.attributes["action"]?.lowercased() {
+        case "volume": return CGFloat(host.volume)
+        case "seek": return host.duration > 0 ? CGFloat(host.currentTime / host.duration) : 0
+        case let action where WinampModernPanAction.matches(action: action):
+            return WinampModernPanAction.normalized(balance: host.balance)
+        default:
+            guard let eq = WinampModernEQAction.decode(action: object.attributes["action"],
+                                                       parameter: object.attributes["param"]),
+                  let snapshot = componentHost?.equalizerSnapshot() else { return nil }
+            return eq.normalizedValue(in: snapshot)
+        }
+    }
+
+    /// A 0…1 host reading in the slider's **own** `low…high` unit — the same conversion the view's
+    /// `notePosition` writes with, so a script that reads a position and one that hears
+    /// `onSetPosition` are handed the same number. Winamp's default range is 0…255.
+    static func sliderPosition(normalized: CGFloat, of object: WasabiObject) -> Int32 {
+        let low = Double(object.attributes["low"] ?? "0") ?? 0
+        let high = Double(object.attributes["high"] ?? "255") ?? 255
+        return Int32((low + Double(normalized) * (high - low)).rounded())
+    }
+
     /// A slider position held inside the `low…high` the object declares. Untouched when it declares
     /// neither, so nothing that never stated a range changes behaviour.
     static func clampedSliderPosition(_ value: Int32, of object: WasabiObject) -> Int32 {

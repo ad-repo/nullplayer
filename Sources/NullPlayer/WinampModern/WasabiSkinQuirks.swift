@@ -15,6 +15,62 @@ import Foundation
 /// delete it the moment a real Winamp shows the uncorrected behaviour is what the author intended.
 enum WasabiSkinQuirks {
 
+    /// The `alpha` an object rests at when its markup declares none and it plainly meant to.
+    /// `nil` — every object but the one below — is Wasabi's own default of fully opaque.
+    static func restingAlpha(for object: WasabiObject) -> Int? {
+        guard object.attributes["alpha"] == nil else { return nil }
+        return classicProSeekerHoverOverlay(object) ? 0 : nil
+    }
+
+    /// ClassicPro engine "two" (cPro2): the seek bar's hover overlay is the one fade layer in the
+    /// engine with no `alpha="0"` in its markup, so it rests **lit** instead of hidden.
+    ///
+    /// `two.info.seeker.active` stacks `…active.layer` (`info.bg.seeker.1.*`, the muted fill) under
+    /// `…hover.layer` (`info.bg.seeker.2.*`, the lit one), and `info-seeker.m` fades the second in
+    /// from `onEnterArea` and out from `onLeaveArea` — the same idiom as every button's `*.fade`
+    /// layer, and as the volume bar's own `…volslider.bar.2`. Every one of those declares
+    /// `alpha="0"`, including this overlay's twin in the *shade* layout
+    /// (`shade.seeker.hover.layer`, one file away). This one does not, so until the pointer first
+    /// entered and left the bar, the elapsed portion sat in the hover artwork and hovering it did
+    /// nothing visible.
+    ///
+    /// Supplied only while the attribute is **absent**: the moment the skin's own script writes an
+    /// alpha — which the first `gotoTarget()` of either handler does — the script owns the value and
+    /// this stops answering. So it seeds the resting state and never fights the fade.
+    private static func classicProSeekerHoverOverlay(_ object: WasabiObject) -> Bool {
+        object.xmlID?.caseInsensitiveCompare("two.info.seeker.hover.layer") == .orderedSame
+    }
+
+    /// The `<gammagroup>` a bitmap is themed through, where it should not be the one it declares.
+    /// `nil` — every bitmap but the ones below — keeps the skin's own group.
+    static func gammaGroup(declared: String?) -> String? {
+        guard let declared = declared?.lowercased() else { return nil }
+        return litFillGammaGroups.contains(declared) ? buttonGlowGammaGroup : nil
+    }
+
+    /// ClassicPro engine "two": the seek bar's elapsed fill and the volume bar's fill are themed
+    /// through the **play controls'** hover group rather than their own.
+    ///
+    /// This skin's colour themes carry two different hover tints, and which one a control gets is
+    /// decided per gammagroup. `n.playback.button.hoverdown` — the play, pause, stop, prev, next and
+    /// bolt buttons — is the glowing one: in `*Default (Purple)` it is a `gray="2"` desaturate plus a
+    /// heavy blue bias, which turns the artwork into the saturated purple the buttons light up with.
+    /// `n.infoseek.seek.hover` and `n.playback.volume.active` are the muted ones, and in most of the
+    /// sixty themes the author leaves them as a plain darkening with no tint at all — so the two bars
+    /// stayed grey while every button beside them glowed, and stayed grey through a theme change that
+    /// visibly moved everything else.
+    ///
+    /// Routing them through the buttons' group is what makes both bars answer the theme *and* match
+    /// the controls next to them, in every theme, without inventing a colour: the tint is always one
+    /// the skin itself declares, and it changes with the picker like everything else.
+    ///
+    /// Keyed on the declared group rather than on bitmap ids, so it covers the full-size, compact and
+    /// shade variants of both bars — every strip the skin cuts for them carries one of these two
+    /// groups, and nothing else in the engine does.
+    private static let buttonGlowGammaGroup = "n.playback.button.hoverdown"
+    private static let litFillGammaGroups: Set<String> = ["n.infoseek.seek.hover",
+                                                          "n.playback.volume.active"]
+
     /// The one entry point: each correction below is tried in turn, and every one of them is scoped
     /// tightly enough that at most one can ever answer for a given object.
     static func correctedFrame(for object: WasabiObject, resolved: CGRect) -> CGRect? {

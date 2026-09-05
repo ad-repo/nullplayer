@@ -180,6 +180,17 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                                           clock: { dumpClock }) else { continue }
             renderersByContainer[info.id] = renderer
         }
+        // `WINAMP_MODERN_RENDER_THEME=<name>` switches the skin's colour theme before anything is
+        // measured. A `.wal` that ships sixty gammasets draws *nothing* the way its default set does
+        // once the user picks one, so a report taken on the default theme and a screen taken on
+        // another are two different skins — and every colour conclusion drawn from the first is void
+        // (B129). Matched case-insensitively, as the picker does.
+        if let wanted = env["WINAMP_MODERN_RENDER_THEME"], !wanted.isEmpty,
+           let renderer = renderersByContainer.values.first {
+            let applied = renderer.activateTheme(wanted)
+            print("THEME requested=\(wanted) applied=\(applied) "
+                  + "active=\(loaded.themeCoordinator.catalog.activeTheme)")
+        }
         let allRenderers = Array(renderersByContainer.values)
         runtime.resolvedGeometryRequested = { object in
             for renderer in allRenderers {
@@ -1101,8 +1112,20 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             let allEvents = ["onleftbuttondown", "onleftbuttondblclk", "onleftbuttonup",
                                              "onleftclick", "onrightbuttondown", "onrightbuttonup",
                                              "onrightclick"]
+                            // The pointer's own pair is drivable, but never by default: a hover is
+                            // not part of a click, and a skin that lights a layer from `onEnterArea`
+                            // would otherwise contaminate every click capture in the corpus. Ask for
+                            // them by name — `RENDER_CLICK_EVENTS=onenterarea` — which is the only
+                            // headless way to see a hover glow that a script, not `hoverimage`,
+                            // draws (B129).
+                            let hoverEvents = ["onenterarea", "onleavearea"]
+                            // An explicit list is driven **in the order it was written**, not in
+                            // the view's fixed order: a hover is a sequence, and "leave, then enter"
+                            // is the only way to measure the second hover of a control whose resting
+                            // state its script has not set (B129).
+                            let known = allEvents + hoverEvents
                             for event in (requested.isEmpty ? allEvents
-                                          : allEvents.filter { requested.contains($0) }) {
+                                          : requested.filter { known.contains($0) }) {
                                 // The button events carry the click's x/y, exactly as the view sends
                                 // them: a handler that pops two arguments off an empty stack fails
                                 // with an underflow that belongs to the harness, not the skin.
@@ -1112,7 +1135,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 // end of its map.
                                 let parent = renderer.resolvedGeometry(of: target)?.parent ?? .zero
                                 let local = CGPoint(x: point.x - parent.minX, y: point.y - parent.minY)
-                                let arguments: [MakiValue] = ["onleftclick", "onrightclick"].contains(event) ? []
+                                let arguments: [MakiValue] = (["onleftclick", "onrightclick"] + hoverEvents).contains(event) ? []
                                     : [.integer(Int32(local.x)), .integer(Int32(local.y))]
                                 // No view here to show a menu, so record what the skin built.
                                 // Installed for **every** event, not just the right-button pair: a
@@ -1427,7 +1450,15 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 // always has a current context inside `NSView.draw`) shows them.
                 let previous = NSGraphicsContext.current
                 NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-                renderer.draw(in: context)
+                // `WINAMP_MODERN_RENDER_HOVER=<id>` draws the frame with the pointer over that
+                // object. Hover artwork — a button's `hoverimage`, a slider's `hoverthumb` — is
+                // markup the *view* supplies as a parameter to `draw`, so with nothing here the
+                // harness could only ever render the one state it is never wrong in, and a
+                // half-drawn hover (the bar lights, the knob does not) was invisible to it (B129).
+                let hovered = (env["WINAMP_MODERN_RENDER_HOVER"] ?? "").isEmpty ? nil
+                    : loaded.runtime.graph.objects(xmlID: env["WINAMP_MODERN_RENDER_HOVER"]!)
+                        .first { renderer.resolvedGeometry(of: $0) != nil }?.stableID
+                renderer.draw(in: context, hovered: hovered)
                 // WINAMP_MODERN_RENDER_TIME=<frames> repaints the whole scene that many times and
                 // reports the per-frame cost — the measurement behind "does this skin hold 30 Hz?",
                 // and the one Layer FX needs, since a warp is a CPU resample on the paint path. Each
@@ -1643,7 +1674,10 @@ final class WinampModernRenderDumpTests: XCTestCase {
 
     /// The attributes a click is likely to move: geometry, visibility, and which art is showing.
     private static func state(of object: WasabiObject) -> String {
-        ["x", "y", "w", "h", "visible", "image", "position", "text"]
+        // `alpha` is here because a whole class of skin behaviour is *only* alpha: ClassicPro's
+        // hover glows are a layer already in place at `alpha="0"` that a script fades in, so a probe
+        // blind to it reported "the click changed nothing" for a control that lights up (B129).
+        ["x", "y", "w", "h", "alpha", "visible", "image", "position", "text"]
             .compactMap { key in object.attributes[key].map { "\(key)=\($0)" } }
             .joined(separator: " ")
     }

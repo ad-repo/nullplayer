@@ -347,7 +347,9 @@ final class WasabiResourceCache {
         // wrong row of the atlas.
         guard topY + height <= fullImage.height,
               let cropped = fullImage.cropping(to: CGRect(x: x, y: topY, width: width, height: height)) else { return nil }
-        let image = themed(cropped, transform: themes.transform(group: definition.attributes["gammagroup"]))
+        let declaredGroup = definition.attributes["gammagroup"]
+        let image = themed(cropped, transform: themes.transform(
+            group: WasabiSkinQuirks.gammaGroup(declared: declaredGroup) ?? declaredGroup))
         let cost = width * height * 4
         let bitmap = WasabiBitmap(image: image, width: width, height: height, cost: cost)
         bitmaps[key] = CachedBitmap(bitmap: bitmap, access: accessCounter)
@@ -506,7 +508,9 @@ final class WasabiResourceCache {
         guard let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               let decoded = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
-        let image = themed(decoded, transform: themes.transform(group: definition.attributes["gammagroup"]))
+        let sheetGroup = definition.attributes["gammagroup"]
+        let image = themed(decoded, transform: themes.transform(
+            group: WasabiSkinQuirks.gammaGroup(declared: sheetGroup) ?? sheetGroup))
         let cost = decoded.width * decoded.height * 4
         let sheet = WasabiBitmap(image: image, width: decoded.width, height: decoded.height, cost: cost)
         bitmaps[key] = CachedBitmap(bitmap: sheet, access: accessCounter)
@@ -2359,7 +2363,8 @@ final class WasabiSceneRenderer {
             drawGuiList(object, frame: node.frame, context: context)
         } else if type == "slider" {
             drawSlider(object, frame: node.frame, context: context,
-                       pressed: pressed == object.stableID)
+                       pressed: pressed == object.stableID,
+                       hovered: hovered == object.stableID)
         } else if type == "progressgrid" {
             drawProgressGrid(object, frame: node.frame, context: context)
         } else if type == "grid" {
@@ -3267,10 +3272,17 @@ final class WasabiSceneRenderer {
         }
     }
 
-    private func drawSlider(_ object: WasabiObject, frame: CGRect, context: CGContext, pressed: Bool) {
+    private func drawSlider(_ object: WasabiObject, frame: CGRect, context: CGContext,
+                            pressed: Bool, hovered: Bool) {
         guard frame.width > 0, frame.height > 0 else { return }
+        // `hoverthumb` on the same footing as `downthumb`: a slider's knob lights under the pointer
+        // exactly as a button's artwork does, and it is markup, not script — cPro2 declares
+        // `thumb="playback.volume.big.1" hoverthumb=".2" downthumb=".3"` and ships a visibly lit
+        // knob for the middle one. Drawing only `thumb` left the volume slider's hover half-done
+        // next to the buttons around it: the bar behind it brightened and the knob did not (B129).
         let thumbID = pressed ? (object.attributes["downthumb"] ?? object.attributes["thumb"])
-                              : object.attributes["thumb"]
+                              : (hovered ? (object.attributes["hoverthumb"] ?? object.attributes["thumb"])
+                                         : object.attributes["thumb"])
         guard let thumb = resources.bitmap(identifier: thumbID) else { return }
         let clamped = normalizedValue(of: object)
         let vertical = Self.isVerticalOrientation(object)

@@ -670,6 +670,15 @@ final class WasabiSkinInitializer {
         for (pending, binding) in zip(pendingScripts, bindings) { pending.owner?.addScriptBinding(binding) }
         passes.append(.scriptBinding)
 
+        // A resting `alpha` the markup should have declared and did not, written onto the object
+        // itself rather than supplied at paint time: the skin's own fade reads the attribute back
+        // (`gotoTarget()` eases from whatever `alpha` says), so a value only the renderer knew about
+        // would leave the script animating 255 → 255 and the fade dead in both directions.
+        // `WasabiSkinQuirks` decides; nothing here knows which objects it names.
+        for object in graph.allObjectsUnordered {
+            guard let resting = WasabiSkinQuirks.restingAlpha(for: object) else { continue }
+            _ = object.setAttribute("alpha", value: String(resting))
+        }
         passes.append(.initialization)
         graph.markAllDirty(.all)
         passes.append(.firstPaint)

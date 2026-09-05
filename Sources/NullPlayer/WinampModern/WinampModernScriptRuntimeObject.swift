@@ -408,6 +408,18 @@ extension WinampModernScriptRuntime {
         // stored duration was.
         case "getposition":
             let readFrom = embeddedControl(of: object) ?? object
+            // **A host-bound slider stands where the host stands, not where its last drag left a
+            // copy.** The renderer already draws the thumb from `host.volume` / the playback clock /
+            // the balance / the EQ snapshot (`normalizedValue(of:)`); the script side read the
+            // `value` attribute, which nothing writes until the *user drags this very slider*. So a
+            // skin that sizes its own artwork from the position it reads back got 0 at load and
+            // after every volume change made anywhere else: ClassicPro's `sc_sliderbar` runs both
+            // cPro2's volume fill and its hover glow off `max*mySlider.getPosition()/255`, and with
+            // 0 for the position both layers were sized to zero width — the bar never filled and
+            // hovering it lit nothing (B129).
+            if let normalized = hostBoundValue(of: readFrom) {
+                return .integer(Self.sliderPosition(normalized: normalized, of: readFrom))
+            }
             if let value = configInteger(of: readFrom) { return .integer(value) }
             return .integer(Int32(readFrom.attributes["value"] ?? readFrom.attributes["position"] ?? "0") ?? 0)
         case "setposition" where Self.configBinding(of: object) != nil:

@@ -32,6 +32,16 @@
 
 ### Bug Fixes
 
+- **Modern skins: the seek bar and volume slider light up under the pointer, like every other
+  control.** On cPro2 and its ClassicPro siblings both bars sat inert: the volume bar never even
+  filled, the elapsed portion of the seek bar never brightened, and a seek left the stretch you
+  seeked into in a different colour from the rest of the bar. Four separate faults — a slider's
+  scripted position not reading the player's own volume or playback clock, an unread `hoverthumb`, a
+  drag-finished event that was never sent, and a hover glow themed through the wrong colour group, so
+  it stayed grey while the buttons beside it followed the skin's colour theme. Both bars now rest in
+  their muted artwork and glow in the same colour as the play controls under the mouse, in every one
+  of a skin's colour themes.
+
 - **Modern skins: cPro2's Web Reader tab opens the reader again** — the tab came up empty. The
   ClassicPro reader loads its list of twenty search providers before it will show anything, and it
   looks for that file beside the player's own program folder. NullPlayer was answering with the

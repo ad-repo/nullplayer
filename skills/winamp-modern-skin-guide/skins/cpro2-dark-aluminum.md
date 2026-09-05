@@ -85,6 +85,9 @@ Visualization, Web Reader, Now Playing.
   nothing else — the SUI collapses to zero height and its tabs go with it, as in the author's own
   render. Fixed 2026-09-05 (B127); see the trap below.
 
+- **The seek bar and the volume bar light under the pointer**, in the same colour the play controls
+  glow. Fixed 2026-09-05 (B129); see the trap below.
+
 ### Not implemented
 
 - **`enumObject` / `getNumObjects`** (×14 combined) — `CentroSUI/_v2/InfoViewer` walks its own object
@@ -163,6 +166,31 @@ Visualization, Web Reader, Now Playing.
   inside the player's own tab strip, which `RENDER_SHOW` cannot. The end of a working run is one
   line: `navigateurl(http://www.albumartexchange.com/covers.php?bgc=121826&q=…)`.
 
+- **A theme carries two hover tints, and the two bars declare the muted one.** Reported as "the
+  volume bar and progress bar are missing the glowing highlight the play controls have", and the last
+  of *four* faults behind it — the other three are in
+  [compatibility/maki-surface.md](../compatibility/maki-surface.md) (`getPosition()` on a host-bound
+  slider, `onSetFinalPosition`) and
+  [compatibility/wasabi-surface.md](../compatibility/wasabi-surface.md) (`hoverthumb`). This one is
+  the skin's own colour data: `n.playback.button.hoverdown` is the glowing group — in
+  `*Default (Purple)` a `gray="2"` desaturate plus a heavy blue bias, which is the saturated purple
+  the buttons light up with — while `n.infoseek.seek.hover` and `n.playback.volume.active` are muted,
+  and in most of the sixty gammasets the author leaves them a plain darkening with no tint at all.
+  Both bars are themed through the buttons' group now (`WasabiSkinQuirks.gammaGroup`), so they answer
+  the theme picker and match the controls beside them without inventing a colour.
+  **The trap for the next reader is the measurement, not the fix:** every colour number taken on the
+  default theme is void against a screenshot taken on another, and this skin ships **61** gammasets.
+  `WINAMP_MODERN_RENDER_THEME=<name>` renders one; `RENDER_THEMES=1` lists them.
+- **The seek bar's hover overlay is the one fade layer whose markup omits `alpha="0"`.**
+  `two.info.seeker.hover.layer` rests *lit* while `play.fade`, `bolt.fade`, `mute.fade`,
+  `two.playback.volslider.bar.2` and its own shade twin `shade.seeker.hover.layer` all rest hidden —
+  so until the pointer first entered and left the bar, the elapsed portion sat in the hover artwork
+  and hovering it did nothing, and the first mouse-leave then took it muted for the rest of the
+  session. Seeded to 0 at load (`WasabiSkinQuirks.restingAlpha`), and seeded **onto the object**
+  rather than supplied at paint time: `gotoTarget()` eases *from* whatever `alpha` says, so a value
+  only the renderer knew about leaves the script animating 255 → 255 and the fade dead in both
+  directions. That is the whole difference between the two attempts, and the check is one line —
+  `CLICK changed group#two.info.seeker.hover.layer … alpha=0 -> alpha=255`.
 - **The snap preview fires with the pointer nowhere near a screen edge.** `layout.m` tests
   `System.getMousePosX() < 1` — the *screen's* left edge in Winamp — and ours answers in the window's
   canvas space, so it is true whenever the pointer is left of the player. B123.

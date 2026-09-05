@@ -1739,6 +1739,15 @@ final class WinampModernMainView: NSView {
         // handler the layer carries, or every drag of cPro's toolbar ends in its double-click trap.
         let moved = pressMovedWindow
         pressMovedWindow = false
+        // **A slider drag ends with `onSetFinalPosition`, and a skin can hang real cleanup off it.**
+        // Wasabi raises it once, on release, after the last `onSetPosition` — cPro2's seek bar draws
+        // a "finder" overlay that follows the pointer from `onSetPosition` and clears it *only*
+        // there (`g_seekerFinder.setXmlParam("w", "0")`). With nothing dispatching it, that overlay
+        // stayed standing at the width of the last seek: the bar came out in two colours, the
+        // seeked-to stretch in the darker `down` artwork and the rest filling normally behind it
+        // (B129). Dispatched wherever the pointer was released, as Wasabi does — the drag belongs to
+        // the object that was pressed, not to whatever is under the mouse when it stops.
+        if let pressedObject { noteFinalPosition(on: pressedObject) }
         if let pressedObject, !moved {
             dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
             if releasedOver === pressedObject {
@@ -2525,6 +2534,18 @@ final class WinampModernMainView: NSView {
     /// that declare a range: a crossfade slider is cut `high="20"` and mmd3 prints the argument
     /// straight into its readout as seconds, and Anaheim's brightness slider is `low="-4096"
     /// high="4096"` and was being handed a 0…255 that meant nothing to the script reading it.
+    /// `onSetFinalPosition` — the end of a slider drag, in the same `low…high` unit `onSetPosition`
+    /// carries. Only for sliders, and only when one was actually driven: every other pressed object
+    /// releases without a position to report.
+    private func noteFinalPosition(on object: WasabiObject) {
+        guard object.typeName.caseInsensitiveCompare("slider") == .orderedSame else { return }
+        let target = scripts.embeddedControl(of: object) ?? object
+        let position = Int32(target.attributes["value"]
+                             ?? target.attributes["position"] ?? "") ?? 0
+        _ = try? scripts.dispatch(object: object, event: "onsetfinalposition",
+                                  arguments: [.integer(position)])
+    }
+
     private func notePosition(_ normalized: CGFloat, on object: WasabiObject) {
         let low = Double(object.attributes["low"] ?? "0") ?? 0
         let high = Double(object.attributes["high"] ?? "255") ?? 255

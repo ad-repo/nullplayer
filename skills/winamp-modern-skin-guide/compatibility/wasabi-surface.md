@@ -46,6 +46,12 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   moves the skin's slider and two stacked balance sliders cannot show different positions.
   `WinampModernPanAction` owns both directions of the −1…+1 ↔ 0…1 conversion. Balance is deliberately
   not persisted, so the slider starts centred each launch
+- A slider's **`hoverthumb`** is drawn under the pointer, on the same footing as `downthumb` under
+  the press (B129). It is markup, not script — cPro2 declares
+  `thumb="playback.volume.big.1" hoverthumb=".2" downthumb=".3"` and ships a visibly lit knob for the
+  middle one — and drawing only `thumb` left a hover half-done: the bar behind the knob brightened
+  from the skin's own fade layer and the knob itself stayed dark. The harness renders a hovered frame
+  only with `WINAMP_MODERN_RENDER_HOVER=<id>`
 - **`cfgattrib` with no `action`** (Phase 45, B32) — the binding *is* the command, on a togglebutton
   and on a slider alike. Four of these address **host state** rather than skin storage and go through
   `WinampModernConfigBridge` to `WinampModernHost`: `{45F3F7C1-…};Shuffle` and `;Repeat`,
