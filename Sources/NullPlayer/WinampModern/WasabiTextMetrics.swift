@@ -187,8 +187,21 @@ final class WasabiTextMetrics {
                                                                  traits: traits) {
                 return installed
             }
-            let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
-            return fallback.flatMap { Self.applying(traits, to: $0) }
+            if let identifier {
+                // Two different failures land here and they are not the same report. A skin that
+                // *declared* a `<truetypefont>` whose file never made it into the archive resolves a
+                // definition with no `logicalFile`, so it falls past the guard into the name branch
+                // and would otherwise be filed as "you named a font nobody has" — which is the
+                // opposite of what happened, and the commonest case in the corpus (25 of 73 skins,
+                // the whole cPro family's `font.ttf`).
+                let declared = loadedSkin.runtime.resources
+                    .resolvedDefinition(identifier: identifier)?.kind == "truetypefont"
+                recordUnresolved(identifier, declared
+                                 ? "is declared as a <truetypefont> whose file is not in the archive"
+                                 : "is neither a declared font resource nor a font installed on this "
+                                   + "system")
+            }
+            return substituteFont(size: size, traits: traits)
         }
         let key = path.lowercased()
         let cgFont: CGFont?
@@ -226,8 +239,50 @@ final class WasabiTextMetrics {
             let bridged: NSFont? = created as NSFont
             if let bridged { return Self.applying(traits, to: bridged) }
         }
-        let fallback: NSFont? = .monospacedSystemFont(ofSize: size, weight: .regular)
+        recordUnresolved(identifier,
+                         "declares file=\"\(path)\", which is not in the archive or cannot be read "
+                         + "as a font")
+        return substituteFont(size: size, traits: traits)
+    }
+
+    /// What a name this system cannot produce draws in.
+    ///
+    /// **Proportional, not monospaced** (B131). The fixed-pitch fallback that stood here was defended
+    /// as a diagnostic and was not one: nothing recorded it, so the only reader was a person looking
+    /// at the skin, and what they saw could not be told apart from a skin that wanted a fixed-pitch
+    /// face. It is also not what Winamp does — GDI substitutes for a name it cannot match and returns
+    /// a proportional face, never a monospaced one — and it was not rare: **25 of the 73 corpus skins**
+    /// declare a `<truetypefont>` whose file is absent (the whole cPro family's `font.ttf`), and 34
+    /// distinct `font=` names do not resolve on macOS at all, among them plain Windows families
+    /// (Calibri ×4 skins, Segoe UI, Century Gothic) and raw Windows font *filenames* used as names
+    /// (`ariblk`, `micross`, `trebuc`, `UNVR67X.ttf` ×5). A third of the corpus was drawing its
+    /// display text in a console face to raise an alarm nobody received. The alarm is now a
+    /// `.unresolvedFont` diagnostic, which is where it belongs.
+    private func substituteFont(size: CGFloat, traits: NSFontTraitMask) -> NSFont? {
+        if let installed = Self.installedFont(named: Self.substituteFamily, size: size,
+                                              traits: traits) {
+            return installed
+        }
+        let fallback: NSFont? = .systemFont(ofSize: size)
         return fallback.flatMap { Self.applying(traits, to: $0) }
+    }
+
+    /// The face an unresolvable name substitutes to — the same default an *undeclared* list font
+    /// takes, so the two never disagree about what "the skin did not give us a face" looks like.
+    static let substituteFamily = "Arial"
+
+    /// Records the substitution once per name. `resolvedFont` runs only on a cache miss and
+    /// `WinampModernLoadedSkin.record` de-duplicates and bounds besides, so this cannot grow per
+    /// frame.
+    private func recordUnresolved(_ identifier: String, _ reason: String) {
+        guard !isTornDown else { return }
+        // The host asks for the substitute family by name for its own surfaces (an undeclared list
+        // font). A system without Arial is our problem, not the skin's — do not file it against one.
+        guard identifier.caseInsensitiveCompare(Self.substituteFamily) != .orderedSame else { return }
+        loadedSkin.runtime.record(WalDiagnostic(
+            .unresolvedFont,
+            "font=\"\(identifier)\" \(reason); it draws in \(Self.substituteFamily) instead.",
+            severity: .warning))
     }
 
     /// A font installed on the system, by family or PostScript name. Optional for the same reason as

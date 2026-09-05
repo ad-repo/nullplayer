@@ -467,3 +467,43 @@ drew 14.4. Two things fix the constants in place:
 The order matters for anyone re-deriving this: the double conversion had been there all along and was
 invisible, because the monospaced system font's x-height at a given point size is far larger than
 Arial's. Fixing the face is what made the size look wrong.
+
+#### The unresolvable case is not monospaced either (B131)
+
+The same substitution now answers a name the skin **stated** that could not be produced, and the
+monospaced fallback is gone from `resolvedFont` entirely. It had been defended as a diagnostic; it was
+not one, on three counts:
+
+- **Nothing recorded it.** `WalDiagnostics` had exactly one font code, `fontSizeExceeded`. The only
+  reader of the "diagnostic" was a person looking at the skin, and what they saw is indistinguishable
+  from a skin that asked for a fixed-pitch face on purpose (Monaco resolves, and must keep resolving).
+- **It is not what Winamp does.** GDI substitutes for a name it cannot match and returns a
+  proportional face. It never hands back fixed-pitch.
+- **It is not rare.** Measured 2026-09-05 across the 73 `.wal` files: **25 declare a `<truetypefont>`
+  whose file is absent** (38 distinct targets — the whole cPro family's `font.ttf`, `SUPERGLU.ttf`,
+  `micross.TTF`), and **34 distinct `font=` names do not resolve on macOS**, among them plain Windows
+  families (Calibri ×4 skins, Segoe UI, Century Gothic, Lucida Sans Unicode) and Windows font
+  *filenames* written where a family belongs (`ariblk`, `micross`, `trebuc`, `UNVR67X.ttf` ×5). A
+  third of the corpus was drawing its display text in a console face to raise an alarm nobody
+  received.
+
+So the alarm moved to `.unresolvedFont`, a `warning` (the string still draws), and the face became
+`WasabiTextMetrics.substituteFamily` — the same Arial the undeclared list font takes, asked for by
+that name so the two defaults cannot drift apart.
+
+**Two failures land in one branch, and they are different reports.** A skin that declared a
+`<truetypefont>` whose file never made it into the archive resolves a definition with **no
+`logicalFile`**, so it falls *past* the guard into the plain-family branch. Reported naively that
+reads "you named a font nobody has", which is the opposite of what happened and is the commonest case
+in the corpus. `resolvedFont` re-checks the definition's kind to tell them apart.
+
+> **A caveat on those counts.** The sweep matched declared ids by literal string over `*.xml` only, so
+> some id-shaped names in it may resolve at runtime by a path the sweep did not walk — several look
+> like Wasabi *standard-framework* ids we do not ship (`wasabi.font.default` ×5 skins,
+> `wasabi.button.font` ×3, `component.title`, `studio.component.statusbar`), which would be our gap
+> and not the skin's. The Windows-family and filename cases are certain. Tracked as **B132**
+> (filename→family map) and **B133** (`@SKINSPATH@` font references).
+
+Two things not to undo: **a skin that genuinely names a monospaced face still gets one** — the
+substitution only fires when nothing resolves — and the host's own request for the substitute family
+is **not** filed against the skin, since a system without Arial is our problem.

@@ -42,6 +42,14 @@
   Text Size setting keeps working exactly as before, and row heights are unchanged, so no skin
   reflows.
 
+- **Modern skins: text in a font your Mac doesn't have now looks like text, not like a terminal.**
+  Many skins name Windows fonts they don't ship — Calibri, Segoe UI, Century Gothic — and some ship a
+  font file that was left out of the archive; a third of the skins tested hit one case or the other.
+  Those strings were drawn in a fixed-width system font, which is not what Winamp does and made
+  otherwise fine skins look broken. They now fall back to Arial, and the substitution is recorded in
+  the skin's compatibility report instead of being announced in the artwork. A skin that genuinely
+  asks for a monospaced font still gets one.
+
 - **Modern skins: the seek bar and volume slider light up under the pointer, like every other
   control.** On cPro2 and its ClassicPro siblings both bars sat inert: the volume bar never even
   filled, the elapsed portion of the seek bar never brightened, and a seek left the stretch you

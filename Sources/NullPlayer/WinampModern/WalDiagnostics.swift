@@ -47,6 +47,11 @@ enum WalDiagnosticCode: String, Codable {
     case invalidImageResource
     case imageDimensionsExceeded
     case fontSizeExceeded
+    /// A `font=` named something this system cannot produce — a `<truetypefont>` whose file is not in
+    /// the archive, or a family name that is not installed. The string still draws, in the
+    /// proportional default, because that is what GDI does with a name it cannot match; this is how
+    /// the substitution becomes *visible* without deforming the skin to announce itself.
+    case unresolvedFont
     case malformedXML
     case duplicateIdentifier
     case groupInheritanceCycle

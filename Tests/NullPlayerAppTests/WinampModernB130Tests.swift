@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+import ZIPFoundation
 @testable import NullPlayer
 
 /// B130 — every playlist row in every `.wal` skin drew in a console font, a size too small.
@@ -35,10 +36,89 @@ final class WinampModernB130Tests: XCTestCase {
                        "a proportional face is the fix; a fixed-pitch one is the defect")
     }
 
-    /// The monospaced fallback stays where it belongs — a name the skin *stated* that resolved to
-    /// nothing still lands there, because that is a diagnostic and not a default.
-    func testTheMonospacedFallbackIsStillFixedPitch() {
-        XCTAssertTrue(NSFont.monospacedSystemFont(ofSize: 11, weight: .regular).isFixedPitch)
+    // MARK: - B131 — the unresolvable case substitutes proportionally too, and says so
+
+    /// The fixed-pitch fallback for a *stated* name that resolved to nothing was defended as a
+    /// diagnostic. It was not one — nothing recorded it. Both ways in now substitute proportionally:
+    /// a `<truetypefont>` whose file is absent (the whole cPro family's `font.ttf`) and a family name
+    /// this system does not have (Calibri, Segoe UI, `ariblk`).
+    func testAnUnresolvableFontSubstitutesProportionally() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <elements>
+            <truetypefont id="player.missingfont" file="NOTSHIPPED.ttf"/>
+          </elements>
+          <container id="main"><layout id="normal" w="80" h="20"/></container>
+        </WasabiXML>
+        """)
+        let metrics = WasabiTextMetrics(loadedSkin: loaded)
+        addTeardownBlock { metrics.teardown() }
+
+        for identifier in ["player.missingfont", "NoSuchFamilyXYZ", "Calibri"] {
+            let font = try XCTUnwrap(metrics.font(identifier: identifier, size: 12),
+                                     "\(identifier) still resolves to something drawable")
+            XCTAssertFalse(font.isFixedPitch,
+                           "\(identifier) substitutes proportionally, the way GDI does with a name "
+                           + "it cannot match")
+        }
+    }
+
+    /// And the substitution is *recorded*, which is the half that was missing. A person debugging a
+    /// skin reads this; nobody could read a monospaced rendering.
+    func testAnUnresolvableFontRecordsADiagnostic() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <elements>
+            <truetypefont id="player.missingfont" file="NOTSHIPPED.ttf"/>
+          </elements>
+          <container id="main"><layout id="normal" w="80" h="20"/></container>
+        </WasabiXML>
+        """)
+        let metrics = WasabiTextMetrics(loadedSkin: loaded)
+        addTeardownBlock { metrics.teardown() }
+        _ = metrics.font(identifier: "player.missingfont", size: 12)
+        _ = metrics.font(identifier: "NoSuchFamilyXYZ", size: 12)
+
+        let recorded = loaded.runtime.diagnostics.filter { $0.code == .unresolvedFont }
+        XCTAssertEqual(recorded.count, 2, "one per unresolvable name")
+        XCTAssertTrue(recorded.allSatisfy { $0.severity == .warning },
+                      "the string still draws, so this is not an error")
+        // The two failures are reported differently: a declared font whose file never shipped is not
+        // "you named a font nobody has", and the corpus is full of the former.
+        XCTAssertTrue(recorded.contains { $0.message.contains("player.missingfont")
+                                          && $0.message.contains("not in the archive") },
+                      "a declared <truetypefont> with no file is reported as exactly that")
+        XCTAssertTrue(recorded.contains { $0.message.contains("NoSuchFamilyXYZ")
+                                          && $0.message.contains("installed") },
+                      "an uninstalled family name is reported as exactly that")
+    }
+
+    /// The host asks for the substitute family by name for its own undeclared-list-font default. A
+    /// system without Arial is our problem, not the skin's, and must not be filed against one.
+    func testTheHostsOwnDefaultIsNeverFiledAgainstTheSkin() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML><container id="main"><layout id="normal" w="80" h="20"/></container></WasabiXML>
+        """)
+        let metrics = WasabiTextMetrics(loadedSkin: loaded)
+        addTeardownBlock { metrics.teardown() }
+        _ = metrics.font(identifier: WasabiTextMetrics.substituteFamily, size: 12)
+
+        XCTAssertTrue(loaded.runtime.diagnostics.allSatisfy { $0.code != .unresolvedFont },
+                      "the host's own default is not a skin defect")
+    }
+
+    /// A resolvable name is untouched — no substitution, no diagnostic.
+    func testAResolvableFontIsLeftAlone() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML><container id="main"><layout id="normal" w="80" h="20"/></container></WasabiXML>
+        """)
+        let metrics = WasabiTextMetrics(loadedSkin: loaded)
+        addTeardownBlock { metrics.teardown() }
+        let mono = try XCTUnwrap(metrics.font(identifier: "Monaco", size: 12))
+
+        XCTAssertTrue(mono.isFixedPitch,
+                      "a skin that genuinely asks for a fixed-pitch face still gets one")
+        XCTAssertTrue(loaded.runtime.diagnostics.allSatisfy { $0.code != .unresolvedFont })
     }
 
     // MARK: - The size
@@ -86,5 +166,26 @@ final class WinampModernB130Tests: XCTestCase {
         // An explicit choice is not capped.
         XCTAssertEqual(WinampModernTextScale.p125.cellPixelHeight(canvasHeight: 400) * ratio,
                        12.375, accuracy: 0.0001)
+    }
+
+    // MARK: - Harness
+
+    private func makeSkin(xml: String) throws -> WinampModernLoadedSkin {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WinampModernB130Tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("B130-\(UUID().uuidString).wal")
+        let archive = try Archive(url: url, accessMode: .create)
+        let payload = Data(xml.utf8)
+        try archive.addEntry(with: "skin.xml", type: .file, uncompressedSize: Int64(payload.count),
+                             compressionMethod: .none) { position, size in
+            let start = Int(position)
+            guard start < payload.count else { return Data() }
+            return payload.subdata(in: start..<min(payload.count, start + size))
+        }
+        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: url)
+        addTeardownBlock { loaded.teardown() }
+        return loaded
     }
 }

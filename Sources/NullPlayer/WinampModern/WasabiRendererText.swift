@@ -489,14 +489,13 @@ extension WasabiSceneRenderer {
            let declared = resources.font(identifier: identifier, size: pointSize) {
             return declared
         }
-        let installed = resources.font(identifier: Self.defaultSurfaceFontFamily, size: pointSize)
-        if let installed, !installed.isFixedPitch { return installed }
-        let system: NSFont? = .systemFont(ofSize: pointSize)
-        return system ?? installed ?? NSFont.systemFont(ofSize: pointSize)
+        // `WasabiTextMetrics` substitutes proportionally for anything it cannot produce (B131), so
+        // the undeclared case needs no fixed-pitch guard of its own — and asking it by name keeps the
+        // two defaults from ever drifting apart.
+        let substitute = resources.font(identifier: WasabiTextMetrics.substituteFamily,
+                                        size: pointSize)
+        return substitute ?? NSFont.systemFont(ofSize: pointSize)
     }
-
-    /// The face an undeclared list font resolves to, matching Winamp's own default.
-    private static let defaultSurfaceFontFamily = "Arial"
 
     private func drawFlippedText(_ text: String, in frame: CGRect, font: NSFont, color: NSColor,
                                  alignment: NSTextAlignment, context: CGContext) {
