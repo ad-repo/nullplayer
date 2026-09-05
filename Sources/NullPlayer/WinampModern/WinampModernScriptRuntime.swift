@@ -1807,6 +1807,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return dispatched
     }
 
+    /// The ids the last diffing pass judged to have left the layout — the objects it told
+    /// `onResize(x, y, 0, 0)`. Recorded before the binding check, so it reports the *decision*
+    /// rather than the delivery, which is what B138 turned on.
+    private(set) var vanishedResizeTargetsForTesting: [WasabiObjectID] = []
+
     @discardableResult
     func dispatchResize(targets: [(object: WasabiObject, frame: CGRect)],
                         previous: [WasabiObjectID: CGRect]?) -> Int {
@@ -1823,9 +1828,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // Wasabi resizes a window to nothing rather than forgetting about it, so that is what this
         // does: the vanished object hears its old origin at 0×0, once, and then drops out of
         // `previous` because the caller records the new target set.
+        vanishedResizeTargetsForTesting = []
         if let previous {
             let present = Set(targets.map(\.object.stableID))
             for (id, before) in previous where !present.contains(id) {
+                vanishedResizeTargetsForTesting.append(id)
                 guard let object = loadedSkin.runtime.graph.object(withID: id),
                       hasBinding(for: object, event: "onresize") else { continue }
                 let origin: [MakiValue] = [.integer(Int32(clamping: Int(before.minX))),

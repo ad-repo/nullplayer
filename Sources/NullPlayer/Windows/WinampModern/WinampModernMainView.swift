@@ -322,6 +322,22 @@ final class WinampModernMainView: NSView {
     @discardableResult
     func activateLayout(id: String) -> Bool {
         guard (try? renderer.activateLayout(id: id)) != nil else { return false }
+        // **Forget the layout we came from before anything can diff against it** (B138).
+        //
+        // `lastResizeFrames` is the previous *scene*, and `dispatchResize` reads an id that is in it
+        // but no longer among the targets as an object that collapsed to nothing — it tells that
+        // object `onResize(x, y, 0, 0)`, which is right for a pane the user closed and wrong for a
+        // layout the window merely switched away from. cPro is the measured case: shading the player
+        // sent its `centro.playlist1` — an object of the **normal** layout, not the shade one — a
+        // 0-wide resize, and `CentroSUI.m` answers that with `if (w < 10) area_right.hide()`. The
+        // pane was then hidden with nothing to bring it back, so unshading returned a player with a
+        // dead grey column where the playlist had been.
+        //
+        // Cleared here rather than at the seeding dispatch below, because a script that moves
+        // something while the new layout is coming up settles the geometry and runs a *diffing* pass
+        // of its own before that line is reached — which is the pass that actually did the damage.
+        lastResizeFrames.removeAll()
+        didBeginLayoutSwitchForTesting?()
         // Winamp creates a layout the first time it is shown, and scripts branch on `getLayout()`
         // answering NULL before that; record the creation so a later lookup can find it.
         scripts.markLayoutRealized(renderer.layout)
@@ -457,6 +473,15 @@ final class WinampModernMainView: NSView {
     /// Resolved frames at the last dispatch, so only an object whose own box actually moved is told
     /// about it — Wasabi does not resize what did not change.
     private var lastResizeFrames: [WasabiObjectID: CGRect] = [:]
+
+    /// What the next *diffing* resize will compare against. The B138 defect was entirely a question
+    /// of what this held part-way through a layout switch, and that instant is reachable from no
+    /// other observation.
+    var resizeBaselineForTesting: [WasabiObjectID: CGRect] { lastResizeFrames }
+
+    /// Called inside `activateLayout` once the baseline is dropped and before anything can dispatch
+    /// — the moment a script's own geometry settle lands in the running app. Test seam only.
+    var didBeginLayoutSwitchForTesting: (() -> Void)?
 
     private func dispatchResize(seeding: Bool) {
         guard !isTornDown else { return }

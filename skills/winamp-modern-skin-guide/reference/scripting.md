@@ -921,6 +921,10 @@ Still open. Before adding the dispatch, note it is not free: announcing a layout
 reaches every skin with a shade mode, so it wants live verification of the symptom first and a corpus
 sweep after.
 
+What a round trip *does* preserve now is the window's own canvas, which is a different mechanism and
+not a reason to consider this closed — see *A layout comes back to the canvas it was on* below (B139).
+Engine two's saved geometry still depends on the two events above.
+
 ### `isVisible()` on a *layout* means "is this the container's active one"
 
 A container shows exactly **one** layout at a time, so `normal` and `shade` must never both report
@@ -1063,6 +1067,74 @@ so reading it *traps* in the headless harness rather than answering.
 ClassicPro seeds `normal.resize(x, y, …)` from `getCurAppTop()` when the user has no stored position,
 so an upward y put the player wherever the flip landed. Both faults were unreachable until
 `System.onShowLayout` began to be dispatched — `fullScreen()` is the only caller.
+
+### A layout switch is not a pane collapse — the resize baseline stops at the boundary
+
+`dispatchResize(targets:previous:)` reports **two** things, and the second is easy to miss. Objects
+whose box moved hear `onResize` with their new frame; an id that was in `previous` but is *not* among
+the current targets is read as an object that left the layout, and is told `onResize(x, y, 0, 0)`
+once. That second rule is load-bearing: closing Big Bento's side playlist collapses
+`player.component.playlist.frame` to 0 wide, everything inside resolves negative and drops out of the
+scene, and the group whose `onResize` gives the tab area its width back is *inside* that subtree. It
+has to hear the collapse or the SUI keeps the hole the open playlist left.
+
+**But the previous scene must never be a different layout.** `WinampModernMainView.activateLayout`
+drops `lastResizeFrames` before anything can dispatch, so the layout being entered is never diffed
+against the one being left. Without that boundary, shading a window declares every object of the
+normal layout vanished and hands each a 0-wide resize — and a skin that reads its own width is
+entitled to act on it.
+
+cPro is the measured case (B138), and it is destructive rather than cosmetic. `centro.playlist1` is
+the player's right-hand playlist pane, and `xui/CentroSUI/_v1/scripts/CentroSUI.m` is unambiguous:
+
+```maki
+area_right.onResize(int x, int y, int w, int h){
+    if(w<10){ area_right.hide(); }
+    else    { area_right.show(); }
+```
+
+So shading hid the pane — the skin doing exactly the right thing with a lie — and nothing ever told a
+*hidden* pane that its width was 196 again, so unshading returned a player with the pane's space
+reserved and flat frame grey drawn in it. The reporter's words were "they cannot reclaim the playlist
+panel empty space".
+
+Note where the trap is: clearing the baseline at the seeding dispatch would not have been enough. A
+script that moves something while the new layout comes up settles the geometry and runs a **diffing**
+pass of its own before that line is reached, and that is the pass that did the damage — the write
+landed 30 ms after the shade switch, from the vanished branch, on an object of the layout the window
+had just left. The clear belongs at the top of the switch.
+
+**It does not reproduce headlessly on its own.** A synthetic skin has no script to move anything
+mid-switch, and the corpus dump activates each layout once, so `normal → shade → normal` renders
+byte-identical before and after the fix. `WINAMP_MODERN_RENDER_LAYOUTS` ([harness.md](harness.md))
+drives the round trip, and it still will not show you this one: it took an attribute-write trace in
+the **running app** to see `group#centro.playlist1 visible: 1 -> 0` and a stack naming the branch.
+
+### A layout comes back to the canvas it was on, and `linkwidth` pairs two of them
+
+`activateLayout` used to reset the canvas to `defaultSize(for:)` on every switch, which throws away
+whatever size the window actually had. For a layout the skin sized itself that is invisible — the
+default *is* the size. For anything else it is a visible jump, and the content fit is exactly
+anything else: it runs once, on the first scene after `start()`, and cannot be re-derived later. cPro's
+player declares `default_w="500" default_h="500"` and the fit grows the real window to 691x541, so a
+shade round trip put it back at 500x500 with the tab strip on its abbreviated artwork (`LIB`/`PLE`/`VID`
+rather than `Media Library`/`Playlist`/`Video`), because the strip lays out from the width it is given
+(B139).
+
+Two rules replace the reset, both Winamp's:
+
+- **Each layout remembers its own canvas.** Recorded on the way out, restored on the way in, clamped
+  by the layout being entered. A container with three layouts remembers three sizes, and one that
+  never leaves its opening layout has an empty memory and behaves exactly as before.
+- **`linkwidth` carries the width between two layouts that name each other.** cPro's player is the
+  pair — `one/xml/player-normal.xml` has `linkwidth="shade"`, `player-shade.xml` has
+  `linkwidth="normal"` — so shading keeps the window's width instead of snapping to 500. Consulted
+  only for a layout entered for the *first* time; after that its own remembered size is the better
+  answer and already carries the width. The height stays the entered layout's business, which is what
+  lets shade's `maximum_h="23"` still win.
+
+A restored size is not one the renderer chose, so `autoFittedCanvas` is cleared with it and the
+content fit leaves it alone — the same rule `resize(to:)` already relied on.
 
 ### `onMove()` is dispatched to the window objects only
 

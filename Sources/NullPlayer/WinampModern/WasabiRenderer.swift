@@ -799,14 +799,51 @@ final class WasabiSceneRenderer {
                                            "Container '\(container.xmlID ?? "Main")' has no layout '\(id)'.",
                                            location: container.source))
         }
+        // The size the layout being left is at, so coming back to it comes back to *it* and not to
+        // the size its markup declares (B139). cPro's player is the case: `default_w="500"` is the
+        // opening size, the content fit grows the real window to 691x541 at load, and a trip through
+        // `shade` and back put the window at 500x500 with the skin's own panes still arranged for
+        // 691 — the playlist pane's space left empty, which is the reported symptom. Recorded before
+        // the switch, keyed by the layout's own object, so a container with three layouts remembers
+        // all three.
+        canvasSizeByLayout[layout.stableID] = storedCanvasSize
+        let previous = layout
         layout = next
+        let restored = canvasSizeByLayout[next.stableID]
+            ?? Self.linkedWidthCarry(into: next, from: previous, width: storedCanvasSize.width)
         storedCanvasSize = defaultSize(for: next)
+        // A size this renderer is *restoring* is not one it chose, so the content fit must leave it
+        // alone — the same rule `resize(to:)` already relies on. Clamped by the layout being entered,
+        // which is what turns a remembered 691x541 into shade's 691x23 rather than a canvas its own
+        // `maximum_h="23"` forbids.
         autoFittedCanvas = storedCanvasSize
         hasFittedContent = false
         contentFloorCache = nil
+        if let restored {
+            _ = resize(to: restored)
+            autoFittedCanvas = nil
+        }
         invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
         return canvasSize
+    }
+
+    /// The canvas each of this container's layouts was last on. Empty until the first switch, so a
+    /// container that never leaves `normal` behaves exactly as it did.
+    private var canvasSizeByLayout: [WasabiObjectID: CGSize] = [:]
+
+    /// Wasabi's `linkwidth`: two layouts that name each other share a width, so shading a window
+    /// keeps the width the user gave it and unshading gives it back. cPro's player declares the pair
+    /// (`normal` has `linkwidth="shade"`, `shade` has `linkwidth="normal"`). Only consulted for a
+    /// layout being entered for the *first* time — after that its own remembered size is the better
+    /// answer, and it already carries the width.
+    private static func linkedWidthCarry(into next: WasabiObject, from previous: WasabiObject,
+                                         width: CGFloat) -> CGSize? {
+        guard let link = next.attributes["linkwidth"], !link.isEmpty,
+              previous.xmlID?.caseInsensitiveCompare(link) == .orderedSame else { return nil }
+        // Height is the entered layout's own business; `resize(to:)` clamps it back up to that
+        // layout's minimum, which is what makes `shade`'s `maximum_h="23"` win here.
+        return CGSize(width: width, height: 0)
     }
 
     /// The active layout's own `minimum_w`/`minimum_h`, in skin pixels, raised to the protective

@@ -32,6 +32,16 @@
 
 ### Bug Fixes
 
+- **ClassicPro skins keep their playlist pane and their size through windowshade.** Shading a cPro
+  player and unshading it came back with a dead grey column where the playlist had been, and the
+  window itself shrank to the size the skin's markup declares rather than the size you had it at —
+  which also left the tab strip on its abbreviated labels (`LIB`, `PLE`, `VID` instead of
+  `Media Library`, `Playlist`, `Video`). Switching layouts told every object of the layout being left
+  that it had collapsed to nothing, and ClassicPro's side-area script responds to a zero width by
+  hiding the pane, with nothing to bring it back. A layout switch no longer reports the outgoing
+  layout's objects that way, and each layout now returns to the size it was actually on, with two
+  linked layouts sharing a width the way Winamp does.
+
 - **Nullsoft Winamp 2000 SP4: window titles are readable again, and its visualizer opens at a usable
   size.** Every title bar in the skin drew two copies of its own text on top of each other, in two
   different colours, and the Windows 2000 blue gradient behind them came out as one flat light blue —

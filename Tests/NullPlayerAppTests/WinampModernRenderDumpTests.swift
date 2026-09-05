@@ -897,8 +897,25 @@ final class WinampModernRenderDumpTests: XCTestCase {
             // `resolvedGeometryRequested` stays installed — it belongs to the whole run now, not to
             // one container's turn in the loop.
             defer { runtime.geometryDidSettle = nil }
-            for layoutID in renderer.availableLayoutIDs {
+            // WINAMP_MODERN_RENDER_LAYOUTS=normal,shade,normal drives an explicit *sequence* of
+            // layout activations on one renderer, so a defect that only appears after a round trip
+            // (shade and back) reproduces headlessly. Default is each layout once, in skin order.
+            let layoutSequence = env["WINAMP_MODERN_RENDER_LAYOUTS"].map {
+                $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            } ?? renderer.availableLayoutIDs
+            for (pass, entry) in layoutSequence.enumerated() {
+                // Each entry is `<layout>` or `<layout>@<W>x<H>` — the size that pass is driven to
+                // after activation, which is how a canvas the app grew (its content fit) is carried
+                // into the round trip.
+                let entryParts = entry.split(separator: "@", maxSplits: 1).map(String.init)
+                let layoutID = entryParts[0]
                 _ = try? renderer.activateLayout(id: layoutID)
+                if entryParts.count == 2 {
+                    let wh = entryParts[1].lowercased().split(separator: "x").compactMap { Double($0) }
+                    if wh.count == 2 {
+                        _ = renderer.resize(to: CGSize(width: wh[0], height: wh[1]))
+                    }
+                }
                 // WINAMP_MODERN_RENDER_SIZE=WxH measures the scene at the *user's* window size rather
                 // than only the size the layout declares. Clamped by the layout, exactly as a drag is.
                 if let spec = env["WINAMP_MODERN_RENDER_SIZE"] {
@@ -1512,7 +1529,12 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 }
                 NSGraphicsContext.current = previous
                 guard let image = context.makeImage() else { continue }
-                let url = dumpDirectory.appendingPathComponent("\(info.id)-\(layoutID).png")
+                let url = dumpDirectory.appendingPathComponent(
+                    // A sequence run visits a layout more than once, so each pass needs its own
+                    // file; a default run keeps the name every existing capture already has.
+                    env["WINAMP_MODERN_RENDER_LAYOUTS"] == nil
+                        ? "\(info.id)-\(layoutID).png"
+                        : "\(info.id)-\(layoutID)-\(pass).png")
                 let rep = NSBitmapImageRep(cgImage: image)
                 try rep.representation(using: .png, properties: [:])?.write(to: url)
                 print("RENDER-DUMP wrote \(url.path)")

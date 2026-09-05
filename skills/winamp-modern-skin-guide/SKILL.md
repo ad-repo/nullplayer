@@ -56,6 +56,19 @@ in the app is one line and settles it; a green sweep does not. The same session 
 plausible mechanism instead of a measurement; the ones that landed came from reading pixels out of the
 reporter's own screenshot and window frames out of the accessibility API.
 
+2026-09-05 ran the same trap one turn further and it is worth naming on its own: **a number that moved
+is not the symptom that was reported.** The shade round trip (B138) had two faults stacked on one
+screen, and fixing the measurable one — the window came back 500x500 instead of 691x541, visible in a
+single `resizeWindow` log line — produced a confident "fixed" while the reporter's actual complaint,
+the empty playlist pane, was still there in the screenshot taken to prove it. The reporter said "not
+fixed" twice before the claim was withdrawn. Two habits fall out. **Reproduce the reporter's own steps
+end to end before believing anything**: a "fresh launch" that has been resized and shaded by your own
+probing is not a fresh launch, and a wrong reading of it ("the bug is there at launch too") sends the
+whole diagnosis somewhere else. And **drive the repro yourself where you can** — `System Events`
+`click at` silently delivers nothing to this app, so a 35-line CGEvent clicker built in the scratchpad
+was what finally made the round trip repeatable, and a pixel-diff of the window against its launch
+state was what made "fixed" a measurement instead of an opinion.
+
 Corollary: verify in the running app, not in your head. Window geometry has no useful armchair form,
 and B56 cost four confident statically-reasoned fixes — each wrong, two of them regressions — before
 anyone launched the app. The loop for measuring it is in the `testing` skill ("Window geometry:

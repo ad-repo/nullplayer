@@ -31,6 +31,15 @@ render path. They are adapted under a strict policy: `exploreFile` reveals an ex
 feature instead of inferring semantics — `getARGBValue`'s BGRA channel order, `getDateYear`'s
 years-since-1900 scale, and the `isInvalid` probe idiom were all pinned that way rather than guessed.
 
+**The SUI decides its own panes from the width it is handed, with no state of its own.**
+`xui/CentroSUI/_v1/scripts/CentroSUI.m` shows and hides the right-hand playlist pane
+(`centro.playlist1`) purely on the `w` of its `onResize` — `if(w<10){ area_right.hide(); } else
+{ area_right.show(); }` — and `area_left`/`area_mini` are laid out the same way. So **any** wrong
+width we hand this engine is not a mis-paint that the next frame corrects; it is a state change the
+skin makes and does not revisit. B138 is that exact failure: one phantom 0-wide resize across a
+layout switch hid the playlist pane for the rest of the session. See [scripting.md](scripting.md) →
+*A layout switch is not a pane collapse*.
+
 
 ## Engine "two"
 
