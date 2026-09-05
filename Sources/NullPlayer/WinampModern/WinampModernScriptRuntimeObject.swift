@@ -1138,11 +1138,32 @@ extension WinampModernScriptRuntime {
 
     /// The rule itself, as a pure function of the two layouts and the realized set — so it can be
     /// asserted against a real object graph without a compiled MAKI program to carry it.
+    ///
+    /// Narrow on the *container* too. The gate models one window's mutually exclusive states, so it
+    /// only has standing over the layouts of the window the script is in. Anaheim Player 01 asks
+    /// across: `BodyColor.maki` lives in `group#Page2<layout#normal<container#skin_options` and wires
+    /// **main**'s `normal` and `mini` bodies together, one `setXMLParam("image", …)` each, so that the
+    /// player's body colour and the mini window's match. Gated against `main/mini` — a layout the user
+    /// has not visited yet — `getLayout("mini")` answered NULL, the mini assignment went nowhere, and
+    /// the mini window stayed on `MiniBody1` (white) however the main window was recoloured. Nothing
+    /// in the Big Bento shape needs the cross-container half: both of its blocks name its own window.
     static func layoutIsCreated(_ layout: WasabiObject,
                                 forScriptIn ownLayout: WasabiObject?,
                                 realized: Set<WasabiObjectID>) -> Bool {
         guard let ownLayout else { return true }
-        return ownLayout === layout || realized.contains(layout.stableID)
+        if ownLayout === layout || realized.contains(layout.stableID) { return true }
+        guard let ownContainer = container(of: ownLayout),
+              let askedContainer = container(of: layout) else { return true }
+        return ownContainer !== askedContainer
+    }
+
+    private static func container(of object: WasabiObject) -> WasabiObject? {
+        var candidate: WasabiObject? = object
+        while let current = candidate {
+            if current.typeName.caseInsensitiveCompare("container") == .orderedSame { return current }
+            candidate = current.parent
+        }
+        return nil
     }
 
     func ancestor(of object: WasabiObject, type: String) -> WasabiObject? {

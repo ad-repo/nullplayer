@@ -109,6 +109,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Window jumps to a screen corner when a skin panel opens | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read* |
 | A skin's window chrome drifts away from the window's content | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read* |
 | A window a skin's own script closed never comes back, or opens empty | [reference/scripting.md](reference/scripting.md) → *`onSetVisible` — a window a script closes has to be reopened* |
+| One window's script sets something in another window and nothing happens | [reference/scripting.md](reference/scripting.md) → *`getLayout()` answers NULL for a layout that has never been shown* |
 | Dragging one window should pull another along and does not | [reference/scripting.md](reference/scripting.md) → *`onMove()` is dispatched to the window objects only* |
 | `setText`/search terms disappear through `embed_xui` | [reference/scripting.md](reference/scripting.md) |
 | Slider action families and `onSetPosition` | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |

@@ -965,10 +965,26 @@ is scoped two ways, and both matter:
   the only place a skin wires its *other* layouts from: multipass's `skin.xml` wires normal and shade
   together, from one program, into separate variables. Gating it too cost **236 (event, object) pairs**
   across the corpus's shade and stick layouts to buy nothing.
+- **Only the script's own container is gated** (B134, 2026-09-05). The rule models one window's
+  mutually exclusive states, so it has no standing over a *different* window's layouts, and applying
+  it there broke Anaheim Player 01's body colour. `BodyColor.maki` lives in the Skin Options window
+  (`group#Page2<layout#normal<container#skin_options`) and wires **main**'s `normal` and `mini` bodies
+  together, one `setXMLParam("image", "NormalBody"+n)` and one `"MiniBody"+n` per recolour, so the
+  player and the mini player wear the same body. `main/mini` is a layout nobody has opened, so
+  `getLayout("mini")` answered NULL, that assignment went nowhere, and the mini window sat on its
+  markup default `MiniBody1` — the white body — however red the player went. Nothing in the Big Bento
+  shape wants the cross-container half: both of its blocks name its own window. Note this is a *third*
+  window reaching in, not the player reaching out — the reporter never opened Skin Options, because
+  the wiring happens in that script's `onScriptLoaded` and the gear only calls it back.
 
 Measured against a baseline worktree over all 62 archives: 14 (event, object) pairs gained, none
-lost; 547 of 552 rendered PNGs byte-identical. Read a suspect binding with
-`WINAMP_MODERN_RENDER_SCRIPTS=bindings`, whose targets carry their ancestor chain.
+lost; 547 of 552 rendered PNGs byte-identical. B134's container scoping was swept the same way over
+69 archives: invariants identical, 588 of 590 PNGs byte-identical, the two that differ being Anaheim's
+own `main/mini` and Anexa's `main/shade`, which differs between two runs of the same build. Read a
+suspect binding with `WINAMP_MODERN_RENDER_SCRIPTS=bindings`, whose targets carry their ancestor
+chain — it is the field that names both the layout **and** the container a binding landed in, and
+B134 is one line of it (`button#BodyBtn<group#Page2<layout#normal<container#skin_options`) read against
+the layout the script was asking for.
 
 ### An object is never equal to NULL, and `!= NULL` is not always false
 

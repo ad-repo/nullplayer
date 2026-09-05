@@ -32,6 +32,13 @@
 
 ### Bug Fixes
 
+- **Anaheim Player 01: the mini player now follows the body colour you pick.** The skin ships ten
+  bodies — white, grey, green, blue, pink, gold, red, black, x-ray, neon — chosen from the gear on
+  the Colors page of its Skin Options window, and both the player and the mini player are meant to
+  wear the one you pick. Only the player was changing; the mini player stayed on its white body
+  whatever you chose. The skin sets the two from a single script, and the half aimed at the mini
+  window was being dropped whenever that window had not been opened yet.
+
 - **Modern skins: the playlist, library and tab text no longer draw in a console font.** Every list
   NullPlayer draws inside a `.wal` skin — playlist rows, the embedded Media Library, tab labels,
   status lines — was falling back to a fixed-pitch system font, in every Modern skin, because none of
