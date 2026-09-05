@@ -698,6 +698,11 @@ final class WasabiSceneRenderer {
     let themeCoordinator: WinampModernThemeCoordinator
     let themes: WasabiColorThemeCatalog
     let container: WasabiObject
+    /// Does the window this renderer draws have the keyboard? Chooses between every object's
+    /// `activealpha` and its `inactivealpha` (`alphaFraction(of:active:)`); the view writes it from
+    /// `isKeyWindow` before each paint. Defaults to active so the headless harness — which has no
+    /// window at all — measures the state a skin is designed around.
+    var isWindowActive = true
     private(set) var layout: WasabiObject
     /// The layout's canvas, in skin pixels.
     ///
@@ -705,7 +710,11 @@ final class WasabiSceneRenderer {
     /// ask how big its window should be, and that read comes *before* the first scene is resolved.
     /// (Measured: with the fit hung off `sceneNodes()` alone, the render dump printed the pre-fit
     /// 100x400 for a window the fit had already grown to 313x400 — one statement later.)
-    var canvasSize: CGSize { fitCanvasToContentIfNeeded(); return storedCanvasSize }
+    var canvasSize: CGSize {
+        fitCanvasToComponentRoomIfNeeded()
+        fitCanvasToContentIfNeeded()
+        return storedCanvasSize
+    }
 
     /// `canvasSize` without the fit — for the fit itself, and for the reads inside it.
     private var storedCanvasSize: CGSize
@@ -1103,7 +1112,8 @@ final class WasabiSceneRenderer {
         for node in nodes {
             let inherited = node.object.parent
                 .flatMap { product[ObjectIdentifier($0)] } ?? node.inheritedAlpha
-            product[ObjectIdentifier(node.object)] = inherited * Self.alphaFraction(of: node.object)
+            product[ObjectIdentifier(node.object)] = inherited
+                * Self.alphaFraction(of: node.object, active: isWindowActive)
             if inherited == node.inheritedAlpha {
                 refreshed.append(node)
             } else {
@@ -2238,7 +2248,7 @@ final class WasabiSceneRenderer {
         } else {
             childClip = parentClip
         }
-        let childAlpha = inheritedAlpha * Self.alphaFraction(of: object)
+        let childAlpha = inheritedAlpha * Self.alphaFraction(of: object, active: isWindowActive)
         // A container a script has scrolled lays its children out against a box shifted *up* by the
         // offset; the clip stays on the unscrolled box, so content leaves through the top and arrives
         // from the bottom exactly as it should. Doing it here rather than at draw time is what makes
@@ -2324,7 +2334,7 @@ final class WasabiSceneRenderer {
         // mousetrap, and that one invisible layer measured **42.8 ms/frame** at Retina scale, with
         // `focus.dummy` — another full-window alpha-0 layer — costing another 42.0. Alpha is read per
         // frame, so an object fading in starts drawing again the moment it is no longer transparent.
-        let effectiveAlpha = Self.alphaFraction(of: object) * node.inheritedAlpha
+        let effectiveAlpha = Self.alphaFraction(of: object, active: isWindowActive) * node.inheritedAlpha
         guard effectiveAlpha > 0 else { return }
         context.saveGState()
         context.clip(to: node.clip)
@@ -2516,8 +2526,19 @@ final class WasabiSceneRenderer {
                                     region: (cut: CGImage, alpha: [UInt8], width: Int, height: Int)?)?
 
     /// An object's `alpha` as a 0…1 fraction. An absent or unparsable value is opaque.
-    static func alphaFraction(of object: WasabiObject) -> CGFloat {
-        let alpha = max(0, min(255, Int(Double(object.attributes["alpha"] ?? "255") ?? 255)))
+    ///
+    /// `activealpha`/`inactivealpha` are the *focus-dependent* pair: Wasabi paints an object at the
+    /// first when its window has the keyboard and at the second when it does not, and plain `alpha`
+    /// is the value for both. Skins use the pair to keep **two objects in the same slot** and show
+    /// one at a time — Nullsoft Winamp 2000 SP4's titlebar declares `window.titlebar.title.active`
+    /// (`activealpha="255" inactivealpha="0"`) directly on top of `…title.inactive` (the reverse),
+    /// each in its own gammagrouped colour, and its song ticker and playlist do the same. With the
+    /// pair unread both copies drew at full strength, in two different colours, one glyph grid apart:
+    /// every window title in that skin came up as an unreadable smear (B135).
+    static func alphaFraction(of object: WasabiObject, active: Bool = true) -> CGFloat {
+        let attributes = object.attributes
+        let raw = attributes[active ? "activealpha" : "inactivealpha"] ?? attributes["alpha"] ?? "255"
+        let alpha = max(0, min(255, Int(Double(raw) ?? 255)))
         return CGFloat(alpha) / 255
     }
 
@@ -3273,11 +3294,23 @@ final class WasabiSceneRenderer {
         func coordinate(_ key: String) -> CGFloat {
             max(0, min(1, CGFloat(Double(object.attributes[key] ?? "0") ?? 0)))
         }
+        // **A gradient that names no direction runs left to right**, which is Wasabi's default and
+        // the only one a titlebar ever wants. Defaulting all four to 0 put `start` on `end`, and
+        // `.drawsAfterEndLocation` then paints the *last* stop over the whole rect — a flat fill.
+        // Nullsoft Winamp 2000 SP4 builds its Windows 2000 titlebar out of exactly this: an opaque
+        // `Active Title Bar Color 1` gradient (navy) with `Color 2` (light blue) laid over it at
+        // `points="0.0=…,0;1.0=…,255"`, a left-to-right alpha ramp. Flat-filled, the second one
+        // covered the first and every titlebar in the skin came out one solid light blue (B137,
+        // measured: every pixel of the equalizer's 469px title strip is rgb(167,203,242)).
+        // A skin that states any of the four still gets exactly what it states — ClassicPro's
+        // `cdbox.fg.fademask` names all four and fades top to bottom.
+        let declaresDirection = ["gradient_x1", "gradient_y1", "gradient_x2", "gradient_y2"]
+            .contains { object.attributes[$0] != nil }
         // The scene is painted y-flipped, so `frame.minY` *is* the object's visual top edge and
         // `gradient_y1="0"` lands there without any further correction.
         let start = CGPoint(x: frame.minX + coordinate("gradient_x1") * frame.width,
                             y: frame.minY + coordinate("gradient_y1") * frame.height)
-        let end = CGPoint(x: frame.minX + coordinate("gradient_x2") * frame.width,
+        let end = CGPoint(x: frame.minX + (declaresDirection ? coordinate("gradient_x2") : 1) * frame.width,
                           y: frame.minY + coordinate("gradient_y2") * frame.height)
         context.saveGState()
         context.clip(to: frame)
@@ -4552,12 +4585,93 @@ final class WasabiSceneRenderer {
               storedCanvasSize == autoFittedCanvas else { return }
         isFittingContent = true
         defer { isFittingContent = false; hasFittedContent = true }
-        let fitted = contentFittedSize(defaultSize(for: layout), for: layout)
+        let fitted = componentRoomFittedSize(contentFittedSize(defaultSize(for: layout), for: layout),
+                                             for: layout)
         guard fitted != storedCanvasSize else { return }
         storedCanvasSize = fitted
         autoFittedCanvas = fitted
         invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
+    }
+
+    /// A component window narrower than this on an axis its skin never sized has no window in it.
+    /// The trigger is the *degenerate* case only — see `componentRoomFittedSize`.
+    private static let degenerateComponentExtent: CGFloat = 32
+    /// What such an axis is grown to give the component. Winamp's own stock Modern skin opens the
+    /// same visualization window at `354x280`, whose client area under the standard frame is a little
+    /// over 250px tall; this reproduces that rather than inventing a number.
+    private static let componentRoomExtent: CGFloat = 250
+
+    private var hasFittedComponentRoom = false
+    private var isFittingComponentRoom = false
+
+    /// The component-room fit, applied **before the skin's scripts run**.
+    ///
+    /// `fitCanvasToContentIfNeeded` deliberately waits for `runtime.start()`, because the content it
+    /// measures is instantiated by the skin's own MAKI. This one must not wait, and the app is where
+    /// that showed: every auxiliary window is placed while the skin is still loading, so the tiler
+    /// asked for the visualizer's size before any script had run and got the unfitted box —
+    /// `[place/tile] AVS {{0, 0}, {354, 30}}` with `WINAMP_MODERN_PLACE_TRACE=1`, against the
+    /// 354x278 the headless dump reports *after* start. The dump reads the size late and the app
+    /// reads it early, which is exactly the gap a render dump cannot show.
+    ///
+    /// Waiting buys nothing here anyway: the `<component>` this measures is plain markup inside the
+    /// layout, in the graph from the moment it is built, and its box is relative to the canvas alone.
+    private func fitCanvasToComponentRoomIfNeeded() {
+        guard !hasFittedComponentRoom, !isFittingComponentRoom,
+              storedCanvasSize == autoFittedCanvas else { return }
+        isFittingComponentRoom = true
+        defer { isFittingComponentRoom = false; hasFittedComponentRoom = true }
+        let fitted = componentRoomFittedSize(storedCanvasSize, for: layout)
+        guard fitted != storedCanvasSize else { return }
+        storedCanvasSize = fitted
+        autoFittedCanvas = fitted
+        invalidateSceneCache()
+        loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
+    }
+
+    /// Grow an axis a layout never states when the component it exists to host has no room on it.
+    ///
+    /// Nullsoft Winamp 2000 SP4's `AVS/normal` states no height at all — only `minimum_h="30"`, a
+    /// floor barely taller than the standard frame's own titlebar — so its visualization holder
+    /// resolved to **346x2** and the window opened as a black sliver the user had to drag open by
+    /// hand (B136). A floor is not a size, but demoting `minimum_*` in `defaultSize` is not the fix:
+    /// it would take micro's deliberate 150x110 player to 275x116 as collateral.
+    ///
+    /// So the rule is as narrow as the measurement that justifies it. Across the whole installed
+    /// corpus — 69 skins, 590 rendered layouts — **exactly one** component holder resolves under
+    /// `degenerateComponentExtent`, and it is this one. An axis is grown only when the skin states no
+    /// size for it *anywhere* (neither on the layout nor on its container) and the holder it feeds is
+    /// degenerate; a layout whose author sized it, and one whose component already has room, is
+    /// untouched. The corpus sweep is what has to keep proving that.
+    private func componentRoomFittedSize(_ declared: CGSize, for layout: WasabiObject) -> CGSize {
+        let attributes = layout.attributes
+        let container = layout.parent?.attributes ?? [:]
+        // Only a window that exists *to* host a component. A player window parks holders it is not
+        // showing — Lobe keeps two 25px ones in `main/normal` and `main/switch` — and growing a
+        // player around a parked holder is exactly the collateral this rule must not cause.
+        guard container["component"] != nil else { return declared }
+        let statesWidth = attributes["w"] != nil || attributes["default_w"] != nil
+            || container["default_w"] != nil
+        let statesHeight = attributes["h"] != nil || attributes["default_h"] != nil
+            || container["default_h"] != nil
+        guard !statesWidth || !statesHeight else { return declared }
+        let holders = sceneNodes(canvas: declared).filter {
+            WinampModernComponentRegistry.isHolderElement($0.object.typeName) && isVisible($0.object)
+        }
+        guard !holders.isEmpty else { return declared }
+        var size = declared
+        if !statesWidth, let widest = holders.map({ $0.frame.width }).max(),
+           widest < Self.degenerateComponentExtent {
+            size.width = min(Self.optionalDimension(attributes["maximum_w"]) ?? .greatestFiniteMagnitude,
+                             size.width + Self.componentRoomExtent - widest)
+        }
+        if !statesHeight, let tallest = holders.map({ $0.frame.height }).max(),
+           tallest < Self.degenerateComponentExtent {
+            size.height = min(Self.optionalDimension(attributes["maximum_h"]) ?? .greatestFiniteMagnitude,
+                              size.height + Self.componentRoomExtent - tallest)
+        }
+        return size
     }
 
     /// Grow a layout that describes **no** size of its own to the extent of the content it lays out.
@@ -4662,16 +4776,34 @@ final class WasabiSceneRenderer {
     /// Only the **declared** minimum clamps here, not `layoutMinimumSize` — that one folds in the
     /// computed protective minimum, which is a defence against a *shrunk* window and has no business
     /// enlarging one the skin's author sized deliberately.
+    ///
+    /// **`default_w`/`default_h` are container attributes too** (B136). `default_x`/`default_y` were
+    /// already read off the container (`WinampModernContainerTopology.defaultOrigin`) and the size
+    /// pair was not, so a skin that sizes its windows there — 29 declarations across the installed
+    /// corpus — got nothing, and every one of those windows opened at its own `minimum_*` floor
+    /// instead. Nullsoft Winamp 2000 SP4 sizes *every* auxiliary window that way: measured on that
+    /// skin, its playlist opened 276×242 against the author's `PLEdit default_w="550"`, its library
+    /// 275×484 against `550×484`, and its visualizer 96×30 against `AVS default_w="354"`. A layout's
+    /// own box still wins; the container only answers for an axis the layout never states.
     private static func defaultSize(for layout: WasabiObject, resources: WasabiResourceCache) -> CGSize {
-        let background = resources.bitmap(identifier: layout.attributes["background"])
+        let attributes = layout.attributes
+        let container = layout.parent?.attributes ?? [:]
+        let minimum = CGSize(width: dimension(attributes, keys: ["minimum_w"], fallback: 1),
+                             height: dimension(attributes, keys: ["minimum_h"], fallback: 1))
+        let background = resources.bitmap(identifier: attributes["background"])
+        /// The layout's own box, then the container's default, then the floor, then the artwork.
+        func extent(_ own: String, _ box: String, _ floor: String, artwork: CGFloat?,
+                    classic: CGFloat) -> CGFloat {
+            dimension(attributes, keys: [own, box],
+                      fallback: dimension(container, keys: [own],
+                                          fallback: dimension(attributes, keys: [floor],
+                                                              fallback: artwork ?? classic)))
+        }
         let size = CGSize(
-            width: dimension(layout.attributes, keys: ["default_w", "w", "minimum_w"],
-                             fallback: background.map { CGFloat($0.width) } ?? 275),
-            height: dimension(layout.attributes, keys: ["default_h", "h", "minimum_h"],
-                              fallback: background.map { CGFloat($0.height) } ?? 116)
-        )
-        let minimum = CGSize(width: dimension(layout.attributes, keys: ["minimum_w"], fallback: 1),
-                             height: dimension(layout.attributes, keys: ["minimum_h"], fallback: 1))
+            width: extent("default_w", "w", "minimum_w",
+                          artwork: background.map { CGFloat($0.width) }, classic: 275),
+            height: extent("default_h", "h", "minimum_h",
+                           artwork: background.map { CGFloat($0.height) }, classic: 116))
         return CGSize(width: max(size.width, minimum.width), height: max(size.height, minimum.height))
     }
 

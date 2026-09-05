@@ -32,6 +32,15 @@
 
 ### Bug Fixes
 
+- **Nullsoft Winamp 2000 SP4: window titles are readable again, and its visualizer opens at a usable
+  size.** Every title bar in the skin drew two copies of its own text on top of each other, in two
+  different colours, and the Windows 2000 blue gradient behind them came out as one flat light blue —
+  between them the titles were unreadable. The skin's built-in visualization window also opened as a
+  30-pixel black sliver you had to drag open by hand, and its playlist and Media Library opened at
+  half the width their author asked for. Modern skins now honour focus-dependent artwork (a window
+  that loses the keyboard dims the way its author drew it), gradients that state no direction, and
+  window sizes declared on a container rather than a layout.
+
 - **Anaheim Player 01: the mini player now follows the body colour you pick.** The skin ships ten
   bodies — white, grey, green, blue, pink, gold, red, black, x-ray, neon — chosen from the gear on
   the Colors page of its Skin Options window, and both the player and the mini player are meant to

@@ -648,3 +648,57 @@ header is genuinely clipped, so it is not a size anyone can have meant, and the 
 resize and never retroactively, so `applyLayoutConstraints` also grows an already-too-small window —
 upward only, bounded by the same limits a drag obeys — and is called a second time after
 `scriptsDidStart()`, because the first call runs before any content exists.
+
+#### `default_w`/`default_h` are `<container>` attributes too (B136, 2026-09-05)
+
+Step 1 of that chain reads the **layout**. A `<container>` may state the same pair, and the fallback
+chain is:
+
+1. the layout's own `default_w`/`default_h`, then `w`/`h`;
+2. **the container's `default_w`/`default_h`** — this rule;
+3. the layout's `minimum_w`/`minimum_h`;
+4. the `background` bitmap, then 275×116.
+
+`default_x`/`default_y` were read off the container all along (`WinampModernContainerTopology`
+`defaultOrigin`); the size pair was not, and every window a skin sizes that way opened at its own
+floor instead. 29 container declarations across the installed corpus state one, and exactly **four
+layout axes on two skins** change with the rule — each toward the number the author wrote:
+
+| Skin | Window | Was | Author's `<container>` |
+|---|---|---|---|
+| Nullsoft Winamp 2000 SP4 | `PLEdit/normalpl` | 276×242 | `default_w="550"` |
+| Nullsoft Winamp 2000 SP4 | `MLibrary/normal` | 275×484 | `default_w="550"` |
+| Nullsoft Winamp 2000 SP4 | `AVS/normal` | 96×30 | `default_w="354"` |
+| Ujola Cat | `PLEdit/normalpl` | 430×200 | `default_h="242"` |
+
+The floor stays a floor: it clamps whatever the chain produced, exactly as before.
+
+#### A component window with no stated size, and why its fit cannot wait for `start()`
+
+`minimum_*` standing in as a size is wrong in general and mostly harmless — until a skin states an
+axis nowhere at all. Nullsoft Winamp 2000 SP4's `AVS/normal` states no height, only `minimum_h="30"`,
+a floor barely taller than the standard frame's own titlebar, so its `<component>` box resolved to
+**346×2**: a black sliver the user had to drag open by hand.
+
+Demoting `minimum_*` below the classic default is *not* the fix — measured, it takes micro's
+deliberate 150×110 player to 275×116 as collateral. `componentRoomFittedSize` is the narrow rule
+instead: an axis is grown only when
+
+- the container declares a `component=` (a window that exists *to* host one — a player parks holders
+  it is not showing, and Lobe's `main/normal` and `main/switch` each keep a 25px one), **and**
+- the skin states no size for that axis anywhere — neither on the layout nor on its container, **and**
+- the holder it feeds resolves under 32px.
+
+It is then grown to give the component 250px, which reproduces stock Winamp Modern's own 354×280
+visualization window rather than inventing a number. Across the corpus — 69 skins, 590 rendered
+layouts — **exactly one** holder meets all three, and the sweep diff is one PNG.
+
+> **The fit that supplies it runs *before* `runtime.start()`, and that is the whole trap.** The
+> content fit above deliberately waits for the scripts; this one must not, because **the window tiler
+> asks every container for its size while the skin is still loading**. The first version of this fix
+> hung off `fitCanvasToContentIfNeeded` and measured perfect in the render dump — `AVS/normal:
+> 354x278` — while the running app showed `[place/tile] AVS {{0, 0}, {354, 30}}` and the user's
+> screen was unchanged. **A render dump reads a window's size late and the app reads it early**, so a
+> size fix verified only in the harness is not verified. Waiting buys nothing here anyway: the
+> `<component>` is plain markup inside the layout, in the graph from the moment it is built, and its
+> box is relative to the canvas alone.

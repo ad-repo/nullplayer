@@ -48,7 +48,11 @@ fix was reported as working on `surfaces=1, strip=48px, drag=88%` and a corpus d
 skin, and the user's screenshot showed the chrome and the contents in different places — every number
 the probe measured was right and blind to the only thing that mattered. Render it
 (`WINAMP_MODERN_DRAG_HOSTED_PNG`, [reference/harness.md](reference/harness.md)) or run it, then hand it
-over. The same session then took five more rounds because each new symptom was answered with a
+over. 2026-09-05 sharpened the same lesson for *sizes*: the dump asks a renderer how big its window is
+**after** `runtime.start()`, and the app's window tiler asks **before** it, so a window-size fix hung
+off the post-start fit printed `AVS/normal: 354x278` in a clean corpus sweep while the running app
+placed the window at `354x30` and the reporter's screen never changed. `WINAMP_MODERN_PLACE_TRACE=1`
+in the app is one line and settles it; a green sweep does not. The same session then took five more rounds because each new symptom was answered with a
 plausible mechanism instead of a measurement; the ones that landed came from reading pixels out of the
 reporter's own screenshot and window frames out of the accessibility API.
 
@@ -96,6 +100,10 @@ This file is a router. Read the one focused reference your symptom names.
 | A menu a **double-click** opens never appears | [reference/rendering.md](reference/rendering.md) → *A skin's own right-click menus* |
 | Colour resolution, themes, unreadable selections/titles | [reference/rendering/colour.md](reference/rendering/colour.md) |
 | Selected row or title text matches its background | [reference/rendering/colour.md](reference/rendering/colour.md) → *A resolved colour is not yet readable* |
+| A title draws as a smear, or two objects in one slot both draw, or artwork ignores window focus | [reference/rendering/colour.md](reference/rendering/colour.md) → *`activealpha`/`inactivealpha`* |
+| A `<gradient>` fills flat instead of ramping | [reference/rendering/colour.md](reference/rendering/colour.md) → *a `<gradient>` with no direction* |
+| A window opens at its `minimum_*` rather than the size its skin declares | [reference/loading.md](reference/loading.md) → *`default_w`/`default_h` are `<container>` attributes too* |
+| A component window (visualizer, video) opens as a sliver | [reference/loading.md](reference/loading.md) → *A component window with no stated size* |
 | The playing playlist row has no marker, or the selection bar never appears | [reference/rendering/colour.md](reference/rendering/colour.md) → *A marker only marks when it differs* |
 | Bitmap icons/borders look blurry at an integer UI Size | [reference/rendering.md](reference/rendering.md) → *Bitmap interpolation follows UI Size × backing scale* |
 | `cfgattrib`, `onActivate`, album art, alpha, fill, sliders, `ProgressGrid`, animation | [reference/rendering.md](reference/rendering.md) |

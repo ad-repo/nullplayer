@@ -132,6 +132,10 @@ final class WinampModernMainView: NSView {
     private var lastPostedTitle: String?
     private var tracking: NSTrackingArea?
     private var animationTimer: Timer?
+    /// Key/resign observers for this view's own window, feeding `renderer.isWindowActive`.
+    /// Kept here rather than on the controller because every `.wal` window — the player, each
+    /// auxiliary container, each hosted window — is one of these views, and each answers for itself.
+    private var activeStateObservers: [NSObjectProtocol] = []
     private(set) var isTornDown = false
     private var sceneIsVisible = false
     var canvasSizeDidChange: ((CGSize) -> Void)?
@@ -813,6 +817,23 @@ final class WinampModernMainView: NSView {
     /// Per-object view rects for the targeted-repaint path, dropped with `animatingRectsCache`.
     private var objectRectCache: [ObjectIdentifier: NSRect] = [:]
 
+    /// Repaint when this window gains or loses the keyboard — nothing else asks AppKit to, and the
+    /// active/inactive artwork is the half of a skin that only changes on focus.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        activeStateObservers.forEach(NotificationCenter.default.removeObserver)
+        activeStateObservers.removeAll()
+        guard let window else { return }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            activeStateObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: window, queue: .main) { [weak self] _ in
+                    guard let self, !self.isTornDown else { return }
+                    self.needsDisplay = true
+                })
+        }
+        needsDisplay = true
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
         #if DEBUG
@@ -821,6 +842,10 @@ final class WinampModernMainView: NSView {
         // Only what is being repainted is cleared: a partial repaint (a meter that moved) must not
         // blank the rest of the window it is not going to draw again.
         context.clear(dirtyRect)
+        // Which of `activealpha`/`inactivealpha` every object paints at. Read here rather than
+        // cached on the notification: a window can lose key without either notification reaching us
+        // (the app deactivating, a sheet), and the read is one Boolean.
+        renderer.isWindowActive = window?.isKeyWindow ?? true
         context.saveGState()
         if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
         renderer.draw(in: context, pressed: pressedObject?.stableID,
@@ -2246,6 +2271,8 @@ final class WinampModernMainView: NSView {
         containerWindowToggleRequested = nil
         surfaceToggleRequested = nil
         webNavigationRequested = nil
+        activeStateObservers.forEach(NotificationCenter.default.removeObserver)
+        activeStateObservers.removeAll()
         isTornDown = true
     }
 

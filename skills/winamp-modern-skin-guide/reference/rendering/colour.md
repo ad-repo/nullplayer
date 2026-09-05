@@ -300,3 +300,38 @@ Skins that define themes and ship **no** picker at all (measured: Anexa, micro, 
 Overdrive_2) are covered by the host **Color Themes** submenu in the Winamp Modern menu, which is the
 preferences dialog we do not otherwise have. It is gated on more than one theme.
 
+
+#### `activealpha`/`inactivealpha`, and a `<gradient>` with no direction (B135/B137, 2026-09-05)
+
+Two defects that together made every window title in Nullsoft Winamp 2000 SP4 unreadable. Both are
+engine-wide; that skin is only the first in the corpus to lean on either.
+
+**`activealpha`/`inactivealpha` are the focus-dependent alpha pair.** Wasabi paints an object at the
+first while its window has the keyboard and at the second when it does not; plain `alpha` is the
+value for both. Skins use the pair to keep **two objects in the same slot** and show one at a time —
+`titlebar.xml` stacks `window.titlebar.title.active` (`activealpha="255" inactivealpha="0"`) directly
+on `…title.inactive` (the reverse), each in its own gammagrouped colour, and the song ticker,
+playlist and the whole standard frame's titlebar artwork do the same. Neither attribute was read
+anywhere, so both copies drew at full strength in two different colours, one glyph grid apart.
+
+`WasabiSceneRenderer.alphaFraction(of:active:)` resolves the pair, off `renderer.isWindowActive`,
+which `WinampModernMainView` writes from `isKeyWindow` before each paint. One view class backs the
+player, every auxiliary container and every hosted window, so each answers for its own window; the
+view also observes `didBecomeKey`/`didResignKey`, because nothing else asks AppKit to repaint for a
+focus change. The headless harness has no window and defaults to **active**, the state a skin is
+designed around.
+
+**A `<gradient>` that names no `gradient_x1/y1/x2/y2` runs left to right.** All four defaulted to 0,
+which put `start` on `end`; `.drawsAfterEndLocation` then paints the *last* stop over the whole rect —
+a flat fill. The Windows 2000 titlebar is built out of exactly this shape: an opaque
+`Active Title Bar Color 1` gradient (navy) with `Color 2` (light blue) laid over it at
+`points="0.0=…,0;1.0=…,255"`, a left-to-right alpha ramp. Flat-filled, the second covered the first
+and every titlebar came out one solid light blue — measured, every pixel of the equalizer's 469px
+title strip was `rgb(167,203,242)`. A skin that states *any* of the four still gets exactly what it
+states, so ClassicPro's `cdbox.fg.fademask` (all four, top to bottom) is untouched. Corpus sweep: 13
+layouts change, all in this one skin, plus Anexa's clock hand.
+
+Verified in the running app rather than the dump — `screencapture` and a pixel read: the active
+equalizer title ramps `rgb(32,60,126)` → `rgb(154,188,230)`, the unfocused player's ramps
+`rgb(128,128,128)` → `rgb(187,187,187)`, which is also the proof that the active/inactive pair is
+being chosen per window.
