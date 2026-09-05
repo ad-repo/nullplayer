@@ -45,6 +45,7 @@ final class SkinLoadingOverlay {
         panel.contentView = makeContentView(size: size)
         panel.setFrameOrigin(originCenteringPanel(ofSize: size))
         panel.orderFrontRegardless()
+        panel.invalidateShadow()
         self.panel = panel
 
         // Draw and hand the layer tree (with its animations) to the render server now — the caller
@@ -72,9 +73,10 @@ final class SkinLoadingOverlay {
         container.material = .hudWindow
         container.blendingMode = .behindWindow
         container.state = .active
-        container.wantsLayer = true
-        container.layer?.cornerRadius = 16
-        container.layer?.masksToBounds = true
+        // A `.behindWindow` backdrop is composited by the window server, which honours the view's
+        // mask but not `layer.cornerRadius` — with a layer corner radius the blurred square (and
+        // the window shadow traced from it) still show at the corners over light backgrounds.
+        container.maskImage = Self.roundedMask(cornerRadius: 16)
 
         let bars = NSView(frame: NSRect(origin: .zero, size: size))
         bars.wantsLayer = true
@@ -136,6 +138,20 @@ final class SkinLoadingOverlay {
             bar.add(fade, forKey: "fade")
             layer.addSublayer(bar)
         }
+    }
+
+    /// A resizable rounded-rect mask; `NSVisualEffectView` stretches it from the cap insets, so the
+    /// corners stay circular at any panel size.
+    private static func roundedMask(cornerRadius radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 
     private func originCenteringPanel(ofSize size: NSSize) -> NSPoint {
