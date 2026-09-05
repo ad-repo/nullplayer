@@ -28,8 +28,8 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two defects.** (b) streaming analyzer starvation **fixed and live-confirmed 2026-09-04**; (a) the ~7 fps repaint is **open with its cause established by B118** — the per-frame CPU warp in `WasabiLayerFXMesh.resample`, 24.1% of the main thread on a *release* build against cPro-Bento's 0.0%; the fix is **B119**. Measured, with the disproved hypotheses recorded so they are not re-tried. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
-| B119 | **Cut WMP11-BlueVU's per-frame warp cost — the CPU resample *and* the f16 composite behind it.** **(1) the CPU resample is fixed and live-confirmed 2026-09-04** — `resample` rewritten to a per-row mesh lerp with a `SIMD4` fixed-point blend, measured on a *release* build at **24.1% -> 10.6%** of the main thread, busy **77.9% -> 68.6%**, against a paired cPro-Bento control at 50.7% that reproduces B118's 49.6% baseline. **(2) is open and is now the larger cost**: the display-list replay's f16 image marking, **23.0%** against the control's **5.9%**, unmoved by (1) because (1) did not touch it. Its cause is still **an unproven hypothesis** (CoreGraphics re-converting a brand-new `CGImage` the warp mints every frame) — **Step 0 is proving it**, and one of its three questions is now answered. B117(a) stays open until (2) lands. Note `warpSourceCache` already caches the source mesh-independently and `warpedImageCache` correctly misses every frame — neither is the lever. Shared path (Defix warps too), so it wants a corpus sweep | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
+| B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two separate defects.** (b) the streaming analyzer was starved of buffers: **fixed and live-confirmed 2026-09-04**. (a) the window repaints at ~7 fps: **open**, cause found by B118 (the per-frame layer warp), fix tracked as **B119**. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
+| B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, because it warps two layers on every frame. **(1) the CPU mesh resample is fixed** (2026-09-04, 24.1% -> ~11%). **(2) Core Graphics painting the warped result is open**, ~26% against a control's ~5%. Three candidate causes are now dead by measurement; what is left is drawing less, not drawing cleverer. See [detail](#b119). Shared path (Defix warps too), so a fix wants a corpus sweep | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
 | B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Awaiting the reporter's live confirmation** | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
 | B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
 | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
@@ -204,203 +204,114 @@ The implementation and its automated coverage shipped; that record is in
 ### B117
 
 - [x] **B117(b). Streaming starved the `.wal` analyzer, and the spectrum slammed to the floor several
-      times a second.** Reported 2026-09-04 as WMP11-BlueVU's spectrum being slow/choppy.
-      **Fixed and live-confirmed 2026-09-04** (*"it looks much better now"*).
+      times a second.** Reported 2026-09-04 as WMP11-BlueVU's spectrum being choppy. **Fixed and
+      live-confirmed 2026-09-04** (*"it looks much better now"*).
 
-      `StreamingAudioPlayer.processAudioBuffer` delivered full-stereo PCM through
-      `DispatchQueue.main.async`, so the analyzer's 2048-point FFT ran on **main** — and the
-      `pendingFullStereoPcmUpdate` coalescing flag was cleared only *inside* that dispatched block.
-      While main was stalled every buffer the audio thread produced was therefore **discarded rather
-      than queued**, and exactly one got through each time main came back. Past
-      `WinampModernLevelMeter.silenceTimeout` (150 ms) `WinampModernAnalyzerTap.swift:166` answers
-      all-zero bands, so band 3 read `0.820 0.000 1.000 1.000 1.000 0.000 0.774 0.000 …` — full scale
-      to floor, several times a second. `AudioEngine` posts the same notification straight from its
-      tap callback with no coalescer, so **local playback was merely late, not starved**, which is the
-      whole of the local/stream asymmetry the reporter noticed.
-
-      Fixed by posting from the audio thread, matching `AudioEngine`, and deleting the coalescer. Both
-      consumers already expect the posting thread: `WinampModernAnalyzerTap.receive` is a lock, three
-      stores and an unlock with the FFT on its own queue, and `CavaRenderModel` hops to main itself.
+      `StreamingAudioPlayer.processAudioBuffer` delivered PCM through `DispatchQueue.main.async`, so
+      the 2048-point FFT ran on **main** — and the coalescing flag was cleared only *inside* the
+      dispatched block, so while main was stalled every buffer was **discarded rather than queued**.
+      Past the 150 ms silence timeout the tap answers all-zero bands, hence full-scale-to-floor
+      several times a second. `AudioEngine` posts straight from its tap with no coalescer, which is
+      the whole of the local-vs-stream asymmetry the reporter saw. Fixed by posting from the audio
+      thread and deleting the coalescer; both consumers already expect that thread.
 
       | | before | after |
       |---|---|---|
-      | arrival gap | median 318 ms, p90 1045, max 5981 | median **106 ms** (min/p90/max all 106) |
+      | arrival gap | median 318 ms, p90 1045, max 5981 | median **106 ms** |
       | `WM-VIS-GAP silence` | 480 | **0** |
-      | draws reading zero | 481/621 (58%) | **9/900 (1.0%)**, matching local's 2.3% baseline |
+      | draws reading zero | 481/621 (58%) | **9/900 (1.0%)**, matching local's 2.3% |
 
-      Thread ids confirm the hop is gone: arrivals now land on 10 rotating audio threads with drawing
-      alone on its own, where before all four probe kinds shared one id.
+      **Dead ends — do not re-try.** The `frameCount >= 2048` short-buffer theory (every streaming
+      arrival logged `frames=2048`), and the `offset = max(0, available - fftSize)` staleness lead in
+      [`rendering/vis.md`](skills/winamp-modern-skin-guide/reference/rendering/vis.md), which is a
+      latency defect and not this one.
 
-      **Two hypotheses died here — do not re-try them.** The `frameCount >= 2048` short-buffer theory
-      is dead (every streaming arrival logged `frames=2048`), and so is the
-      `offset = max(0, available - fftSize)` staleness lead in
-      [`rendering/vis.md`](skills/winamp-modern-skin-guide/reference/rendering/vis.md) — that is a
-      latency defect, not this one. `vis.md`'s 10 Hz cadence section was quoted as the cause by two
-      sessions without being measured; it now carries the re-taken numbers and a warning.
+      **Left behind for whoever touches it next.** `processAudioBuffer` writes the shared
+      `fullStereoPcmLeft/Right` before copying out and the coalescer used to mask that seam; the
+      strict 106 ms spacing says the calls are sequential, so this is a note, not a defect. And the
+      delivery thread of `.audioStereoPCMFullDataUpdated` is undocumented where it is declared while
+      `StreamingAudioPlayer` hops to main in **six** places — `pendingSpectrumUpdate` and
+      `pendingPcmUpdate` feed the Classic spectrum and PeppyMeter through the identical block and
+      have not been measured. Same seam as `780541ea`, `3b9721af`, `bc4253eb`.
 
-      **Note for whoever touches that block next:** `processAudioBuffer` writes the shared
-      `fullStereoPcmLeft/Right` instance buffers before copying out, and the coalescer used to mask
-      that seam. The strict 106 ms arrival spacing says the calls are sequential — thread migration,
-      not concurrency — so this is a note, not a known defect.
+- [ ] **B117(a). The window repaints at ~7 fps, and the marquee with it.** Measured, not disputed:
+      the frame interval clusters at 120–145 ms against an expected 33 ms, and `WM-VIS-STALL` is
+      median 131 / p90 300 after B117(b). cPro-Bento on the same build is median 60 / p90 68, so it
+      is skin-specific. The marquee shares the repaint, which is why the symptom is not audio-shaped.
 
-      **Underlying, and why this class recurs:** the delivery thread of
-      `.audioStereoPCMFullDataUpdated` and its siblings is undocumented at `AudioEngine.swift:15-30`
-      and in `audio-system/SKILL.md` (both document `userInfo` shape only), while
-      `WinampModernAnalyzerTap` asserts *"the posting thread — the real-time audio tap"* as fact, and
-      `StreamingAudioPlayer` hops to main in **six** places — four of them the same coalesce-and-drop
-      block. Because the coalescer drops rather than queues, the failure presents as *missing data*
-      and gets filed against the renderer. Same seam as `780541ea`, `3b9721af`, `bc4253eb`. Worth
-      stating the contract where the notifications are declared and auditing the other five hops;
-      `pendingSpectrumUpdate` and `pendingPcmUpdate` feed the Classic spectrum and PeppyMeter through
-      the identical block and have **not** been measured.
+      **The cause is found and the fix is B119** — the per-frame layer warp in
+      `WasabiLayerFXMesh.resample` and the paint that follows it. This item closes when B119 does;
+      it holds no separate work.
 
-- [ ] **B117(a). The ~7 fps repaint, and the low-fps marquee with it. Cause found (B118), not yet fixed.**
-      The frame
-      interval is directly measured and is not in dispute: `elapsed` clusters at 120–145 ms against an
-      expected 33 ms, and after B117(b) `WM-VIS-STALL` is still median 131 ms / p90 300 / max 6395.
-      cPro-Bento on the same build is median 60 / p90 68 / max 122, so this is skin-specific. The
-      marquee shares the repaint, which is why the symptom is not audio-shaped.
-
-      **Disproved — do not re-file.** A first pass blamed scene-memo thrash from the twelve
-      `animatedlayer#beatleft/beatright` in `WMP11-BlueVU/xml/player-normal-group.xml` that write
-      `frame` ~100x/s. That claim was manufactured by pairing a `writes=…/writers=12` line with a
-      `resolves:` line from a **different** `MUTATION_TRACE` window (the `scene=312` window is
-      `writers=41`). Partitioning all 169 windows: **148 of 150 `writers=12` windows report
-      `resolves=0`**, and the few scene resolves that occur follow an explicit
-      `drop(updatePlaybackState())` hand-drop, not the writes. `frame` is already scene-neutral —
-      `71ffd874` put it in `WasabiObjectGraph.isSceneNeutral` (`WasabiObjectGraph.swift:282`) and the
-      path is intact — so the scene walk is not the bottleneck and changing invalidation granularity
-      would optimize something already costing nothing. `RESIZE_TRACE` is clean (`noop=true` count 0),
-      so it is not B52's resize storm either.
-
-      **Method note for the next agent:** `MUTATION_TRACE` prints its `writes=`/`resolves=` summary
-      and its top-writer list as separate lines. Do not `grep` them independently and pair the
-      results — read whole windows.
-
-      **The cause, from B118's release `sample` (2026-09-04):** the per-frame CPU warp in
-      `WasabiLayerFXMesh.resample` (`WasabiLayerFX.swift:88-133`). It is **24.1%** of WMP11-BlueVU's
-      main thread and **0.0%** of cPro-Bento's on the same build and source — the whole of the
-      skin-specific 77.9% vs 49.6% busy gap. The measurement is release, so it is not a debug
-      artifact, and it is post-B116, so it is not the duplicated frame subtree either. It is also not
-      text: `drawText` is 1.3%. What remains open here is the **fix**, tracked as B119.
+      **Dead ends — do not re-file.** Scene-memo thrash from the twelve
+      `animatedlayer#beatleft/beatright` that write `frame` ~100x/s: `frame` is already scene-neutral
+      (`WasabiObjectGraph.isSceneNeutral`), and partitioning all 169 `MUTATION_TRACE` windows gives
+      **148 of 150 `writers=12` windows at `resolves=0`**. That claim came from pairing a `writes=`
+      line with a `resolves:` line out of a **different** window — the trace prints them separately,
+      so read whole windows rather than grepping the two apart. `RESIZE_TRACE` is clean, so it is not
+      B52's resize storm either.
 
 ### B119
 
-- [ ] **B119. Cut WMP11-BlueVU's per-frame warp cost — the CPU resample *and* the f16 composite
-      behind it.** **Half done: (1) the CPU resample is fixed and live-confirmed 2026-09-04; (2) the
-      f16 composite is open and is now the larger of the two.** **Not an attribution item** —
-      **B118 closed 2026-09-04** and located the cost from a release `sample`. Do not re-run `WINAMP_MODERN_DRAW_PROFILE` to find it; it is found. Read
-      [`../skills/winamp-modern-skin-guide/SKILL.md`](skills/winamp-modern-skin-guide/SKILL.md) and
-      [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) → *Profiling the running
-      app* before starting.
+- [ ] **B119. WMP11-BlueVU's per-frame warp costs three quarters of the main thread.** The skin
+      warps two layers — 300x300 and 180x180 — on every frame. Half the cost was ours and is fixed;
+      half is Core Graphics painting the result and is open.
 
-      **What B118 measured.** Release build `563085fb` (B116 and B117(b) both in), a local file
-      playing, two 10 s `sample` windows, hands off the UI, cPro-Bento as the control:
+      **The numbers** (release build, local file playing, hands off, 10 s `sample` each,
+      cPro-Bento as the control on the same build minutes apart):
 
-      | | WMP11-BlueVU (B118) | **WMP11 after (1)** | cPro-Bento (B118) | cPro-Bento (paired) |
-      |---|---|---|---|---|
-      | main-thread **busy** | **77.9%** | **68.6%** | **49.6%** | 50.7% |
-      | `drawWarped` / `WasabiLayerFXMesh.resample` | **25.0% / 24.1%** | **11.2% / 10.6%** | 0.1% / 0.0% | 0.0% / 0.0% |
-      | `CGDisplayListDrawInContextDelegate` (replay) | **21.3%** | **23.0%** | 4.4% | 5.9% |
-      | `RGBAf16_*` (image marking, inside that replay) | **23.7%** | 13.4% | 3.3% | 2.6% |
-      | `drawText` | 1.3% | 1.1% | — | 3.4% |
+      | | WMP11 before | WMP11 after (1) | control |
+      |---|---|---|---|
+      | main-thread **busy** | 77.9% | 68.6% | ~49% |
+      | `resample` (our CPU warp) | 24.1% | **10.6%** | 0.0% |
+      | `CGDisplayListDrawInContextDelegate` (the paint) | 21.3% | **23.0%** | ~5% |
 
-      The last column is a **paired** control taken on the same build minutes after the "after"
-      column, 2026-09-04. It reproduces B118's control to about a point, which is what licenses
-      reading the two B118 columns and the two new ones against each other at all.
+      **(1) The CPU mesh resample — FIXED 2026-09-04.** It interpolated the mesh in `Double` per
+      destination pixel; it now does one lerp per row and blends four channels as one `SIMD4` in
+      fixed point. 2.05 -> 0.73 ms/frame at 264x264. The doc comment on `resample` is the canonical
+      account. Differs from the old form by at most 1 on 4% of channels, which is what the corpus
+      sweep sees.
 
-      **Do not read the per-subtree deltas as a budget.** (1)'s 13.5-point drop and (2)'s 17.1-point
-      excess over the control sum to more than the 17.9-point busy gap, because the control does
-      drawing WMP11 does not (`drawText` 3.4% against 1.1%).
+      **(2) Core Graphics painting the warped image — OPEN.** `draw(_:)` records a **display list**,
+      and the image is marked into the backing store later, under
+      `CA::Transaction::commit -> CGDisplayListDrawInContextDelegate -> ripc_DrawImage -> ripl_Mark`.
+      The warp mints a new `CGImage` every frame, so nothing about it can be cached between frames.
 
-      **There are two costs, not one, and they are disjoint subtrees.**
+      **Ruled out — do not re-try these.**
 
-      **(1) Our CPU warp, 24.1% — FIXED 2026-09-04, now 10.6%.** As filed,
-      `WasabiLayerFXMesh.resample` interpolated the mesh in `Double` for every destination pixel and
-      then made four `accumulate` calls, each doing four `Double` multiply-accumulates out of a
-      `UInt8` source — a scalar `w x h x 16` inner loop on the main thread, capped only by
-      `maximumWarpExtent` (1024). It now interpolates the mesh **once per destination row**, walks
-      both axes incrementally (no divide, no trapping float->`Int` in the inner loop), and blends the
-      four channels as one `SIMD4` in 10-bit fixed point. Measured in isolation at 264x264, Defix's
-      needle size: **2.05 -> 0.73 ms/frame**; the intermediate steps are recorded in the doc comment
-      on `resample`, which is the canonical account. It differs from the `Double` form by at most
-      **1** on **4%** of channels — the corpus sweep sees exactly that, `maxdelta=1` on the four FX
-      skins (BLAKK, two EPS eq layouts, jvc.tape) and nothing else beyond Anexa's known
-      nondeterministic clock.
+      - ~~An f16 backing store (EDR / deep colour).~~ `WINAMP_MODERN_DRAW_FORMAT=1` reports
+        `layerFormat=RGBA8`, `layerEDR=false`, `edrMax=1.0`. The `RGBAf16_*` frames are Core
+        Graphics' resampler, not the destination.
+      - ~~The raster being the wrong size or format.~~ Tried 2026-09-04 and **measured worse**:
+        emitting the warp at device resolution in the destination's colour space moved the paint
+        **not at all** (23.0% -> 26.4%) and added ~5 points to `drawWarped`. Reverted. An isolated
+        benchmark said this should have been a 9x win (2.07 ms -> 0.215 ms per draw), and it was not,
+        which means a bitmap context in the screen's colour space is **not** a model of what the
+        replay composites into. Do not trust that benchmark shape again.
+      - ~~Unrelated compositing sharing the replay.~~ The control warps nothing and paints at ~5%;
+        WMP11 warps and paints at ~26%, same build, minutes apart. The cost tracks the warped layer.
+      - ~~Widening `warpedImageCache`.~~ It is keyed on the mesh on purpose. A 24% cost means the
+        layer moves a vertex nearly every frame, so every miss is genuine. `warpSourceCache` already
+        caches the source mesh-independently; neither is the lever.
 
-      **(2) CoreGraphics compositing the *result*, 21.3% against the control's 4.4%.** This one is
-      **not** inside our draw call — its ancestry is
-      `CA::Transaction::commit -> CGDisplayListDrawInContextDelegate -> ripc_DrawImage ->
-      RIPLayerBltImage -> ripl_Mark -> RGBAf16_image -> RGBAf16_sample_RGBAf_inner`, i.e. the display
-      list being replayed into an **f16** backing store after `draw(_:)` has returned. The leading
-      hypothesis is that `Self.image(fromPixels:width:height:)` mints a **brand-new `CGImage` every
-      frame**, so CoreGraphics can cache nothing about it and redoes the 8-bit -> f16 conversion of the
-      whole warped raster on every replay. `image(fromPixels:)` itself samples at **0.0%**, which fits:
-      `makeImage` is lazy and the work lands at composite time, which is why B118's first reading
-      mis-filed this as the *source* fetch.
+      **What is left.** The paint is expensive because of how many pixels are painted, how often —
+      not because of their shape. So: **repaint the FX layers fewer times a second** (check the
+      animation clock's rate against the rate the meter actually moves — `WINAMP_MODERN_RENDER_FX_SPIN`
+      measures the skin's own cadence), or **paint less of them** (check whether the warp extent is
+      larger than what is visible; both costs scale with `w x h`). Neither has been tried.
 
-      **Two things that look like levers and are not.**
+      **Constraints.** `drawWarped` is shared — Defix's reels and needles take the identical path —
+      so a fix wants a corpus render sweep and `RENDER_TIME`/`RENDER_FX` on Defix as a second
+      control. Classic and Original behavior must not move.
 
-      - **`warpSourcePixels` already caches mesh-independently.** `WasabiRendererLayerFX.swift:52-74`
-        keys `warpSourceCache` on `WarpSourceKey` (image identity + width + height) *only*, so the
-        source raster is fetched once per layer per size and the mesh moving does not invalidate it.
-        An earlier draft of this item proposed adding that cache; it exists. The f16 cost is
-        item (2), downstream, not this.
-      - **Widening `warpedImageCache` is wrong.** `drawWarped` keys it on `WarpSourceKey` **and**
-        mesh equality precisely so an unrelated repaint does not re-warp a still layer. A 24% cost
-        means WMP11's FX layer moves a vertex on essentially every frame, so every frame is a genuine
-        miss, correctly.
+      **How to confirm.** Release build, WMP11-BlueVU against cPro-Bento, local file playing, hands
+      off, 10 s `sample` each. Parse per
+      [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) — cut the thread block at
+      the next `Thread_<id>:`, sum leaves for busy/idle, take the **outermost** occurrence for a
+      subtree. Success is WMP11's busy fraction converging on the control's ~50%, and it closes
+      **B117(a)** with it. The table above is the baseline of record; the raw `sample` files were
+      session scratch and are not preserved.
 
-      **Step 0 — prove (2)'s cause before optimizing against it.** The **21.3%** is measured and
-      solid; the *reason* for it is an **unproven hypothesis inferred from the call ancestry**, and
-      this item has already mis-read this same subtree once. Do not write a fix against it until one
-      of these settles it:
-
-      - Check the window's backing store. If it is f16 for EDR/deep-colour reasons, the conversion is
-        structural, and the question is whether the warp can emit that format directly rather than
-        whether the `CGImage` is fresh.
-      - Test the freshness claim directly: keep the warped pixels in a **reused** buffer/context
-        across frames while changing nothing else, and re-`sample`. If `RGBAf16_*` does not move, the
-        per-frame `CGImage` was not the cause and the hypothesis is dead.
-      - ~~Confirm the subtree is the warped layer at all, not other image compositing that happens
-        to share the replay.~~ **Answered 2026-09-04** by the paired control above: cPro-Bento warps
-        nothing and replays at 5.9%, WMP11 warps and replays at 23.0%, on the same build minutes
-        apart. The cost tracks the warped layer, so ambient compositing is ruled out. This does
-        **not** discriminate between the remaining two causes — a fresh `CGImage` per frame versus a
-        structurally f16 backing store — and those are still open.
-
-      If (2)'s cause turns out to be structural, **(1) alone is still worth doing** — 24.1% against a
-      control's 0.0% stands on its own.
-
-      **Candidate fixes:**
-
-      - ~~**Take the resample off `Double`.**~~ **Done 2026-09-04**, and it went further than the
-        `Float` this line proposed: `Float` alone measured 1.53 ms against the `Double` form's 2.05,
-        fixed-point channels 1.22, and the shipped `SIMD4` fixed-point 0.73. Addressed (1).
-      - **Stop minting a fresh `CGImage` per frame** — *only if Step 0 confirms that is the cause*.
-        Warp into a reused buffer and hand CoreGraphics something it can composite cheaply — a reused `CGLayer`/`IOSurface`-backed context, or a
-        raster already in the destination's format so `RGBAf16_sample_RGBAf_inner` has nothing to
-        convert. Addresses (2), which is nearly as large as (1) and has not been attempted at all.
-      - **Bound the destination.** Check whether WMP11's FX layer is warped at a larger extent than
-        it is drawn; both costs scale with `w x h`.
-
-      **Constraints.** `drawWarped` is shared renderer code — Defix's cassette reels and needles go
-      through the identical path — so any change wants a corpus render sweep, not just these two
-      skins, and `RENDER_TIME`/`RENDER_FX` on Defix as a second control. Classic and Original
-      behavior must not move.
-
-      **How to confirm.** Same shape B118 used: release build, WMP11-BlueVU against cPro-Bento, local
-      file, hands off the UI, 10 s `sample` each. Report the busy split plus the `drawWarped`,
-      `resample` and `CGDisplayListDrawInContextDelegate` shares against the table above. Parse the
-      output per [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) — cut the thread
-      block at the next `Thread_<id>:`, sum leaves for busy/idle and outermost occurrences for a
-      subtree. Success is WMP11's busy fraction converging on the control's ~50%, and it should close
-      **B117(a)** with it. B118's raw `sample` files were session scratch and are **not** preserved;
-      the table above is the baseline of record.
-
-      Also worth a look only if a fresh profile points there: `sceneNodes()` allocates two full node
-      arrays per call on the **cache-hit** path (`cache.nodes.map(withRefreshedBitmapID)` then
-      `withRefreshedAlpha`), which the resolve counter cannot see.
 
 ### B110
 
