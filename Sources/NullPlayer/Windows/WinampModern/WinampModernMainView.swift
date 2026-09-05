@@ -815,6 +815,9 @@ final class WinampModernMainView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
+        #if DEBUG
+        Self.reportDrawFormatOnce(context: context, view: self)
+        #endif
         // Only what is being repainted is cleared: a partial repaint (a meter that moved) must not
         // blank the rest of the window it is not going to draw again.
         context.clear(dirtyRect)
@@ -824,6 +827,48 @@ final class WinampModernMainView: NSView {
                       hovered: hoveredObject?.stableID)
         context.restoreGState()
     }
+
+    #if DEBUG
+    /// `WINAMP_MODERN_DRAW_FORMAT=1` — the pixel format the window actually composites in, printed
+    /// once per view on its first `draw(_:)`.
+    ///
+    /// Written for B119(2), where `RGBAf16_*` frames in the replay looked like a deep-colour backing
+    /// store. They are not: this reports `layerFormat=RGBA8`, `layerEDR=false`, `edrMax=1.0`, so the
+    /// f16 is Core Graphics' *resampler*, not the destination.
+    ///
+    /// The other half of what it prints is the more useful half. `bpc=0` — the context `draw(_:)` is
+    /// handed is a **display list**, not a bitmap. Nothing the renderer records is scaled or
+    /// colour-matched while we are inside `draw(_:)`; that happens when Core Animation replays the
+    /// list, which is why `context.ctm` is 1.0 even at 100% on a Retina display, and why per-frame
+    /// image costs land after our own frame timing says the frame is over.
+    private static var drawFormatReported: Set<ObjectIdentifier> = []
+    private static let drawFormatProbe =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAW_FORMAT"] == "1"
+
+    private static func reportDrawFormatOnce(context: CGContext, view: WinampModernMainView) {
+        guard drawFormatProbe, drawFormatReported.insert(ObjectIdentifier(view)).inserted else { return }
+        let layer = view.layer
+        let screen = view.window?.screen
+        let name = view.window?.title ?? "<no window>"
+        NSLog("""
+              [draw/format] window=\(name) \
+              bpc=\(context.bitsPerComponent) bpp=\(context.bitsPerPixel) \
+              bitmapInfo=0x\(String(context.bitmapInfo.rawValue, radix: 16)) \
+              space=\(context.colorSpace?.name.map { $0 as String } ?? "nil") \
+              layerBacked=\(view.wantsLayer) layer=\(layer.map { String(describing: type(of: $0)) } ?? "nil") \
+              layerFormat=\(layer?.contentsFormat.rawValue ?? "nil") \
+              layerEDR=\(layer?.wantsExtendedDynamicRangeContent ?? false) \
+              depthLimit=\(view.window?.depthLimit.rawValue ?? -1) \
+              dynamicDepth=\(view.window?.hasDynamicDepthLimit ?? false) \
+              deepColor=\(view.window?.canRepresent(.p3) ?? false) \
+              edrMax=\(screen?.maximumExtendedDynamicRangeColorComponentValue ?? -1) \
+              edrPotential=\(screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? -1) \
+              windowSpace=\(view.window?.colorSpace?.localizedName ?? "nil") \
+              screenSpace=\(screen?.colorSpace?.localizedName ?? "nil") \
+              backingScale=\(view.window?.backingScaleFactor ?? 0)
+              """)
+    }
+    #endif
 
     /// `WINAMP_MODERN_SURFACE_TRACE=1` — the hosted-surface reconcile, in the running app. The
     /// headless harness installs no component host, so no surface is ever made there and this whole
