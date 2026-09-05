@@ -501,6 +501,35 @@ pressed id as the resting `image=` on one of a button's two alpha-gated copies.
   here. Formamp declares 20 of the `wasabi.button.*` ids and corneramp_redux most of the rest, and
   both keep every piece they ship.
 
+##### A standard frame whose artwork stayed in Winamp (B121, 2026-09-04)
+
+The fourth instance of the same exception, one level up from the buttons: not a control inside the
+title bar but **the title bar, the plate and the border themselves**. Winamp kept `wasabi.frame.*`,
+`wasabi.titlebar.*` and `wasabi.panel.*` in its base skin, so a skin written against them declares no
+window artwork at all and its windows drew as bare content on nothing — no border, no backing, and any
+label the skin painted in a light colour invisible with it (`Winamp 3.0 Default`'s equalizer band
+captions were the reported case, along with "missing window borders and backgrounds"). B95 had already
+brought such a frame's `content=` group and title text into the graph; nothing ever painted the frame.
+
+`WasabiStandardFrames.hostedAttribute` marks the instance at initialization, under the **same
+`!claimedBySkin` gate** the content instantiation uses, and the renderer paints plate, strip and border
+before the type chain so the title and client group draw over it. Three properties matter:
+
+- **Contained by the groupdef, not by the tag.** A skin that supplies `wasabi.standardframe.*` paints
+  its own frame and is never marked. Corpus-wide only **three** skins ship none — `Winamp 3.0 Default`,
+  `jvc.tape.v0.5`, `Overdrive_2` — plus `TomK`, which defines three flavours and instantiates a fourth.
+  Those four are the entire blast radius, and the render sweep for the change moved exactly their 10
+  images out of 590 (the 11th, Anexa's `main-shade`, is the wall-clock face that differs between two
+  runs of one build).
+- **Painted from `WinampModernSurfaceStyle`, never a fixed grey.** The strip has to read on a skin of
+  either polarity, and this is already the palette NullPlayer's own windows beside the skin use — so a
+  hosted frame and the playlist window next to it are one surface. Same argument as the chrome buttons'
+  single-colour line work.
+- **It is chrome, not a reconstruction.** No attempt is made to imitate the Winamp3 frame's bevel or
+  its hatched title rules; that is Nullsoft's artwork. When a report compares a skin against its own
+  `screenshot.png`, only the *content* half of that picture is reproducible from the archive — see
+  [skins/winamp-3-0-default.md](../skins/winamp-3-0-default.md).
+
 ##### `<Wasabi:TitleBox>` is a body, not just a border
 
 A title box **names its body by group id**, exactly as a standard frame does:

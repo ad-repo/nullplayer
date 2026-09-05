@@ -71,6 +71,18 @@ extension WasabiStandardFrames {
         flavour(forTypeName: object.typeName) != nil
     }
 
+    /// Set on a `<Wasabi:StandardFrame:*>` instance whose groupdef the skin never supplied, so the
+    /// renderer knows to paint the chrome Winamp's own frame would have drawn.
+    static let hostedAttribute = "nullplayer.standardframe"
+
+    static func isHostedFrame(_ object: WasabiObject) -> Bool {
+        isStandardFrame(object) && object.attributes[hostedAttribute] == "1"
+    }
+
+    /// The edge drawn around a frame we painted ourselves. One point, inside `contentInset`'s
+    /// margin, so it never moves an object the skin placed.
+    static let borderWidth = 1.0
+
     /// The `<group>` node for this frame's client area, or `nil` when the frame names no content.
     ///
     /// A standard frame **names its body by group id** rather than nesting it, and in real Winamp the

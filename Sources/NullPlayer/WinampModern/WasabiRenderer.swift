@@ -770,6 +770,7 @@ final class WasabiSceneRenderer {
     }
 
     var paletteCache: WasabiPalette?
+    var surfaceStyleCache: WinampModernSurfaceStyle?
     /// Rasterized sources for the Layer FX warp, keyed by image + size.
     var warpSourceCache: [WarpSourceKey: (source: CGImage, pixels: [UInt8])] = [:]
     /// The last warped raster per FX layer, with the mesh it was built from.
@@ -2313,6 +2314,13 @@ final class WasabiSceneRenderer {
             }
         }
 
+        // The window chrome Winamp's own standard frame drew. Before the type chain because a frame
+        // is not one of the primitives, and before its children — the title strip and the client
+        // group both draw on top of this.
+        if WasabiStandardFrames.isHostedFrame(object) {
+            drawHostedStandardFrame(frame: node.frame, context: context)
+        }
+
         // A Wasabi standard form widget's own chrome, under whatever the primitive it became draws
         // on top of it: an edit's box, a slider's track, the whole of a check box or a drop-down.
         // Before the type chain rather than inside it, because two of the five (`text`, `edit`) are
@@ -3103,6 +3111,43 @@ final class WasabiSceneRenderer {
             // Half-pixel inset so a 1px stroke lands *inside* the rect rather than straddling its edge.
             context.stroke(frame.insetBy(dx: 0.5, dy: 0.5))
         }
+        context.restoreGState()
+    }
+
+    /// The chrome for a `<Wasabi:StandardFrame:*>` the skin left to Winamp: the plate, the title
+    /// strip and the border.
+    ///
+    /// Winamp kept `wasabi.frame.*`, `wasabi.titlebar.*` and `wasabi.panel.*` in its base skin, so a
+    /// skin written against them ships no artwork at all for its own window edges — `Winamp 3.0
+    /// Default`, Nullsoft's Winamp3 base skin, is three such windows and every one of them drew as
+    /// bare content on nothing. Painted rather than invented as bitmaps, and painted in
+    /// `WinampModernSurfaceStyle` rather than in a fixed grey, for the same reason the chrome buttons
+    /// are line work in one colour: the strip has to read on a skin of either polarity, and this is
+    /// the palette NullPlayer's own windows beside the skin already use.
+    private func drawHostedStandardFrame(frame: CGRect, context: CGContext) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        let style = surfaceStyle
+        let border = CGFloat(WasabiStandardFrames.borderWidth)
+        let titleHeight = min(CGFloat(WasabiStandardFrames.titleHeight), frame.height)
+        context.saveGState()
+        context.setShouldAntialias(false)
+        context.setFillColor(style.background.cgColor)
+        context.fill(frame)
+        if titleHeight > 0 {
+            context.setFillColor(style.barBackground.cgColor)
+            context.fill(CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: titleHeight))
+        }
+        context.setFillColor(style.border.cgColor)
+        // The strip's own underline, and then the window edge — both as fills, so a 1pt line lands on
+        // a whole pixel instead of straddling two the way a stroked path does.
+        if titleHeight > 0, titleHeight < frame.height {
+            context.fill(CGRect(x: frame.minX, y: frame.minY + titleHeight - border,
+                                width: frame.width, height: border))
+        }
+        context.fill(CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: border))
+        context.fill(CGRect(x: frame.minX, y: frame.maxY - border, width: frame.width, height: border))
+        context.fill(CGRect(x: frame.minX, y: frame.minY, width: border, height: frame.height))
+        context.fill(CGRect(x: frame.maxX - border, y: frame.minY, width: border, height: frame.height))
         context.restoreGState()
     }
 

@@ -18,6 +18,7 @@ extension WasabiSceneRenderer {
     func themeDidChange() {
         resources.invalidateTheme()
         paletteCache = nil
+        surfaceStyleCache = nil
         warpSourceCache.removeAll()
         warpedImageCache.removeAll()
         clearPrescaledCache()
@@ -37,6 +38,16 @@ extension WasabiSceneRenderer {
         }
         paletteCache = palette
         return palette
+    }
+
+    /// The chrome those same colours widen into — what NullPlayer paints where a skin expected
+    /// Winamp's own artwork. Identical to the style the app's fallback windows use, so a hosted
+    /// standard frame and the playlist window beside it are the same surface.
+    var surfaceStyle: WinampModernSurfaceStyle {
+        if let surfaceStyleCache { return surfaceStyleCache }
+        let style = WinampModernSurfaceStyle(palette: palette)
+        surfaceStyleCache = style
+        return style
     }
 
     /// A line-per-link account of how `palette` resolved, for the `RENDER_PALETTE` probe.

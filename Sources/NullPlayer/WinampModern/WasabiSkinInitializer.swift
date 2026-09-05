@@ -1574,13 +1574,25 @@ final class WasabiSkinInitializer {
                                   documentOrder: documentOrder, enclosingOrder: nodeOrder)
                 WasabiFrame.applyLayout(to: object)
             }
+            // A `<Wasabi:StandardFrame:*>` the skin never defined: everything Winamp's own frame
+            // supplied has to come from us.
+            if WasabiStandardFrames.isStandardFrame(object), !claimedBySkin {
+                // The frame's own chrome — the plate, the title strip, the border — is artwork
+                // Winamp kept in its base skin, so a skin that expects Winamp's frame ships none of
+                // it and the window came up as an unbordered, unbacked hole with the content group
+                // floating in it (the user's report on `Winamp 3.0 Default`, 2026-09-04: "missing
+                // window borders and backgrounds"). Marked here rather than drawn here because the
+                // colours are the renderer's palette, and claimed the same way the buttons are:
+                // a skin that supplies the groupdef paints its own and never gets this.
+                _ = object.setAttribute(WasabiStandardFrames.hostedAttribute, value: "1")
+            }
             // A `<Wasabi:StandardFrame:*>` the skin never defined. Winamp's own frame instantiates
             // the `content=` group into its client area from `standardframe.maki`, and a skin that
             // expects Winamp's frame ships neither the groupdef nor that script — so the group with
             // all of the skin's artwork in it stayed out of the graph. `Winamp 3.0 Default` is every
             // full-size layout of one such frame, which is why it rendered a blank white 275x116
             // while its windowshade layouts (plain groups) drew fine (B95).
-            if WasabiStandardFrames.isStandardFrame(object), !claimedBySkin,
+            if WasabiStandardFrames.isHostedFrame(object),
                let content = WasabiStandardFrames.contentGroupNode(for: object, location: node.location) {
                 // The title strip first, so the client area draws over it rather than under it, and
                 // because `window.titlebar.title` is the one object such a skin addresses by name:

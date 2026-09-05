@@ -148,6 +148,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Window restores at the wrong size or one skin inherits another's frame | [reference/rendering.md](reference/rendering.md) → *A .wal window's size is still the skin's* |
 | Toggle works but never looks active | [reference/rendering.md](reference/rendering.md) → *onActivate* |
 | Playlist/EQ/library lamp on a skin button is inverted or counts clicks | [reference/rendering.md](reference/rendering.md) → *A `TOGGLE` button's lamp* |
+| A window has no border or background, or a skin's own labels are invisible against it | [reference/rendering.md](reference/rendering.md) → *A standard frame whose artwork stayed in Winamp* |
 | Settings window is an empty slab, or a `<Wasabi:TitleBox>` shows neither label nor body | [reference/rendering.md](reference/rendering.md) → *`<Wasabi:TitleBox>` is a body, not just a border* |
 | Settings page has boxes but no switches, labels, sliders or drop-downs | [reference/rendering.md](reference/rendering.md) → *The Wasabi standard form widgets are the primitives they wrap* |
 | A window the skin closes at startup is missing from every probe | [reference/components.md](reference/components.md) → *`visible` on a container answers two questions* |
