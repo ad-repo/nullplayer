@@ -2,6 +2,49 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B100 — the pointer's own handlers were not callable — closed 2026-09-04
+
+| B100 | **`onLeaveArea` is unimplemented.** `xui/CentroSUI/_v2/CentroSUI.xml` binds it (×1). The paired `onEnterArea` decides what a hover reveals, so the leave half is what puts it away again — expect something in the SUI to stay lit after the pointer goes | 1 skin measured (cPro2) | S | Measured |
+
+### B100
+
+- [x] **B100. cPro2's Now Playing selector picked nothing. Fixed and live-confirmed 2026-09-04.**
+
+      Reported as *"the album art window area menu does not work — not the art, file info,
+      visualizations"*. `WINAMP_MODERN_CALL_TRACE=1` settled it on the first retest, in three lines:
+
+      ```
+      CALL-TRACE popatxy(760,297) -> 0
+      CALL-TRACE ismouseoverrect() on button#comp.goto -> 0
+      CALL-TRACE ismouseoverrect() on Wasabi:AlbumArt#centro.playlist.wasabicover -> 0
+                                          <- nothing. the handler is over.
+      ```
+
+      The next statement in `CentroSUI2.m`'s `but_miniGoto.onLeftClick` is `wasabiCover.onLeaveArea()`.
+
+      **The entry was filed against the wrong half of the problem.** The *events* were never missing —
+      `WinampModernMainView` has dispatched `onenterarea`/`onleavearea` on hover throughout, which is
+      why nothing in the SUI was ever seen staying lit. What was missing is that a script may **call**
+      them, and neither name was in `dispatchableEventArity`. That is worse than an unimplemented
+      method: a missing *signature* fails closed inside the interpreter, before `invoke` and therefore
+      before any trace, so the log shows neither the call nor an `UNSUPPORTED` line — only a sequence
+      that stops. Both names are now in the table with arity **0**, measured off 57 handler
+      declarations in the ClassicPro engine and 193 across the 69-skin corpus, every one `()`, plus
+      the engine's six explicit calls.
+
+      **One missing arity, three broken menu entries, two different failure points**, which is why the
+      report named all of them:
+
+      - **Album Art is command id `0`.** `popAtXY` answers `0`, the handler takes its
+        `if (result <= 0 && …) wasabiCover.onLeaveArea();` branch and dies there — *before*
+        `openMini(result)` on the next line ever runs.
+      - **File Info (1) and Visualization (4)** skip that branch and reach `openMini`, which hides
+        every pane and *then* calls `wasabiCover.onEnterArea()` for any `miniNo != 0`. They died with
+        the old pane already gone and the new one not yet shown.
+
+      Confirmed live in the trace afterwards: `setpublicint(cpro2.lastMini,1)`, `,2` and `,4` all
+      reached. `swift test` 1797 pass. Tests: `WinampModernB100Tests`.
+
 ## B101 — Aero-snap and the engine-two drop shadow — closed 2026-09-04
 
 | B101 | **Aero-snap and the engine-two drop shadow are inert, by decision rather than by omission.** `snapAdjust` is accepted and returns `.null`; `main.aerosnap` renders as a 2-node stub. `load-two_alpha.xml` declares a `main.shadow` container (830×630) that nothing instantiates. Both are Windows shell behaviours with macOS counterparts already provided by the window server, so this is filed to record the decision, not to schedule work. Close it as *won't do* unless a skin turns out to draw something into either | every engine-`two` skin | L | Measured |

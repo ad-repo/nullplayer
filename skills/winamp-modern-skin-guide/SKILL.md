@@ -101,6 +101,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Slow rendering, CPU, repaint storms | [reference/performance.md](reference/performance.md) |
 | Frame is fast but the app hangs | [reference/harness.md](reference/harness.md) → *Profiling the running app* |
 | Script abort, arity, unknown method, script-built UI | [reference/scripting.md](reference/scripting.md) |
+| A call trace stops mid-handler with no failure line | [reference/scripting.md](reference/scripting.md) → *An event handler is also a method* |
 | Host readout or EQ change never reaches a script | [reference/scripting.md](reference/scripting.md) |
 | Keyboard, mouse wheel, wrapper value, scrolling | [reference/scripting.md](reference/scripting.md) |
 | `getAutoWidth` / `getAutoHeight`, scripted layout drift | [reference/scripting.md](reference/scripting.md) |

@@ -19,7 +19,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | B99 | **`enumObject` / `getNumObjects` are unimplemented, and ClassicPro's InfoViewer walks its object list with them.** Dispatch is fail-closed, so each call abandons the whole handler, not just the loop. Measured on cPro2 Dark Aluminum 2026-09-01: `enumObject` ×12 and `getNumObjects` ×2, all from `xui/CentroSUI/_v2/InfoViewer/InfoViewer.xml`, and the demand **rose** from ×2 once `System.onShowLayout` started running the paths that reach it. `enumItem` (×1, `xml/widgets-manager-cpro2.xml`) is the same family | 1 skin measured; the `_v2` SUI is shared by any future engine-`two` skin | M | Measured |
-| B100 | **`onLeaveArea` is unimplemented.** `xui/CentroSUI/_v2/CentroSUI.xml` binds it (×1). The paired `onEnterArea` decides what a hover reveals, so the leave half is what puts it away again — expect something in the SUI to stay lit after the pointer goes | 1 skin measured (cPro2) | S | Measured |
 | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
 | B18 | Classic minimize-mask parity | — · engine integration, outside the corpus | S | Measured |
 

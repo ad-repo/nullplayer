@@ -38,6 +38,7 @@ bitmaps            main/normal: 80 resolved, 1 unresolved (beatvis.overlay)
                    main/shade:  42 resolved, 1 unresolved (s.button.mute.over.0)
 compatibility      unsupported — 4 error findings, all one class: unimplemented MAKI methods
                    enumObject ×12 · getNumObjects ×2 · enumItem ×1 · onLeaveArea ×1
+                   (onLeaveArea answered since B100, 2026-09-04)
 VIS box            main/normal two.playback.visobject(14,74,71,17) mode=1 Spectrum Analyzer
                    main/shade  shade.vis(351,4,39,14)             mode=1
 PLAYLIST holder    PlaylistPro.wdh(596,116,196,457) text=12.5px row=14px scale=auto(114%)
@@ -66,6 +67,8 @@ Visualization, Web Reader, Now Playing.
   left and the volume slider at the right.
 - **The SUI tab strip is live** — the six tabs switch the sheet, the embedded playlist fills, and the
   media library renders, as on every other cPro skin.
+- **The Now Playing selector** — the button over the album-art area, opening Album Art / File Info /
+  Stored Playlists / Video / Visualization / the widgets. Fixed 2026-09-04 (B100); see the trap below.
 - **The bolt multi-button** works, including its right-click command menu (Change Color Theme,
   Explore Folder, Open About Winamp, Show Quick Playlist, Show Send to Menu) — the menu records which
   command the *left* click will run, so drive two clicks to measure it (`WINAMP_MODERN_RENDER_CLICK_PICK`).
@@ -77,7 +80,6 @@ Visualization, Web Reader, Now Playing.
 - **`enumObject` / `getNumObjects`** (×14 combined) — `CentroSUI/_v2/InfoViewer` walks its own object
   list with them. Highest measured demand this skin has.
 - **`enumItem`** — `xml/widgets-manager-cpro2.xml`.
-- **`onLeaveArea`** — `CentroSUI/_v2/CentroSUI.xml`.
 - **Aero-snap is inert by design.** `snapAdjust` is accepted and returns `.null`. Snapping a window
   to a screen edge is a Windows shell behaviour with no macOS counterpart worth emulating.
 - **The drop shadow is inert by design.** macOS draws its own window shadow.
@@ -98,6 +100,14 @@ Visualization, Web Reader, Now Playing.
 
 ### Traps this skin sets
 
+- **A script calls the pointer's own handlers, and `openMini` is on the far side of one.**
+  `CentroSUI2.m` uses `wasabiCover.onEnterArea()` / `onLeaveArea()` as its only way to raise and drop
+  the album-art overlay, from five places. Neither had a dispatchable arity, and a missing *signature*
+  fails closed **before** the trace, so `but_miniGoto.onLeftClick` stopped one statement after its two
+  `isMouseOverRect` tests with no `UNSUPPORTED` line to say why. Album Art is command id `0`, so it
+  dies on the `result <= 0` branch before `openMini`; File Info and Visualization die *inside*
+  `openMini`, after it has hidden every pane. Fixed by B100 — and the shape generalises: when a trace
+  stops with no failure line, look for a method with no signature, not a method with no implementation.
 - **The two glue windows open the moment dynamic containers work.** `shadow.m` builds `main.shadow`
   from `mainLayout.onSetVisible(1)` and `layout.m` builds `main.aerosnap` from `normal.onMove()`, and
   both were dead only because `newDynamicContainer` could not make a window. B110 made one, and the

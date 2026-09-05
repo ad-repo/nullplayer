@@ -160,6 +160,23 @@ with all three subtly wrong, and each would have produced a defect of its own:
 - **The reach count was reproducible and correct.** Which is the point: the numbers a `grep` produces
   survive; the prose around them decays.
 
+### A demand count is a count of calls, not of consequences
+
+`unsupportedMethods` ranks what to implement by how often the corpus asks for it, and that ranking is
+sound — but a `×1` says one call site, and says **nothing** about how much sits behind it. B100 was
+filed as *"`onLeaveArea` is unimplemented, ×1 — expect something in the SUI to stay lit after the
+pointer goes"*, a cosmetic prediction from a count of one. What it actually cost was cPro2's entire
+Now Playing selector: five call sites in one script the count never saw (they are calls, not
+bindings), each one able to abandon its whole handler, two of them on the path every menu pick takes.
+
+So when an entry predicts a *symptom*, treat that prediction as the weakest thing in it. The count is
+reproducible; the guess about what the missing call was holding up is prose, and prose decays. Read
+the call sites before you believe the severity — `grep -rn "\.<method>(" ` over the engine and the
+extracted corpus takes seconds and is the difference between "cosmetic" and "a dead menu".
+
+The corollary for the *other* direction: a defect the reporter describes as one broken thing can be
+one missing arity behind several. Do not stop at the first call site that explains part of it.
+
 The cheap discipline is to re-run the entry's own measurement command first, before reading any
 source. It takes a minute, it either confirms the entry or hands you a corrected one, and it is the
 difference between fixing the defect and fixing the description of it.

@@ -571,6 +571,21 @@ saves a value it read back from us, a call we answered with nothing becomes a va
 for the save side (`onScriptUnloading`, an `onDataChanged` collapse branch) before concluding an
 unimplemented method is cosmetic.
 
+**A missing arity is silent in a way a missing implementation is not** (B100, 2026-09-04). An
+unimplemented method goes through `unsupported(_:program:)`, which prints
+`CALL-TRACE <name>(…) -> UNSUPPORTED, handler aborts [file]` and lands in the compatibility report. A
+name with **no signature** fails one step earlier — inside the interpreter, which cannot unwind a
+stack whose depth it does not know — so `invoke` is never reached and *nothing* is printed. What a
+trace shows is a handler that simply stops mid-sequence with no failure line anywhere. When you are
+looking at that, look for a method with no signature before concluding the engine is fine.
+
+The measured case is the pointer's own pair. `onEnterArea`/`onLeaveArea` were dispatched as **events**
+throughout, so nothing about hovering was ever broken; what they lacked was the arity that lets a
+script *call* them, and ClassicPro's `CentroSUI2.m` uses them as the only way to raise and drop its
+album-art overlay. That took out cPro2's whole Now Playing selector — and took it out twice, once
+before `openMini` for the pick whose command id is `0` and once inside it for every other pick, which
+is why the report said the menu did nothing rather than that one entry did nothing.
+
 #### Two handlers for one event: a repeat runs once, two *different* bodies both run
 
 A program can declare the same (object, event) pair twice, and what to do about it depends entirely

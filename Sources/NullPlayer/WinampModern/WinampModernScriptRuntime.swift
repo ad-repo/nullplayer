@@ -422,6 +422,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // script calls it: none in the corpus does, but the arity has to be declared for the
         // dispatch either way.
         "onkeydown": 1,
+        // The pointer's own pair, called as methods. ClassicPro's CentroSUI uses them as the *only*
+        // way to put its album-art overlay up and away, and calls them from five places in
+        // `CentroSUI2.m` — including the two that decide what the Now Playing selector does after the
+        // menu closes. Without an arity the interpreter fails closed before the call is even traced,
+        // so `but_miniGoto.onLeftClick` stopped one statement after its two `isMouseOverRect` tests
+        // and `openMini()` never ran (B100): Album Art, File Info and Visualization all did nothing,
+        // the last two after `openMini` had already hidden every pane. Zero arguments — 57 handler
+        // declarations in the engine and 193 in the corpus, every one of them `()`.
+        "onenterarea": 0,
+        "onleavearea": 0,
         "onshownotification": 0,
         // `System.onScriptLoaded()` called as a method — a script re-running its **own** startup body.
         // Ebonite's standard frame is built around it: it closes its frame container on every hide and
