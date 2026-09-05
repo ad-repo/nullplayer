@@ -32,6 +32,14 @@
 
 ### Bug Fixes
 
+- **Modern skins: cPro2's Web Reader tab opens the reader again** — the tab came up empty. The
+  ClassicPro reader loads its list of twenty search providers before it will show anything, and it
+  looks for that file beside the player's own program folder. NullPlayer was answering with the
+  folder its application bundle sits in on your Mac, which is not where a skin's files live, so the
+  reader found nothing and hid itself. It now answers with the location a skin means by that
+  question, and the reader loads its providers, fills the drop-down, and opens a page for the
+  playing track.
+
 - **Modern skins: the small player is small again** — dragged down to its shortest size, cPro2 Dark
   Aluminum now shows just the title bar, the song display and the transport row, the way the skin's
   author drew it; before, the window refused to shrink past its tab strip and library and stopped

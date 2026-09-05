@@ -260,14 +260,22 @@ extension WinampModernScriptRuntime {
         case "getsettingspath":
             return .string(WinampModernSkinImporter.defaultDestinationDirectory()
                 .deletingLastPathComponent().path)
-        // The directory the player itself sits in, which is what Winamp answers. Handing back a
-        // string is not filesystem access and does not become any: every route a skin has from here
-        // is already sandboxed — `File.load`/`exists` are a no-op and a constant `false`,
-        // `System.navigateUrl` is inert, and `openFile`/`exploreFile` take an arbitrary skin-authored
-        // string anyway. What the callers are actually doing is probing for Winamp's own `/Lang`
-        // packs and its plugin folder; those probes correctly find nothing here, and the branch the
-        // skin takes on that is the truthful one.
-        case "getapplicationpath": return .string(Bundle.main.bundleURL.deletingLastPathComponent().path)
+        // The directory the player itself sits in. **The VFS root, not the host's.** The host path is
+        // the honest answer to "where is the binary" and the wrong answer to every question a skin
+        // asks with it: a skin concatenates onto this and hands the result back to `XmlDoc.load` or
+        // `File.exists`, which resolve inside the WAL VFS, where a `/Applications/…` path can never
+        // exist. ClassicPro's Web Reader is the case that made it matter — its only route to the
+        // provider list it needs is `getApplicationPath() + "\\Plugins\\ClassicPro\\engine\\xui\\…"`,
+        // and the engine is mounted at exactly `@WINAMPPATH@\\Plugins\\classicPro\\engine`, so the
+        // resolution failed, `initLoadFiles()` returned early, and the reader's own
+        // `onSetVisible` handler hid the whole tab (B128).
+        //
+        // Handing back a string is still not filesystem access: every route onward is sandboxed —
+        // `File.load`/`exists` are a no-op and a constant `false`, `System.navigateUrl` is inert, and
+        // this answer widens nothing, because the VFS is read-only and already reachable by any
+        // `@WINAMPPATH@` a skin writes in its own markup. Probes for Winamp's `/Lang` packs still
+        // find nothing and still take their "not installed" branch.
+        case "getapplicationpath": return .string(loadedSkin.vfs.winampRoot)
         case "getcolortheme": return .string(activeThemeRequested?() ?? "Default")
         case "setcolortheme":
             _ = themeSwitchRequested?(arguments[0].stringValue)

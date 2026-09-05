@@ -2313,6 +2313,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "getred": .init(argumentCount: 0, returnKind: .integer),
         "getgreen": .init(argumentCount: 0, returnKind: .integer),
         "getblue": .init(argumentCount: 0, returnKind: .integer),
+        // The gamma-corrected spellings of the same three. `ColorMgr.getColor` already resolves
+        // through the active `<gammaset>`, so here they *are* the same three — see the receiver.
+        "getredwithgamma": .init(argumentCount: 0, returnKind: .integer),
+        "getgreenwithgamma": .init(argumentCount: 0, returnKind: .integer),
+        "getbluewithgamma": .init(argumentCount: 0, returnKind: .integer),
         "getparent": .init(argumentCount: 0, returnKind: .object),
         "getparentlayout": .init(argumentCount: 0, returnKind: .object),
         "getcurlayout": .init(argumentCount: 0, returnKind: .object),

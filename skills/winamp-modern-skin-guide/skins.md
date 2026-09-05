@@ -174,7 +174,9 @@ section is the list; read it *before* changing engine code on that skin's behalf
 - [cPro2 Dark Aluminum](skins/cpro2-dark-aluminum.md#traps-this-skin-sets) — **engine two**: the whole
   player lays out from `System.onShowLayout`, the cold start is gated on `!shade.isVisible()`, a
   `w="0"` group is a reveal window, `forcefixed` reserves width without monospacing, `<Style>`
-  attributes are order-dependent, and a pre-B93 saved window frame is poison
+  attributes are order-dependent, a pre-B93 saved window frame is poison, and **the Web Reader hides
+  itself** when it cannot read its provider list — which it addresses through
+  `getApplicationPath()`, so a host path there took the whole tab down (B128)
 - [Love is War Miku](skins/love-is-war-miku.md#traps-this-skin-sets)
 - [Defix Hi-End 200](skins/defix-hi-end-200.md#traps-this-skin-sets) — unseeded background preference,
   alpha-multiplexed readouts, `rectrgn` hit testing, `findObject`'s wide lookup, timer-gated tabs,

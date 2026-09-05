@@ -127,12 +127,16 @@ final class WinampModernPhase54Tests: XCTestCase {
     /// page's own script ran and aborted on this. The skin concatenates a `/Lang/*.wlz` filename
     /// onto it and probes with `File.load`/`exists`/`getSize`, all of which are sandboxed here, so
     /// the branch it takes ("that language pack is not installed") is the truthful one.
-    func testGetApplicationPathAnswersAnAbsoluteDirectory() throws {
+    ///
+    /// It answers the **VFS** root rather than the host directory the binary sits in (B128): a skin
+    /// concatenates onto this and hands the result to `XmlDoc.load`/`File.exists`, which resolve
+    /// inside the WAL VFS, so a host path can never name anything that exists. The doubled separator
+    /// a caller's own `\` produces is dropped by canonicalization.
+    func testGetApplicationPathAnswersTheVFSRoot() throws {
         let (runtime, _) = try makeListRuntime()
         let path = try runtime.invoke(method: "getapplicationpath", on: MakiObjectReference(.system),
                                       arguments: [], program: emptyProgram()).stringValue
-        XCTAssertTrue(path.hasPrefix("/"))
-        XCTAssertFalse(path.hasSuffix("/"), "callers append their own separator")
+        XCTAssertEqual(path, "/")
     }
 
     // MARK: - Helpers

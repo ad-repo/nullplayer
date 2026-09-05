@@ -879,11 +879,22 @@ extension WinampModernScriptRuntime {
             default: return .integer(0)
             }
         // `Color.getRed/getGreen/getBlue` — the channels `ColorMgr.getColor` resolved.
-        case "getred", "getgreen", "getblue":
+        //
+        // The `…WithGamma` spellings answer the *same* numbers, and that is the correct reading
+        // rather than a stub: Winamp's plain getters hand back the colour as the skin declared it and
+        // the gamma ones hand it back after the active `<gammaset>` has been applied, while
+        // `ColorMgr.getColor` here resolves through `WasabiSceneRenderer.resolvedColor`, which
+        // already follows references *and* applies the gammagroup and the live colour theme. There is
+        // no un-gamma'd form left to distinguish. ClassicPro's Web Reader is what needs them: every
+        // provider URL carrying a `%COLOR:LBG%` token goes through `getColorHex()`, which reads all
+        // three, so the miss aborted `surfSelected()` before its `navigateUrl` and the reader tab
+        // never loaded a page (B128).
+        case "getred", "getgreen", "getblue",
+             "getredwithgamma", "getgreenwithgamma", "getbluewithgamma":
             guard case .color(let red, let green, let blue) = state.role else { return .integer(0) }
             switch method {
-            case "getred": return .integer(red)
-            case "getgreen": return .integer(green)
+            case "getred", "getredwithgamma": return .integer(red)
+            case "getgreen", "getgreenwithgamma": return .integer(green)
             default: return .integer(blue)
             }
         case "getwidth", "getheight":

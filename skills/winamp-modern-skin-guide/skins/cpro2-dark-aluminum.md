@@ -77,6 +77,10 @@ Visualization, Web Reader, Now Playing.
 - **F9–F12 preset positions** — `two/scripts/presetpos.m` calls `getCurAppLeft/Top/Width/Height()`;
   all four now answer, in Winamp's screen space.
 
+- **The Web Reader tab.** The reader loads its twenty search providers, fills the drop-down, and
+  navigates its `<browser>` to the selected provider's URL for the playing track. Fixed 2026-09-05
+  (B128); see the trap below.
+
 - **The small player.** Dragged to its floor the window is titlebar + info band + transport and
   nothing else — the SUI collapses to zero height and its tabs go with it, as in the author's own
   render. Fixed 2026-09-05 (B127); see the trap below.
@@ -134,6 +138,30 @@ Visualization, Web Reader, Now Playing.
   Fixed by letting a script-written `minimum_h` stand the probe down (B127); the general rule is in
   [reference/loading.md](../reference/loading.md) → *The protective window minimum*.
   `WINAMP_MODERN_RENDER_MINIMUM=1` names the culprit and prints its frame beside its parent's.
+
+- **The Web Reader hides itself, and the reason is two faults deep.** `Reader/main.m`'s
+  `myGroup.onSetVisible(1)` is `initLoadFiles(); if(continueLoad) surfSelected(); else { myGroup.hide(); }`
+  — a reader that cannot read its provider list takes the whole tab down with it, so the symptom is
+  *"the browser tab does not load the browser"* with nothing on screen to say why. Both faults were
+  in shared engine surface, not in this skin:
+
+  1. **`Application.GetApplicationPath()` answered a host path.** The file is addressed *only* as
+     `getApplicationPath() + "\Plugins\ClassicPro\engine\xui\CentroSUI\_v2\Reader\source\_<lang>.xml"`,
+     and `XmlDoc.load` resolves inside the WAL VFS, where the engine is mounted at
+     `/Plugins/classicPro/engine` and a `/Applications/…` path can never exist. `exists()` came back
+     false and `initLoadFiles` returned with `continueLoad` still false. Now the VFS root — see
+     [compatibility/maki-surface.md](../compatibility/maki-surface.md).
+  2. **Behind it, `Color.getRedWithGamma()` was unimplemented.** With the providers loaded,
+     `surfSelected()` builds the URL through `convert_address.mi`, whose `%COLOR:LBG%` token calls
+     `getColorHex()` — and that aborted one statement before `myBrowser.navigateUrl(…)`. The default
+     provider (AlbumArtExchange) carries the token, so the tab still came up dead.
+
+  Note `getLanguageId()` answers `en` here against Winamp's `en-us`, so the *first* load always
+  misses; the script's own `_en-us.xml` fallback covers it, and `exists() -> 0` followed by
+  `exists() -> 1` is the healthy trace, not the defect. The whole chain is readable headlessly with
+  `WINAMP_MODERN_RENDER_EVENTS=onsetvisible WINAMP_MODERN_CALL_TRACE=1` — that driver reaches a group
+  inside the player's own tab strip, which `RENDER_SHOW` cannot. The end of a working run is one
+  line: `navigateurl(http://www.albumartexchange.com/covers.php?bgc=121826&q=…)`.
 
 - **The snap preview fires with the pointer nowhere near a screen edge.** `layout.m` tests
   `System.getMousePosX() < 1` — the *screen's* left edge in Winamp — and ours answers in the window's

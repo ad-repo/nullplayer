@@ -97,6 +97,13 @@ final class WalVirtualFileSystem {
         setVariable("COLORTHEMESPATH", to: skinRoot, trailingSeparator: true)
     }
 
+    /// Where `@WINAMPPATH@` points: the logical root the whole VFS hangs off, which is what a
+    /// Winamp installation directory is here. `System.getApplicationPath()` answers this, because a
+    /// skin that concatenates onto it is addressing files that really are mounted under it —
+    /// ClassicPro's reader builds `getApplicationPath() + "\\Plugins\\ClassicPro\\engine\\…"` and the
+    /// engine mount is at exactly that path.
+    var winampRoot: String { variables["WINAMPPATH"] ?? "/" }
+
     func mount(_ provider: WalResourceProvider, at logicalRoot: String) throws {
         let root = try Self.canonicalize(logicalRoot, relativeToDirectory: "/")
         guard root != "/" else {

@@ -130,6 +130,20 @@ By area:
   two cannot disagree. An unknown theme name yields the object anyway and `apply()` is inert, because
   refusing at `getGammaSet` would abort the caller's whole handler. Demand: Big Bento Modern's 77
   themes ×2 files, **and Ebonite_2_1**, which is why this is not a Bento-only item. BB8
+- **`ColorMgr.getColor(id)` → `Color.getRed/getGreen/getBlue`**, and their `…WithGamma` spellings.
+  The colour is resolved once at creation through `WasabiSceneRenderer.resolvedColor` — references
+  followed, gammagroup and the live colour theme applied — so a widget that paints itself from the
+  skin's palette agrees with the palette.
+
+  **The three `…WithGamma` getters answer the same numbers, and that is the reading rather than a
+  stub (B128, 2026-09-05).** In Winamp the plain getters hand back the colour as declared and the
+  gamma ones hand it back after the active `<gammaset>`; here `getColor` has *already* applied it, so
+  there is no un-gamma'd form left to distinguish. ClassicPro's Web Reader needs all three: every
+  provider URL carrying a `%COLOR:LBG%` token goes through `convert_address.mi`'s `getColorHex()`,
+  which reads red, green and blue and hex-encodes them, so the miss aborted `surfSelected()` one
+  statement before its `navigateUrl` and the reader tab loaded no page at all. The same `getColor`
+  gap is what `WinampModernMainView.usesSkinAuthoredReaderToolbar` records as blocking Big Bento's
+  Refresh button; that half is worth re-measuring now
 - **`GroupList.instantiate(groupdef, count)`** — the *list's* own expansion, the second argument a
   **count** and not an index (the author of Big Bento Modern says so in his own comment, and the
   bytecode agrees). A `<GroupList>` is a vertical stack, so each entry is stamped with the two things
@@ -145,7 +159,20 @@ By area:
   sandboxed (`File.load`/`exists` are a no-op and a constant `false`, `System.navigateUrl` is inert),
   so a skin probing for Winamp's `/Lang/*.wlz` packs correctly finds nothing and takes its
   "not installed" branch. The domino behind `instantiate` — with the config pages finally built, the
-  Localization page's own script ran and aborted here. BB7
+  Localization page's own script ran and aborted here. BB7.
+
+  **It answers the VFS root, not the host directory the binary sits in (B128, 2026-09-05).** The host
+  path is the honest answer to "where is the binary" and the wrong answer to every question a skin
+  asks with it: a skin concatenates onto this and hands the result straight back to `XmlDoc.load` or
+  `File.exists`, which resolve **inside** the WAL VFS — where `/Applications/…` can never name
+  anything, whatever is really on disk. ClassicPro's Web Reader is what made it matter: its only
+  route to the provider list it needs is
+  `getApplicationPath() + "\Plugins\ClassicPro\engine\xui\CentroSUI\_v2\Reader\source\_en-us.xml"`,
+  and the engine is mounted at exactly `@WINAMPPATH@\Plugins\classicPro\engine`. Answering
+  `@WINAMPPATH@` (`WalVirtualFileSystem.winampRoot`, `/`) makes that resolve; the doubled separator
+  the caller's own `\` produces is dropped by canonicalization, and the `/Lang` probes still find
+  nothing and still take their "not installed" branch. It widens nothing — the VFS is read-only and
+  a skin can already write `@WINAMPPATH@` in its own markup
 - **`ToggleButton.setActivatedNoCallback(bool)`** — `setActivated` without the `onToggle` it would
   otherwise send. A skin uses it to follow state it is already reacting to; the plain setter there
   re-enters its own notification. Phase 33. Note this is the silent write for a state that **did**
