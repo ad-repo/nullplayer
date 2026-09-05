@@ -140,7 +140,24 @@ Visualization, Web Reader, Now Playing.
   "look for the next fault before reverting it" rule exists for. `two.screen frame=(0,28,800,70)` and
   `declared=240x106` are the check; `y=0` and `240x200` are the defect.
 - **Neither `onShowLayout` nor `onHideLayout` fires on a shade round trip**, so `saveSkinPos()` and
-  the `normal.resize(cPro2.x, …)` restore never run when you shade the window and come back. B125.
+  the `normal.resize(cPro2.x, …)` restore never run when you shade the window and come back — the
+  band survives, the saved geometry does not. Engine-wide cause and status in
+  [reference/scripting.md](../reference/scripting.md) → *`System.onShowLayout` / `onHideLayout`*.
+- **The album-art pane has come up dead twice, and a relaunch cleared it both times.** Reported
+  2026-09-04 live: no local cover, no File Info, and the selector menu doing nothing — while
+  *streaming* cover art arrived in the same session, so the pane and its holder are alive when it
+  happens. **Not reproduced and not diagnosed**, and deliberately not filed as backlog work: it is a
+  one-off until it reproduces. What would settle it is a
+  `WINAMP_MODERN_CALL_TRACE=1 WINAMP_MODERN_TRACE_MAKI=1` capture of a launch that *fails* — both
+  captures so far are of launches that worked, which is the wrong half. Cheap discriminator first:
+  does the classic skin show that same track's local cover at that moment? Then two candidates, in
+  order — `tagviewer.m`'s `loadFileInfo()` opens `if(!scriptGroup.isVisible()) return;`, so a group
+  reading invisible while on screen kills File Info for *every* source; and
+  `WinampModernHost.albumArtwork` drops any cover whose `NowPlayingManager.currentTrackId` does not
+  match `engine.currentTrack?.id`, which a load-order race would do to local art alone. Not
+  attributable to B124: this skin's cold-start script execution is byte-identical either side of it
+  (identical 265-program `RENDER_SCRIPTS` report, identical node list, only `fullScreen()` in the
+  call-trace diff).
 - **`two.playback` declares no `h`, only `autoheightsource`.** A group that resolves 0 tall is not a
   resize target, so `playback-layout.maki`'s `g.onResize` never runs and the transport strip stays
   hard left at its declared `x=8` with the visualization sitting on top of it at the same x and no

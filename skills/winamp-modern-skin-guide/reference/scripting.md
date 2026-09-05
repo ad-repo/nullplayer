@@ -915,7 +915,11 @@ branch for three days after the event started firing. See *An object is never eq
 neither event. So a shade↔normal round trip runs neither handler: cPro2 never calls `saveSkinPos()`
 on the way into shade, and never re-runs `fullScreen()` on the way out, so the window geometry the
 skin saved for you is not restored. The band itself survives, because `fullScreen`'s writes are
-`setXmlParam`s that persist across a layout switch. Open work, `TASKS.md` B125.
+`setXmlParam`s that persist across a layout switch, so the visible symptom is geometry, not paint.
+
+Still open. Before adding the dispatch, note it is not free: announcing a layout the host is *leaving*
+reaches every skin with a shade mode, so it wants live verification of the symptom first and a corpus
+sweep after.
 
 ### `isVisible()` on a *layout* means "is this the container's active one"
 
