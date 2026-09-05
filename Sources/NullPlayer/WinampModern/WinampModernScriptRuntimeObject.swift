@@ -1045,12 +1045,36 @@ extension WinampModernScriptRuntime {
         return descendant(of: object, xmlID: id)
     }
 
+    /// The named object in `root`'s subtree — **the first one that came up**.
+    ///
+    /// Ids are supposed to be unique inside a window and routinely are not: 304 duplicate ids inside
+    /// one group/layout across the corpus, most of them harmless because nothing looks them up. The
+    /// ones that matter are the copy-paste leftovers a skin never removed, and those are usually dead
+    /// in exactly the way Wasabi itself names — `isInvalid()`, an object whose bitmap the skin never
+    /// declared, so it has no size, cannot draw and cannot be clicked. T800 carries one: a second
+    /// `id="Pause"` parked at x=803 (its layout is 177 wide) on the undeclared `player.main.pause`.
+    /// `play2pause.maki` asks the group for "Pause", got that corpse, and hid and showed it for the
+    /// rest of the session — while the *real* Pause, sitting on the jaw at the exact rect of the Play
+    /// button and declared after it, was never hidden and took every click topmost-wins gave it. The
+    /// play button on the jaw could not be pressed at all: pressing it sent `pause`.
+    ///
+    /// So a match that came up outranks a match that did not, and declaration order decides
+    /// everything else. An object with no `image`/`bitmap` of its own is never invalid, so groups,
+    /// text and containers are unaffected; a skin with two live duplicates still gets the first, the
+    /// way it did before.
     func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
-        if root.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return root }
-        for child in root.children {
-            if let match = descendant(of: child, xmlID: xmlID) { return match }
+        var deadMatch: WasabiObject?
+        func walk(_ node: WasabiObject) -> WasabiObject? {
+            if node.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame {
+                if !isInvalid(node) { return node }
+                if deadMatch == nil { deadMatch = node }
+            }
+            for child in node.children {
+                if let match = walk(child) { return match }
+            }
+            return nil
         }
-        return nil
+        return walk(root) ?? deadMatch
     }
 
     /// Whether `getLayout` may hand this layout back to `program`.

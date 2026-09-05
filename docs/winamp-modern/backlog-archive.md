@@ -2,6 +2,49 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B120 — T800's jaw play button ran `pause` — closed 2026-09-04
+
+| B120 | **A script asking its group for a duplicated id got the copy-paste corpse, and it cost T800 its play button.** Reported 2026-09-04 as *"in t800 skin the play button on the jaw does not work properly"*. **Fixed and live-confirmed the same day** | 1 skin reported; 6 lookups corpus-wide | S | Live-reported |
+
+### B120
+
+- [x] **B120. T800's jaw play button could not be pressed; it sent `pause`.** Fixed and confirmed by
+      the reporter 2026-09-04.
+
+      T800's jaw stacks `Play` and `Pause` on the same rect — `x="105" y="288"`, both drawn from
+      `player.main.play` — which is the standard `scripts/play2pause.maki` pair: the script keeps
+      exactly one of the two visible and hides the other. But `xml/player-normal.xml` declares a
+      **second** `id="Pause"` earlier in the same group, parked at `x="803"` in a 177-wide layout and
+      drawn from `player.main.pause`, a bitmap id the skin never declares. That object has no size and
+      can neither draw nor be clicked — `isInvalid()` in Wasabi's own terms.
+
+      `getScriptGroup().getObject("Pause")` answered with the first match, so the script hid and showed
+      that corpse all session. The live Pause on the jaw was never hidden, and because it is declared
+      *after* Play, topmost-wins gave it every click on the pair's shared rect. Measured with the click
+      probe before the fix, in the stopped state:
+
+      ```text
+      CLICK at (110,292) hits button#Pause frame=(105,288,27,13)
+      CLICK markup action: pause
+      ```
+
+      **The fix** (`WinampModernScriptRuntimeObject.swift`, `descendant(of:xmlID:)`): the lookup answers
+      with the first match that *came up*. A live match outranks a dead one; declaration order decides
+      everything else; an id that is only ever dead still resolves to it, because ClassicPro probes for
+      optional artwork exactly that way. `findObject` shares the walk. After the fix the same probe reads
+      `hits button#Play … action: PLAY` when stopped and `hits button#Pause … action: pause` after
+      `onplay` — the pair toggles.
+
+      **Blast radius, measured over the 61-skin corpus:** duplicate ids inside one group or layout are
+      ordinary (304 of them), but only **6** lookups have a dead candidate ahead of a live one — T800
+      `Pause`, PaddPreview `balance` and `preamp`, micro `drawer`, EPS High-End `casseteroll2`, and
+      Nullsoft Media Player 10 `borderstretch` — and in each the live object is the one a script means.
+      `swift test` green (1782); `WinampModernB120Tests` covers the report and the three cases the rule
+      must leave alone, and its two report tests fail against the old lookup.
+
+      The rule and the probes that found it: [scripting.md](../../skills/winamp-modern-skin-guide/reference/scripting.md)
+      → *`getObject` skips a duplicate id that never came up*.
+
 ## B118 — WMP11-BlueVU's repaint cost on a release build — closed 2026-09-04
 
 | B118 | **[live session, reporter driving — protocol in [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md) *The measurement loop that works*]** **Establish WMP11-BlueVU's repaint cost on a *release* build before anyone optimizes it.** Blocks B119 and any B117(a) work. Every number in the B117 investigation is from `--debug`, and `71ffd874` records debug at 96.2% main-thread busy against release's 60.7%, with the whole post-B106 chase turning out to be a debug artifact. `WINAMP_MODERN_VIS_STALL` is `#if DEBUG` and cannot fire in release, so this needs `sample`, not the probe. May collapse B117(a) entirely | 2 skins to compare; the debug/release gap affects every perf item | S | Live-reported |

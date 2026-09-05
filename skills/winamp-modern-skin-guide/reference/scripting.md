@@ -1022,6 +1022,35 @@ scene tree during `append()`. The main `draw` method sets `context.setAlpha(alph
 inheritedAlpha)` once; per-drawer methods must NOT override it with their own `setAlpha` call or the
 inheritance is lost.
 
+### `getObject` skips a duplicate id that never came up
+
+Ids are supposed to be unique inside a window and routinely are not: **304 duplicate ids inside one
+group/layout across the 61-skin corpus**. Most are harmless, because nothing looks them up. The ones
+that bite are the copy-paste leftovers a skin never removed, and those are usually dead in the way
+Wasabi itself names — `isInvalid()`: an object whose `image`/`bitmap` names a bitmap the skin never
+declares, so it has no size and can neither draw nor be clicked.
+
+T800 carries one, and it cost the player its play button (B120). Its jaw stacks `Play` and `Pause` on
+the same rect (105,288, both on `player.main.play`), the standard `play2pause.maki` pair; but
+`player-normal.xml` declares a **second** `id="Pause"` earlier in the same group, parked at x=803 in a
+177-wide layout on the undeclared `player.main.pause`. `getScriptGroup().getObject("Pause")` returned
+that corpse, the script hid and showed it for the rest of the session, and the live jaw Pause — declared
+*after* Play, so topmost-wins hands it every click — was never hidden. Pressing play sent `pause`, in
+every playback state.
+
+So the lookup answers with **the first match that came up**: a live match outranks a dead one, and
+declaration order decides everything else. Two live duplicates still resolve to the first, and an id
+that is only ever dead still resolves to it — ClassicPro asks for exactly those, since `isInvalid()` is
+how a script probes for artwork a skin is free to remove. `findObject` shares the walk, so both spellings
+agree. Across the corpus only **6** lookups have a dead candidate ahead of a live one (T800 `Pause`,
+PaddPreview `balance`/`preamp`, micro `drawer`, EPS High-End `casseteroll2`, Nullsoft Media Player 10
+`borderstretch`), which is the measured blast radius of the rule.
+
+The general lesson for a dead control: when two objects share a rect, ask which one the *script* is
+holding before touching the hit test. `WINAMP_MODERN_RENDER_CLICK` names the object that won the point
+and the action it ran, and `WINAMP_MODERN_RENDER_PROBE` shows whether the object the script should have
+hidden is still in the scene — a phantom shows up there with a `0.0, 0.0` size.
+
 ### `Map.loadMap(id)` covers the bitmap's **sub-rect**, not the whole file
 
 `loadMap` takes a declared bitmap id as readily as a path, and a `<bitmap>` is routinely a *slice* of

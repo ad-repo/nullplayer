@@ -32,6 +32,12 @@
 
 ### Bug Fixes
 
+- **Modern skins: the play button works on skins that declare the same button twice** — some skins
+  leave an unused copy of a button in the markup, pointing at artwork the skin no longer ships. The
+  skin's own play/pause script could end up controlling that leftover instead of the button you can
+  see, which left the visible play button doing nothing but pause. NullPlayer now hands the script the
+  button that actually exists. Fixes the play button on the jaw in the T800 skin.
+
 - **Modern skins: a window frame built on another one is no longer drawn twice** — a skin can define
   its frame by extending one of Winamp's, changing only the parts it cares about. NullPlayer kept
   both versions of every part it changed, so skins like WMP11-BlueVU, Sony Walkman and canum built
