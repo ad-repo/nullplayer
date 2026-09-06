@@ -710,6 +710,56 @@ it in the same thin frame: its contents are entirely NullPlayer's and its rows a
 information, where a frame drawn for a picture costs rows on every screen. It only ever *reduces* the
 border, and playlist, video and visualizer keep the frames their authors chose.
 
+#### A frame that builds its own client still costs the window (B140, 2026-09-05)
+
+The section above is the *exemplar* branch — skins that lay chrome and content out side by side. The
+ordinary branch has the same border and it was free: `Frame.chromeInset` answered `.zero` whenever
+there was no exemplar, so the registry's client size was used as the **window** size and the frame ate
+it from inside. Reported on HeadAMP, 2026-09-05, as *"thick borders/small interior and it's also
+offset within the frame"*: a 343x145 meter drew in 303x75.
+
+**Where such a frame states its client is the `param` on the `<script>` in its groupdef**, not the
+markup around it: `<script file="scripts/standardframe.maki" param="25,28,-40,-70,0,0,1,1"/>` is
+`x,y,w,h,relatx,relaty,relatw,relath`, applied by `standardframe.maki` to the group named by
+`content=`. **51 of the 67 corpus archives write one** (`grep -rhio 'standardframe[^>]*param="[^"]*"'`),
+so this is the majority shape, not HeadAMP's quirk. `WasabiSurfaceSynthesizer.scriptClientRect` reads
+it, walking `inherit_group` the way `hasContentScript` does — a skin that states none keeps exactly
+the behaviour it had.
+
+Three rules follow, and the skin itself is never edited: what changes is which frame *we* instantiate
+and where *our* group sits inside it.
+
+- **The thinnest flavour wins here too.** Selection used to be "richest first" — status bar, then no
+  status bar, then static — and for a NullPlayer-owned window that is backwards: a status frame
+  reserves rows for a strip whose text Winamp's own components supply and ours never do. HeadAMP's
+  costs 70 rows against its no-status frame's 50, around a 145-row window. Flavours are now ordered by
+  what their client rect leaves, and the old order only breaks ties — including the tie every skin
+  that states no rect is in.
+- **The client is centred on the *larger* of each opposing inset, and we place it ourselves.** An
+  author's padding is asymmetric wherever it is padding for contents we do not supply: HeadAMP's
+  `25,28,-40,-50` is 25 left against 15 right and 28 top against 22 bottom, and a meter placed there
+  reads as pushed right and sunk — which is exactly what the reporter said next. So the frame is
+  handed **no `content=`** (the same emission the exemplar branch uses) and our group sits beside it
+  at 25/25 and 28/28. **Larger, not smaller**: the smaller inset would centre it too, and would draw
+  our surface over artwork the author kept clear on the thicker side — Big Bento's 44px title band
+  against a 24px bottom. The cost of the larger is a little more of the skin's own background texture
+  on the thin side, which reads as an even mat.
+- **The window is grown by twice that border**, through `Frame.floor(under:)`, the same rule the
+  exemplar branch already followed.
+
+**A hosted window's geometry is decided in two places, and they are different objects.** Sizing reads
+`WinampModernHostedFrameDescriptor`; placement is emitted by
+`WasabiSkinInitializer.instantiateHostedWindowAtRuntime`, which **rebuilds** a `Frame` from that
+descriptor before calling `frameNodes`. A field added to `Frame` and threaded through the descriptor is
+still dropped by that rebuild, and the failure is quiet and half-right: the window came out the correct
+size with the client still shoved right, which is a much harder thing to read than either half being
+wrong. Assert both paths; `WinampModernB140Tests` does.
+
+**Measuring this needs the real rect, not the ASCII map.** `WINAMP_MODERN_DRAG_MAP` samples on a 3px
+grid, which rounded a 15px right border to look like the 25px left one and made a first, wrong fix
+read as centred. Print `holder.frame` against `renderer.canvasSize` — and at more than one width, since
+the app opens these at the player's, not the layout's.
+
 #### A client area tucks under the border (2026-09-04)
 
 A skin can state its client a pixel inside the hole its own border leaves — Itemskin's visualizer

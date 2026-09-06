@@ -58,6 +58,15 @@
   whatever you chose. The skin sets the two from a single script, and the half aimed at the mini
   window was being dropped whenever that window had not been opened yet.
 
+- **Modern skins: NullPlayer's own windows sit properly inside the skin's frame** — on HeadAMP, and on
+  any skin whose window frame states how much room it keeps for itself, Cava, Flow, PeppyMeter, the
+  spectrum analyzer, the waveform, Audio Analysis, projectM and the fallback equalizer opened as a
+  thick border around a squashed interior, with the contents pushed to one side of it rather than
+  centred. Those windows now open big enough to hold their contents *and* the frame drawn around them,
+  they take the skin's lightest frame rather than the one that reserves space for a status bar
+  NullPlayer has nothing to put in, and their contents sit centred inside the border. The skins
+  themselves are untouched, and a skin whose frame states nothing is unchanged.
+
 - **Modern skins: the playlist, library and tab text no longer draw in a console font.** Every list
   NullPlayer draws inside a `.wal` skin — playlist rows, the embedded Media Library, tab labels,
   status lines — was falling back to a fixed-pitch system font, in every Modern skin, because none of

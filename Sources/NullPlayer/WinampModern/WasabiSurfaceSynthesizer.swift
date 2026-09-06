@@ -281,11 +281,44 @@ enum WasabiSurfaceSynthesizer {
         /// How the skin itself lays this frame out in one of its own windows, when it does. Nil for
         /// the ordinary case, where the frame's own script builds its client area from `content=`.
         let exemplar: FrameExemplar?
+        /// Where the frame's *own script* would put its client, for the ordinary `content=` case: the
+        /// `origin` and total border of the `param="x,y,w,h,…"` its `standardframe.maki` applies to
+        /// the group named by `content=`. Nil where the skin states no such rect.
+        let scriptClient: CGRect?
 
-        /// What this frame's border costs the window, from the exemplar's own content rect: a
-        /// `w="-66" h="-92"` client area is a 66x92 border around it.
+        init(groupIdentifier: String, xuiTag: String, hasArtwork: Bool,
+             exemplar: FrameExemplar?, scriptClient: CGRect? = nil) {
+            self.groupIdentifier = groupIdentifier
+            self.xuiTag = xuiTag
+            self.hasArtwork = hasArtwork
+            self.exemplar = exemplar
+            self.scriptClient = scriptClient
+        }
+
+        /// The border this frame draws around a window of **ours**, per side, in skin pixels.
+        ///
+        /// The skin's own number is asymmetric wherever the author left padding on one side for
+        /// contents Winamp supplies and we do not — HeadAMP's status frame states `25,28,-40,-70`,
+        /// which is 25 left against 15 right and 28 top against 42 bottom, and a meter placed there
+        /// reads as pushed right and sunk. Ours is the **larger** of each opposing pair, so the client
+        /// is centred and still clears everything the author kept clear on either side. Nothing about
+        /// the skin changes: this places the group we synthesized, in the window we synthesized.
+        var symmetricBorder: CGSize? {
+            guard exemplar == nil, let rect = scriptClient else { return nil }
+            let horizontal = max(rect.minX, rect.width - rect.minX)
+            let vertical = max(rect.minY, rect.height - rect.minY)
+            guard horizontal > 0, vertical > 0 else { return nil }
+            return CGSize(width: horizontal, height: vertical)
+        }
+
+        /// What this frame's border costs the window: the exemplar's own content rect where the skin
+        /// lays its windows out itself — a `w="-66" h="-92"` client area is a 66x92 border around it —
+        /// and otherwise twice the symmetric border we place our own client inside.
         var chromeInset: CGSize {
-            guard let exemplar else { return .zero }
+            guard let exemplar else {
+                guard let border = symmetricBorder else { return .zero }
+                return CGSize(width: 2 * border.width, height: 2 * border.height)
+            }
             let width = Double(exemplar.content["w"] ?? "") ?? 0
             let height = Double(exemplar.content["h"] ?? "") ?? 0
             return CGSize(width: max(0, -width), height: max(0, -height))
@@ -297,11 +330,12 @@ enum WasabiSurfaceSynthesizer {
         ///
         /// Every number in the hosted-window registry is the size of the *contents* — the spectrum's
         /// 343x145 is the bars. Treating it as the window's size instead left Itemskin's 33x55 border
-        /// eating most of the window and reading as chrome far too thick for what it framed.
+        /// eating most of the window and reading as chrome far too thick for what it framed, and
+        /// HeadAMP's 40x70 script inset squashing a 343x145 meter into 303x75 (B140).
         func floor(under size: CGSize) -> CGSize {
-            guard let exemplar else { return size }
             let grown = CGSize(width: size.width + chromeInset.width,
                                height: size.height + chromeInset.height)
+            guard let exemplar else { return grown }
             return CGSize(width: max(grown.width, exemplar.minimumSize.width),
                           height: max(grown.height, exemplar.minimumSize.height))
         }
@@ -349,7 +383,8 @@ enum WasabiSurfaceSynthesizer {
                 groupIdentifier: frame.groupIdentifier,
                 xuiTag: frame.xuiTag,
                 hasArtwork: frame.hasArtwork,
-                exemplar: frame.exemplar
+                exemplar: frame.exemplar,
+                scriptClient: frame.scriptClient
             ))
         case .failure(let reason):
             route = .classicFallback(reason: reason)
@@ -359,8 +394,14 @@ enum WasabiSurfaceSynthesizer {
         ))
     }
 
-    /// Prefer a status bar, then no status bar, then a static frame — but only accept one the skin
-    /// can actually build a window out of.
+    /// The thinnest frame the skin declares that we can actually build a window out of.
+    ///
+    /// The order used to be "richest first" — a status bar, then no status bar, then a static frame —
+    /// and for a NullPlayer-owned window that is backwards. A status frame reserves rows for a status
+    /// strip whose text Winamp's own components supply and ours never do: HeadAMP's costs 70 rows
+    /// against its no-status frame's 50, around a 145-row meter (B140). So among the flavours whose
+    /// frame can build a client area, the one whose client rect leaves the most window wins, and the
+    /// old order only breaks ties — including the tie every skin that states no rect is in.
     ///
     /// Two shapes qualify, in this order:
     ///
@@ -375,7 +416,8 @@ enum WasabiSurfaceSynthesizer {
                                     document: WalExpandedXMLDocument,
                                     scriptReader: ScriptReader?) -> FrameSelection {
         var reasons: [String] = []
-        for flavour in WasabiStandardFrames.Flavour.allCases {
+        var declared: [(border: Double, order: Int, frame: Frame)] = []
+        for (order, flavour) in WasabiStandardFrames.Flavour.allCases.enumerated() {
             guard let definition = definitions[fold(flavour.groupIdentifier)] else {
                 reasons.append("\(flavour.rawValue): the skin declares no '\(flavour.groupIdentifier)'")
                 continue
@@ -389,10 +431,17 @@ enum WasabiSurfaceSynthesizer {
                                + "that instantiates its content")
                 continue
             }
-            return .success(Frame(groupIdentifier: flavour.groupIdentifier,
-                                  xuiTag: flavour.xuiTag,
-                                  hasArtwork: hasArtwork(definition, definitions: definitions, depth: 0),
-                                  exemplar: nil))
+            let frame = Frame(groupIdentifier: flavour.groupIdentifier,
+                              xuiTag: flavour.xuiTag,
+                              hasArtwork: hasArtwork(definition, definitions: definitions, depth: 0),
+                              exemplar: nil,
+                              scriptClient: scriptClientRect(definition, definitions: definitions,
+                                                             depth: 0))
+            declared.append((border: frame.chromeInset.width + frame.chromeInset.height,
+                             order: order, frame: frame))
+        }
+        if let best = declared.sorted(by: { ($0.border, $0.order) < ($1.border, $1.order) }).first {
+            return .success(best.frame)
         }
         // Nothing follows the contract. Copy one of the skin's own windows instead, if it has one:
         // its own layout is proof of where this frame's content goes, which nothing else here is.
@@ -638,11 +687,28 @@ enum WasabiSurfaceSynthesizer {
                            componentName: String, location: WalSourceLocation) -> [WalXMLNode] {
         let fullBleed = ["x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1"]
         guard let exemplar = frame.exemplar else {
-            return [WalXMLNode(name: frame.xuiTag, attributes: fullBleed.merging([
-                "id": frameID,
-                "content": contentGroupID,
-                "componentname": componentName,
-            ]) { _, new in new }, location: location)]
+            guard let border = frame.symmetricBorder else {
+                return [WalXMLNode(name: frame.xuiTag, attributes: fullBleed.merging([
+                    "id": frameID,
+                    "content": contentGroupID,
+                    "componentname": componentName,
+                ]) { _, new in new }, location: location)]
+            }
+            // The frame still draws its own artwork; only the client is ours to place, so the frame is
+            // handed no `content=` and our group sits beside it, centred in the border. Letting the
+            // script place it instead is what put the client off to one side (B140).
+            return [
+                WalXMLNode(name: frame.xuiTag, attributes: fullBleed.merging([
+                    "id": frameID,
+                    "componentname": componentName,
+                ]) { _, new in new }, location: location),
+                WalXMLNode(name: "group", attributes: [
+                    "id": contentGroupID,
+                    "x": String(Int(border.width)), "y": String(Int(border.height)),
+                    "w": String(Int(-2 * border.width)), "h": String(Int(-2 * border.height)),
+                    "relatw": "1", "relath": "1",
+                ], location: location),
+            ]
         }
         return [
             WalXMLNode(name: frame.xuiTag,
@@ -727,6 +793,35 @@ enum WasabiSurfaceSynthesizer {
     /// The MAKI method a standard frame calls to build its client area out of `content=`. Method
     /// names are lowercased by the parser.
     private static let contentInstantiationMethod = "newgroup"
+
+    /// Where a `content=` frame's own script puts its client, in skin pixels.
+    ///
+    /// `standardframe.maki` builds the client area from its `<script param="x,y,w,h,relatx,relaty,
+    /// relatw,relath">` — the tokens are `setXmlParam`'d straight onto the group named by `content=` —
+    /// so a negative `w`/`h` there is the border, exactly the way an exemplar's component rect is.
+    /// It is the only statement such a skin makes about where its client goes, and 51 of the 67
+    /// corpus archives make it: HeadAMP's status frame is `25,28,-40,-70`, which ate 40x70 of a
+    /// window sized as if the frame cost nothing and left a 343x145 meter drawing in 303x75 (B140).
+    ///
+    /// Read from the markup and not from the bytecode because the rect is *in* the markup; a script
+    /// that ignores its param only ever leaves the window the two skin pixels of slack a frame with
+    /// no rect at all already had.
+    private static func scriptClientRect(_ definition: WalXMLNode,
+                                         definitions: [String: WalXMLNode], depth: Int) -> CGRect? {
+        guard depth <= maximumInheritanceDepth else { return nil }
+        for script in scriptNodes(in: definition) {
+            let tokens = (script.attribute("param") ?? "")
+                .split(separator: ",", omittingEmptySubsequences: false)
+                .map { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard tokens.count >= 4, let x = tokens[0], let y = tokens[1],
+                  let width = tokens[2], let height = tokens[3],
+                  width < 0, height < 0, x >= 0, y >= 0, -width > x, -height > y else { continue }
+            return CGRect(x: x, y: y, width: -width, height: -height)
+        }
+        guard let parent = definition.attribute("inherit_group"),
+              let inherited = definitions[fold(parent)] else { return nil }
+        return scriptClientRect(inherited, definitions: definitions, depth: depth + 1)
+    }
 
     private static func scriptNodes(in node: WalXMLNode) -> [WalXMLNode] {
         var found: [WalXMLNode] = []
