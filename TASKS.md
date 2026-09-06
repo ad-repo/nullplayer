@@ -27,7 +27,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | B123 | **`System.getMousePos*` answers in the window's canvas space where Winamp answers in screen space.** Found while closing B101 (2026-09-04): cPro2's `layout.m` opens its Aero-snap preview when `System.getMousePosX() < 1`, meaning *the cursor is at the left edge of the screen*; ours reads window-relative, so it is true whenever the pointer is anywhere left of the player and the preview opened on an ordinary launch. The suppression that closed B101 hides the symptom on the only skin that has shown it; the reading is still wrong for anything else that asks. **Not a free change**: `WinampModernMainView.currentMousePositionInSkinPixels` is window-space deliberately, and `reference/scripting.md` records three corpus skins (Lobe, Rika, mmd3) whose knobs and dials were fixed by making it so — a screen-space reading wants each of those re-measured live before it lands | 1 skin measured; every skin whose script reads the cursor | M | Live-reported |
-| B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two separate defects.** (b) the streaming analyzer was starved of buffers: **fixed and live-confirmed 2026-09-04**. (a) the window repaints at ~7 fps: **open**, cause found by B118 (the per-frame layer warp), fix tracked as **B119**. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
+| B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two separate defects.** (b) the streaming analyzer was starved of buffers: **fixed and live-confirmed 2026-09-04**, [archived](docs/winamp-modern/backlog-archive.md#b117b--streaming-starved-the-wal-analyzer--closed-2026-09-04). (a) the window repaints at ~7 fps: **open**, cause found by B118 (the per-frame layer warp), fix tracked as **B119**. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
 | B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, because it warps two layers on every frame. **(1) the CPU mesh resample is fixed** (2026-09-04, 24.1% -> ~11%). **(2) Core Graphics painting the warped result is open**, ~26% against a control's ~5%. Three candidate causes are now dead by measurement; what is left is drawing less, not drawing cleverer. See [detail](#b119). Shared path (Defix warps too), so a fix wants a corpus sweep | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
 | B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Awaiting the reporter's live confirmation** | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
 | B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
@@ -201,37 +201,6 @@ The implementation and its automated coverage shipped; that record is in
       `manual-qa-checklist.md`.
 
 ### B117
-
-- [x] **B117(b). Streaming starved the `.wal` analyzer, and the spectrum slammed to the floor several
-      times a second.** Reported 2026-09-04 as WMP11-BlueVU's spectrum being choppy. **Fixed and
-      live-confirmed 2026-09-04** (*"it looks much better now"*).
-
-      `StreamingAudioPlayer.processAudioBuffer` delivered PCM through `DispatchQueue.main.async`, so
-      the 2048-point FFT ran on **main** — and the coalescing flag was cleared only *inside* the
-      dispatched block, so while main was stalled every buffer was **discarded rather than queued**.
-      Past the 150 ms silence timeout the tap answers all-zero bands, hence full-scale-to-floor
-      several times a second. `AudioEngine` posts straight from its tap with no coalescer, which is
-      the whole of the local-vs-stream asymmetry the reporter saw. Fixed by posting from the audio
-      thread and deleting the coalescer; both consumers already expect that thread.
-
-      | | before | after |
-      |---|---|---|
-      | arrival gap | median 318 ms, p90 1045, max 5981 | median **106 ms** |
-      | `WM-VIS-GAP silence` | 480 | **0** |
-      | draws reading zero | 481/621 (58%) | **9/900 (1.0%)**, matching local's 2.3% |
-
-      **Dead ends — do not re-try.** The `frameCount >= 2048` short-buffer theory (every streaming
-      arrival logged `frames=2048`), and the `offset = max(0, available - fftSize)` staleness lead in
-      [`rendering/vis.md`](skills/winamp-modern-skin-guide/reference/rendering/vis.md), which is a
-      latency defect and not this one.
-
-      **Left behind for whoever touches it next.** `processAudioBuffer` writes the shared
-      `fullStereoPcmLeft/Right` before copying out and the coalescer used to mask that seam; the
-      strict 106 ms spacing says the calls are sequential, so this is a note, not a defect. And the
-      delivery thread of `.audioStereoPCMFullDataUpdated` is undocumented where it is declared while
-      `StreamingAudioPlayer` hops to main in **six** places — `pendingSpectrumUpdate` and
-      `pendingPcmUpdate` feed the Classic spectrum and PeppyMeter through the identical block and
-      have not been measured. Same seam as `780541ea`, `3b9721af`, `bc4253eb`.
 
 - [ ] **B117(a). The window repaints at ~7 fps, and the marquee with it.** Measured, not disputed:
       the frame interval clusters at 120–145 ms against an expected 33 ms, and `WM-VIS-STALL` is

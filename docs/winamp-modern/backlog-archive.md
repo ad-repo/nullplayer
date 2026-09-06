@@ -2,6 +2,44 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B117(b) — streaming starved the `.wal` analyzer — closed 2026-09-04
+
+Half of a two-part item. **B117(a)** — WMP11-BlueVU's window repainting at ~7 fps — is still open and
+keeps the `B117` row in [`TASKS.md`](../../TASKS.md); only the closed half moved here.
+
+### B117(b)
+
+- [x] **B117(b). Streaming starved the `.wal` analyzer, and the spectrum slammed to the floor several
+      times a second.** Reported 2026-09-04 as WMP11-BlueVU's spectrum being choppy. **Fixed and
+      live-confirmed 2026-09-04** (*"it looks much better now"*).
+
+      `StreamingAudioPlayer.processAudioBuffer` delivered PCM through `DispatchQueue.main.async`, so
+      the 2048-point FFT ran on **main** — and the coalescing flag was cleared only *inside* the
+      dispatched block, so while main was stalled every buffer was **discarded rather than queued**.
+      Past the 150 ms silence timeout the tap answers all-zero bands, hence full-scale-to-floor
+      several times a second. `AudioEngine` posts straight from its tap with no coalescer, which is
+      the whole of the local-vs-stream asymmetry the reporter saw. Fixed by posting from the audio
+      thread and deleting the coalescer; both consumers already expect that thread.
+
+      | | before | after |
+      |---|---|---|
+      | arrival gap | median 318 ms, p90 1045, max 5981 | median **106 ms** |
+      | `WM-VIS-GAP silence` | 480 | **0** |
+      | draws reading zero | 481/621 (58%) | **9/900 (1.0%)**, matching local's 2.3% |
+
+      **Dead ends — do not re-try.** The `frameCount >= 2048` short-buffer theory (every streaming
+      arrival logged `frames=2048`), and the `offset = max(0, available - fftSize)` staleness lead in
+      [`rendering/vis.md`](skills/winamp-modern-skin-guide/reference/rendering/vis.md), which is a
+      latency defect and not this one.
+
+      **Left behind for whoever touches it next.** `processAudioBuffer` writes the shared
+      `fullStereoPcmLeft/Right` before copying out and the coalescer used to mask that seam; the
+      strict 106 ms spacing says the calls are sequential, so this is a note, not a defect. And the
+      delivery thread of `.audioStereoPCMFullDataUpdated` is undocumented where it is declared while
+      `StreamingAudioPlayer` hops to main in **six** places — `pendingSpectrumUpdate` and
+      `pendingPcmUpdate` feed the Classic spectrum and PeppyMeter through the identical block and
+      have not been measured. Same seam as `780541ea`, `3b9721af`, `bc4253eb`.
+
 ## B133 — `@SKINSPATH@` font references — closed 2026-09-05, not a defect
 
 | B133 | **`@SKINSPATH@/<Other Skin>/…` font references are not expanded, so an overlay skin loses every face it borrows.** Big Bento Modern Light and its Windows 10 sibling declare all three of their faces (`oxygen.ttf`, `swis721bdcn_bt_numbers.ttf`, `swis721lt_cn_bt_light.ttf`) as `file="@SKINSPATH@/Big Bento Modern/fonts/…"` — they are written against the base Big Bento skin rather than shipping copies. The loader already understands the macro for a *mount* (`missingRequiredMount` exists and is deliberately not `resourceMissing`), so the question is whether a `<truetypefont file=>` goes through the same expansion; measured 2026-09-05, these six targets do not resolve. Until it does, both Light variants draw entirely in the B131 substitute and are indistinguishable from a skin that named a font nobody has | 2 skins measured; every overlay skin written against an installed base | M | Measured |
