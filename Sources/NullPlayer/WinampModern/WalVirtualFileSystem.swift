@@ -57,6 +57,18 @@ final class WalVirtualFileSystem {
     private var mounts: [Mount] = []
     private var variables: [String: String] = [:]
 
+    /// Mount roots the loaded skin has actually **read bytes from**, so a caller can tell whether a
+    /// skin genuinely depends on a mount (the ClassicPro engine is mounted for every skin, and a
+    /// non-cPro skin simply never touches it). Existence probes deliberately do not count: only
+    /// `data(at:)` records, since `canonicalExistingPath` is what `exists(_:)` and the sibling-mount
+    /// probes call, and a probe that resolves a path hands the skin nothing.
+    private(set) var readMountRoots: Set<String> = []
+
+    func didRead(fromMountRoot root: String) -> Bool {
+        guard let canonical = try? Self.canonicalize(root, relativeToDirectory: "/") else { return false }
+        return readMountRoots.contains(Self.fold(canonical))
+    }
+
     /// Resolves an installed skin *by mount name* into a provider, so an overlay skin can reach the
     /// base skin it is written against. Nil means "no such skin is installed".
     var siblingMountResolver: ((String) throws -> WalResourceProvider?)?
@@ -225,7 +237,9 @@ final class WalVirtualFileSystem {
             throw WalFailure(WalDiagnostic(.resourceMissing, "No provider owns logical resource '\(canonical)'.", location: location))
         }
         do {
-            return try mount.provider.data(for: relative)
+            let bytes = try mount.provider.data(for: relative)
+            readMountRoots.insert(mount.foldedRoot)
+            return bytes
         } catch let failure as WalFailure {
             throw failure
         } catch {

@@ -366,6 +366,14 @@ final class WinampModernPhase6Tests: XCTestCase {
         let playlistPro = try provider.data(for: "xui/PlaylistPro/_v1/PlaylistPro.xml")
         XCTAssertEqual(playlistPro.count, 3711,
                        "expected the superseding PlaylistPro.xml, not the 312-byte stub")
+        // The engine the provenance constants were measured from. A mismatch here means the
+        // extraction changed, or the user pointed at a different build — investigate, do not
+        // re-pin the constant.
+        if URL(fileURLWithPath: path).pathExtension.lowercased() == "exe" {
+            XCTAssertEqual(info.contentHash, ClassicProKnownGood.engineTreeSHA256)
+            XCTAssertEqual(info.installerSHA256, ClassicProKnownGood.installerSHA256)
+            XCTAssertEqual(info.provenanceVerdict, .knownGood)
+        }
     }
 
     /// Opt-in end-to-end: with the engine imported (WINAMP_MODERN_ENGINE) and a cPro `.wal` supplied
@@ -383,7 +391,105 @@ final class WinampModernPhase6Tests: XCTestCase {
         XCTAssertEqual(windows.filter(\.isMainPlayer).count, 1)
     }
 
+    // MARK: - 6.5 Engine provenance
+
+    func testSHA256HexMatchesKnownVectors() {
+        XCTAssertEqual(ClassicProDigests.sha256Hex(Data()),
+                       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        XCTAssertEqual(ClassicProDigests.sha256Hex(Data("abc".utf8)),
+                       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
+    func testVerdictTreeMatchWins() {
+        XCTAssertEqual(ClassicProDigests.verdict(installerDigest: nil,
+                                                 engineTreeSHA256: ClassicProKnownGood.engineTreeSHA256),
+                       .knownGood)
+        // A folder or bare-tree import has no installer to offer, and must not be penalized for it.
+        XCTAssertEqual(ClassicProDigests.verdict(installerDigest: "whatever",
+                                                 engineTreeSHA256: ClassicProKnownGood.engineTreeSHA256),
+                       .knownGood)
+    }
+
+    /// The tested installer extracting to an unexpected tree means *our extractor* changed. Reporting
+    /// that as verified is exactly the regression the provenance check exists to catch.
+    func testVerdictKnownInstallerWithWrongTreeIsTreeMismatch() {
+        XCTAssertEqual(ClassicProDigests.verdict(installerDigest: ClassicProKnownGood.installerSHA256,
+                                                 engineTreeSHA256: String(repeating: "0", count: 64)),
+                       .treeMismatch)
+    }
+
+    func testVerdictUnknownBothIsUnrecognized() {
+        XCTAssertEqual(ClassicProDigests.verdict(installerDigest: nil,
+                                                 engineTreeSHA256: String(repeating: "0", count: 64)),
+                       .unrecognized)
+        XCTAssertEqual(ClassicProDigests.verdict(installerDigest: "0123",
+                                                 engineTreeSHA256: String(repeating: "0", count: 64)),
+                       .unrecognized)
+    }
+
+    /// `.engine-info.json` files written before `installerSHA256` existed must still decode: `info()`
+    /// swallows a decode failure, so a broken Codable shape silently reports "no engine installed".
+    func testEngineInfoDecodesLegacyJSONWithoutInstallerDigest() throws {
+        let json = #"{"families":["one","two"],"fileCount":309,"contentHash":"abc123"}"#
+        let info = try JSONDecoder().decode(ClassicProEngineInfo.self, from: Data(json.utf8))
+        XCTAssertNil(info.installerSHA256)
+        XCTAssertEqual(info.families, ["one", "two"])
+        XCTAssertEqual(info.fileCount, 309)
+        XCTAssertEqual(info.contentHash, "abc123")
+        XCTAssertEqual(info.provenanceVerdict, .unrecognized)
+    }
+
+    func testPrepareImportWritesNothingUntilCommitted() throws {
+        let source = try makeSyntheticEngineFolder()
+        // A store root that does not exist yet, so any write at all is visible on the filesystem.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WinampModernPhase6-store-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let importer = ClassicProEngineImporter(store: ClassicProEngineStore(rootDirectory: root))
+
+        let prepared = try importer.prepareImport(from: source)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path), "prepareImport must not write")
+
+        _ = try importer.commitImport(prepared)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("engine/load.xml").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(".engine-info.json").path))
+    }
+
+    /// A synthetic tree must never read as the build we test against.
+    func testSyntheticEngineIsUnrecognized() throws {
+        let store = ClassicProEngineStore(rootDirectory: try makeTempDir())
+        let info = try ClassicProEngineImporter(store: store).importEngine(from: try makeSyntheticEngineFolder())
+        XCTAssertNil(info.installerSHA256, "a folder source has no installer to fingerprint")
+        XCTAssertEqual(info.provenanceVerdict, .unrecognized)
+        XCTAssertEqual(store.info(), info)
+    }
+
+    /// The signal §5's untested-engine warning rides on: reading bytes from the engine mount counts,
+    /// but merely probing for a path does not. The engine mounts for *every* skin, so a probe-counts
+    /// implementation would flag skins that never touch it.
+    func testVFSRecordsMountReadsButNotProbes() throws {
+        let engineRoot = ClassicProEngineStore.logicalMountRoot
+        let vfs = try WalVirtualFileSystem(skinName: "probe",
+                                           skin: try WalMemoryResourceProvider(resources: ["skin.xml": Data("<x/>".utf8)]))
+        try vfs.mount(try WalMemoryResourceProvider(resources: ["load.xml": Data("<engine/>".utf8)]), at: engineRoot)
+        XCTAssertFalse(vfs.didRead(fromMountRoot: engineRoot))
+
+        XCTAssertTrue(vfs.contains(engineRoot + "/load.xml"))
+        XCTAssertFalse(vfs.didRead(fromMountRoot: engineRoot), "an existence probe is not a read")
+
+        _ = try vfs.data(at: engineRoot + "/load.xml")
+        XCTAssertTrue(vfs.didRead(fromMountRoot: engineRoot))
+    }
+
     // MARK: - Helpers
+
+    /// Minimal engine tree: `load.xml` plus the `one` family `validate` requires.
+    private func makeSyntheticEngineFolder() throws -> URL {
+        let dir = try makeTempDir()
+        try writeFile(dir, "load.xml", "<WinampAbstractionLayer version=\"1.0\"/>")
+        try writeFile(dir, "one/xml/player.xml", "<groupdef id=\"player\"/>")
+        return dir
+    }
 
     private func makeTempDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory

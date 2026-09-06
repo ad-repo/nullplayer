@@ -9,6 +9,28 @@ struct ClassicProEngineInfo: Codable, Equatable {
     let fileCount: Int
     /// SHA-256 over the sorted (path, bytes) of the engine tree.
     let contentHash: String
+    /// SHA-256 of the installer the engine was extracted from, when the source was one (`.exe`, or a
+    /// `.zip` with a nested installer). `nil` for a folder or a bare engine tree — not a downgrade,
+    /// since the tree hash alone is what decides the verdict.
+    ///
+    /// Optional with an explicit default so `.engine-info.json` files written before this field
+    /// existed still decode (`info()` swallows decode failures and would otherwise report no engine
+    /// info at all for a perfectly good install).
+    var installerSHA256: String? = nil
+
+    /// Derived at read time, never stored: persisting the judgment would freeze the opinion of the
+    /// build that did the import, so blessing a second engine later could never reach an engine
+    /// already on disk.
+    var provenanceVerdict: ClassicProProvenanceVerdict {
+        ClassicProDigests.verdict(installerDigest: installerSHA256, engineTreeSHA256: contentHash)
+    }
+}
+
+/// A resolved, validated engine import that has not been written anywhere yet.
+struct ClassicProEnginePreparedImport {
+    let engineFiles: [String: Data]
+    let info: ClassicProEngineInfo
+    var verdict: ClassicProProvenanceVerdict { info.provenanceVerdict }
 }
 
 /// Private, one-time store for the user-supplied ClassicPro engine. The engine is imported once and
@@ -56,8 +78,9 @@ final class ClassicProEngineStore {
     }
 
     /// Persist a validated engine tree (paths relative to the engine root) atomically.
-    func install(engineFiles: [String: Data]) throws -> ClassicProEngineInfo {
-        let info = try Self.validate(engineFiles: engineFiles)
+    func install(engineFiles: [String: Data],
+                 precomputedInfo: ClassicProEngineInfo? = nil) throws -> ClassicProEngineInfo {
+        let info = try precomputedInfo ?? Self.validate(engineFiles: engineFiles)
         let staging = rootDirectory.appendingPathComponent(".engine-importing-\(UUID().uuidString)", isDirectory: true)
         try? fileManager.removeItem(at: staging)
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
@@ -128,22 +151,43 @@ final class ClassicProEngineImporter {
 
     @discardableResult
     func importEngine(from url: URL) throws -> ClassicProEngineInfo {
-        let engineFiles = try engineFileMap(from: url)
-        return try store.install(engineFiles: engineFiles)
+        try commitImport(try prepareImport(from: url))
+    }
+
+    /// Resolve, validate and fingerprint a source **without writing anything**, so the caller can put
+    /// an unrecognized engine to the user before it replaces the one already installed.
+    func prepareImport(from url: URL) throws -> ClassicProEnginePreparedImport {
+        let resolved = try resolvedSource(from: url)
+        var info = try ClassicProEngineStore.validate(engineFiles: resolved.files)
+        info.installerSHA256 = resolved.installerSHA256
+        return ClassicProEnginePreparedImport(engineFiles: resolved.files, info: info)
+    }
+
+    @discardableResult
+    func commitImport(_ prepared: ClassicProEnginePreparedImport) throws -> ClassicProEngineInfo {
+        try store.install(engineFiles: prepared.engineFiles, precomputedInfo: prepared.info)
     }
 
     /// Resolve any supported source to an engine-root-relative file map (`load.xml`, `one/...`, …).
     func engineFileMap(from url: URL) throws -> [String: Data] {
+        try resolvedSource(from: url).files
+    }
+
+    /// The single exe/zip/folder dispatch, alongside the installer digest each source can offer.
+    private func resolvedSource(from url: URL) throws -> (files: [String: Data], installerSHA256: String?) {
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
             throw WalFailure(WalDiagnostic(.resourceMissing, "Engine source '\(url.lastPathComponent)' does not exist."))
         }
         if isDirectory.boolValue {
-            return try engineFilesFromDirectory(url)
+            // A folder has no installer to hash; the tree hash stands on its own.
+            return (try engineFilesFromDirectory(url), nil)
         }
         switch url.pathExtension.lowercased() {
         case "exe":
-            return Self.slice(engine: try NSISArchive.extract(data: try readBounded(url), limits: limits), sourceName: url.lastPathComponent)
+            let installer = try readBounded(url)
+            return (Self.slice(engine: try NSISArchive.extract(data: installer, limits: limits), sourceName: url.lastPathComponent),
+                    ClassicProDigests.sha256Hex(installer))
         case "zip", "wal":
             return try engineFilesFromZip(url)
         default:
@@ -169,7 +213,7 @@ final class ClassicProEngineImporter {
         return Self.slice(engine: full, sourceName: directory.lastPathComponent)
     }
 
-    private func engineFilesFromZip(_ url: URL) throws -> [String: Data] {
+    private func engineFilesFromZip(_ url: URL) throws -> (files: [String: Data], installerSHA256: String?) {
         let archive: Archive
         do {
             archive = try Archive(url: url, accessMode: .read)
@@ -198,10 +242,12 @@ final class ClassicProEngineImporter {
         }
         // Prefer an embedded engine tree; otherwise fall back to a nested NSIS installer.
         let sliced = Self.slice(engine: files, sourceName: url.lastPathComponent)
-        if !sliced.isEmpty { return sliced }
+        // A zip carrying the tree directly has no installer bytes to fingerprint.
+        if !sliced.isEmpty { return (sliced, nil) }
         if let installer = nestedInstaller {
-            return Self.slice(engine: try NSISArchive.extract(data: installer.data, limits: limits),
-                              sourceName: installer.name)
+            return (Self.slice(engine: try NSISArchive.extract(data: installer.data, limits: limits),
+                               sourceName: installer.name),
+                    ClassicProDigests.sha256Hex(installer.data))
         }
         throw WalFailure(WalDiagnostic(.invalidRoot,
             "'\(url.lastPathComponent)' contains neither a ClassicPro engine tree nor an installer."))

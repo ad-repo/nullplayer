@@ -140,6 +140,35 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         window.setAccessibilityLabel("Winamp Modern Main Window")
     }
 
+    /// One-time warning when a skin reads the ClassicPro engine mount and the installed engine is
+    /// not the build we test against. Suppressed per engine `contentHash`, so it fires again if the
+    /// user swaps in a different engine but never nags about one they have already accepted.
+    private static let untestedEngineWarnedKey = "winampModernUntestedClassicProEngineWarned"
+
+    private func warnIfEngineUntested(loaded: WinampModernLoadedSkin) {
+        guard loaded.vfs.didRead(fromMountRoot: ClassicProEngineStore.logicalMountRoot),
+              let info = ClassicProEngineStore.shared.info(),
+              info.provenanceVerdict != .knownGood,
+              UserDefaults.standard.string(forKey: Self.untestedEngineWarnedKey) != info.contentHash
+        else { return }
+        UserDefaults.standard.set(info.contentHash, forKey: Self.untestedEngineWarnedKey)
+
+        let alert = NSAlert()
+        alert.messageText = "This Skin Uses an Untested ClassicPro Engine"
+        alert.informativeText = """
+            NullPlayer has only been tested against ClassicPro 2.01. This skin reads from the \
+            installed engine, so parts of it may render incorrectly.
+
+            Reimporting the ClassicPro 2.01 installer replaces the engine.
+            """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Reimport\u{2026}")
+        if alert.runModal() == .alertSecondButtonReturn {
+            MenuActions.shared.importClassicProEngineFromFile()
+        }
+    }
+
     func loadSkin(at url: URL) {
         // Before the teardown, because the teardown is what makes them unreadable: which of
         // NullPlayer's own feature windows the user has open, in whichever chrome the outgoing skin
@@ -380,6 +409,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 NSLog("WinampModern compatibility [%@]:\n%@", url.lastPathComponent, report.summary)
             }
             #endif
+            // Not DEBUG-gated: this one is for the user. The engine mounts for every skin, so the
+            // only reliable signal that a skin *depends* on it is that the skin actually read bytes
+            // from the mount.
+            warnIfEngineUntested(loaded: loaded)
             view.updatePlaybackState()
             view.updateTime(current: host.currentTime, duration: host.duration)
             view.needsDisplay = true

@@ -1023,6 +1023,28 @@ class ContextMenuBuilder {
             if engineInstalled { engineItem.state = .on }
             winampModernMenu.addItem(engineItem)
 
+            let downloadEngineItem = NSMenuItem(title: "Download ClassicPro Engine...",
+                                                action: #selector(MenuActions.downloadClassicProEngine), keyEquivalent: "")
+            downloadEngineItem.target = MenuActions.shared
+            winampModernMenu.addItem(downloadEngineItem)
+
+            // Whether the installed engine is the build we test against. The engine is third-party
+            // and user-supplied, so an untested build is allowed \u{2014} it just must not be silent.
+            if engineInstalled {
+                let verdict = ClassicProEngineStore.shared.info()?.provenanceVerdict
+                let title: String
+                switch verdict {
+                case .knownGood: title = "Engine: verified 2.01"
+                // An installed engine with unreadable info is untested for the same reason an
+                // unrecognized one is: nothing vouches for what is on disk.
+                case .unrecognized, .none: title = "\u{26A0}\u{FE0E} Engine: untested build"
+                case .treeMismatch: title = "\u{26A0}\u{FE0E} Engine: unexpected contents"
+                }
+                let status = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                status.isEnabled = false
+                winampModernMenu.addItem(status)
+            }
+
             // How the user gets `.wal` skins, and where they land — about *this* installation, not
             // about what is loaded into it. Opening the folder belongs with the import it is the
             // other half of, not stranded at the bottom of the menu.
@@ -4496,9 +4518,14 @@ class MenuActions: NSObject {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let info = try ClassicProEngineImporter.shared.importEngine(from: url)
-            NSLog("WinampModern: Imported ClassicPro engine (families %@, %d files, %@)",
-                  info.families.joined(separator: "+"), info.fileCount, String(info.contentHash.prefix(12)))
+            // Prepare first: nothing is written until an unrecognized engine has been confirmed, so
+            // declining leaves the engine already installed exactly as it was.
+            let prepared = try ClassicProEngineImporter.shared.prepareImport(from: url)
+            if prepared.verdict != .knownGood, !confirmUntestedEngineImport(prepared) { return }
+            let info = try ClassicProEngineImporter.shared.commitImport(prepared)
+            NSLog("WinampModern: Imported ClassicPro engine (families %@, %d files, %@, %@)",
+                  info.families.joined(separator: "+"), info.fileCount, String(info.contentHash.prefix(12)),
+                  info.provenanceVerdict.rawValue)
             if WindowManager.shared.uiMode == .winampModern,
                let selected = WinampModernSkinImporter.shared.selectedSkin() {
                 (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
@@ -4512,6 +4539,39 @@ class MenuActions: NSObject {
             alert.alertStyle = .warning
             alert.runModal()
         }
+    }
+
+    /// Blocking confirmation for an engine that is not the tested build. Cancel is added first so it
+    /// is the default: the safe answer to "we do not recognize this" is to keep what is installed.
+    private func confirmUntestedEngineImport(_ prepared: ClassicProEnginePreparedImport) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = prepared.verdict == .treeMismatch
+            ? "This Engine Extracted to Unexpected Contents"
+            : "This Is Not the Tested ClassicPro Engine"
+        if prepared.verdict == .treeMismatch {
+            // The loudest case: known installer, wrong tree, which means our own extraction changed.
+            alert.informativeText = """
+                The installer is the ClassicPro 2.01 build NullPlayer was tested against, but it \
+                extracted to contents we do not recognize.
+
+                Expected: \(String(ClassicProKnownGood.engineTreeSHA256.prefix(12)))
+                Found: \(String(prepared.info.contentHash.prefix(12)))
+
+                cPro skins may render incorrectly. Please report this.
+                """
+        } else {
+            alert.informativeText = """
+                NullPlayer has only been tested against ClassicPro 2.01. cPro skins may render \
+                incorrectly, or fail to load, with a different build.
+
+                Engine contents: \(String(prepared.info.contentHash.prefix(12))) \
+                (\(prepared.info.fileCount) files)
+                """
+        }
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Import Anyway")
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     @objc func openWinampModernSkinsFolder() {
@@ -4574,6 +4634,11 @@ class MenuActions: NSObject {
     
     @objc func getMoreClassicSkins() {
         guard let url = URL(string: "https://skins.webamp.org") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc func downloadClassicProEngine() {
+        guard let url = URL(string: "https://www.softpedia.com/get/Multimedia/Audio/Audio-Plugins/ClassicPro.shtml#download") else { return }
         NSWorkspace.shared.open(url)
     }
 
