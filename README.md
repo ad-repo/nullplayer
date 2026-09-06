@@ -260,6 +260,50 @@ Library data is stored as a SQLite database at `~/Library/Application Support/Nu
 
 Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
 
+## Skins
+
+NullPlayer has four looks - Modern, Classic, Original, and Original-Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
+
+### Winamp Modern (`.wal`) / ClassicPro
+
+ClassicPro skins (such as cPro-Bento, cPro2 Dark Aluminum, and the cPro Insomnis family) depend on the **ClassicPro plug-in**, which ships in a Windows installer. NullPlayer extracts that installer internally — no Wine, no external tools — but you must supply the installer. You can download it directly from **Skins > Modern > Download ClassicPro Engine...** and that will open a browser to the Softpedia download page.
+
+**Only `ClassicPro_2.01.exe` is supported.** Other versions or builds are not recognized; importing them shows a clear warning and the engine stays inactive.
+
+To set up:
+
+1. Open **Skins > Modern > Download ClassicPro Engine...** to fetch `ClassicPro_2.01.exe`.
+2. Import the installer via **Skins > Modern > Import ClassicPro Engine…** (it stays as a single private copy and is not run as a program).
+3. Import a ClassicPro skin via **Skins > Modern > Import .wal Skin...**, then select it from **Skins > Modern**.
+
+NullPlayer's Winamp Modern support is built through clean-room reverse engineering, verified against a corpus of real-world skins. The [skin compatibility report](docs/winamp-modern/skin-compatibility.md) is the current corpus of `.wal` skins tested in that effort — every Winamp 5.x skin the engine has been measured against, its compatibility grade, and what is still known to be outstanding on it. It is updated as the engine improves and new skins are measured.
+
+### Winamp Classic Mode
+
+Classic `.wsz` skin support. The app starts with a native macOS appearance and ships with one original NullPlayer skin (Silver). To apply a skin, use **Skins > Load Skin...** to open a `.wsz` file, or place skin files in `~/Library/Application Support/NullPlayer/Skins/` and select them from the Skins menu. Thousands of community-created skins can be downloaded from the **Skins > Get More Skins...** menu link, which opens the [Winamp Skin Museum](https://skins.webamp.org).
+
+### Nullplayer Original Mode
+
+A custom skin engine built from scratch with a neon cyberpunk aesthetic. Original skins are JSON-configured and support:
+
+- **Color palette theming** -- define 12 named colors and the entire UI adapts
+- **Custom PNG image assets** -- optionally replace any UI element with your own artwork
+- **Procedural grid backgrounds** -- configurable Tron-style perspective grids
+- **Bloom/glow post-processing** -- Metal-based glow effects on bright UI elements
+- **Custom fonts** -- bundle TTF/OTF fonts or use any system font
+- **Animations** -- sprite frame cycling and parametric effects (pulse, glow, rotate, color cycle)
+
+The bundled default skin ("NeonWave") is fully programmatic -- zero image assets, pure palette-driven rendering.
+
+**Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
+
+**Skin installation**: Place skin folders or `.nsz` bundles in the compatibility directory `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Skins > Original**.
+
+### Nullplayer Original-Metal Mode
+
+A hi-fi hardware faceplate look, selected from **Skins > Original-Metal**, with seven finishes — Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, and Copper. Each finish restyles the whole player (chrome, panels, sliders, transport, and EQ) with a backlit-green LCD for the time and track displays and a spectrum analyzer matched to the finish.
+
+
 ## CLI Mode
 
 NullPlayer includes a first-class headless CLI mode for browsing, querying, playing, and routing media entirely from the terminal. It is designed to work as a scriptable command in automation pipelines: resolve media from multiple sources, pick a local output or cast target, then hand off playback without opening the GUI.
@@ -497,48 +541,6 @@ NullPlayer does not collect or transmit personal data to the developer. Playback
 and usage history is stored only in the app's local SQLite database. See the
 [Privacy Policy](PRIVACY.md) for details about local storage and user-directed
 network features.
-
-## Skins
-
-NullPlayer has three looks — Classic, Original, and Original-Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
-
-### Classic Mode
-
-Classic `.wsz` skin support. The app starts with a native macOS appearance and ships with one original NullPlayer skin (Silver). To apply a skin, use **Skins > Load Skin...** to open a `.wsz` file, or place skin files in `~/Library/Application Support/NullPlayer/Skins/` and select them from the Skins menu. Thousands of community-created skins can be downloaded from the **Skins > Get More Skins...** menu link, which opens the [Winamp Skin Museum](https://skins.webamp.org).
-
-### Original Mode
-
-A custom skin engine built from scratch with a neon cyberpunk aesthetic. Original skins are JSON-configured and support:
-
-- **Color palette theming** -- define 12 named colors and the entire UI adapts
-- **Custom PNG image assets** -- optionally replace any UI element with your own artwork
-- **Procedural grid backgrounds** -- configurable Tron-style perspective grids
-- **Bloom/glow post-processing** -- Metal-based glow effects on bright UI elements
-- **Custom fonts** -- bundle TTF/OTF fonts or use any system font
-- **Animations** -- sprite frame cycling and parametric effects (pulse, glow, rotate, color cycle)
-
-The bundled default skin ("NeonWave") is fully programmatic -- zero image assets, pure palette-driven rendering.
-
-**Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
-
-**Skin installation**: Place skin folders or `.nsz` bundles in the compatibility directory `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Skins > Original**.
-
-### Original-Metal Mode
-
-A hi-fi hardware faceplate look, selected from **Skins > Original-Metal**, with seven finishes — Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, and Copper. Each finish restyles the whole player (chrome, panels, sliders, transport, and EQ) with a backlit-green LCD for the time and track displays and a spectrum analyzer matched to the finish.
-
-### Winamp Modern (`.wal`) / ClassicPro
-
-ClassicPro skins (such as cPro-Bento, cPro2 Dark Aluminum, and the cPro Insomnis family) depend on the **ClassicPro plug-in**, which ships in a Windows installer. NullPlayer extracts that installer internally — no Wine, no external tools — but you must supply the installer. You can download it directly from **Skins > Modern > Download ClassicPro Engine...** and that will open a browser to the Softpedia download page.
-
-**Only `ClassicPro_2.01.exe` is supported.** Other versions or builds are not recognized; importing them shows a clear warning and the engine stays inactive.
-
-To set up:
-
-1. Open **Skins > Modern > Download ClassicPro Engine...** to fetch `ClassicPro_2.01.exe`.
-2. Import the installer via **Skins > Modern > Import ClassicPro Engine…** (it stays as a single private copy and is not run as a program).
-3. Import a ClassicPro skin via **Skins > Modern > Import .wal Skin...**, then select it from **Skins > Modern**.
-
 
 ## License
 
