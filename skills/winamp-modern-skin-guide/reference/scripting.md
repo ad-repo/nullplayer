@@ -425,6 +425,20 @@ from a subroutine whose only caller is `onTextChanged`. Reading the disassembly 
 look like `onTimer` work — the two handlers are adjacent, and `op25` is a **call** into the shared
 block, not a jump within one handler. Undispatched, the whole readout was unreachable code.
 
+**A *script's* `setText` raises it too, and the poll is not the only source (B141).** Winamp raises the
+event from inside `setText`, so a skin can drive layout off a string it wrote itself. ClassicPro's
+file-info drawer is the measured case: every row is a `<Text id="label">` beside a `<Text id="text">`,
+both declared at `x="0"` and stacked on purpose, and `infoline.maki` measures the label and shifts the
+value clear of it from `label.onTextChanged` alone — where the label's own string arrives as an XUI
+param, i.e. through `setText`. With no dispatch the handler never ran and every row drew its value on
+top of its label. Two guards go with it: **only on an actual change**, as Wasabi does, and **never
+re-entrantly** — a handler is free to answer with another `setText` on the same object
+(`textChangeInFlight`), which is an unbounded recursion rather than a second event. The write also
+records itself in `lastDispatchedText`, or the next `refreshBoundText` tick reads the script's own
+write as a host-side change and fires a second time. Measured with `WINAMP_MODERN_RENDER_SCRIPTS=1`:
+26 of cPro-Bento's programs run `ontextchanged` that never ran before, no other event's set changes,
+and no default layout renders differently — the page these rows live on is not shown at load.
+
 #### The mouse wheel is a *layout* event, and it carries two arguments
 
 `onMouseWheelUp` / `onMouseWheelDown` are how a skin scrolls anything it draws itself — a settings
