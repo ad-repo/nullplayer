@@ -1,6 +1,13 @@
 # HeadAMP
 
 An homage to the Windows Media Player "Headspace" skin by sambaneko (`winamp.spacecatsamba.com`), and
+
+- **Grade: B (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 27 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 the skin that found B140. **Its NullPlayer-owned windows are framed correctly as of B140
 (2026-09-05)**; before that they were chrome around a squashed, off-centre client.
 

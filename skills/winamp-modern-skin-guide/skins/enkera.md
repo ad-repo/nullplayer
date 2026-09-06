@@ -4,7 +4,12 @@
 
 - **File:** `Enkera.wal` · 428306 B · SHA-256 `61912f06fbab81d7…`
 - **Measured:** 2026-08-31 (B77) — **structural first pass only**, see *Not measured*
-- **Grade: not graded (confidence: low)** — nothing here was driven under the mouse or seen live.
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has used this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 4 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 
 **Measured status** — `WINAMP_MODERN_RENDER_DUMP` + `RENDER_BITMAPS` + `RENDER_SCRIPTS`:
 

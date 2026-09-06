@@ -320,7 +320,7 @@ half exists to stop a window being *shrunk* and has no business enlarging one it
 ### The corpus, measured (`VIS holder` in the render dump)
 
 **16 skins declare a `{0000000A}` surface; 6 of them embed one in the player.** Re-measured
-2026-08-30 (B23a), replacing a table that read "8 of the 31 installed skins… every one is a separate
+2026-08-30 (B23a), replacing a table that read "8 of the 31 then-installed skins… every one is a separate
 container; none embeds the component in the player." Both halves of that were wrong, and the reason
 is in the next paragraph.
 

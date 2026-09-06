@@ -150,7 +150,18 @@ Every row cites the probe that proved it — a status with no evidence column is
 
 Cover at minimum: window chrome/frames · transport · seek · volume · display/readouts · song ticker ·
 visualization · playlist · equalizer · library · tabs/drawers · configurator · colour themes ·
-album art · each menu · each animation · each auxiliary window.
+album art · each menu · each animation · each auxiliary window · **NullPlayer-owned windows**.
+
+That last row is required and is easy to forget, because it is not a surface the skin declares. Since
+B110/B140 the windows NullPlayer owns — Cava, Flow, PeppyMeter, the spectrum analyzer, the waveform,
+Audio Analysis, projectM, and the fallback equalizer — open wearing *this skin's* standard frame, so a
+skin can be flawless in its own containers and still put a broken border, an unreachable title strip
+or a mispositioned client area around eight of ours. It is a large visible surface and it wants one
+row per window, not one row for all of them. `WINAMP_MODERN_DRAG_HOSTED` says which windows got a
+skin frame and which fell back to the standalone classic window, and
+`WINAMP_MODERN_DRAG_HOSTED_PNG` renders each one with its chrome composited — reach for the PNG, not
+the counts: `surfaces=1` says a client area exists and is reachable and says **nothing** about where
+it is drawn.
 
 ## 5. Unsupported / unimplemented
 Split by class (A/B/C/D). For A, name the exact method or attribute. Note explicitly that the method
@@ -198,6 +209,113 @@ coverage or an undriven configurator caps confidence, never inflates the grade.
 Rules: **never grade a state you did not enter** — put it in §9 and lower confidence. A skin that
 looks perfect at rest and is dead under the mouse is **not** an A. If the archive ships a
 `screenshot.png` and you did not compare against it, confidence is at most medium.
+
+### A grade goes stale, and it must say so
+
+A letter is a measurement of one skin against one engine, and the engine moves. The template's
+`Measured: <date> · harness <git rev>` line already records which one — but nothing compared that rev
+to HEAD, so a grade written before forty backlog items landed still read as current. Several of those
+items change what a user sees on *every* skin (window frames, gamma, title rendering, window sizing),
+which is exactly the kind of change that invalidates a letter without touching the skin.
+
+So the rev is not decoration. **A grade is stale once the engine has moved underneath it:**
+
+```sh
+git log <measured-rev>..HEAD --oneline -- \
+    Sources/NullPlayer/WinampModern Sources/NullPlayer/Windows/WinampModern
+```
+
+Non-empty output means stale. A stale grade is still evidence and is never silently deleted — it
+publishes as **"B (as of 2026-08-31)"**, never as a current grade, and anything reading it should say
+what has landed since. Re-measuring is the only thing that clears it; there is no partial refresh.
+
+Check this before quoting an existing grade anywhere, and record the rev in
+`skins/<skin>.md` beside the letter so the check is possible without opening the report.
+
+### The provisional (headless) letter
+
+A driven report is the only way to a real letter, and there are 75 installed skins. So every skin also
+carries a **provisional** letter derived from a headless pass — load the archive, render every
+container and layout it declares to an image, start its scripts, and record artwork lookups,
+unimplemented-method calls and surface routing. `docs/winamp-modern/skin-compatibility.md` publishes
+it, clearly marked, wherever no live letter exists. A live letter always supersedes it.
+
+The ladder, and the *only* four signals allowed to move it:
+
+| | Awarded when |
+|---|---|
+| **F** | the archive does not load, **or** the main player container's best layout paints < 5% of its canvas |
+| **D** | a container the skin declares paints < 2% of its canvas, and it is not one a host fills (search results, tooltips, notifiers, about/preferences dialogs, which are legitimately empty at rest) |
+| **C** | a managed surface has no window in the skin, **or** the skin calls a MAKI method we do not implement — dispatch is fail-closed, so each such call abandons its whole handler |
+| **B** | none of the above |
+| **A** | never. The A bar is "nothing a user would report", and only a user establishes that |
+
+**Its measured error is about ±1 letter, in both directions.** On the six skins that had both, the
+headless letter disagreed with the driven one four times: three times harsher (cPro Insomnis, Insomnis
+v2, das-skin-prev, all B by hand and C headless) and **once kinder** — LOBE, headless B against a
+driven C. Do not describe the method as conservative; it is not.
+
+**Three signals were tried as discriminators and rejected on measurement.** Record them so nobody
+re-adds one:
+
+- **Unresolved artwork.** cPro Insomnis is a driven **B** with 13 unresolved ids of its own; cPro T2T
+  is a driven **C** with 15. It does not separate them. Worse, much of it is not missing at all: a
+  skin points an element at `none`, `null`, `image.null`, `window.background.hidden` or
+  `rating.remove.invisible` *precisely so that nothing draws*, and Winamp treats an unresolved id as
+  "draw nothing". Filter those, and separate hover/pressed-state art (cosmetic) from base art, before
+  quoting a number — then put it in the skin's outstanding list, not in its grade.
+- **`WINAMP_MODERN_RENDER_CLICKABLE` counts.** This probe lists objects the **markup hit test rejects
+  but a script hooks the mouse on** — so a **zero is the good result**, and 23 corpus skins report
+  zero. Reading it as "no working controls" downgrades most of the corpus on an inverted premise.
+  There is no headless inventory of *working* controls; that is what a driven pass is for.
+- **The compatibility level.** Diagnostics, not correctness. See the section above.
+
+### The census rating is not a grade, and must never be printed as one
+
+`scripts/wal_skin_census.sh` gives every installed archive a coarse **release rating** —
+`fully-skinned` / `player-skinned` / `partly-skinned` / `does-not-load` — and
+`docs/winamp-modern/skin-compatibility.md` publishes it
+for the skins nobody has graded. It exists because there are 75 distinct skins and six letters, and a
+release document has to say *something* about the other sixty-nine. It answers exactly one question:
+
+> **Did every piece the skin declares end up somewhere, with its artwork resolved?**
+
+- **fully-skinned** — the archive loaded, every layout the skin declares has a renderer, every
+  managed surface (playlist, equalizer, library, video, visualization) is embedded or has its own
+  window, and the NullPlayer-owned windows wear the skin's own frame.
+- **player-skinned** — all of that, except our own windows fall back to the standalone classic window
+  because the skin ships no usable standard frame.
+- **partly-skinned** — a managed surface has no window in the skin at all, or a declared container has
+  no selectable layout, so a standard NullPlayer window stands in for it. Mostly this is a skin that
+  predates Winamp's media library, not a defect.
+- **does-not-load** — the archive failed to load. No skin in the corpus is in this tier today.
+
+The names matter. An earlier pass called these `complete` / `partial` / `needs-work`, which told a
+user that Nullsoft's own Winamp3 base skin "needs work" because it declares no library window — a
+surface that did not exist when it was made. Name the measurement, not a verdict.
+
+Three things it is deliberately **not**, each of them measured rather than merely cautious:
+
+1. **It is not the compatibility level.** `full` / `degraded` / `unsupported`
+   (`WinampModernCompatibilityReport.swift`) counts *diagnostics*, not correctness — an unsupported
+   MAKI call is a warning, a thrown load or any error-severity finding forces `unsupported`. Itemskin
+   reads `unsupported` and draws correctly; a skin can read `full` and be visibly wrong. Publishing
+   that column to users would tell them a working skin is unsupported. Keep it as an internal
+   diagnostic column and nothing more.
+2. **It is not built from finding or missing-bitmap counts.** Across the corpus on 2026-09-06, 57 of
+   79 archives referenced at least one bitmap that did not resolve and 23 carried an error-severity
+   finding. Neither tracks what a user sees: cPro Insomnis carries a hand-graded **B** with 15
+   unresolved ids and Big Bento Modern is among the best-drawing skins in the corpus with 20, and
+   most of the shortfall is Wasabi base ids (`wasabi.frame.basetexture`, `component.basetexture`)
+   that nothing visible draws. A rating built on those columns called 58 of 79 skins broken. They
+   stay in the TSV; they do not decide the rating.
+3. **It is not a letter.** It says the pieces are present and placed. It says nothing about whether
+   they are drawn right, whether the controls respond, whether the animations run, or whether the
+   skin resembles its author's screenshot. Only a live pass says that. Wherever the rating is
+   published, that sentence is published beside it.
+
+A skin that has both a rating and a letter publishes the **letter**; the rating adds nothing once a
+human has looked.
 
 ## 6. Close the loop
 

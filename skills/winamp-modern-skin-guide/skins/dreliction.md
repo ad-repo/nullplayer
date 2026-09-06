@@ -4,7 +4,15 @@
 
 - **File:** `4-drelictionreleasepic.wal` · 1049380 B · SHA-256 `9b481e7535b9460e…`
 - **Measured:** 2026-08-31 (B77) — **structural first pass only**, see *Not measured*
-- **Grade: not graded (confidence: low)**
+- **Grade: C (provisional · confidence: low)** — from a headless pass; nobody has used this skin. Calls 1 unimplemented maki method(s) ×6 (`isobjectvalid`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 3 bitmap id(s) it references do not resolve, leaving a visible gap: `Layer`, `notifier.bg.inner`, `player.Beat`
+- unimplemented MAKI: `isobjectvalid` ×6
+- 30 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+- 3 error-severity load finding(s)
+
 
 **Measured status:**
 

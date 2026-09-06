@@ -2,6 +2,14 @@
 
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
+- **Grade: B (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 2 bitmap id(s) it references do not resolve, leaving a visible gap: `FRAMING_GLASS.window`, `Lighting.Element`
+- 14 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
+
 **Fixture note:** the archive ships `screenshot.png`, but it is a 275×116 skin-browser thumbnail of the
 whole three-window arrangement, not a reference render — good enough to settle *what the skin looks
 like* (wood-panelled player flanked by two speaker cabinets), not to measure against.

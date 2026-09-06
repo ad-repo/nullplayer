@@ -71,7 +71,7 @@ player, both speaker cabinets, the playlist and the library wearing the old artw
 
 Most bindings address skin-private preferences, and those live in `WinampModernConfiguration`. Four
 do not: they are Winamp's own playback options, which the skin merely *draws*. Measured across the
-30 installed skins they are also by far the most common bindings there are —
+30 skins then installed they are also by far the most common bindings there are —
 `{45F3F7C1-…};Repeat` ×52, `;Shuffle` ×50, `{FC3EAF78-…};Enable crossfading` ×32,
 `{F1239F09-…};Crossfade time` ×12 — so `WinampModernConfigBridge` maps exactly those to
 `WinampModernHost` (`shuffleEnabled`, `repeatEnabled`, `crossfadeEnabled`, `crossfadeSeconds`, the
@@ -109,7 +109,7 @@ buttons use the same bitmap for `image` and `activeImage` on purpose — the ind
 six `ghost="1"` layers whose alpha `playertools.m` sets as `activated * 255` from `getActivated()`
 at load and from `onActivate` thereafter. Every probe showed the buttons working and the skin
 looking dead, because `RENDER_PROBE` read `activated=0` and `alpha=0` on a script that had run
-clean. 8 of the 30 installed skins declare a handler.
+clean. 8 of the 30 skins then installed declare a handler.
 
 Dispatch it from all three places activation can move — `toggleActivation`, `setActivated` (never
 `setActivatedNoCallback`, which exists precisely to stay silent), and a `cfgattrib` write — and for
@@ -468,7 +468,7 @@ A deliberate exception to the identifier-only rule for the seeded Wasabi standar
 measured skins (CornerAmp, mmd3's `ctsbig`, Anexa) put a bare `<Wasabi:Button text="Switch">` under
 their theme list, and such a button names **no `image=` at all**, so it resolves no bitmap whatever
 the skin declares. (An earlier version of this note said no `.wal` ships `wasabi.button.*` artwork.
-That is wrong — **49 of the 70 corpus skins declare some**, Bio-Nid, Firefox and T800 116 ids each,
+That is wrong — **49 of the 70 corpus skins then installed declare some**, Bio-Nid, Firefox and T800 116 ids each,
 and CornerAmp and Anexa are themselves among them. The containment was never the corpus-wide absence;
 it is the `text=` and no-bitmap test below. Corrected while measuring B95.) The renderer draws a 1px border in `palette.listText` with the label centred, but
 only when the instance resolves *no* bitmap and carries a non-empty `text=` — a skin with its own
@@ -549,7 +549,7 @@ a missing *object*, not a missing paint. `WasabiTitleBox` supplies both halves: 
 expands `content` beneath the box (beside the `<Wasabi:Frame>` pane expansion, for the same reason),
 and the renderer draws the label and the box.
 
-Reach when this landed: **9 of the 35 installed skins, 33 declarations** — Bio-Nid, BLAKK, Core-X5,
+Reach when this landed: **9 of the 35 skins then installed, 33 declarations** — Bio-Nid, BLAKK, Core-X5,
 Ebonite, Enkera, impulse, Itemskin, Shield_Amp, Styx.
 
 Three things worth keeping:
@@ -622,8 +622,8 @@ Four things worth keeping:
   Modern keeps its own search box and how Styx and Shield_Amp keep their own `Wasabi:CustomDropDownList`
   wrappers — all three of that tag's users define it, which is why only the inner `Wasabi:DropDownList`
   needed implementing.
-- **A slider is the case that argues against drawing.** 19 of the 36 installed skins ship
-  `wasabi.slider.horizontal.button`, including all four that use the tag, so the substitution seeds
+- **A slider is the case that argues against drawing.** 19 of the 36 skins then installed
+  ship `wasabi.slider.horizontal.button`, including all four that use the tag, so the substitution seeds
   those ids and the skin's own artwork draws. Only a skin shipping neither reaches the flat track and
   drawn thumb. A check box is the opposite — **no** `.wal` ships `wasabi.checkbox.*` — so it is drawn,
   on the same deliberate exception as an artwork-less `<Wasabi:Button>` above.
@@ -732,7 +732,7 @@ nothing, so once BB26 gave the attribute the power to draw, those lamps read bac
 window does not start closed — which at launch is common. Reported as *"they are reflective of the
 start state; if the window launches at launch then the toggle gets reversed"*. Closing the window by
 its own close button or from a menu is the same desync arriving by another road. 194 declarations
-across 31 skins; roughly half name a component and half one of the skin's own container ids.
+across the 31 skins then installed; roughly half name a component and half one of the skin's own container ids.
 
 The lamp now asks, through `WasabiSceneRenderer.toggleTargetVisibleProvider`, and the answer wins
 outright — `activated` is not consulted when there is one, or the second copy simply returns. The
@@ -932,7 +932,8 @@ box resolved to 0x0 and the draw was free. impulse is the corpus's heaviest user
 and stick vis groups each name a dot-matrix `...vis.region` mask, which we were painting as if it were
 artwork — a static LCD grid that looked plausible and was never in the skin's picture.
 
-**Corpus reach**, measured before the change: 102 group instances across 37 of the 69 installed skins
+**Corpus reach**, measured before the change: 102 group instances across 37 of the 69
+skins then installed
 carry a `background` and no `w`/`h`. The before/after sweep moved **13 of 590 images across 7 skins**,
 every one an improvement or a 1px edge: BLAKK fixed, **Styx's notifier went from an empty gold band to
 its full Now Playing text** (its rows are relative children of a group that had no box to be relative

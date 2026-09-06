@@ -1,6 +1,16 @@
 # cPro — Venus ALPHA Port
 
 `cPro_Venus_Alpha_port_by_Victhor_v1.3.1.wal`, v1.31 — RPeterClark's Venus brought onto the
+
+- **Grade: C (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Calls 1 unimplemented maki method(s) ×4 (`enumitem`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 3 bitmap id(s) it references do not resolve, leaving a visible gap: `info.vol.bg`, `vol.bg`, `volume.bg2`
+- unimplemented MAKI: `enumitem` ×4
+- 10 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+- 1 error-severity load finding(s)
+
 ClassicPro engine by Victhor. A **ClassicPro `engine="one"`** skin, so it needs the engine imported;
 without it the archive is inert markup. The skin that found B142.
 

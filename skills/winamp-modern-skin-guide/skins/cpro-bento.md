@@ -2,6 +2,16 @@
 
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
+- **Grade: C (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. Calls 1 unimplemented maki method(s) ×4 (`enumitem`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 2 bitmap id(s) it references do not resolve, leaving a visible gap: `custom.repeat.0`, `custom.shuffle.0`
+- unimplemented MAKI: `enumitem` ×4
+- 13 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+- 1 error-severity load finding(s)
+
+
 **Fixture note:** the archive ships `screenshot.png` — 178×75, the author's own reference render.
 Small, but it settles the questions that cost the most time here: the tab pills are **framed** and sit
 *inset* inside the strip, the SUI sheet and playlist box have drawn borders, and the tab labels are the

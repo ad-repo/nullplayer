@@ -1,6 +1,13 @@
 # Bio-Nid
 
 `Bio-Nid.wal` · 336,780 B · SHA-256 `a90c5a01…c31e71d9` · skininfo name **"T-800"**, author
+
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 "Quadhelix", version 1.0. First measured 2026-08-28 (Phase 80), from a live report:
 *"bio-nid skin has 8 eq windows listed, the important window is empty and the eq's are little spiders
 that dont seem to do anything"*. No `screenshot.png` in the archive despite `<screenshot>skinshot.png</screenshot>`,

@@ -513,7 +513,7 @@ That is not a corpus of small skins ducking the question: it includes Winamp's o
   unexercised by the corpus. Do not read a claim about how a host row draws in a skin's bitmap sheet
   as something that has been observed.
 
-Reach: everything host-drawn, in all 73 skins. Arial is 18–36% narrower than the monospaced system
+Reach: everything host-drawn, in every installed skin. Arial is 18–36% narrower than the monospaced system
 font at the same point size (`Playlist` −36%, a long `Artist - Title` −31%, `3:45` −21%), and
 `surfaceTextWidth` feeds both the SUI tab-strip fit pass and the playlist title/time column split, so
 the change moves measured geometry corpus-wide — in the benign direction (less truncation, more tabs

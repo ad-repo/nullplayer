@@ -1,6 +1,16 @@
 # cPro2 — Styler (Normal / Radiance / Touchscreen)
 
 `cPro2_Styler_by_Victhor.wal`, `cPro2_Styler_Radiance_by_Victhor.wal`,
+
+- **Grade: C (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Calls 3 unimplemented maki method(s) ×20 (`enumitem`, `enumobject`, `getnumobjects`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 6 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `playback.button.mute.over.0`, `playback.button.rep.over.0`, `playback.button.shuf.over.0`, `s.button.mute.over.0`
+- unimplemented MAKI: `enumitem` ×2, `enumobject` ×14, `getnumobjects` ×4
+- 9 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+- 3 error-severity load finding(s)
+
 `cPro2_Styler_Touchscreen_by_Victhor.wal`, v1.00 — Victhor's 2014 "more than a skin, a project"
 release, shipped with 70 PSDs and a replace-the-graphics tutorial. All three are **ClassicPro
 `engine="two"`** skins (`load-two_alpha.xml`), so the engine has to be imported; without it the

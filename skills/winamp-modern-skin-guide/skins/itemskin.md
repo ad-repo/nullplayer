@@ -1,6 +1,16 @@
 # Itemskin
 
 A glass-framed skin whose component windows are built in an unusual way, and the reason B69 exists.
+
+- **Grade: C (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. Calls 1 unimplemented maki method(s) ×4 (`setchecked`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 3 bitmap id(s) it references do not resolve, leaving a visible gap: `player.main.extras.textbox.left`, `player.songinfo.stereo`, `player.songinfo.stereomono`
+- unimplemented MAKI: `setchecked` ×4
+- 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+- 2 error-severity load finding(s)
+
 Loads as of Phase 35; its notifier preferences draw as of B66, on their own background as of B90; its
 frames find their content as of B69 (2026-08-29); **its playlist window opens as of B112 (2026-09-04)**;
 **its audio is audible as of B111 (2026-09-04)** —

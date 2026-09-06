@@ -1,6 +1,15 @@
 # LOBE
 
 `Lobe.wal` · 605,554 B · SHA-256 `cfc66ef5…9e2e98a7` · author "boostr29", version 1.0.
+
+- **Grade: B (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 14 bitmap id(s) it references do not resolve, leaving a visible gap: `border`, `drawer.left.bg`, `drawer.right.bg`, `main.00002`, `main.attatchment`, `main.glass.lower`…
+- 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `thinger.over`
+- 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 First measured 2026-08-21 (`/wal-skin-report`, harness `108e4ea5`) — **grade D at measurement,
 **C after B27/B28** (confirmed live the same day); confidence medium.
 No `screenshot.png` and no readme in the archive, so no reference exists to check semantics against.

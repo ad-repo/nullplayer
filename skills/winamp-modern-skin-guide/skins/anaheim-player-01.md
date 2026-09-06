@@ -1,6 +1,13 @@
 # Anaheim Player 01
 
 **Archive:** `Anaheim_Player_01.wal`
+
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 2 error-severity load finding(s)
+
 **Layouts:** `normal` (240×260), `mini` (260×130) — both `desktopalpha="1"`
 **Background:** 400×400 shared bitmap (transparent outside artwork)
 

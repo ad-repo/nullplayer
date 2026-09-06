@@ -1,6 +1,14 @@
 # Hal's Eye
 
 `1-Hal__s_Eye_v1_2.wal` · 1,555,039 B · SHA-256 `77dbb83f…cc3e3679` · author "-=RoNtZ=-", version 1.0,
+
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 1 bitmap id(s) it references do not resolve, leaving a visible gap: `about.bg`
+- 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 `flo@metaskins.net`. Built for the GUIOlympics '04. First worked on **B91, 2026-08-31**
 (confirmed live); no `/wal-skin-report` run yet.
 

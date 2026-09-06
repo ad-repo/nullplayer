@@ -6,6 +6,13 @@
 - **Measured:** 2026-08-31 (B77) · engine: ClassicPro, family `one`
 - **Grade: B (confidence: medium)** — every surface routes and draws; what is left is this skin's own uncut artwork and two engine-wide backlog items, not anything specific to it.
 
+**Known outstanding:**
+
+- unimplemented MAKI: `enumitem` ×4
+- 12 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+- 1 error-severity load finding(s)
+
+
 **Read [cpro-bento.md](cpro-bento.md) first.** These four skins are almost content-free — `skin.xml`
 is a `<skininfo>` block plus `<include …/Plugins/classicPro/engine/load.xml"/>` — so everything
 structural is the shared engine's and is documented there. This file records only what *differs*.

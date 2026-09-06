@@ -2,6 +2,17 @@
 
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
+- **Grade: C (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Calls 3 unimplemented maki method(s) ×32 (`enumitem`, `enumobject`, `getnumobjects`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 3 bitmap id(s) it references do not resolve, leaving a visible gap: `cpro2.eq.auto.overlay.0`, `cpro2.eq.on.overlay.0`, `cpro2.xfade.overlay.0`
+- 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `s.button.mute.over.0`
+- unimplemented MAKI: `enumitem` ×2, `enumobject` ×26, `getnumobjects` ×4
+- 8 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+- 3 error-severity load finding(s)
+
+
 **This is the corpus's only engine-"two" skin**, and the reason it is worth its own file. Its
 `ClassicPro.xml` declares `<ClassicPro version="2.01" engine="two">` and its `skin.xml` includes
 `load-two_alpha.xml` — the shadow variant — which pulls an include graph **disjoint** from the `one`

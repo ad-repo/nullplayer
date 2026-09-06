@@ -23,3 +23,7 @@ Prefer not to use the Terminal? Install with Homebrew, or clear the block via **
 ## What Changed
 
 {{CHANGELOG}}
+
+Using a Winamp Modern (`.wal`) skin? [Skin compatibility](docs/winamp-modern/skin-compatibility.md)
+lists the skins this release was tested against, what each one does here, and the issues that affect
+every skin.

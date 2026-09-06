@@ -45,7 +45,7 @@ a mongrel pairing that neither family's author intended. Winamp never hits this:
 a native Win32 list, so the OS guarantees a legible selection. We draw those rows ourselves, so the
 guarantee has to be ours.
 
-**Measured across all 36 installed skins:** 23 drew an unreadable selected row (< 1.5:1), **nine of
+**Measured across all 36 skins then installed:** 23 drew an unreadable selected row (< 1.5:1), **nine of
 them at exactly 1.00:1** — text and highlight the same colour — and 5 an unreadable window title,
 with 22 more weak (< 3:1). Big Bento is the type specimen: highlight from
 `studio.list.item.selected` (orange `color.selected.active`), row text from

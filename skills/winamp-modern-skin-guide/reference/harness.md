@@ -30,7 +30,8 @@ WINAMP_MODERN_RENDER_DUMP=/tmp/render \
 ```
 
 `WINAMP_MODERN_WAL` also accepts a **directory**, which renders every `.wal` in it inside one
-invocation — the corpus sweep, 36 skins in about a minute. See *The corpus render sweep* below.
+invocation — the corpus sweep, 79 archives in about five minutes as of 2026-09-06. The count is
+whatever is installed at run time; the sweep prints it rather than asserting one. See *The corpus render sweep* below.
 
 Optional env switches, all off by default:
 
@@ -301,12 +302,64 @@ That is how a title box overlapping the artist beneath it survived a clean rende
 are deliberately long enough to need more room than a toast declares, because auto-width and ticker
 behaviour are only exercised by a string that does not fit.
 
+### The corpus census — one structural row per installed skin
+
+`scripts/wal_skin_census.sh <outdir>` is the sweep's reporting sibling. It runs one render-dump pass
+and one `WINAMP_MODERN_DRAG_HOSTED` pass over the corpus and writes **one TSV row per archive** —
+sha256, compatibility level, findings by severity and code, arrangement, where every managed surface
+ended up, container/layout/node counts, resolved and unresolved bitmaps, which NullPlayer-owned
+windows got a skin frame, whether the archive ships the author's `screenshot.png`, and the git rev it
+was measured at. It answers "what is the state of the whole corpus" where the sweep answers "did my
+change move anything". No engine code: everything in a row already existed on a dump line.
+
+```sh
+scripts/wal_skin_census.sh <outdir>                 # census.tsv, plus render.txt/hosted.txt/damaged.txt
+scripts/wal_skin_census.sh <outdir> --parse-only    # re-derive census.tsv from a capture already there
+scripts/wal_skin_census.sh <outdir> --corpus <dir>  # one skin alone, for a damaged-log re-run
+```
+
+It inherits the sweep's freeze rule, its dirty-tree refusal and its redirect-don't-pipe rule, and
+`--parse-only` exists so a parsing or rating change can be checked against a known-good capture
+without paying five minutes for another one. Two things about it are load-bearing:
+
+- **The enumeration rule is `*.[wW][aA][lL]`, `-type f`, and the script prints the count it
+  measured.** A plain `*.wal` glob drops `Defix Hi-END 200.WAL` — one of the six skins that carries a
+  letter — and a bare `*` picks up the `ClassicProEngine` **directory**, which is a shared engine tree
+  and not an archive. The corpus also moves: four skins landed overnight on 2026-09-05, so a document
+  asserting a fixed number goes wrong in a way that looks right. On 2026-09-06 it measured **79
+  archives, 75 distinct skins** — four archives are byte-identical duplicates under a second filename,
+  which the sha256 column makes visible. **Count per file where a row is per file, per distinct skin
+  where a row is per skin.**
+- **`damaged` is a column, not an afterthought.** The sweep's interleaved writes eat whole blocks of
+  the log at random in about half of all passes, so a census that inherited the sweep but not this
+  would emit *silently missing fields*. A skin whose log came back damaged gets a row carrying its
+  identity and the flag and nothing else, and is named for a solo re-run. Two consecutive passes on
+  an unchanged tree (2026-09-06) came back byte-identical, with one skin damaged in both; run alone it
+  produced a full row.
+
+**A count in this guide is dated by its corpus, and the date cannot be recovered from `git blame`.**
+Sentences like "19 of the 36 installed skins ship `<slider>`" are measurements: the denominator is a
+timestamp on the numerator, and rewriting 36 to today's 75 leaves a count that was never measured
+against 75. Such a sentence keeps its number and says *then installed*. Only a sentence asserting how
+big the corpus **is** adopts the current figure. Do not date them from `git blame` — it gives the day
+the line was last edited, not the day the count was taken, and doing so once put the 30-skin corpus
+and the 36-skin corpus on the same date in two different files. If the prose does not already carry
+the measurement date, leave it undated.
+
+**What the census cannot do is grade.** Its `fully-skinned` / `player-skinned` /
+`partly-skinned` / `does-not-load` rating says every piece the skin declares found a home with its
+artwork resolved — it does not say anything is drawn
+right, and three skins rate `fully-skinned` while rendering an empty main player window (B145). The rating
+is defined, with the measurements that ruled out the obvious alternatives, in
+`.claude/skills/wal-skin-report/SKILL.md` → *The census rating is not a grade*; the user-facing list
+it feeds is `docs/winamp-modern/skin-compatibility.md`.
+
 ### The corpus render sweep — the regression proof for any engine-wide change
 
 A change to loading, initialization, script startup, hit testing or **drawing** reaches every skin,
 so the proof that it broke none of them is a before/after capture across the whole installed corpus.
 `WINAMP_MODERN_WAL` takes a **directory** as well as a single archive (B72, 2026-08-30) and loops the
-corpus inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has. Measured: **69 skins in
+corpus inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has. Measured over the 69 skins then installed: **69 skins in
 ~100 seconds**, against ~25 minutes for the shell loop it replaces.
 
 **A clean sweep proves the default state and nothing else.** Every skin renders in its *stored

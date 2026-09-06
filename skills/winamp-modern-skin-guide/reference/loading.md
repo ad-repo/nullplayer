@@ -86,7 +86,7 @@ that shape, and they want opposite answers, so `WasabiSkinInitializer` keys the 
   persisted key resolve exactly where they did. The skin's `name=` is untouched — that is what the
   Skin Windows menu shows, and it is the only thing telling the pair apart to a user.
 
-Corpus: one rename (`WMP11-BlueVU`) and one drop (`jvc.tape.v0.5`) across all 70 archives; every other
+Corpus: one rename (`WMP11-BlueVU`) and one drop (`jvc.tape.v0.5`) across all 70 archives then installed; every other
 skin takes the identical path, because the branch only fires on a repeated container-root id.
 
 **Do not read `resolved=0` on a repeated container id as an engine defect.** The render dump keys its
@@ -105,7 +105,8 @@ attached to its parent (or to `roots`) when it *opens*, not when it closes, so b
 runs the unclosed tag already holds all of its children and every sibling written after it.
 `maximumDepth` still bounds how much can be left open, so nothing about the sandbox changes.
 
-`Shield_Amp` is the measured case and was the only skin of the 30 installed that failed outright:
+`Shield_Amp` is the measured case and was the only skin of the 30 then installed that failed
+outright:
 `opensource_notifier/notifier.xml` opens two `<container>`s, closes one, and ends on a
 `<script file="…"/>`. Winamp loads it. The throw cost the skin all nine of its surfaces.
 
@@ -334,7 +335,7 @@ Group semantics worth knowing:
   LOBE's 233 findings; a definition is compared on what it *is* (a resource: kind + logical file +
   attributes; a groupdef: XUI tag, `inherit_group`, `embed_xui`, defaults and the whole template
   subtree via `WalXMLNode.isStructurallyEqual(to:)`), with the source location ignored. Corpus:
-  1343 → 851 diagnostic occurrences over 30 skins, and every differing redefinition still reported.
+  1343 → 851 diagnostic occurrences over the 30 skins then installed, and every differing redefinition still reported.
 - `registerWasabiStandardLibrary` seeds the curated `wasabi.*` base groups that ship inside Winamp
   rather than in the archive. Skin/engine definitions register first and always win. A base outside
   the curated set warns and is dropped rather than failing the load.
@@ -386,7 +387,7 @@ the frame **instance**, beside the `<Wasabi:TitleBox>` and `<Wasabi:Frame>` expa
 
 Reach when this landed: **5 skins, 18 layouts** — `Winamp 3.0 Default` (8 layouts, blank → fully
 drawn), TomK (`gallery` and `colorwnd`, empty windows → the image gallery and a working theme list),
-corneramp_redux (5), Overdrive_2 and jvc.tape (playlist titles). The other 31 skins and 531 layouts
+corneramp_redux (5), Overdrive_2 and jvc.tape (playlist titles). The other 31 skins of that corpus, and its 531 layouts,
 in the sweep are pixel-identical.
 
 **An undecodable image degrades; an oversized one still fails.** A `<bitmap>`/`<cursor>`/
@@ -716,7 +717,7 @@ instead: an axis is grown only when
 - the holder it feeds resolves under 32px.
 
 It is then grown to give the component 250px, which reproduces stock Winamp Modern's own 354×280
-visualization window rather than inventing a number. Across the corpus — 69 skins, 590 rendered
+visualization window rather than inventing a number. Across the corpus as it then stood — 69 skins, 590 rendered
 layouts — **exactly one** holder meets all three, and the sweep diff is one PNG.
 
 > **The fit that supplies it runs *before* `runtime.start()`, and that is the whole trap.** The

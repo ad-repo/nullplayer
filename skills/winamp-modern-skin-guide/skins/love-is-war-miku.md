@@ -2,6 +2,13 @@
 
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
+- **Grade: F (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. The main player window renders nothing — 0.0% of its canvas is opaque (b145). A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
+
 **Fixture note:** the archive ships `Love is War Miku/screenshot.png`, the author's own reference
 render at the skin's exact canvas size (456×419). Every text metric in Phase 23 was measured against
 it by pixel. Compare against it before concluding anything looks wrong.

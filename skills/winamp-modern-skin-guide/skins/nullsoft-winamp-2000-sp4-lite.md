@@ -5,7 +5,13 @@
 - **File:** `Nullsoft.Winamp.2000.SP4.Lite.wal` · 639133 B · SHA-256 `147838d6a8e36090…`
 - **Measured:** 2026-08-31 (B77) structural pass; **2026-09-05 (B135/B136/B137)** live QA on the
   running app
-- **Grade: not graded (confidence: low)**
+- **Grade: B (provisional · confidence: medium)** — from a headless pass; nobody has used this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 7 bitmap id(s) it references do not resolve, leaving a visible gap: `window.normal.left2`, `window.normal.middle2`, `window.plvis.display.bg`, `window.shade.region.bottom.left`, `window.shade.region.bottom.right`, `window.shade.region.top.left`…
+- 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 
 **Measured status:**
 

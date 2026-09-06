@@ -405,7 +405,8 @@ truncated `CTLine` matches exactly, at the cost of rows that AppKit currently sq
 truncating one character earlier instead. That is a visible change to the playlist and a decision to
 take deliberately, not a free win — which is why it was not taken here.
 
-**Sweep result** (`scripts/wal_render_sweep.sh`, all 69 installed archives): 1993 of 1993 comparable
+**Sweep result** (`scripts/wal_render_sweep.sh`, all 69 archives then installed):
+1993 of 1993 comparable
 invariant lines identical, 585 of 590 PNGs byte-identical. The 5 that differ are antialiasing — two
 skins (Formamp, K-jr, the latter shipped twice), at most 10 pixels each, at most **5/255**, with
 every full-coverage and every empty pixel unchanged, so no glyph moved. The same residue shows in

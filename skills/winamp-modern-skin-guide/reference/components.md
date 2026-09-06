@@ -431,7 +431,7 @@ Three rules, and each is load-bearing:
 
 - **Both halves, or no claim.** `autoavailable="1"` *and* an empty/`none` `hold`. A holder that says
   only `hold="none"` is a skin reserving space for itself; one that already names a component has
-  made its own decision and outranks ours. Across the 36 installed skins exactly **two** holders pass
+  made its own decision and outranks ours. Across the 36 skins then installed exactly **two** holders pass
   both tests, and both are `wdh.waveseeker` (Big Bento Modern and its Windows 10 edition) — every
   other `autoavailable="1"` holder in the corpus already carries a `hold="guid:…"`.
 - **We claim only what we can draw.** `offered` is a set of one. Widening it to the components that
@@ -522,7 +522,7 @@ Two things about the embedded case that are easy to get wrong:
   container, which is the same trap `.video` fell into below: impulse draws EQ sliders in its player
   **and** ships a 198×158 `Equalizer` container, so the drawer won the catalog and the window became
   unreachable — routed to as the equalizer surface, and therefore absent from **Skin Windows** too.
-  The gate is measured, not assumed: over the 36 installed skins 14 declare an equalizer container
+  The gate is measured, not assumed: over the 36 skins then installed 14 declare an equalizer container
   and 4 embed, and impulse is the only skin in both sets, so this moves that one skin.
 - **`.video` can be embedded, `.visualization` cannot** (B23). B20 made video never-embedded to stop
   Winamp Modern's *invisible* in-player holder winning over its real video window; the rule is now
@@ -905,7 +905,7 @@ title strip is a supplement to that, never a replacement for it.
 
 B55 read "the frame owns the chrome" as "the frame owns the drag" and gave all eight surfaces a
 `guard hostedContext == nil else { return }` in `mouseDown`/`mouseDragged`/`mouseUp`. What that
-actually left is measurable, and it is small. Standard-frame title strips across the 36 installed
+actually left is measurable, and it is small. Standard-frame title strips across the 36 then-installed
 skins: **corneramp_redux 15px, Anexa/Bio-Nid/Rika/T800 18px, cPro-Bento and micro 21px, Core-X5 and
 S7Reflex 24px, Nullsoft 2000 SP4 Lite 27px, Defix 42px, Big Bento 45px.** A strip is a *fixed* height,
 so it is a smaller share of the window the larger the window gets — on Nullsoft 2000 the hosted

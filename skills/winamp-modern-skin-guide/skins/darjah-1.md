@@ -4,7 +4,12 @@
 
 - **File:** `Darjah 1.wal` · 792486 B · SHA-256 `973931ca4ebaba7d…`
 - **Measured:** 2026-09-04 — **volume question only**, see *Not measured*
-- **Grade: not graded (confidence: low)** — one reported symptom was chased to its cause; nothing else here was driven.
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has used this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 1 bitmap id(s) it references do not resolve, leaving a visible gap: `play/on.png`
+
 
 ### The volume controls are the skin's, and there are almost none
 

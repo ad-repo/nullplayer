@@ -4,7 +4,12 @@
 
 - **File:** `Core-X5.wal` · 336165 B · SHA-256 `e111688d2a1b3d91…`
 - **Measured:** 2026-08-31 (B77) — **structural first pass only**, see *Not measured*
-- **Grade: not graded (confidence: low)**
+- **Grade: B (provisional · confidence: medium)** — from a headless pass; nobody has used this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- nothing outstanding that a headless pass can see
+
 
 **Measured status:**
 

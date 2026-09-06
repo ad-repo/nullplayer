@@ -383,7 +383,7 @@ Bento Modern declares `display="SONGNAME"` on all 17 of its `Bento:InfoLine` obj
 fills each line from `fileinfo.m`; every line drew the song title, which reads on screen as a repeated
 title rather than as a broken panel.
 
-**The revert half is not optional, and it is the commoner pattern.** A sweep of the 36 installed skins
+**The revert half is not optional, and it is the commoner pattern.** A sweep of the 36 skins then installed
 found 13 that call `setText` on a display-bound object, and most are a transient readout laid over the
 songticker — MMD3's SEEK/VOLUME/BASS/TREBLE, Styx's and Ebonite's seek and volume overlays,
 BLAKK's stick — taken back down with `setText("")` a moment later.
@@ -1009,7 +1009,7 @@ is scoped two ways, and both matter:
 
 Measured against a baseline worktree over all 62 archives: 14 (event, object) pairs gained, none
 lost; 547 of 552 rendered PNGs byte-identical. B134's container scoping was swept the same way over
-69 archives: invariants identical, 588 of 590 PNGs byte-identical, the two that differ being Anaheim's
+the 69 archives then installed: invariants identical, 588 of 590 PNGs byte-identical, the two that differ being Anaheim's
 own `main/mini` and Anexa's `main/shade`, which differs between two runs of the same build. Read a
 suspect binding with `WINAMP_MODERN_RENDER_SCRIPTS=bindings`, whose targets carry their ancestor
 chain — it is the field that names both the layout **and** the container a binding landed in, and

@@ -5,6 +5,14 @@
 - **File:** `cPro_T2T-by-MAC.wal` · 686183 B · SHA-256 `e28a9e423f0389e6…`
 - **Measured:** 2026-08-31 (B77; re-measured same day against the author's promo sheet) · engine: ClassicPro, family `one`
 - **Grade: C (confidence: high)** — *downgraded from B.* B77 measured the skin at rest and against
+
+**Known outstanding:**
+
+- 15 bitmap id(s) it references do not resolve, leaving a visible gap: `custom.repeat.0`, `custom.shuffle.0`, `custom.winamp`, `player.o.bottom`, `player.o.bottomleft`, `player.o.bottomright`…
+- unimplemented MAKI: `enumitem` ×4
+- 12 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+- 1 error-severity load finding(s)
+
   the engine, and graded it on that. The distributed archive folder ships
   `cPro-T2T-by_MAC-PROMO.jpg` (1185x853) **outside the `.wal`** — a full annotated reference sheet —
   and against it three declared user-facing features are dead. Every surface still routes and draws;

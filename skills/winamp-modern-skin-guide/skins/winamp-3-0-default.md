@@ -1,6 +1,15 @@
 # Winamp 3.0 Default
 
 `Winamp 3.0 Default.wal` — Nullsoft's own **Winamp3 Base Skin** (`skin.xml`: *"Please feel free to use
+
+- **Grade: C (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Declares no library window, so a standard NullPlayer window stands in. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- no library window of its own
+- 8 NullPlayer-owned window(s) open in the plain frame — no reusable standard frame (B110/B140)
+- 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 this skin as a reference point to build your new Winamp3 skins"*, Steve Gedikian). 84 KB, the smallest
 archive in the corpus: 48 files, of which **nine are PNGs**.
 

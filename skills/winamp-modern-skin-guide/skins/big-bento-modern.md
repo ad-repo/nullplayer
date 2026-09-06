@@ -1,6 +1,15 @@
 # Big Bento Modern (all four variants)
 
 **Archives:** `Big Bento Modern.wal`, `Big Bento Modern Light.wal`,
+
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 5 bitmap id(s) it references do not resolve, leaving a visible gap: `frame.center`, `infocomp.button.icon.bg`, `infocomp.button.icon.lyricfinder`, `infocomp.button.icon.searchvideo`, `player.button.repeat.normal`
+- 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `config.button.hover`
+- 27 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 `Big Bento Modern Windows 10 edition.wal`, `Big Bento Modern Windows 10 edition Light.wal`
 **Author:** Victhor, over Taber Buhl's work and the original Wasabi development
 **Arrangement:** `singleWindowSUI` — playlist, library and video are all embedded tabs
@@ -96,7 +105,7 @@ integrated Waveform Seeker, and it sits directly on top of the seek bar's grid a
 the palette's content colour across the holder's whole rect. `RENDER_PROBE=main/normal` named it in
 one line, `HOLDERS main/normal: other@wdh.waveseeker(16, 123, 414, 34)`, against a black slab
 measured at exactly that rect. The rule is in `reference/components.md`; the corpus scan says this
-holder is the only `hold="none"` in the 36 installed skins.
+holder is the only `hold="none"` in the 36 skins then installed.
 
 Making the bar visible immediately exposed **BB16**: one press-release on it runs
 `seeker.ghost.hide()` from `seek.maki`'s `onLeftButtonUp`, whose `onSetVisible` mirror then hides
@@ -402,7 +411,7 @@ stored rather than second-guessing it. A profile that ran the old build needs th
 (`defaults delete NullPlayer "winampModern.config.<skin>.<skin>.playlist_cover_poppler"`) or the
 divider dragged once. Four variants, four keys.
 
-**Blast radius, measured before shipping.** 7 of the 35 installed skins call `onDataChanged()` as a
+**Blast radius, measured before shipping.** 7 of the 35 skins then installed call `onDataChanged()` as a
 method — the four Bento variants (2 calls each), `winampmodern566` (19), `S7Reflex` (5),
 `Ebonite_2_1` (4). A before/after render sweep of those four skins: 39 images, 38 pixel-identical.
 The one change is `winampmodern566`'s `Pledit-normal`, where the skin's own newly-running handler

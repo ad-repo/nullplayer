@@ -2,6 +2,13 @@
 
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
+- **Grade: B (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 7 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
+
 By sambaneko. First measured in **Phase 34** (2026-08-20), from three user-reported defects: two dead
 buttons in the console's right drawer, "the visualizer does not look correct", and the library and
 playlist windows showing "layered full backgrounds in different colors" and "multiple top menubars".

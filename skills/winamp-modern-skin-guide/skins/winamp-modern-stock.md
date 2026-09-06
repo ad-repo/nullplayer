@@ -2,6 +2,13 @@
 
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 10 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
+
 **Shape of the skin:** separate windows — `main` (354×280) plus declared `Pledit`, `MLibrary`,
 `Video`, `AVS`, `winamp.albumart` and `notifier` containers. The main window is **hollow XML**: the
 whole client area is built at runtime by `standardframe.maki` from its `content=` XUI param.

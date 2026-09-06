@@ -57,7 +57,8 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   `WinampModernConfigBridge` to `WinampModernHost`: `{45F3F7C1-…};Shuffle` and `;Repeat`,
   `{FC3EAF78-…};Enable crossfading`, `{F1239F09-…};Crossfade time` (the last two are Sweet Fades, the
   seconds clamped into the range the app's own Fade Duration menu offers). By a wide margin the most
-  common bindings in the corpus — 52 / 50 / 32 / 12 declarations across the 30 installed skins.
+  common bindings in the corpus — 52 / 50 / 32 / 12 declarations across the 30 skins then
+  installed.
   A bound control keeps **no state of its own**: `getActivated()` and `getPosition()` both answer
   from the binding, the drag writes it in the control's own `low…high`, and the thumb and the
   `activeimage` are drawn from it — so shuffle changed from the menu bar and the skin's own lamp can

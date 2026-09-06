@@ -109,7 +109,7 @@ object the hit test returned:
 - the **`layout`** itself — the window's own background. A skin that paints its whole frame there and
   hangs nothing but controls off it (T800) has no other handle, and without this it cannot be moved.
 - **anything carrying `move="1"`** that is not a control. This is the skin *affirmatively* naming a
-  handle, and it says so on far more than groups: across the 30 installed skins `move="1"` appears
+  handle, and it says so on far more than groups: across the 30 skins then installed `move="1"` appears
   **981 times on 14 element types** — `group` 421, `rect` 233, `layer` 151, `text` 66, `grid` 36,
   `grouplist` 34 — and honouring it only on `<group>` left 560 declarations doing nothing. Big Bento
   Modern is the measured case: its titlebar is `<grid … move="1">` over a
@@ -136,7 +136,7 @@ A `.wal` window is borderless, so **the skin nominates its own resize handles**:
 `WasabiSceneRenderer.resizeEdges(at:)` reads it, `WinampModernMainView` drags it, and
 `WinampModernMainView.resizedFrame(...)` is the pure geometry form.
 
-**597 handles in 32 of the 36 corpus skins, every one of them on a `<layer>`** — winampmodern566 83,
+**597 handles in 32 of the 36 corpus skins then installed, every one of them on a `<layer>`** — winampmodern566 83,
 S7Reflex 43, Nullsoft SP4 Lite 35, Styx and Itemskin 30 each, Shield_Amp 26. Most come from the
 shared `standardframe` include, which is why one implementation reaches nearly the whole corpus; the
 four that declare none (cPro-Bento, Overdrive_2, both Big Bento *Light* variants) resize through the
@@ -199,7 +199,7 @@ and edge silhouettes of 28 skins, `-1` on winampmodern566's and S7Reflex's confi
 
 `WasabiSceneRenderer.isRegionOnly` answers the paint half; `regionCuts` / `buildWindowRegion` answer
 the shape half, and `containsRegionPixel` gates `object(at:)` so a trimmed corner takes no click
-either. **Measured: 108 of 312 corpus layouts change shape, across 22 of the 36 skins** — mostly a
+either. **Measured: 108 of 312 corpus layouts change shape, across 22 of the 36 skins then installed** — mostly a
 1px border and 25px corners, up to 18% on skins whose frame region trims more than a corner (Ebonite,
 Sony_Walkman, Styx, Ujola Cat).
 

@@ -4,7 +4,13 @@
 
 - **File:** `S7Reflex.wal` · 1305284 B · SHA-256 `ce2aa923469d50fc…`
 - **Measured:** 2026-08-31 (B77) — **structural first pass only**, see *Not measured*
-- **Grade: not graded (confidence: low)**
+- **Grade: B (provisional · confidence: medium)** — from a headless pass; nobody has used this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+
+**Known outstanding:**
+
+- 22 bitmap id(s) it references do not resolve, leaving a visible gap: `drawer.button.close.bg`, `player.button.repeat.bg`, `player.button.shuffle.bg`, `player.display.bg.center`, `player.display.bg.left`, `player.display.bg.right`…
+- 6 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
+
 
 **Measured status:**
 
