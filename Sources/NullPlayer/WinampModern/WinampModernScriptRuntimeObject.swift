@@ -177,6 +177,7 @@ extension WinampModernScriptRuntime {
             // `getText()` to build its search. Kept apart, the reader answered "" and the lyrics
             // button searched the web for the bare word "lyrics" (B40).
             let object = embeddedControl(of: object) ?? object
+            let contentBeforeWrite = WasabiTextMetrics.content(of: object, host: host)
             _ = object.setAttribute("text", value: arguments[0].stringValue)
             // Written to its own key as well, because a non-empty value has to beat the object's
             // `display=` binding — see `WasabiTextMetrics.scriptTextKey`. Empty writes through as
@@ -187,6 +188,24 @@ extension WinampModernScriptRuntime {
             // song title back.
             _ = object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey, value: "")
             notifyObjectDidMutate(object)
+            // Winamp raises `onTextChanged` from inside `setText`, and a skin may have no other
+            // signal that the string moved. ClassicPro's file-info drawer is the measured case: every
+            // row is a `<Text id="label">` beside a `<Text id="text">`, both declared at x=0, and
+            // `infoline.maki` shifts the value clear of the label from `label.onTextChanged` alone —
+            // where the label's own text arrives as an XUI param, i.e. through this method. Without
+            // the dispatch the handler never ran and every row drew its value on top of its label
+            // (B141). Only on an actual change, as Wasabi does, and never re-entrantly: a handler is
+            // free to answer with another `setText` on the same object.
+            let contentAfterWrite = WasabiTextMetrics.content(of: object, host: host)
+            if contentAfterWrite != contentBeforeWrite, !textChangeInFlight.contains(object.stableID) {
+                textChangeInFlight.insert(object.stableID)
+                defer { textChangeInFlight.remove(object.stableID) }
+                // The bound-text poll keys off the same content, so record it here too or the next
+                // tick reports the script's own write as a host-side change and fires a second time.
+                lastDispatchedText[object.stableID] = contentAfterWrite
+                _ = try? dispatch(object: object, event: "ontextchanged",
+                                  arguments: [.string(contentAfterWrite)])
+            }
             return .null
         // What the object *shows*, not just the literal it was declared with. MMD3's songinfo timer
         // reads `getText()` off the `display="songinfo"` text and tokenises it for KBPS/KHZ; answering

@@ -1072,6 +1072,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// rather than on every poll.
     var lastDispatchedText: [WasabiObjectID: String] = [:]
 
+    /// Objects whose `onTextChanged` is running right now, so a handler that writes text back into
+    /// its own object cannot recurse for ever. Winamp raises the event from inside `setText`, and a
+    /// skin is free to answer it with another `setText`.
+    var textChangeInFlight: Set<WasabiObjectID> = []
+
     /// Hand the skin a key press as `System.onKeyDown(<accelerator>)`, and say whether it took it.
     ///
     /// The accelerator is Winamp's own string (`WinampModernKeyAccelerator` builds it): the corpus's
