@@ -32,6 +32,14 @@
 
 ### Bug Fixes
 
+- **The cPro2 Styler Modern skins draw their time and bitrate readouts properly.** The elapsed time
+  ran into the `/` before the track length, the stereo icon sat on top of the bitrate line, and the
+  elapsed digits were chopped off along the bottom. Two separate causes, both in how NullPlayer sizes
+  and places text: a skin that measures a string to lay out what goes beside it was told the string
+  was four pixels narrower than Winamp reports, and a line taller than the box it was declared in was
+  pushed to the bottom of that box instead of being centred in it. Both are fixed against the skin
+  author's own reference screenshots.
+
 - **A Modern skin whose playlist window came up as an empty frame now shows the playlist.** Some
   `.wal` skins draw their own window frames but leave the code that fills them to Winamp itself, so
   under NullPlayer the window opened as the skin's own border, title bar and status strip around a

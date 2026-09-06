@@ -186,6 +186,8 @@ This file is a router. Read the one focused reference your symptom names.
 | Skin starts in an impossible all-zero settings state | [reference/loading.md](reference/loading.md) → *settings must start in a state scripts can express* |
 | Vertical slider uses the wrong axis or EQ curve is absent | [reference/rendering.md](reference/rendering.md) → *A skin spells the axis two ways* |
 | Clock fields collide or the separator sits off baseline | [reference/rendering/text.md](reference/rendering/text.md) → *A clock is a run of fields* |
+| A separator or icon a script placed sits on the string beside it | [reference/rendering/text.md](reference/rendering/text.md) → *`getTextWidth()` carries the box's own margin* |
+| A readout's glyphs are chopped at the bottom, or sit low in their box | [reference/rendering/text.md](reference/rendering/text.md) → *A line is centred in the cell the skin declared* |
 | White/black slab appears where a named colour belongs | [reference/rendering/colour.md](reference/rendering/colour.md) → *How a colour resolves* |
 | Theme picker is empty or will not switch | [reference/rendering/colour.md](reference/rendering/colour.md) → *The picker* |
 | Skin-owned right-click menu is missing or wrong | [reference/rendering.md](reference/rendering.md) → *A skin's own right-click menus* |

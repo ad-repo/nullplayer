@@ -567,6 +567,7 @@ final class WasabiTextMetrics {
         CGFloat(pixelHeight(of: object) * pixelHeightToPointSize)
     }
 
+
     /// The `fontsize=` a text object declares, clamped — a pixel cell height in the skin's own units,
     /// before the conversion to a point size the drawing needs.
     static func pixelHeight(of object: WasabiObject) -> Double {
@@ -739,10 +740,65 @@ final class WasabiTextMetrics {
         return ""
     }
 
+    /// Wasabi reserves **two pixels on each side** of a string inside a `<text>`, and the number a
+    /// script reads back carries them. It is not a fudge: the ClassicPro engine's own arithmetic only
+    /// closes with it, and three independent places in the corpus agree on the same 4.
+    ///
+    /// Measured against the author's own full-size Winamp screenshots of cPro2 Styler
+    /// (`deviantart.com/victhor/art/cPro2-Styler-Skin-project-468424123`), read pixel by pixel.
+    /// `info-text.m` puts the total time at `trackTime.getTextWidth() - 4 + 21` in a box that starts
+    /// at 21 and is `getTextWidth()` wide — a deliberate 4px tuck — and lays the bitrate row out as
+    /// `getTextWidth() + 18` around a right-aligned `w="-5" relatw="1"`. In the reference shot
+    /// `2:12` is 35px of ink and the `/` sits 2px past it, which puts Winamp's `getTextWidth("2:12")`
+    /// at 42 against the 37.24 Century Gothic advances at that size; the bitrate row clears its
+    /// stereo icon by 4px, which needs the same margin and nothing else. Both are the same +4, at two
+    /// different font sizes and string lengths, so it is neither per-glyph nor size-scaled.
+    ///
+    /// It is also what B87 saw from the other side and worked around: ClassicPro's SUI tab is
+    /// `label.getAutoWidth() + 14` inside `w="-15" relatw="1"` and its v2 engine
+    /// `getTextWidth() + 23` inside `w="-26"`, boxes that come out 1 and 3 pixels short of the string
+    /// they were sized for — exactly the margin, minus the 1-3px slack a tab wants. The renderer's
+    /// clip widening stays, because a skin may still declare a box narrower than its own string.
+    ///
+    /// **Measurement only.** The string is still *drawn* from `resources.textWidth`, flush to its
+    /// box's aligned edge, which is what GDI's `DrawText` does inside the same rect — so this moves
+    /// the boxes a script computes and never the ink inside one.
+    ///
+    /// **A string measured as a string.** A run laid out in *cells* — a bitmap atlas, a `forcefixed`
+    /// counter, a `display="time"` clock — is not one, and each of those was measured against its own
+    /// drawn result and carries its own clearance already (`ClockRun.edgeInset`, `timecolonwidth`'s
+    /// cell). ClassicPro's own live report was that a bitmap clock's measurement has to agree with
+    /// what is drawn to the pixel, so nothing is added there.
+    static let boxMargin: CGFloat = 4
+
     /// Width the object's text occupies when drawn, in skin pixels, including its horizontal padding.
     /// Bitmap fonts are a fixed-pitch atlas (`charwidth` + `hspacing` per glyph); everything else is
     /// measured with the very font `WasabiSceneRenderer.drawText` would use.
     func width(of object: WasabiObject, text: String) -> CGFloat {
+        // An object showing nothing measures nothing: `autowidthsource` collapses a group whose
+        // source has not been filled in yet, and a margin around an empty string would give it a
+        // 4px box instead of none.
+        guard !text.isEmpty else { return 0 }
+        return contentWidth(of: object, text: text) + (isCellRun(object, text: text) ? 0 : Self.boxMargin)
+    }
+
+    /// Whether the object's text is laid out in cells rather than measured as a string — see
+    /// `boxMargin`.
+    private func isCellRun(_ object: WasabiObject, text: String) -> Bool {
+        if let fontID = object.attributes["font"],
+           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
+           definition.kind == "bitmapfont" {
+            return true
+        }
+        let size = Self.pointSize(of: object)
+        let font = font(identifier: object.attributes["font"], size: size,
+                        traits: Self.traits(of: object)) ?? NSFont.systemFont(ofSize: size)
+        return Self.clockRun(of: object, text: text, font: font) != nil
+            || Self.fixedPitch(of: object, font: font) != nil
+    }
+
+    /// The string itself, without the box margin `width(of:text:)` adds.
+    private func contentWidth(of object: WasabiObject, text: String) -> CGFloat {
         let padding = CGFloat((Double(object.attributes["leftpadding"] ?? "0") ?? 0)
                               + (Double(object.attributes["rightpadding"] ?? "0") ?? 0))
         if let fontID = object.attributes["font"],

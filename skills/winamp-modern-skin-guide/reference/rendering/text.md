@@ -31,6 +31,41 @@ content's width.
 > `wasabi.titlebox.center.group` bodies are `x="0" w="0" relatw="1"` — so those are unchanged. Of 53
 > declarations in 13 corpus skins, 26 name an offset source and 27 do not.
 
+#### `getTextWidth()` carries the box's own margin: **+4** (B144)
+
+A `<text>` reserves two pixels on each side of its string, and the number a script reads back carries
+them. Without it the ClassicPro engine's own arithmetic has no clearance anywhere: `info-text.m` puts
+the total time at `trackTime.getTextWidth() - 4 + 21` inside a box that starts at 21 and is
+`getTextWidth()` wide — a deliberate 4px tuck — and lays the bitrate row out as `getTextWidth() + 18`
+around a right-aligned `w="-5" relatw="1"`. Measured as the ink, the separator lands on the last digit
+and the bitrate string backs into the stereo icon, which is exactly what was reported live on the
+three cPro2 Styler skins.
+
+Settled against the author's own **1:1** Winamp screenshots of the skin
+(`deviantart.com/victhor/art/cPro2-Styler-Skin-project-468424123` — the info panel is 40px there and
+its stereo sprite 13px, which is what makes the shot measurable), read pixel by pixel: `2:12` is 35px
+of ink with the `/` 2px past it, which puts Winamp's `getTextWidth("2:12")` at 42 against the 37.24 of
+Century Gothic advances at that size; the bitrate row clears its icon by 4px and needs the same
+margin. Two font sizes, two string lengths, the same +4 — neither per-glyph nor size-scaled.
+
+It is also what B87 met from the other side and worked around. ClassicPro's SUI tab is
+`label.getAutoWidth() + 14` inside `w="-15" relatw="1"` and its v2 engine `getTextWidth() + 23` inside
+`w="-26"` — boxes that come out 1 and 3 pixels short of the string they were sized for, which is the
+margin less the slack a tab wants. B87's clip widening stays: a skin may still declare a box narrower
+than its own string.
+
+Two limits worth keeping straight:
+
+- **Measurement only.** The string is still drawn from `resources.textWidth`, flush to its box's
+  aligned edge, which is what GDI's `DrawText` does inside the same rect. Insetting the ink by 4 would
+  undo the clearance the rule exists to give.
+- **A string measured as a string.** A run laid out in *cells* — a bitmap atlas, a `forcefixed`
+  counter, a `display="time"` clock — is not one. Each was measured against its own drawn result and
+  carries its own clearance already (`ClockRun.edgeInset`, `timecolonwidth`'s cell), and ClassicPro's
+  live report about the bitmap clock was that its measurement has to agree with what is drawn to the
+  pixel. Nothing is added there. An empty string still measures 0, so `autowidthsource` keeps
+  collapsing a group whose source a script has not filled in yet.
+
 #### A `<text>`'s box bounds it vertically; horizontally its **group** does (B87)
 
 A skin sizes its own boxes from the very measurement this renderer draws with, and then routinely
@@ -141,8 +176,11 @@ render is the ground truth for this kind of thing):
   `WasabiTextMetrics.verticalAlignment` and applied as one
   offset down from the box's top edge (`VerticalAlignment.offset(cell:in:)`). 63 declarations across
   9 of the 17 skins, 54 of them `top`: Defix's songticker and Infoticker, every readout in Nokia
-  5220's screen, multipass's whole display. The Core Text inset is **clamped at zero**, so a string
-  taller than its own box starts at the top rather than above it.
+  5220's screen, multipass's whole display. A **named** alignment keeps the clamp at zero, so an
+  oversized `valign="bottom"` readout starts at its box's top rather than above it — a skin that
+  names an edge is asking for the string to sit against it, not to leave the box. **Centring is not
+  clamped** (B144): a line taller than its box is centred in it, half the overflow above and half
+  below. See *A line is centred in the cell the skin declared* below.
   **The bitmap-font sheet path shares this**, and used to be pinned to `frame.minY` — that is
   `valign="top"` and nothing else, so every sheet-drawn readout with no `valign` (and every playlist
   row NullPlayer draws into a skin's own list) sat half a box too high. `valign` on a `<layer>` is
@@ -156,6 +194,31 @@ render is the ground truth for this kind of thing):
   `center`, that nudge lands on top of a centring already done and both times sit 4px below the `/`
   between them, which declares no `valign` at all. Nine declarations corpus-wide, eight of them
   Bento's; the arithmetic is what identifies them, not the spelling.
+
+#### A line is centred in the cell the **skin** declared, even when it does not fit (B144)
+
+Two numbers decide where a string sits in its box, and both were wrong in the same direction.
+
+- **The cell is `fontsize`, not the face's `ascender - descender`.** Winamp hands `fontsize` to GDI as
+  the font's height and lays the string out inside it, which is why `WasabiTextMetrics.lineHeight(of:)`
+  — what `getAutoHeight()` answers, and what Big Bento Modern's tab strip is built from — is exactly
+  that number. The renderer centred on the *face's* metrics instead, so the two disagreed by whatever
+  the font happened to report, and the gap is worst on a face with a tall ascender and short digits.
+- **Centring is not clamped at zero.** A line taller than its box became `valign="top"`, which drops it
+  as low as the box allows.
+
+Century Gothic reports 23.5 for a 24px cell and puts 19.3 of it above the baseline against digits only
+14 tall, so cPro2 Styler's elapsed clock sat a pixel low in its 22px box — and ClassicPro's
+`two.info.text.time` group is exactly 20px (`h="50" relath="2"`, half the 40px info panel), so that
+pixel went through the group's clip and took the bottom off every `0`, `3` and `9`. Reported live as
+*"the elapsed timer is getting chopped at the bottom of the numbers… it looks a bit too low adjusted"*,
+and the reporter was right about which of the two it was: an earlier attempt at the same screenshot
+shrank the glyphs instead and was rejected.
+
+The **vertical scissor moved to the object's own box** in the same change. It used to follow the
+*shifted* rect, which is the same rect while the line fits and is dragged out of the box the moment a
+negative offset exists — carrying the cut above the box with it, where BB27 and B87 both say the box
+bounds the string.
 
 #### A paragraph is not a line — `wrap="1"` (B91)
 

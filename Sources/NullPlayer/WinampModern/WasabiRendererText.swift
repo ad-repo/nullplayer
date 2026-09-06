@@ -92,13 +92,33 @@ extension WasabiSceneRenderer {
         // whole line's leading on a tall box (Love is War Miku's 30px time readout) and enough on a
         // tight one to push the song ticker's descenders onto the seek bar below it. Under the local
         // mirror below, a rect's *top* edge is its `maxY`, so lowering the text by `inset` means
-        // moving the rect down the same amount. Clamped at zero: a string taller than its own box
-        // starts at the top rather than above it, whatever it asked for.
+        // moving the rect down the same amount.
+        //
+        // **A line taller than its own box is still centred in it**, which is what the negative inset
+        // below is for. Clamping it at zero made that case `valign="top"` instead, and a face whose
+        // ascender sits far above its cap height then hangs its glyphs off the bottom: Century Gothic
+        // reaches 19.3 of a 23.5px cell above the baseline where its digits are only 14 tall, so
+        // cPro2 Styler's 24px elapsed clock in a 22px box lost its last row through the 20px-tall
+        // `two.info.text.time` group and every round digit came back with a flat bottom. Centred, the
+        // same string sits where the author's own Winamp screenshots put it. Winamp's `DT_VCENTER`
+        // centres the line rect on the box whether or not it fits, and overflow at the top is what a
+        // skin that declares a font taller than its box is asking for; the vertical scissor further
+        // down is what keeps it from reaching the row above.
         //
         // A paragraph's "cell" is the height of the whole broken block, not of one line: aligning a
         // nine-line block by a single line's leading would centre its *first* line in the box and
         // run the other eight out of the bottom.
-        let lineCell = font.ascender - font.descender
+        // The cell a line is centred in is the one the **skin** declared — `fontsize` — not the one
+        // the face reports. Winamp hands that number to GDI as the font's height and lays the string
+        // out inside it, which is why `WasabiTextMetrics.lineHeight(of:)` (what `getAutoHeight()`
+        // answers, and what Big Bento Modern's tab strip is built from) is exactly `fontsize` too.
+        // The renderer was centring on `ascender - descender` instead, so the two disagreed by
+        // whatever the face's own metrics happened to be, and the gap is worst on a face with a tall
+        // ascender and short digits: Century Gothic reports 23.5 for a 24px cell and puts 19.3 of it
+        // above the baseline, which drops cPro2 Styler's elapsed clock a pixel low and pushed the
+        // bottom of every round digit through its group's clip.
+        let lineCell = max(font.ascender - font.descender,
+                           CGFloat(WasabiTextMetrics.pixelHeight(of: object)))
         let cell: CGFloat
         if wraps {
             let bounds = (text as NSString).boundingRect(
@@ -108,8 +128,13 @@ extension WasabiSceneRenderer {
         } else {
             cell = lineCell
         }
-        let inset = max(0, WasabiTextMetrics.verticalAlignment(of: object)
-            .offset(cell: cell, in: frame.height))
+        // Centring is the one alignment that moves, and only when the line does not fit. `top` and
+        // `bottom` keep the clamp Phase 38 measured: a skin that names an edge is asking for the
+        // string to sit against it, and lifting an oversized `valign="bottom"` readout clear of its
+        // own box is not what it meant.
+        let alignedVertically = WasabiTextMetrics.verticalAlignment(of: object)
+        let offset = alignedVertically.offset(cell: cell, in: frame.height)
+        let inset = alignedVertically == .center ? offset : max(0, offset)
         // `offsetx`/`offsety` shift the *string* inside its own box without moving the box — so the
         // object still measures and hit-tests where it was declared, and its parent still clips it
         // where it was. Big Bento Modern's SUI tab labels are the measured case: `offsetx="35"` puts
@@ -178,8 +203,13 @@ extension WasabiSceneRenderer {
         // back; `drawFrame` is that box after `valign` and `offsety` have moved the string inside
         // it, so it is not symmetric and the same trick does not work on it.
         if !wraps {
-            context.clip(to: CGRect(x: clip.minX, y: drawFrame.minY,
-                                    width: clip.width, height: drawFrame.height))
+            // The **object's own box**, not the shifted one. They are the same rect whenever the line
+            // sits inside its box, and they part company exactly where the vertical alignment moved
+            // the string out of it — a line taller than its box is centred, so half its overflow is
+            // above the box, and scissoring at the shifted rect would carry the cut up there with it.
+            // BB27's rule is that the box bounds the string vertically, so that is the rect.
+            context.clip(to: CGRect(x: clip.minX, y: frame.minY,
+                                    width: clip.width, height: frame.height))
         }
         // Where a line's baseline sits inside `drawFrame`, and the one piece of vertical arithmetic
         // the conversion needs. All three branches share it: a clock cell and a ticker use the same
