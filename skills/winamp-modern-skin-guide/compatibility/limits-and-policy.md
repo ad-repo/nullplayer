@@ -1,6 +1,6 @@
-# Winamp Modern (`.wal`) — Limits, engine policy, and verification status
+# Winamp Modern (`.wal`) — Security, limits, engine policy, and verification status
 
-Part of [compatibility.md](../compatibility.md). The enforced bounds a skin cannot exceed, the ClassicPro engine policy, and how much of this surface is test-protected.
+Part of [compatibility.md](../compatibility.md). The sandbox a skin runs inside, the enforced bounds it cannot exceed, the ClassicPro engine policy, and how much of this surface is test-protected.
 
 ## ClassicPro engine policy
 
@@ -24,6 +24,34 @@ Part of [compatibility.md](../compatibility.md). The enforced bounds a skin cann
 - **Version gate.** `WinampVersionCheck` sees a build number past the `2405` gate, so `load.xml`
   *branches* past its update warning rather than being hard-blocked. Install/update/download prompts
   are inert.
+
+## Security model
+
+The skin is **untrusted input**. Three rules hold everywhere and must not be relaxed:
+
+1. **No host filesystem access.** Resources are read only through `WalResourceProvider` /
+   `WalVirtualFileSystem`. Never hand a skin an `NSURL` into the real filesystem.
+2. **Everything is bounded.** Archive entries, uncompressed bytes, compression ratio, XML depth, node
+   count, include depth, image dimensions, font size, script size, instruction count, call depth,
+   allocation, stack values, active timers. See [*Limits*](#limits) for values.
+3. **Failures are typed, never traps.** Malformed input produces a `WalFailure` carrying
+   `WalDiagnostic`s with a `WalSourceLocation` (`logical-path:line:column`). A Swift trap or a hang on
+   skin input is a bug — the fuzz tests in `WinampModernPhase7Tests` exist to catch exactly that.
+
+Scripts cannot launch executables, open modal UI, reach arbitrary host paths, or make general host
+network requests, and `messagebox` remains denied. The pasteboard is **write-only** and plain text
+only (`System.setClipboardText`, BB13): a skin's copy commands work, and nothing lets one read what
+the user last copied elsewhere.
+
+**Navigation is the one narrow exception, and it is typed rather than free** (B40). Every address a
+skin authors — from `<browser>.navigateUrl`, from `System.navigateUrl` /
+`System.navigateUrlBrowser`, or from a `browser_search` / `browser_navigate` action — passes through
+`WinampModernWebNavigationPolicy`: HTTP/HTTPS with a real host only, no other scheme, no file or
+application URL. An internal address reaches only that skin's own ephemeral, policy-gated WebKit
+surface. The **external** route (`System.navigateUrl`, the user's default browser) additionally
+requires the user's consent: a sheet naming the URL on first use, remembered per skin if they choose
+"Always Allow", one outstanding question at a time, and never a modal loop. See
+[reference/components/browser.md](../reference/components/browser.md) — *The four routes a skin reaches the web by*.
 
 ## Limits
 

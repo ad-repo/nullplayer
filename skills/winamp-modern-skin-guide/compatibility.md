@@ -17,7 +17,7 @@ Split by surface, because this is a lookup document — you want one table, not 
 | Below | Archive and filesystem: what a `.wal` may contain and what is rejected |
 | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) | Wasabi XML / XUI — elements, attributes, geometry, and what the markup layer ignores |
 | [compatibility/maki-surface.md](compatibility/maki-surface.md) | MAKI — implemented and unimplemented methods, the event surface, dispatch behavior |
-| [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md) | The enforced limits, the ClassicPro engine policy, and verification status |
+| [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md) | The security model a skin runs inside, the enforced limits, the ClassicPro engine policy, and verification status |
 | Below | Hosted components — playlist, EQ, library, and where each surface lives |
 
 How the engine *works* (rather than what it supports) is

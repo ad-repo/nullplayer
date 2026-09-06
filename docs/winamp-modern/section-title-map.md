@@ -78,3 +78,7 @@ Historical handoffs cite the subsystem guide by section title. Every title below
 | The order that made Phase 33 cheap | [reference/harness.md](../../skills/winamp-modern-skin-guide/reference/harness.md) |
 | The golden images | [reference/harness.md](../../skills/winamp-modern-skin-guide/reference/harness.md) |
 | What is open right now, ranked | `TASKS.md` (the only live backlog); [triage-playbook.md](../../skills/winamp-modern-skin-guide/triage-playbook.md) §4b is historical |
+| The pipeline | [reference/loading.md](../../skills/winamp-modern-skin-guide/reference/loading.md) |
+| Security model | [compatibility/limits-and-policy.md](../../skills/winamp-modern-skin-guide/compatibility/limits-and-policy.md) |
+| Instrument before you reason | [reference/harness.md](../../skills/winamp-modern-skin-guide/reference/harness.md) |
+| When a fix changes nothing on screen, look for the next fault | [reference/harness.md](../../skills/winamp-modern-skin-guide/reference/harness.md) |

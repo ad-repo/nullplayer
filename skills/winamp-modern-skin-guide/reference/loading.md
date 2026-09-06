@@ -287,6 +287,30 @@ path is unchanged.
 `missingRequiredMount` above, and so does the ClassicPro engine — an overlay drawn against missing
 artwork, or a cPro skin with no engine, must say so rather than half-load.
 
+### The pipeline
+
+```
+.wal file
+  └─ WalArchive              validate + bound (ZIP, read-only, on-demand inflate)
+      └─ WalVirtualFileSystem  mount at /Skins/<name>/, resolve @VARS@, case-insensitive
+          └─ WalXMLDocumentLoader  parse skin.xml, expand <include>/<elementinclude> + globs
+              ├─ WinampModernSurfaceInventory   what the skin declares (pre-graph, bounded walk)
+              └─ WasabiSurfaceSynthesizer       append windows for missing surfaces
+                  └─ WasabiSkinInitializer  6 ordered passes → registries + retained graph
+                      ├─ WasabiSceneRenderer   graph → Core Graphics
+                      ├─ WinampModernScriptRuntime  MAKI programs bound to graph objects
+                      └─ WinampModernHost      the only door to AudioEngine
+```
+
+Synthesis sits **before** initialization on purpose: synthetic XML must go through the same
+registration, inheritance validation, object creation, and script binding as the skin's own. After
+`scripts.start()`, `WinampModernSurfaceCoordinator` reconciles the catalog against the containers that
+actually opened.
+
+`WinampModernSkinLoader.load(from:additionalMounts:)` is the headless entry point for the whole
+left column and returns a `WinampModernLoadedSkin`. Every test and the window controller go through
+it — there is no second path.
+
 ### Initialization passes
 
 `WasabiSkinInitializer` runs six explicit, tested passes, in this order:

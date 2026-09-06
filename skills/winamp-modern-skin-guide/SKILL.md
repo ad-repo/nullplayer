@@ -19,6 +19,7 @@ references to the actual stock *Winamp Modern* skin.
 The runtime loads, scripts, and renders real skins, but see
 [compatibility.md](compatibility.md) for the exact supported/unsupported surface before assuming any
 behavior works.
+
 ## The rule that outranks everything below
 
 **Winamp Modern must never change how Classic or Original skins behave.** Those modes work; this one
@@ -42,39 +43,15 @@ necessarily changed Classic, and that was legitimate as its own scoped change wi
 up front. Do not let the rule turn a shared bug into one nobody is allowed to fix — say plainly that
 it is separate work and let the user decide.
 
-Corollary: **a structural probe is not a picture.** `surfaces=1` from the hosted-window sweep says a
-client area exists and is reachable; it says nothing about where it is drawn. 2026-09-04 a hosted-frame
-fix was reported as working on `surfaces=1, strip=48px, drag=88%` and a corpus diff of exactly one
-skin, and the user's screenshot showed the chrome and the contents in different places — every number
-the probe measured was right and blind to the only thing that mattered. Render it
-(`WINAMP_MODERN_DRAG_HOSTED_PNG`, [reference/harness.md](reference/harness.md)) or run it, then hand it
-over. 2026-09-05 sharpened the same lesson for *sizes*: the dump asks a renderer how big its window is
-**after** `runtime.start()`, and the app's window tiler asks **before** it, so a window-size fix hung
-off the post-start fit printed `AVS/normal: 354x278` in a clean corpus sweep while the running app
-placed the window at `354x30` and the reporter's screen never changed. `WINAMP_MODERN_PLACE_TRACE=1`
-in the app is one line and settles it; a green sweep does not. The same session then took five more rounds because each new symptom was answered with a
-plausible mechanism instead of a measurement; the ones that landed came from reading pixels out of the
-reporter's own screenshot and window frames out of the accessibility API.
+Three corollaries follow from it, each of which has already cost a phase. They are one line here and
+a worked example in [reference/harness.md](reference/harness.md):
 
-2026-09-05 ran the same trap one turn further and it is worth naming on its own: **a number that moved
-is not the symptom that was reported.** The shade round trip (B138) had two faults stacked on one
-screen, and fixing the measurable one — the window came back 500x500 instead of 691x541, visible in a
-single `resizeWindow` log line — produced a confident "fixed" while the reporter's actual complaint,
-the empty playlist pane, was still there in the screenshot taken to prove it. The reporter said "not
-fixed" twice before the claim was withdrawn. Two habits fall out. **Reproduce the reporter's own steps
-end to end before believing anything**: a "fresh launch" that has been resized and shaded by your own
-probing is not a fresh launch, and a wrong reading of it ("the bug is there at launch too") sends the
-whole diagnosis somewhere else. And **drive the repro yourself where you can** — `System Events`
-`click at` silently delivers nothing to this app, so a 35-line CGEvent clicker built in the scratchpad
-was what finally made the round trip repeatable, and a pixel-diff of the window against its launch
-state was what made "fixed" a measurement instead of an opinion.
-
-Corollary: verify in the running app, not in your head. Window geometry has no useful armchair form,
-and B56 cost four confident statically-reasoned fixes — each wrong, two of them regressions — before
-anyone launched the app. The loop for measuring it is in the `testing` skill ("Window geometry:
-measure it, never reason about it"); `WINAMP_MODERN_PLACE_TRACE=1` is the probe for this subsystem
-([reference/harness.md](reference/harness.md)) and the arrangement itself is in
-[reference/components.md](reference/components.md).
+- **A structural probe is not a picture.** `surfaces=1` says a client area exists, never where it is
+  drawn. Render it or run it before handing it over — §*A structural probe is not a picture*.
+- **A number that moved is not the symptom that was reported.** Reproduce the reporter's own steps end
+  to end, and drive the repro yourself — §*A number that moved is not the symptom that was reported*.
+- **Verify window geometry in the running app, not in your head.** `WINAMP_MODERN_PLACE_TRACE=1` is
+  the probe — §*Verify window geometry in the running app*.
 
 ### Pick your working mode first
 
@@ -94,111 +71,136 @@ animated VU meters behind the other eight have never been rendered here).
 
 ## Routing: which file answers this?
 
-This file is a router. Read the one focused reference your symptom names.
+This file is a router. Find your symptom below and read that one focused reference — not this file
+top to bottom. Rows are grouped by area; within a group, follow the most specific row.
+
+### Loading, geometry, and where windows open
 
 | Symptom / question | Read |
 |---|---|
 | Load, mounts, `@VARS@`, include/glob, sibling skins | [reference/loading.md](reference/loading.md) |
-| The bundled default skin, or Modern mode has nothing to load | [reference/loading.md](reference/loading.md) → *The bundled default skin* |
 | Geometry, anchors, y-origin, collapsed windows | [reference/loading.md](reference/loading.md) |
+| The bundled default skin, or Modern mode has nothing to load | [reference/loading.md](reference/loading.md) → *The bundled default skin* |
+| A window opens at its `minimum_*` rather than the size its skin declares | [reference/loading.md](reference/loading.md) → *`default_w`/`default_h` are `<container>` attributes too* |
+| A component window (visualizer, video) opens as a sliver | [reference/loading.md](reference/loading.md) → *A component window with no stated size* |
+| Skin starts in an impossible all-zero settings state | [reference/loading.md](reference/loading.md) → *settings must start in a state scripts can express* |
 | Where a skin's windows open, overlapping windows, the tiling | [reference/components.md](reference/components.md) |
-| Dead mouse target, clipping, regions, drag policy, `sysregion` | [reference/rendering/hit-testing.md](reference/rendering/hit-testing.md) |
-| Invisible layer blocks clicks or drags the window | [reference/rendering/hit-testing.md](reference/rendering/hit-testing.md) → *Hit testing* |
-| Splitter cursor/drag/persistence or `<Wasabi:Frame>` | [reference/rendering/frame-splitter.md](reference/rendering/frame-splitter.md) |
-| `<vis>` analyzer/oscilloscope, gain, colours, modes | [reference/rendering/vis.md](reference/rendering/vis.md) |
-| Visualization timing, stepped motion, pause freeze | [reference/performance.md](reference/performance.md) → *The visualization has a clock of its own* |
-| Text metrics, fonts, clocks, bitmap fonts, missing height, offsets | [reference/rendering/text.md](reference/rendering/text.md) |
-| A paragraph draws as one clipped line, or `wrap=`/`<Wasabi:Text>` layout | [reference/rendering/text.md](reference/rendering/text.md) → *A paragraph is not a line* |
-| Playlist/library/tab text draws in a console font, or a size too small | [reference/rendering/text.md](reference/rendering/text.md) → *Host-drawn text is not skin-declared text* |
-| A menu a **double-click** opens never appears | [reference/rendering.md](reference/rendering.md) → *A skin's own right-click menus* |
+| Skin-opened window appears in the wrong place | [reference/components.md](reference/components.md) → *default_visible* |
+| Several windows in the menu share one name | [reference/components.md](reference/components.md) → *default_visible*, and `WinampModernContainerTopology.menuLabels` |
+| A window the skin closes at startup is missing from every probe | [reference/components.md](reference/components.md) → *`visible` on a container answers two questions* |
+| Window restores at the wrong size or one skin inherits another's frame | [reference/rendering.md](reference/rendering.md) → *A .wal window's size is still the skin's* |
+| Container/layout writes do not move or size their window | [reference/rendering.md](reference/rendering.md) → *A container's x/y/w/h are its window's* |
+| A bare outline rectangle opens beside the player (drop shadow, snap preview) | [reference/components.md](reference/components.md) → *A window that only fakes a Windows desktop effect* |
+
+### Drawing: sprites, colour, text
+
+| Symptom / question | Read |
+|---|---|
+| `cfgattrib`, `onActivate`, alpha, fill, sliders, `ProgressGrid`, animation; album art, animated layer or image parameter draws stale/wrong | [reference/rendering.md](reference/rendering.md) |
+| Toggle works but never looks active | [reference/rendering.md](reference/rendering.md) → *onActivate* |
+| Playlist/EQ/library lamp on a skin button is inverted or counts clicks | [reference/rendering.md](reference/rendering.md) → *A `TOGGLE` button's lamp* |
+| Shuffle/repeat/crossfade disagree with the host | [reference/rendering.md](reference/rendering.md) → *Some cfgattrib values are the host's* |
+| Vertical slider uses the wrong axis or EQ curve is absent | [reference/rendering.md](reference/rendering.md) → *A skin spells the axis two ways* |
+| Bitmap icons/borders look blurry at an integer UI Size | [reference/rendering.md](reference/rendering.md) → *Bitmap interpolation follows UI Size × backing scale* |
+| A window has no border or background, or a skin's own labels are invisible against it | [reference/rendering.md](reference/rendering.md) → *A standard frame whose artwork stayed in Winamp* |
+| Settings window is an empty slab, or a `<Wasabi:TitleBox>` shows neither label nor body | [reference/rendering.md](reference/rendering.md) → *`<Wasabi:TitleBox>` is a body, not just a border* |
+| Settings page has boxes but no switches, labels, sliders or drop-downs | [reference/rendering.md](reference/rendering.md) → *The Wasabi standard form widgets are the primitives they wrap* |
+| A skin-owned right-click menu is missing or wrong, or a menu a **double-click** opens never appears | [reference/rendering.md](reference/rendering.md) → *A skin's own right-click menus* |
 | Colour resolution, themes, unreadable selections/titles | [reference/rendering/colour.md](reference/rendering/colour.md) |
+| White/black slab appears where a named colour belongs | [reference/rendering/colour.md](reference/rendering/colour.md) → *How a colour resolves* |
 | Selected row or title text matches its background | [reference/rendering/colour.md](reference/rendering/colour.md) → *A resolved colour is not yet readable* |
 | A title draws as a smear, or two objects in one slot both draw, or artwork ignores window focus | [reference/rendering/colour.md](reference/rendering/colour.md) → *`activealpha`/`inactivealpha`* |
 | A `<gradient>` fills flat instead of ramping | [reference/rendering/colour.md](reference/rendering/colour.md) → *a `<gradient>` with no direction* |
-| A window opens at its `minimum_*` rather than the size its skin declares | [reference/loading.md](reference/loading.md) → *`default_w`/`default_h` are `<container>` attributes too* |
-| A component window (visualizer, video) opens as a sliver | [reference/loading.md](reference/loading.md) → *A component window with no stated size* |
 | The playing playlist row has no marker, or the selection bar never appears | [reference/rendering/colour.md](reference/rendering/colour.md) → *A marker only marks when it differs* |
-| Bitmap icons/borders look blurry at an integer UI Size | [reference/rendering.md](reference/rendering.md) → *Bitmap interpolation follows UI Size × backing scale* |
-| `cfgattrib`, `onActivate`, album art, alpha, fill, sliders, `ProgressGrid`, animation | [reference/rendering.md](reference/rendering.md) |
+| Theme picker is empty or will not switch | [reference/rendering/colour.md](reference/rendering/colour.md) → *The picker* |
+| Text metrics, fonts, clocks, bitmap fonts, missing height, offsets | [reference/rendering/text.md](reference/rendering/text.md) |
+| A paragraph draws as one clipped line, or `wrap=`/`<Wasabi:Text>` layout | [reference/rendering/text.md](reference/rendering/text.md) → *A paragraph is not a line* |
+| Playlist/library/tab text draws in a console font, or a size too small | [reference/rendering/text.md](reference/rendering/text.md) → *Host-drawn text is not skin-declared text* |
+| Clock fields collide or the separator sits off baseline | [reference/rendering/text.md](reference/rendering/text.md) → *A clock is a run of fields* |
+| A separator or icon a script placed sits on the string beside it | [reference/rendering/text.md](reference/rendering/text.md) → *`getTextWidth()` carries the box's own margin* |
+| A readout's glyphs are chopped at the bottom, or sit low in their box | [reference/rendering/text.md](reference/rendering/text.md) → *A line is centred in the cell the skin declared* |
+| Splitter cursor/drag/persistence or `<Wasabi:Frame>` | [reference/rendering/frame-splitter.md](reference/rendering/frame-splitter.md) |
 | Slow rendering, CPU, repaint storms | [reference/performance.md](reference/performance.md) |
-| Frame is fast but the app hangs | [reference/harness.md](reference/harness.md) → *Profiling the running app* |
-| Script abort, arity, unknown method, script-built UI | [reference/scripting.md](reference/scripting.md) |
+
+### Input and hit testing
+
+| Symptom / question | Read |
+|---|---|
+| Dead mouse target, clipping, regions, drag policy, `sysregion` | [reference/rendering/hit-testing.md](reference/rendering/hit-testing.md) |
+| Invisible layer blocks clicks or drags the window | [reference/rendering/hit-testing.md](reference/rendering/hit-testing.md) → *Hit testing* |
+| A control is dead because a *second* object shares its rect, or a skin declares the same id twice | [reference/scripting.md](reference/scripting.md) → *`getObject` skips a duplicate id that never came up* |
+| A button draws, presses and glows but runs no command; `setText`/search terms disappear or a search action receives empty terms | [reference/scripting.md](reference/scripting.md) → *`embed_xui` — the wrapper **is** the control* |
+| Control works once, hides itself, and cannot be clicked again | [reference/scripting.md](reference/scripting.md) → *A layout must not be left with no way to seek* |
+| Config/EQ drawer or custom list will not scroll | [reference/scripting.md](reference/scripting.md) → *The mouse wheel is a layout event* |
+
+### Scripting (MAKI)
+
+| Symptom / question | Read |
+|---|---|
+| Script abort, arity, unknown method, script-built UI; host readout or EQ change never reaches a script; keyboard, mouse wheel, wrapper value, scrolling; `getAutoWidth`/`getAutoHeight` and scripted layout drift | [reference/scripting.md](reference/scripting.md) |
 | A call trace stops mid-handler with no failure line | [reference/scripting.md](reference/scripting.md) → *An event handler is also a method* |
-| Host readout or EQ change never reaches a script | [reference/scripting.md](reference/scripting.md) |
-| Keyboard, mouse wheel, wrapper value, scrolling | [reference/scripting.md](reference/scripting.md) |
-| `getAutoWidth` / `getAutoHeight`, scripted layout drift | [reference/scripting.md](reference/scripting.md) |
-| Window jumps to a screen corner when a skin panel opens | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read* |
-| A skin's window chrome drifts away from the window's content | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read* |
+| Window jumps to a screen corner when a skin panel opens, or a skin's window chrome drifts away from the window's content | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read* |
 | A window a skin's own script closed never comes back, or opens empty | [reference/scripting.md](reference/scripting.md) → *`onSetVisible` — a window a script closes has to be reopened* |
 | One window's script sets something in another window and nothing happens | [reference/scripting.md](reference/scripting.md) → *`getLayout()` answers NULL for a layout that has never been shown* |
 | Dragging one window should pull another along and does not | [reference/scripting.md](reference/scripting.md) → *`onMove()` is dispatched to the window objects only* |
-| `setText`/search terms disappear through `embed_xui` | [reference/scripting.md](reference/scripting.md) |
-| Slider action families and `onSetPosition` | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
-| Playlist/EQ/library hosting, synthesis, topology | [reference/components.md](reference/components.md) |
-| A skin's own About page, `skin.about.group`, the About GUID | [reference/components.md](reference/components.md) → *The About page is a group, not a window* |
-| Embedded playlist/library text sizes disagree | [reference/components.md](reference/components.md) → *How large NullPlayer draws its own text* |
-| Hosted surface survives the wrong tab or remounts dead | [reference/components.md](reference/components.md) → *Unmounting is not teardown* |
+
+### Components and hosted surfaces
+
+| Symptom / question | Read |
+|---|---|
+| Playlist/EQ/library hosting, synthesis, topology; `TOGGLE`, container ids, first layout, `default_visible`; NullPlayer-hosted text size or palette; an auxiliary window freezes, repaints wrong, or leaks on teardown | [reference/components.md](reference/components.md) |
 | `hold="none"`, flat holder slab, component routing | [reference/components.md](reference/components.md) → *Component hosting* |
 | A window opens as the skin's own frame around an empty hole | [reference/components.md](reference/components.md) → *A frame the skin drew and left for Winamp to fill* |
-| `TOGGLE`, container ids, first layout, `default_visible` | [reference/components.md](reference/components.md) |
-| Component bucket/thinger, missing widget from include closure | [reference/components.md](reference/components.md) → *The component bucket* |
-| NullPlayer-hosted text size or palette | [reference/components.md](reference/components.md) |
-| Auxiliary window freezes; repaint or teardown issue | [reference/components.md](reference/components.md) |
-| Video picture, child-window sizing, control bar | [reference/components/video.md](reference/components/video.md) |
-| Clock or transport frozen while a video plays | [reference/components/video.md](reference/components/video.md) → *The picture's clock* |
-| Video window pops out when a tab changes | [reference/components/video.md](reference/components/video.md) → *A holder leaving is a tab switch* |
+| Component bucket/thinger, or a skin declares a widget that never enters its include closure | [reference/components.md](reference/components.md) → *The component bucket* |
+| Hosted surface survives the wrong tab or remounts dead | [reference/components.md](reference/components.md) → *Unmounting is not teardown* |
+| Mode switch teardown crashes or leaks a hosted surface | [reference/components.md](reference/components.md) → *Teardown order* |
+| Embedded playlist/library text sizes disagree | [reference/components.md](reference/components.md) → *How large NullPlayer draws its own text* |
+| A skin's own About page, `skin.about.group`, the About GUID | [reference/components.md](reference/components.md) → *The About page is a group, not a window* |
+
+### Visualization, video, browser, notifier
+
+| Symptom / question | Read |
+|---|---|
+| `<vis>` analyzer/oscilloscope, gain, colours, modes | [reference/rendering/vis.md](reference/rendering/vis.md) |
+| Visualization timing, stepped motion, pause freeze | [reference/performance.md](reference/performance.md) → *The visualization has a clock of its own* |
 | AVS/MilkDrop component holder or embedded visualization | [reference/components/visualization.md](reference/components/visualization.md) |
 | Plugin pane draws an analyzer and the user wants something else in it | [reference/components/visualization.md](reference/components/visualization.md) → *An unhosted pane is a surface with a choice of its own* |
 | Several visualization holders show the wrong engine | [reference/components/visualization.md](reference/components/visualization.md) → *one holder per skin* |
+| Video picture, child-window sizing, control bar | [reference/components/video.md](reference/components/video.md) |
+| Clock or transport frozen while a video plays | [reference/components/video.md](reference/components/video.md) → *The picture's clock* |
+| Video window pops out when a tab changes | [reference/components/video.md](reference/components/video.md) → *A holder leaving is a tab switch* |
 | Browser/WebKit, navigation, search URL, duplicate toolbar | [reference/components/browser.md](reference/components/browser.md) |
 | Scheme-less web address is mistaken for a VFS path | [reference/components/browser.md](reference/components/browser.md) → *four navigation routes* |
 | Notifier toast text, layout, visibility, timing | [reference/components/notifier.md](reference/components/notifier.md) |
 | Notifier title is invisible or rows overlap | [reference/components/notifier.md](reference/components/notifier.md) → *text and layout* |
-| Playlist/visualization/video toolbar actions | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
+
+### The compatibility surface, and the other engines
+
+| Symptom / question | Read |
+|---|---|
+| Supported Wasabi markup; slider action families and `onSetPosition`; playlist/visualization/video toolbar actions | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
+| Host action is accepted but deliberately inert | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) → action families |
+| Implemented MAKI method/events | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
+| Security model, limits, policy, verification status | [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md) |
 | ClassicPro engine/import behavior | [reference/classicpro.md](reference/classicpro.md) |
 | WACUP probe, branding branch, WACUP-only surface | [reference/wacup.md](reference/wacup.md) |
+
+### Instruments, proof, and what to work on
+
+| Symptom / question | Read |
+|---|---|
 | Probes, env vars, dumps, live defect | [reference/harness.md](reference/harness.md) |
 | Probe reports no match or no event | [reference/harness.md](reference/harness.md) → *A blind instrument reads as a working feature* |
 | Whole skin dead or startup handler aborts | [reference/harness.md](reference/harness.md) → *The order that made Phase 33 cheap* |
 | Meter moves too little | [reference/harness.md](reference/harness.md) → histogram the frames |
+| GUI-only scripted-control report | [reference/harness.md](reference/harness.md) → *Ask for the live trace first, not fourth* |
+| Frame is fast but the app hangs | [reference/harness.md](reference/harness.md) → *Profiling the running app* |
 | Renderer regression proof | [reference/harness.md](reference/harness.md) → *The golden images* |
 | Proving an engine-wide change broke no other skin | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
-| Supported Wasabi markup | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) |
-| Host action is accepted but deliberately inert | [compatibility/wasabi-surface.md](compatibility/wasabi-surface.md) → action families |
-| Implemented MAKI method/events | [compatibility/maki-surface.md](compatibility/maki-surface.md) |
-| Limits, policy, verification status | [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md) |
-| One named skin's current state | [skins.md](skins.md) → `skins/<skin>.md` |
-| Skin declares a widget that never enters its include graph | [reference/components.md](reference/components.md) → *The component bucket* |
 | Measure one skin end to end | `/wal-skin-report <skin.wal>` |
+| The GUI verification pass before handing work over | [manual-qa-checklist.md](manual-qa-checklist.md) |
+| One named skin's current state | [skins.md](skins.md) → `skins/<skin>.md` |
 | Choose the next cross-skin capability | [triage-playbook.md](triage-playbook.md), then the ranked Reach table in `TASKS.md` |
-| Window restores at the wrong size or one skin inherits another's frame | [reference/rendering.md](reference/rendering.md) → *A .wal window's size is still the skin's* |
-| Toggle works but never looks active | [reference/rendering.md](reference/rendering.md) → *onActivate* |
-| Playlist/EQ/library lamp on a skin button is inverted or counts clicks | [reference/rendering.md](reference/rendering.md) → *A `TOGGLE` button's lamp* |
-| A window has no border or background, or a skin's own labels are invisible against it | [reference/rendering.md](reference/rendering.md) → *A standard frame whose artwork stayed in Winamp* |
-| Settings window is an empty slab, or a `<Wasabi:TitleBox>` shows neither label nor body | [reference/rendering.md](reference/rendering.md) → *`<Wasabi:TitleBox>` is a body, not just a border* |
-| Settings page has boxes but no switches, labels, sliders or drop-downs | [reference/rendering.md](reference/rendering.md) → *The Wasabi standard form widgets are the primitives they wrap* |
-| A window the skin closes at startup is missing from every probe | [reference/components.md](reference/components.md) → *`visible` on a container answers two questions* |
-| A button draws, presses and glows but runs no command | [reference/scripting.md](reference/scripting.md) → *`embed_xui` — the wrapper **is** the control* |
-| A control is dead because a *second* object shares its rect, or a skin declares the same id twice | [reference/scripting.md](reference/scripting.md) → *`getObject` skips a duplicate id that never came up* |
-| Several windows in the menu share one name | [reference/components.md](reference/components.md) → *default_visible*, and `WinampModernContainerTopology.menuLabels` |
-| Shuffle/repeat/crossfade disagree with the host | [reference/rendering.md](reference/rendering.md) → *Some cfgattrib values are the host's* |
-| Control works once, hides itself, and cannot be clicked again | [reference/scripting.md](reference/scripting.md) → *A layout must not be left with no way to seek* |
-| Skin starts in an impossible all-zero settings state | [reference/loading.md](reference/loading.md) → *settings must start in a state scripts can express* |
-| Vertical slider uses the wrong axis or EQ curve is absent | [reference/rendering.md](reference/rendering.md) → *A skin spells the axis two ways* |
-| Clock fields collide or the separator sits off baseline | [reference/rendering/text.md](reference/rendering/text.md) → *A clock is a run of fields* |
-| A separator or icon a script placed sits on the string beside it | [reference/rendering/text.md](reference/rendering/text.md) → *`getTextWidth()` carries the box's own margin* |
-| A readout's glyphs are chopped at the bottom, or sit low in their box | [reference/rendering/text.md](reference/rendering/text.md) → *A line is centred in the cell the skin declared* |
-| White/black slab appears where a named colour belongs | [reference/rendering/colour.md](reference/rendering/colour.md) → *How a colour resolves* |
-| Theme picker is empty or will not switch | [reference/rendering/colour.md](reference/rendering/colour.md) → *The picker* |
-| Skin-owned right-click menu is missing or wrong | [reference/rendering.md](reference/rendering.md) → *A skin's own right-click menus* |
-| Container/layout writes do not move or size their window | [reference/rendering.md](reference/rendering.md) → *A container's x/y/w/h are its window's* |
-| Search action receives empty terms | [reference/scripting.md](reference/scripting.md) → *embed_xui* |
-| GUI-only scripted-control report | [reference/harness.md](reference/harness.md) → *Ask for the live trace first, not fourth* |
-| Config/EQ drawer or custom list will not scroll | [reference/scripting.md](reference/scripting.md) → *The mouse wheel is a layout event* |
-| Album art, animated layer, or image parameter draws stale/wrong | [reference/rendering.md](reference/rendering.md) |
-| Skin-opened window appears in the wrong place | [reference/components.md](reference/components.md) → *default_visible* |
-| A bare outline rectangle opens beside the player (drop shadow, snap preview) | [reference/components.md](reference/components.md) → *A window that only fakes a Windows desktop effect* |
-| Mode switch teardown crashes or leaks a hosted surface | [reference/components.md](reference/components.md) → *Teardown order* |
 | Current open work | `TASKS.md` — the only live backlog; closed history is [the archive](../../docs/winamp-modern/backlog-archive.md) |
 
 The backward-compatibility map for section-title pointers in old handoffs lives in
@@ -206,7 +208,7 @@ The backward-compatibility map for section-title pointers in old handoffs lives 
 
 Routing rules:
 
-- Follow the most specific row. The parent `rendering.md` now owns drawable behavior that does not
+- Follow the most specific row. The parent `rendering.md` owns drawable behavior that does not
   belong to hit testing, visualization, splitters, text, or colour; the parent `components.md` owns
   hosting core that does not belong to video, visualization, browser, or notifier surfaces.
 - A visual symptom and its evidence can route to different files. For example, a dead control's
@@ -276,60 +278,25 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 
 Design records and per-phase handoffs: `docs/winamp-modern/` — see its `INDEX.md`.
 
-## The pipeline
+## The pipeline and the security model
 
-```
-.wal file
-  └─ WalArchive              validate + bound (ZIP, read-only, on-demand inflate)
-      └─ WalVirtualFileSystem  mount at /Skins/<name>/, resolve @VARS@, case-insensitive
-          └─ WalXMLDocumentLoader  parse skin.xml, expand <include>/<elementinclude> + globs
-              ├─ WinampModernSurfaceInventory   what the skin declares (pre-graph, bounded walk)
-              └─ WasabiSurfaceSynthesizer       append windows for missing surfaces
-                  └─ WasabiSkinInitializer  6 ordered passes → registries + retained graph
-                      ├─ WasabiSceneRenderer   graph → Core Graphics
-                      ├─ WinampModernScriptRuntime  MAKI programs bound to graph objects
-                      └─ WinampModernHost      the only door to AudioEngine
-```
+Both moved out of this router; each is one read away.
 
-Synthesis sits **before** initialization on purpose: synthetic XML must go through the same
-registration, inheritance validation, object creation, and script binding as the skin's own. After
-`scripts.start()`, `WinampModernSurfaceCoordinator` reconciles the catalog against the containers that
-actually opened.
-
-`WinampModernSkinLoader.load(from:additionalMounts:)` is the headless entry point for the whole
-left column and returns a `WinampModernLoadedSkin`. Every test and the window controller go through
-it — there is no second path.
-
-### Security model
-
-The skin is **untrusted input**. Three rules hold everywhere and must not be relaxed:
-
-1. **No host filesystem access.** Resources are read only through `WalResourceProvider` /
-   `WalVirtualFileSystem`. Never hand a skin an `NSURL` into the real filesystem.
-2. **Everything is bounded.** Archive entries, uncompressed bytes, compression ratio, XML depth, node
-   count, include depth, image dimensions, font size, script size, instruction count, call depth,
-   allocation, stack values, active timers. See [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md#limits) for values.
-3. **Failures are typed, never traps.** Malformed input produces a `WalFailure` carrying
-   `WalDiagnostic`s with a `WalSourceLocation` (`logical-path:line:column`). A Swift trap or a hang on
-   skin input is a bug — the fuzz tests in `WinampModernPhase7Tests` exist to catch exactly that.
-
-Scripts cannot launch executables, open modal UI, reach arbitrary host paths, or make general host
-network requests, and `messagebox` remains denied. The pasteboard is **write-only** and plain text
-only (`System.setClipboardText`, BB13): a skin's copy commands work, and nothing lets one read what
-the user last copied elsewhere.
-
-**Navigation is the one narrow exception, and it is typed rather than free** (B40). Every address a
-skin authors — from `<browser>.navigateUrl`, from `System.navigateUrl` /
-`System.navigateUrlBrowser`, or from a `browser_search` / `browser_navigate` action — passes through
-`WinampModernWebNavigationPolicy`: HTTP/HTTPS with a real host only, no other scheme, no file or
-application URL. An internal address reaches only that skin's own ephemeral, policy-gated WebKit
-surface. The **external** route (`System.navigateUrl`, the user's default browser) additionally
-requires the user's consent: a sheet naming the URL on first use, remembered per skin if they choose
-"Always Allow", one outstanding question at a time, and never a modal loop. See
-[reference/components/browser.md](reference/components/browser.md) — *The four routes a skin reaches the web by*.
+- **The load pipeline** (`.wal` → archive → VFS → XML → inventory/synthesis → initializer → renderer /
+  script runtime / host, and why synthesis sits *before* initialization) —
+  [reference/loading.md](reference/loading.md) → *The pipeline*.
+  `WinampModernSkinLoader.load(from:additionalMounts:)` is the headless entry point for that whole
+  column and the only path any test or window controller takes.
+- **The security model** — the skin is untrusted input: no host filesystem access, everything bounded,
+  failures typed rather than traps, a write-only plain-text pasteboard, and the one narrow typed
+  exception for web navigation —
+  [compatibility/limits-and-policy.md](compatibility/limits-and-policy.md) → *Security model*.
+  **Do not relax any of it to make a skin load.**
 
 
 ## Rules for extending this subsystem
+
+**Engine rules — normative, and none of them bend for one skin.**
 
 - Do not weaken a limit or a sandbox rule to make a skin load. Degrade gracefully with a warning
   diagnostic instead — a missing optional bitmap or an unknown `wasabi.*` base should warn, not fail.
@@ -341,40 +308,36 @@ requires the user's consent: a sheet naming the URL on first use, remembered per
   actually landed, not what its markup says. Bento-style skins are almost entirely relative geometry
   (`w="-4" relatw="1"`), and an attribute read there is a negative number a skin will lay itself out
   against.
-- Before concluding "the script never ran", check with a probe that observes **execution**. Per-object
-  binding state does not answer that question, and reading it as if it did cost two phases.
-- **Instrument before you reason.** Deducing a mechanism from the skin's bytecode and the engine
-  source produced three wrong answers in a row on one defect; `WINAMP_MODERN_CALL_TRACE=1` on the
-  running app settled it in a single launch. Count what a method *returns*, not whether it is called.
-- **When a fix changes nothing on screen, look for the next fault before reverting it.** One Defix
-  readout had four independent faults stacked on it, so the first two correct fixes looked like no
-  change at all.
-- **A number handed to skin artwork must be in the unit that artwork is cut for.** Winamp's meters are
-  vis bytes on a logarithmic sweep; a linear magnitude × 255 has now been found twice (`getLeftVUMeter`
-  Phase 29, `getVisBand` Phase 30) and is still open in the `<vis>` analyzer. The test is to histogram
-  the frames a meter actually uses: a healthy one spreads, a mis-scaled one piles on its rest frame.
-- **Check `RENDER_SCRIPTS` for a failed handler before believing anything about what a skin contains.**
-  Dispatch is fail-closed: one unimplemented method abandons the *whole handler*, and skins put their
-  entire startup in one. multipass's eleven initialisers all sat behind statement eight of the first
-  one, so the skin was a static picture and every feature "missing" — including a widget a graph-walking
-  probe then recorded as absent, because a script had never run to create it. A skin whose startup
-  aborted has no features to debug (Phase 33; the *whole* method is in `reference/harness.md` §*The
-  order that made Phase 33 cheap*).
-- **Read the skin's own `scripts/*.m` when the archive ships them** — several do, and it turns an
-  afternoon of disassembly into a five-minute read.
-- **Ask what kind of object a control is before concluding the skin has none.** multipass's seek bar
-  is an `<animatedlayer>` plus a `Map`, not a `<slider>`.
-- **Corpus-scan the attribute, not the button.** One `action="…"` grep across the installed skins
-  turned "this button does nothing" into nine dead buttons in five skins plus a list of what is still
-  inert — a coverage decision rather than a one-off fix. Then run the render sweep, which is what
-  proves the fix reached other skins *and* broke none.
-- **When a probe reports nothing, check the probe can see the thing at all.** Three harness blind
-  spots each made a real defect look absent (see *A blind instrument reads as a working feature*).
 - Add fixtures, never third-party assets. Every committed test fixture is synthetic and self-authored.
-- Measure with `/wal-skin-report` rather than by hand, and land what you learn: durable rules in the
-  `reference/` file that owns the concept or in [compatibility.md](compatibility.md), per-skin state in
-  `skins/<skin>.md`, the report itself outside the repo unless the user asks for it. An ad-hoc dump
-  nobody wrote down gets re-derived, and two phases have already been lost that way.
+- Measure with `/wal-skin-report` rather than by hand, and land what you learn — see
+  *Where new findings land*. An ad-hoc dump nobody wrote down gets re-derived, and two phases have
+  already been lost that way.
+
+**Debugging rules — always paid.** Each is one line here; the worked example that earned it is the
+named section of [reference/harness.md](reference/harness.md).
+
+- **Instrument before you reason.** Deducing a mechanism from bytecode plus engine source produced
+  three wrong answers in a row on one defect; `WINAMP_MODERN_CALL_TRACE=1` on the running app settled
+  it in one launch. Count what a method *returns*, not whether it is called — and never conclude "the
+  script never ran" from per-object binding state, which does not answer that question and cost two
+  phases when it was read as if it did. §*Instrument
+  before you reason*, §*Ask for the live trace first, not fourth*.
+- **Check `RENDER_SCRIPTS` for a failed handler before believing anything about what a skin contains.**
+  Dispatch is fail-closed: one unimplemented method abandons the *whole* handler, and skins put their
+  entire startup in one, so a skin whose startup aborted has no features to debug. §*The order that
+  made Phase 33 cheap* — which also carries: read the skin's own `scripts/*.m` when the archive ships
+  them, ask what *kind* of object a control is before concluding the skin has none, and corpus-scan
+  the attribute rather than the button, then run the render sweep.
+- **When a fix changes nothing on screen, look for the next fault before reverting it.** One Defix
+  readout had four independent faults stacked on it. §*When a fix changes nothing on screen*.
+- **A number handed to skin artwork must be in the unit that artwork is cut for.** Winamp's meters are
+  vis bytes on a logarithmic sweep; a linear magnitude × 255 has been found twice and is still open in
+  the `<vis>` analyzer. §*The measurement that finds scale bugs*.
+- **When a probe reports nothing, check the probe can see the thing at all.** Three harness blind spots
+  each made a real defect look absent. §*A blind instrument reads as a working feature*.
+- The three corollaries of the Classic-safety rule above — probe-is-not-a-picture, a-number-that-moved,
+  and verify-geometry-in-the-running-app — are debugging rules too.
+
 
 ### Where new findings land
 
@@ -383,6 +346,8 @@ requires the user's consent: a sheet naming the URL on first use, remembered per
 - A supported/unsupported surface fact → [compatibility.md](compatibility.md).
 - A corpus-scale method or disposition → [triage-playbook.md](triage-playbook.md).
 - A new backlog item → `TASKS.md` with a Reach measurement; move it to the archive in the same change that closes it.
+- A `/wal-skin-report` run itself → **outside the repo** unless the user asks for it; only what it
+  taught you lands in the files above.
 - This file grows **only** when a new *category* appears — then add a row to the routing table.
 - **Dedupe rule:** long or volatile prose gets exactly one home and everything else points at it;
   short stable tables may repeat where an extra file read would cost more than the duplicate.

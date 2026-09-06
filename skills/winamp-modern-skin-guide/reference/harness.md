@@ -907,6 +907,48 @@ band draws at ~15%.
 **Any host number handed to skin artwork must be in the unit the artwork is cut for.** Winamp's meter
 values are vis bytes on a logarithmic sweep; a linear magnitude × 255 is the recurring mistake.
 
+### A structural probe is not a picture (B117/B138, 2026-09-04/05)
+
+`surfaces=1` from the hosted-window sweep says a client area exists and is reachable; it says nothing
+about **where it is drawn**. 2026-09-04 a hosted-frame fix was reported as working on
+`surfaces=1, strip=48px, drag=88%` and a corpus diff of exactly one skin, and the user's screenshot
+showed the chrome and the contents in different places — every number the probe measured was right,
+and blind to the only thing that mattered. Render it (`WINAMP_MODERN_DRAG_HOSTED_PNG`) or run it,
+then hand it over.
+
+2026-09-05 sharpened the same lesson for *sizes*: the dump asks a renderer how big its window is
+**after** `runtime.start()`, and the app's window tiler asks **before** it, so a window-size fix hung
+off the post-start fit printed `AVS/normal: 354x278` in a clean corpus sweep while the running app
+placed the window at `354x30` and the reporter's screen never changed. `WINAMP_MODERN_PLACE_TRACE=1`
+in the app is one line and settles it; a green sweep does not. That session then took five more rounds
+because each new symptom was answered with a plausible mechanism instead of a measurement; the ones
+that landed came from reading pixels out of the reporter's own screenshot and window frames out of the
+accessibility API.
+
+### A number that moved is not the symptom that was reported (B138, 2026-09-05)
+
+The shade round trip had two faults stacked on one screen, and fixing the measurable one — the window
+came back 500x500 instead of 691x541, visible in a single `resizeWindow` log line — produced a
+confident "fixed" while the reporter's actual complaint, the empty playlist pane, was still there in
+the screenshot taken to prove it. The reporter said "not fixed" twice before the claim was withdrawn.
+Two habits fall out.
+
+- **Reproduce the reporter's own steps end to end before believing anything.** A "fresh launch" that
+  has been resized and shaded by your own probing is not a fresh launch, and a wrong reading of it
+  ("the bug is there at launch too") sends the whole diagnosis somewhere else.
+- **Drive the repro yourself where you can.** `System Events` `click at` silently delivers nothing to
+  this app, so a 35-line CGEvent clicker built in the scratchpad was what finally made the round trip
+  repeatable, and a pixel-diff of the window against its launch state was what made "fixed" a
+  measurement instead of an opinion. See *Driving a click in the running app*.
+
+### Verify window geometry in the running app, not in your head
+
+Window geometry has no useful armchair form. B56 cost four confident statically-reasoned fixes — each
+wrong, two of them regressions — before anyone launched the app. The loop for measuring it is in the
+`testing` skill (*Window geometry: measure it, never reason about it*);
+`WINAMP_MODERN_PLACE_TRACE=1` is the probe for this subsystem, and the window arrangement itself is
+in [components.md](components.md).
+
 ### Ask for the live trace **first**, not fourth
 
 A GUI-only report on a scripted control cost **five** rebuild-and-retest rounds before anyone looked
