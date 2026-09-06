@@ -2221,13 +2221,10 @@ final class WasabiSceneRenderer {
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
-        } else if object.attributes["fitparent"] == "1" {
-            // `fitparent="1"` fills the parent regardless of x/y/w/h. Groups use it constantly
-            // (`<group id="cpro.normal.background" fitparent="1"/>`); without it they resolve to a
-            // 0×0 rect at the origin and every descendant collapses into the top-left corner.
-            resolved = parentFrame
         } else {
-            let wasabi = object.geometry.resolve(
+            // `fitparent="1"` objects come through here too, sized to their parent and placed by
+            // their own `x`/`y` — see `geometry(of:)`.
+            let wasabi = geometry(of: object).resolve(
                 in: WasabiRect(x: Double(parentFrame.minX), y: Double(parentFrame.minY),
                                width: Double(parentFrame.width), height: Double(parentFrame.height)),
                 intrinsicSize: intrinsic
@@ -4534,6 +4531,34 @@ final class WasabiSceneRenderer {
         return value != "0" && value != "false" && value != "no"
     }
 
+    /// The object's declared geometry, with `fitparent="1"` folded in.
+    ///
+    /// `fitparent` is a **size**: the object is as big as its parent, and its own `w`/`h` do not get
+    /// a say — ClassicPro's whole SUI is `<Centro:SUI fitparent="1" h="100"/>`, and a reading that
+    /// let that `h` through (as `parentHeight + 100`, since `fitparent` also implies `relath="1"`)
+    /// grew the component pane 100px past its frame and pushed the playlist's ADD/REM/SEL bar out
+    /// of the window.
+    ///
+    /// What it says nothing about is **where** the object sits, and that is the whole of B142: a
+    /// parent-sized group a skin means to slide sideways could not be slid. cPro Venus's playback
+    /// buttons live in `<group id="c.buttons.centered" x="20" y="-20" fitparent="1"/>` and
+    /// `cbuttonsc.maki` centres them from the layout's own resize with
+    /// `setXmlParam("x", w/2-112)`; with the offset discarded the whole cluster — transport
+    /// buttons, backing plate and the venus wordmark — sat jammed against the left edge at every
+    /// window width. (Its declared `x`/`y` are written *before* `fitparent` and so are the ones
+    /// Winamp throws away — see `WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent`.)
+    func geometry(of object: WasabiObject) -> WasabiGeometrySpec {
+        var spec = object.geometry
+        guard WasabiGeometrySpec.flag(object.attributes["fitparent"]) else { return spec }
+        spec.width = 0
+        spec.height = 0
+        spec.relativeWidth = true
+        spec.relativeHeight = true
+        spec.percentWidth = false
+        spec.percentHeight = false
+        return spec
+    }
+
     private func clipsChildren(_ object: WasabiObject) -> Bool {
         let value = object.attributes["clipchildren"]?.lowercased()
         if value == "1" || value == "true" { return true }
@@ -4549,8 +4574,9 @@ final class WasabiSceneRenderer {
     /// Only a group whose box the skin actually **declared** clips. One that is sized from its
     /// background bitmap, or that falls through to the renderer's default, has a rect we inferred —
     /// and clipping children to a guess can erase content that is really there, which is a far worse
-    /// failure than the overhang it would prevent. `fitparent` counts as declared: it resolves to the
-    /// parent's box, so the clip it produces is the one the children already had.
+    /// failure than the overhang it would prevent. `fitparent` counts as declared: it states the
+    /// group's size outright (the parent's, on whichever axis the group does not size itself), so the
+    /// clip it produces is the one the children already had.
     private func isSizedGroup(_ object: WasabiObject) -> Bool {
         guard object.typeName.caseInsensitiveCompare("group") == .orderedSame else { return false }
         if object.attributes["fitparent"] == "1" { return true }

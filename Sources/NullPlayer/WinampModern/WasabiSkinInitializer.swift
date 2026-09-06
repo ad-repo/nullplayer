@@ -1490,6 +1490,14 @@ final class WasabiSkinInitializer {
                 }
             }
 
+            // `fitparent="1"` is applied where the tag writes it, so geometry written *before* it
+            // is geometry Winamp threw away — see
+            // `WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent`. Done here rather than in
+            // the renderer because it is a property of the markup, and because a script that writes
+            // `x` later must still win: cPro Venus centres its playback buttons that way (B142).
+            attributes = WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent(
+                in: attributes, declaredOrder: node.attributeOrder)
+
             createdCount += 1
             guard createdCount <= maximumObjectCount else {
                 throw WalFailure(WalDiagnostic(.expandedNodeLimitExceeded, "Retained graph exceeds \(maximumObjectCount) objects.", location: node.location))

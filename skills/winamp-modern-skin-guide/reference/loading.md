@@ -523,9 +523,35 @@ left stacked on top of the reels. Same rule in the two collapsed-window checks
 only when it *declares* a ≤2px box, or a skin that sizes its equalizer from art looks like it has
 none and gets a synthesized one built over the top of it.
 
-`fitparent="1"` fills the parent regardless of `x/y/w/h`. Winamp Modern and ClassicPro use it
-constantly for their SUI/content groups; without it those groups resolve to a 0×0 rect at the origin
-and every descendant collapses into the top-left corner.
+#### `fitparent="1"` is a size, not a box
+
+`fitparent="1"` makes an object **the size of its parent** — it writes `w="0" h="0" relatw="1"
+relath="1"`. Winamp Modern and ClassicPro use it constantly for their SUI/content groups; without it
+those groups resolve to a 0×0 rect at the origin and every descendant collapses into the top-left
+corner. Three rules around it, each paid for (B142, 2026-09-06):
+
+- **A stated `w`/`h` loses to it.** ClassicPro's whole SUI is `<Centro:SUI fitparent="1" h="100"/>`,
+  and reading that `h` as an addition to the parent's height (which `fitparent`'s implied `relath="1"`
+  makes it) grew the component pane 100px past its frame and pushed the playlist's ADD/REM/SEL bar
+  clean out of the window. The margin form is the same attribute — ClassicPro's drawer pages are
+  `<group id="drawer.video" fitparent="1" y="1" h="-1"/>` — and read as an *absolute* `-1` that is a
+  negative box, which the negative-box rule drops along with every child under it. Either way the
+  answer is the parent's size.
+- **It says nothing about `x`/`y`.** The object sits where its offset puts it, and a script may write
+  that offset later: cPro Venus's playback buttons are one `<group id="c.buttons.centered" x="20"
+  y="-20" fitparent="1"/>` that `cbuttonsc.maki` centres from the layout's own resize with
+  `setXmlParam("x", integerToString(w/2-112))`. Answering `fitparent` with the parent's box *origin
+  included* pinned that to zero and left the whole cluster jammed against the left edge at every
+  window width — the reported defect.
+- **It is applied where the tag writes it**, so geometry earlier in the same tag is geometry Winamp
+  threw away (`WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent`, applied at object
+  creation so a script's later write still wins). Two tags in the 79-skin corpus state geometry before
+  `fitparent`: Venus's group above, whose `y="-20"` kept would clip 10px off the venus wordmark in the
+  titlebar, and Ebonite's `x="0" y="0" … fitparent="1"`, which writes what it would be given.
+
+Attributes an object inherits from a groupdef default or a XUI instance are *not* judged by that
+order — only names the same tag wrote are, because guessing at a position for the others would resize
+objects whose markup nobody has read.
 
 #### The protective window minimum
 

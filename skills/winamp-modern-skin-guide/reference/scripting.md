@@ -103,7 +103,8 @@ menubar chrome; the entire client area comes from its `content=` param at runtim
 
 1. The object is created from the groupdef, and its script (`standardframe.maki`) is bound to it.
 2. `onScriptLoaded` fires (a **System** event) and the script caches `getScriptGroup()`.
-3. Each XML attribute is delivered as `onSetXuiParam(name, value)`.
+3. Each XML attribute the **object itself does not answer** is delivered as
+   `onSetXuiParam(name, value)`.
 4. The handler for `content` calls `System.newGroup(id)`, which expands that groupdef as a child of
    the calling script's own group; the script then positions it with `setXmlParam`.
 
@@ -121,6 +122,17 @@ Three ordering rules make or break this:
   `label.getAutoWidth() + 20` per tab; run before the labels arrived as params, all five tabs came out
   at that bare 20px, stacked at the left edge. `start()` therefore runs object-owned scripts, then
   `deliverXUIParams`, then the skin-level ones — do not collapse it back into one pass.
+- **Geometry never reaches the script.** Wasabi hands a tag's attributes to `GuiObject::setXmlParam`
+  first and only scripts what that leaves unclaimed, which is why a XUI wrapper can afford to forward
+  everything it is given straight to the control it wraps. ClassicPro's `ModernSongticker.maki` is
+  exactly that shape: it names eight `id_*` params it uses itself and pushes every *other* one onto
+  the `<SongTicker fitparent="1"/>` inside its group. Handed the group's own `x="25" y="78" w="-53"`
+  as well — cPro Venus writes them on the `<ModernSongticker>` tag — it applied that box a second
+  time inside the box it had already placed, and the song title left the display and landed over the
+  playback buttons (B142). `WinampModernScriptRuntime.isConsumedBeforeXUIParams` holds the list, and
+  it is geometry only: `font`, `align` and `color` reach the wrapper on purpose, because a `<group>`
+  has no use for them and forwarding them to the text inside is the whole point of the tag. The same
+  filter applies to a param a *script* writes (`deliverRuntimeXUIParam`), for the same reason.
 - **`notify="key,value"`** on a group instance delivers `onSetXuiParam("key", "value")` even when the
   instance tag is `<group>`, not the XUI tag name. Lobe's Pledit uses
   `<group id="wasabi.standardframe.statusbar" notify="content,pledit.normal.content.group">` — the

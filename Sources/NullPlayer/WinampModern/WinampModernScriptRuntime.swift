@@ -630,6 +630,23 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         return owner.typeName.caseInsensitiveCompare("scripts") == .orderedSame
     }
 
+    /// A param the **object itself** answers, so its script never hears it.
+    ///
+    /// Wasabi hands a XUI tag's attributes to `GuiObject::setXmlParam` first and only calls
+    /// `onSetXuiParam` for what that leaves unclaimed — which is why a XUI wrapper can afford to
+    /// forward everything it is given straight to the control it wraps. ClassicPro's does exactly
+    /// that: `ModernSongticker.maki` names eight `id_*` params it uses itself and pushes every
+    /// other one onto the `<SongTicker fitparent="1"/>` inside its group. Handing that `else` the
+    /// group's own geometry as well put Venus's `x="25" y="78" w="-53" h="20"` onto a ticker that
+    /// is meant to fill the group those numbers already placed, and the song title landed a second
+    /// display's width down and to the right — over the playback buttons (B142).
+    ///
+    /// Only geometry: `font`, `align` and `color` reach the wrapper on purpose — a `<group>` has no
+    /// use for them and forwarding them to the text inside is the whole point of the tag.
+    static func isConsumedBeforeXUIParams(_ name: String) -> Bool {
+        WasabiGeometrySpec.geometryAttributes.contains(name.lowercased())
+    }
+
     private func deliverXUIParams(forSubtreeOf objects: [WasabiObject]) {
         for object in objects { deliverXUIParams(forSubtreeOf: object) }
     }
@@ -647,7 +664,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             // `onSetXuiParam` is a *System* event, and each XUI instance gets its own program
             // instance, so the params must go only to the programs that instance owns —
             // dispatching to every program would hand one frame's `content` to all of them.
-            for (name, value) in object.attributes.sorted(by: { $0.key < $1.key }) {
+            for (name, value) in object.attributes.sorted(by: { $0.key < $1.key })
+            where !Self.isConsumedBeforeXUIParams(name) {
                 _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
                                   arguments: [.string(name), .string(value)], in: owned)
             }
@@ -717,7 +735,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// the rest — while `widgetManItem.maki`'s whole body is one `system.onSetXuiParam` switch. With
     /// the write silent, every row drew with the groupdef's placeholder text and dead buttons.
     func deliverRuntimeXUIParam(_ key: String, value: String, to object: WasabiObject) {
-        guard !object.scriptBindings.isEmpty else { return }
+        guard !Self.isConsumedBeforeXUIParams(key), !object.scriptBindings.isEmpty else { return }
         let owned = programs.filter { $0.ownerID == object.stableID }
         guard !owned.isEmpty else { return }
         _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",

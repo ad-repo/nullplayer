@@ -160,6 +160,41 @@ struct WasabiGeometrySpec: Equatable {
         return leadingInteger(raw) == 2
     }
 
+    /// The eight attributes that place and size an object — the ones a Wasabi `GuiObject` answers
+    /// itself, and the ones `fitparent="1"` writes over.
+    ///
+    /// Winamp applies `fitparent` where it is *written*: it fills in "the whole parent"
+    /// (`x=0 y=0 w=0 h=0 relatw=1 relath=1`) as the tag is parsed, so an attribute earlier in the
+    /// same tag is overwritten by it and one later in the tag overwrites it back. Two tags in the
+    /// 79-skin corpus state geometry before `fitparent`, and one of them is the case this exists
+    /// for: cPro Venus's `<group id="c.buttons.centered" x="20" y="-20" fitparent="1"/>`, whose
+    /// `y="-20"` Winamp discards — leaving the group over the whole window, where the venus
+    /// wordmark inside it sits in the titlebar rather than 10px above the top of the screen — while
+    /// `cbuttonsc.maki` writes `x` back afterwards to centre the playback buttons (B142).
+    /// (The other is Ebonite's `x="0" y="0" … fitparent="1"`, which writes what it would be given.)
+    static let geometryAttributes: Set<String> = [
+        "x", "y", "w", "h", "relatx", "relaty", "relatw", "relath"
+    ]
+
+    /// `attributes` with the geometry `fitparent` overwrote removed, judged by where each name sits
+    /// in the tag's own `declaredOrder`.
+    ///
+    /// Only names the *same tag* wrote are considered: an attribute that arrived from a groupdef's
+    /// defaults has no position here, and guessing one either way would silently resize objects
+    /// whose markup nobody has read. Left in place, it goes on being honoured, which is what the
+    /// renderer already did for every stated box.
+    static func discardingGeometryOverwrittenByFitParent(in attributes: [String: String],
+                                                         declaredOrder: [String]) -> [String: String] {
+        guard flag(attributes["fitparent"]),
+              let fitIndex = declaredOrder.firstIndex(of: "fitparent") else { return attributes }
+        var result = attributes
+        for (index, name) in declaredOrder.enumerated()
+        where index < fitIndex && geometryAttributes.contains(name) {
+            result.removeValue(forKey: name)
+        }
+        return result
+    }
+
     func resolve(in parent: WasabiRect, intrinsicSize: WasabiSize = .zero) -> WasabiRect {
         func resolved(_ value: Double, percent: Bool, relative: Bool, span: Double) -> Double {
             if percent { return span * value / 100 }

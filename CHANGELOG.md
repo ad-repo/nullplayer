@@ -32,6 +32,15 @@
 
 ### Bug Fixes
 
+- **cPro Venus draws its playback buttons in the middle of the window again, and its song title in
+  its display.** The skin holds its transport cluster — the buttons, their backing plate and the
+  venus wordmark — in one group that fills the window, and centres it with a script of its own on
+  every resize; NullPlayer was ignoring where that group asked to sit, so the whole cluster stayed
+  jammed against the left edge at any window size. The same fix keeps a skin's scrolling song title
+  in the display it belongs to instead of dropping it over the buttons underneath. Other skins pick
+  up smaller corrections from it: dreliction's About page now sits inside its window frame rather
+  than spilling out of the corner, Shield_Amp's stick-mode readout gets its LCD panel back, and
+  Ebonite's equalizer sliders are inset the way the skin draws them.
 - **cPro skins get their playlist search bar back.** The ClassicPro installer ships one of its
   PlaylistPro definitions twice — a stub, then the real thing — and a real Winamp install keeps the
   second. NullPlayer kept the first, so every cPro skin in the `one` family (cPro-Bento among them)
