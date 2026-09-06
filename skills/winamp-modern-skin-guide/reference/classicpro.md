@@ -27,6 +27,57 @@ render path. They are adapted under a strict policy: `exploreFile` reveals an ex
 `image/installed.png` — and `switchSkin`es away if it fails; that is why `loadMap` must accept a path.
 `switchSkin` itself is accepted and inert: choosing a skin is the host's decision, not a script's.
 
+**The installer can ship one path twice, and NSIS keeps the *last* one.** Audited 2026-09-05 by
+extracting `ClassicPro_2.01.exe` with `7z` and diffing it file-by-file against the installed tree:
+308 of 309 files are byte-identical, and the one deviation is ours, not the user's.
+`xui/PlaylistPro/_v1/PlaylistPro.xml` appears **twice** in the installer — a 312-byte stub dated
+2012-01-24 and the full 3711-byte definition dated 2012-10-17 — and it is the only duplicated path in
+the engine tree. NSIS replays `ExtractFile` in order, so a real Winamp install ends with the 3711-byte
+file; `NSISArchive.extract` does the opposite (`guard result[path] == nil else { continue }`,
+first-write-wins) and keeps the stub. The stub is a bare `windowholder` `groupdef`; the full version
+is what defines the PlaylistPro search-results list, its edit box, and the search bar — so cPro skins
+using the `_v1` PlaylistPro XUI ran against a hollowed-out definition. **Fixed 2026-09-05** in
+`5ede97b1`: `extract` is last-wins, and because a duplicate no longer grows `result`, it counts
+materialized extractions rather than result entries to bound the work. `declaredTotal` still
+accumulates over superseded duplicates — an over-count in the conservative direction, and *not* the
+decompression cost, since `LZMA1Decoder.output` is cumulative and re-reading an earlier position is
+an array copy, never a second inflate.
+
+`xui-files_one.xml` includes `_v1` and `xui-files_two.xml` includes `_v2`, and only `_v1` was
+duplicated — so this cost the **`one` family alone** its playlist search UI, and `two`-family skins
+never saw it. Confirmed on screen in cPro-Bento: no search strip before, the edit box and Search
+button after. Note `p0` of `EW_EXTRACTFILE` is the overwrite flag and `NSISArchive` does not decode
+it, so last-wins is an assumption; it is safe here because the second copy is both later in replay
+order and newer, so every overwrite mode keeps it.
+
+**An engine imported before that fix keeps the stub** — the engine lives outside the app bundle and
+there is no migration. Re-importing the installer is the only remedy, which is what the untested-build
+status line and the load-time warning exist to prompt.
+
+**The engine is pinned by digest, and the tree hash is the authority.**
+`ClassicProEngineProvenance.swift` holds the SHA-256 of `ClassicPro_2.01.exe`
+(`c118937b…`, 1 370 091 bytes) and of the 309-file tree it extracts to (`265193d8…`, observed after
+the last-wins fix; a first-wins reader gives `53a9ff68…`). Re-derive the tree hash by importing and
+reading `contentHash` from `.engine-info.json`, never by hand.
+
+A tree hash that is *not* the pinned one is a signal to **investigate, never to update the constant**
+— with the installer digest matching, it means our extraction changed, which is why `verdict` reports
+`.treeMismatch` there instead of folding the installer digest into an OR. `.unrecognized` is the
+ordinary "some other build" case: a blocking Cancel/Import Anyway alert at import, a greyed status
+line in the menu, and one warning per engine hash when a skin actually **reads bytes from** the mount
+(the engine mounts for every skin, so a probe must not count — `WalVirtualFileSystem` records only in
+`data(at:)`). A `nil` installer digest, from a folder or bare-tree import, is not a downgrade: the
+tree hash alone can still say `.knownGood`.
+
+The digests only verify against the user's own copy — there is nothing committed to check them
+against, and there cannot be.
+
+The audit's other two results are clean and worth not re-deriving: the one file 7z produces that we do
+not (`widgets/data/nowplaying/$SMPROGRAMS/…/$(LSTR_114).url`) is a Start Menu shortcut whose path
+still holds unresolved NSIS variables — `NSISArchive` skips those deliberately and 7z does not — and
+recomputing the store's content hash over the installed tree still reproduces the `contentHash` in
+`.engine-info.json`, so nothing has been touched since import.
+
 **The engine ships its MAKI `.m` source next to the bytecode.** Read the script that owns the broken
 feature instead of inferring semantics — `getARGBValue`'s BGRA channel order, `getDateYear`'s
 years-since-1900 scale, and the `isInvalid` probe idiom were all pinned that way rather than guessed.

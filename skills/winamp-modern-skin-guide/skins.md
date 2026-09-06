@@ -12,6 +12,33 @@ The one `.wal` the repo *does* commit is **NullPlayer-Black**, the bundled place
 ourselves; it is not a compatibility fixture and has no row below. See
 [reference/loading.md](reference/loading.md) → *The bundled default skin*.
 
+**The local corpus is unmodified, audited 2026-09-05.** A recurring question — whether any installed
+`.wal` was hand-edited to make it load — was answered by hashing all 75 skins in
+`~/Library/Application Support/NullPlayer/WinampModernSkins/` against the pristine sources still on
+disk: 73 are byte-identical to their original (60 to a same-named download, 6 to the `.wal` inside its
+source `.zip`/`.rar`, 4 are byte-identical duplicates under a second filename) or, for the three
+repacked locally from a loose folder or `.rar` (canum, cpro_interface, cpro2_dark_aluminum), identical
+entry-for-entry with zero files added, removed, or changed. Two (`Darjah 1`, `impulse_…d4wcub`) have
+no source copy left but show no sign of editing. Nothing in any archive mentions NullPlayer, every
+CRC passes, and the importer only ever `copyItem`s (`WinampModernSkinImporter.swift:115`). **So a skin
+that renders wrong is the engine's bug, never a doctored fixture — do not go looking for one.**
+
+Two traps this audit turned up. Zip **entry dates are not evidence of tampering**: `Ujola Cat` (2026)
+and `Diablo IV Skills V2` (2025) carry dates inside our development window because they are genuinely
+new skins downloaded from `winamp.spacecatsamba.com`, and conversely a local repack preserves the
+original mtimes, so a repacked skin looks old. `kMDItemWhereFroms`/`com.apple.quarantine` xattrs and a
+content diff settle it; dates do not. And a **mixed packer signature inside one archive** — one entry
+with a different `create_system`/`create_version` than its siblings — is an upstream redistributor
+edit, not ours: mmd3 `xml/player-normal.xml`, winampmodern566 `xml/albumart.xml` + `ml.xml`, Nullsoft
+2000 `xml/color-themes.xml`, and Pure Inspired `img/win_b.png` all carry one, all dated 2010–2022, and
+every one of those archives is byte-identical to its download. Likewise the backslash-path warnings
+`unzip -t` reports for PokemonDS, SingItKitty, and Wiimote are in the pristine downloads too.
+
+The ClassicPro engine tree was audited the same day against its installer and was byte-identical bar
+one file, which our own NSIS reader got wrong (fixed the same day, and the tree is now pinned by
+digest); see [reference/classicpro.md](reference/classicpro.md) → *The installer can ship one path
+twice*.
+
 **How a skin's file gets written.** Run `/wal-skin-report <skin.wal>` (`skills/wal-skin-report`) — it
 measures the skin in a fixed order and emits the full structured report; `skins/<skin>.md` is the
 durable summary distilled from it, not a second measurement. The report is a snapshot and lives

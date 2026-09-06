@@ -364,6 +364,24 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
   menu bar. **About nullPlayer** stays where it is and still shows the app's own panel; a skin that
   draws no About page falls back to it.
 
+### The ClassicPro Engine (cPro Skins)
+- cPro skins are not self-contained: they need the third-party **ClassicPro** engine, which NullPlayer
+  cannot bundle. Without it, a cPro skin will not load.
+- **Skins > Modern > Download ClassicPro Engine...** opens the download page; **Import ClassicPro
+  Engine...** (**Reimport...** once one is installed) accepts the installer `.exe`, a `.zip`, or an
+  already-extracted engine folder. The extraction happens inside NullPlayer — the installer is never
+  executed.
+- A greyed status line under the menu item says what is installed: **Engine: verified 2.01** for the
+  build NullPlayer is tested against, **⚠ Engine: untested build** for any other, and **⚠ Engine:
+  unexpected contents** if the tested installer produced an engine we do not recognize (worth
+  reporting — it means the extraction itself went wrong).
+- Importing an unrecognized engine asks first. **Cancel** keeps the engine already installed, exactly
+  as it was; **Import Anyway** proceeds. cPro skins may render incorrectly against an untested build,
+  so the first time a skin actually uses one, a warning offers to reimport.
+- An engine imported by an earlier build holds a stubbed PlaylistPro definition, which strips the
+  **playlist search bar** from `one`-family cPro skins (cPro-Bento among them). Reimporting the
+  installer is what fixes it — there is no automatic repair.
+
 ### UI Size Mode
 - **Original/Original-Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
 - **Classic UI**: choose context menu -> **UI Size** or use the classic size control to enlarge

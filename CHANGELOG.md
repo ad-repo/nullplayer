@@ -32,6 +32,17 @@
 
 ### Bug Fixes
 
+- **cPro skins get their playlist search bar back.** The ClassicPro installer ships one of its
+  PlaylistPro definitions twice — a stub, then the real thing — and a real Winamp install keeps the
+  second. NullPlayer kept the first, so every cPro skin in the `one` family (cPro-Bento among them)
+  drew a playlist with no search box and no Search button at all. Reimport the ClassicPro engine to
+  pick up the fix; an engine already imported keeps the stub until you do.
+- **NullPlayer now says whether your ClassicPro engine is the build it was tested against.** The
+  engine is third-party and user-supplied, and a different build can make cPro skins render wrong
+  with no explanation. Importing one NullPlayer does not recognize now asks before replacing what you
+  have, the Skins menu shows what is installed, and a skin that actually uses an untested engine says
+  so once. **Skins > Modern > Download ClassicPro Engine...** opens the download page.
+
 - **ClassicPro skins keep their playlist pane and their size through windowshade.** Shading a cPro
   player and unshading it came back with a dead grey column where the playlist had been, and the
   window itself shrank to the size the skin's markup declares rather than the size you had it at —
