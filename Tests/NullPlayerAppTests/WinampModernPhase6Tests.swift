@@ -360,6 +360,12 @@ final class WinampModernPhase6Tests: XCTestCase {
         XCTAssertGreaterThan(info.fileCount, 50)
         let provider = try store.provider()
         XCTAssertNoThrow(try provider.data(for: "load.xml"))
+        // ClassicPro 2.01 extracts this path twice: a 312-byte stub, then the full definition. NSIS
+        // keeps the last one, so the PlaylistPro search UI (results list, edit box, search bar) must
+        // be present. A first-wins reader silently leaves the stub here.
+        let playlistPro = try provider.data(for: "xui/PlaylistPro/_v1/PlaylistPro.xml")
+        XCTAssertEqual(playlistPro.count, 3711,
+                       "expected the superseding PlaylistPro.xml, not the 312-byte stub")
     }
 
     /// Opt-in end-to-end: with the engine imported (WINAMP_MODERN_ENGINE) and a cPro `.wal` supplied

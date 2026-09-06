@@ -73,6 +73,7 @@ enum NSISArchive {
 
         var result: [String: Data] = [:]
         var declaredTotal: UInt64 = 0
+        var extractedFileCount = 0
         var currentOutDir = ""
 
         for index in 0..<entriesNum {
@@ -89,8 +90,21 @@ enum NSISArchive {
             case ewExtractFile:
                 let name = decodeString(header, stringsOffset: stringsOffset, reference: p1)
                 guard let path = normalize(outDir: currentOutDir, name: name) else { continue }
-                guard result[path] == nil else { continue }
-                guard result.count < limits.maximumEntryCount else {
+                // Last-wins: an installer may extract the same path more than once (ClassicPro 2.01
+                // ships `xui/PlaylistPro/_v1/PlaylistPro.xml` as a 312-byte stub and then as the full
+                // 3711-byte definition), and a real install keeps whichever `ExtractFile` ran last.
+                // Note that `p0` of EW_EXTRACTFILE is the overwrite flag and this reader does not
+                // decode it, so last-wins is an assumption, not the installer's own answer: under
+                // `ifnewer`/`ifdiff`/`never` NSIS could keep the earlier file. It does not matter for
+                // ClassicPro — the second copy is both later in replay order and newer (2012-10-17 vs
+                // 2012-01-24), so every overwrite mode keeps the same bytes — and honoring `p0`
+                // properly would need mtimes this reader never parses.
+                //
+                // With last-wins a duplicate no longer grows `result`, so the result count stops
+                // bounding the work: count materialized extractions instead. `entriesNum` is already
+                // capped at `limits.maximumEntryCount * 8` above, which bounds the loop itself.
+                extractedFileCount += 1
+                guard extractedFileCount <= limits.maximumEntryCount else {
                     throw WalFailure(WalDiagnostic(.entryLimitExceeded,
                         "NSIS installer expands beyond \(limits.maximumEntryCount) files."))
                 }
@@ -98,6 +112,12 @@ enum NSISArchive {
                 guard UInt64(bytes.count) <= limits.maximumEntrySize else {
                     throw WalFailure(WalDiagnostic(.entryTooLarge, "NSIS file '\(path)' exceeds the per-file limit."))
                 }
+                // `declaredTotal` bounds materialized bytes, and accumulates over every payload —
+                // superseded duplicates included. That is a deliberate over-count in the conservative
+                // direction, and it is not the decompression cost: `LZMA1Decoder.output` is cumulative
+                // and `readFile` only ever calls `decode(untilOutputCount:)`, so re-reading an earlier
+                // position costs an array copy, never a second inflate. The decompression ceiling is
+                // `decoderLimits.maximumOutputBytes`, set at the top of `extract`.
                 let (newTotal, overflow) = declaredTotal.addingReportingOverflow(UInt64(bytes.count))
                 guard !overflow, newTotal <= limits.maximumTotalSize else {
                     throw WalFailure(WalDiagnostic(.totalSizeExceeded, "NSIS installer expands beyond the total limit."))
