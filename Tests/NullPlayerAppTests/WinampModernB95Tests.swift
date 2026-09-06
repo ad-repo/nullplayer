@@ -97,13 +97,18 @@ final class WinampModernB95Tests: XCTestCase {
 
     // MARK: - Containment
 
-    /// A skin that ships the frame ships the script that instantiates the content with it, so ours
-    /// must not instantiate it a second time. mmd3, CornerAmp and Winamp Modern all declare theirs.
+    /// A skin that ships the frame *and the script that fills it* instantiates its own content, so
+    /// ours must not instantiate it a second time. mmd3, CornerAmp and Winamp Modern all do.
+    ///
+    /// The script is what this turns on, not the groupdef: B143 found three skins that declare the
+    /// groupdef and leave the script to Winamp, and they are covered below.
     func testASkinThatDeclaresItsOwnFrameIsNotGivenASecondClientArea() throws {
-        let runtime = try makeRuntime(markup: """
+        let runtime = try makeRuntime(art: ["scripts/standardframe.maki": Self.frameScript()], markup: """
         <groupdef id="player.content" name="Winamp"/>
         <groupdef id="wasabi.standardframe.nostatusbar" xuitag="Wasabi:StandardFrame:NoStatus">
           <layer id="own.chrome" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+          <script id="standardframe.script" file="scripts/standardframe.maki"
+                  param="5,15,-10,-34,0,0,1,1"/>
         </groupdef>
         <container id="Main">
           <layout id="normal" w="64" h="64">
@@ -118,6 +123,111 @@ final class WinampModernB95Tests: XCTestCase {
                       "and its own script — not ours — is what instantiates the content")
         XCTAssertTrue(runtime.graph.objects(xmlID: "window.titlebar.title").isEmpty,
                       "nor did we add a title strip over the skin's own chrome")
+    }
+
+    // MARK: - B143 — the skin drew the frame and left the script to Winamp
+
+    /// TRON Legacy's shape: the skin redefines `wasabi.standardframe.statusbar` with
+    /// `inherit_content="scripts"` — "this is my artwork, keep the scripts of the definition I am
+    /// replacing" — and the definition it replaces is Winamp's own, which we do not ship. So the
+    /// frame is claimed (no hosted chrome) and scriptless (no `newGroup`), and the content group
+    /// holding the whole playlist never entered the graph: the user saw the skin's chrome around a
+    /// white void.
+    func testAClaimedFrameWithNoScriptStillInstantiatesItsContent() throws {
+        let runtime = try makeRuntime(markup: """
+        <groupdef id="player.content" name="Winamp">
+          <layer id="art" x="0" y="0" w="8" h="8"/>
+        </groupdef>
+        <groupdef id="wasabi.standardframe.statusbar" inherit_content="scripts">
+          <layer id="own.chrome" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+        </groupdef>
+        <container id="Main">
+          <layout id="normal" w="64" h="64">
+            <Wasabi:StandardFrame:Status x="0" y="0" w="0" h="0" relatw="1" relath="1"
+                                         content="player.content"/>
+          </layout>
+        </container>
+        """)
+        XCTAssertFalse(runtime.graph.objects(xmlID: "own.chrome").isEmpty,
+                       "the skin's own frame body expanded")
+        XCTAssertFalse(runtime.graph.objects(xmlID: "player.content").isEmpty,
+                       "and nothing else was going to instantiate its content")
+        XCTAssertFalse(runtime.graph.objects(xmlID: "art").isEmpty,
+                       "so the artwork inside it is in the graph too")
+    }
+
+    /// The client rect is **measured** from the frame's own `resize=` strips, so it is the hole the
+    /// skin's artwork actually leaves rather than the inset we invent for a frame of our own. TRON's
+    /// strips are 5px sides, a 15px top and a 19px bottom band; corners are deliberately not counted,
+    /// because a corner sprite is as wide as the rounding (24px there) and not as thick as the border.
+    func testTheClaimedFrameClientIsMeasuredFromItsResizeStrips() throws {
+        let runtime = try makeRuntime(markup: """
+        <elements>
+          <bitmap id="edge.top" file="art.png" x="0" y="0" w="8" h="15"/>
+          <bitmap id="edge.corner" file="art.png" x="0" y="0" w="24" h="19"/>
+        </elements>
+        <groupdef id="player.content" name="Winamp"/>
+        <groupdef id="wasabi.standardframe.statusbar" inherit_content="scripts">
+          <layer id="c.bottom" x="24" y="-19" h="19" relatw="1" relaty="1" resize="bottom"/>
+          <layer id="c.bottom.left" x="0" y="-23" h="23" relaty="1" resize="bottomleft"/>
+          <group id="wasabi.frame.layout" x="0" y="0" w="0" relatw="1" h="-23" relath="1"/>
+        </groupdef>
+        <groupdef id="wasabi.frame.layout">
+          <layer id="c.left" x="0" y="19" w="5" relath="1" resize="left"/>
+          <layer id="c.right" x="-5" y="19" w="5" relatx="1" relath="1" resize="right"/>
+          <layer id="c.top" x="24" y="0" relatw="1" image="edge.top" resize="top"/>
+          <layer id="c.top.left" x="0" y="0" image="edge.corner" resize="topleft"/>
+        </groupdef>
+        <container id="Main">
+          <layout id="normal" w="275" h="116">
+            <Wasabi:StandardFrame:Status x="0" y="0" w="0" h="0" relatw="1" relath="1"
+                                         content="player.content"/>
+          </layout>
+        </container>
+        """)
+        let content = try XCTUnwrap(runtime.graph.objects(xmlID: "player.content").first)
+        XCTAssertEqual(content.attributes["x"], "5", "the left strip, not the 24px corner")
+        XCTAssertEqual(content.attributes["y"], "15", "the top strip, whose height comes from its bitmap")
+        XCTAssertEqual(content.attributes["w"], "-10")
+        XCTAssertEqual(content.attributes["h"], "-34", "15 top plus the 19px status band")
+        XCTAssertEqual(content.attributes["relatw"], "1")
+        XCTAssertEqual(content.attributes["relath"], "1")
+    }
+
+    /// The other spelling of the same parameter: a plain `<group id="wasabi.standardframe.statusbar"
+    /// notify="content,…">` rather than the XUI tag. Sony Walkman writes its windows that way, and
+    /// the script that reads `content` is the same script in both cases.
+    func testTheNotifySpellingOfContentIsHonouredToo() throws {
+        let runtime = try makeRuntime(markup: """
+        <groupdef id="player.content" name="Winamp"/>
+        <groupdef id="wasabi.standardframe.statusbar" inherit_content="scripts">
+          <layer id="own.chrome" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+        </groupdef>
+        <container id="Main">
+          <layout id="normal" w="64" h="64">
+            <group id="wasabi.standardframe.statusbar" x="0" y="0" w="0" h="0"
+                   relatw="1" relath="1" notify="content,player.content"/>
+          </layout>
+        </container>
+        """)
+        XCTAssertFalse(runtime.graph.objects(xmlID: "player.content").isEmpty)
+    }
+
+    /// A frame that names no content at all is still left alone — there is nothing to instantiate,
+    /// and inventing a body would put an object into EPS's notifier base.
+    func testAClaimedFrameNamingNoContentInstantiatesNothing() throws {
+        let runtime = try makeRuntime(markup: """
+        <groupdef id="wasabi.standardframe.statusbar" inherit_content="scripts">
+          <layer id="own.chrome" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+        </groupdef>
+        <container id="Main">
+          <layout id="normal" w="64" h="64">
+            <Wasabi:StandardFrame:Status id="bare" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+          </layout>
+        </container>
+        """)
+        let frame = try XCTUnwrap(runtime.graph.objects(xmlID: "bare").first)
+        XCTAssertEqual(frame.children.count, 1, "its own chrome layer, and nothing else")
     }
 
     /// The shell is also reachable as an ordinary base. EPS's notifier writes
@@ -246,8 +356,32 @@ final class WinampModernB95Tests: XCTestCase {
         }
     }
 
-    private func makeRuntime(markup: String) throws -> WasabiSkinRuntime {
-        try makeScene(rawMarkup: markup).loadedSkin.runtime
+    private func makeRuntime(art: [String: Data] = [:], markup: String) throws -> WasabiSkinRuntime {
+        try makeScene(rawMarkup: markup, art: art).loadedSkin.runtime
+    }
+
+    /// A MAKI program that declares only a method table — enough for a `<script file=…>` to resolve
+    /// and bind. What it contains does not matter here: this path asks whether the skin declares a
+    /// frame script at all, not what that script does.
+    private static func frameScript() -> Data {
+        var data = Data([0x46, 0x47])
+        func u16(_ value: UInt16) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        func u32(_ value: UInt32) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        u16(0x0403); u32(23); u32(1)
+        data.append(contentsOf: repeatElement(UInt8(0), count: 16))
+        let methods = ["getid", "newGroup"]
+        u32(UInt32(methods.count))
+        for method in methods {
+            u16(0); u16(0)
+            let name = Array(method.utf8)
+            u16(UInt16(name.count)); data.append(contentsOf: name)
+        }
+        u32(0); u32(0); u32(0); u32(0)
+        return data
     }
 
     private func makeScene(resources: String = "",

@@ -139,6 +139,7 @@ This file is a router. Read the one focused reference your symptom names.
 | Embedded playlist/library text sizes disagree | [reference/components.md](reference/components.md) → *How large NullPlayer draws its own text* |
 | Hosted surface survives the wrong tab or remounts dead | [reference/components.md](reference/components.md) → *Unmounting is not teardown* |
 | `hold="none"`, flat holder slab, component routing | [reference/components.md](reference/components.md) → *Component hosting* |
+| A window opens as the skin's own frame around an empty hole | [reference/components.md](reference/components.md) → *A frame the skin drew and left for Winamp to fill* |
 | `TOGGLE`, container ids, first layout, `default_visible` | [reference/components.md](reference/components.md) |
 | Component bucket/thinger, missing widget from include closure | [reference/components.md](reference/components.md) → *The component bucket* |
 | NullPlayer-hosted text size or palette | [reference/components.md](reference/components.md) |

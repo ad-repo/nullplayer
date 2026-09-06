@@ -32,6 +32,12 @@
 
 ### Bug Fixes
 
+- **A Modern skin whose playlist window came up as an empty frame now shows the playlist.** Some
+  `.wal` skins draw their own window frames but leave the code that fills them to Winamp itself, so
+  under NullPlayer the window opened as the skin's own border, title bar and status strip around a
+  blank white hole — reported on TRON Legacy, and the same in Sony Walkman and canum. NullPlayer now
+  fills such a frame itself, fitting the contents to the hole the skin's own artwork leaves.
+
 - **cPro Venus draws its playback buttons in the middle of the window again, and its song title in
   its display.** The skin holds its transport cluster — the buttons, their backing plate and the
   venus wordmark — in one group that fills the window, and centres it with a script of its own on

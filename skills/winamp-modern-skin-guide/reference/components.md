@@ -169,6 +169,54 @@ and every auxiliary container window. Only the main view (`drivesScripts: true`)
 script callbacks (theme, actions, mouse, EQ) — layout switching and resizing are **container-scoped**
 (below).
 
+#### A frame the skin drew and left for Winamp to fill (B143, 2026-09-06)
+
+A `<Wasabi:StandardFrame:*>` names its body by group id and **the frame's own
+`standardframe.maki` is what instantiates it** — `newGroup(getParam("content"))`. Two cases were
+already handled: a frame the skin never defines at all (B95, we supply chrome *and* content), and a
+frame the skin lays out itself with the content as a sibling (Itemskin, B140). This is the third,
+and it was reported as a Modern playlist window that opened as **the skin's own border, title bar
+and status strip around a blank white hole**.
+
+`<groupdef id="wasabi.standardframe.statusbar" inherit_content="scripts">` is a skin saying *"this
+is my artwork; keep the scripts of the definition I am replacing"* — and the definition it replaces
+is Winamp's own `standardframe.xml`, which we do not ship. So such a skin **claims** the groupdef
+(the B95 hosted path never fires, because the skin drew the chrome) and **declares no script**
+(nothing ever calls `newGroup`), and the content group — the component holder that *is* the playlist
+— never entered the graph. Measured on TRON Legacy: `Pledit/normal`, 18 nodes, every one of them
+chrome, `pledit.content.group` absent.
+
+The corpus has exactly three: **TRON Legacy** (the reporting skin, `<Wasabi:StandardFrame:Status
+content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things carry the fix:
+
+- **The trigger is the missing script, not the claimed groupdef.** A skin that ships the frame *and*
+  a script keeps instantiating its own content, and a second copy under it would be the failure mode
+  this replaces. Unlike `WasabiSurfaceSynthesizer`'s frame test, the bytecode is **not** read here: a
+  declared script is taken at its word, because this path only ever adds a group where nothing else
+  could have, and being wrong in the other direction duplicates the skin's body.
+- **Both spellings of `content` are read.** `content="…"` on the XUI tag (TRON) and Wasabi's
+  `notify="content,…"` on a plain `<group id="wasabi.standardframe.statusbar">` (Sony Walkman, Lobe)
+  are one parameter with two syntaxes — `deliverXUIParams` already treats them as one, and so does
+  this.
+- **The client rect is measured, not guessed** (`WasabiStandardFrames.measuredBorder`), from the
+  frame's `resize=` **strips** — the four single-edge values, never a corner. A corner sprite is as
+  wide as the artwork's rounding rather than as thick as the border it joins (TRON's
+  `component.top.left` is 24x19 against a 5px side), so counting corners would inset the client by
+  the corner's width on every side. The strips are the parts that *stretch*, so their thickness is
+  exactly the hole the artwork leaves. The check that this is the right rule is external: it yields
+  `5,15,-10,-34` for TRON against the `5,15,-10,-36` corneramp_redux's author **wrote by hand** for
+  the same Winamp frame.
+- **A strip usually states no `w`/`h`**, taking it from its bitmap, so the sizes come from the
+  resource registry — which is why `WasabiSkinInitializer` now holds one (`resourceRegistry`). A
+  bitmap that declares neither contributes nothing rather than zero.
+
+**The synthesizer still rejects these frames, and that is now stale.** `usableFrame` asks the
+bytecode whether a frame can build its own client area, so TRON's Media Library — a window *we*
+synthesize — still falls back to NullPlayer's chrome (`library=classic('wasabi.standardframe.statusbar'
+has no frame script that instantiates its content')`) even though the initializer could now fill that
+frame. Unpicked deliberately: it changes the hosted-window catalog for three skins and wants its own
+live QA.
+
 #### The component bucket — Winamp's thinger (B34, 2026-08-25)
 
 `<componentbucket>` is Winamp's scrolling strip of *installed component* icons: click one to open that

@@ -612,6 +612,12 @@ final class WasabiSkinInitializer {
         return .rename(unique)
     }
 
+    /// The resource registry of the skin being built, for the few passes that need to ask what a
+    /// bitmap's declared size is rather than what its id is. Set once per `initialize` and left in
+    /// place afterwards, because the same initializer serves the runtime's later expansions
+    /// (`newGroup`, a dynamic container, a synthesized hosted window) and they build the same markup.
+    private var resourceRegistry: WalResourceRegistry?
+
     init(vfs: WalVirtualFileSystem, maximumObjectCount: Int = 100_000,
          resourceLimits: WasabiResourceLimits = .production) {
         self.vfs = vfs
@@ -624,6 +630,7 @@ final class WasabiSkinInitializer {
         containerDiagnostics.removeAll()
         var passes: [WasabiInitializationPass] = []
         let resources = WalResourceRegistry()
+        resourceRegistry = resources
         var validatedImages: Set<String> = []
         var undecodableImages: Set<String> = []
         try registerResources(in: document.roots, registry: resources,
@@ -1410,6 +1417,11 @@ final class WasabiSkinInitializer {
             /// own artwork-less shells. A widget whose body a skin supplies is that skin's, and this
             /// is what keeps a hosted `<Wasabi:TabSheet>` from being drawn over a replacement.
             var claimedBySkin = false
+            /// The skin's own `wasabi.standardframe.*` body, when this node expanded to one. Both
+            /// spellings land here: the `<Wasabi:StandardFrame:*>` XUI tag (TRON Legacy) and a plain
+            /// `<group id="wasabi.standardframe.statusbar">` (Sony Walkman) resolve to the same
+            /// definition, and only the definition can say whether a script will fill the frame.
+            var claimedStandardFrame: WasabiResolvedGroupDefinition?
             // A node the document itself contains is stamped with its own position; a template child
             // — expanded here, but written elsewhere — instantiates at the position of the reference
             // that brought it in, which is when Winamp would have read it.
@@ -1437,6 +1449,10 @@ final class WasabiSkinInitializer {
                 embeddedXUITag = resolved.embeddedXUITag
                 nextDefinitionStack.append(key)
                 claimedBySkin = definition.source.path != Self.wasabiStandardLibrarySource.path
+                if claimedBySkin,
+                   WasabiStandardFrames.isStandardFrameIdentifier(definition.identifier) {
+                    claimedStandardFrame = resolved
+                }
             } else if let substitution = WasabiFormWidgets.substitution(forTypeName: node.name) {
                 // A Wasabi standard **form widget** nothing else claims. Winamp's own definition of
                 // each is a thin wrapper around a primitive this engine already has, so the tag
@@ -1618,6 +1634,37 @@ final class WasabiSkinInitializer {
                 // Default` names its own player, and with no such object the send lands nowhere.
                 let title = Self.titleTextNode(height: WasabiStandardFrames.titleHeight)
                 try createObjects(from: [title, content], parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            }
+            // A `wasabi.standardframe.*` the skin **did** define, but only as artwork: it declares
+            // `inherit_content="scripts"` and expects Winamp's own `standardframe.maki` to do the
+            // `newGroup(getParam("content"))`. We do not ship that script, so the named group never
+            // entered the graph and the window was the skin's chrome around nothing — TRON Legacy's
+            // playlist, measured, was 18 nodes of border, title and status bar with
+            // `pledit.content.group` absent. The client rect is measured from the frame's own resize
+            // strips rather than guessed, so it is the hole the skin's artwork actually leaves.
+            if let definition = claimedStandardFrame,
+               let contentID = WasabiStandardFrames.contentGroupIdentifier(of: object.attributes),
+               WasabiStandardFrames.needsHostedContent(
+                   definitionChildren: definition.templateChildren,
+                   group: { try? types.resolved(identifier: $0).templateChildren }) {
+                let border = WasabiStandardFrames.measuredBorder(
+                    in: definition.templateChildren,
+                    group: { try? types.resolved(identifier: $0).templateChildren },
+                    bitmapSize: { [resourceRegistry] identifier in
+                        guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier),
+                              let width = resource.attributes["w"].flatMap(Double.init),
+                              let height = resource.attributes["h"].flatMap(Double.init)
+                        else { return nil }
+                        return CGSize(width: width, height: height)
+                    })
+                let content = WasabiStandardFrames.measuredContentGroupNode(
+                    identifier: contentID, border: border, location: node.location)
+                try createObjects(from: [content], parent: object, graph: graph, types: types,
                                   pendingScripts: &pendingScripts,
                                   pendingMetaCommands: &pendingMetaCommands,
                                   definitionStack: nextDefinitionStack,
