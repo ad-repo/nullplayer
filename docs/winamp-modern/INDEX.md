@@ -73,6 +73,8 @@ available lesson in how to debug this subsystem.
   with six findings and their dispositions. Written 2026-09-02 at `3e871eb9`. Read it before touching
   `WindowManager`, `ContextMenuBuilder` or the seven hosted window views — and before the cut, because
   its Finding 1 is an open decision.
-- [corpus-runner-plan.md](corpus-runner-plan.md) — **a build plan for tooling that does not exist.**
-  The unattended corpus-triage pipeline (S0–S4) and its build order. Corpus triage is manual today;
-  the method that is runnable now is `skills/winamp-modern-skin-guide/triage-playbook.md`.
+- [corpus-runner-plan.md](corpus-runner-plan.md) — **a build plan, now partly delivered.** The
+  unattended corpus-triage pipeline (S0–S4) and its build order. S1 shipped as
+  `scripts/wal_skin_census.sh` and the regression sweep as `scripts/wal_render_sweep.sh`; S2–S4 are
+  still specification. The method, and the current built/not-built table, are in
+  `skills/winamp-modern-skin-guide/triage-playbook.md` §3.

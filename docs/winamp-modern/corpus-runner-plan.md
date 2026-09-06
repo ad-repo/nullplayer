@@ -1,10 +1,16 @@
 # Winamp Modern (`.wal`) — Corpus Runner Plan
 
-**Status: not built.** This is a build plan, not a description of tooling that exists. Corpus triage
-is a **manual process today** — the durable method (defect classes, instrument blind spots, isolating
-one issue, dispositions, regression safety) lives in
-`skills/winamp-modern-skin-guide/triage-playbook.md` and is runnable by hand right now. What follows
-is the specification for the automation that would make it unattended.
+**Status: partly built (reviewed 2026-09-06).** **S1 (load census) shipped** as
+`scripts/wal_skin_census.sh`, and the §6 regression sweep shipped as `scripts/wal_render_sweep.sh`
+(`capture` / `compare`) — both documented in `skills/winamp-modern-skin-guide/reference/harness.md`,
+and neither section below should be read as pending. **S0 is partial** (no committed manifest and no
+Gold/Silver tiering; the census emits a sha256 per row instead). **S2, S3, S3.5 and S4 are not
+built**, and the rest of this file is their specification. The stand-in for S2's demand ranking is the
+hand-run grep set under *Reproducible reach commands* in `TASKS.md`.
+
+The durable method — defect classes, instrument blind spots, isolating one issue, dispositions,
+regression safety — lives in `skills/winamp-modern-skin-guide/triage-playbook.md`, whose §3 carries
+the same built/not-built table and is the copy to keep current.
 
 As each stage is built, its commands land in
 `skills/winamp-modern-skin-guide/reference/harness.md` and that part of this plan becomes history —

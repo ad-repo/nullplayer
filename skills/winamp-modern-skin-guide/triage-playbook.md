@@ -1,12 +1,17 @@
 # Winamp Modern (`.wal`) — Corpus Triage Playbook
 
-- **Date:** 2026-08-18
+- **Written:** 2026-08-18. **Last reconciled against the tree:** 2026-09-06.
 - **Problem:** the long tail. Nine skins were fixed one at a time over 26 phases. There are tens of
   thousands of `.wal` skins in the wild, each one a bespoke program, and every one of them can fail
   differently. Per-skin heroics do not scale to that.
 - **Companion:** [SKILL.md](SKILL.md) and [compatibility.md](compatibility.md) (how the engine works),
-  [skins.md](skins.md) (per-skin status), `docs/winamp-modern/state-of-the-engine.md` (where the engine
-  stands overall)
+  [reference/harness.md](reference/harness.md) (**every probe and both corpus scripts, with their
+  commands** — this file never restates a command), [skins.md](skins.md) (per-skin status),
+  `docs/winamp-modern/skin-compatibility.md` (the user-facing list),
+  `docs/winamp-modern/state-of-the-engine.md` (where the engine stands overall)
+- **The corpus is what is installed**, not a fixed set: 79 archives / 75 distinct skins on 2026-09-06,
+  and it moves. Every count below carries the corpus it was measured against; do not rewrite an old
+  numerator against today's denominator.
 
 ---
 
@@ -67,24 +72,44 @@ variable it takes is documented once, in
 | `RENDER_DUMP` PNGs | Initial static scene, **including** renderer-drawn embedded surfaces (the playlist and EQ are drawn by `WasabiSceneRenderer`, coloured by the skin's palette) | Everything time-driven; everything a click changes; the embedded **library**, which is a live AppKit view whose holder paints only a flat fill. And in the dump harness specifically, the playlist/EQ come out as empty panels because no `componentHost` is set — a harness artifact, not a missing feature |
 | `RENDER_CLICK` | One point, its handler chain, attribute deltas | Whatever you didn't think to click |
 | `RENDER_SCRIPTS` | Which handlers actually ran and how they failed | Only for events that were driven |
+| **Corpus census** (`wal_skin_census.sh`) | One structural row per archive: level, findings by code, where every surface landed, resolved/unresolved bitmaps, which hosted windows wear the frame | **Whether anything is drawn right.** Its `fully-skinned` rating says every declared piece found a home with its artwork resolved — three skins rate `fully-skinned` while rendering an *empty main window* (B145). It is a structural rating, never a grade |
+| **Corpus render sweep** (`wal_render_sweep.sh`) | Whether an engine-wide change moved any invariant line or any pixel of any dumped PNG | **Every state that is not the stored default.** A change can pass 287 of 288 images and still break a skin whose defect lives behind a tab, a setting or a drag (measured 2026-08-24 on Big Bento Modern) |
 
-Two corollaries that shape the whole pipeline: **runtime demand must be provoked**, and **animation is
-invisible to a single frame**. Both are addressed by §3's pipeline — which is not built (see below),
-so provoke them by hand.
+Three corollaries that shape everything downstream: **runtime demand must be provoked**, **animation is
+invisible to a single frame**, and **a clean corpus pass proves the default state and nothing else.**
+The first two would be addressed by the unbuilt stages in §3; today, provoke them by hand.
 
 ---
 
-## 3. The pipeline
+## 3. The pipeline — what exists, and what is still done by hand
 
-**Not built. Corpus triage is a manual process today.** Everything else in this playbook is runnable
-by hand right now; the five-stage unattended pipeline (S0 ingest/tier, S1 load census, S2 static MAKI
-demand, S3 motion + interaction sweep, S3.5 state-space enumeration, S4 aggregate and rank) is
-**specified but not written**. Do not go looking for a corpus runner to invoke.
+**Partly built.** The five-stage pipeline was specified in 2026-08-18 as S0 ingest/tier, S1 load
+census, S2 static MAKI demand, S3 motion + interaction sweep, S3.5 state-space enumeration, S4
+aggregate and rank. Two of those now exist as committed scripts, and the rest is still manual. Know
+which half you are standing on before planning work:
 
-The specification, and the build order that would deliver it, are in
+| Stage | State | What to run |
+|---|---|---|
+| S0 ingest/tier | **Partly.** No committed manifest and no Gold/Silver tiering; the census enumerates whatever is installed and emits a **sha256 per row**, which is what makes duplicate archives and a moved corpus visible | — |
+| S1 load census | **Built** — `scripts/wal_skin_census.sh`, one TSV row per archive | [reference/harness.md](reference/harness.md) → *The corpus census* |
+| Regression sweep (§6) | **Built** — `scripts/wal_render_sweep.sh capture` / `compare`, invariants **and** every PNG | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
+| S2 static MAKI/XML demand | **Not built.** The stand-in is the hand-run `grep` set under *Reproducible reach commands* in `TASKS.md`, which is where every measured Reach number in the backlog comes from | `TASKS.md` |
+| S3 motion + interaction, S3.5 state space, S4 rank | **Not built.** Provoke motion and interaction by hand | — |
+
+Two rules follow from the built half, and both are already paid for — the full versions, with the
+measurements behind them, are in [reference/harness.md](reference/harness.md):
+
+- **A sweep or census is a build. Freeze the tree.** Both scripts refuse a dirty tree without
+  `--allow-dirty`, because a binary that will not compile writes an *empty* capture that diffs as
+  "everything changed".
+- **A damaged log is a first-class outcome, not a finding.** Interleaved writes eat whole blocks of
+  the capture in about half of all passes, and the result looks exactly like a dropped container.
+  `damaged.txt` names those skins; re-run each alone before believing anything about it.
+
+The specification for the unbuilt stages, and the build order that would deliver them, are in
 `docs/winamp-modern/corpus-runner-plan.md` — a project plan, kept where the phase handoffs live. As
-each stage is built, its commands land in [reference/harness.md](reference/harness.md) and that part of
-the plan becomes history.
+each further stage is built, its commands land in [reference/harness.md](reference/harness.md), that
+part of the plan becomes history, and the row above changes to **Built**.
 
 ---
 
@@ -231,41 +256,49 @@ in every batch forever, and an un-recorded "no" is re-litigated every time.
 
 ## 6. Regression safety at corpus scale
 
-**Half of this is now done.** Phase 44 committed golden images for the *mechanisms* the sweep protects
-— group clipping, `<Wasabi:Frame>` slicing, animated-layer framing, bitmap-font text placement and
-per-object `alpha` — as synthetic fixtures no third-party artwork is needed for
-(`WinampModernGoldenImageTests`, goldens in `Tests/NullPlayerAppTests/Goldens/WinampModern/`,
-regenerated with `WINAMP_MODERN_GOLDEN_UPDATE=1`). A whole canvas is the assertion, so a defect
-anywhere in the frame fails; each golden was checked to fail under a deliberately reintroduced
-regression before being trusted, which is the only thing that tells a golden apart from a
-[blind instrument](reference/harness.md).
+In 2026-08-18 this section asked for two halves — synthetic cover for the mechanisms and a corpus
+sweep for the artwork — and **both now exist as committed, runnable checks** rather than an afternoon
+of manual comparison. What they cover, and the three things they still do not, follow.
 
-What is still manual is the other half: the evidence that a renderer change disturbs no other *real*
-skin is a **17-skin before/after sweep**, and no synthetic fixture can stand in for a skin's own
-artwork and scripts.
+- **Synthetic goldens** cover the *mechanisms*: group clipping, `<Wasabi:Frame>` slicing,
+  animated-layer framing, bitmap-font text placement and per-object `alpha`, as whole-canvas
+  assertions over fixtures needing no third-party artwork (`WinampModernGoldenImageTests`, Phase 44 /
+  B10). Each was checked to fail under a deliberately reintroduced regression before being trusted,
+  which is the only thing that tells a golden apart from a [blind instrument](reference/harness.md).
+  These run in CI, which has no corpus.
+- **The corpus sweep** covers the *artwork*, which no fixture can stand in for.
+  `scripts/wal_render_sweep.sh capture` dumps every layout of every installed skin in one invocation
+  (~100 seconds over the 69 then installed, against ~25 minutes for the shell loop it replaced), and
+  `compare` diffs the invariant lines **and** every PNG, reporting per image identical / `maxdelta=N`
+  over a pixel count and bbox / present on one side only. It is the pre-merge gate for any
+  engine-wide change, and its output is what gets attached to the PR.
 
-Replace that half with the corpus:
+What §6 asked for in 2026-08-18 and what shipped are not quite the same thing, and the difference is
+worth keeping straight: it asked for **render hashes**; what exists is a **per-pixel delta**, which is
+strictly better, because a hash tells you a skin changed and a delta tells you by how much. Read the
+magnitude before calling a difference a regression — a `maxdelta` of 1 is one LSB. The traps that
+apply to every run (freeze the tree, redirect don't pipe, damaged logs, capture the baseline in a
+worktree and never by `git stash`, and the one genuinely nondeterministic image in the corpus) are
+documented once in [reference/harness.md](reference/harness.md); do not re-derive them here.
 
-- **Render hashes** for every Gold + Silver layout, clock pinned (unpinned, animation noise makes every
-  skin look changed — it did on the first manual run). A diff surfaces the exact skin/layout/frame.
-- **Motion signatures** from S3's ladder, so a change that freezes an animation fails a check instead of
-  waiting for a user to notice.
-- **Interaction signatures** — the dead-control count per skin. A routing or hit-test change that kills
-  controls in an unrelated skin shows up as a number moving.
-- **Re-measure after every change, never work down a static list.** Each fix lets scripts run further
-  and reach the next thing they need.
+**Still not built**, and still the honest gaps:
 
-Hashes are of *our own renders of user-supplied skins*, so they stay local like the corpus — which
-makes **provisioning** part of the contract, not an afterthought. A hash is comparable only between
-runs with the same three things pinned: the corpus tier (by the manifest's SHA-256 list, so a machine
-either has the exact Gold set or is not running that gate), the harness version, and the clock/settle
-ladder. Therefore:
+- **Motion signatures** — a change that freezes an animation passes the sweep, because a single frame
+  has no motion in it. This waits on S3.
+- **Interaction signatures** — the dead-control count per skin, so a routing or hit-test change that
+  kills controls in an unrelated skin shows up as a number moving. This waits on S3.
+- **State beyond the default.** Every skin renders in its *stored default configuration*. Reproduce a
+  non-default state explicitly (`WINAMP_MODERN_RENDER_CONFIG` / `RENDER_SET` seed it headlessly) and
+  hand the build over to be checked on screen; a clean sweep is "no regression in the default state",
+  never "verified".
 
-- CI (no corpus) runs the **synthetic** tests only, plus a check that the manifest is well-formed.
-- The corpus sweep is a **documented pre-merge gate run on a provisioned machine** for any
-  renderer/dispatch/routing change, and its output (the hash set) is what gets attached to the PR.
-- A machine missing a manifest entry **skips loudly** and reports partial coverage; it never silently
-  compares a smaller set and calls it green.
+And one rule that has not changed: **re-measure after every change, never work down a static list.**
+Each fix lets scripts run further and reach the next thing they need.
+
+Provisioning is part of the contract, because a comparison is only meaningful between runs over the
+same corpus. There is no committed manifest — the census's **sha256 column** is what makes the corpus
+a reproducible input, so record the census alongside a sweep whose result you intend to cite, and say
+which corpus a claim was measured against. CI, having no corpus, runs the synthetic goldens only.
 
 ---
 
@@ -311,10 +344,15 @@ draws and what it wires up. Every one of these is a countable declaration:
 - `gammaset` count → how many colour themes ship
 - `groupdef`/`inherit_group`/`embed_xui`/`xuitag` → the skin's own widget vocabulary
 
-We already walk exactly this document for surface synthesis (`WasabiSurfaceInventory`), so the census
-is a second visitor over a structure that is already built. The only thing that has to be **authored**
-is the other side of the diff: a curated manifest of which tags and attributes we actually honour.
-Without it, "unimplemented" stays folklore.
+We already walk exactly this document for surface synthesis (`WasabiSurfaceInventory`, in
+`Windows/WinampModern/WinampModernSurfaceCoordinator.swift`), so the census is a second visitor over a
+structure that is already built. `scripts/wal_skin_census.sh` now emits the part of this that falls out
+of a load — container/layout/node counts, where each surface landed, resolved and unresolved bitmaps —
+but **not** the per-tag/per-attribute demand census, which is still S2 and still unbuilt. The only
+thing that has to be **authored** is the other side of that diff: a curated manifest of which tags and
+attributes we actually honour. Without it, "unimplemented" stays folklore. The nearest thing that
+exists today is [compatibility.md](compatibility.md) and `compatibility/wasabi-surface.md`, which are
+prose, not a machine-diffable set.
 
 **2. The MAKI symbol tables — the behaviour inventory, without running anything.**
 Every compiled `.maki` carries, in the file:
@@ -329,7 +367,9 @@ Two things fall straight out of that, and both are the answer to "what does this
 
 - **`methods` minus our `signature(for:)` set = a complete per-skin list of API the skin can call
   that we do not implement** — including every branch nobody ever clicked. This is the single
-  highest-value measurement available, and it needs a parse, not a run.
+  highest-value measurement available, and it needs a parse, not a run. It is **still not
+  implemented**; the backlog's Reach numbers come from the hand-run greps in `TASKS.md` instead, which
+  read the extracted corpus rather than the method tables and are therefore an approximation of it.
 - **`bindings` is the event map.** It says which object handles which events. Composed with the
   instruction stream — walk from a binding's entry point to the next one — you get *per handler* the
   methods it calls. That is a **static per-control requirement list**: "this button's `onLeftButtonUp`
