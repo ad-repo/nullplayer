@@ -13,6 +13,20 @@ extension WasabiSceneRenderer {
         themeCoordinator.activate(name)
     }
 
+    /// Drop only what a **user colour override** can have changed, and repaint (B146).
+    ///
+    /// The colour half of `themeDidChange` and nothing more: an override recolours the palette and the
+    /// chrome derived from it, but it cannot touch a themed bitmap, a warped layer raster or a
+    /// prescaled sprite — those come from the skin's images through its `gammaset`, which has not
+    /// moved. Dropping them anyway would make every colour change pay for a full re-render of the
+    /// scene's artwork, on a panel whose colour well fires continuously while the user drags.
+    func paletteOverridesDidChange() {
+        paletteCache = nil
+        surfaceStyleCache = nil
+        invalidateSceneCache()
+        loadedSkin.runtime.graph.markAllDirty(.appearance)
+    }
+
     /// Drop this renderer's themed bitmaps and repaint. Called for every renderer of the skin when
     /// any of them switches theme.
     func themeDidChange() {
@@ -30,7 +44,11 @@ extension WasabiSceneRenderer {
     /// same resource + gamma path the skin's own drawing uses.
     var palette: WasabiPalette {
         if let paletteCache { return paletteCache }
-        let palette = WasabiPalette.make { [weak self] identifier in
+        // Scoped to the theme that is applied right now (B146). `paletteCache` is already dropped on a
+        // theme switch, so switching re-reads that theme's own overrides with no extra plumbing.
+        let overrides = WinampModernSkinState.paletteOverrides(theme: themes.activeTheme,
+                                                               in: loadedSkin.configuration)
+        let palette = WasabiPalette.make(overrides: overrides) { [weak self] identifier in
             guard let self,
                   let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: identifier),
                   Self.declaredColor(of: definition) != nil else { return nil }
@@ -63,6 +81,13 @@ extension WasabiSceneRenderer {
         let palette = palette
         for role in WasabiPalette.Role.allCases {
             let resolved = palette.color(for: role)
+            // Leading, because an override means none of the chain lines below it decided anything —
+            // reading them as the answer is exactly the misreading this probe exists to prevent.
+            if palette.isOverridden(role) {
+                lines.append("PALETTE \(role.rawValue) OVERRIDE "
+                             + "\(WinampModernSkinState.hexString(resolved)) "
+                             + "(user, theme: \(themes.activeTheme))")
+            }
             lines.append("PALETTE \(role.rawValue) = \(Self.describe(resolved)) "
                          + "(fallback: \(role.fallbackDescription))")
             for identifier in role.identifiers {
@@ -143,6 +168,10 @@ extension WasabiSceneRenderer {
     /// separate pairing and a separate measurement.
     func legibleRowColor(_ preferred: NSColor, selected: Bool) -> NSColor {
         guard selected else { return preferred }
+        // A colour the user set by hand is not a mongrel pairing — it is the answer (B146). The guard
+        // rescues what a skin's author never meant to put together; overruling a deliberate pick would
+        // make the Skin Colors panel preview a colour the app then refuses to draw.
+        guard !palette.isUserChosen(preferred) else { return preferred }
         return WinampModernSurfaceStyle.legible(
             preferring: [preferred, palette.selectionText, palette.currentText, palette.listText,
                          palette.contentBackground],
@@ -163,6 +192,9 @@ extension WasabiSceneRenderer {
     /// The threshold is deliberately far below `minimumContrast`: this asks "is anything drawn at
     /// all", not "can text be read on it".
     var rowSelectionBackground: NSColor {
+        // A user who set the selection background gets it, even against a plate it barely differs
+        // from — B122's derived bar exists for a skin that collided with itself by accident (B146).
+        if palette.isOverridden(.selectionBackground) { return palette.selectionBackground }
         let plate = palette.contentBackground
         guard WinampModernSurfaceStyle.contrastRatio(palette.selectionBackground, plate) < 1.15 else {
             return palette.selectionBackground
@@ -182,6 +214,7 @@ extension WasabiSceneRenderer {
     /// Only called when the skin actually named a current colour; a skin that named none is marked by
     /// its selection bar, as Winamp marks it.
     func legibleCurrentRowColor(on background: NSColor, plain: NSColor) -> NSColor {
+        if palette.isOverridden(.currentText) { return palette.currentText }
         let candidates = [palette.currentText, palette.selectionText].filter { $0 != plain }
         return WinampModernSurfaceStyle.legible(preferring: candidates, on: background)
     }

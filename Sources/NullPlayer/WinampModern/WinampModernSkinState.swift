@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// What the **host** remembers about a `.wal` skin between launches (B44).
@@ -15,6 +16,10 @@ import Foundation
 /// | Whether one of the skin's windows is open | `@nullplayer.windows` | `container-id` |
 /// | How large the host draws its own text (Text Size) | `@nullplayer.text` | `size` |
 /// | Whether the host fills a claimable holder (Waveform Seeker) | `@nullplayer.components` | `waveseeker` |
+/// | A colour the user set by hand (Skin Colors) | `@nullplayer.colors` | `role/theme` |
+///
+/// The colour overrides are the clearest case of the rule below: they exist **only** because a user
+/// said so, and the skin has an opinion of its own that they are deliberately outranking.
 ///
 /// Text Size is the one entry that is not object-graph state — it is a plain per-skin preference —
 /// but it belongs here for the same reason: it is the *host's* setting about a skin, so nothing the
@@ -58,6 +63,8 @@ enum WinampModernSkinState {
     /// Host components the user can decline. See `waveformSeekerEnabled`.
     static let componentsSection = "@nullplayer.components"
     static let waveformSeekerKey = "waveseeker"
+    /// Colours the user set by hand, per role **and per colour theme**. See `paletteOverride`.
+    static let colorsSection = "@nullplayer.colors"
 
     // MARK: - A splitter's divider offset
 
@@ -186,6 +193,88 @@ enum WinampModernSkinState {
     static func setVisualizationHolderMode(_ mode: WasabiVisualizationMode,
                                            in configuration: WinampModernConfiguration) {
         configuration.setString(mode.attributeValue, section: visSection, key: holderModeKey)
+    }
+
+    // MARK: - Colours the user set by hand (B146)
+
+    /// One role's user colour for this skin under `theme`, or nil when they have never set it.
+    ///
+    /// **Per theme, not just per skin.** A skin's `<gammaset>`s re-tint the list roles independently —
+    /// winampmodern566 ships 88 of them — so a colour that fixes one theme's Media Library is simply a
+    /// different wrong colour under the next. The key is `role/theme`, the same composite shape
+    /// `frameKey` uses, and the theme is the catalog's canonical display name (`activeTheme`), which is
+    /// stable across launches because the catalog vends it from the skin's own markup.
+    ///
+    /// Stored as `#rrggbb`. Alpha is deliberately not stored: every role here is drawn opaque, and a
+    /// colour a user could set to invisible is a way to make the panel produce a blank window.
+    ///
+    /// One accepted collision: `WinampModernConfiguration.safeComponent` folds punctuation to `_`, so
+    /// two themes whose names differ only in punctuation would share a slot. No corpus skin does that,
+    /// and the cost of getting it wrong is one theme showing another's override — not data loss.
+    static func paletteOverride(role: WasabiPalette.Role, theme: String,
+                                in configuration: WinampModernConfiguration) -> NSColor? {
+        let stored = configuration.string(section: colorsSection,
+                                          key: paletteKey(role: role, theme: theme), default: "")
+        return stored.isEmpty ? nil : color(fromHex: stored)
+    }
+
+    /// Set or clear one role's user colour. **Clearing removes the key**, because there is no free
+    /// value a colour could spell "unset" with — see `WinampModernConfiguration.removeValue`.
+    static func setPaletteOverride(_ color: NSColor?, role: WasabiPalette.Role, theme: String,
+                                   in configuration: WinampModernConfiguration) {
+        let key = paletteKey(role: role, theme: theme)
+        guard let color else {
+            configuration.removeValue(section: colorsSection, key: key)
+            return
+        }
+        configuration.setString(hexString(color), section: colorsSection, key: key)
+    }
+
+    /// Every role the user has set for this skin under `theme` — what `WasabiPalette.make` asks for.
+    static func paletteOverrides(theme: String,
+                                 in configuration: WinampModernConfiguration) -> [WasabiPalette.Role: NSColor] {
+        var overrides: [WasabiPalette.Role: NSColor] = [:]
+        for role in WasabiPalette.Role.allCases {
+            if let color = paletteOverride(role: role, theme: theme, in: configuration) {
+                overrides[role] = color
+            }
+        }
+        return overrides
+    }
+
+    /// The whole-skin reset: drop every override under **every** theme.
+    ///
+    /// The two-level reset exists because per-theme storage is otherwise a trap — a user who fixed one
+    /// theme months ago has no way to find the other five they also touched. Per-role clears this
+    /// theme; this clears the skin.
+    static func clearPaletteOverrides(in configuration: WinampModernConfiguration) {
+        configuration.removeSection(colorsSection)
+    }
+
+    static func paletteKey(role: WasabiPalette.Role, theme: String) -> String {
+        "\(role.rawValue)/\(theme.isEmpty ? "Default" : theme)"
+    }
+
+    /// `#rrggbb` from a colour that may be in any space — `redComponent` traps on a greyscale or
+    /// catalog colour, and `NSColorWell` hands back whatever the colour panel was last showing.
+    static func hexString(_ color: NSColor) -> String {
+        let rgb = color.usingColorSpace(.deviceRGB) ?? NSColor(deviceRed: 0, green: 0, blue: 0, alpha: 1)
+        func channel(_ value: CGFloat) -> Int { Int((max(0, min(1, value)) * 255).rounded()) }
+        return String(format: "#%02x%02x%02x", channel(rgb.redComponent),
+                      channel(rgb.greenComponent), channel(rgb.blueComponent))
+    }
+
+    /// The inverse. Strict — anything that is not exactly six hex digits behind a `#` reads as nil, so
+    /// a hand-edited or corrupted preference falls back to the skin rather than to an invented colour.
+    static func color(fromHex value: String) -> NSColor? {
+        var text = value.trimmingCharacters(in: .whitespaces)
+        guard text.hasPrefix("#") else { return nil }
+        text.removeFirst()
+        guard text.count == 6, let packed = UInt32(text, radix: 16) else { return nil }
+        return NSColor(deviceRed: CGFloat((packed >> 16) & 0xff) / 255,
+                       green: CGFloat((packed >> 8) & 0xff) / 255,
+                       blue: CGFloat(packed & 0xff) / 255,
+                       alpha: 1)
     }
 
     // MARK: - The sentinel

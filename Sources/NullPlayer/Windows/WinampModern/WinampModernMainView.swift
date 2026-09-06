@@ -219,7 +219,7 @@ final class WinampModernMainView: NSView {
         // Every `.wal` window repaints on a colour-theme switch, whichever window triggered it, and
         // so does any AppKit content it hosts.
         renderer.themeCoordinator.addObserver(self) { [weak self] in
-            self?.themeDidChange()
+            self?.paletteDidChange()
         }
         updateAnimationTimer()
     }
@@ -493,12 +493,17 @@ final class WinampModernMainView: NSView {
                                       uniquingKeysWith: { _, latest in latest })
     }
 
-    /// The skin switched colour theme. The renderer has already dropped its themed bitmaps.
+    /// The palette moved — the skin switched colour theme, or the user set a colour by hand (B146).
+    /// The renderer has already dropped whatever its own caches held.
     ///
     /// Embedded surfaces are told directly; the *fallback* windows have no handle on this view, so
     /// they learn about it from the notification (Phase 16.2). Both have to happen, because a skin
     /// can have one of each open at the same time.
-    private func themeDidChange() {
+    ///
+    /// A colour override reuses this whole fan-out rather than growing a parallel one: the work is
+    /// identical, and a second route is a second place for a surface to be forgotten. `internal`
+    /// for that reason — the controller calls it after writing an override.
+    func paletteDidChange() {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
         for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }

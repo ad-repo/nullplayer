@@ -662,6 +662,61 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
+    // MARK: - Colours the user set by hand (B146)
+
+    private var skinColorsController: WinampModernSkinColorsWindowController?
+
+    /// The name of the theme any override the user sets right now will be filed under, for the panel's
+    /// header. Overrides are stored per theme because a skin's `<gammaset>`s recolour the same roles
+    /// differently, and per-theme storage is invisible unless the panel says so.
+    var activeThemeName: String { skinView?.renderer.themes.activeTheme ?? "Default" }
+
+    /// What the user has set for this skin under the theme that is applied now. Empty before a skin
+    /// loads, which is when there is no configuration to have written into.
+    var paletteOverrides: [WasabiPalette.Role: NSColor] {
+        guard let configuration = loadedSkin?.configuration else { return [:] }
+        return WinampModernSkinState.paletteOverrides(theme: activeThemeName, in: configuration)
+    }
+
+    /// Set one role's colour, or clear it with `nil`, then repaint everything drawn from the palette.
+    func setPaletteOverride(_ color: NSColor?, for role: WasabiPalette.Role) {
+        guard let configuration = loadedSkin?.configuration else { return }
+        WinampModernSkinState.setPaletteOverride(color, role: role, theme: activeThemeName,
+                                                 in: configuration)
+        applyPaletteOverrides()
+    }
+
+    /// Drop every override for this skin, under **every** theme — the one reset that can find the
+    /// ones the user set under a theme they are not looking at.
+    func resetAllPaletteOverrides() {
+        guard let configuration = loadedSkin?.configuration else { return }
+        WinampModernSkinState.clearPaletteOverrides(in: configuration)
+        applyPaletteOverrides()
+    }
+
+    /// Re-read the palette everywhere it is held.
+    ///
+    /// Fans out exactly as `setTextScale` does, and for the same reason: a separate-window skin keeps
+    /// its Media Library in an auxiliary container, so touching only the player's renderer would move
+    /// the panel's swatch and nothing on screen.
+    private func applyPaletteOverrides() {
+        for view in ([skinView].compactMap { $0 } + auxiliaryContainers.map(\.view)) {
+            view.renderer.paletteOverridesDidChange()
+            view.paletteDidChange()
+        }
+        skinColorsController?.refreshValues()
+    }
+
+    func showSkinColors() {
+        guard loadedSkin != nil else { return }
+        if skinColorsController == nil {
+            skinColorsController = WinampModernSkinColorsWindowController(controller: self)
+        }
+        skinColorsController?.refreshValues()
+        skinColorsController?.showWindow(nil)
+        skinColorsController?.window?.makeKeyAndOrderFront(nil)
+    }
+
     // MARK: - What paints the skin's `<vis>` box (B53)
 
     /// Winamp's own analyzer and oscilloscope, or one of NullPlayer's. Skin-wide, so the player's
@@ -2665,6 +2720,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // would be listing a skin that no longer exists.
         skinSettingsController?.close()
         skinSettingsController = nil
+        // Same reason: the panel edits one skin's stored colours, and the skin is going away.
+        skinColorsController?.close()
+        skinColorsController = nil
         boundTextTimer?.invalidate()
         boundTextTimer = nil
         auxiliaryContainers.removeAll()

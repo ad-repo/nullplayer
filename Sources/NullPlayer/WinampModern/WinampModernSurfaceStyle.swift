@@ -76,9 +76,17 @@ struct WinampModernSurfaceStyle: Equatable {
         // orange under pale blue-grey). Winamp never hits this because its Media Library is a native
         // Win32 list, where the OS guarantees a legible selection. We draw the list ourselves, so the
         // guarantee has to be ours.
-        selectedText = Self.legible(preferring: [palette.currentText, palette.selectionText,
-                                                 palette.listText, palette.contentBackground],
-                                    on: palette.selectionBackground)
+        //
+        // Unless the user said otherwise (B146). A colour set by hand in the Skin Colors panel is a
+        // deliberate choice, not a collision between two families, and the panel shows its contrast
+        // against this very bar — so the guard would be overruling a number the user was just shown.
+        if palette.isOverridden(.selectionText) {
+            selectedText = palette.selectionText
+        } else {
+            selectedText = Self.legible(preferring: [palette.currentText, palette.selectionText,
+                                                     palette.listText, palette.contentBackground],
+                                        on: palette.selectionBackground)
+        }
     }
 
     // MARK: - Legibility

@@ -113,6 +113,7 @@ top to bottom. Rows are grouped by area; within a group, follow the most specifi
 | A `<gradient>` fills flat instead of ramping | [reference/rendering/colour.md](reference/rendering/colour.md) → *a `<gradient>` with no direction* |
 | The playing playlist row has no marker, or the selection bar never appears | [reference/rendering/colour.md](reference/rendering/colour.md) → *A marker only marks when it differs* |
 | Theme picker is empty or will not switch | [reference/rendering/colour.md](reference/rendering/colour.md) → *The picker* |
+| A skin's colours are readable-but-bad and the user wants to fix them by hand | [reference/rendering/colour.md](reference/rendering/colour.md) → *A user override outranks the chain* |
 | Text metrics, fonts, clocks, bitmap fonts, missing height, offsets | [reference/rendering/text.md](reference/rendering/text.md) |
 | A paragraph draws as one clipped line, or `wrap=`/`<Wasabi:Text>` layout | [reference/rendering/text.md](reference/rendering/text.md) → *A paragraph is not a line* |
 | Playlist/library/tab text draws in a console font, or a size too small | [reference/rendering/text.md](reference/rendering/text.md) → *Host-drawn text is not skin-declared text* |

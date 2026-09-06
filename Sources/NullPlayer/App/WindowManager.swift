@@ -1110,6 +1110,39 @@ class WindowManager {
             .setVisualizationHolderMode(mode)
     }
 
+    /// Whether there is a loaded `.wal` skin whose colours could be overridden (B146). Safe default in
+    /// every other mode, per the mode-guarding rule in CLAUDE.md — Classic and Original have no
+    /// `WasabiPalette` to override, and the menu asks this before it offers the entry point.
+    var canEditWinampModernSkinColors: Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.currentPalette != nil
+    }
+
+    /// The colours the user has set by hand for the loaded skin under the theme applied now, and the
+    /// name of that theme. Safe defaults in every other mode.
+    var winampModernPaletteOverrides: (overrides: [WasabiPalette.Role: NSColor], theme: String) {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return ([:], "") }
+        return (controller.paletteOverrides, controller.activeThemeName)
+    }
+
+    func setWinampModernPaletteOverride(_ color: NSColor?, for role: WasabiPalette.Role) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.setPaletteOverride(color, for: role)
+    }
+
+    func resetWinampModernPaletteOverrides() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.resetAllPaletteOverrides()
+    }
+
+    /// Open the per-skin colour overrides panel.
+    func showWinampModernSkinColors() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.showSkinColors()
+    }
+
     /// Open the list of settings the skin registered but bound no control to.
     func showWinampModernSkinSettings() {
         guard uiMode.controllerFamily == .winampModern else { return }

@@ -2,6 +2,59 @@
 
 Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
 
+## B146 — a user override for the `.wal` palette (Skin Colors) — closed 2026-09-06
+
+Closed as a **feature**, not a fix: the reported skin was rendering correctly, and the resolution was
+to give the user a way to outrank it. See
+[colour.md](../../skills/winamp-modern-skin-guide/reference/rendering/colour.md)
+§ *A user override outranks the chain* for the design and its rules.
+
+### B146
+
+- [x] **B146. A user override for the `.wal` palette — Skin Colors.** Reported 2026-09-06 as
+      winampmodern566's Media Library being unreadable under one of its colour themes.
+      **Implemented and live-confirmed 2026-09-06** (*"looks good, accepted and tested"*).
+
+      **Not a defect.** The skin ships 88 `<gammaset>`s, nearly all of which re-tint the list group
+      (`ListText`, `ListBackground`, `ListSelBackground`, `ListTextSelected`, `ListColumnText`), and
+      some of those tints simply pair badly — the engine resolved exactly what the author wrote.
+      B48/B122 guard only *selected* and *current* rows, and B113 deliberately leaves a plain row on
+      its own plate alone, so **bad-but-authored** pairings are a class nothing automatic will fix,
+      and should not.
+
+      All eight `WasabiPalette` roles are overridable from a **Skins > Modern > Skin Colors...**
+      panel. The choke point is `WasabiPalette.make(overrides:resolve:)` — an override wins before
+      the role's id chain is walked, so the derived roles, `WinampModernSurfaceStyle`'s chrome and
+      the `RENDER_PALETTE` report all follow from it unchanged.
+
+      Stored **per skin and per colour theme** (`@nullplayer.colors`, key `role/theme`, value
+      `#rrggbb`), because 566's gammasets recolour the same roles differently and a fix for one
+      theme is the wrong colour under the next. Clearing had to *remove* the key —
+      `WinampModernConfiguration.removeValue`/`removeSection` — since every `#rrggbb`, black
+      included, is something a user could legitimately have picked, so no sentinel was available.
+      Reset is two-level: per role clears this theme, **Reset This Skin** clears every theme, which
+      is the only control that can reach a theme the user is not looking at.
+
+      **The legibility guards step aside for an overridden role.** `selectedText`, `legibleRowColor`,
+      `legibleCurrentRowColor` and `rowSelectionBackground` take a user's colour verbatim — those
+      guards exist to rescue a pairing an author never meant to make, and a panel previewing one
+      colour while the app drew another would be lying about the only thing it does. Low contrast is
+      flagged with a `⚠`, never blocked, and measured against the plate the role's own draw fills
+      (B113's rule applied to the readout).
+
+      Classic and Original are untouched by construction: every new reader is gated on
+      `uiMode.controllerFamily == .winampModern`, and `WasabiPalette` / `WinampModernSurfaceStyle`
+      do not exist outside it.
+
+      | proof | result |
+      |---|---|
+      | `swift test` | 1910 tests, 0 failures (10 new in `WinampModernB146Tests`) |
+      | corpus render sweep, no overrides set | invariants identical (2355 lines); **681 of 682 images byte-identical** |
+
+      The single moving image is `Anexa/main-shade`, which is nondeterministic by nature and differs
+      between two passes of the same build — so the sweep is the proof the feature is **inert until
+      a user touches it**.
+
 ## B117(b) — streaming starved the `.wal` analyzer — closed 2026-09-04
 
 Half of a two-part item. **B117(a)** — WMP11-BlueVU's window repainting at ~7 fps — is still open and

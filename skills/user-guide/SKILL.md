@@ -364,6 +364,18 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
   menu bar. **About nullPlayer** stays where it is and still shows the app's own panel; a skin that
   draws no About page falls back to it.
 
+- **Skins > Modern > Skin Colors...** overrides the colours NullPlayer draws its own surfaces in —
+  the embedded Media Library and playlist — when a skin's own palette is hard to read. One row per
+  colour role, with the contrast ratio against the surface that colour actually lands on; anything
+  under 3:1 is flagged with a warning, never blocked. **Your colour is used exactly as picked**, even
+  where the app would otherwise substitute a more readable one.
+- Overrides are stored **per skin and per colour theme**, because a skin's themes re-tint the same
+  roles differently — the panel's header names the theme you are editing. **Reset** beside a row
+  clears that one colour in that theme; **Reset This Skin** at the foot clears every colour under
+  every theme of the skin, and asks first.
+- The entry appears only in Modern mode with a skin loaded. Classic and Original skins are unaffected,
+  and each skin keeps its own colours.
+
 ### The ClassicPro Engine (cPro Skins)
 - cPro skins are not self-contained: they need the third-party **ClassicPro** engine, which NullPlayer
   cannot bundle. Without it, a cPro skin will not load.

@@ -30,8 +30,32 @@ final class WinampModernConfiguration {
         defaults.set(value, forKey: storageKey(section: section, key: key))
     }
 
+    /// Genuinely unset a key, rather than storing a value that means "unset".
+    ///
+    /// Every other entry here has a free value it can spell "never set" with — `-1` for the integers,
+    /// the empty string for the strings. A **colour** has none: every `#rrggbb` is a legal thing for a
+    /// user to have chosen, so a user colour override can only be cleared by removing the key (B146).
+    func removeValue(section: String, key: String) {
+        defaults.removeObject(forKey: storageKey(section: section, key: key))
+    }
+
+    /// Unset every key in one section — the whole-skin reset behind a per-theme store.
+    ///
+    /// Still sandboxed: the prefix is built from `storageKey`'s own components, so the sweep can only
+    /// ever reach keys this configuration could itself have written, inside its own namespace.
+    func removeSection(_ section: String) {
+        let prefix = sectionPrefix(section)
+        for name in defaults.dictionaryRepresentation().keys where name.hasPrefix(prefix) {
+            defaults.removeObject(forKey: name)
+        }
+    }
+
+    private func sectionPrefix(_ section: String) -> String {
+        "winampModern.config.\(namespace).\(Self.safeComponent(section))."
+    }
+
     private func storageKey(section: String, key: String) -> String {
-        "winampModern.config.\(namespace).\(Self.safeComponent(section)).\(Self.safeComponent(key))"
+        sectionPrefix(section) + Self.safeComponent(key)
     }
 
     /// `static`, for the reason `WinampModernComponentRegistry.normalize` is written over bytes:

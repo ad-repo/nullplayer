@@ -1133,6 +1133,19 @@ class ContextMenuBuilder {
                 skinSpecific.append(themesItem)
             }
 
+            // The user's own colours for this skin (B146), directly under Color Themes because it is
+            // scoped to the theme selected there: winampmodern566's 88 gammasets re-tint the list
+            // roles independently, so an override belongs to one theme and the two entries are read
+            // together. Gated on a *loaded* skin rather than on the mode alone — the placeholder has
+            // no palette worth overriding, and nothing outside `.winampModern` has one at all.
+            if wm.canEditWinampModernSkinColors {
+                let colorsItem = NSMenuItem(title: "Skin Colors...",
+                                            action: #selector(MenuActions.showWinampModernSkinColors),
+                                            keyEquivalent: "")
+                colorsItem.target = MenuActions.shared
+                skinSpecific.append(colorsItem)
+            }
+
             // Only when the loaded skin registered settings of its own: many skins register none,
             // and an empty window is worse than no entry point (Phase 27.3).
             if WindowManager.shared.hasWinampModernSkinSettings {
@@ -4486,6 +4499,10 @@ class MenuActions: NSObject {
     @objc func selectWinampModernColorTheme(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         WindowManager.shared.selectWinampModernColorTheme(name)
+    }
+
+    @objc func showWinampModernSkinColors() {
+        WindowManager.shared.showWinampModernSkinColors()
     }
 
     @objc func showWinampModernSkinSettings() {

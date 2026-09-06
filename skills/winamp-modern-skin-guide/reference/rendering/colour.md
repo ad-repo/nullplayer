@@ -335,3 +335,75 @@ Verified in the running app rather than the dump — `screencapture` and a pixel
 equalizer title ramps `rgb(32,60,126)` → `rgb(154,188,230)`, the unfocused player's ramps
 `rgb(128,128,128)` → `rgb(187,187,187)`, which is also the proof that the active/inactive pair is
 being chosen per window.
+
+#### A user override outranks the chain (B146, 2026-09-06)
+
+Reported as *"winampmodern566's Media Library is unreadable"* on one of its colour themes. **It is not
+a defect.** That skin ships **88** `<gammaset>`s, nearly all of them re-tint the list group
+(`ListText`, `ListBackground`, `ListSelBackground`, `ListTextSelected`, `ListColumnText`), and some of
+those tints simply pair badly. The engine resolved exactly what the author wrote, and the sections
+above say why nothing automatic will rescue it: B48 and B122 guard only *selected* and *current* rows,
+and B113 records the deliberate decision to leave a plain row on its own plate alone. That leaves a
+whole class of **bad-but-authored** pairing the engine will never fix and should not.
+
+So the fix is not another guard. It is letting the user say what they want, and then getting out of
+the way.
+
+**The choke point is `WasabiPalette.make(overrides:resolve:)`.** An override for a role wins *before*
+its id chain is walked; everything downstream — the derived roles, `WinampModernSurfaceStyle`'s chrome
+blends, `paletteResolutionReport` — follows from it with no further plumbing. The palette carries
+`overriddenRoles`, and it is part of `Equatable`, so a palette that gained an override is a different
+palette even when every channel matches and the caches keyed on it notice.
+
+**The cascade is deliberate.** `currentText`, `selectionText` and `treeText` still fall back to the
+*resolved* `listText`, so overriding list text alone recolours the roles the skin left derived —
+exactly as overriding it in the skin's own XML would. `isOverridden` answers only for roles the user
+actually set, which is what the guards and the panel's per-role Reset key on.
+
+**Storage is per skin *and per colour theme*.** `@nullplayer.colors`, key `role/theme`, value
+`#rrggbb`, in the skin's own `WinampModernConfiguration` (`WinampModernSkinState.paletteOverride`).
+Per-theme because 566's gammasets recolour the same roles differently: a colour that fixes one theme
+is a different wrong colour under the next. The theme is the catalog's canonical `activeTheme`
+display name, which is stable across launches because the catalog vends it from the skin's markup.
+`safeComponent` folds punctuation, so two themes differing only in punctuation would share a slot —
+accepted; no corpus skin does it, and the cost is one theme showing another's colour, not data loss.
+
+**Clearing had to mean *removing*.** Every other entry in `WinampModernSkinState` has a spare value to
+spell "never set" with (`-1`, the empty string). A colour has none — every `#rrggbb` is something a
+user could legitimately have picked, black included — so `WinampModernConfiguration` gained
+`removeValue(section:key:)` and `removeSection(_:)`. The section sweep is built from `storageKey`'s
+own components, so it can only reach keys that configuration could itself have written.
+
+**The reset is two-level**, and the second level is not optional. Per-role clears *this* theme;
+**Reset This Skin** clears every theme. Per-theme storage is otherwise a trap: a user who fixed one
+theme months ago has no way to find the other five they also touched.
+
+**The guards step aside for a colour the user chose.** `WinampModernSurfaceStyle.selectedText`,
+`legibleRowColor`, `legibleCurrentRowColor` and `rowSelectionBackground` all take an overridden role
+verbatim. This is the rule that makes the feature honest: those guards exist to rescue a pairing an
+author never meant to make, and a panel that previewed one colour while the app drew another would be
+lying about the only thing it does. A user gets 1.2:1 if they ask for it — flagged with a `⚠` beside
+the ratio, never blocked.
+
+**The contrast column is measured against the plate the role's own draw fills** — B113's rule applied
+to the readout, via `Role.contrastPlate`. Row text on `contentBackground`, selected-row text on
+`selectionBackground`, tree text on `treeSelection`. Weighing all four against one background is
+precisely the mistake B113 records.
+
+**Applying a change reuses the theme-switch fan-out** rather than growing a parallel one:
+`WinampModernMainView.themeDidChange()` is now `paletteDidChange()` (internal), and the controller
+calls it over `skinView` **and every `auxiliaryContainers` entry** — a separate-window skin keeps its
+Media Library in an auxiliary container, so touching only the player's renderer moves the swatch and
+nothing on screen. The renderer's own half is `paletteOverridesDidChange()`, which drops
+`paletteCache`/`surfaceStyleCache` and marks the graph `.appearance` dirty but **not** the themed
+bitmaps or the warp/prescale caches: an override cannot change a bitmap, and a colour well fires
+continuously while the user drags.
+
+`WINAMP_MODERN_RENDER_PALETTE=1` prints a leading `PALETTE <role> OVERRIDE #rrggbb (user, theme: …)`
+line for an overridden role — leading, because none of the chain lines below it decided anything, and
+reading them as the answer is exactly the misreading the probe exists to prevent.
+
+**Proof the feature is inert until touched:** corpus render sweep, clean profile, 2026-09-06 —
+invariants identical (2355 lines), **681 of 682 images byte-identical**, the one mover being
+`Anexa/main-shade`, which is nondeterministic by nature and moves between two passes of the same
+build.
