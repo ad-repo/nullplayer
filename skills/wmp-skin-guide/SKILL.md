@@ -44,7 +44,12 @@ fallback. Existing users keep their persisted mode.
 ## Loader contracts
 
 - `WMPPhase0Limits` and stable codes `WMP0001`–`WMP0020` are locked. Production loading must preserve
-  their meanings and reject metadata bounds before decompressing payloads.
+  their meanings and reject metadata bounds before decompressing payloads. One amendment exists:
+  `WMP0005`'s 200:1 ratio is tested only on entries expanding past `entryCompressionRatioFloorBytes`
+  (1 MiB), because a ratio is not the quantity a bomb is dangerous in and flat-colour BMPs are not
+  bombs — see Amendment 1 in `phase-0-decision-record.md`. It is not a precedent: **never relax a
+  limit to make a skin load.** That one held only because the limit was mis-specified against its
+  own threat model, and it was argued about the threat rather than about the skins.
 - Archive paths normalize Windows separators, use Unicode-composed case-insensitive lookup, and
   reject absolute paths, drive prefixes, traversal, symlinks, collisions, excess wrapper depth, and
   CRC failure. The provider is read-only and never extracts to disk.

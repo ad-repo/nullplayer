@@ -6,6 +6,15 @@ enum WMPPhase0Limits {
     static let entryUncompressedBytes: UInt64 = 32 * 1_024 * 1_024
     static let archiveUncompressedBytes: UInt64 = 128 * 1_024 * 1_024
     static let entryCompressionRatio = 200.0
+    /// The ratio bound is only asked about entries that expand past this. A ratio is not the
+    /// quantity a decompression bomb is dangerous in — absolute expanded bytes is, and
+    /// `entryUncompressedBytes` and `archiveUncompressedBytes` already bound that. Below the floor
+    /// the ratio measures how *boring* an image is: an uncompressed flat-colour BMP naturally
+    /// squashes 240:1 to 850:1, and 13 of the 180 installed archives were rejected for a blank
+    /// background. Every entry over 200:1 anywhere in that corpus is a `.bmp`, the largest expands
+    /// to 842,636 bytes, and the worst archive holding one totals 5.3 MB. A real bomb is huge by
+    /// definition and still meets the ratio gate above the floor, then the 32 MiB entry bound.
+    static let entryCompressionRatioFloorBytes: UInt64 = 1 * 1_024 * 1_024
     static let wrapperDirectories = 1
     static let xmlDepth = 256
     static let xmlNodes = 100_000
@@ -98,7 +107,7 @@ enum WMPPhase0ArchiveAuditor {
                     throw diagnostic(.archiveTooLarge, entry.path, "archive uncompressed bytes exceed limit")
                 }
                 totalBytes = sum.partialValue
-                if entry.uncompressedSize > 0 {
+                if entry.uncompressedSize > WMPPhase0Limits.entryCompressionRatioFloorBytes {
                     let ratio = Double(entry.uncompressedSize) / Double(max(entry.compressedSize, 1))
                     guard ratio <= WMPPhase0Limits.entryCompressionRatio else {
                         throw diagnostic(.compressionRatioExceeded, entry.path, String(format: "%.2f:1", ratio))

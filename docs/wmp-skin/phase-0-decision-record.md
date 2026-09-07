@@ -17,6 +17,40 @@
   must retain the framed protocol and process boundary while adding the typed WMP command/event
   vocabulary; it may amortize startup only if teardown and hard-stop properties remain equivalent.
 
+## Amendment 1 — the compression-ratio bound applies only above a size floor
+
+**Date:** 2026-09-07 · **Rev:** `1d7e63bd` · **Corpus:** the 180 archives in `WMPSkins/`
+
+`WMPPhase0Limits.entryCompressionRatio` stays at 200:1 and `WMP0005` keeps its meaning. It is now
+asked only about entries expanding past `entryCompressionRatioFloorBytes` (1 MiB).
+
+**Why.** A ratio is not the quantity a decompression bomb is dangerous in. Absolute expanded bytes
+is, and the 32 MiB per-entry and 128 MiB per-archive bounds already cap that — they are what stops
+memory exhaustion, with or without this rule. Below the floor the ratio measures something else
+entirely: how *uniform* a file is. An uncompressed flat-colour BMP — a blank background, a mapping
+image — naturally squashes 240:1 to 850:1 because it is boring, not because it is hostile.
+
+**Measured, not argued.** 13 of the 180 installed archives were rejected outright by this rule.
+Every entry over 200:1 anywhere in that corpus is a `.bmp`; the largest expands to **842,636 bytes**
+(`Israeli/map.bmp`, 287:1) and the worst ratio is **847:1** (`anime/background_blank.bmp`, 244 KB).
+The largest archive holding one totals 5.3 MB. Nothing in the corpus comes within two orders of
+magnitude of the 32 MiB entry bound.
+
+**What the floor still catches.** A bomb is large by definition: it has to expand to something that
+hurts. Above 1 MiB the ratio test is unchanged, and above 32 MiB `WMP0003` rejects on expanded size
+regardless of ratio. The fixture pair proves both halves — `small-high-ratio.wmz` (64 KiB at ~830:1)
+is admitted and `excess-ratio.wmz` (2 MiB at ~1000:1) is still rejected, in
+`testTheRatioBoundAppliesOnlyAboveItsSizeFloor`.
+
+**Effect.** Archives loading go from 159 of 180 to **171**, and twelve of the thirteen draw.
+`The_Doobie_Brothers` trades `WMP0005` for a
+genuine `WMP0015` — `vol_anim.bmp` declares 9152×45, past the 8,192 image bound — which is a real
+finding that the ratio rejection had been hiding.
+
+**This is not a precedent for relaxing a limit to make a skin load.** The rule stands: never do
+that. This amendment holds because the limit was mis-specified against its own threat model, and the
+argument is about the threat, not about the thirteen skins.
+
 ## Threat model
 
 A user-supplied `.wmz` is a hostile ZIP containing attacker-controlled names, sizes, compression,
@@ -47,7 +81,7 @@ of the trusted computing base.
 |---|---:|
 | Archive entries | 4,096 |
 | Entry / archive uncompressed bytes | 32 MiB / 128 MiB |
-| Per-entry compression ratio | 200:1 |
+| Per-entry compression ratio | 200:1, tested only on entries expanding past 1 MiB (see Amendment 1) |
 | Wrapper directories above `.wms` | zero or one |
 | XML depth / expanded nodes | 256 / 100,000 |
 | Image bounds | 8,192×8,192 and 32 Mpx |

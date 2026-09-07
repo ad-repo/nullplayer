@@ -103,7 +103,11 @@ final class WMPArchiveTests: XCTestCase {
         let compressedURL = try WMPSkinTestSupport.makeArchive([
             WMPTestArchiveEntry("theme.wms", data: Data(repeating: 0, count: 8_192), compression: .deflate)
         ])
-        limits = .production; limits.maximumCompressionRatio = 2
+        // Production limits never ask an 8 KiB entry about its ratio: below
+        // `entryCompressionRatioFloorBytes` a ratio measures how boring an image is, not how
+        // dangerous, and that rejected 13 of the 180 installed archives for a blank background.
+        XCTAssertNoThrow(try WMPArchive(url: compressedURL, limits: .production))
+        limits = .production; limits.maximumCompressionRatio = 2; limits.compressionRatioFloor = 0
         XCTAssertEqual(WMPSkinTestSupport.failureCode { try WMPArchive(url: compressedURL, limits: limits) },
                        .compressionRatioExceeded)
     }

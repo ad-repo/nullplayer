@@ -13,6 +13,7 @@ final class WMPPhase0ArchiveTests: XCTestCase {
         XCTAssertEqual(WMPPhase0Limits.entryUncompressedBytes, 32 * 1_024 * 1_024)
         XCTAssertEqual(WMPPhase0Limits.archiveUncompressedBytes, 128 * 1_024 * 1_024)
         XCTAssertEqual(WMPPhase0Limits.entryCompressionRatio, 200)
+        XCTAssertEqual(WMPPhase0Limits.entryCompressionRatioFloorBytes, 1 * 1_024 * 1_024)
         XCTAssertEqual(WMPPhase0Limits.wrapperDirectories, 1)
         XCTAssertEqual(WMPPhase0Limits.xmlDepth, 256)
         XCTAssertEqual(WMPPhase0Limits.xmlNodes, 100_000)
@@ -63,6 +64,24 @@ final class WMPPhase0ArchiveTests: XCTestCase {
             XCTAssertThrowsError(try WMPPhase0ArchiveAuditor.audit(url: fixtures.appendingPathComponent(name)), name) { error in
                 XCTAssertEqual((error as? WMPPhase0Diagnostic)?.code, expectedCode, "wrong diagnostic for \(name): \(error)")
             }
+        }
+    }
+
+    /// The ratio bound is only asked about entries past `entryCompressionRatioFloorBytes`, because
+    /// below it a ratio measures how *boring* an image is rather than how dangerous it is. An
+    /// uncompressed flat-colour BMP squashes 240:1 to 850:1 and 13 of the 180 installed archives
+    /// were rejected for a blank background — every over-200:1 entry in that whole corpus is a
+    /// `.bmp`, the largest expanding to 842,636 bytes against a 32 MiB per-entry bound.
+    ///
+    /// `small-high-ratio.wmz` is 64 KiB at ~830:1 and must be admitted; `excess-ratio.wmz` is the
+    /// same shape at 2 MiB and must still be rejected. Both halves, because a floor that admits
+    /// everything is not a floor.
+    func testTheRatioBoundAppliesOnlyAboveItsSizeFloor() throws {
+        XCTAssertNoThrow(try WMPPhase0ArchiveAuditor.audit(
+            url: fixtures.appendingPathComponent("small-high-ratio.wmz")))
+        XCTAssertThrowsError(try WMPPhase0ArchiveAuditor.audit(
+            url: fixtures.appendingPathComponent("excess-ratio.wmz"))) { error in
+            XCTAssertEqual((error as? WMPPhase0Diagnostic)?.code, .compressionRatioExceeded)
         }
     }
 }

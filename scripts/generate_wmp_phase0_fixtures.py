@@ -69,10 +69,18 @@ def patch_declared_sizes(path: Path, sizes, compressed_sizes=None) -> None:
     path.write_bytes(data)
 
 
+# Files in OUT this script does not own. It wipes the directory before regenerating, and
+# corpus-baseline.tsv is a recorded measurement rather than a synthetic fixture — deleting it
+# silently disarms the WMPCorpusLoadTests ratchet, which is the one test that notices a loader
+# regression against the installed corpus. Kept out of MANIFEST.txt too: its hash moves every time
+# the loader improves, and the manifest attests that these bytes are original synthetic fixtures.
+NOT_OURS = {"corpus-baseline.tsv"}
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for old in OUT.iterdir():
-        if old.is_file():
+        if old.is_file() and old.name not in NOT_OURS:
             old.unlink()
 
     simple = '<?xml version="1.0"?><THEME><VIEW id="main" width="320" height="80"/></THEME>\n'
@@ -130,7 +138,13 @@ def main() -> None:
     archive("symlink.wmz", [("skin.wms", simple.encode(), False), ("link.bmp", b"pixel.bmp", True)])
     archive("wrapper-too-deep.wmz", [("one/two/skin.wms", simple.encode(), False)])
     archive("excess-entries.wmz", [(f"entries/{index:04}.txt", b"", False) for index in range(4097)])
-    archive("excess-ratio.wmz", [("ratio.bin", b"A" * 65536, False)])
+    # Above WMPPhase0Limits.entryCompressionRatioFloorBytes, so the ratio bound is asked about it
+    # at all. 2 MiB of one byte deflates to ~2 KB — the shape of a real decompression bomb.
+    archive("excess-ratio.wmz", [("ratio.bin", b"A" * (2 * 1024 * 1024), False)])
+    # The same shape *below* the floor: 64 KiB at ~830:1. An uncompressed flat-colour BMP looks
+    # exactly like this, and 13 of the 180 installed archives were rejected for one. Admitted.
+    archive("small-high-ratio.wmz", [("skin.wms", simple.encode(), False),
+                                      ("blank.bin", b"A" * 65536, False)])
 
     entry_bytes = archive("excess-entry-bytes.wmz", [("huge.bin", b"", False)], stored=True)
     patch_declared_sizes(entry_bytes, [32 * 1024 * 1024 + 1])
@@ -160,7 +174,7 @@ def main() -> None:
         "",
     ]
     for path in sorted(OUT.iterdir()):
-        if path.name != "MANIFEST.txt":
+        if path.name != "MANIFEST.txt" and path.name not in NOT_OURS:
             manifest.append(f"{path.name}\t{path.stat().st_size}\t{binascii.hexlify(__import__('hashlib').sha256(path.read_bytes()).digest()).decode()}")
     (OUT / "MANIFEST.txt").write_text("\n".join(manifest) + "\n", encoding="utf-8")
 

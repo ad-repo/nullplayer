@@ -6,6 +6,10 @@ struct WMPArchiveLimits: Equatable {
     var maximumEntrySize = WMPPhase0Limits.entryUncompressedBytes
     var maximumTotalSize = WMPPhase0Limits.archiveUncompressedBytes
     var maximumCompressionRatio = UInt64(WMPPhase0Limits.entryCompressionRatio)
+    /// Entries at or below this are not asked about their ratio at all; see
+    /// `WMPPhase0Limits.entryCompressionRatioFloorBytes` for why the ratio is the wrong
+    /// quantity down there. Settable so a test can still drive the gate with a small entry.
+    var compressionRatioFloor = WMPPhase0Limits.entryCompressionRatioFloorBytes
     var maximumImageDimension = WMPPhase0Limits.imageDimension
     var maximumImagePixels = WMPPhase0Limits.imagePixels
     var maximumScriptSize = WMPPhase0Limits.scriptBytes
@@ -109,7 +113,7 @@ final class WMPArchive: WMPResourceProviding {
                     "Archive expands beyond the \(limits.maximumTotalSize)-byte total limit."))
             }
             total = nextTotal
-            if entry.uncompressedSize > 0 {
+            if entry.uncompressedSize > limits.compressionRatioFloor {
                 guard entry.compressedSize > 0, limits.maximumCompressionRatio > 0 else {
                     throw WMPFailure(WMPDiagnostic(.compressionRatioExceeded,
                         "Entry '\(entry.path)' exceeds the compression-ratio limit."))
