@@ -13,6 +13,7 @@ struct WMPArchiveLimits: Equatable {
     var maximumImageDimension = WMPPhase0Limits.imageDimension
     var maximumImagePixels = WMPPhase0Limits.imagePixels
     var maximumScriptSize = WMPPhase0Limits.scriptBytes
+    var maximumRepairableArchiveSize = WMPPhase0Limits.repairableArchiveFileBytes
 
     static let production = WMPArchiveLimits()
 }
@@ -73,7 +74,16 @@ final class WMPArchive: WMPResourceProviding {
     init(url: URL, limits: WMPArchiveLimits = .production) throws {
         let opened: Archive
         do {
-            opened = try Archive(url: url, accessMode: .read)
+            // A handful of authored `.wmz` files overwrite the first local file header's signature,
+            // which ends ZIPFoundation's iteration before its first entry. See
+            // `WMPArchiveHeaderRepair` for what is repaired and on what evidence.
+            if let repaired = try WMPArchiveHeaderRepair.repairedArchiveData(at: url, limits: limits) {
+                opened = try Archive(data: repaired, accessMode: .read)
+            } else {
+                opened = try Archive(url: url, accessMode: .read)
+            }
+        } catch let failure as WMPFailure {
+            throw failure
         } catch {
             throw WMPFailure(WMPDiagnostic(.invalidArchive,
                 "Unable to open '\(url.lastPathComponent)' as a ZIP-based .wmz archive: \(error.localizedDescription)"))

@@ -16,7 +16,8 @@ reproducible by a command recorded next to it.
 
 **Reach numbers below are `scripts/wmp_skin_census.sh` output, measured 2026-09-07 at rev
 `1d7e63bd` over the 180 archives in `WMPSkins/`.** Reproduce with
-`scripts/wmp_skin_census.sh /tmp/wmp/census`. **171 of 180 load, and 482 views lay out.**
+`scripts/wmp_skin_census.sh /tmp/wmp/census`. **175 of 180 load, and 506 views lay out**, re-measured
+at rev `36e91df9` after W31; a row below that still cites 171/482 was not re-measured then.
 
 Numbers taken before rev `61f8955a` were measured with an instrument that dropped three blocks of
 its own output (W35), so a count from an earlier capture is short by an unknown amount rather than
@@ -29,15 +30,14 @@ deleted; five *name*-similar pairs (`Ginger Man`/`Ginger_man`, `QuickSilver`/`(2
 `Project Gotham Racing 2`/`(1)`, `The Unit`/`TheUnit`) are different releases of the same skin with
 differing `.wms` and `.js`, and are kept deliberately as separate test cases.
 
-## Tier 1 — loading, and views that load then draw nothing (171 of 180 archives load)
+## Tier 1 — loading, and views that load then draw nothing (175 of 180 archives load)
 
-### 1a. The 9 rejections
+### 1a. The 5 rejections
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W31 | `WMP0021` "one `.wms` at root or inside one wrapper directory" is too narrow | **4 of 9 rejections** | `bruteforce`, `Need_for_Speed_Underground`, `QuantumRedshiftWMPSkin`, `SplinterCellWMPSkin`. Inspect the actual layouts before widening the rule; two wrapper levels and a `.wms` beside a subdirectory are both plausible. |
-| W32 | `WMP0022` multiple `.wms` in one archive has no selection rule | 2 | `Nautical`, `Sports`. WMP does pick one. Find out how before inventing a rule. |
-| W33 | `WMP0015` oversized image | 3 | `Ice`, `pharaoh`, and `The_Doobie_Brothers`, which reached this only once W30 stopped rejecting it earlier: `vol_anim.bmp` declares 9152×45, past the 8,192 bound. A filmstrip that wide is an ordinary WMP authoring idiom, so check what the bound is protecting against a *strip* before widening it — 9152×45 is 412 Kpx, nowhere near the 32 Mpx area bound that sits beside it. |
+| W32 | `WMP0022` multiple `.wms` in one archive has no selection rule | **2 of 5 rejections** | `Nautical`, `Sports`. WMP does pick one. Find out how before inventing a rule. |
+| W33 | `WMP0015` oversized image | **3 of 5 rejections** | `Ice`, `pharaoh`, and `The_Doobie_Brothers`, which reached this only once W30 stopped rejecting it earlier: `vol_anim.bmp` declares 9152×45, past the 8,192 bound. A filmstrip that wide is an ordinary WMP authoring idiom, so check what the bound is protecting against a *strip* before widening it — 9152×45 is 412 Kpx, nowhere near the 32 Mpx area bound that sits beside it. |
 
 ### 1b. Views that load and then draw nothing
 
@@ -45,7 +45,7 @@ Still the largest single class, and indistinguishable from a rejection to anyone
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W6 | A view whose size is computed in script must still lay out | **84 views across 46 skins** (`WMP0032`) | "View requires positive literal width and height for static layout." **12 skins load and produce zero layouts** (`aoe`, `bluegrid`, `cerulean`, `circle`, `claw`, `cyberchannel`, `Darkling`, `digitaldj`, `iconic`, `Miniplayer`, `Radio`, `YIL!OMA2K`) — 17 before W7 landed, then 11, then 12 as W30 let `cyberchannel` in far enough to reach this. It is now the **only** cause left of a skin that loads and draws nothing, and the count will keep rising as the remaining nine rejections clear: a probe cannot see a defect in a skin it rejects. Phase 4 work; ranked in Tier 1 because it is a total blackout. |
+| W6 | A view whose size is computed in script must still lay out | **86 views across 47 skins** (`WMP0032`) | "View requires positive literal width and height for static layout." **12 skins load and produce zero layouts** (`aoe`, `bluegrid`, `cerulean`, `circle`, `claw`, `cyberchannel`, `Darkling`, `digitaldj`, `iconic`, `Miniplayer`, `Radio`, `YIL!OMA2K`) — 17 before W7 landed, then 11, then 12 as W30 let `cyberchannel` in far enough to reach this. It is now the **only** cause left of a skin that loads and draws nothing, and the count keeps rising as the remaining rejections clear: a probe cannot see a defect in a skin it rejects, and W31 alone added two views (`Need_for_Speed_Underground/mediaSwitcherView`, `controlView`) and one skin. Phase 4 work; ranked in Tier 1 because it is a total blackout. |
 | W34 | `WMP0033` image decode failed | 4 views, 4 skins | |
 | W8 | A view draws its transparency key instead of keying it out | **23 views across 21 skins** | Re-measured at rev `1d7e63bd` by counting opaque `#FF00FF` in every dumped PNG, not by reading a census column — a structural probe cannot see this. Worst: `Plus! Mecha/mediaSwitcherView` 44.6%, `Main_Street/mini` 40.5%, `Plus! Professional/mediaSwitcherView` 33.1%, `polygon/view-2` 33.0%, `deepbluesomething/MainPlayer` 31.8%, `Ducky/view-2` 28.3%; threshold 5% of view area. `Alpine7618_v09/view-2` was the first case found and is below that threshold. Class B, and much larger than the single skin it was filed as. |
 | W9 | `Official_Xbox_XP` paints an opaque black `VIDEO` placeholder over its own art | 1 skin measured | `census/png/Official_Xbox_XP/mainBox@1x.png`. Fixed by Phase 5's hosted video surface. |

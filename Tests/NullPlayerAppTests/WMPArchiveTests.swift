@@ -23,6 +23,38 @@ final class WMPArchiveTests: XCTestCase {
         XCTAssertEqual(wrapped.resourcePaths, ["art/a.bmp", "theme.wms"])
     }
 
+    /// Four of the 180 corpus archives overwrite the signature of the local file header at offset 0
+    /// with `01 00 01 00`, which ends ZIPFoundation's iteration before its first entry: the loader
+    /// then saw an archive with no entries at all and reported `WMP0021` "no .wms at the root" for
+    /// a skin whose `.wms` is at the root. No third-party archive is committed, so the shape is
+    /// rebuilt here — a real ZIP with that one signature scribbled over.
+    func testLoadsAnArchiveWhoseFirstLocalHeaderSignatureIsOverwritten() throws {
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("art/bg.bmp", data: Data([1, 2, 3, 4, 5])),
+            WMPTestArchiveEntry("theme.wms", data: Data("<THEME/>".utf8))
+        ])
+        var bytes = try Data(contentsOf: url)
+        XCTAssertEqual(Array(bytes.prefix(4)), [0x50, 0x4B, 0x03, 0x04], "fixture is not a plain ZIP")
+        bytes.replaceSubrange(bytes.startIndex ..< (bytes.startIndex + 4), with: [0x01, 0x00, 0x01, 0x00])
+        let damaged = url.deletingLastPathComponent().appendingPathComponent("damaged.wmz")
+        try bytes.write(to: damaged)
+
+        let archive = try WMPArchive(url: damaged)
+        XCTAssertEqual(archive.skinDefinitionPath, "theme.wms")
+        XCTAssertEqual(archive.resourcePaths, ["art/bg.bmp", "theme.wms"])
+        // The repaired entry is the one that was damaged; its bytes must still inflate and pass CRC.
+        XCTAssertEqual(try archive.data(for: "art/bg.bmp"), Data([1, 2, 3, 4, 5]))
+    }
+
+    /// The repair rewrites a signature only where the header already agrees with the central
+    /// directory record pointing at it, so a file that merely fails to be a ZIP stays a failure.
+    func testDoesNotInventEntriesInAFileThatIsNotAZIP() throws {
+        let directory = try WMPSkinTestSupport.temporaryDirectory()
+        let junk = directory.appendingPathComponent("junk.wmz")
+        try Data(repeating: 0x01, count: 8_192).write(to: junk)
+        XCTAssertEqual(WMPSkinTestSupport.failureCode { try WMPArchive(url: junk) }, .invalidArchive)
+    }
+
     func testRejectsUnsafePathsSymlinksCaseCollisionsAndBadRootShapes() throws {
         XCTAssertEqual(code(["theme.wms", "../escape"]), .pathTraversal)
         XCTAssertEqual(code(["theme.wms", "/absolute"]), .absolutePath)

@@ -104,6 +104,36 @@ a multi-line tag was attributed several lines late — `corona.wms` `svTop` read
 holding that tag's closing `>`) where it opens at `42:4`. Expect that shift when comparing against any
 capture taken before rev `733d3631`.
 
+## A `.wmz` that is a ZIP everywhere except its first four bytes
+
+Four corpus archives — `bruteforce`, `Need_for_Speed_Underground`, `QuantumRedshiftWMPSkin`,
+`SplinterCellWMPSkin` — carry `01 00 01 00` where the local file header at file offset 0 should
+carry `PK\03\04`. Exactly one header per archive is affected, always the one physically first in
+the file; the end-of-central-directory record, the whole central directory, every other local
+header and every deflate stream are intact. `unzip` and Windows Media Player both read these,
+because both work from the central directory.
+
+`ZIPFoundation` reads each entry's local header through a serialiser that validates the signature,
+and a `nil` there **ends the iteration** rather than skipping that one entry. In all four the
+damaged header belongs to the first central-directory record, so enumeration yielded **zero**
+entries — and the loader then reported `WMP0021` "Archive must contain one `.wms` file at its root
+or inside one wrapper directory" for four archives whose `.wms` *is* at the root. The diagnostic
+named the last rule the empty entry list happened to fail. It was filed as a layout rule that was
+too narrow (`W31`); it was the archive reader never seeing a single file, and the layout rule needed
+no change at all. **Read the failing archive's bytes before widening the rule its diagnostic names.**
+
+`WMPArchiveHeaderRepair` handles it. The gate is four bytes: an archive whose file begins with a
+local header signature is handed straight to the file-backed reader and pays nothing more. Only the
+others are read into memory — bounded by `WMPPhase0Limits.repairableArchiveFileBytes` (32 MiB), the
+only path that holds a whole archive at once — where the central directory is walked and a local
+header's signature is rewritten **only** when the header at that offset already agrees with the
+central-directory record pointing at it: same file-name length, same file-name bytes. That
+agreement is the entire warrant for writing, and it is what stops a run of arbitrary data being
+promoted into an entry; a file that is simply not a ZIP still fails `WMP0001`. ZIP64 archives and
+any file whose central directory is not where its record says it is are left alone. Nothing is
+written to disk, no limit was relaxed, and the CRC of every repaired entry is still verified before
+the provider is exposed.
+
 ## Case sensitivity
 
 Tag names, attribute names and element ids are all case-insensitive; the corpus spells `<THEME>` and
@@ -119,6 +149,6 @@ across six skins fail `WMP0032` because their size is computed in script. A skin
 nothing is indistinguishable from a rejection to anyone using the app — which is why `WMP_TASKS.md`
 Tier 1 did not empty when the loader stopped rejecting. Load level is a floor, never a result.
 
-On the 180-archive corpus at rev `61f8955a` that floor holds at 159 of 180 loading and 469 views
-laying out, with **11** skins still loading and drawing nothing — every one of them `WMP0032`, which
-is now the only cause left.
+On the 180-archive corpus at rev `36e91df9` that floor holds at **175 of 180 loading and 506 views
+laying out**, with **12** skins still loading and drawing nothing — every one of them `WMP0032`,
+which is now the only cause left. The five remaining rejections are `WMP0015` ×3 and `WMP0022` ×2.

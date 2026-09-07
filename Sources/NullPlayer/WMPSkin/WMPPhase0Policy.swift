@@ -15,6 +15,13 @@ enum WMPPhase0Limits {
     /// to 842,636 bytes, and the worst archive holding one totals 5.3 MB. A real bomb is huge by
     /// definition and still meets the ratio gate above the floor, then the 32 MiB entry bound.
     static let entryCompressionRatioFloorBytes: UInt64 = 1 * 1_024 * 1_024
+    /// An archive whose first four bytes are not a ZIP local file header signature is read into
+    /// memory once so `WMPArchiveHeaderRepair` can check it against its own central directory. That
+    /// is the only path that holds a whole archive at once, so it carries its own bound; it is a
+    /// new ceiling on a case that previously could not load at all, never a relaxation. A `.wmz`
+    /// is compressed artwork and markup — the largest in the 180-archive corpus is 5.2 MB — so
+    /// 32 MiB is far above any real skin and far below a memory problem.
+    static let repairableArchiveFileBytes: UInt64 = 32 * 1_024 * 1_024
     static let wrapperDirectories = 1
     static let xmlDepth = 256
     static let xmlNodes = 100_000
