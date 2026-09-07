@@ -117,13 +117,35 @@ import re, sys
 
 PREFIX = re.compile(r"(SKIN |LOAD |COMPAT |RENDER-DUMP |BITMAPS |SCRIPTS |FINDING \[|Test Case)")
 skin, damaged = "<before any skin>", []
+blocks = {}
 for line in open(sys.argv[1], errors="replace"):
     line = line.rstrip("\n")
     if line.startswith("SKIN "):
-        skin = line[len("SKIN "):].strip()
+        skin = line[len("SKIN "):].strip().split(" FAILED ")[0]
+        blocks.setdefault(skin, [])
+    if skin in blocks:
+        blocks[skin].append(line)
     hit = PREFIX.search(line, 1)
     if hit and not line.startswith(" "):
         damaged.append(skin)
+
+# A splice is only the *visible* half of a lost write. Two of the three losses in the 180-archive
+# run left no spliced prefix at all — one block simply stopped, and the prefix-scan above saw
+# nothing. `views=` is the block's own declaration of how many RENDER-DUMP lines must follow it
+# (a view that fails still emits `RENDER-DUMP <view> FAILED`), so a short block is arithmetic, not
+# inference. Rejected archives carry no LOAD line and are not blocks with missing rows.
+for name, lines in blocks.items():
+    loads = [line for line in lines if line.startswith("LOAD ")]
+    if len(loads) > 1:
+        damaged.append(name)
+        continue
+    if not loads:
+        continue
+    declared = re.search(r"\bviews=(\d+)", loads[0])
+    dumps = sum(1 for line in lines if line.startswith("RENDER-DUMP "))
+    if declared and int(declared.group(1)) != dumps:
+        damaged.append(name)
+
 for name in dict.fromkeys(damaged):
     print(name)
 PYDAMAGED

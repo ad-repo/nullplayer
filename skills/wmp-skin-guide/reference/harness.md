@@ -153,12 +153,23 @@ scripts/wmp_render_sweep.sh compare  /tmp/wmp-sweep/base /tmp/wmp-sweep/curr
   stalls both.
 - **Redirect to a file and grep the file.** Piping a long `swift test` into a filter drops lines
   silently. stderr gets its own file.
-- **Interleaved writes eat blocks of the log at random.** Two writers land inside one another and
-  the lines they collide with are lost outright, not mangled — which reads exactly like a skin that
-  stopped drawing and is not one. Both scripts detect it, list the skins in `damaged.txt`, give them
-  a row carrying identity and nothing else, and leave them out of the diff. Re-run a damaged skin
-  alone with `--corpus <a directory holding just that archive>`. Their PNGs are unaffected and are
-  still compared.
+- **Every harness line is one `write(2)`, never `print`.** `WMPHarnessOutput.emit` takes a lock,
+  flushes stdio so XCTest's own lines stay ordered against ours, and writes the line and its
+  terminator in a single unbuffered call. It exists because `print` did not: in the 180-archive
+  sweep at rev `171cf89a` a `CALL` line and the `SKIN` line opening the next archive landed inside
+  one another (`CALL vSKIN Windows_XP_Media_Center_Edition.wmz`) and the **5,087 bytes** that should
+  have followed — the rest of that skin's trace, two `PNG` lines and a `RENDER-DUMP` — never reached
+  the file. It was byte-identical across two full sweeps and did not reproduce on a two-archive
+  corpus, so it was the buffered stream, not the content: what is lost is whatever `stdout` was
+  holding. Removing the buffer removes the loss. Do not reintroduce `print` here.
+- **The damage detectors stay, and one of them is arithmetic.** A splice is only the *visible* half
+  of a lost write, and the invisible half is the common one: that same run lost three blocks and the
+  prefix scan saw **one**, because the splice consumes the record prefix that would have betrayed
+  it. So both scripts also check each loaded block's `RENDER-DUMP` count against the `views=` its own
+  `LOAD` line declares (a view that fails still emits `RENDER-DUMP <view> FAILED`), and flag a
+  second `LOAD` inside one block. Damaged skins are listed in `damaged.txt`, get a row carrying
+  identity and nothing else, and are left out of the diff. Re-run one alone with
+  `--corpus <a directory holding just that archive>`. Their PNGs are unaffected and still compare.
 - **Compare pixels, not alpha.** Pillow 9.5 made `getbbox()` on an RGBA image consider the alpha
   channel alone, and every dump carries alpha, so a change that moved a visible control but left
   alpha untouched came back "identical" across 590 `.wal` images. `alpha_only=False` in
@@ -180,6 +191,7 @@ spots each made a real defect look absent. Four checks run on every plain `swift
 | `testRenderProbeReportsResolvedFramesForEveryDrawnNode` | `PROBE` reports the frame a node was *drawn at*, not the one it was authored with |
 | `testExpressionProbeReportsSourceAndResolvedValue` | `EXPR` reports both the source text and the value it resolved to |
 | `testUprightCropColorKeyNestedClipZOrderAndBackingScale` | the renderer's own pixels, at 1× and 2× — the check that nothing else in this table substitutes for |
+| `testEmitsEveryLineWholeUnderConcurrentWriters` | eight concurrent writers and 9 KB lines all arrive whole and exactly once — the emitter cannot splice or drop a measurement |
 
 `compare` was checked the same way on 2026-09-07: a one-pixel **colour-only** change (alpha
 untouched) to one dumped PNG and a one-character change to one invariant line, each reported.

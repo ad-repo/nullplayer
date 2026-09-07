@@ -32,6 +32,54 @@ import XCTest
 // broken archive must not abandon the other thirteen, and with 10 of 14 rejected today a harness
 // that stopped on the first failure would measure nothing at all.
 
+/// One `write(2)` per line, straight to the descriptor, never through stdio.
+///
+/// W35, the reason this exists. In the 180-archive sweep a `CALL` line and the `SKIN` line that
+/// opened the next archive landed inside one another —
+///
+///     CALL vSKIN Windows_XP_Media_Center_Edition.wmz
+///
+/// — and the 5,087 bytes that should have followed the `CALL` (the rest of that skin's trace, two
+/// `PNG` lines and a `RENDER-DUMP`) never reached the file at all. That cost **two** rows: the
+/// containing block is flagged `damaged` and the swallowed skin reads `not-run`, and both skins
+/// measure fine when run alone.
+///
+/// It is byte-identical across two full sweeps and does not reproduce on a two-archive corpus, so
+/// it is the buffered stream rather than anything in the content: what is lost is whatever `stdout`
+/// happened to be holding. `print` writes into that buffer. A lost buffer is lost measurements, and
+/// a silently missing row reads exactly like a skin that stopped drawing — the failure mode this
+/// whole harness exists to escape. Writing each line unbuffered and whole removes the buffer that
+/// can be lost, and `testEmitsEveryLineWholeUnderConcurrentWriters` proves the emitter itself.
+///
+/// The `fflush` keeps stdio's own output (XCTest's case lines) ordered against ours; without it the
+/// two streams would reach the file in different orders and a block boundary could move.
+enum WMPHarnessOutput {
+    private static let lock = NSLock()
+
+    static func emit(_ line: String, to descriptor: Int32 = STDOUT_FILENO) {
+        let bytes = Array((line + "\n").utf8)
+        lock.lock()
+        defer { lock.unlock() }
+        fflush(stdout)
+        bytes.withUnsafeBytes { buffer in
+            var offset = 0
+            while offset < buffer.count {
+                let written = write(descriptor, buffer.baseAddress!.advanced(by: offset),
+                                    buffer.count - offset)
+                if written > 0 {
+                    offset += written
+                } else if written < 0 && (errno == EINTR || errno == EAGAIN) {
+                    continue
+                } else {
+                    // Nothing useful is left to do with a descriptor that will not take bytes; the
+                    // census's short-capture floor is what notices a truncated run.
+                    return
+                }
+            }
+        }
+    }
+}
+
 /// Everything the harness prints for one archive. Held as a value so a directory sweep and a
 /// single-archive run take byte-identical paths and their captures diff cleanly.
 struct WMPProbe {
@@ -233,6 +281,44 @@ final class WMPRenderDumpTests: XCTestCase {
         XCTAssertTrue(width.contains("-> 80"), width)
     }
 
+    /// The emitter itself, because a lost line is the one defect this harness cannot report on.
+    ///
+    /// W35 lost 5,087 bytes of one skin's measurements mid-line in a 180-archive sweep, and the
+    /// only reason anyone knew is that the collision left a visible splice for the census to flag.
+    /// A loss that had landed on a line boundary would have read as a skin that simply drew less.
+    /// So: many writers, lines longer than any stdio buffer, and every line has to come back whole
+    /// and exactly once.
+    func testEmitsEveryLineWholeUnderConcurrentWriters() throws {
+        let file = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("wmp-emit-\(UUID().uuidString).txt")
+        FileManager.default.createFile(atPath: file.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let writers = 8, perWriter = 200
+        DispatchQueue.concurrentPerform(iterations: writers) { writer in
+            for index in 0..<perWriter {
+                // Every fourth line is 9 KB — past any stdio buffer, so a line that survives whole
+                // proves the partial-write loop and not just that the line happened to fit.
+                let padding = index % 4 == 0 ? String(repeating: "x", count: 9_000) : "value"
+                WMPHarnessOutput.emit("CALL writer\(writer) line\(index) \(padding)",
+                                      to: handle.fileDescriptor)
+            }
+        }
+        try handle.close()
+
+        let lines = try String(contentsOf: file, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+        XCTAssertEqual(lines.count, writers * perWriter, "lines were lost or split")
+        var seen = Set<String>()
+        for line in lines {
+            XCTAssertTrue(line.hasPrefix("CALL writer"), "a line was spliced: \(line.prefix(60))")
+            let identity = line.split(separator: " ").prefix(3).joined(separator: " ")
+            XCTAssertTrue(seen.insert(identity).inserted, "duplicated: \(identity)")
+        }
+        XCTAssertEqual(seen.count, writers * perWriter)
+    }
+
     // MARK: - The corpus sweep
 
     /// `WMP_SKIN` accepts a file **or a directory**. Directory mode sweeps the whole corpus in one
@@ -276,12 +362,12 @@ final class WMPRenderDumpTests: XCTestCase {
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
 
         let probe = WMPProbe(env: env)
-        print("HARNESS \(archives.count) archive(s) from \(path)")
+        WMPHarnessOutput.emit("HARNESS \(archives.count) archive(s) from \(path)")
         for archive in archives {
             // The sweep's own frame. Every other line is keyed by view, which is not unique across
             // skins, so without this a directory run is an unattributable wall of text. Printed for
             // a single archive too, so one skin's capture and its row in a sweep stay identical.
-            print("SKIN \(archive.lastPathComponent)")
+            WMPHarnessOutput.emit("SKIN \(archive.lastPathComponent)")
             let dump = dumpRoot.map { root -> URL in
                 archives.count > 1
                     ? root.appendingPathComponent(archive.deletingPathExtension().lastPathComponent,
@@ -293,7 +379,7 @@ final class WMPRenderDumpTests: XCTestCase {
             } catch {
                 // One unloadable archive must not abandon the rest — with 10 of 14 rejected today,
                 // stopping here would measure nothing. The failure is printed where the diff sees it.
-                print("SKIN \(archive.lastPathComponent) FAILED \(WMPHarness.oneLine(error))")
+                WMPHarnessOutput.emit("SKIN \(archive.lastPathComponent) FAILED \(WMPHarness.oneLine(error))")
             }
             fflush(stdout)
         }
@@ -322,20 +408,20 @@ enum WMPHarness {
         let archiveData = (try? Data(contentsOf: archive)) ?? Data()
 
         let bytes = skin.archive.entries.reduce(UInt64(0)) { $0 &+ $1.uncompressedSize }
-        print("LOAD definition=\(skin.definitionPath) encoding=\(skin.textEncoding.rawValue) "
+        WMPHarnessOutput.emit("LOAD definition=\(skin.definitionPath) encoding=\(skin.textEncoding.rawValue) "
             + "entries=\(skin.archive.entries.count) bytes=\(bytes) views=\(skin.views.count) "
             + "nodes=\(skin.graph.allNodes.count) scripts=\(skin.scripts.count) "
             + "resources=\(skin.resources.count) loadms=\(String(format: "%.1f", loadMilliseconds))")
-        for line in findingLines(skin.diagnostics) { print(line) }
-        for line in compatibilityLines(skin) { print(line) }
+        for line in findingLines(skin.diagnostics) { WMPHarnessOutput.emit(line) }
+        for line in compatibilityLines(skin) { WMPHarnessOutput.emit(line) }
 
         let pass = WMPScriptPass(archiveData: archiveData, defaults: defaults)
         if let reason = pass.unavailableReason {
             // Printed once per archive whether or not WMP_RENDER_SCRIPTS asked, because every
             // script-derived line below goes quiet without it and quiet reads as "no scripts".
-            print("SCRIPTS programs=\(skin.scripts.count) runtime=unavailable (\(reason))")
+            WMPHarnessOutput.emit("SCRIPTS programs=\(skin.scripts.count) runtime=unavailable (\(reason))")
         }
-        if probe.wantsScripts { for line in scriptLines(skin: skin, pass: pass) { print(line) } }
+        if probe.wantsScripts { for line in scriptLines(skin: skin, pass: pass) { WMPHarnessOutput.emit(line) } }
 
         let store = WMPImageStore(provider: skin.archive)
         let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
@@ -344,7 +430,7 @@ enum WMPHarness {
                 try await measure(view: view.id, skin: skin, builder: builder, imageStore: store,
                                   pass: pass, dump: dump, probe: probe)
             } catch {
-                print("RENDER-DUMP \(view.id) FAILED \(oneLine(error))")
+                WMPHarnessOutput.emit("RENDER-DUMP \(view.id) FAILED \(oneLine(error))")
             }
         }
         if let session = pass.session { await session.teardown() }
@@ -388,28 +474,28 @@ enum WMPHarness {
                                                 overrides: output.overrides)
             }
             for diagnostic in output?.diagnostics ?? [] {
-                print("SCRIPT-DIAG \(viewID) [\(diagnostic.code)] \(diagnostic.message)")
+                WMPHarnessOutput.emit("SCRIPT-DIAG \(viewID) [\(diagnostic.code)] \(diagnostic.message)")
             }
         }
 
-        print("RENDER-DUMP \(viewID): \(WMPNumber.format(scene.canvasSize.width))x"
+        WMPHarnessOutput.emit("RENDER-DUMP \(viewID): \(WMPNumber.format(scene.canvasSize.width))x"
             + "\(WMPNumber.format(scene.canvasSize.height)), \(scene.metrics.resolvedNodeCount) nodes, "
             + "\(scene.commands.count) commands, \(scene.hits.count) hits, "
             + "\(scene.widgets.count) widgets, \(scene.metrics.unresolvedNodeCount) unresolved")
 
         if probe.probes(viewID) {
-            for line in probeLines(scene: scene, skin: skin) { print(line) }
+            for line in probeLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
         }
         if probe.wantsBitmaps {
             let tally = bitmapTally(scene: scene, skin: skin, imageStore: imageStore)
-            print("BITMAPS \(viewID): resolved=\(tally.resolved) missing=\(tally.missing.joined(separator: " "))")
+            WMPHarnessOutput.emit("BITMAPS \(viewID): resolved=\(tally.resolved) missing=\(tally.missing.joined(separator: " "))")
         }
         if probe.wantsExpressions {
-            for line in expressionLines(scene: scene, skin: skin, viewID: viewID, output: output) { print(line) }
+            for line in expressionLines(scene: scene, skin: skin, viewID: viewID, output: output) { WMPHarnessOutput.emit(line) }
         }
         if probe.wantsCallTrace {
             for line in callTraceLines(viewID: viewID, output: output, unavailable: pass.unavailableReason) {
-                print(line)
+                WMPHarnessOutput.emit(line)
             }
         }
         if let clicks = probe.clicks, clicks.viewID.caseInsensitiveCompare(viewID) == .orderedSame {
@@ -419,7 +505,7 @@ enum WMPHarness {
         if let dump {
             try FileManager.default.createDirectory(at: dump, withIntermediateDirectories: true)
             let record = try await WMPRenderer(imageStore: imageStore).dump(scene: scene, to: dump)
-            print("PNG \(viewID): \(record.pngFilename)")
+            WMPHarnessOutput.emit("PNG \(viewID): \(record.pngFilename)")
         }
     }
 
@@ -659,7 +745,7 @@ enum WMPHarness {
         for point in clicks {
             let where_ = "\(viewID)@\(WMPNumber.format(point.x)),\(WMPNumber.format(point.y))"
             guard let target = WMPHitTester(hits: scene.hits).hitTest(point) else {
-                print("CLICK \(where_) MISS")
+                WMPHarnessOutput.emit("CLICK \(where_) MISS")
                 continue
             }
             let node = nodesByID[target.stableID]
@@ -668,7 +754,7 @@ enum WMPHarness {
                       event.caseInsensitiveCompare("onClick") == .orderedSame else { return nil }
                 return source
             }
-            print("CLICK \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) kind=\(target.kind) "
+            WMPHarnessOutput.emit("CLICK \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) kind=\(target.kind) "
                 + "action=\(target.action.map(String.init(describing:)) ?? "-") "
                 + "sticky=\(target.sticky) handlers=\(handlers.count)")
             guard let session = pass.session, !handlers.isEmpty else { continue }
@@ -679,25 +765,25 @@ enum WMPHarness {
             // a skin's click handler routinely moves a sibling pane, and a probe that reported only
             // the target would call that click inert.
             for line in changeLines(from: previous, to: output.overrides, nodes: nodesByID) {
-                print("CLICK \(where_) \(line)")
+                WMPHarnessOutput.emit("CLICK \(where_) \(line)")
             }
             previous = output.overrides
             for command in output.hostCommands {
-                print("CLICK \(where_) command=\(command.action) value=\(command.value?.string ?? "-")")
+                WMPHarnessOutput.emit("CLICK \(where_) command=\(command.action) value=\(command.value?.string ?? "-")")
             }
             for diagnostic in output.diagnostics {
-                print("CLICK \(where_) [\(diagnostic.code)] \(diagnostic.message)")
+                WMPHarnessOutput.emit("CLICK \(where_) [\(diagnostic.code)] \(diagnostic.message)")
             }
             // The compatibility surface taken *after* driving the event: a member is only demanded
             // once the handler that reaches it has run.
             if probe.wantsCallTrace {
                 let unrecognised = Set(output.calls.filter { !$0.recognised }.map(\.path)).sorted()
-                print("CLICK \(where_) unrecognised=[\(unrecognised.joined(separator: ","))]")
+                WMPHarnessOutput.emit("CLICK \(where_) unrecognised=[\(unrecognised.joined(separator: ","))]")
             }
             if let rebuilt = try? await builder.build(viewID: viewID, requestedSize: probe.requestedSize,
                                                       overrides: output.overrides) {
                 scene = rebuilt
-                print("CLICK \(where_) after: \(rebuilt.commands.count) commands, "
+                WMPHarnessOutput.emit("CLICK \(where_) after: \(rebuilt.commands.count) commands, "
                     + "\(rebuilt.metrics.unresolvedNodeCount) unresolved")
             }
         }

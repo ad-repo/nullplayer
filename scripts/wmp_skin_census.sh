@@ -164,6 +164,24 @@ for line in render:
     if hit and not line.startswith(" "):
         damaged.add(current)
 
+# A splice is only the *visible* half of a lost write, and the invisible half is the common one:
+# of the three losses in the 180-archive run at rev 171cf89a, the scan above saw one. The other two
+# blocks simply stopped, because the splice consumed the record prefix that would have betrayed it.
+# `views=` is the block's own declaration of how many RENDER-DUMP lines must follow (a view that
+# fails still emits `RENDER-DUMP <view> FAILED`), so a short block is arithmetic rather than
+# inference. A rejected archive carries no LOAD line and is not a block with rows missing.
+for name, lines in blocks.items():
+    loads = [line for line in lines if line.startswith("LOAD ")]
+    if len(loads) > 1:
+        damaged.add(name)
+        continue
+    if not loads:
+        continue
+    declared = re.search(r"\bviews=(\d+)", loads[0])
+    dumps = sum(1 for line in lines if line.startswith("RENDER-DUMP "))
+    if declared and int(declared.group(1)) != dumps:
+        damaged.add(name)
+
 with open(os.path.join(out, "damaged.txt"), "w") as handle:
     for name in sorted(damaged):
         handle.write(name + "\n")
