@@ -42,7 +42,7 @@ No Winamp skins are distributed with the project
 - Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
 - Live skin switching. Cycle through Classic, Modern, Original, and Original-Metal skins with no restart or interuption in playback
 - Full development harness for debugging and reverse engineering Winamp 5 and ClassicPro skins
-- Native nullplayer windows are themed according to the host skin
+- Native nullplayer windows are themed to the host skin
 
 ### Media Support
 
