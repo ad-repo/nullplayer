@@ -270,6 +270,53 @@ The `PlexVideoPlaybackReporter` singleton manages Plex reporting for **video con
 - `VideoPlayerWindowController.play(episode:)` - Starts tracking for TV episodes
 - Non-Plex videos (local files) are not reported
 
+#### The end of a film is a `.paused`, not an `.ended`
+
+The vendored VLCKit **never sends `VLCMediaPlayerState.ended`**. A film running out reports a plain
+`.paused` — measured on a local `.mp4` and again on a Plex `.mkv`, where the log goes `Playing` …
+`Paused` and stops. Everything hung off `onPlaybackFinished` therefore used to be dead for all video:
+finish-scrobbling to Plex/Jellyfin/Emby, the analytics play event, and video-playlist advance. The
+servers saw `videoDidPause` at 100% instead, so a film watched to the end was never marked watched.
+
+**Do not tell the end apart by the clock alone.** That was tried and it is wrong: VLCKit's clock stops
+updating over a second before the last frame, and how far before depends on the stream's keyframe
+spacing. The measured end-of-film pause on a real Plex stream is `t=5054.42 dur=5056.06 pos=0.9997` —
+a 1.6 s gap that a tight window misses entirely, and a stream whose duration is reported late or not
+at all has no clock to compare against in the first place.
+
+The rule (`VideoPlayerView.isEndOfFilmPause`) rests on something the app knows for certain instead:
+`togglePlayPause()` and `stop()` are the **only two calls that pause on purpose**, whoever drove them
+— the skin's transport, the video window's own bar, the menu bar, a media key. A `.paused` that
+arrives while the film is playing and that nothing asked for is VLCKit's, and it sends exactly one of
+those. The clock stays on only as a generous sanity check (`endOfMediaTolerance` = 5 s, or
+`position < 0.98`), and an **unknown** duration is treated as unknown rather than as "not finished".
+
+Two traps in that rule, both found the hard way:
+
+- VLCKit **blanks `time` while a seek is in flight**, so a seek near the end briefly reports `t=0`
+  against a known duration. Reading that zero as "no clock" and falling to the position term latched
+  a film as finished mid-play.
+- `.ended` still arrives from sources that do report it, so the end path is latched
+  (`reportPlaybackFinished`) — otherwise such a source scrobbles and advances the playlist twice.
+
+At end of media the **session ends and the transport resets** in every mode:
+`WindowManager.isVideoActivePlayback` goes false and `videoPlaybackState` answers `.stopped`, both
+from `VideoPlayerWindowController.didReachEndOfMedia`. The content stays loaded — the picture is
+still up on its last frame and can be seeked back and replayed — so `clearLoadedContentState()` is
+**not** on this path; it belongs to the routes that also close the window.
+
+Answering is not enough. **Classic and Original only repaint what something pushes to them**, so a
+property that merely answers correctly leaves the seek thumb parked at the end of a finished film
+indefinitely: the defect looks fixed in the code and is not fixed on screen.
+`WindowManager.videoPlaybackDidReachEndOfMedia()` is the push.
+
+`AudioEngine`'s video-teardown gates use **`isVideoContentActive`**, which does not go false at end of
+media. The two properties mean different things and the split matters: `isVideoActivePlayback` is *is
+video the transport*, `isVideoContentActive` is *is there a video window holding content*. A finished
+film still owns its window and still has to be torn down before an audio track loads.
+
+Rule pinned by `WinampModernB107Tests`.
+
 ## Now Playing Integration
 
 NullPlayer reports playback information to macOS via `MPNowPlayingInfoCenter`, enabling:

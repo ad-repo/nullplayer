@@ -1,5 +1,11 @@
 import Foundation
 
+/// `[CLOCKDBG]` traces the Sonos cast clock — the stuck-at-zero and rewinding-clock signatures
+/// under investigation. Off by default: two of these fire on **every volume submit**, so leaving
+/// them ungated wrote to the system log throughout a normal cast. Set `NULLPLAYER_CAST_CLOCK_LOG`
+/// to any value to re-enable them. Same shape as `NULLPLAYER_UPNP_LOG` in `UPnPManager`.
+let castClockLoggingEnabled = ProcessInfo.processInfo.environment["NULLPLAYER_CAST_CLOCK_LOG"] != nil
+
 /// Coalesces Sonos/UPnP volume commands into a single-flight, latest-value-wins stream.
 ///
 /// A fast volume-slider drag assigns `AudioEngine.volume` many times, each firing a detached
@@ -35,7 +41,9 @@ final class SonosVolumeCoalescer {
 
     /// Submit the latest desired volume percent (0–100). Coalesces with any in-flight send.
     func submit(_ percent: Int) async {
-        NSLog("CastManager: [CLOCKDBG] volume submit=%d inFlight=%d", percent, inFlight ? 1 : 0)
+        if castClockLoggingEnabled {
+            NSLog("CastManager: [CLOCKDBG] volume submit=%d inFlight=%d", percent, inFlight ? 1 : 0)
+        }
         pending = percent
         if inFlight { return }              // a drain loop is already running; it will pick up `pending`
         inFlight = true
@@ -47,7 +55,9 @@ final class SonosVolumeCoalescer {
             let sendGeneration = generation
             let t0 = Date()
             let ok = await send(next)
-            NSLog("CastManager: [CLOCKDBG] volume send=%d ok=%d %.0fms", next, ok ? 1 : 0, Date().timeIntervalSince(t0) * 1000)
+            if castClockLoggingEnabled {
+                NSLog("CastManager: [CLOCKDBG] volume send=%d ok=%d %.0fms", next, ok ? 1 : 0, Date().timeIntervalSince(t0) * 1000)
+            }
             if ok,
                generation == sendGeneration,
                currentKey() == key {                                           // still same session generation + target?

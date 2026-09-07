@@ -658,7 +658,7 @@ class CLIPlayer: AudioEngineDelegate {
     /// directly and is intentionally not deduped — it's an explicit on-demand reprint.
     private func printTrackInfoIfChanged(_ track: Track?) {
         guard let track else { return }
-        let key = "\(track.artist ?? "")|\(track.title ?? "")|\(track.album ?? "")"
+        let key = "\(track.artist ?? "")|\(track.title)|\(track.album ?? "")"
         guard key != lastTrackInfoKey else { return }
         lastTrackInfoKey = key
         display.printTrackInfo(track)

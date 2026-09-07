@@ -1,0 +1,80 @@
+# `docs/winamp-modern/` — index
+
+**Durable rules do not live here.** How the `.wal` engine works, what it supports, how to debug it,
+and what each measured skin does are all in `skills/winamp-modern-skin-guide/`, which is kept current.
+The files in this directory are an **immutable historical record**: what each phase decided, changed,
+and left open, written at the time.
+
+Read a handoff to understand *why* something is the way it is, or to pick up an open thread. Do not
+read one for current behaviour — where the two disagree, the skill is right.
+
+## Following a pointer out of a handoff
+
+Handoffs cite the skill by file **and section title** (*"the `rectrgn` bullet under Hit testing: who
+owns a point"*, *"read `skins.md` for Defix"*). Those titles are all still verbatim, but the skill was
+split into a router plus topic files, so they live in different files now. Two maps resolve any such
+pointer in one hop, and they are kept where the reader lands:
+
+- **Section title → reference file**: [section-title-map.md](section-title-map.md).
+- **Skin → file**: the *Where each skin's detail lives* index in
+  [`skills/winamp-modern-skin-guide/skins.md`](../../skills/winamp-modern-skin-guide/skins.md).
+
+The maps are not duplicated here — one home per fact applies to the migration map too.
+
+## Phases
+
+Numbering has gaps: phases 1, 9, 14–15, 18–22, 24–25 shipped without their own handoff document (their
+outcome is recorded in the skill and in the git history).
+
+**Start with [phase-30-handoff.md](phase-30-handoff.md)** if you are picking this up cold: it carries
+the current open list, and its §2 (three wrong hypotheses and what killed each) is the cheapest
+available lesson in how to debug this subsystem.
+
+| Phase | Date | What it changed | Key files |
+|---|---|---|---|
+| [0A](phase-0a-decision-record.md) | 2026-08-15 | The legal, provenance, and security gate that had to clear before any loader existed. Decisions locked by the product owner | `docs/legal/winamp_modern_provenance.md` |
+| [0B](phase-0b-decision-record.md) | 2026-08-15 | Feasibility harness and compatibility inventory against cPro-Bento. Verdict: GO | — (throwaway harness) |
+| [2](phase-2-handoff.md) | 2026-08-15 | Production archive, XML/XUI core, retained object graph | `WalArchive`, `WalXML`, `WinampModernSkinLoader`, `WinampModernSkinImporter` |
+| [3](phase-3-handoff.md) | 2026-08-15 | CornerAmp_Redux vertical slice — first skin on screen | `WinampModernMainWindowController`, `WinampModernMainView` |
+| [4](phase-4-handoff.md) | 2026-08-15 | Winamp Modern (stock) compatibility expansion | `WasabiSkinInitializer`, `WasabiRenderer`, `WinampModernConfiguration` |
+| [5](phase-5-handoff.md) | 2026-08-15 | Playlist, EQ, library, and component hosting | `WinampModernComponents`, `WinampModernContainerTopology` |
+| [6](phase-6-handoff.md) | 2026-08-15 | ClassicPro user-supplied engine import; cPro-Bento loads | `NSISArchive`, `LZMA1Decoder`, `WalDirectoryResourceProvider` |
+| [7](phase-7-handoff.md) | 2026-08-15 | Compatibility hardening — fuzz, stress, limits, typed diagnostics | `WinampModernCompatibilityReport`, `WalDiagnostic`, `WinampModernPhase7Tests` |
+| [8](phase-8-handoff.md) | 2026-08-15 | Documentation and release readiness; produced the subsystem guide | `MakiInterpreter`, `WalXML` |
+| [10](phase-10-handoff.md) | 2026-08-16 | MMD3 fidelity — colour themes, script-built UI, UI Size | `WasabiRenderer`, `WasabiSkinInitializer`, `WinampModernScriptRuntime` |
+| [11](phase-11-handoff.md) | 2026-08-16 | cPro-Bento's blocking MAKI surface (the SUI body still empty) | `WasabiSkinInitializer`, `WasabiSceneRenderer`, `WinampModernCrashRepro` |
+| [12](phase-12-handoff.md) | 2026-08-16 | `Wasabi:Frame` — the SUI body builds; window sizing left open | `WasabiFrame`, `WasabiGeometry`, `WasabiTextMetrics` |
+| [13](phase-13-handoff.md) | 2026-08-16 | Playlist, EQ and library become skin-owned surfaces | `WinampModernSurfaceCoordinator`, `WinampModernLibrarySurfaceView`, `WasabiPalette` |
+| [16](phase-16-handoff.md) | 2026-08-16 | Surfaces NullPlayer draws itself are themed from the skin, not classic-skinned | `WinampModernSurfaceStyle`, `WasabiPalette` |
+| [17](phase-17-handoff.md) | 2026-08-16 | The MMD3 defect sweep — text metrics, resource cache | `WasabiTextMetrics`, `WasabiRenderer` |
+| [23](phase-23-handoff.md) | 2026-08-17 | The Love is War Miku defect sweep; first per-skin status file | `MakiBytecode`, `WasabiTextMetrics`, `WasabiSceneRenderer` |
+| [26](phase-26-handoff.md) | 2026-08-18 | The Defix Hi-End 200 live-GUI sweep | `WinampModernMainWindowController`, `WinampModernComponentBridge` |
+| [27](phase-27-handoff.md) | 2026-08-18 | Skin Settings sheet, `getVisBand`, `isLoading`, VU level scale | `WinampModernScriptRuntime`, `MakiBytecode`, `WasabiRenderer` |
+| [28](phase-28-handoff.md) | 2026-08-19 | Layer FX, MAKI math library, unary-minus fix, targeted repaints. **Superseded by 29** | `WasabiLayerFX`, `MakiBytecode`, `WinampModernScriptRuntime` |
+| [29](phase-29-handoff.md) | 2026-08-19 | Frame budget, repaint discipline, the VU scale — all confirmed live | `WasabiRenderer`, `WinampModernScriptRuntime`, `WinampModernMainView` |
+| [30](phase-30-handoff.md) | 2026-08-19 | The documentation split; `PE_Info` by `display=`, `getPlaylistLength`, `onTextChanged`, auxiliary-window repaint routes, `getVisBand` on a dB scale | `WasabiTextMetrics`, `WinampModernScriptRuntime`, `WinampModernMainView`, `WinampModernMainWindowController` |
+| [31](phase-31-handoff.md) | 2026-08-19 | Two input-layer gaps from one Defix report: `onRightButtonDown` undispatched, and a skin opening its own window from script | `WinampModernMainView`, `WinampModernScriptRuntime` |
+| [32](phase-32-handoff.md) | 2026-08-19 | Colour themes: `<ColorThemes:List>`, the three host actions, the host menu for skins with no picker. **§2's multipass bullet is superseded by 33** | `WasabiColorThemeList`, `WasabiSceneRenderer`, `ContextMenuBuilder` |
+| [33](phase-33-handoff.md) | 2026-08-19 | multipass: one refused method aborting a whole skin's startup, plus the togglebutton click, animated-layer sizing/region, MAKI division, and the main-menu button | `WinampModernScriptRuntime`, `WasabiRenderer`, `MakiBytecode`, `WinampModernMainView` |
+
+## Not a phase handoff
+
+- **`TASKS.md`** (repo root, tracked) — **everything still open.** It is the only backlog;
+  start there when deciding what to do next. A tracked copy once lived here as `open-items.md`,
+  compiled after Phase 33 and ranked by bang for buck; it was deleted on 2026-08-23 once an audit
+  confirmed nothing in it was unique. `triage-playbook.md` §4b keeps the head of its ranking.
+- [backlog-archive.md](backlog-archive.md) — closed entries moved verbatim from the live backlogs;
+  not a source of current priorities.
+- [state-of-the-engine.md](state-of-the-engine.md) — orientation for someone arriving cold: what was
+  built, component-by-component status, **what is not verified**, and the reverse-engineering /
+  provenance analysis.
+- [branch-review-stage-1.md](branch-review-stage-1.md) — the pre-release review of `feat/winamp-modern`'s
+  **shared** code: every change outside the engine classified gated / inert-by-construction / ungated,
+  with six findings and their dispositions. Written 2026-09-02 at `3e871eb9`. Read it before touching
+  `WindowManager`, `ContextMenuBuilder` or the seven hosted window views — and before the cut, because
+  its Finding 1 is an open decision.
+- [corpus-runner-plan.md](corpus-runner-plan.md) — **a build plan, now partly delivered.** The
+  unattended corpus-triage pipeline (S0–S4) and its build order. S1 shipped as
+  `scripts/wal_skin_census.sh` and the regression sweep as `scripts/wal_render_sweep.sh`; S2–S4 are
+  still specification. The method, and the current built/not-built table, are in
+  `skills/winamp-modern-skin-guide/triage-playbook.md` §3.

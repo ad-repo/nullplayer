@@ -125,7 +125,7 @@ struct CLISourceResolver {
 
         // Post-filter by --track
         if let trackName = opts.track {
-            tracks = tracks.filter { ($0.title ?? "").localizedCaseInsensitiveContains(trackName) }
+            tracks = tracks.filter { $0.title.localizedCaseInsensitiveContains(trackName) }
         }
 
         return .tracks(tracks)

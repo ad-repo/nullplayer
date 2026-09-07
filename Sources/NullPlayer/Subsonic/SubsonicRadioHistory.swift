@@ -145,7 +145,7 @@ class SubsonicRadioHistory {
             try db.run(table.insert(
                 or: .replace,
                 colTrackId <- trackId,
-                colTitle <- (track.title ?? ""),
+                colTitle <- track.title,
                 colArtist <- track.artist,
                 colAlbum <- track.album,
                 colServerId <- serverId,

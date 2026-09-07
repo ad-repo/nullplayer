@@ -1,0 +1,367 @@
+# Winamp Modern (`.wal`) — Manual QA Checklist
+
+Everything in this checklist requires a **GUI session** and **user-supplied skin fixtures**, which is
+why none of it was executed during implementation (Phases 3–7 all deferred it). The automated suite
+covers the headless side; this is the gap.
+
+Run this before shipping a release that changes the `.wal` runtime.
+
+Since Phase 13 the playlist, equalizer, and library are skin-owned surfaces rather than classic
+windows, so **§4 is the section that changed most** — run it against all four fixtures.
+
+## Setup
+
+You supply the fixtures — nothing third-party is committed:
+
+- `CornerAmp_Redux.wal`
+- `WinampModern.wal`
+- `mmd3.wal`
+- `cPro-Bento.wal` **+** `ClassicPro_2.01.exe`
+- `Love is War Miku.wal` — the Phase 23 fixture, and the one whose author ships a `screenshot.png`
+  inside the archive: **compare against it**, it is the skin's own reference render
+- `Defix Hi-END 200.WAL` — the Phase 25 fixture: four windows at once (player, two speaker cabinets,
+  playlist) plus an 800×600 SUI. Its own `screenshot.png` is a 275×116 browser thumbnail, so it settles
+  what the skin looks like, not any measurement
+
+```sh
+./scripts/kill_build_run.sh
+```
+
+Then **Modern** → **Import .wal Skin…** (the menu family for `.wal` skins; the `-uiMode` value and
+every internal identifier stay `winampModern`), and for cPro-Bento also
+**Import ClassicPro Engine…**. In a DEBUG build you can bypass the picker:
+
+```sh
+./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath /abs/path/Skin.wal
+```
+
+Watch the log for the compatibility report — DEBUG builds log it after script start whenever the level
+is not `.full`. **Capture that report for each fixture**; its `unsupportedMethods` bucket is the
+measured list of MAKI methods to implement next, and collecting it is the point of this pass.
+
+## 1. Load and render
+
+For each of the three fixtures:
+
+- [ ] Skin loads without an error alert
+- [ ] Main window appears at the skin's own canvas size (CornerAmp 246×228, Winamp Modern 354×280)
+- [ ] Window is correctly alpha-shaped — no opaque rectangle, no black corners
+- [ ] Artwork, fonts, colors, and gamma look like the skin's intent
+- [ ] Record which widgets draw empty (expected for `wasabi.*`-backed ones) with a screenshot
+- [ ] cPro-Bento: the SUI expands to exactly **one** window, not a scattering of stubs
+- [ ] cPro-Bento: beat visualization, spectrum, and the kbps/kHz/stereo readouts are all alive, and
+      the window frame has no holes in its edges (each was a Phase 11 symptom)
+- [ ] mmd3: the display shows the **song title** (artist and title, scrolling when long) and the
+      elapsed time, and the KBPS / KHZ fields fill in once playback starts — all four were blank
+      before Phase 17, because none of the skin's bitmap-font text was drawing at all
+- [ ] mmd3: the VIS / COLORTHEMES / EQ tabs on the right open and close their drawers, and the rotary
+      volume, bass and treble knobs turn under the mouse (Phase 17: a full-window group was swallowing
+      every click that was not over the transport)
+- [ ] mmd3: the animated display in the middle is **unobstructed** — no spectrum bars painted over it
+      in its animated modes; the drawer's analyzer and oscilloscope buttons still switch it
+- [ ] mmd3: click **Crossfade / Shuffle / Repeat** (the three round buttons top-left) — each lights
+      the small **lamp** beside it *and* brightens its word in the display, and clicking again puts
+      both back. The buttons use one bitmap for on and off on purpose, so the lamp and the word are
+      the whole indication (B32)
+- [ ] mmd3: **the other direction** — toggle **Playback ▸ Shuffle** (and ▸ Repeat) from the menu bar
+      and watch the skin: the lamp and word must follow. A `.wal` indicator is written once from
+      `onActivate` and never polled, so this is a different code path from the click above and the
+      one still unverified in the GUI at the time B32 landed
+- [ ] mmd3: the Crossfade button turns **Sweet Fades** on — check **Playback ▸ Sweet Fades** shows
+      it ticked — and the **crossfade slider in the EQ drawer** moves its seconds readout. Drag it to
+      the far right: it pins at **10s**, not 20, because the skin's declared range is clamped into
+      the one the Fade Duration menu offers. Changing **Playback ▸ Sweet Fades ▸ Fade Duration**
+      should move the skin's slider and readout too
+- [ ] Miku: the display's text sits **inside** the box — the song line above the seek bar with a gap,
+      the big time readout in Arial Bold with steady digit columns and neither string overflowing its
+      slot (Phase 23: `fontsize` is a pixel height, `font="Arial"` is a system family, text is centred
+      in its box, `forcefixed`/`timecolonwidth` give the clock fixed cells)
+- [ ] Miku: the seek bar shows a **teal fill** proportional to the elapsed time, and it tracks playback
+      (Phase 23: the `<ProgressGrid>` is the only position indicator this skin draws — its slider thumb
+      is a 1×1 pixel)
+- [ ] Miku: the **+/− arrows left of the display** change the volume, click-and-hold repeats and
+      accelerates, and the song ticker flashes `Volume: NN%` while it moves (Phase 23: every float
+      constant in every script was decoding to a fraction of its value)
+- [ ] Miku: **right-click** the strip left of the display — the skin's own menu appears with
+      *Spectrum Analyzer* and *Oscilloscope* submenus, the current mode ticked; each entry selects the
+      visualization it names, and the window comes up with **bars** by default
+- [ ] cPro-Bento: leave it open and **use** it for several minutes — clicking, opening drawers,
+      switching colour themes, changing UI Size. A live run crashed in text drawing on 2026-08-16
+      that no headless harness reproduces; if it recurs, record what you did immediately before.
+- [ ] Defix: the player, **both speaker cabinets**, the playlist window and the SUI all come up
+      **wood-panelled and framed** — none of them a flat black box (Phase 25: the skin names its
+      background art by prefixing a preference it never seeds, so every id resolved to nothing)
+- [ ] Defix: the display shows the **cassette deck** with the song title on its label, the time, and
+      `Kbps:` / `Extension:` — **one readout variant at a time**, never Kbps and KHz and Channels
+      printed over each other (Phase 25: `alpha` on text)
+- [ ] Defix: the SUI's **Media Library / Visualization / Explorer** tabs sit side by side at readable
+      widths, not stacked as narrow stubs at the left edge (Phase 25: a skin-level `<scripts>` block
+      loads last, after the XUI params its layout maths reads)
+- [ ] Defix: the SUI tab strip switches — Media Library shows the embedded library, Visualization the
+      vis component, Explorer its live `<Browser>` pane. Switch back and forth several times: the
+      browser page, scroll position, and history must survive, and a strip where only the *first*
+      click works is a real regression
+- [ ] Defix: the four round buttons under the display **all** respond (they are `rectrgn` outline
+      icons; a click through a gap used to fall past them onto the panel behind). What each one does
+      is configurable per profile, so check they act, not that they act on a particular surface
+- [ ] Defix: the round **CONF** button opens *Skin Settings*, and its switches actually move —
+      turning off "Window control bar" should visibly hide the playlist control bar and the SUI tab
+      strip. A switch that moves but changes nothing means the `onDataChanged` notification was lost
+- [ ] Any skin with an `<AlbumArt>` (Defix's playlist and its Album Art tab): the **playing track's
+      cover** appears, not the skin's "no cover art" placeholder, and it changes with the track
+- [ ] Windows ▸ Equalizer, on a skin that declares no EQ (Defix, T800): opens NullPlayer's full
+      classic EQ — on/off, auto, presets, labels — painted in the skin's palette, **and** the skin's
+      own EQ button opens the same window rather than a different one
+- [ ] Defix: open **Winamp Modern → Skin Windows → SPEAKER 1 / 2** during playback — the cabinets draw
+      (wood, cone, tweeter) and the cone tracks the music. Its animation is *subtle by design*: check
+      the frames it uses, not your eyes (`reference/harness.md`, *Debugging a live defect*)
+- [ ] Defix: the playlist window's info box shows **`Items: N`** and **`Time: h:mm:ss`**, and both
+      follow a playlist edit. Blank readouts here have had four separate causes
+- [ ] Defix: its configurator's **Body material** arrow changes the background of the player, both
+      speaker cabinets, the playlist and the library — not only the configurator's own window. `BG1`
+      is the shipped artwork, so click twice. **Change sticker** swaps the round sticker on the
+      *main* window
+- [ ] Defix: **Winamp Modern → Skin Settings...** — picking a display style under *Visualizer*
+      switches the display (six of the eight do; `Ovis 1`/`Ovis 2` are the skin's own empty branches),
+      and under *Songticker*, unticking *Disable* and ticking *Modern* or *Classic* makes the song
+      title move
+- [ ] Capture a reference screenshot per fixture into `docs/winamp-modern/screenshots/`
+
+## 2. Input and transport
+
+- [ ] Buttons respond to hover, press, and release with the right state images
+- [ ] Play / Pause / Stop / Previous / Next / Eject all work
+- [ ] Clicks **outside** the alpha region fall through (do not activate the window)
+- [ ] Dragging the window body moves it; dragging a control does not
+- [ ] Right-click opens the expected menu
+- [ ] **Double-click the title bar** — the window goes to its winshade/compact layout and a
+      double-click on the shade goes back (multipass, mmd3, winampmodern566, ZDL, Overdrive_2; the
+      trap is only the top ~18px). Do it for the playlist and equalizer windows too, where the skin
+      ships shade layouts for them
+- [ ] **Double-click the song title** — the File Info sheet opens for the playing track and dismisses
+      cleanly; **right-click it** — the track menu appears at the pointer and Reveal in Finder is
+      disabled for a stream
+- [ ] Seek slider scrubs, and the position display tracks it
+- [ ] Volume slider changes output level and is clamped at both ends
+- [ ] **Balance slider** pans the audio and is centred when the skin opens (corneramp's and
+      Itemskin's EQ windows, mmd3's and Ujola Cat's drawers, multipass, winampmodern566's EQ drawer,
+      ZDL's advanced EQ). In multipass and Ujola Cat the song ticker also reads out the position
+      while you drag it
+- [ ] **The skin's own keyboard shortcuts** (Phase 43) — click the skin window so it has focus, then:
+      **Alt+G** opens and closes the EQ drawer in multipass and winampmodern566; in winampmodern566
+      **Ctrl+W** shades the *focused* window and leaves the others alone (try it on the main window,
+      then on the playlist), and **Alt+A** toggles the album-art window. Also check the app's own
+      equivalents still work while a skin window is focused — **⌘Q** quits, **⌘W** is not swallowed by
+      the skin's `ctrl+w`
+- [ ] Repeat and shuffle toggles reflect and change real state
+- [ ] Ticker/marquee and elapsed-time text update during playback
+- [ ] **Text sits inside its slot, not floating in it** — Nokia 5220's KBPS/Mono/volume/time readouts
+      and Defix's song ticker and info line ask for `valign="top"`; a skin's pixel-art font readouts
+      (multipass's display, micro's and Itemskin's clocks) and the rows in a skin's own playlist
+      should look vertically centred in their slots
+
+## 3. Playback (never verified from a `.wal` skin)
+
+- [ ] Local file plays to completion and auto-advances
+- [ ] Streaming source (Plex / Jellyfin / Subsonic / Emby) plays
+- [ ] Internet radio plays and metadata updates
+- [ ] Visualization area animates in time with audio
+- [ ] Pausing freezes the visualization; resuming restarts it
+- [ ] No audio glitch or dropout attributable to skin repaint
+
+## 4. Hosted components
+
+Run this section against **all four** skins — they exercise different arrangements (see the table in
+`compatibility.md`): cPro-Bento embeds all three surfaces, mmd3 declares a playlist window and needs a
+synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares playlist + library.
+
+**Where each surface opens**
+
+- [ ] Open the playlist, equalizer, and library from the **Windows menu** and from the **skin's own
+      control**, and confirm both reach the *same* place
+- [ ] cPro-Bento stays a single window throughout — no classic `.wsz` window and no duplicate
+      synthetic window appears for a surface the skin already shows
+- [ ] mmd3 / CornerAmp: the synthesized library window is drawn with **the skin's own frame** (its
+      title bar, borders, and buttons), not NullPlayer chrome
+- [ ] A surface with no home falls back to a window of its own, and the DEBUG log names the reason
+- [ ] **Darjah 1, MoonLight and Pure Inspired draw their own artwork** (B94) — none has been driven
+      under the mouse. Load each: Darjah's player must show its wood panelling and its own round blue
+      transport, not NullPlayer's generic controls over a plain background; MoonLight's `main/normal`
+      must be a full player rather than a clock on an empty bar. Then load **mmd3 or MMD3-4-5** in the
+      same pass and read its display text: the ticker, time, KBPS and KHZ must be tinted with the rest
+      of the player, not grey — that is the `fontSheet` bound, and a corpus render sweep catches it
+      only because those two skins are in it.
+- [ ] **Itemskin: the player makes sound, and the volume slider holds** (B111) — load Itemskin and
+      play a track. It must be **audible**, and dragging the volume bar on the display must move it
+      and leave it there; before the fix the host volume was driven to 0 at load and every drag was
+      immediately undone, so the skin played silently with the clock running. Check the volume
+      survives a relaunch on this skin, because the zero used to be persisted. This is the one
+      corpus skin that binds `onToggle` to `setVolume`, so no other skin substitutes for it and no
+      render sweep can see it — it needs the app, with sound.
+- [ ] **Itemskin, MoonLight and Nullsoft 2000 SP4 Lite: list rows are readable on the plate behind
+      them** (B113) — open the library and the playlist with tracks in them on each. Itemskin's rows
+      are dark olive on **gold**, MoonLight's grey on **near-white** (a light list inside a dark
+      skin, which is what its author declared — 233,233,233 column headers beside a 246,246,246
+      list), SP4 Lite's black on **white** rather than on a slab of selection blue. Then open
+      Itemskin's **Notifier Preferences** in the same pass: its drop-downs must stay near-black with
+      white labels — they are the other half of the fix, and gold boxes or dark-on-dark labels there
+      mean the `editBackground` split has come undone. No render sweep can see any of this: the dump
+      harness attaches no component host, so it draws the plate and never a row of text.
+- [ ] **Itemskin and EPS High-End: the Notifier Preferences window has a background** (B90) — open
+      it from **Skin Windows** on each. Itemskin shows its own `config.png` panel artwork behind the
+      six title boxes; EPS shows a black panel, against which its near-white controls are legible.
+      Neither should be see-through. Then check one shaped player (Ujola Cat, winampmodern566) in the
+      same pass: a window that declares no background must **not** have gained a rectangle.
+- [ ] **Itemskin: the frame windows follow their content** (B69) — open the playlist, video, library
+      and AVS windows. Each must be a *single* composed window, not an empty frame in one place and a
+      chromeless panel in another: this skin builds every component window as a pair (a bare content
+      box plus a separate `dynamic="1"` chrome container) and its own `Wasabi:StandardFrame:*` scripts
+      keep them laid over each other. Then **drag one by its frame** — the content must travel with
+      it, with no snap-back when you let go, and it must stay together when you drag it so its edge
+      hangs off the screen. This is the only route that exercises `onMove()`: a binding is compiled
+      MAKI addressed at a variable a script assigns at runtime, so there is no headless route to it
+
+**Playlist**
+
+- [ ] Renders inside its holder with rows, selection, and now-playing marker, in the skin's colours
+- [ ] Click selects; double-click plays; scroll wheel scrolls and stays bounded
+- [ ] Select a row, press **Delete** — that row is removed, and selection/scroll stay in range
+- [ ] Press Delete with the *player* focused (no row clicked): nothing is removed
+- [ ] The `PE_Info` status line shows item count and total time, and updates as the queue changes
+- [ ] ADD / REM / SEL / MISC buttons draw and hover but do nothing (documented limitation)
+
+**Equalizer**
+
+- [ ] Preamp and all 10 bands drag, and band 1 and band 10 audibly change output
+- [ ] The EQ **on/off** button turns processing on and off (it must not open or close a window)
+- [ ] The Auto button toggles auto mode, and both buttons' lit state follows the engine
+- [ ] The presets button opens the preset list; applying one moves the sliders *and* changes the sound
+- [ ] Change the EQ from the menu bar or the classic window — the skin's sliders follow
+- [ ] `<eqvis>` (where the skin has one) tracks the current curve
+- [ ] EQ gains survive a switch to Classic and back
+
+**Library**
+
+- [ ] The real browser appears inside the skin (cPro's Media Library tab; mmd3/CornerAmp's synthesized
+      window; Winamp Modern's `MLibrary` window) — **not** a classic library window
+- [ ] Browse local files and every configured remote source; artwork, tabs, and search all work
+- [ ] Link a new server from the embedded browser; the sheet attaches to the `.wal` window
+- [ ] CoverFlow and history hosting behave as they do in the classic window
+- [ ] Switch tabs/layouts away and back — the browser is torn down and rebuilt without leaking tasks
+- [ ] Browse mode is remembered across a quit and relaunch
+
+**Embedded web browser**
+
+- [ ] Defix Explorer, Rika HOME, and T800 HOME show a real page rather than the Media Library or an
+      empty frame; a dead historical URL shows the compact *Page unavailable* result
+- [ ] A browser window marked `default_visible="1"` opens with the skin unless the user previously
+      closed it; closing it remains remembered per skin
+- [ ] Click links, scroll, select/copy text, and submit a form; a `target=_blank` link stays in the
+      same skin browser and does not create another window
+- [ ] The search/address field remains visible above the page; enter a full HTTPS URL and press
+      Return, then repeat with a bare domain. **⌘L** focuses/selects the field and Escape returns focus
+      to the page without navigating
+- [ ] Enter ordinary words in the search/address field and confirm DuckDuckGo results load in the
+      same browser
+- [ ] Right-click and exercise Back, Forward, Reload, Stop, Search or Enter Address, and Open Page in
+      Default Browser; disabled history commands must not act
+- [ ] Switch away from the browser tab/layout and back: page, scroll position, form state, and history
+      survive; switching skins destroys the old browser and its nonpersistent cookies/site storage
+- [ ] A skin-local HTML page loads its relative CSS, JavaScript, image, and font resources from the
+      WAL; it never exposes a `file:` URL
+- [ ] Attempts to navigate to `file:`, `javascript:`, `data:`, or an application URL scheme remain in
+      the current page; downloads and popup windows do not appear
+- [ ] A page requesting camera or microphone access receives no prompt and no device access
+- [ ] Hidden/offscreen/zero-sized update browsers make no request until they become visibly usable
+
+**Fallback surfaces are the skin's colours, not a classic skin's (Phase 16)**
+
+> The gate for Phase 16. These windows keep the *classic controller* but are drawn flat from the
+> loaded skin's palette, so what is being checked is colour and legibility, never geometry.
+
+- [ ] Pick a skin that offers **no** playlist / EQ / library of its own and open each from the Windows
+      menu: the window is flat and coloured from the `.wal` skin — **no** `.wsz` sprite frame, no
+      chunky 5×6 bitmap font, and none of the selected classic skin's colours anywhere
+- [ ] cPro-Bento's embedded library reads in the skin's own colours; text is legible against its
+      background, and the tab strip, search bar, status bar, and list rows are all distinguishable
+      from each other (the chrome roles are blends, so this is what proves the blend fractions work)
+- [ ] Try a **light** skin as well as a dark one — the chrome must get *darker* than the content on a
+      light skin, not wash out
+- [ ] Every control is still exactly where it was: close button, tab strip, search field, EQ sliders
+      and the EQ preset/on/auto buttons all respond at the same point they did before
+- [ ] The EQ curve, slider thumbs, and the 0 dB centre lines are visible and track the audio
+- [ ] Switch **back to Classic mode**: the playlist, EQ, and library must look exactly as they always
+      did — no palette leaking into a mode that has no `.wal` skin loaded
+
+**Themes and sizing**
+
+- [ ] Switch colour theme (MMD3 has 82): main chrome, auxiliary windows, playlist, EQ, and the
+      library all recolour — **including** an already-open fallback window, which repaints from
+      `.winampModernThemeDidChange` rather than being told directly
+
+**The colour-theme picker (Phase 32)**
+
+- [ ] **mmd3** — the in-player COLORTHEMES drawer lists all 82 themes and its `Switch` button applies
+      one; the standalone `ColorThemes` window (Skin Windows menu) does the same. The list opens
+      scrolled to the theme it is wearing, and the wheel scrolls it
+- [ ] **winampmodern566** — config drawer → Color Themes tab: the list populates, `Switch` / previous /
+      next all work
+- [ ] **corneramp_redux** — the `Color Themes` window populates; a double-click on a row applies it,
+      and `Switch` / `Pr…` / `Ne…` under it work
+- [x] **multipass** (confirmed live 2026-08-19) — hover the player, click the left drawer's toggle,
+      then the drawer's **Color Themes** page: a populated 58-row list sits at (54, 217) — not the empty placeholder — and
+      switch / previous / next act on it (Phase 33; before that the list was never instantiated and
+      Switch fell through to the popup menu)
+- [ ] **Defix** — the configurator's *Color Themes* list populates and `Switch to selected Color Theme`
+      recolours the skin
+- [ ] **cPro-Bento** — the engine's own colour-theme list populates and switches (needs
+      `WINAMP_MODERN_ENGINE`)
+- [ ] **Rika** — the `Color Themes` window lists all 10; it ships no Switch button, so a double-click
+      is the route
+- [ ] **Anexa / micro / T800 / ZDL** — no in-skin picker at all: the host **Color Themes** submenu
+      (Winamp Modern menu) lists their themes, checks the applied one, and switching recolours the
+      window
+- [ ] On any of them, with the playlist and library windows open: **one** switch recolours the player,
+      the playlist and the embedded library together, and the pick survives a relaunch
+- [ ] Resize every native `.wal` window; each obeys its **own** layout minimum
+- [ ] Exercise every UI Size level, including clicking inside the embedded library at 200%
+- [ ] Restore a session whose saved frame is below the layout minimum: the window clamps up and keeps
+      its saved top-left corner
+
+## 5. Mode switching and lifecycle
+
+- [ ] Switch Classic → Modern → Metal → Winamp Modern → Classic; correct UI each time, no crash
+- [ ] **Switch modes while audio is playing** — playback continues uninterrupted across every switch
+- [ ] Switch modes while **casting** (Sonos and Chromecast) — the cast survives
+- [ ] Swap between installed `.wal` skins live
+- [ ] Swap between installed `.wal` skins with the **Media Library**, the playlist and the
+      equalizer already open — each repaints in the incoming skin's palette without being
+      closed and reopened (B98)
+- [ ] Quit with Remember State on; relaunch returns to Winamp Modern with the same skin
+- [ ] Enter and exit Compact Mode
+- [ ] Change UI Size
+- [ ] Window docking/snapping behaves (Winamp Modern routes through the classic geometry path)
+- [ ] Memory does not climb across ~20 load/teardown cycles (Instruments or Activity Monitor)
+
+## 6. Failure handling
+
+- [ ] Importing a non-`.wal` file shows a clear error, no crash
+- [ ] Importing a truncated/corrupt `.wal` shows a clear error, no crash
+- [ ] cPro-Bento **without** the engine imported degrades with a diagnostic rather than hanging
+- [ ] Importing a non-NSIS-2 `.exe` as the engine gives an actionable message
+- [ ] No error path leaks a real filesystem path into user-visible text
+
+## 7. Release hygiene
+
+- [ ] `swift test` fully green
+- [ ] `./scripts/validate_notices.sh` passes
+- [ ] Release build (`-c release`) compiles — the menu is no longer `#if DEBUG`, so release is the
+      configuration that actually exercises this code path
+- [ ] The `.wal` skin menu is labeled **Modern** (no "Experimental" tag), and the NullPlayer
+      families are labeled **Original** / **Original-Metal**
+- [ ] Fixtures used are recorded in the QA notes; none were committed
+
+## Reporting
+
+File anything that fails as a normal issue. For each fixture, attach the compatibility report and the
+reference screenshot — together they are the input to the next round of demand-driven API work.

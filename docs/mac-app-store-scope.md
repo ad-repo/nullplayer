@@ -32,7 +32,7 @@ NullPlayer is submitted to the Mac App Store (MAS) with full feature parity to t
 | **Visualizations** | ✓ | ✓ | GPU (Metal) | See Review Notes (GPL-3.0 risk) |
 | ProjectM/MilkDrop (100 presets + user downloads) | ✓ | ✓ | — | `Visualization/ProjectMWrapper.swift` |
 | Spectrum analyzer (Metal, 84-bar) | ✓ | ✓ | — | `Visualization/SpectrumAnalyzerView.swift` |
-| Geiss, Tripex, Met Museum, Album Art effects | ✓ | ✓ | — | `Visualization/Geiss*`, `Tripex*`, `MetMuseum/` |
+| Geiss, Tripex, Album Art effects | ✓ | ✓ | — | `Visualization/Geiss*`, `Tripex*` |
 | **Skins** | ✓ | ✓ | — | — |
 | Classic `.wsz` skins + modern JSON skins | ✓ | ✓ | — | `Skin/`, `ModernSkin/` |
 | **Audio Processing** | ✓ | ✓ | — | — |

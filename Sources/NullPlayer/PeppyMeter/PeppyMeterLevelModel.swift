@@ -26,7 +26,10 @@ final class PeppyMeterLevelModel {
     private let attack = 0.55   // fast rise
     private let release = 0.18  // slow fall
 
-    private let consumerId = "peppyMeter"
+    /// The tap registration this model holds. Injectable so two meters can hold the tap at once —
+    /// two consumers sharing one id would deregister each other's. (A `.wal` skin's VU meters read
+    /// the same audio but on Winamp's own scale, through `WinampModernLevelMeter`.)
+    private let consumerId: String
     private var observer: NSObjectProtocol?
     private var timer: Timer?
     private var running = false
@@ -37,6 +40,10 @@ final class PeppyMeterLevelModel {
     private var displayRight = 0.0
     private var lastEmittedLeft = -1.0
     private var lastEmittedRight = -1.0
+
+    init(consumerId: String = "peppyMeter") {
+        self.consumerId = consumerId
+    }
 
     func start() {
         guard !running else { return }
@@ -51,10 +58,16 @@ final class PeppyMeterLevelModel {
         ) { note in
             let left = note.userInfo?["left"] as? [Float] ?? []
             let right = note.userInfo?["right"] as? [Float] ?? []
+            // The **measurement runs here**, on the posting thread, and only two numbers cross to the
+            // main thread. Running `rmsDBFS` inside the hop instead put a vDSP pass over every PCM
+            // buffer, twice, on the main thread at audio-buffer rate — the repo's standing rule is
+            // that the main thread draws and handles input, and nothing else.
+            let leftDB = Double(AudioAnalysisDSP.rmsDBFS(left))
+            let rightDB = Double(AudioAnalysisDSP.rmsDBFS(right))
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.targetLeft = PeppyMeterLevels.volume(fromDBFS: Double(AudioAnalysisDSP.rmsDBFS(left)), floor: self.floorDB)
-                self.targetRight = PeppyMeterLevels.volume(fromDBFS: Double(AudioAnalysisDSP.rmsDBFS(right)), floor: self.floorDB)
+                self.targetLeft = PeppyMeterLevels.volume(fromDBFS: leftDB, floor: self.floorDB)
+                self.targetRight = PeppyMeterLevels.volume(fromDBFS: rightDB, floor: self.floorDB)
             }
         }
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }

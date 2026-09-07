@@ -1,0 +1,1148 @@
+import Foundation
+
+struct MakiExecutionLimits: Equatable {
+    var maximumInstructionsPerEvent = 5_000_000
+    var maximumCallDepth = 256
+    var maximumAllocatedBytesPerEvent = 64 * 1_024 * 1_024
+    var maximumStackValues = 1_000_000
+    var maximumObjectMembers = 65_536
+
+    static let production = MakiExecutionLimits()
+}
+
+enum MakiValueKind: UInt8 {
+    case null = 0
+    case integer = 2
+    case float = 3
+    case double = 4
+    case boolean = 5
+    case string = 6
+    case object = 7
+}
+
+/// The class GUIDs the host itself answers for, in the normalized form the compiled tables reduce to.
+///
+/// Compiled MAKI stores a class id as four little-endian 32-bit words; `canonical` reverses each of
+/// them so two spellings of the same class compare equal. It lives here rather than in the runtime
+/// because the *parser* needs it too: which global is `System` is a class question.
+enum MakiClassGUID {
+    /// Winamp's `PlEdit`, the playlist-editor singleton — `{345BEEBC-0229-4921-90BE-6CB6A49A79D9}`.
+    static let playlistEditor = "345beebc49210229b66cbe90d9799aa4"
+
+    /// Winamp's `ColorMgr`, the colour-theme manager — a second system-flagged global beside
+    /// `System`, and the receiver of `getGammaSet(name)`.
+    static let colorManager = "aee235ff498febd1e0d7af961a54d4da"
+
+    /// The `GammaSet` object `ColorMgr.getGammaSet` answers with; `apply()` is declared on it.
+    /// Gating that name by class matters more than it looks: `apply` is exactly the sort of short
+    /// verb several classes could declare, and registering it globally would give every one of them
+    /// this arity. Measured across the installed corpus it appears on this class alone.
+    static let gammaSet = "0d024db942d09574b526c7b887f9f153"
+
+    /// Winamp's Media Library playlist manager — the *saved* playlists, not the play queue
+    /// (`PlEdit` is the queue). A third system-flagged global beside `System` and `ColorMgr`, and the
+    /// receiver of `getNumItems()` / `getItemName(i)` / `playItem(i)`.
+    ///
+    /// Found by `WINAMP_MODERN_RENDER_GLOBALS=1` on Big Bento Modern, whose programmable-button
+    /// right-click menu lists every saved playlist as a submenu. Winamp added it in 5.51, which the
+    /// skin knows: the whole submenu is guarded by `if (manager)` and falls back to a
+    /// "feature requires WA 5.51+" entry, so a **null** here is a supported state and not a defect.
+    static let playlistManager = "61a7abad41f67d7980e1d0b1f4a40386"
+
+    /// Host singletons the **runtime** binds by class, and which the parser must therefore leave
+    /// alone. Deliberately a carve-out rather than an allow-list of one: a system-flagged global of
+    /// any other class keeps the System object it has always been given, so nothing that worked
+    /// before this became a null receiver.
+    static let runtimeBound: Set<String> = [playlistEditor, colorManager, playlistManager]
+
+    /// Reverse each of the four words, so two spellings of the same class compare equal.
+    ///
+    /// This is on the interpreter's dispatch path — `signature(for:classGUID:)` calls it for every
+    /// method invocation — so how it walks the string matters. It used to reach each byte pair with
+    /// `raw.index(raw.startIndex, offsetBy:)`, which is O(n) from the *start* every time, and it
+    /// materialised 16 two-character `String`s plus a reversed array plus a join. That is O(n²) and
+    /// ~20 allocations for a 32-character constant, and it measured on cPro Bento (B103). One
+    /// `Array(raw)` and one `String` give the identical result — same characters, same order, the
+    /// same trailing `lowercased()` — with O(n) indexing.
+    ///
+    /// Not memoized: the cache would be keyed on the raw string, and hashing 32 characters is the
+    /// same order of work as the loop below now is.
+    static func canonical(_ raw: String) -> String {
+        guard raw.count == 32 else { return raw.lowercased() }
+        let characters = Array(raw)
+        var ordered = String()
+        ordered.reserveCapacity(32)
+        for start in stride(from: 0, to: 16, by: 4) {
+            for pair in stride(from: start + 3, through: start, by: -1) {
+                ordered.append(characters[pair * 2])
+                ordered.append(characters[pair * 2 + 1])
+            }
+        }
+        return ordered.lowercased()
+    }
+}
+
+final class MakiObjectReference: Hashable {
+    enum Kind: Hashable {
+        case system
+        /// Winamp's `PlEdit` — the playlist-editor singleton `std.mi` declares as a global object,
+        /// addressed by class GUID rather than by anything in the skin's graph. Seeded into every
+        /// program's `PlEdit` variable at parse time, exactly as `System` is seeded into variable 0.
+        case playlistEditor
+        /// Winamp's `ColorMgr` — the colour-theme manager, seeded the same way `PlEdit` is. Big
+        /// Bento Modern's 77-theme picker and Ebonite's own switcher both reach the catalog through
+        /// it.
+        case colorManager
+        /// Winamp's Media Library playlist manager, seeded the same way `PlEdit` and `ColorMgr` are.
+        /// Distinct from `playlistEditor`: that one is the **play queue**, this one is the list of
+        /// *saved* playlists the library holds.
+        case playlistManager
+        case gui(WasabiObjectID)
+        case popupMenu(UInt64)
+        case dynamic(UInt64)
+    }
+
+    let kind: Kind
+
+    init(_ kind: Kind) { self.kind = kind }
+
+    static func == (lhs: MakiObjectReference, rhs: MakiObjectReference) -> Bool {
+        lhs.kind == rhs.kind
+    }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(kind) }
+}
+
+enum MakiValue {
+    case null
+    case integer(Int32)
+    case float(Double)
+    case double(Double)
+    case boolean(Bool)
+    case string(String)
+    case object(MakiObjectReference)
+
+    var truthy: Bool {
+        switch self {
+        case .null: return false
+        case .integer(let value): return value != 0
+        case .float(let value), .double(let value): return value != 0
+        case .boolean(let value): return value
+        case .string(let value): return !value.isEmpty
+        case .object: return true
+        }
+    }
+
+    var integerValue: Int32 {
+        switch self {
+        case .integer(let value): return value
+        case .boolean(let value): return value ? 1 : 0
+        // `clamping:` guards the Int32 step but **not** the `Int64(value)` inside it, which traps on
+        // an infinity or a NaN — and MAKI's `/` is IEEE division with no zero check, so any skin
+        // that divides by a value that happens to be zero reaches here with ±inf. That is a trap on
+        // skin input, which the engine's security model does not allow (failures are typed). NaN
+        // reads as 0, the way `Int32("nan")` does on the string branch.
+        case .float(let value), .double(let value):
+            if value.isNaN { return 0 }
+            // Compared as Double before converting: a finite 1e300 traps `Int64(_:)` just as an
+            // infinity does, so the range check has to happen in the wider type.
+            if value >= Double(Int32.max) { return .max }
+            if value <= Double(Int32.min) { return .min }
+            return Int32(value.rounded(.towardZero))
+        case .string(let value): return Int32(value) ?? 0
+        case .null, .object: return 0
+        }
+    }
+
+    var doubleValue: Double {
+        switch self {
+        case .integer(let value): return Double(value)
+        case .float(let value), .double(let value): return value
+        case .boolean(let value): return value ? 1 : 0
+        case .string(let value): return Double(value) ?? 0
+        case .null, .object: return 0
+        }
+    }
+
+    var stringValue: String {
+        switch self {
+        case .null: return ""
+        case .integer(let value): return String(value)
+        case .float(let value), .double(let value): return String(value)
+        case .boolean(let value): return value ? "1" : "0"
+        case .string(let value): return value
+        case .object: return ""
+        }
+    }
+}
+
+final class MakiVariable {
+    let declaredKind: MakiValueKind
+    let classGUID: String?
+    let isGlobal: Bool
+    let isSystem: Bool
+    var value: MakiValue
+    var classMembers: [Int] = []
+    var isClass = false
+
+    init(declaredKind: MakiValueKind, classGUID: String? = nil, isGlobal: Bool = false,
+         isSystem: Bool = false, value: MakiValue) {
+        self.declaredKind = declaredKind
+        self.classGUID = classGUID
+        self.isGlobal = isGlobal
+        self.isSystem = isSystem
+        self.value = value
+    }
+
+    static func temporary(_ value: MakiValue) -> MakiVariable {
+        let kind: MakiValueKind
+        switch value {
+        case .null: kind = .null
+        case .integer: kind = .integer
+        case .float: kind = .float
+        case .double: kind = .double
+        case .boolean: kind = .boolean
+        case .string: kind = .string
+        case .object: kind = .object
+        }
+        return MakiVariable(declaredKind: kind, value: value)
+    }
+}
+
+struct MakiMethod {
+    let classIndex: Int
+    let name: String
+}
+
+struct MakiBinding {
+    let variableIndex: Int
+    let methodIndex: Int
+    let instructionIndex: Int
+}
+
+enum MakiInstructionArgument {
+    case none
+    case variable(Int)
+    case method(Int)
+    case type(Int)
+    case instruction(Int)
+    /// The declared type of a dynamic `Member` access (opcode 104), with the member's class GUID
+    /// when it is object-typed (`Member GuiObject Tab.left;`).
+    case valueKind(MakiValueKind, classGUID: String?)
+}
+
+struct MakiInstruction {
+    let opcode: UInt8
+    let argument: MakiInstructionArgument
+    let byteOffset: Int
+}
+
+final class MakiProgram {
+    let version: UInt16
+    let classes: [String]
+    let methods: [MakiMethod]
+    let variables: [MakiVariable]
+    let bindings: [MakiBinding]
+    /// The bindings an event dispatch actually runs: every handler a program declares for an
+    /// (object, event) pair, minus the ones whose **body is a byte-for-byte repeat** of an earlier
+    /// handler for the same pair.
+    ///
+    /// Two different rules were needed here and only the duplicate-body one is safe.
+    ///
+    /// Defix's `MAIN_LAYOUT_1` declares `ConfBT2.onLeftClick()` **twice**, both bodies reading
+    /// `MainBtn2` and both ending in the round button's assigned target. Running both fired that
+    /// whole action twice per click, and because the action is a *toggle* the two cancelled — the
+    /// user saw the playlist window flash open and shut again, and saw an open one refuse to close.
+    ///
+    /// Keeping only the *last* binding per pair fixed that and broke Big Bento Modern, whose
+    /// `mcvcore` declares `System.onScriptLoaded()` twice with **different** bodies: the first finds
+    /// every object in the Multi Content View and decides which of the album-art and visualization
+    /// panes to show, the second only starts a timer. Shadowing the first left both panes in the
+    /// scene, the visualization box drawn black over the cover art (B38.4).
+    ///
+    /// So a repeat body is a compile artifact and is dropped; two distinct bodies are two real
+    /// handlers and both run, which is also what the reference interpreter does. Jump targets are
+    /// absolute, so they are compared relative to each body's own entry point.
+    let dispatchBindings: [MakiBinding]
+    let instructions: [MakiInstruction]
+    let source: WalSourceLocation
+    let ownerID: WasabiObjectID?
+    let parameter: String?
+
+    init(version: UInt16, classes: [String], methods: [MakiMethod], variables: [MakiVariable],
+         bindings: [MakiBinding], instructions: [MakiInstruction], source: WalSourceLocation,
+         ownerID: WasabiObjectID?, parameter: String?) {
+        self.version = version
+        self.classes = classes
+        self.methods = methods
+        self.variables = variables
+        self.bindings = bindings
+        // A handler's body runs from its entry point to the next entry point the program declares —
+        // the compiler lays them out contiguously — or to the end of the instruction stream.
+        let entryPoints = Set(bindings.map(\.instructionIndex)).sorted()
+        func body(from start: Int) -> ArraySlice<MakiInstruction> {
+            let end = entryPoints.first { $0 > start } ?? instructions.count
+            guard start >= 0, start <= end, end <= instructions.count else { return [] }
+            return instructions[start..<end]
+        }
+        var seenBodies: Set<String> = []
+        self.dispatchBindings = bindings.filter { binding in
+            guard methods.indices.contains(binding.methodIndex) else { return true }
+            let signature = "\(binding.variableIndex)/\(methods[binding.methodIndex].name)/"
+                + Self.bodySignature(body(from: binding.instructionIndex),
+                                     relativeTo: binding.instructionIndex)
+            return seenBodies.insert(signature).inserted
+        }
+        self.instructions = instructions
+        self.source = source
+        self.ownerID = ownerID
+        self.parameter = parameter
+    }
+
+    /// A handler body reduced to a comparable string — the *shape* of the handler, independent of
+    /// where it was emitted and which slots it happened to be given.
+    ///
+    /// Two things are normalised, and both are needed to recognise a repeated handler:
+    ///
+    /// - **Jump targets** are absolute instruction indices, so a repeat's jumps point at its own
+    ///   copy. They are taken relative to the body's entry point.
+    /// - **Variable indices** are renumbered by first appearance inside the body. The compiler gives
+    ///   each copy of a repeated handler its own temporaries (Defix's two `ConfBT2.onLeftClick`
+    ///   bodies are the same 125 instructions reading the same config string, one through `v586` and
+    ///   the other through `v591`), so comparing raw slots calls two copies of one handler different.
+    ///
+    /// The cost of the second normalisation is that two handlers differing *only* in which variable
+    /// they read compare equal. That is deliberate: it is precisely the repeated-handler shape, and
+    /// a real second handler for the same (object, event) — Big Bento's `mcvcore` — differs in far
+    /// more than a slot number.
+    static func bodySignature(_ body: ArraySlice<MakiInstruction>, relativeTo start: Int) -> String {
+        var rankByVariable: [Int: Int] = [:]
+        func rank(_ index: Int) -> Int {
+            if let existing = rankByVariable[index] { return existing }
+            let next = rankByVariable.count
+            rankByVariable[index] = next
+            return next
+        }
+        return body.map { step -> String in
+            switch step.argument {
+            case .none: return "\(step.opcode)"
+            case .variable(let index): return "\(step.opcode)v\(rank(index))"
+            case .method(let index): return "\(step.opcode)m\(index)"
+            case .type(let index): return "\(step.opcode)t\(index)"
+            case .instruction(let target): return "\(step.opcode)j\(target - start)"
+            case .valueKind(let kind, let guid): return "\(step.opcode)k\(kind)\(guid ?? "")"
+            }
+        }.joined(separator: ",")
+    }
+
+    /// A stable short hash of one binding's body — what the duplicate-body rule above compares, in a
+    /// form a probe can print next to two same-named bindings.
+    func bodyHash(of binding: MakiBinding) -> Int {
+        let entryPoints = Set(bindings.map(\.instructionIndex)).sorted()
+        let start = binding.instructionIndex
+        let end = entryPoints.first { $0 > start } ?? instructions.count
+        guard start >= 0, start <= end, end <= instructions.count else { return 0 }
+        return abs(Self.bodySignature(instructions[start..<end], relativeTo: start).hashValue % 100_000)
+    }
+
+    /// Winamp's `PopupMenu`, as its class table stores it. Only used to recognise the one class the
+    /// dispatcher builds something other than a generic dynamic object for.
+    static let popupMenuClassGUID = "f47a78f4bbb2f74e9cfbe74ba9bea88d"
+
+    /// The GUID a `new` should build, or `nil` when the index is out of range in a program that does
+    /// declare its classes (a corrupt table). A program compiled without a class table (see the
+    /// legacy retry in `MakiBytecodeParser`) still says which *methods* belong to each class code,
+    /// and that is enough to tell a popup menu from everything else — the rest are dynamic objects,
+    /// which is what a `Map`, the measured case, needs to be anyway.
+    func classGUID(atIndex index: Int) -> String? {
+        if classes.indices.contains(index) { return classes[index] }
+        guard classes.isEmpty else { return nil }
+        let names = Set(methods.filter { $0.classIndex == index }.map(\.name))
+        return names.contains("popatmouse") || names.contains("addcommand")
+            ? Self.popupMenuClassGUID : ""
+    }
+}
+
+struct MakiBytecodeParser {
+    private enum Immediate {
+        case none, variable, method, type, instruction, valueKind
+    }
+
+    private struct Reader {
+        let data: Data
+        var offset = 0
+
+        mutating func readUInt8() throws -> UInt8 {
+            try require(1)
+            defer { offset += 1 }
+            return data[data.startIndex + offset]
+        }
+
+        mutating func readUInt16() throws -> UInt16 {
+            try require(2)
+            let a = UInt16(data[data.startIndex + offset])
+            let b = UInt16(data[data.startIndex + offset + 1]) << 8
+            offset += 2
+            return a | b
+        }
+
+        mutating func readUInt32() throws -> UInt32 {
+            try require(4)
+            var result: UInt32 = 0
+            for index in 0..<4 {
+                result |= UInt32(data[data.startIndex + offset + index]) << UInt32(index * 8)
+            }
+            offset += 4
+            return result
+        }
+
+        mutating func readInt32() throws -> Int32 {
+            Int32(bitPattern: try readUInt32())
+        }
+
+        mutating func readData(count: Int) throws -> Data {
+            try require(count)
+            defer { offset += count }
+            return data.subdata(in: (data.startIndex + offset)..<(data.startIndex + offset + count))
+        }
+
+        mutating func readString() throws -> String {
+            let length = Int(try readUInt16())
+            let bytes = try readData(count: length)
+            guard let value = String(data: bytes, encoding: .utf8) else {
+                throw ParseError("MAKI string is not valid UTF-8.")
+            }
+            return value
+        }
+
+        func peekUInt32() throws -> UInt32 {
+            var copy = self
+            return try copy.readUInt32()
+        }
+
+        func require(_ count: Int) throws {
+            guard count >= 0, offset <= data.count - count else {
+                throw ParseError("MAKI file ends unexpectedly at byte \(offset).")
+            }
+        }
+    }
+
+    private struct ParseError: Error {
+        let message: String
+        init(_ message: String) { self.message = message }
+    }
+
+    let maximumTableEntries: Int
+
+    init(maximumTableEntries: Int = 100_000) {
+        self.maximumTableEntries = maximumTableEntries
+    }
+
+    func parse(_ data: Data, source: WalSourceLocation, ownerID: WasabiObjectID? = nil,
+               parameter: String? = nil) throws -> MakiProgram {
+        do {
+            do {
+                return try parse(data, source: source, ownerID: ownerID, parameter: parameter,
+                                 classTablePresent: true)
+            } catch is ParseError {
+                // A pre-5.0 `mc.exe` wrote a different shape under the *same* version word (0x0403),
+                // so the variant cannot be told apart by the header — only by trying it.
+                // `Overdrive_2`'s `scripts/seek.maki` (2001) is the measured case, and it sits beside
+                // four siblings in the ordinary form, which is why this is a retry and not a branch.
+                // Two differences, both decoded from that file:
+                //   * no class GUID table at all — the class code in a method record indexes a table
+                //     the runtime supplied, so a call here dispatches on its *name* alone (which is
+                //     what the interpreter already does for an out-of-range class index), and
+                //   * a **13-byte** variable record: the trailing `global`/`system` pair is one byte
+                //     holding `object` instead. `System` is the first variable a MAKI program
+                //     declares, so index 0 is the system object.
+                // Failing this reading too, its own error is the one reported.
+                return try parse(data, source: source, ownerID: ownerID, parameter: parameter,
+                                 classTablePresent: false)
+            }
+        } catch let error as ParseError {
+            throw WalFailure(WalDiagnostic(.invalidScript, error.message, location: source))
+        }
+    }
+
+    private func parse(_ data: Data, source: WalSourceLocation, ownerID: WasabiObjectID?,
+                       parameter: String?, classTablePresent: Bool) throws -> MakiProgram {
+        do {
+            var reader = Reader(data: data)
+            guard try reader.readData(count: 2) == Data([0x46, 0x47]) else {
+                throw ParseError("MAKI magic must be 'FG'.")
+            }
+            let version = try reader.readUInt16()
+            _ = try reader.readUInt32()
+
+            var classes: [String] = []
+            if classTablePresent {
+                let classCount = try boundedCount(try reader.readUInt32(), section: "class")
+                classes.reserveCapacity(classCount)
+                for _ in 0..<classCount {
+                    let bytes = try reader.readData(count: 16)
+                    classes.append(bytes.map { String(format: "%02x", $0) }.joined())
+                }
+            }
+
+            let methodCount = try boundedCount(try reader.readUInt32(), section: "method")
+            var methods: [MakiMethod] = []
+            methods.reserveCapacity(methodCount)
+            for _ in 0..<methodCount {
+                let classCode = try reader.readUInt16()
+                _ = try reader.readUInt16()
+                let classIndex = Int(classCode & 0xff)
+                guard classIndex < classes.count || classes.isEmpty else {
+                    throw ParseError("MAKI method references an unknown class.")
+                }
+                methods.append(MakiMethod(classIndex: classIndex, name: try reader.readString().lowercased()))
+            }
+
+            let variableCount = try boundedCount(try reader.readUInt32(), section: "variable")
+            var variables: [MakiVariable] = []
+            variables.reserveCapacity(variableCount)
+            for index in 0..<variableCount {
+                let typeOffset = Int(try reader.readUInt8())
+                var object = try reader.readUInt8() != 0
+                let subclass = try reader.readUInt16() != 0
+                let initial1 = try reader.readUInt16()
+                let initial2 = try reader.readUInt16()
+                _ = try reader.readUInt16()
+                _ = try reader.readUInt16()
+                var global = false
+                var system = false
+                if classTablePresent {
+                    global = try reader.readUInt8() != 0
+                    system = try reader.readUInt8() != 0
+                } else {
+                    object = try reader.readUInt8() != 0
+                    system = object && index == 0
+                    global = system
+                }
+
+                if subclass {
+                    guard typeOffset < variables.count else { throw ParseError("MAKI subclass references an unknown variable.") }
+                    let base = variables[typeOffset]
+                    base.isClass = true
+                    let variable = MakiVariable(declaredKind: .object, classGUID: base.classGUID,
+                                                isGlobal: global, isSystem: system, value: .null)
+                    variables.append(variable)
+                    base.classMembers.append(variables.count - 1)
+                } else if object {
+                    guard typeOffset < classes.count || classes.isEmpty else {
+                        throw ParseError("MAKI object references an unknown class.")
+                    }
+                    let guid = typeOffset < classes.count ? classes[typeOffset] : nil
+                    // The `system` flag means "the host owns this global", not "this *is* System".
+                    // `std.mi` declares several such singletons — `PlEdit` among them — and seeding
+                    // all of them with the System object made every `PlEdit.getCurrentIndex()` a call
+                    // on System, which then failed there as an unknown System method. That is why the
+                    // playlist API read as an intermittent defect: nothing surfaced until a click.
+                    // The singletons the runtime binds by class are carved out here (see
+                    // `seedHostSingletons`); every other one keeps the System object it always had.
+                    let isSystemObject = system
+                        && !(guid.map { MakiClassGUID.runtimeBound.contains(MakiClassGUID.canonical($0)) } ?? false)
+                    let initial: MakiValue = isSystemObject ? .object(MakiObjectReference(.system)) : .null
+                    variables.append(MakiVariable(declaredKind: .object, classGUID: guid,
+                                                  isGlobal: global, isSystem: system, value: initial))
+                } else {
+                    let kind = MakiValueKind(rawValue: UInt8(typeOffset))
+                    let value: MakiValue
+                    switch kind {
+                    case .integer:
+                        value = .integer(Int32(initial1))
+                    case .boolean:
+                        value = .boolean(initial1 != 0)
+                    case .float, .double:
+                        // The mantissa's high bits must be widened *before* the shift: `initial2` is
+                        // a `UInt16`, so `(0x80 | …) << 16` shifted the implicit leading one and every
+                        // stored bit clean out of the word and left only `initial1`. Every float and
+                        // double constant in every script decoded to a fraction of its real value —
+                        // Love is War Miku's volume step (2.55 of 255) arrived as 0.003, so the
+                        // buttons ran the whole handler and moved the level by nothing.
+                        let exponent = Int((initial2 & 0xff80) >> 7)
+                        let mantissa = (Int(0x80 | (initial2 & 0x7f)) << 16) | Int(initial1)
+                        let decoded = Double(mantissa) * pow(2, Double(exponent - 0x96))
+                        value = kind == .float ? .float(decoded) : .double(decoded)
+                    case .string:
+                        value = .string("")
+                    default:
+                        throw ParseError("Unsupported MAKI primitive type \(typeOffset).")
+                    }
+                    variables.append(MakiVariable(declaredKind: kind!, isGlobal: global,
+                                                  isSystem: system, value: value))
+                }
+            }
+
+            let constantCount = try boundedCount(try reader.readUInt32(), section: "constant")
+            for _ in 0..<constantCount {
+                let variableIndex = Int(try reader.readUInt32())
+                guard variableIndex < variables.count else { throw ParseError("MAKI constant references an unknown variable.") }
+                variables[variableIndex].value = .string(try reader.readString())
+            }
+
+            let bindingCount = try boundedCount(try reader.readUInt32(), section: "binding")
+            var unresolvedBindings: [(Int, Int, Int)] = []
+            unresolvedBindings.reserveCapacity(bindingCount)
+            for _ in 0..<bindingCount {
+                let variable = Int(try reader.readUInt32())
+                let method = Int(try reader.readUInt32())
+                let byteOffset = Int(try reader.readUInt32())
+                guard variable < variables.count, method < methods.count else {
+                    throw ParseError("MAKI binding references an unknown variable or method.")
+                }
+                unresolvedBindings.append((variable, method, byteOffset))
+            }
+
+            let codeLength = Int(try reader.readUInt32())
+            try reader.require(codeLength)
+            let codeStart = reader.offset
+            let codeEnd = codeStart + codeLength
+            var unresolvedInstructions: [(UInt8, Immediate, Int, Int)] = []
+            var offsetToInstruction: [Int: Int] = [:]
+            while reader.offset < codeEnd {
+                let byteOffset = reader.offset - codeStart
+                offsetToInstruction[byteOffset] = unresolvedInstructions.count
+                let opcode = try reader.readUInt8()
+                let immediate = try immediate(for: opcode)
+                var rawArgument = 0
+                if immediate != .none {
+                    if immediate == .instruction {
+                        rawArgument = byteOffset + 5 + Int(try reader.readInt32())
+                    } else {
+                        rawArgument = Int(try reader.readUInt32())
+                    }
+                    if reader.offset + 4 <= codeEnd {
+                        let protection = try reader.peekUInt32()
+                        if (0xffff0000...0xffff000f).contains(protection) { _ = try reader.readUInt32() }
+                    }
+                    if opcode == 112 { _ = try reader.readUInt8() }
+                }
+                unresolvedInstructions.append((opcode, immediate, rawArgument, byteOffset))
+            }
+            guard reader.offset == codeEnd else { throw ParseError("MAKI instruction crosses the code-section boundary.") }
+
+            let instructions = try unresolvedInstructions.map { opcode, immediate, raw, byteOffset in
+                let argument: MakiInstructionArgument
+                switch immediate {
+                case .none: argument = .none
+                case .variable:
+                    guard raw >= 0, raw < variables.count else { throw ParseError("MAKI opcode references unknown variable \(raw).") }
+                    argument = .variable(raw)
+                case .method:
+                    guard raw >= 0, raw < methods.count else { throw ParseError("MAKI opcode references unknown method \(raw).") }
+                    argument = .method(raw)
+                case .type:
+                    guard raw >= 0, raw < classes.count || classes.isEmpty else {
+                        throw ParseError("MAKI opcode references unknown class \(raw).")
+                    }
+                    argument = .type(raw)
+                case .instruction:
+                    guard let target = offsetToInstruction[raw] else { throw ParseError("MAKI jump target \(raw) is not an instruction boundary.") }
+                    argument = .instruction(target)
+                case .valueKind:
+                    // The immediate has the same shape as a variable record's first two bytes: a type
+                    // offset, then an "is object" flag. For an object member the offset indexes the
+                    // class table (`Member GuiObject Tab.left;` in ClassicPro's CproTabs is
+                    // `0x0100 | 9`), not the primitive value kinds.
+                    guard raw >= 0, raw <= Int(UInt16.max) else {
+                        throw ParseError("MAKI member access declares unknown value type \(raw).")
+                    }
+                    let typeOffset = raw & 0xff
+                    if raw >> 8 != 0 {
+                        guard typeOffset < classes.count || classes.isEmpty else {
+                            throw ParseError("MAKI member access references unknown class \(typeOffset).")
+                        }
+                        argument = .valueKind(.object,
+                                              classGUID: typeOffset < classes.count ? classes[typeOffset] : nil)
+                    } else {
+                        guard let kind = MakiValueKind(rawValue: UInt8(typeOffset)) else {
+                            throw ParseError("MAKI member access declares unknown value type \(raw).")
+                        }
+                        argument = .valueKind(kind, classGUID: nil)
+                    }
+                }
+                return MakiInstruction(opcode: opcode, argument: argument, byteOffset: byteOffset)
+            }
+
+            let bindings = try unresolvedBindings.map { variable, method, byteOffset in
+                guard let instruction = offsetToInstruction[byteOffset] else {
+                    throw ParseError("MAKI binding target \(byteOffset) is not an instruction boundary.")
+                }
+                return MakiBinding(variableIndex: variable, methodIndex: method, instructionIndex: instruction)
+            }
+
+            return MakiProgram(version: version, classes: classes, methods: methods, variables: variables,
+                               bindings: bindings, instructions: instructions, source: source,
+                               ownerID: ownerID, parameter: parameter)
+        }
+    }
+
+    private func boundedCount(_ raw: UInt32, section: String) throws -> Int {
+        guard raw <= UInt32(maximumTableEntries) else {
+            throw ParseError("MAKI \(section) table exceeds \(maximumTableEntries) entries.")
+        }
+        return Int(raw)
+    }
+
+    private func immediate(for opcode: UInt8) throws -> Immediate {
+        switch opcode {
+        case 1, 3: return .variable
+        case 16, 17, 18, 25: return .instruction
+        case 24, 112: return .method
+        case 96: return .type
+        case 104: return .valueKind
+        case 2, 8, 9, 10, 11, 12, 13, 33, 40, 48, 56, 57, 58, 59,
+             64, 65, 66, 67, 68, 72, 73, 74, 76, 80, 81, 88, 89, 90, 91, 97:
+            return .none
+        default:
+            throw ParseError("Unsupported MAKI opcode \(opcode).")
+        }
+    }
+}
+
+struct MakiMethodSignature {
+    let argumentCount: Int
+    let returnKind: MakiValueKind
+}
+
+protocol MakiMethodDispatching: AnyObject {
+    func signature(for method: String, classGUID: String?) -> MakiMethodSignature?
+    func invoke(method: String, on object: MakiObjectReference, arguments: [MakiValue],
+                program: MakiProgram) throws -> MakiValue
+    func makeObject(classGUID: String, program: MakiProgram) throws -> MakiObjectReference
+    /// What a call on a *null* receiver evaluates to. Null is right for almost everything (the call
+    /// is a no-op), but a handful of methods are questions *about* the receiver, and for those "no
+    /// object" is a real answer rather than an absence of one.
+    func nullReceiverResult(for method: String) -> MakiValue
+    /// A script `delete`d an object it made with `new`. Anything the host was holding for it (a
+    /// timer, a decoded map) can go.
+    func releaseObject(_ reference: MakiObjectReference)
+}
+
+extension MakiMethodDispatching {
+    func nullReceiverResult(for method: String) -> MakiValue { .null }
+    func releaseObject(_ reference: MakiObjectReference) {}
+}
+
+final class MakiInterpreter {
+    /// `WINAMP_MODERN_MAKI_TRACE=<substring>` prints every instruction of the programs whose XUI
+    /// parameter or source path contains the substring, with the top of the value stack — the only
+    /// way to see *what a handler computes* when its inputs come from the host and its output is a
+    /// single number (Phase 28: which term zeroed a needle's rotation).
+    static let traceFilter = ProcessInfo.processInfo.environment["WINAMP_MODERN_MAKI_TRACE"]?.lowercased()
+    static var traceBudget = Int(ProcessInfo.processInfo.environment["WINAMP_MODERN_MAKI_TRACE_LIMIT"] ?? "4000") ?? 4000
+
+    let limits: MakiExecutionLimits
+    weak var dispatcher: MakiMethodDispatching?
+
+    private(set) var lastInstructionCount = 0
+    private(set) var isTornDown = false
+
+    /// How many times a handler has executed MAKI's `complete;` (opcode 40) since this interpreter
+    /// was made.
+    ///
+    /// `complete;` is how a script says "I have dealt with this event"; every `onKeyDown` in the
+    /// corpus ends its matching branch with one and falls straight out otherwise. It is *not* control
+    /// flow — the compiler emits it before the handler's own return, so it stays a no-op here and only
+    /// records that it happened. A counter rather than a flag because a handler may dispatch a further
+    /// event while it runs: a caller reads the count either side of `execute` and compares.
+    private(set) var completionCount = 0
+
+    /// Backing store for MAKI `Member` declarations (`Member int CProWidget.custombg;`), which attach
+    /// named, typed storage to an object at runtime rather than to a compiled variable slot. Opcode
+    /// 104 resolves one of these to an lvalue, so the entry must persist across events — assignment
+    /// (opcode 48) writes straight through the returned `MakiVariable`.
+    private var objectMembers: [MakiObjectReference: [String: MakiVariable]] = [:]
+    private var objectMemberCount = 0
+
+    init(dispatcher: MakiMethodDispatching, limits: MakiExecutionLimits = .production) {
+        self.dispatcher = dispatcher
+        self.limits = limits
+    }
+
+    /// What a value becomes when it is stored into a variable of a declared type.
+    ///
+    /// MAKI's variables are typed and its arithmetic is not: an expression is evaluated in whatever
+    /// the operands and the operator produce, and the **store** is where it is narrowed. Division is
+    /// the case that makes this visible (`Int i = 7 / 2` is 3, `Float f = 7 / 2` is 3.5), and getting
+    /// it wrong at the store instead sends a fractional value on into string building and array
+    /// indices. Only numeric narrowing happens here: nothing else is reinterpreted, so a string, an
+    /// object or a null is stored as it is and the declared kind is ignored.
+    static func coerced(_ value: MakiValue, to kind: MakiValueKind) -> MakiValue {
+        switch (kind, value) {
+        case (.integer, .float), (.integer, .double): return .integer(value.integerValue)
+        case (.boolean, .float), (.boolean, .double), (.boolean, .integer): return .boolean(value.truthy)
+        // MAKI has no null literal of its own: `NULL` compiles to a plain integer 0, so
+        // `lastActiveT = NULL;` stored an *integer* in an object-typed variable. It compared equal to
+        // null and read as false, so nothing looked wrong until a member access — which is a
+        // different instruction and fails closed on a non-object owner (`op104`, below). ClassicPro's
+        // tab strip opens every tab activation with `closeTab(lastActiveT)`, whose first line reads
+        // `lastActiveT.ID`, so the handler that re-aligns the strip died halfway through on the first
+        // click of a session and left the tabs half-deactivated and unaligned.
+        case (.object, .integer(0)), (.object, .boolean(false)): return .null
+        default: return value
+        }
+    }
+
+    /// MAKI's `==` / `!=`, as a pure function of the two values — so the rule can be asserted
+    /// directly instead of through a compiled program that happens to exercise it.
+    ///
+    /// **An object is equal to nothing but another object.** The string fallback could not say so:
+    /// `.object`'s `stringValue` is `""` and so is `.null`'s, so every live object compared **equal
+    /// to NULL**. That is not an academic case — `getLayout` legitimately answers NULL for a layout
+    /// the window has not switched to yet (Winamp builds them on demand; see `isLayoutCreated`), and
+    /// skins branch on it. ClassicPro engine two opens `System.onShowLayout` with
+    /// `if(_layout==shade && …)` against a `shade` that is null on a cold start, so cPro2's *normal*
+    /// layout took the shade branch and `fullScreen()` — the only cold-start caller that places
+    /// `two.screen`, the entire info + transport band — never ran: the title, seek bar and transport
+    /// drew on top of the titlebar and a 28px dead strip opened above the SUI.
+    ///
+    /// The same fallback made `x != NULL` permanently **false**, so every `while (t != NULL)` walk in
+    /// the corpus (ClassicPro's `CproTabs.m` is full of them) exited before its first iteration, and
+    /// every `if (x != NULL)` guard was skipped. Big Bento Modern's Windows 10 edition drew the
+    /// *restore* glyph on a window that was not maximized for exactly that reason.
+    static func valuesAreEqual(_ lhs: MakiValue, _ rhs: MakiValue) -> Bool {
+        switch (lhs, rhs) {
+        case (.string(let a), .string(let b)): return a.caseInsensitiveCompare(b) == .orderedSame
+        case (.object(let a), .object(let b)): return a == b
+        // Ordered after the object/object case above, so identity still decides two objects.
+        case (.object, _), (_, .object): return false
+        case (.null, .null): return true
+        // MAKI has no null literal: `NULL` compiles to integer 0 (see `coerced`).
+        case (.null, .integer(let b)), (.integer(let b), .null): return b == 0
+        default: return lhs.stringValue == rhs.stringValue
+        }
+    }
+
+    /// Run one handler and answer with **what it returned**.
+    ///
+    /// Every event before Phase 28 was a notification, so the value a handler left behind was thrown
+    /// away. Layer FX is the first host→script call whose return value is the entire point
+    /// (`fx_onGetPixelR` answers with the coordinate to sample from), so the value on top of the
+    /// stack when the program returns is carried back out. MAKI's compiler emits `push <value>; ret`
+    /// for `return <value>;`, and a handler that returns nothing leaves whatever the last statement
+    /// pushed — so the value is only meaningful for a handler declared to return one, and every
+    /// existing caller still ignores it.
+    /// `WINAMP_MODERN_TRACE_MAKI=1` — every handler entry, subroutine call and return, with the
+    /// instruction each one left from. The only way to see *where* a handler bailed: a guard that
+    /// returns at instruction 3 and a handler that never ran look identical from outside.
+    static let tracesExecution = ProcessInfo.processInfo.environment["WINAMP_MODERN_TRACE_MAKI"] != nil
+
+    /// The handler currently on the interpreter's stack, so a side effect can name the script that
+    /// caused it. `setVisible` alone cannot: every skin's shows and hides arrive through one method,
+    /// and "which handler called this" is the whole question when a page reopens itself.
+    static var traceStack: [String] = []
+
+    @discardableResult
+    func execute(program: MakiProgram, at start: Int, arguments: [MakiValue] = []) throws -> MakiValue {
+        if Self.tracesExecution {
+            print("MAKI enter \((program.source.path as NSString).lastPathComponent) @\(start)")
+            Self.traceStack.append("\((program.source.path as NSString).lastPathComponent)@\(start)")
+        }
+        defer { if Self.tracesExecution, !Self.traceStack.isEmpty { Self.traceStack.removeLast() } }
+        guard !isTornDown, let dispatcher else { return .null }
+        var stack = arguments.reversed().map(MakiVariable.temporary)
+        var callStack: [Int] = []
+        var instructionPointer = start
+        var instructionCount = 0
+        var allocatedBytes = stack.count * 32
+
+        func failure(_ code: WalDiagnosticCode, _ message: String) -> WalFailure {
+            WalFailure(WalDiagnostic(code, message, location: program.source))
+        }
+        func argument(_ instruction: MakiInstruction, variable: Bool = false) throws -> Int {
+            switch instruction.argument {
+            case .variable(let value) where variable: return value
+            case .method(let value) where !variable: return value
+            case .type(let value) where !variable: return value
+            case .instruction(let value) where !variable: return value
+            default: throw failure(.invalidScript, "MAKI opcode \(instruction.opcode) has an invalid argument.")
+            }
+        }
+        func pop() throws -> MakiVariable {
+            guard let value = stack.popLast() else { throw failure(.invalidScript, "MAKI value stack underflow.") }
+            return value
+        }
+        func push(_ value: MakiVariable) throws {
+            guard stack.count < limits.maximumStackValues else {
+                throw failure(.scriptBudgetExceeded, "MAKI value stack exceeds \(limits.maximumStackValues) entries.")
+            }
+            stack.append(value)
+        }
+        func numericResult(_ lhs: MakiValue, _ rhs: MakiValue, operation: (Double, Double) -> Double) -> MakiValue {
+            if case .integer = lhs, case .integer = rhs {
+                return .integer(Int32(clamping: Int64(operation(lhs.doubleValue, rhs.doubleValue))))
+            }
+            return .double(operation(lhs.doubleValue, rhs.doubleValue))
+        }
+
+        while instructionPointer >= 0, instructionPointer < program.instructions.count {
+            instructionCount += 1
+            guard instructionCount <= limits.maximumInstructionsPerEvent else {
+                throw failure(.scriptBudgetExceeded, "MAKI event exceeded \(limits.maximumInstructionsPerEvent) instructions.")
+            }
+            guard allocatedBytes <= limits.maximumAllocatedBytesPerEvent else {
+                throw failure(.scriptBudgetExceeded, "MAKI event exceeded its \(limits.maximumAllocatedBytesPerEvent)-byte allocation budget.")
+            }
+
+            let instruction = program.instructions[instructionPointer]
+            var next = instructionPointer + 1
+            if let needle = Self.traceFilter, Self.traceBudget > 0,
+               (program.parameter ?? "").lowercased().contains(needle)
+                || program.source.path.lowercased().contains(needle) {
+                Self.traceBudget -= 1
+                // The program tag matters as much as the instruction: a needle like a XUI parameter
+                // matches several programs at once, and their instruction indices interleave into one
+                // stream that reads as a single program taking impossible jumps.
+                print("MAKI [\((program.source.path as NSString).lastPathComponent)"
+                      + "#\(program.parameter ?? "-")/\(program.instructions.count)] "
+                      + "\(instructionPointer): op\(instruction.opcode) "
+                      + "top=\(stack.last.map { $0.value.stringValue } ?? "-") "
+                      + "under=\(stack.count > 1 ? stack[stack.count - 2].value.stringValue : "-")")
+            }
+            switch instruction.opcode {
+            case 1:
+                try push(program.variables[try argument(instruction, variable: true)])
+            case 2:
+                _ = try pop()
+            case 3:
+                let target = program.variables[try argument(instruction, variable: true)]
+                target.value = Self.coerced(try pop().value, to: target.declaredKind)
+            case 8, 9:
+                let rhs = try pop().value
+                let lhs = try pop().value
+                let equal = Self.valuesAreEqual(lhs, rhs)
+                try push(.temporary(.boolean(instruction.opcode == 8 ? equal : !equal)))
+            case 10, 11, 12, 13:
+                let rhs = try pop().value.doubleValue
+                let lhs = try pop().value.doubleValue
+                let result: Bool
+                switch instruction.opcode {
+                case 10: result = lhs > rhs
+                case 11: result = lhs >= rhs
+                case 12: result = lhs < rhs
+                default: result = lhs <= rhs
+                }
+                try push(.temporary(.boolean(result)))
+            case 16:
+                if !(try pop().value.truthy) { next = try argument(instruction) }
+            case 17:
+                if try pop().value.truthy { next = try argument(instruction) }
+            case 18:
+                next = try argument(instruction)
+            case 104:
+                // Dynamic `Member` access: pops the member name and its owning object, and pushes the
+                // member's storage as an lvalue (the compiler emits the declared type as the immediate).
+                guard case .valueKind(let kind, let classGUID) = instruction.argument else {
+                    throw failure(.invalidScript, "MAKI member access is missing its value type.")
+                }
+                let name = try pop().value.stringValue
+                let owner = try pop().value
+                guard case .object(let reference) = owner else {
+                    // A member on a **null** object is tolerated exactly as a method call on one is
+                    // (see the null receiver a dozen lines below): the read gives the declared type's
+                    // default and the write goes nowhere. Skins rely on it — ClassicPro's tab strip
+                    // opens a click with `closeTab(lastActiveT)`, and on the very first click
+                    // `lastActiveT` is still NULL while `closeTab` reads `.ID` off it. Throwing took
+                    // the whole handler down with it, so no tab could ever be activated.
+                    //
+                    // Any *other* non-object owner still fails closed: MAKI's compiler cannot emit a
+                    // member access on an integer, so one appearing here means the stack is not what
+                    // this instruction thinks it is, and carrying on would build storage on a lie.
+                    guard case .null = owner else {
+                        throw failure(.invalidScript,
+                                      "MAKI member '\(name)' was accessed on a non-object value.")
+                    }
+                    try push(Self.detachedMember(kind: kind, classGUID: classGUID))
+                    break
+                }
+                try push(try member(name, on: reference, kind: kind, classGUID: classGUID))
+            case 24, 112:
+                let methodIndex = try argument(instruction)
+                let method = program.methods[methodIndex]
+                let classGUID = program.classes.indices.contains(method.classIndex)
+                    ? program.classes[method.classIndex] : nil
+                guard let signature = dispatcher.signature(for: method.name, classGUID: classGUID) else {
+                    throw failure(.unsupportedScriptCapability, "Winamp Modern runtime does not support method '\(method.name)'.")
+                }
+                var arguments: [MakiValue] = []
+                arguments.reserveCapacity(signature.argumentCount)
+                for _ in 0..<signature.argumentCount { arguments.append(try pop().value) }
+                let receiver = try pop()
+                guard case .object(let object) = receiver.value else {
+                    // Winamp ignores a call on a null object and carries on; skins ship with such
+                    // calls (MMD3 checks menu commands from a function that also runs before the menu
+                    // is built). Aborting the whole event instead would take every later statement in
+                    // `onScriptLoaded` — the entire skin's wiring — down with it.
+                    try push(.temporary(dispatcher.nullReceiverResult(for: method.name)))
+                    break
+                }
+                let result = try dispatcher.invoke(method: method.name, on: object,
+                                                   arguments: arguments, program: program)
+                if case .string(let string) = result { allocatedBytes += string.utf8.count }
+                try push(.temporary(result))
+            case 25:
+                guard callStack.count < limits.maximumCallDepth else {
+                    throw failure(.scriptBudgetExceeded, "MAKI call depth exceeds \(limits.maximumCallDepth).")
+                }
+                if Self.tracesExecution {
+                    print("MAKI call \((program.source.path as NSString).lastPathComponent) "
+                          + "@\(start) \(instructionPointer) -> \((try? argument(instruction)) ?? -1)")
+                }
+                callStack.append(next)
+                next = try argument(instruction)
+            case 33:
+                guard let returnAddress = callStack.popLast() else {
+                    lastInstructionCount = instructionCount
+                    if Self.tracesExecution {
+                        print("MAKI return \((program.source.path as NSString).lastPathComponent) "
+                              + "@\(start) at \(instructionPointer)")
+                    }
+                    return stack.last?.value ?? .null
+                }
+                next = returnAddress
+            case 40:
+                completionCount &+= 1
+            case 48:
+                let source = try pop()
+                let destination = try pop()
+                destination.value = Self.coerced(source.value, to: destination.declaredKind)
+                try push(source)
+            case 56, 57, 58, 59:
+                let value = try pop()
+                let old = value.value.integerValue
+                let delta: Int32 = (instruction.opcode == 56 || instruction.opcode == 58) ? 1 : -1
+                value.value = .integer(old &+ delta)
+                let result = (instruction.opcode == 56 || instruction.opcode == 57) ? old : old &+ delta
+                try push(.temporary(.integer(result)))
+            case 64, 65, 66, 67, 68:
+                let rhs = try pop().value
+                let lhs = try pop().value
+                let result: MakiValue
+                if instruction.opcode == 64,
+                   case .string(let left) = lhs, case .string(let right) = rhs {
+                    result = .string(left + right)
+                    allocatedBytes += left.utf8.count + right.utf8.count
+                } else {
+                    switch instruction.opcode {
+                    case 64: result = numericResult(lhs, rhs, operation: +)
+                    case 65: result = numericResult(lhs, rhs, operation: -)
+                    case 66: result = numericResult(lhs, rhs, operation: *)
+                    case 67:
+                        guard rhs.doubleValue != 0 else { throw failure(.invalidScript, "MAKI division by zero.") }
+                        // Division is the one operator that is **always** real, whatever the operands
+                        // are. MAKI is statically typed and its compiler emits no cast: multipass's
+                        // seek bar is `Float pct = mapValue / 255 * 100;` over two Ints, and the
+                        // `seekTo(length * (pos / 255))` beside it is the same shape — read as integer
+                        // division both are 0, so clicking the seek bar always sought to 0:00 and its
+                        // "SEEK TO:" readout always said 0:00. Truncation still happens, but where the
+                        // language puts it: on the **store** into a declared Int (see opcode 48/3),
+                        // and on any Int the value is passed to.
+                        result = .double(lhs.doubleValue / rhs.doubleValue)
+                    default:
+                        guard rhs.integerValue != 0 else { throw failure(.invalidScript, "MAKI modulo by zero.") }
+                        result = .integer(lhs.integerValue % rhs.integerValue)
+                    }
+                }
+                try push(.temporary(result))
+            case 72, 73, 88, 89, 90, 91:
+                let rhs = try pop().value.integerValue
+                let lhs = try pop().value.integerValue
+                let result: Int32
+                switch instruction.opcode {
+                case 72: result = lhs & rhs
+                case 73: result = lhs | rhs
+                case 88, 90: result = lhs << (rhs & 31)
+                default: result = lhs >> (rhs & 31)
+                }
+                try push(.temporary(.integer(result)))
+            case 74:
+                try push(.temporary(.boolean(!(try pop().value.truthy))))
+            case 76:
+                // Unary minus keeps the operand's type. Negating through `integerValue` truncated
+                // every fractional value to 0: Defix's VU needle computes its angle as
+                // `range * -(level / 127) + range`, so `-(0.29)` became `-0` and the needle had
+                // exactly two positions — full rest below the divisor and full deflection above it.
+                switch try pop().value {
+                case .integer(let value): try push(.temporary(.integer(0 &- value)))
+                case .boolean(let value): try push(.temporary(.integer(value ? -1 : 0)))
+                case .float(let value): try push(.temporary(.float(-value)))
+                case .double(let value): try push(.temporary(.double(-value)))
+                case .string(let value): try push(.temporary(.integer(-(Int32(value) ?? 0))))
+                case .null, .object: try push(.temporary(.integer(0)))
+                }
+            case 80, 81:
+                let rhs = try pop().value
+                let lhs = try pop().value
+                let result = instruction.opcode == 80 ? (lhs.truthy && rhs.truthy) : (lhs.truthy || rhs.truthy)
+                try push(.temporary(.boolean(result)))
+            case 96:
+                let classIndex = try argument(instruction)
+                guard let classGUID = program.classGUID(atIndex: classIndex) else {
+                    throw failure(.unsupportedScriptCapability,
+                                  "MAKI 'new' names class \(classIndex), which the program does not declare.")
+                }
+                try push(.temporary(.object(try dispatcher.makeObject(classGUID: classGUID, program: program))))
+                allocatedBytes += 128
+            case 97:
+                // `delete obj` — destroys the object but is still an *expression*, so the compiler
+                // emits its own discard pop straight after (`push; delete; pop`). Popping here as
+                // well underflowed the stack and killed the rest of the event: ClassicPro's
+                // `mainmenu.maki` reads its colours out of a `Map` and then deletes it, three
+                // statements into `onScriptLoaded`.
+                let target = stack.last?.value
+                if case .object(let reference) = target {
+                    objectMemberCount -= objectMembers.removeValue(forKey: reference)?.count ?? 0
+                    dispatcher.releaseObject(reference)
+                }
+            default:
+                throw failure(.unsupportedScriptCapability, "Unsupported MAKI opcode \(instruction.opcode).")
+            }
+            instructionPointer = next
+        }
+        lastInstructionCount = instructionCount
+        return stack.last?.value ?? .null
+    }
+
+    func teardown() {
+        dispatcher = nil
+        objectMembers.removeAll()
+        objectMemberCount = 0
+        isTornDown = true
+    }
+
+    /// Resolve (creating on first touch) the storage for `name` on `object`, typed by the member's
+    /// declaration. Returned as an lvalue so reads and assignments both hit the same slot.
+    /// Storage for a member of a null object: a fresh variable belonging to nothing, so it costs no
+    /// budget and cannot be read back. See the `case 104` null-owner path.
+    private static func detachedMember(kind: MakiValueKind, classGUID: String?) -> MakiVariable {
+        MakiVariable(declaredKind: kind, classGUID: classGUID, value: defaultValue(of: kind))
+    }
+
+    private static func defaultValue(of kind: MakiValueKind) -> MakiValue {
+        switch kind {
+        case .integer: return .integer(0)
+        case .boolean: return .boolean(false)
+        case .float: return .float(0)
+        case .double: return .double(0)
+        case .string: return .string("")
+        case .null, .object: return .null
+        }
+    }
+
+    private func member(_ name: String, on object: MakiObjectReference,
+                        kind: MakiValueKind, classGUID: String? = nil) throws -> MakiVariable {
+        let key = name.lowercased()
+        if let existing = objectMembers[object]?[key] { return existing }
+        guard objectMemberCount < limits.maximumObjectMembers else {
+            throw WalFailure(WalDiagnostic(.scriptBudgetExceeded,
+                                           "MAKI skin exceeds \(limits.maximumObjectMembers) object members."))
+        }
+        let variable = MakiVariable(declaredKind: kind, classGUID: classGUID,
+                                    value: Self.defaultValue(of: kind))
+        objectMembers[object, default: [:]][key] = variable
+        objectMemberCount += 1
+        return variable
+    }
+}

@@ -1,0 +1,1778 @@
+import Foundation
+import ImageIO
+
+struct WasabiResourceLimits: Equatable {
+    var maximumImageWidth = 8_192
+    var maximumImageHeight = 8_192
+    var maximumImagePixels = 32_000_000
+    var maximumFontPointSize = 512.0
+    var maximumScriptSize = 4 * 1_024 * 1_024
+
+    static let production = WasabiResourceLimits()
+}
+
+struct WalResourceDefinition {
+    let kind: String
+    let identifier: String?
+    let logicalFile: String?
+    let attributes: [String: String]
+    let source: WalSourceLocation
+    /// Created by the engine for an attribute that named an image **file**, not read from a
+    /// `<bitmap>` the skin wrote. It is the whole file with no crop and no gamma group, so a caller
+    /// that needs a *declared* resource — `fontSheet`, which must carry the font's own gamma group —
+    /// has to be able to tell the two apart.
+    var isImplicit = false
+}
+
+final class WalResourceRegistry {
+    private(set) var definitions: [WalResourceDefinition] = []
+    private(set) var diagnostics: [WalDiagnostic] = []
+    private var byIdentifier: [String: WalResourceDefinition] = [:]
+    /// The colour-carrying declarations only, indexed separately from everything else.
+    ///
+    /// Wasabi keeps bitmaps and colours in **different tables**, so one id may legitimately name both
+    /// — and skins use that: Big Bento Modern declares `wasabi.list.background` as a `<color>` in
+    /// `system-colors.xml` *and* as a tiled `<bitmap>` in `system-elements.xml`. With one flat table
+    /// the bitmap won, a colour lookup found an image with no `color=` attribute, and every surface
+    /// that asked the skin for its list background fell through to the black literal instead (BB2a).
+    private var colorsByIdentifier: [String: WalResourceDefinition] = [:]
+    private var aliases: [String: String] = [:]
+    /// `fold(_:)` memoized, because it is not the cheap string op it looks like.
+    ///
+    /// `String.folding(options:locale:)` is a full ICU normalization pass with an allocation, and
+    /// every bitmap, colour and font id in the scene goes through it on **every frame** — the
+    /// renderer resolves artwork per object, per draw. `resolved` measured 3.4% of the main
+    /// thread on cPro Bento (B103). Hashing the string to find the cached answer is far less work
+    /// than folding it again.
+    ///
+    /// Never invalidated: the fold of a string does not depend on anything the registry holds, so a
+    /// later `register` or `registerAlias` cannot change an answer already in here.
+    private var foldedIdentifiers: [String: String] = [:]
+
+    /// Ids come from the skin's own XML, so this is a bounded set in practice; the cap only guards
+    /// against a caller resolving generated ids in a loop.
+    private static let maximumFoldedIdentifiers = 4096
+
+    private func folded(_ value: String) -> String {
+        if let cached = foldedIdentifiers[value] { return cached }
+        let key = Self.fold(value)
+        if foldedIdentifiers.count >= Self.maximumFoldedIdentifiers {
+            foldedIdentifiers.removeAll(keepingCapacity: true)
+        }
+        foldedIdentifiers[value] = key
+        return key
+    }
+
+    func register(_ definition: WalResourceDefinition) {
+        definitions.append(definition)
+        guard let identifier = definition.identifier, !identifier.isEmpty else { return }
+        let key = Self.fold(identifier)
+        // A *different* definition replacing an earlier one is worth saying; the same definition read
+        // twice is not. A skin sharing an elements file between two containers re-includes every
+        // resource in it, which is ordinary Winamp practice — 198 of LOBE's 233 findings were this,
+        // and they were what pushed the skin's compatibility level to `degraded` (B29).
+        if let previous = byIdentifier[key], !Self.isSameDefinition(previous, definition) {
+            diagnostics.append(WalDiagnostic(
+                .duplicateIdentifier,
+                "Resource id '\(identifier)' replaces the earlier definition at \(previous.source).",
+                severity: .warning,
+                location: definition.source
+            ))
+        }
+        byIdentifier[key] = definition
+        // Later wins among equals, but a real `<color>` outranks a generated bitmap however late the
+        // bitmap arrives. Ebonite_2_1 declares `wasabi.list.background` as **both**: a `<color>` at
+        // 70,70,70 ("lists/trees item background") and a `$solid` at 237,237,237 ("Tree background
+        // bitmap (tile)"). Its list text is white, so taking the tile painted white on near-white.
+        // The two are different things to Winamp — one is a colour, one is artwork a tree tiles —
+        // and only the first is an answer to "what colour is a list background".
+        if Self.colorRank(definition) > Self.colorRank(colorsByIdentifier[key]) ||
+            (Self.colorRank(definition) == Self.colorRank(colorsByIdentifier[key]) && Self.colorRank(definition) > 0) {
+            colorsByIdentifier[key] = definition
+        }
+    }
+
+    /// How well a declaration answers a **colour** request: a `<color>` best, then one of the
+    /// generated `$solid`/`$gradient` bitmaps whose pixels *are* its `color=` attribute (cPro-Bento
+    /// declares its list background only that way), then not at all.
+    private static func colorRank(_ definition: WalResourceDefinition?) -> Int {
+        guard let definition else { return 0 }
+        if definition.kind.caseInsensitiveCompare("color") == .orderedSame { return 2 }
+        let isGenerated = definition.kind.caseInsensitiveCompare("bitmap") == .orderedSame
+            && definition.attributes["file"]?.hasPrefix("$") == true
+            && definition.attributes["color"] != nil
+        return isGenerated ? 1 : 0
+    }
+
+    /// Whether this id is already spoken for, by a declaration or an `<elementalias>`. An implicit
+    /// bitmap must never displace either.
+    func hasIdentifier(_ identifier: String) -> Bool {
+        let key = folded(identifier)
+        return byIdentifier[key] != nil || aliases[key] != nil
+    }
+
+    /// A bitmap Wasabi creates on the skin's behalf, because an attribute named an image **file**
+    /// where a declared id was expected. It is not a declaration, so it never replaces one, never
+    /// answers a colour request, and never warns about a duplicate — the first path wins and every
+    /// later mention of the same path is the same bitmap.
+    func registerImplicit(_ definition: WalResourceDefinition) {
+        guard let identifier = definition.identifier, !hasIdentifier(identifier) else { return }
+        definitions.append(definition)
+        byIdentifier[Self.fold(identifier)] = definition
+    }
+
+    func warn(_ diagnostic: WalDiagnostic) { diagnostics.append(diagnostic) }
+
+    func definition(identifier: String) -> WalResourceDefinition? { byIdentifier[folded(identifier)] }
+
+    func registerAlias(identifier: String, target: String, source: WalSourceLocation) {
+        let key = Self.fold(identifier)
+        if aliases[key] != nil || byIdentifier[key] != nil {
+            diagnostics.append(WalDiagnostic(.duplicateIdentifier,
+                                             "Resource alias '\(identifier)' replaces an earlier resource.",
+                                             severity: .warning, location: source))
+        }
+        aliases[key] = target
+    }
+
+    func resolvedDefinition(identifier: String) -> WalResourceDefinition? {
+        resolved(identifier: identifier, in: byIdentifier)
+    }
+
+    /// The declaration that answers a **colour** request for this id, which is not always the one
+    /// `resolvedDefinition` answers — see `colorsByIdentifier`. Falls back to the general table so an
+    /// id declared only once behaves exactly as before.
+    func resolvedColorDefinition(identifier: String) -> WalResourceDefinition? {
+        resolved(identifier: identifier, in: colorsByIdentifier)
+            ?? resolvedDefinition(identifier: identifier)
+    }
+
+    private func resolved(identifier: String,
+                          in table: [String: WalResourceDefinition]) -> WalResourceDefinition? {
+        var key = folded(identifier)
+        // The overwhelmingly common case is an id that resolves directly, so neither the cycle
+        // guard's `Set` nor its allocation is paid until the lookup actually follows an alias.
+        if let definition = table[key] { return definition }
+        guard aliases[key] != nil else { return nil }
+        var visited: Set<String> = [key]
+        for _ in 0..<64 {
+            guard let target = aliases[key] else { return nil }
+            key = folded(target)
+            guard visited.insert(key).inserted else { return nil }
+            if let definition = table[key] { return definition }
+        }
+        return nil
+    }
+
+    /// What a resource *is*, with no regard for which file it was read from: the kind, the file it
+    /// points at, and its attributes.
+    private static func isSameDefinition(_ lhs: WalResourceDefinition,
+                                         _ rhs: WalResourceDefinition) -> Bool {
+        lhs.kind.caseInsensitiveCompare(rhs.kind) == .orderedSame
+            && lhs.logicalFile == rhs.logicalFile
+            && lhs.attributes == rhs.attributes
+    }
+
+    private static func fold(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+}
+
+struct WasabiGroupDefinition {
+    let identifier: String
+    let xuiTag: String?
+    let inheritedGroup: String?
+    let embeddedXUITag: String?
+    let defaultAttributes: [String: String]
+    let templateChildren: [WalXMLNode]
+    let source: WalSourceLocation
+    /// Where this `<groupdef>` sits in the expanded document, in pre-order. Winamp's parser is
+    /// streaming: a `<group>` instantiates whatever definition of that id has been read *so far*,
+    /// so a skin may redefine an id later in the document without disturbing the groups already
+    /// built from the earlier one. `Int.min` (the default) means "predates the whole document",
+    /// which is what our predefined Wasabi shells and test fixtures want.
+    var documentOrder: Int = .min
+}
+
+struct WasabiResolvedGroupDefinition {
+    let identifier: String
+    let embeddedXUITag: String?
+    let defaultAttributes: [String: String]
+    let templateChildren: [WalXMLNode]
+}
+
+final class WasabiTypeRegistry {
+    let maximumInheritanceDepth: Int
+    private(set) var diagnostics: [WalDiagnostic] = []
+    private var byIdentifier: [String: WasabiGroupDefinition] = [:]
+    /// Every definition registered for an id, in registration (document) order. Only ids a skin
+    /// actually redefines have more than one, so this costs nothing for the common case.
+    private var versionsByIdentifier: [String: [WasabiGroupDefinition]] = [:]
+    private var identifierByXUITag: [String: String] = [:]
+    private var resolvedCache: [String: WasabiResolvedGroupDefinition] = [:]
+
+    init(maximumInheritanceDepth: Int = 64) {
+        self.maximumInheritanceDepth = maximumInheritanceDepth
+    }
+
+    func register(_ definition: WasabiGroupDefinition) {
+        let key = Self.fold(definition.identifier)
+        // Same rule as the resource registry: a re-include of an identical `<groupdef>` is not a
+        // redefinition, and warning about it says nothing about the skin (B29).
+        if let previous = byIdentifier[key], !Self.isSameDefinition(previous, definition) {
+            diagnostics.append(WalDiagnostic(
+                .duplicateIdentifier,
+                "Group definition '\(definition.identifier)' is redefined; the earlier definition at "
+                    + "\(previous.source) still serves the groups declared before this point.",
+                severity: .warning,
+                location: definition.source
+            ))
+        }
+        byIdentifier[key] = definition
+        versionsByIdentifier[key, default: []].append(definition)
+        if let xuiTag = definition.xuiTag, !xuiTag.isEmpty {
+            let xuiKey = Self.fold(xuiTag)
+            if let previousID = identifierByXUITag[xuiKey],
+               Self.fold(previousID) != Self.fold(definition.identifier) {
+                diagnostics.append(WalDiagnostic(
+                    .duplicateIdentifier,
+                    "XUI tag '\(xuiTag)' is reassigned from group '\(previousID)' to '\(definition.identifier)'.",
+                    severity: .warning,
+                    location: definition.source
+                ))
+            }
+            identifierByXUITag[xuiKey] = definition.identifier
+        }
+        resolvedCache.removeAll()
+    }
+
+    /// Every groupdef declaring `windowtype="<type>"`, in the document order they were registered in.
+    ///
+    /// Winamp's **component bucket**: `<componentbucket wndtype="X">` is not markup that draws, it is
+    /// a *collection point* — the parser instantiates every groupdef declaring `windowtype="X"` as
+    /// one of its children, and a script then walks them with `getNumChildren`/`enumChildren`. That
+    /// is the whole mechanism ClassicPro's widgets ride on, and with it unimplemented every bucket
+    /// answered 0 children, so the Widgets Manager listed nothing however far the rest of the chain
+    /// got. Measured: `centro.widgets.{nowplaying,browserpro}.dummy.main` both declare
+    /// `windowtype="centro.widgets.main"`, and `CproTabs.xml`'s bucket asks for exactly that.
+    func identifiers(windowType: String) -> [String] {
+        let wanted = Self.fold(windowType)
+        return byIdentifier.values
+            .filter { $0.defaultAttributes["windowtype"].map(Self.fold) == wanted }
+            .sorted { $0.documentOrder < $1.documentOrder }
+            .map(\.identifier)
+    }
+
+    /// Point an unclaimed XUI tag at a groupdef the skin already declares.
+    ///
+    /// Narrow on purpose: it applies only when the destination groupdef exists *and* nothing has
+    /// claimed the tag, so a skin that declares its own `xuitag=` always wins and no tag is ever
+    /// silently repointed. Used for the conventional `wasabi.standardframe.*` pairs that mmd3 (like
+    /// real Winamp's standard library) leaves to convention. Returns whether the alias was applied.
+    @discardableResult
+    func registerXUITagAlias(_ tag: String, to identifier: String) -> Bool {
+        let tagKey = Self.fold(tag)
+        guard identifierByXUITag[tagKey] == nil, contains(identifier: identifier) else { return false }
+        identifierByXUITag[tagKey] = identifier
+        resolvedCache.removeAll()
+        return true
+    }
+
+    func validateInheritance() throws {
+        for definition in versionsByIdentifier.values.flatMap({ $0 })
+            .sorted(by: { ($0.identifier, $0.documentOrder) < ($1.identifier, $1.documentOrder) }) {
+            _ = try resolved(definition)
+        }
+    }
+
+    /// The definition a `<group>`/XUI-tag instance expands to. `documentOrder` is where the instance
+    /// sits in the expanded document: the definition in force *there* wins, so a later redefinition
+    /// of the same id (T800 gives `player.main.cms` a second body for its shade layout) reaches only
+    /// the groups declared after it, exactly as Winamp's streaming parser does. Pass `nil` for an
+    /// instance with no document position of its own — a script's `System.newGroup`, a synthesized
+    /// node — which takes the newest definition.
+    func definition(forInstance node: WalXMLNode, documentOrder: Int? = nil) -> WasabiGroupDefinition? {
+        if let identifier = identifierByXUITag[Self.fold(node.name)] {
+            return definition(identifier: identifier, documentOrder: documentOrder)
+        }
+        if node.name.caseInsensitiveCompare("group") == .orderedSame,
+           let identifier = node.attribute("id") {
+            return definition(identifier: identifier, documentOrder: documentOrder)
+        }
+        return nil
+    }
+
+    private func definition(identifier: String, documentOrder: Int?) -> WasabiGroupDefinition? {
+        let key = Self.fold(identifier)
+        guard let versions = versionsByIdentifier[key], versions.count > 1, let documentOrder else {
+            return byIdentifier[key]
+        }
+        // Lenient where Winamp is not: a group referenced before any definition of its id gets the
+        // first one rather than nothing, so a forward reference still renders something.
+        return versions.last { $0.documentOrder <= documentOrder } ?? versions.first
+    }
+
+    func contains(identifier: String) -> Bool { byIdentifier[Self.fold(identifier)] != nil }
+
+    /// Whether `tag` is a registered XUI tag (e.g. `Wasabi:MainFrame:NoStatus`). Objects created
+    /// from one receive `onSetXuiParam` for their attributes, the way Wasabi delivers XUI params.
+    func isXUITag(_ tag: String) -> Bool { identifierByXUITag[Self.fold(tag)] != nil }
+
+    func resolved(identifier: String) throws -> WasabiResolvedGroupDefinition {
+        guard let definition = byIdentifier[Self.fold(identifier)] else {
+            throw WalFailure(WalDiagnostic(.missingGroupDefinition, "Group definition '\(identifier)' does not exist."))
+        }
+        return try resolve(definition: definition, stack: [])
+    }
+
+    /// Resolve one specific version of a definition — the one `definition(forInstance:documentOrder:)`
+    /// picked, which is not necessarily the newest.
+    func resolved(_ definition: WasabiGroupDefinition) throws -> WasabiResolvedGroupDefinition {
+        try resolve(definition: definition, stack: [])
+    }
+
+    private func resolve(definition: WasabiGroupDefinition, stack: [String]) throws -> WasabiResolvedGroupDefinition {
+        let identifier = definition.identifier
+        let key = Self.fold(identifier)
+        let cacheKey = "\(key)#\(definition.documentOrder)"
+        if let cached = resolvedCache[cacheKey] { return cached }
+        guard stack.count < maximumInheritanceDepth else {
+            throw WalFailure(WalDiagnostic(.groupInheritanceDepthExceeded, "Group inheritance exceeds \(maximumInheritanceDepth) levels.", location: definition.source))
+        }
+        guard !stack.contains(key) else {
+            let chain = (stack + [key]).joined(separator: " -> ")
+            throw WalFailure(WalDiagnostic(.groupInheritanceCycle, "Group inheritance cycle detected: \(chain).", location: definition.source))
+        }
+
+        var attributes: [String: String] = [:]
+        var children: [WalXMLNode] = []
+        // `embed_xui` controls XUI embedding behavior; it is not an inheritance edge.
+        if let parentReference = definition.inheritedGroup {
+            let parentID = identifierByXUITag[Self.fold(parentReference)] ?? parentReference
+            do {
+                guard let base = self.definition(identifier: parentID, documentOrder: definition.documentOrder) else {
+                    throw WalFailure(WalDiagnostic(.missingGroupDefinition,
+                                                   "Group definition '\(parentID)' does not exist."))
+                }
+                let parent = try resolve(definition: base, stack: stack + [key])
+                attributes.merge(parent.defaultAttributes) { _, new in new }
+                children = parent.templateChildren
+            } catch let failure as WalFailure
+                where failure.diagnostics.allSatisfy({ $0.code == .missingGroupDefinition }) {
+                // Real skins/engines inherit from predefined Wasabi standard-library groups
+                // (`wasabi.*`) that ship inside Winamp, not the skin. The common bases are now seeded
+                // by `registerWasabiStandardLibrary`; this path only fires for a base outside that
+                // curated set. Treat such an unknown base as empty and warn, so the derived group
+                // still resolves. Inheritance cycles and depth overflows still hard-fail above.
+                diagnostics.append(WalDiagnostic(.missingGroupDefinition,
+                    "Group '\(identifier)' inherits unknown predefined group '\(parentReference)'; ignoring that base.",
+                    severity: .warning, location: definition.source))
+            }
+        }
+        attributes.merge(definition.defaultAttributes) { _, new in new }
+        children = Self.merging(inherited: children, with: definition.templateChildren)
+
+        let result = WasabiResolvedGroupDefinition(identifier: definition.identifier,
+                                                   embeddedXUITag: definition.embeddedXUITag,
+                                                   defaultAttributes: attributes,
+                                                   templateChildren: children)
+        resolvedCache[cacheKey] = result
+        return result
+    }
+
+    /// Lay a derived group's template children over the ones it inherited, the way the attribute
+    /// merge beside it already works: a derived child that redeclares an inherited `id` **replaces**
+    /// that child, in the base's place so the draw order is the base's, and any other derived child
+    /// appends. An inherited child the derived group does not redeclare still draws — WMP11-BlueVU
+    /// never redeclares `frame.bottom`, and its bottom border is meant to stay. Appending both lists
+    /// instead built the whole window frame twice.
+    private static func merging(inherited: [WalXMLNode], with derived: [WalXMLNode]) -> [WalXMLNode] {
+        guard !inherited.isEmpty else { return derived }
+        var merged = inherited
+        var indexByIdentifier: [String: Int] = [:]
+        for (index, child) in merged.enumerated() {
+            guard let identifier = child.attribute("id"), !identifier.isEmpty else { continue }
+            indexByIdentifier[fold(identifier)] = index
+        }
+        for child in derived {
+            if let identifier = child.attribute("id"), !identifier.isEmpty,
+               let index = indexByIdentifier[fold(identifier)] {
+                merged[index] = child
+            } else {
+                merged.append(child)
+            }
+        }
+        return merged
+    }
+
+    /// What a `<groupdef>` *is* — its XUI tag, what it inherits, the XUI it embeds, its defaults and
+    /// its whole template subtree — with no regard for the file it was read from.
+    private static func isSameDefinition(_ lhs: WasabiGroupDefinition,
+                                         _ rhs: WasabiGroupDefinition) -> Bool {
+        guard lhs.xuiTag == rhs.xuiTag, lhs.inheritedGroup == rhs.inheritedGroup,
+              lhs.embeddedXUITag == rhs.embeddedXUITag,
+              lhs.defaultAttributes == rhs.defaultAttributes,
+              lhs.templateChildren.count == rhs.templateChildren.count else { return false }
+        for (mine, theirs) in zip(lhs.templateChildren, rhs.templateChildren)
+        where !mine.isStructurallyEqual(to: theirs) {
+            return false
+        }
+        return true
+    }
+
+    private static func fold(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+}
+
+enum WasabiInitializationPass: String, Codable {
+    case resourceRegistration
+    case groupAndXUIRegistration
+    case objectCreation
+    case scriptBinding
+    case initialization
+    case firstPaint
+}
+
+enum WasabiRuntimeState: Equatable {
+    case initialized
+    case awaitingFirstPaint
+    case tornDown
+}
+
+final class WasabiSkinRuntime {
+    let resources: WalResourceRegistry
+    let types: WasabiTypeRegistry
+    let graph: WasabiObjectGraph
+    let scriptBindings: [WasabiScriptBinding]
+    let completedPasses: [WasabiInitializationPass]
+    let loadDiagnostics: [WalDiagnostic]
+    private(set) var state: WasabiRuntimeState = .awaitingFirstPaint
+
+    /// Whether `WinampModernScriptRuntime.start()` has run for this skin. Lives here rather than on
+    /// the script runtime because a `WasabiSceneRenderer` holds the skin, not the scripts, and it is
+    /// the renderer that has to know: a `Wasabi:StandardFrame`'s client group is instantiated by the
+    /// skin's own `standardframe.maki` from an `onSetXuiParam`, so before this is true a window's
+    /// scene is the bare frame with nothing in it (ClassicPro's Widgets Manager: 19 nodes before,
+    /// 30 after). Anything sizing a window from what it contains has to wait for it.
+    private(set) var hasStartedScripts = false
+
+    func markScriptsStarted() { hasStartedScripts = true }
+
+    /// Winamp's thinger (B34): which component icon the skin's `<componentbucket>`s are pointing at,
+    /// and how far the strip is scrolled. Skin-wide — one skin has one thinger however many of its
+    /// layouts and windows draw one.
+    let componentBucket = WinampModernComponentBucketState()
+
+    /// What paints this skin's `<vis>` boxes — Winamp's own analyzer/scope, or one of NullPlayer's
+    /// (B53). Skin-wide for the thinger's reason: one skin draws its visualization in several boxes
+    /// across several containers, and each has its own `WasabiSceneRenderer`.
+    let spectrumAnalyzer = WinampModernSpectrumAnalyzerState()
+
+    /// Diagnostics recorded *after* load — surface classification and synthesis decisions happen once
+    /// the graph exists, and they belong in the same compatibility report as the load-time ones.
+    /// Bounded and de-duplicated: a per-frame scene walk must not grow this without limit.
+    private var postLoadDiagnostics: [WalDiagnostic] = []
+    private var postLoadDiagnosticKeys: Set<String> = []
+    private static let maximumPostLoadDiagnostics = 256
+    private var trustedHostedContainerIDs: Set<WasabiObjectID> = []
+
+    /// Every diagnostic this skin has produced, load-time first.
+    var diagnostics: [WalDiagnostic] { loadDiagnostics + postLoadDiagnostics }
+
+    func record(_ diagnostic: WalDiagnostic) {
+        let key = "\(diagnostic.code.rawValue)\u{1}\(diagnostic.message)\u{1}\(diagnostic.location?.description ?? "")"
+        guard !postLoadDiagnosticKeys.contains(key),
+              postLoadDiagnostics.count < Self.maximumPostLoadDiagnostics else { return }
+        postLoadDiagnosticKeys.insert(key)
+        postLoadDiagnostics.append(diagnostic)
+    }
+
+    /// Instantiates a registered groupdef into the live graph, for MAKI's `System.newGroup`.
+    /// Winamp Modern's window frames are hollow by design: `Wasabi:MainFrame:NoStatus` ships only
+    /// the titlebar/menubar chrome, and `standardframe.maki` builds the client area at runtime from
+    /// the frame's `content=` XUI param. Without this the main window renders as bare chrome.
+    /// Set by `WasabiSkinInitializer`, which owns the expansion machinery (type registry, object
+    /// limits, script path resolution).
+    var instantiateGroup: ((_ identifier: String, _ parent: WasabiObject) throws -> WasabiObject)?
+
+    /// Trusted, host-only request-time window growth. Unlike `instantiateGroup`, this closure is not
+    /// reachable from MAKI and accepts only the typed NullPlayer hosted-window description.
+    var instantiateHostedWindow: ((WinampModernHostedWindowInstantiation) throws -> WasabiObject)?
+
+    /// A **second live copy** of a container the skin declared `dynamic="1"`, for MAKI's
+    /// `System.newDynamicContainer` (B110). Winamp builds a fresh instance per call so a skin can
+    /// have several of the same window at once; Ebonite's standard frame needs one overlay per framed
+    /// window, and answering all five with the one declared root put its playlist, library and frame
+    /// windows at a single rect. Answers `nil` when the id names no `dynamic="1"` container.
+    ///
+    /// The instance is a real root in the graph with its own `stableID` and a **distinct** `id`
+    /// (`sc.alphaframe#2`), which is what keeps one window per container id true for everything that
+    /// looks a window up by that id — see `dynamicInstanceAttribute`.
+    var instantiateContainer: ((_ declaredID: String) throws -> WasabiObject?)?
+
+    /// Marks a container root built by `instantiateContainer` rather than declared by the skin, and
+    /// carries the id it was declared under. The sibling of `WinampModernContainerTopology`'s
+    /// `synthesizedAttribute`: a window that exists because a script asked for it is not part of the
+    /// skin's own arrangement, so it is not tiled, not a snap target, not persisted and not in a menu.
+    static let dynamicInstanceAttribute = "nullplayer_dynamic_instance"
+
+    func isTrustedHostedHolder(_ object: WasabiObject) -> Bool {
+        var node: WasabiObject? = object
+        while let current = node {
+            if current.typeName.caseInsensitiveCompare("container") == .orderedSame {
+                return trustedHostedContainerIDs.contains(current.stableID)
+            }
+            node = current.parent
+        }
+        return false
+    }
+
+    func discardHostedWindow(_ root: WasabiObject) {
+        trustedHostedContainerIDs.remove(root.stableID)
+        graph.discardSubtree(root)
+    }
+
+    fileprivate func registerHostedWindow(_ root: WasabiObject) {
+        trustedHostedContainerIDs.insert(root.stableID)
+    }
+
+    init(resources: WalResourceRegistry, types: WasabiTypeRegistry, graph: WasabiObjectGraph,
+         scriptBindings: [WasabiScriptBinding], completedPasses: [WasabiInitializationPass],
+         diagnostics: [WalDiagnostic]) {
+        self.resources = resources
+        self.types = types
+        self.graph = graph
+        self.scriptBindings = scriptBindings
+        self.completedPasses = completedPasses
+        self.loadDiagnostics = diagnostics
+    }
+
+    func markFirstPaintComplete() {
+        guard state == .awaitingFirstPaint else { return }
+        state = .initialized
+        _ = graph.consumeInvalidations()
+    }
+
+    func teardown() {
+        guard state != .tornDown else { return }
+        graph.teardown()
+        state = .tornDown
+    }
+}
+
+final class WasabiSkinInitializer {
+    private struct PendingScript {
+        weak var owner: WasabiObject?
+        let rawPath: String
+        let parameter: String?
+        let source: WalSourceLocation
+    }
+
+    private struct PendingMetaCommand {
+        weak var owner: WasabiObject?
+        let kind: String
+        let attributes: [String: String]
+    }
+
+    let vfs: WalVirtualFileSystem
+    let maximumObjectCount: Int
+    let resourceLimits: WasabiResourceLimits
+
+    /// Where each container-root `id` was first declared, for B96's two-cause duplicate rule.
+    private var containerRootIdentities: [String: WalSourceLocation] = [:]
+    /// Findings raised while creating objects. The registries carry their own; this one belongs to
+    /// the initializer.
+    private var containerDiagnostics: [WalDiagnostic] = []
+
+    private enum ContainerRootIdentity {
+        /// The first container to claim this id.
+        case keep
+        /// The same declaration reached twice through two include paths: drop it.
+        case reinclude
+        /// A genuinely separate declaration sharing the id: give it one of its own.
+        case rename(String)
+    }
+
+    private func resolveContainerRootIdentity(declaredID: String,
+                                              location: WalSourceLocation) -> ContainerRootIdentity {
+        let key = declaredID.lowercased()
+        guard let first = containerRootIdentities[key] else {
+            containerRootIdentities[key] = location
+            return .keep
+        }
+        guard first != location else { return .reinclude }
+        var suffix = 2
+        var unique = "\(declaredID)#\(suffix)"
+        while containerRootIdentities[unique.lowercased()] != nil {
+            suffix += 1
+            unique = "\(declaredID)#\(suffix)"
+        }
+        containerRootIdentities[unique.lowercased()] = location
+        return .rename(unique)
+    }
+
+    /// The resource registry of the skin being built, for the few passes that need to ask what a
+    /// bitmap's declared size is rather than what its id is. Set once per `initialize` and left in
+    /// place afterwards, because the same initializer serves the runtime's later expansions
+    /// (`newGroup`, a dynamic container, a synthesized hosted window) and they build the same markup.
+    private var resourceRegistry: WalResourceRegistry?
+
+    init(vfs: WalVirtualFileSystem, maximumObjectCount: Int = 100_000,
+         resourceLimits: WasabiResourceLimits = .production) {
+        self.vfs = vfs
+        self.maximumObjectCount = maximumObjectCount
+        self.resourceLimits = resourceLimits
+    }
+
+    func initialize(document: WalExpandedXMLDocument) throws -> WasabiSkinRuntime {
+        containerRootIdentities.removeAll()
+        containerDiagnostics.removeAll()
+        var passes: [WasabiInitializationPass] = []
+        let resources = WalResourceRegistry()
+        resourceRegistry = resources
+        var validatedImages: Set<String> = []
+        var undecodableImages: Set<String> = []
+        try registerResources(in: document.roots, registry: resources,
+                              validatedImages: &validatedImages, undecodableImages: &undecodableImages)
+        registerImplicitBitmaps(in: document.roots, registry: resources,
+                                validatedImages: &validatedImages, undecodableImages: &undecodableImages)
+        passes.append(.resourceRegistration)
+
+        let types = WasabiTypeRegistry()
+        // Register the skin/engine groupdefs first so an explicit definition always wins over our
+        // predefined shell, then backfill any predefined Wasabi bases the skin inherits but omits.
+        let documentOrder = documentOrder(of: document.roots)
+        registerTypes(in: document.roots, registry: types, documentOrder: documentOrder)
+        // Conventional tag → groupdef pairs before the shells: a skin that declares
+        // `wasabi.standardframe.statusbar` without an `xuitag` (mmd3 does, exactly as real Winamp's
+        // standard library expects) must still answer to `<Wasabi:StandardFrame:Status>`, and it must
+        // win over the artwork-less shell registered next.
+        for pair in WasabiStandardFrames.conventionalXUITags {
+            types.registerXUITagAlias(pair.tag, to: pair.identifier)
+        }
+        registerWasabiStandardLibrary(in: types)
+        try types.validateInheritance()
+        passes.append(.groupAndXUIRegistration)
+
+        let graph = WasabiObjectGraph()
+        var pendingScripts: [PendingScript] = []
+        var pendingMetaCommands: [PendingMetaCommand] = []
+        var createdCount = 0
+        try createObjects(from: document.roots, parent: nil, graph: graph, types: types,
+                          pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                          definitionStack: [], createdCount: &createdCount,
+                          documentOrder: documentOrder, enclosingOrder: nil)
+        applyMetaCommands(pendingMetaCommands)
+        // Buckets are filled *before* scripts are bound, so a `<groupdef>` a bucket brings in has its
+        // own `<script>` collected into the same `pendingScripts` batch as the rest of the skin and
+        // comes up at load, not later. Anything else would leave a widget's script unbound.
+        try populateComponentBuckets(graph: graph, types: types,
+                                     pendingScripts: &pendingScripts,
+                                     pendingMetaCommands: &pendingMetaCommands,
+                                     createdCount: &createdCount, documentOrder: documentOrder)
+        passes.append(.objectCreation)
+
+        let bindings = try bindScripts(pendingScripts)
+        for (pending, binding) in zip(pendingScripts, bindings) { pending.owner?.addScriptBinding(binding) }
+        passes.append(.scriptBinding)
+
+        // A resting `alpha` the markup should have declared and did not, written onto the object
+        // itself rather than supplied at paint time: the skin's own fade reads the attribute back
+        // (`gotoTarget()` eases from whatever `alpha` says), so a value only the renderer knew about
+        // would leave the script animating 255 → 255 and the fade dead in both directions.
+        // `WasabiSkinQuirks` decides; nothing here knows which objects it names.
+        for object in graph.allObjectsUnordered {
+            guard let resting = WasabiSkinQuirks.restingAlpha(for: object) else { continue }
+            _ = object.setAttribute("alpha", value: String(resting))
+        }
+        passes.append(.initialization)
+        graph.markAllDirty(.all)
+        passes.append(.firstPaint)
+
+        let runtime = WasabiSkinRuntime(
+            resources: resources,
+            types: types,
+            graph: graph,
+            scriptBindings: bindings,
+            completedPasses: passes,
+            diagnostics: document.diagnostics + resources.diagnostics + types.diagnostics
+                + containerDiagnostics
+        )
+        // The closure retains this initializer so runtime expansion keeps the same VFS, limits, and
+        // object budget as load time. `createdCount` continues from the load-time total, so scripts
+        // cannot grow the graph past `maximumObjectCount` by instantiating in a loop.
+        runtime.instantiateGroup = { [self] identifier, parent in
+            try instantiateGroupAtRuntime(identifier: identifier, parent: parent,
+                                          graph: graph, types: types, createdCount: &createdCount)
+        }
+        runtime.instantiateHostedWindow = { [self] request in
+            let root = try instantiateHostedWindowAtRuntime(request, graph: graph, types: types,
+                                                            createdCount: &createdCount)
+            runtime.registerHostedWindow(root)
+            return root
+        }
+        let dynamicNodes = Self.dynamicContainerNodes(in: document.roots)
+        runtime.instantiateContainer = { [self] declaredID in
+            guard let node = dynamicNodes[declaredID.lowercased()] else { return nil }
+            return try instantiateContainerAtRuntime(node, declaredID: declaredID, graph: graph,
+                                                     types: types, createdCount: &createdCount,
+                                                     documentOrder: documentOrder)
+        }
+        return runtime
+    }
+
+    /// Instantiate each `<componentbucket wndtype="X">`'s members: every groupdef declaring
+    /// `windowtype="X"`. See `WasabiTypeRegistry.identifiers(windowType:)` for what the tag means.
+    ///
+    /// A bucket that names a type nothing declares stays empty, which is the correct answer and a
+    /// common one — ClassicPro's drawer bucket is `wndtype="centro.widgets.drawer"` and the engine
+    /// ships no widget for that place at all, which is why its menu reads *"No widgets found for
+    /// this view!"*.
+    private func populateComponentBuckets(graph: WasabiObjectGraph, types: WasabiTypeRegistry,
+                                          pendingScripts: inout [PendingScript],
+                                          pendingMetaCommands: inout [PendingMetaCommand],
+                                          createdCount: inout Int,
+                                          documentOrder: [ObjectIdentifier: Int]) throws {
+        var buckets: [WasabiObject] = []
+        func collect(_ object: WasabiObject) {
+            if object.typeName.caseInsensitiveCompare("componentbucket") == .orderedSame,
+               let type = object.attributes["wndtype"], !type.isEmpty {
+                buckets.append(object)
+            }
+            for child in object.children { collect(child) }
+        }
+        for root in graph.roots { collect(root) }
+        for bucket in buckets {
+            guard let type = bucket.attributes["wndtype"] else { continue }
+            for identifier in types.identifiers(windowType: type) {
+                let node = WalXMLNode(name: "group", attributes: ["id": identifier],
+                                      location: bucket.source)
+                try createObjects(from: [node], parent: bucket, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: [], createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nil)
+            }
+        }
+    }
+
+    /// Every `<container dynamic="1">` in the document, by lowercased id — the only ones a script may
+    /// ask `newDynamicContainer` for a second copy of. Kept as **XML**, not as a graph clone: an
+    /// instance has to go through the same groupdef expansion and script binding the declared one did,
+    /// or its own `standardframe.maki` would never run.
+    private static func dynamicContainerNodes(in roots: [WalXMLNode]) -> [String: WalXMLNode] {
+        var found: [String: WalXMLNode] = [:]
+        func walk(_ nodes: [WalXMLNode]) {
+            for node in nodes {
+                if node.name.caseInsensitiveCompare("container") == .orderedSame,
+                   node.attributes["dynamic"] == "1",
+                   let id = node.attributes["id"]?.lowercased(), !id.isEmpty,
+                   found[id] == nil {
+                    found[id] = node
+                }
+                walk(node.children)
+            }
+        }
+        walk(roots)
+        return found
+    }
+
+    /// How many live copies of one declared container a skin may have. Ebonite wants five (one per
+    /// framed window); the cap is here because the id a script passes is skin input and the call sits
+    /// on a show/hide path, so a skin that never releases one must not be able to grow the graph a
+    /// window at a time.
+    private static let maximumDynamicContainerInstances = 12
+
+    private func instantiateContainerAtRuntime(_ node: WalXMLNode, declaredID: String,
+                                               graph: WasabiObjectGraph, types: WasabiTypeRegistry,
+                                               createdCount: inout Int,
+                                               documentOrder: [ObjectIdentifier: Int]) throws -> WasabiObject {
+        let existing = graph.roots.filter {
+            $0.typeName.caseInsensitiveCompare("container") == .orderedSame &&
+            ($0.xmlID?.caseInsensitiveCompare(declaredID) == .orderedSame ||
+             $0.attributes[WasabiSkinRuntime.dynamicInstanceAttribute]?
+                .caseInsensitiveCompare(declaredID) == .orderedSame)
+        }
+        guard existing.count < Self.maximumDynamicContainerInstances else {
+            throw WalFailure(WalDiagnostic(.unsupportedScriptCapability,
+                                           "Skin asked for more than \(Self.maximumDynamicContainerInstances) "
+                                               + "live copies of container '\(declaredID)'.",
+                                           location: node.location))
+        }
+        var attributes = node.attributes
+        attributes["id"] = "\(declaredID)#\(existing.count + 1)"
+        attributes[WasabiSkinRuntime.dynamicInstanceAttribute] = declaredID
+        // Never opened by the arrangement: the script that asked for this copy is the only thing that
+        // knows where it belongs, and it shows it itself.
+        attributes["default_visible"] = "0"
+        let instanceNode = WalXMLNode(name: node.name, attributes: attributes, location: node.location,
+                                      children: node.children, attributeOrder: node.attributeOrder)
+        let rootsBefore = Set(graph.roots.map(\.stableID))
+        var pendingScripts: [PendingScript] = []
+        var pendingMetaCommands: [PendingMetaCommand] = []
+        do {
+            try createObjects(from: [instanceNode], parent: nil, graph: graph, types: types,
+                              pendingScripts: &pendingScripts,
+                              pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: [], createdCount: &createdCount,
+                              documentOrder: documentOrder, enclosingOrder: nil)
+            applyMetaCommands(pendingMetaCommands)
+            let bindings = try bindScripts(pendingScripts)
+            for (pending, binding) in zip(pendingScripts, bindings) {
+                pending.owner?.addScriptBinding(binding)
+            }
+            guard let root = graph.roots.first(where: {
+                !rootsBefore.contains($0.stableID) && $0.xmlID == attributes["id"]
+            }) else {
+                throw WalFailure(WalDiagnostic(.malformedXML,
+                                               "Dynamic container '\(declaredID)' created no container.",
+                                               location: node.location))
+            }
+            return root
+        } catch {
+            for root in graph.roots where !rootsBefore.contains(root.stableID) {
+                graph.discardSubtree(root)
+            }
+            throw error
+        }
+    }
+
+    private func instantiateHostedWindowAtRuntime(
+        _ request: WinampModernHostedWindowInstantiation,
+        graph: WasabiObjectGraph,
+        types: WasabiTypeRegistry,
+        createdCount: inout Int
+    ) throws -> WasabiObject {
+        let id = request.definition.id
+        let location = WalSourceLocation(path: WasabiSurfaceSynthesizer.sourcePath)
+        let holder = WalXMLNode(name: "component", attributes: [
+            "id": "\(id.contentGroupIdentifier).surface",
+            "param": id.holderReference,
+            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+        ], location: location)
+        types.register(WasabiGroupDefinition(
+            identifier: id.contentGroupIdentifier,
+            xuiTag: nil,
+            inheritedGroup: nil,
+            embeddedXUITag: nil,
+            defaultAttributes: [:],
+            templateChildren: [holder],
+            source: location
+        ))
+        try types.validateInheritance()
+
+        var layoutAttributes: [String: String] = [
+            "id": "normal",
+            "default_w": String(Int(request.defaultSize.width)),
+            "default_h": String(Int(request.defaultSize.height)),
+            "minimum_w": String(Int(request.minimumSize.width)),
+            "minimum_h": String(Int(request.minimumSize.height)),
+        ]
+        if let maximum = request.definition.maximumSize {
+            if maximum.width.isFinite { layoutAttributes["maximum_w"] = String(Int(maximum.width)) }
+            if maximum.height.isFinite { layoutAttributes["maximum_h"] = String(Int(maximum.height)) }
+        }
+        let frameNodes = WasabiSurfaceSynthesizer.frameNodes(
+            frame: WasabiSurfaceSynthesizer.Frame(groupIdentifier: request.frame.groupIdentifier,
+                                                  xuiTag: request.frame.xuiTag,
+                                                  hasArtwork: request.frame.hasArtwork,
+                                                  exemplar: request.frame.exemplar,
+                                                  scriptClient: request.frame.scriptClient),
+            frameID: "\(id.contentGroupIdentifier).frame",
+            contentGroupID: id.contentGroupIdentifier,
+            componentName: request.definition.title,
+            location: location)
+        let layout = WalXMLNode(name: "layout", attributes: layoutAttributes,
+                                location: location, children: frameNodes)
+        let containerNode = WalXMLNode(name: "container", attributes: [
+            "id": id.containerIdentifier,
+            "name": request.definition.title,
+            "default_visible": "0",
+            WinampModernContainerTopology.synthesizedAttribute: "1",
+        ], location: location, children: [layout])
+
+        let rootsBefore = Set(graph.roots.map(\.stableID))
+        var pendingScripts: [PendingScript] = []
+        var pendingMetaCommands: [PendingMetaCommand] = []
+        do {
+            try createObjects(from: [containerNode], parent: nil, graph: graph, types: types,
+                              pendingScripts: &pendingScripts,
+                              pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: [], createdCount: &createdCount,
+                              documentOrder: [:], enclosingOrder: nil)
+            applyMetaCommands(pendingMetaCommands)
+            let bindings = try bindScripts(pendingScripts)
+            for (pending, binding) in zip(pendingScripts, bindings) {
+                pending.owner?.addScriptBinding(binding)
+            }
+            guard let root = graph.roots.first(where: {
+                !rootsBefore.contains($0.stableID) && $0.xmlID == id.containerIdentifier
+            }) else {
+                throw WalFailure(WalDiagnostic(.malformedXML,
+                                               "Hosted window '\(id.rawValue)' created no container.",
+                                               location: location))
+            }
+            return root
+        } catch {
+            for root in graph.roots where !rootsBefore.contains(root.stableID) {
+                graph.discardSubtree(root)
+            }
+            throw error
+        }
+    }
+
+    /// Expand `identifier`'s groupdef beneath `parent` after load, binding any scripts it declares
+    /// so nested components (display, seek, vis…) come up exactly as they would have at load time.
+    private func instantiateGroupAtRuntime(identifier: String, parent: WasabiObject,
+                                           graph: WasabiObjectGraph, types: WasabiTypeRegistry,
+                                           createdCount: inout Int) throws -> WasabiObject {
+        guard types.contains(identifier: identifier) else {
+            throw WalFailure(WalDiagnostic(.missingGroupDefinition,
+                                           "Script requested unknown group '\(identifier)'.",
+                                           location: parent.source))
+        }
+        let node = WalXMLNode(name: "group", attributes: ["id": identifier], location: parent.source)
+        let existingChildren = parent.children.count
+        var pendingScripts: [PendingScript] = []
+        var pendingMetaCommands: [PendingMetaCommand] = []
+        try createObjects(from: [node], parent: parent, graph: graph, types: types,
+                          pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                          definitionStack: [], createdCount: &createdCount,
+                          documentOrder: [:], enclosingOrder: nil)
+        applyMetaCommands(pendingMetaCommands)
+        let bindings = try bindScripts(pendingScripts)
+        for (pending, binding) in zip(pendingScripts, bindings) { pending.owner?.addScriptBinding(binding) }
+        guard parent.children.count > existingChildren else {
+            throw WalFailure(WalDiagnostic(.missingGroupDefinition,
+                                           "Group '\(identifier)' expanded to no objects.",
+                                           location: parent.source))
+        }
+        return parent.children[existingChildren]
+    }
+
+    private func registerResources(in nodes: [WalXMLNode], registry: WalResourceRegistry,
+                                   validatedImages: inout Set<String>,
+                                   undecodableImages: inout Set<String>) throws {
+        // `gammagroup` is deliberately absent: its `id` is scoped to the enclosing `<gammaset>`, not
+        // the global resource namespace, so registering it made every colour theme after the first
+        // "replace" the previous theme's groups (MMD3 declares 83 themes → 1404 bogus duplicate-id
+        // warnings). `WasabiColorThemeCatalog` reads the gammasets straight from the document.
+        let resourceTags: Set<String> = ["bitmap", "bitmapfont", "truetypefont", "color", "gammaset", "cursor"]
+        for node in nodes {
+            let kind = node.name.lowercased()
+            if kind == "elementalias", let identifier = node.attribute("id"),
+               let target = node.attribute("target"), !identifier.isEmpty, !target.isEmpty {
+                registry.registerAlias(identifier: identifier, target: target, source: node.location)
+            }
+            if resourceTags.contains(kind) {
+                var logicalFile: String?
+                // Bitmap-font `file` values come in **both** forms and a skin picks one freely: the
+                // stock Winamp Modern skin names a previously declared bitmap, MMD3 names a path
+                // ("player/tickerfont2.png"). So a bitmap font resolves its path here like any other
+                // image and simply registers without one when that fails — the identifier stays in
+                // `attributes` and the renderer looks it up in the registry instead. Resolving only
+                // the identifier form dropped every bitmap-font string MMD3 draws.
+                if let rawFile = node.attribute("file"), !rawFile.isEmpty,
+                   // Predefined generated bitmaps (`file="$solid"` / `"$gradient"`) are synthesized
+                   // from their `color`/`w`/`h` attributes, not loaded from the VFS. Keep the marker
+                   // in `attributes`; the renderer generates the pixels on demand.
+                   !rawFile.hasPrefix("$") {
+                    do {
+                        let resolved = try resolveSkinResource(rawFile, source: node.location).logicalPath
+                        logicalFile = resolved
+                        if kind == "bitmap" || kind == "cursor" || kind == "bitmapfont" {
+                            // A dud file two `<bitmap>`s share degrades both, not just the first to
+                            // reach it — without the memo the second would keep a `logicalFile` the
+                            // renderer can never decode.
+                            guard !undecodableImages.contains(resolved) else {
+                                throw Self.undecodableImage(resolved, node.location)
+                            }
+                            if validatedImages.insert(resolved).inserted {
+                                do {
+                                    try validateImage(at: resolved, source: node.location)
+                                } catch let failure as WalFailure
+                                    where failure.diagnostics.allSatisfy({ $0.code == .invalidImageResource }) {
+                                    undecodableImages.insert(resolved)
+                                    throw failure
+                                }
+                            }
+                        }
+                    } catch let failure as WalFailure
+                        where (kind == "bitmap" || kind == "cursor" || kind == "bitmapfont"
+                                || kind == "truetypefont")
+                            && failure.diagnostics.allSatisfy({
+                                $0.code == .resourceMissing
+                                    // A file that exists but is not a decodable image is a content
+                                    // problem, not a security one, and the renderer already answers
+                                    // `nil` for it safely. The Big Bento Modern Windows 10 edition
+                                    // ships a **zero-byte** `window/no_alb_art_shade.png`, and one
+                                    // dud PNG failed the whole skin — it would not load at all.
+                                    // `.imageDimensionsExceeded` stays fatal: that one is the bound.
+                                    || ($0.code == .invalidImageResource && kind != "truetypefont")
+                            }) {
+                        let undecodable = failure.diagnostics.contains { $0.code == .invalidImageResource }
+                        // Real skins and the ClassicPro engine declare optional bitmaps whose image
+                        // files aren't shipped; Winamp tolerates this and simply draws nothing.
+                        // A `truetypefont` is tolerated for the same reason and was not: Rika
+                        // declares `<truetypefont file="SUPERGLU.ttf">` and ships no such file, and
+                        // one missing font failed the **whole skin** — it would not load at all,
+                        // where Winamp falls back to a default face. `WasabiTextMetrics.font` already
+                        // answers `nil` for a face it cannot produce and every caller has a fallback,
+                        // so the cost of the miss is the skin's text in a substitute font.
+                        // Register the resource without a file and record a warning rather than
+                        // failing the whole load. Security failures (traversal/escape/variable/
+                        // oversize/corrupt image) still throw above.
+                        // A bitmap font that does not resolve as a path is the *identifier* form, not
+                        // a missing file, so it is not worth a warning — the renderer resolves it
+                        // through the registry and only a genuinely unknown id draws nothing.
+                        if undecodable {
+                            // The path *did* resolve, so drop it: a registered `logicalFile` the
+                            // renderer cannot decode would have it retry the decode on every draw.
+                            // An id that resolved to a dud file is worth a warning even for a
+                            // bitmap font, where a plain miss is not.
+                            logicalFile = nil
+                            registry.warn(WalDiagnostic(.invalidImageResource,
+                                "Bitmap resource '\(rawFile)' is not a decodable image; it will not render.",
+                                severity: .warning, location: node.location))
+                        } else if kind != "bitmapfont" {
+                            registry.warn(WalDiagnostic(.resourceMissing,
+                                "Optional \(kind) resource '\(rawFile)' is missing; it will not render.",
+                                severity: .warning, location: node.location))
+                        }
+                    }
+                }
+                registry.register(WalResourceDefinition(
+                    kind: kind,
+                    identifier: node.attribute("id"),
+                    logicalFile: logicalFile,
+                    attributes: node.attributes,
+                    source: node.location
+                ))
+            }
+            try registerResources(in: node.children, registry: registry,
+                                  validatedImages: &validatedImages,
+                                  undecodableImages: &undecodableImages)
+        }
+    }
+
+    /// The image file extensions an implicit bitmap may be created from. Deliberately a
+    /// whitelist: the test is what makes an attribute value a *path* rather than an id, and every
+    /// value in the corpus that names artwork ends in one of these.
+    private static let implicitBitmapExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "bmp"]
+
+    /// Wasabi creates a bitmap for an attribute that names an image **file** where a declared
+    /// `<bitmap>` id was expected — `image="play/Bar.png"` is as good as `image="volume.bar"`.
+    /// Resolving only the declared form left a skin authored entirely that way drawing none of its
+    /// own artwork: Darjah 1 declares no `<bitmap>` for its player at all, so both of its layouts
+    /// resolved zero and fell back to NullPlayer's generic transport over a plain background. 56 of
+    /// its 74 unique `image=` values are paths, and the corpus has 606 such declarations across 9
+    /// skins.
+    ///
+    /// Registering them as ordinary bitmaps — rather than teaching each of the two dozen call sites
+    /// that read an id to also try a path — is what makes this reach every one of them at once, the
+    /// script runtime's `setXmlParam("image", …)` and `Map.loadMap` included.
+    ///
+    /// Runs **after** every declaration, and never displaces one: an id that a `<bitmap>` already
+    /// claims keeps its declaration, crop, and gamma group. An implicit bitmap has none of those —
+    /// a path form declares no `x`/`y`/`w`/`h` and no `gammagroup`, so it is the whole file,
+    /// untinted, exactly as `background=` already resolves one (B90).
+    private func registerImplicitBitmaps(in nodes: [WalXMLNode], registry: WalResourceRegistry,
+                                         validatedImages: inout Set<String>,
+                                         undecodableImages: inout Set<String>) {
+        for node in nodes {
+            for value in node.attributes.values where Self.looksLikeImagePath(value) {
+                guard !registry.hasIdentifier(value),
+                      let resolved = try? resolveSkinResource(value, source: node.location).logicalPath,
+                      !undecodableImages.contains(resolved) else { continue }
+                // The same validation a declared `<bitmap>` gets, with the same memo, but a failure
+                // only declines to create the implicit bitmap: nothing asked for this file yet, so
+                // there is no skin to fail and no warning to raise.
+                if validatedImages.insert(resolved).inserted {
+                    do {
+                        try validateImage(at: resolved, source: node.location)
+                    } catch {
+                        undecodableImages.insert(resolved)
+                        continue
+                    }
+                }
+                registry.registerImplicit(WalResourceDefinition(
+                    kind: "bitmap",
+                    identifier: value,
+                    logicalFile: resolved,
+                    attributes: ["file": value],
+                    source: node.location,
+                    isImplicit: true
+                ))
+            }
+            registerImplicitBitmaps(in: node.children, registry: registry,
+                                    validatedImages: &validatedImages,
+                                    undecodableImages: &undecodableImages)
+        }
+    }
+
+    /// A path shape, not an id shape: a final component with an image extension. `$solid` and the
+    /// wildcard an `<include>` may carry are excluded — neither is a file this can load.
+    private static func looksLikeImagePath(_ value: String) -> Bool {
+        guard !value.isEmpty, !value.hasPrefix("$"), !value.contains("*"),
+              let dot = value.lastIndex(of: ".") else { return false }
+        let ext = value[value.index(after: dot)...].lowercased()
+        return implicitBitmapExtensions.contains(ext)
+    }
+
+    private static func undecodableImage(_ path: String, _ source: WalSourceLocation) -> WalFailure {
+        WalFailure(WalDiagnostic(.invalidImageResource,
+                                 "Image resource '\(path)' has no valid image metadata.",
+                                 location: source))
+    }
+
+    private func validateImage(at path: String, source: WalSourceLocation) throws {
+        let data = try vfs.data(at: path, location: source)
+        guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+              width > 0, height > 0 else {
+            throw Self.undecodableImage(path, source)
+        }
+        let (pixels, overflow) = width.multipliedReportingOverflow(by: height)
+        guard !overflow,
+              width <= resourceLimits.maximumImageWidth,
+              height <= resourceLimits.maximumImageHeight,
+              pixels <= resourceLimits.maximumImagePixels else {
+            throw WalFailure(WalDiagnostic(
+                .imageDimensionsExceeded,
+                "Image resource '\(path)' is \(width)×\(height); limits are \(resourceLimits.maximumImageWidth)×\(resourceLimits.maximumImageHeight) and \(resourceLimits.maximumImagePixels) pixels.",
+                location: source
+            ))
+        }
+    }
+
+    /// Number every node of the expanded document in pre-order — the order Winamp's streaming parser
+    /// reads them in. `registerTypes` stamps each `<groupdef>` with its number and `createObjects`
+    /// stamps each `<group>` instance with its own, which is what lets a redefined id serve two
+    /// different bodies to the layouts on either side of it.
+    private func documentOrder(of nodes: [WalXMLNode]) -> [ObjectIdentifier: Int] {
+        var order: [ObjectIdentifier: Int] = [:]
+        var next = 0
+        func walk(_ nodes: [WalXMLNode]) {
+            for node in nodes {
+                order[ObjectIdentifier(node)] = next
+                next += 1
+                walk(node.children)
+            }
+        }
+        walk(nodes)
+        return order
+    }
+
+    private func registerTypes(in nodes: [WalXMLNode], registry: WasabiTypeRegistry,
+                               documentOrder: [ObjectIdentifier: Int]) {
+        for node in nodes {
+            if node.name.caseInsensitiveCompare("groupdef") == .orderedSame,
+               let identifier = node.attribute("id"), !identifier.isEmpty {
+                var defaults = node.attributes
+                for metadata in ["id", "xuitag", "inherit_group", "embed_xui"] { defaults.removeValue(forKey: metadata) }
+                registry.register(WasabiGroupDefinition(
+                    identifier: identifier,
+                    xuiTag: node.attribute("xuitag"),
+                    inheritedGroup: node.attribute("inherit_group"),
+                    embeddedXUITag: node.attribute("embed_xui"),
+                    defaultAttributes: defaults,
+                    templateChildren: node.children,
+                    source: node.location,
+                    documentOrder: documentOrder[ObjectIdentifier(node)] ?? .min
+                ))
+            }
+            registerTypes(in: node.children, registry: registry, documentOrder: documentOrder)
+        }
+    }
+
+    /// Predefined Wasabi standard-library base groups. These ship *inside* Winamp (the stock
+    /// `xml/wasabi.xml` / `xml/standard/*` library), not inside a `.wal` or the ClassicPro engine,
+    /// so real skins and engines routinely `inherit_group="wasabi.*"` from bases we never receive as
+    /// files. We seed them as minimal empty template groups so a derived group resolves a real (if
+    /// artwork-less) base instead of dropping to a graceful-degradation warning. Genuinely unknown
+    /// bases — anything not on this curated list — still warn-and-drop in `resolve(identifier:stack:)`.
+    ///
+    /// The list is curated from the measured targets' inheritance edges (Phase 0B inventory) plus the
+    /// documented Wasabi standard library. No third-party art or SDK files are bundled; these are
+    /// identifier-only shells. Add to this list on measured demand (Phase 7.3), not speculatively.
+    static let wasabiStandardLibraryGroups: [String] = [
+        // Client area / containers
+        "wasabi.panel",
+        "wasabi.frame",
+        "wasabi.objectframe",
+        "wasabi.objectframe.group",
+        // Text
+        "wasabi.text",
+        "wasabi.text.group",
+        // Buttons
+        "wasabi.button",
+        "wasabi.button.group",
+        "wasabi.togglebutton",
+        "wasabi.togglebutton.group",
+        "wasabi.checkbox",
+        // Edits
+        "wasabi.edit",
+        "wasabi.edit.box",
+        "wasabi.edits",
+        // Lists / scrolling
+        "wasabi.list",
+        "wasabi.scrollbar",
+        "wasabi.scrollbar.horizontal",
+        "wasabi.scrollbar.vertical",
+        "wasabi.slider",
+        // Standard window frames
+        "wasabi.standardframe",
+        "wasabi.standardframe.static",
+        "wasabi.standardframe.modal",
+        "wasabi.standardframe.statusbar",
+        "wasabi.standardframe.nostatusbar",
+        // Tabs / grouping
+        "wasabi.tabsheet",
+        "wasabi.titlebar",
+        "wasabi.titlebox",
+        "wasabi.tooltip",
+        // Media-facing composites
+        "wasabi.albumart",
+        "wasabi.ratings",
+    ]
+
+    /// Where the seeded shells claim to come from. Not a real file — it exists so a diagnostic can say
+    /// which definition a skin is actually using.
+    static let wasabiStandardLibrarySource = WalSourceLocation(path: "/System/WasabiStandardLibrary.xml")
+
+    /// Conventional tag → shell pairings, applied *after* the shells exist.
+    ///
+    /// `wasabi.standardframe.*` is aliased earlier (`WasabiStandardFrames.conventionalXUITags`) because
+    /// there the destination is the skin's *own* groupdef. These point at our shells instead, so they
+    /// have to run after seeding — `registerXUITagAlias` requires the destination to exist. Both passes
+    /// only fill an *unclaimed* tag, so Winamp Modern's own `xuitag="Wasabi:TitleBar"` still wins.
+    static let wasabiStandardLibraryXUITags: [(tag: String, identifier: String)] = [
+        ("Wasabi:TitleBar", "wasabi.titlebar"),
+        (WasabiTitleBox.xuiTag, WasabiTitleBox.groupIdentifier),
+        (WasabiTabSheet.xuiTag, WasabiTabSheet.groupIdentifier),
+    ] + WasabiStandardFrames.conventionalXUITags
+
+    /// The standard-library shells that can be reconstructed from conventional skin resources.
+    ///
+    /// Most shells are identifier-only by design, but a title bar is a measured exception: CornerAmp
+    /// instantiates `<Wasabi:TitleBar>` inside its own `wasabi.standardframe.nostatusbar` and never
+    /// defines the tag — in real Winamp the standard library supplies it — so every CornerAmp window
+    /// came up with a nameless title bar. The skin ships no `wasabi.titlebar.*` bitmaps either, so this
+    /// invents no artwork: it restores the window *title*, resolved from `:componentname` the same way
+    /// a skin-supplied title bar's own `<text>` is. `wasabi.window.text` and `wasabi.font.default` are
+    /// the conventional ids — CornerAmp defines the colour, nothing measured defines the font, and both
+    /// degrade (white, system font) when absent.
+    private static func shellTemplateChildren(for identifier: String) -> [WalXMLNode] {
+        switch identifier {
+        case "wasabi.panel":
+            return [standardLibraryGrid(
+                id: "wasabi.panel.grid",
+                prefix: "wasabi.panel",
+                middle: "wasabi.panel.tint"
+            )]
+        case "wasabi.objectframe.group":
+            return [standardLibraryGrid(
+                id: "wasabi.objectframe.grid",
+                prefix: "wasabi.objectframe",
+                middle: "wasabi.objectframe.center"
+            )]
+        case "wasabi.titlebar":
+            return [titleTextNode(height: nil)]
+        default:
+            return []
+        }
+    }
+
+    /// The window title, resolved from `:componentname` the way a skin-supplied title bar's own
+    /// `<text>` is. `wasabi.window.text` and `wasabi.font.default` are the conventional ids, and both
+    /// degrade (white, system font) when the skin defines neither.
+    ///
+    /// A standard frame we drew ourselves gets one too, confined to its title strip. It is expanded
+    /// onto the **instance** rather than into the shell's body, because the shell is also reachable
+    /// as a plain `inherit_group`/`<group>` base — EPS's notifier writes
+    /// `<group id="wasabi.standardframe.nostatusbar" …/>` and wants the empty base it asked for.
+    static func titleTextNode(height: Double?) -> WalXMLNode {
+        var attributes: [String: String] = [
+            "id": "window.titlebar.title",
+            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+            "align": "center",
+            // A point under the 11 default: text draws from the top of its box and CornerAmp's
+            // title bar is 11px tall, where 11pt clips the descenders of "Playlist Editor".
+            "fontsize": "10",
+            "default": ":componentname",
+            "font": "wasabi.font.default",
+            "color": "wasabi.window.text",
+        ]
+        if let height {
+            // A standard frame fills its whole window, so its title has to be confined to the strip
+            // rather than centred over the client area.
+            attributes["h"] = String(Int(height))
+            attributes["relath"] = "0"
+        }
+        return WalXMLNode(name: "text", attributes: attributes, location: wasabiStandardLibrarySource)
+    }
+
+    /// Winamp supplies these two group bodies, while modern skins supply the artwork under stable
+    /// `wasabi.*` bitmap ids. A tiled grid preserves the one-pixel edges and repeating centre
+    /// textures used by the measured skins; absent parts already degrade to an empty grid.
+    private static func standardLibraryGrid(id: String, prefix: String, middle: String) -> WalXMLNode {
+        WalXMLNode(
+            name: "grid",
+            attributes: [
+                "id": id,
+                "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+                "topleft": "\(prefix).top.left",
+                "top": "\(prefix).top",
+                "topright": "\(prefix).top.right",
+                "left": "\(prefix).left",
+                "middle": middle,
+                "right": "\(prefix).right",
+                "bottomleft": "\(prefix).bottom.left",
+                "bottom": "\(prefix).bottom",
+                "bottomright": "\(prefix).bottom.right",
+                "tile": "1",
+                "ghost": "1",
+            ],
+            location: wasabiStandardLibrarySource
+        )
+    }
+
+    private func registerWasabiStandardLibrary(in registry: WasabiTypeRegistry) {
+        // Seed each predefined base only when the skin/engine hasn't already declared it, so a skin
+        // that *does* ship a fuller definition always wins over our shell.
+        for identifier in Self.wasabiStandardLibraryGroups {
+            guard !registry.contains(identifier: identifier) else { continue }
+            registry.register(WasabiGroupDefinition(
+                identifier: identifier,
+                xuiTag: nil,
+                inheritedGroup: nil,
+                embeddedXUITag: nil,
+                defaultAttributes: [:],
+                templateChildren: Self.shellTemplateChildren(for: identifier),
+                source: Self.wasabiStandardLibrarySource
+            ))
+        }
+        for pair in Self.wasabiStandardLibraryXUITags {
+            registry.registerXUITagAlias(pair.tag, to: pair.identifier)
+        }
+    }
+
+    private func createObjects(
+        from nodes: [WalXMLNode],
+        parent: WasabiObject?,
+        graph: WasabiObjectGraph,
+        types: WasabiTypeRegistry,
+        pendingScripts: inout [PendingScript],
+        pendingMetaCommands: inout [PendingMetaCommand],
+        definitionStack: [String],
+        createdCount: inout Int,
+        documentOrder: [ObjectIdentifier: Int],
+        enclosingOrder: Int?
+    ) throws {
+        let wrappers: Set<String> = ["wasabixml", "winampabstractionlayer", "elements", "skininfo"]
+        let declarations: Set<String> = ["groupdef", "bitmap", "bitmapfont", "truetypefont", "color", "gammagroup", "gammaset", "cursor", "elementalias"]
+
+        for node in nodes {
+            let lower = node.name.lowercased()
+            if lower == "script" {
+                if let rawFile = node.attribute("file"), !rawFile.isEmpty {
+                    pendingScripts.append(PendingScript(owner: parent, rawPath: rawFile,
+                                                        parameter: WasabiXMLMacroResolver.resolve(node.attribute("param")),
+                                                        source: node.location))
+                }
+                continue
+            }
+            if ["sendparams", "hideobject", "showobject"].contains(lower) {
+                pendingMetaCommands.append(PendingMetaCommand(owner: parent, kind: lower,
+                                                              attributes: node.attributes))
+                continue
+            }
+            if declarations.contains(lower) { continue }
+            if wrappers.contains(lower) {
+                try createObjects(from: node.children, parent: parent, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: definitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: enclosingOrder)
+                continue
+            }
+
+            var attributes = node.attributes
+            if let rawSize = attributes["fontsize"], let pointSize = Double(rawSize),
+               !pointSize.isFinite || pointSize > resourceLimits.maximumFontPointSize {
+                throw WalFailure(WalDiagnostic(.fontSizeExceeded,
+                                               "Font size '\(rawSize)' exceeds the \(resourceLimits.maximumFontPointSize)-point limit.",
+                                               location: node.location))
+            }
+            var templateChildren: [WalXMLNode] = []
+            let instanceChildren = node.children
+            var embeddedXUITag: String?
+            var nextDefinitionStack = definitionStack
+            var typeName = node.name
+            var formWidget: WasabiFormWidgets.Substitution?
+            /// Whether the tag resolved to a definition the **skin** wrote, as opposed to one of our
+            /// own artwork-less shells. A widget whose body a skin supplies is that skin's, and this
+            /// is what keeps a hosted `<Wasabi:TabSheet>` from being drawn over a replacement.
+            var claimedBySkin = false
+            /// The skin's own `wasabi.standardframe.*` body, when this node expanded to one. Both
+            /// spellings land here: the `<Wasabi:StandardFrame:*>` XUI tag (TRON Legacy) and a plain
+            /// `<group id="wasabi.standardframe.statusbar">` (Sony Walkman) resolve to the same
+            /// definition, and only the definition can say whether a script will fill the frame.
+            var claimedStandardFrame: WasabiResolvedGroupDefinition?
+            // A node the document itself contains is stamped with its own position; a template child
+            // — expanded here, but written elsewhere — instantiates at the position of the reference
+            // that brought it in, which is when Winamp would have read it.
+            let nodeOrder = documentOrder[ObjectIdentifier(node)] ?? enclosingOrder
+            if let definition = types.definition(forInstance: node, documentOrder: nodeOrder) {
+                let key = definition.identifier.lowercased()
+                guard !definitionStack.contains(key) else {
+                    throw WalFailure(WalDiagnostic(.groupInheritanceCycle, "Recursive group expansion for '\(definition.identifier)'.", location: node.location))
+                }
+                let resolved = try types.resolved(definition)
+                var merged = resolved.defaultAttributes
+                merged.merge(attributes) { _, instance in instance }
+                // `instanceid` *names the instance*: the expanded object answers to it instead of the
+                // groupdef's id, which is how a skin tells two instantiations of one groupdef apart.
+                // Winamp Modern's titlebar instantiates `wasabi.titlebar.streak` twice — left and
+                // right — and both its `sendparams` and its script's
+                // `findObject("wasabi.titlebar.streak.left")` address them this way. Without it the
+                // script found neither streak, so the streaks kept their declared slot while the
+                // title centred itself on the window and landed underneath them.
+                if let instanceID = merged["instanceid"], !instanceID.isEmpty {
+                    merged["id"] = instanceID
+                }
+                attributes = merged
+                templateChildren = resolved.templateChildren
+                embeddedXUITag = resolved.embeddedXUITag
+                nextDefinitionStack.append(key)
+                claimedBySkin = definition.source.path != Self.wasabiStandardLibrarySource.path
+                if claimedBySkin,
+                   WasabiStandardFrames.isStandardFrameIdentifier(definition.identifier) {
+                    claimedStandardFrame = resolved
+                }
+            } else if let substitution = WasabiFormWidgets.substitution(forTypeName: node.name) {
+                // A Wasabi standard **form widget** nothing else claims. Winamp's own definition of
+                // each is a thin wrapper around a primitive this engine already has, so the tag
+                // becomes that primitive here and the rest of the engine needs to know nothing about
+                // it — drawing, hit testing, `cfgattrib` binding and script dispatch all key off the
+                // type. Without it 156 declarations across 15 skins were structure-free shells, which
+                // is what an empty settings page usually is (B66).
+                //
+                // The `else` is the whole containment: a skin that defines the tag itself resolved a
+                // definition above and never reaches here, so Big Bento Modern keeps its own search
+                // box and Styx keeps its own drop-down wrapper.
+                formWidget = substitution
+                typeName = substitution.typeName
+                attributes[WasabiFormWidgets.kindAttribute] = substitution.kind.rawValue
+                for (name, value) in substitution.defaults where attributes[name] == nil {
+                    attributes[name] = value
+                }
+            }
+
+            // B96: a second container root carrying an `id` the skin has already used. Two causes,
+            // and they want opposite answers. A skin that includes the same file twice — jvc.tape
+            // reads `xml/pledit.xml` from both `skin.xml` and `xml/amp.xml` — declares its `Pledit`
+            // once and gets it twice; the copies come from the *same* source location, and the
+            // second is a phantom window. A skin that writes the tag twice — WMP11-BlueVU's
+            // `<container id="Meter" name="VU Meters Large">` and `<container id="Meter" name="VU
+            // Meters Small">` — means two windows, and they come from two different locations.
+            // Everything downstream of here addresses a window by its id string (the renderer, the
+            // Skin Windows menu, the per-container layout and frame persistence), so the second of a
+            // pair is otherwise unreachable: opening "VU Meters Small" resolved the id back to the
+            // large meter. Winamp's own by-id lookups keep answering with the first declaration,
+            // which is what a renamed *second* preserves.
+            if parent == nil, typeName.caseInsensitiveCompare("container") == .orderedSame,
+               let declaredID = attributes["id"], !declaredID.isEmpty {
+                switch resolveContainerRootIdentity(declaredID: declaredID, location: node.location) {
+                case .keep:
+                    break
+                case .reinclude:
+                    containerDiagnostics.append(WalDiagnostic(
+                        .duplicateIdentifier,
+                        "Container '\(declaredID)' is included twice from the same declaration; "
+                        + "the repeat is dropped.",
+                        severity: .warning, location: node.location))
+                    continue
+                case .rename(let unique):
+                    containerDiagnostics.append(WalDiagnostic(
+                        .duplicateIdentifier,
+                        "Container '\(declaredID)' is declared again; this instance answers to "
+                        + "'\(unique)' so both windows can be opened.",
+                        severity: .warning, location: node.location))
+                    attributes["id"] = unique
+                }
+            }
+
+            // `fitparent="1"` is applied where the tag writes it, so geometry written *before* it
+            // is geometry Winamp threw away — see
+            // `WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent`. Done here rather than in
+            // the renderer because it is a property of the markup, and because a script that writes
+            // `x` later must still win: cPro Venus centres its playback buttons that way (B142).
+            attributes = WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent(
+                in: attributes, declaredOrder: node.attributeOrder)
+
+            createdCount += 1
+            guard createdCount <= maximumObjectCount else {
+                throw WalFailure(WalDiagnostic(.expandedNodeLimitExceeded, "Retained graph exceeds \(maximumObjectCount) objects.", location: node.location))
+            }
+            let object = graph.makeObject(typeName: typeName, attributes: attributes, source: node.location)
+            if let parent { try parent.appendChild(object) } else { graph.appendRoot(object) }
+            // A top-level container's *declared* visibility, snapshotted before anything can write
+            // over it. `visible` is one attribute serving two questions — "is this an SUI-collapsed
+            // stub the skin never means to show" (markup) and "is this window open right now"
+            // (`setVisible`) — and a script hiding its own window at startup is the ordinary case, so
+            // the second answer buries the first. Defix hides `VISCON` from `CORE_SCRIPT.maki` and
+            // every later reader then classified the window as a stub that does not exist (B16).
+            if parent == nil, typeName.caseInsensitiveCompare("container") == .orderedSame {
+                _ = object.setAttribute(WinampModernContainerTopology.declaredVisibleAttribute,
+                                        value: object.attributes["visible"] ?? "1")
+            }
+            try createObjects(from: templateChildren, parent: object, graph: graph, types: types,
+                              pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: nextDefinitionStack,
+                              createdCount: &createdCount,
+                              documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            let embeddedParent = embeddedXUITag.flatMap { findObject(xmlID: $0, beneath: object) } ?? object
+            // `embed_xui` does not only say where the instance's children go — it says which object
+            // *is* the XUI, so the group answers for the embedded control's mouse events. Defix's
+            // `bento.tabbutton` embeds its `mousetrap` button and the core script hooks `onLeftClick`
+            // on the **group** (`switch.ml`); with nothing carrying the click across, the tab lit up
+            // under the pointer and the SUI body never changed. Recorded on the group so the runtime
+            // can find it from the child at dispatch time; `id` is not unique, but the pair
+            // (this group, that id) is what the lookup above already resolved.
+            if embeddedParent !== object, let tag = embeddedXUITag {
+                _ = object.setAttribute("nullplayer.embedxui", value: tag.lowercased())
+                // The wrapper *is* the control, so the range it declares is the **embedded** object's
+                // range — a `<SC:VScrollBar low="0" high="100">` wrapping a bare `<slider>` means that
+                // slider counts 0…100, not Winamp's default 0…255.
+                //
+                // Measured, from a live trace of Big Bento Modern's settings scrollbar: its up button
+                // does `slider.setPosition(slider.getPosition() + 5)` on the **inner** slider, and the
+                // page computes `scrollToPercent(99 - position)`. On the 0…255 default the positions
+                // ran 113 → 118 → 123 → 128, so the percentage was *negative every time* and the page
+                // clamped back to the top on every press: the bar moved, and nothing scrolled (BB19).
+                // Only the range is carried across; geometry, identity and appearance belong to the
+                // wrapper, and forwarding those would move the control inside its own group.
+                for key in ["low", "high"] where embeddedParent.attributes[key] == nil {
+                    if let value = attributes[key] { _ = embeddedParent.setAttribute(key, value: value) }
+                }
+                // The **commands** the instance declares, for the same reason and by the same rule:
+                // the wrapper is a `<group>`, which has no click behaviour of its own, and the object
+                // the pointer actually lands on is the embedded one. Enkera's whole transport is
+                // `<button:glow … action="play">` over a bare `<button id="but" fitparent="1"/>`, and
+                // Defix's two button bars are `<Defix:Bottom.bar.button action="PE_Add">` over a
+                // `mousetrap`: in both the artwork drew, the press animated, and the command reached
+                // nothing, because it stayed on a group that cannot run it. Commands only — geometry,
+                // identity and appearance stay on the wrapper, which is what draws.
+                for key in ["action", "param", "dblclickaction", "dbclickaction", "rightclickaction",
+                            "tooltip"] where embeddedParent.attributes[key] == nil {
+                    if let value = attributes[key] { _ = embeddedParent.setAttribute(key, value: value) }
+                }
+                // A **vertical** slider starts at the top of its travel, which is `high` — not at the
+                // zero a missing value would otherwise read as. Only one that drives nothing itself
+                // (no `action`, so no host value to take) and states a range is seeded; a seek or
+                // volume slider is told its position by the host and must not be pre-empted.
+                //
+                // Measured: each of Big Bento Modern's settings pages opens by reading its
+                // scrollbar's position and calling `scrollToPercent(99 - position)`. Read as 0 that
+                // is *99% — the bottom*, and seven of the skin's nine pages launched scrolled to the
+                // end of themselves. Seeding the attribute rather than special-casing the getter
+                // keeps the thumb, the hit test and the script's arithmetic on one number.
+                if embeddedParent.typeName.caseInsensitiveCompare("slider") == .orderedSame,
+                   WasabiSceneRenderer.isVerticalOrientation(embeddedParent),
+                   embeddedParent.attributes["action"] == nil,
+                   embeddedParent.attributes["value"] == nil,
+                   let high = embeddedParent.attributes["high"] {
+                    _ = embeddedParent.setAttribute("value", value: high)
+                }
+            }
+            try createObjects(from: instanceChildren, parent: embeddedParent, graph: graph, types: types,
+                              pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: nextDefinitionStack,
+                              createdCount: &createdCount,
+                              documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            // A `<Wasabi:Frame>` declares its two panes by group id rather than nesting them, so the
+            // splitter is what brings them into the graph. cPro-Bento's entire body (library tree,
+            // playlist, tabs) hangs off one, and without this the SUI expands to an empty frame.
+            if WasabiFrame.isFrame(object) {
+                let panes = WasabiFrame.paneIdentifiers(of: object).map {
+                    WalXMLNode(name: "group", attributes: ["id": $0], location: node.location)
+                }
+                try createObjects(from: panes, parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
+                WasabiFrame.applyLayout(to: object)
+            }
+            // A `<Wasabi:StandardFrame:*>` the skin never defined: everything Winamp's own frame
+            // supplied has to come from us.
+            if WasabiStandardFrames.isStandardFrame(object), !claimedBySkin {
+                // The frame's own chrome — the plate, the title strip, the border — is artwork
+                // Winamp kept in its base skin, so a skin that expects Winamp's frame ships none of
+                // it and the window came up as an unbordered, unbacked hole with the content group
+                // floating in it (the user's report on `Winamp 3.0 Default`, 2026-09-04: "missing
+                // window borders and backgrounds"). Marked here rather than drawn here because the
+                // colours are the renderer's palette, and claimed the same way the buttons are:
+                // a skin that supplies the groupdef paints its own and never gets this.
+                _ = object.setAttribute(WasabiStandardFrames.hostedAttribute, value: "1")
+            }
+            // A `<Wasabi:StandardFrame:*>` the skin never defined. Winamp's own frame instantiates
+            // the `content=` group into its client area from `standardframe.maki`, and a skin that
+            // expects Winamp's frame ships neither the groupdef nor that script — so the group with
+            // all of the skin's artwork in it stayed out of the graph. `Winamp 3.0 Default` is every
+            // full-size layout of one such frame, which is why it rendered a blank white 275x116
+            // while its windowshade layouts (plain groups) drew fine (B95).
+            if WasabiStandardFrames.isHostedFrame(object),
+               let content = WasabiStandardFrames.contentGroupNode(for: object, location: node.location) {
+                // The title strip first, so the client area draws over it rather than under it, and
+                // because `window.titlebar.title` is the one object such a skin addresses by name:
+                // `<sendparams target="window.titlebar.title" default="WINAMP"/>` is how `Winamp 3.0
+                // Default` names its own player, and with no such object the send lands nowhere.
+                let title = Self.titleTextNode(height: WasabiStandardFrames.titleHeight)
+                try createObjects(from: [title, content], parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            }
+            // A `wasabi.standardframe.*` the skin **did** define, but only as artwork: it declares
+            // `inherit_content="scripts"` and expects Winamp's own `standardframe.maki` to do the
+            // `newGroup(getParam("content"))`. We do not ship that script, so the named group never
+            // entered the graph and the window was the skin's chrome around nothing — TRON Legacy's
+            // playlist, measured, was 18 nodes of border, title and status bar with
+            // `pledit.content.group` absent. The client rect is measured from the frame's own resize
+            // strips rather than guessed, so it is the hole the skin's artwork actually leaves.
+            if let definition = claimedStandardFrame,
+               let contentID = WasabiStandardFrames.contentGroupIdentifier(of: object.attributes),
+               WasabiStandardFrames.needsHostedContent(
+                   definitionChildren: definition.templateChildren,
+                   group: { try? types.resolved(identifier: $0).templateChildren }) {
+                let border = WasabiStandardFrames.measuredBorder(
+                    in: definition.templateChildren,
+                    group: { try? types.resolved(identifier: $0).templateChildren },
+                    bitmapSize: { [resourceRegistry] identifier in
+                        guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier),
+                              let width = resource.attributes["w"].flatMap(Double.init),
+                              let height = resource.attributes["h"].flatMap(Double.init)
+                        else { return nil }
+                        return CGSize(width: width, height: height)
+                    })
+                let content = WasabiStandardFrames.measuredContentGroupNode(
+                    identifier: contentID, border: border, location: node.location)
+                try createObjects(from: [content], parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            }
+            // A `<Wasabi:TitleBox>` names its body by group id the way a standard frame does, and
+            // the object that would instantiate it lives in Winamp rather than in the skin. Without
+            // this the body never enters the graph at all: Bio-Nid's `dtabox.content` — the one
+            // control its only settings window exists to show — was simply absent.
+            if WasabiTitleBox.isTitleBox(object),
+               let content = WasabiTitleBox.contentGroupNode(for: object, location: node.location) {
+                try createObjects(from: [content], parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            }
+            // A `<Wasabi:TabSheet>` names its pages by group id the same way, and the object that
+            // shows one of them at a time lives in Winamp rather than in the skin. Without this not
+            // one page enters the graph: Shield_Amp's Configuration is a single tab sheet over three
+            // groups whose form widgets are all implemented, and it drew as an empty slab (B14).
+            if WasabiTabSheet.isTabSheet(object), !claimedBySkin {
+                let pages = WasabiTabSheet.pageNodes(for: object, location: node.location)
+                if !pages.isEmpty {
+                    _ = object.setAttribute(WasabiTabSheet.hostedAttribute, value: "1")
+                    try createObjects(from: pages, parent: object, graph: graph, types: types,
+                                      pendingScripts: &pendingScripts,
+                                      pendingMetaCommands: &pendingMetaCommands,
+                                      definitionStack: nextDefinitionStack,
+                                      createdCount: &createdCount,
+                                      documentOrder: documentOrder, enclosingOrder: nodeOrder)
+                    WasabiTabSheet.select(index: WasabiTabSheet.selectedIndex(of: object), on: object)
+                }
+            }
+            // Winamp's drop-down carries a label object inside itself, and a skin's script reaches
+            // for it by name: Styx's and Shield_Amp's `customdropdownlist.maki` are the same script,
+            // and both do `findObject("dropdownlist.text")` then persist the pick from that object's
+            // `onTextChanged`. With no such object the handle is null and the selection survives
+            // nothing. The node is invisible — the drop-down draws its own label — so this adds a
+            // handle, not a second copy of the text.
+            if formWidget?.kind == .dropDownList,
+               findObject(xmlID: WasabiFormWidgets.dropDownLabelID, beneath: object) == nil {
+                try createObjects(from: [WasabiFormWidgets.labelNode(location: node.location)],
+                                  parent: object, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: nextDefinitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            }
+        }
+    }
+
+    private func applyMetaCommands(_ commands: [PendingMetaCommand]) {
+        for command in commands {
+            guard let owner = command.owner else { continue }
+            let scope = command.attributes["group"].flatMap { findObject(xmlID: $0, beneath: owner) } ?? owner
+            let targets = (command.attributes["target"] ?? "").split(separator: ";")
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            for targetID in targets {
+                guard let target = findObject(xmlID: targetID, beneath: scope) else { continue }
+                switch command.kind {
+                case "hideobject": _ = target.setAttribute("visible", value: "0")
+                case "showobject": _ = target.setAttribute("visible", value: "1")
+                case "sendparams":
+                    for (name, value) in command.attributes where name != "target" && name != "group" {
+                        _ = target.setAttribute(name, value: value)
+                    }
+                default: break
+                }
+            }
+        }
+    }
+
+    private func findObject(xmlID: String, beneath root: WasabiObject) -> WasabiObject? {
+        if root.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return root }
+        for child in root.children {
+            if let match = findObject(xmlID: xmlID, beneath: child) { return match }
+        }
+        return nil
+    }
+
+    private func bindScripts(_ pendingScripts: [PendingScript]) throws -> [WasabiScriptBinding] {
+        try pendingScripts.map { pending in
+            let path = try resolveSkinResource(pending.rawPath, source: pending.source).logicalPath
+            let data = try vfs.data(at: path, location: pending.source)
+            guard data.count <= resourceLimits.maximumScriptSize else {
+                throw WalFailure(WalDiagnostic(.entryTooLarge, "Script '\(path)' is \(data.count) bytes; the limit is \(resourceLimits.maximumScriptSize).", location: pending.source))
+            }
+            return WasabiScriptBinding(ownerID: pending.owner?.stableID, logicalPath: path,
+                                       parameter: pending.parameter, source: pending.source)
+        }
+    }
+
+    /// Wasabi includes are XML-file-relative, but bitmap/font/script declarations in real
+    /// Winamp skins are commonly skin-root-relative even when declared by an included XML.
+    /// Preserve the relative form first for authored subfolders, then fall back to the fixed
+    /// `@SKINPATH@` VFS mount. Only a genuine missing-resource diagnostic may fall back;
+    /// traversal, variables, and other security failures remain hard errors.
+    private func resolveSkinResource(_ rawPath: String, source: WalSourceLocation) throws -> WalResolvedResource {
+        do {
+            return try vfs.resolve(rawPath, relativeTo: source.path, location: source)
+        } catch let failure as WalFailure
+            where failure.diagnostics.allSatisfy({ $0.code == .resourceMissing }) {
+            return try vfs.resolve("@SKINPATH@/\(rawPath)", relativeTo: source.path, location: source)
+        }
+    }
+}

@@ -1,0 +1,1062 @@
+# Debugging harness
+
+Reference for the `winamp-modern-skin-guide` skill. **This is the canonical probe and environment-variable reference** — every other document points here.
+
+## Debugging a skin
+
+(Debugging *one* skin is below. For work spanning many skins — ranking what to implement next,
+finding what a skin contains that we have never rendered — use
+[triage-playbook.md](../triage-playbook.md) instead.)
+
+**Start with [skins.md](../skins.md) if the report names a skin we have measured** — it records what
+already works, what is knowingly missing, and the traps that skin sets.
+
+**Then the compatibility report.** `WinampModernLoadedSkin.compatibilityReport` (and
+`compatibilityReport(withRuntime:)`) aggregates load diagnostics plus the runtime's unsupported-method
+tally into de-duplicated categories (`archive`, `resources`, `groups`, `scripts`,
+`unsupportedMethods`, `other`) with a coarse level (`.full` / `.degraded` / `.unsupported`). In DEBUG
+builds the main window controller logs it after `scripts.start()` whenever the level is not `.full`.
+The `unsupportedMethods` bucket is the **measured-demand list** for what to implement next.
+
+**Then look at the pixels.** Structural assertions (graph built, scripts ran, node counts) cannot see
+a rendering bug: a vertical-flip and a wrong crop origin survived 490+ green tests because nothing
+ever rendered a frame. `WinampModernRenderDumpTests` renders every container/layout of a real skin to
+PNG and reports the scene:
+
+```sh
+WINAMP_MODERN_WAL=/path/Skin.wal \
+WINAMP_MODERN_RENDER_DUMP=/tmp/render \
+  swift test --filter WinampModernRenderDumpTests
+```
+
+`WINAMP_MODERN_WAL` also accepts a **directory**, which renders every `.wal` in it inside one
+invocation — the corpus sweep, 79 archives in about five minutes as of 2026-09-06. The count is
+whatever is installed at run time; the sweep prints it rather than asserting one. See *The corpus render sweep* below.
+
+Optional env switches, all off by default:
+
+| Variable | Effect |
+|---|---|
+| `WINAMP_MODERN_ENGINE` | import + mount the ClassicPro engine first (cPro skins) |
+| `WINAMP_MODERN_RENDER_PROBE=<container>/<layout>` | dump every scene node: type, id, frame, clip, bitmap, attributes |
+| `WINAMP_MODERN_RENDER_BITMAPS=1` | count resolved bitmaps and list any that fail to load |
+| `WINAMP_MODERN_PLACE_TRACE=1` | every window-placement decision, in the running app. `[place] <container>` — an auxiliary window's size, its preferred origin, the origin resolved for it, and every frame it had to avoid. `[place/stack] …` — `positionSubWindow`'s stack scan: the player's frame, how many stack members it saw, the `targetY` it chose, and what the non-overlap resolve did with it. `[place/hosted] <id> afterShow=…` — a hosted window's frame *after* it is on screen, which is what catches something moving it later. `[place/script] <container>` — the skin's own MAKI `resize()`/`setTargetX/Y` parking a window, which overrides whatever placement decided and is the one case where an overlap is the skin's arithmetic rather than the host's. Window geometry has no useful armchair form; this is how B56 was actually found |
+| `WINAMP_MODERN_SURFACE_TRACE=1` | the hosted-surface reconcile, **in the running app**. One line per pass — `[surf/vis] reconcile engine=<id\|none> holders=<id#stable(frame) …>` — then `[surf/vis] unmount`, `[surf/vis] mount`, `[surf/vis] attached` (already in the hierarchy, left alone) and `[surf/vis] layout <id> frame=…`, each stamped with the **object pointer**. The pointer is the whole point: the bridge vends *one* visualization surface per skin, so the holder the engine moves to and the holder it moves from hand back the same object, and a mount and an unmount that name the same `obj=` in one pass is the double-registration BB35 was. The headless harness installs no component host, so `makeVisualizationSurface()` answers nil, no surface is ever made, and this entire path is invisible to every other probe — a `VIS holder` line proves the *box*, never the surface in it. BB35's addition |
+| `WINAMP_MODERN_RENDER_XUI=1` | list objects with scripts and whether their events bind |
+| `WINAMP_MODERN_RENDER_CLOCK=<seconds>` | pin the animation/ticker clock; render two values to prove motion |
+| `WINAMP_MODERN_RENDER_SCALE=<factor>` | draw the scene the way the **view** does — `context.scaleBy(skinScale)` over the whole scene — instead of at the canvas's own 1:1. Without it the harness can only ever see the one scale nothing is wrong at: every seam, shimmer and half-covered edge in this subsystem is a property of a **fractional** device scale (UI Size 105% on a Retina panel is 2.1), and at 1.0 the dump is clean while the app is not. Pass the app's UI Size, not the backing factor. Pairs with an objective seam test: count rows whose alpha is strictly between transparent and opaque, rather than judging a 1px line by eye — and never compare two renders by rescaling them to a common size, which blurs away exactly the artifact being hunted |
+| `WINAMP_MODERN_RENDER_MINIMUM=1` | name the objects that set each layout's protective minimum — **per axis** (`wbelow=`/`hbelow=`), with the layout's `declared=`, its content floor, the `protective=` the probe computed, and `authored=` (the axes the skin's own script **wrote**, which stand the probe down: see [loading.md](loading.md) → *The protective window minimum*). Each culprit also prints a `MINIMUM   culprit` line with its frame, its **parent's** frame and its ancestor chain — the overhang is a difference of a few pixels between those two rects, and without them a floor three times too tall is one object id with nothing to check it against (B127). The probe resolves the hypothetical canvas **without dispatching `onResize`**, so an object a skin's own resize handler would have hidden is still counted here; that gap is exactly what `authored=` exists to answer |
+| `WINAMP_MODERN_RENDER_CLICKABLE=1` | objects the markup-only hit test rejects but a script hooks the mouse on |
+| `WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y[;x,y…]` | drive a click and report what it hit, its handler counts, **every attribute it changed anywhere in the graph**, the whole chain of handlers it set off, the menu a right-click builds, and a compatibility report taken *after*. Several points are driven **in order** — how you check that a second click undoes the first. Seven events, in the order the view sends them: `onleftbuttondown`, `onleftbuttondblclk`, `onleftbuttonup`, `onleftclick`, **`onrightbuttondown`**, `onrightbuttonup`, **`onrightclick`**. It also prints **`CLICK action:`** — the host action the click ends in — and **`CLICK window:`** — a container the skin asked to show or hide. Those last three lines are Phase 31 additions, and each of them was a defect the probe could not see: a skin that hangs its menu off the right-button *down*, a button that reaches its target through an invisible proxy's `leftClick()`, and a skin that opens its own window with `getContainer(id).show()` rather than an action. The presenter is installed for **every** dispatched event, not just the right-button pair: a menu is not the right button's property, and ClassicPro's drawer hangs its whole page list off `drawer.menulist`'s `onLeftClick` — while this was `if event.hasPrefix("onright")` that menu, the one probe that answers *"does the drawer menu build at all"*, printed nothing and read exactly like a menu that is never built. **The popup presenter here answers 0** ("the user picked nothing"), so a run that needs a menu *pick* must be given one. It also prints **`CLICK markup action:`** — the object's own `action=`/`param=`, decoded as the view decodes it, with the host-action family that answers it (`host=playlistAdd`, `host=inert(<reason>)`, or nothing for an action outside the four families). That line is Phase 39's addition, and it is what makes a plain toolbar button visible at all: such a button has no script, so its seven handler counts are all zero and the attribute *is* its whole behaviour. It also prints **`CLICK dblclickaction:` / `CLICK rightclickaction:`** — the commands the object carries on its second click and its right button, decoded (tail split, explicit param) exactly as the view decodes them (Phase 36; these are separate attributes from `action=`, and for a song title or a titlebar mousetrap they are the only command it has). It also prints **`CLICK radio <id> set=<radioid> activated=<0/1>`** when the click lands on a `radioid` check box — the view answers a radio with `selectRadioMember` **before** the toggle and returns, and the probe used to skip straight to the toggle, so it reported `CLICK toggled … activated=1` for radios that nothing in the app was flipping (found in B14's live QA, 2026-08-29; the same blind-instrument shape as Phase 45's `configStateProvider`). The changed-attribute list carries **`alpha`** alongside `x`/`y`/`w`/`h`/`visible`/`image`: a whole class of skin behaviour is *only* alpha — every hover glow in the ClassicPro family is a layer already in place at `alpha="0"` that a script fades in — and while the snapshot skipped it the probe reported "this click changed nothing" for a control that lights up (B129). It also prints **`CLICK toggled <id> activated=<0/1>`** when the click lands on a togglebutton — the flip and the `onToggle` that follows it, mirroring what the view does (Phase 33; a skin can hang a whole drawer off that event, and while the probe drove only the seven mouse events it reported a working toggle as seven zero counts) |
+| `WINAMP_MODERN_RENDER_CLICK_EVENTS=<event>[,<event>]` | narrow `RENDER_CLICK` to the events a *plain* click sends (`onleftbuttondown,onleftbuttonup`). **`onenterarea` and `onleavearea` are drivable here too, and only here** — never in the default set, because a hover is not part of a click and a skin that lights a layer from `onEnterArea` would contaminate every click capture in the corpus. An explicit list is driven **in the order you wrote it**, which is what makes `onleavearea,onenterarea` — the *second* hover of a control whose resting state its script has not set — measurable at all (B129). The default is all seven, which includes the double-click and both right-button halves — so a skin that hangs a command off one of those makes an ordinary click unreadable: cPro-Bento's tab strip maximizes the window from its `onLeftButtonDblClk`, and every probe of a tab click reported that expansion as if the click had caused it |
+| `WINAMP_MODERN_RENDER_CLICK_PICK=<command>` | answer a `RENDER_CLICK` right-click menu with that command id instead of `0` ("the user picked nothing"), and print `CLICK menu pick: <id>`. For a menu whose choice only takes effect on a *later* click, `0` is the same as never opening it: ClassicPro's corner bolt is a multi-button whose right-click menu merely records which of six commands the **left** click will run, so all six were unmeasurable until this existed. Drive the two clicks in one run (`@x,y;x,y`) and read the second one's `CLICK action:` |
+| `WINAMP_MODERN_RENDER_CLICK_WATCH=<id>,<id>` | where those objects ended up after the click, changed or not — for "it opened, but in the wrong place" |
+| `WINAMP_MODERN_RENDER_HOVER=<id>` | draw the frame with the pointer over that object. Hover artwork — a button's `hoverimage`, a slider's `hoverthumb` — is markup the **view** supplies as a parameter to `draw`, so without this the harness only ever renders the one state it is never wrong in: a half-drawn hover (cPro2's volume bar lit while its knob stayed dark) is invisible to every other probe. Pair it with `RENDER_CLICK_EVENTS=onenterarea` when the *script* draws part of the hover too — the two halves are independent, and a skin usually has both (B129) |
+| `WINAMP_MODERN_RENDER_THEME=<name>` | switch the skin's colour theme before anything is measured, matched case-insensitively as the picker does; prints `THEME requested=… applied=… active=…`. A `.wal` that ships sixty gammasets draws **nothing** the way its default set does once the user picks one, so a report taken on the default theme and a screen taken on another are two different skins — and every colour conclusion drawn from the first is void. B129 spent an afternoon comparing default-theme numbers against a purple-theme screenshot before this existed; `RENDER_THEMES=1` lists the names to pass |
+| `WINAMP_MODERN_RENDER_LAYOUTS=<layout>[@<W>x<H>][,<layout>…]` | drive an explicit **sequence** of layout activations on one renderer instead of visiting each layout once in skin order, so a defect that only appears after a *round trip* reproduces headlessly: `normal@691x541,shade,normal` is the shade trip that found B138/B139. A `@WxH` on an entry resizes that pass after activation — how you carry in a canvas the app grew with its content fit, which is the size the round trip actually loses. PNGs are written as `<container>-<layout>-<pass>.png` while this is set, because a layout is visited more than once; a run without it keeps the filenames every existing capture has. Applies to **every** container in the run, so a sequence naming `normal@691x541` sizes the notifier and the About box to 691x541 too — read a sweep taken with it as a probe, never as a corpus baseline |
+| `WINAMP_MODERN_RENDER_SIZE=<W>x<H>` | resize the layout (clamped, as a drag is) before measuring, so a defect can be reproduced at the user's window size. It resizes the *canvas* only — the app dispatches `onResize` on a real drag, so pair it with `RENDER_EVENTS=onresize` (applied after the resize) or a script-driven layout stays at its old width. The automatic seed happens at `start()`, before this resize, so it does not cover you here |
+| `WINAMP_MODERN_RENDER_EVENTS=[<container>/<layout>@]onresize,onplay,…` | drive events in order before measuring, each at its real target with its real arity. **A `RENDER_SETTLE` is applied after the last one** (BB27): a skin routinely does an event's *work* from a timer the handler starts rather than in the handler — Big Bento's notifier starts a 30 ms poll from `onTitleChange` and lays the toast out on its first tick — so without one the scene is measured a frame too early and a working layout routine reads as one that never ran. **`onshownotification`** is drivable (arity 0, `.system`, exactly what `showNotifier` dispatches); it is the only entry into a notifier script, and without it every notifier in the corpus measured as a window whose script does nothing. **`onresize`** is seeded automatically at `start()` now, so drive it here only to *re*-apply after `RENDER_SIZE`. `onmousewheelup`/`onmousewheeldown` are addressed at the **layout** with two arguments (where every corpus binding lands) — but they call `dispatch` directly rather than going through the view, and `isMouseOverRect` answers `false` with no window, so a `handlers=` count proves the bindings and the arity, **not** that anything scrolled |
+| `WINAMP_MODERN_RENDER_SCRIPTS=1` (or `=bindings`) | per program: owner, source, declared handlers, which events actually **ran**, and which failed with what. `=bindings` adds what every handler is bound to *right now*, its entry point (`@<index>`), whether the dispatcher **shadows** it as a repeat of an earlier body, and each script group's ancestor chain. A bound object is printed with **its own ancestor chain** (`button#vol.on<group#player.cbuttons<layout#normal<container#main`), which is what makes a binding that resolved into the *wrong layout* visible at a glance — the whole of BB37 was found by reading that one field. The entry point is what tells two same-named bindings apart: a program may declare one (object, event) pair twice with *different* bodies, and which body a dispatch reaches is then the whole question |
+| `WINAMP_MODERN_RENDER_DISASM=<method>` | the instructions around every call site of a method — how an unknown **arity** is settled, by counting the net pushes between the receiver and the call |
+| `WINAMP_MODERN_TRACE_MAKI=1` | **runs in the app as well as the harness.** Every handler entry, subroutine call and return (`MAKI enter <script> @<entry>` / `MAKI call … -> <target>` / `MAKI return … at <instruction>`), plus every timer arm and cancel with the handler that did it (`MAKI timer start id=996 delay=700 by=<script>@<entry>`). It also stamps `by=` onto the `SETVISIBLE` line, which is the whole point: every skin's shows and hides arrive through one method, so *which handler did this* is unanswerable without it. A guard that returns at the third instruction and a handler that never ran look identical from outside — the `return … at <instruction>` is what tells them apart, and reading it against `RENDER_DISASM=@<source>` names the branch. Pair the two **for the skin that is actually loaded**: entry points are per-program and do not carry across variants (BB28 was chased through the base skin's listing while the app ran the Windows 10 Light overlay, and none of the numbers matched). Added for BB28 |
+| `WINAMP_MODERN_RENDER_DISASM=@<source>` | the **whole** listing for every program whose path matches: each handler's entry point, every instruction, constants and method names resolved. Variable values are read *after* the run, so a `vN=null` at a `findObject` is a lookup that failed. This is how Winamp Modern's titlebar layout was recovered — an arity fits in an 8-instruction window, a layout routine does not |
+| `WINAMP_MODERN_RENDER_GLOBALS=1` | every **system-flagged global** a program declares, with its canonical class GUID, the raw form the class table carries, and what the runtime bound it to (`System` / `PlEdit` / `ColorMgr` / `MLPlaylists`). `reference/scripting.md` already prescribed this dump — "dump `program.classes` and the `isSystem`/`isGlobal` variables" — and there was no way to run it. The class table is binary, so `strings` on a `.maki` shows the method names and **never** the GUIDs, which leaves a host singleton we have not bound looking exactly like a missing method: it keeps the System object, every call on it reports the method unsupported, and the handler dies there. That is how Big Bento's `getNumItems` read for as long as it did. One line per distinct (class, binding, source), because every program in a skin declares the same handful of globals. Needs `RENDER_DUMP`. B21's addition |
+| `WINAMP_MODERN_RENDER_SETTINGS=1` | every option the skin registered with `newAttribute` — item name, section GUID, current and default value. What the host's **Skin Settings** window will offer, and the only headless way to see options a skin registers for Winamp's preferences dialog and binds no control to |
+| `WINAMP_MODERN_RENDER_PALETTE=1` | the colours NullPlayer's **own** surfaces are painted in inside this skin — the embedded library, and any playlist/EQ/library window a skin declares none of — and how each one resolved. Per role: the resolved `rgb(r,g,b)`, then every id in its chain with the reason it answered or did not (`undeclared`, `kind=bitmap file=… — no declared colour, skipped`, `value=color.window.bg -> 55,57,64 gammagroup=PlayerDisplay`), plus a `PALETTE surface` line with the derived chrome (`background`/`bar`/`border`/`divider`/`dimText`). This is the **only** headless view of an embedded surface's appearance: the harness sets no component host, so nothing is drawn into a holder, but the colours those surfaces *would* use resolve exactly as they do in the app. Needs no `WINAMP_MODERN_RENDER_DUMP`. Run it before changing a colour path — "the skin never declared it", "a colour theme crushed it" and "the chain skipped a same-named bitmap" are indistinguishable on screen and one line apart here (BB2a) |
+| `WINAMP_MODERN_RENDER_THEMES=1` | the whole colour-theme picture: the catalog (count, names, active, default), every `<ColorThemes:List>` **in the graph** (with its container and `visible=`) and in the drawn scene (with its resolved frame and row count), and every object carrying a `colorthemes_*` action with the object its `action_target` resolves to. The only reproducible route — a `.wal` is a compressed NSIS archive, so `strings … \| grep -i colorthemes` answers 0 for skins that ship a full picker. Needs no `WINAMP_MODERN_RENDER_DUMP` |
+| `WINAMP_MODERN_RENDER_FX[=play]` | every layer whose script has switched **Layer FX** on: grid, flags, and where the evaluated mesh samples its corners from. A mesh that is not the identity is a layer that is actually moving. `=play` tells the skin a track started first, because a meter's FX is switched on from playback |
+| `WINAMP_MODERN_RENDER_FX_SPIN=<seconds>` | samples every warped layer's angle at 60 Hz, printing the wall-clock step between updates and how far it turned. This is how "the animation is rough" is split into *the script's cadence* and *our frame rate* — a smooth meter is a small, even step at an even interval |
+| `WINAMP_MODERN_RENDER_SHOW=<container>[,<container>]` | open auxiliary windows the way the user does from **Skin Windows**, dispatching `onSetVisible` to them and settling again afterwards. Without it the harness only ever sees the windows a skin opens by default, so a defect confined to one that ships `default_visible="0"` — Defix's speaker cabinets, whose `getVisBand` timer *starts* from `onSetVisible` — is invisible to every other probe. **A `default_visible="1"` window is opened without it** (Phase 40), because the app opens it too: the line reads `SHOW <id> (default_visible)`, and a container the app refuses to auto-open prints `DEFAULT-VISIBLE <id> suppressed: <reason>` instead. The settle applies to both |
+| `WINAMP_MODERN_RENDER_EQ=<band>=<value>[,…]` | drive an equalizer change from **outside** the skin — the route a preset, the menu bar or the classic equalizer window takes — and print the handlers it reaches (`EQ handler onEqBandChanged -> ledfillbar.xml`), the values driven, and every `EQ_BAND`/`EQ_PREAMP` slider's resulting 0…255 position. `band` is 0…9 or `preamp`, `value` is MAKI's −127…127; bare `1` sweeps every band. Without it the harness installs no equalizer at all, so `getEqBand` answers 0 and the events never fire. Phase 41's addition, and the only headless way to see a readout that follows the *event* rather than the drag |
+| `WINAMP_MODERN_RENDER_TEXT=1` | poll the host-bound text objects the way the running window does, so **`onTextChanged`** fires headlessly. Prints `TEXT handler -> <script> owner=<id>` per handler reached (with its failure, if any), `TEXT ontextchanged handlers=<n>`, and a `TEXT bound` line per object that declares the event with the content it currently reads. The poll lives in the window controller, so without this every `onTextChanged` in the corpus measures as an unreached handler and a skin whose readouts are written *only* from it reads as a skin with no readouts. Pair with `RENDER_PLAYLIST` for the `PE_Info` feeds, which are empty until there is a queue. B38's addition |
+| `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]` | stand a synthetic queue up behind the component seam **before** the scripts start — the only way a skin's `PlEdit` API can be observed headlessly, since the dump harness sets no component host and every script that walks the queue otherwise takes its empty branch. It also fills the drawn playlist panel, which has always come out as an empty box for exactly that reason. Prints `PLAYLIST before:` / `PLAYLIST after:` so an edit a script made (`removeTrack`, `moveTo`, `clear`) is visible, and `PLAYLIST reveal row=<n>` for a `showTrack`. Pair with `WINAMP_MODERN_CALL_TRACE=1` to see each call and its result. Phase 42's addition |
+| `WINAMP_MODERN_RENDER_KEY=<accelerator>[,<accelerator>]` | press keys at the skin the way the window does — `System.onKeyDown("alt+g")` — and print the handlers each one reached (`KEY handler alt+g -> skin.xml`) plus `KEY <accel>: handlers=<n> consumed=<0/1>`, where `consumed` is whether any handler ran MAKI's `complete;` (what tells the view to swallow the key). Accelerators are Winamp's own lowercase strings: `alt+g`, `ctrl+w`, `esc`. Without it the harness has no keyboard at all and every `onKeyDown` in the corpus measures as an unreached handler. Note the harness answers `isActive()` **true** for every object (no windows, so no focus), where the app answers per window — a `ctrl+w` that measures `consumed=1` here is still gated by focus in the app. Phase 43's addition |
+| *(always on, with `RENDER_DUMP`)* | **`VIDEO holder <container>/<layout>: <id><frame> cmdbar=<0/1>`** — the video box a skin declares, and the two things the window layer needs from it: the frame the picture is parked at, and whether the holder asked for Winamp's command bar (`noshowcmdbar=`). A `video=declared:…` catalog entry whose container turns out to hold no `<component>` prints no line at all, which is exactly the Hoop_Life_WA3 / Media_Whore case where the skin routes but has no box and the host's own window takes the video. B20's addition. A holder that is in the graph but **not in the scene** prints `<id> hidden` with no frame (B23) — an SUI skin keeps its video in a tab, so at load every visibility-filtered probe answered "this skin declares no video box" while cPro-Bento's Video tab sat empty and the film opened a window of its own |
+| *(always on, with `RENDER_DUMP`)* | **`VIS holder <container>/<layout>: <id><frame>`** — the skin's AVS/visualization **component** box, the one the host's own engine fills, and **`VIS box <container>/<layout>: <id><frame> mode=<n>(<name>)`** — every `<vis>` in the layout with the mode it asks for. The two are different surfaces (plugin vs. built-in analyzer) and telling them apart is the whole routing question, so both print. A holder in the graph but **not in the scene** prints `<id> hidden` with no frame, the same pass `VIDEO holder` and `PLAYLIST holder` each already needed (B23a, 2026-08-30). Without it every **player-embedded** holder in the corpus measured as absent — a skin parks its visualization group off-canvas under a `visible="0"` group and slides it in from a script (BLAKK: `x="161"` in a 160-wide `remote` layout, moved by `minivis.maki`) — and the corpus table recorded that absence as "none embeds the component in the player" for as long as it stood. **16 skins declare a `{0000000A}` surface and 6 embed one in the player**; the roster is in [components/visualization.md](components/visualization.md) → *The corpus, measured*. Note the failure was **visibility, not layout selection**: the dump activates every layout and printed BLAKK's `VIS box main/remote` throughout. B20a's addition |
+| *(always on, with `RENDER_DUMP`)* | **`PLAYLIST holder <container>/<layout>: <id><frame> text=<n>px row=<n>px scale=<auto(n%)|set(n%)>`** — the embedded playlist box and the metrics NullPlayer draws its rows at. The rows are the *host's*, not the skin's (a `<windowholder hold="guid:{45F3F7C1-…}">` is filled by the player, so there is no `fontsize` on it to read), and the harness sets no component host, so the drawn panel is empty and nothing else in a dump shows the size. `text=` is the **Text Size** setting resolved against this window's canvas and `scale=` says whether it came from `auto` or from a user's choice — the answer to "the playlist font is tiny in this skin". The rule is `clamp(canvasHeight/48, 11, 18)` and is keyed on the **window**, not on the skin's fonts, so a probe that changes only the pane around the holder will not move it (`reference/components.md` → *How large NullPlayer draws its own text*). A holder in the graph but not in the scene prints `<id> hidden` with the same metrics, which is the only way to measure an SUI skin (every Big Bento variant keeps its playlist in a closed tab). Measured on Auto, 2026-08-26: Big Bento `main/normal` **18** (at the cap) and its own `main/shade` **11** — the same skin, two layouts, because the rule follows the canvas; Defix `pledit` **11** (a 355px window), and cPro-Bento, mmd3, micro and stock Winamp Modern **11** (the Wasabi default). **micro moved 13 → 11 with this rule** and that is the intended correction: 13 came from its own declared fonts inside a 152×96 window |
+| `WINAMP_MODERN_RENDER_VU=<level>` | inject a program level per channel (0…1) for `getLeftVUMeter`/`getRightVUMeter`; `sweep` oscillates 0…1 at 0.5 Hz. The harness has no audio, so without it every meter reads silence and a needle's travel cannot be measured. It also **scales the injected spectrum**, because meters that read `getVisBand` rather than the VU (Defix's speaker cones) sit on one frame against the harness's otherwise-constant ramp and measure as dead at every level |
+| `WINAMP_MODERN_RENDER_CONFIG=<section>;<key>=<value>[\|…]` | write skin configuration **before** the scripts start — where the app reads it from, since the value is persisted. How a stored option the skin reads at load (a background id, a page index) is set without a GUI. Note it *stays* set for later runs. **It cannot select a display style**: Defix reads its own private copy (`CurVuVis`) at load and only writes it from `onDataChanged`, so a value seeded here is simply ignored — that is what `RENDER_SET` is for |
+| `WINAMP_MODERN_RENDER_SET=<section>;<key>=<value>[\|…]` | write a registered setting **after** the skin is up, through `setConfigAttribute` — the exact route the host's Skin Settings window takes. Prints `SET handler <key> -> <script>` per handler reached and `SET [<section>] <key> = <value> handlers=<n>`. The only headless way to pick one of a skin's display styles or songticker modes and see what it draws. Expect a *cascade* of handler lines where the setting is one of a radio group: Defix's style handler switches the other seven off, and each of those is another `onDataChanged`. Phase 45's addition |
+| `WINAMP_MODERN_RENDER_TIME=<frames>` (+ `WINAMP_MODERN_RENDER_TIME_SCALE=2`, `WINAMP_MODERN_RENDER_TIME_CLIP=1`) | ms/frame for a full repaint. `_SCALE=2` is the number that matters — it is the Retina backing store the app actually pays for; `_CLIP=1` measures the same frame clipped to the warped layers' rects. Defix, after Phase 29's pre-scaled artwork cache: **3.5 ms at 2×** idle, 5.4 ms with both reels warping, 4.4 ms clipped (it was 19.3 / 6.9 when every bitmap was resampled to the backing scale on every frame) |
+| `WINAMP_MODERN_DRAG_PROBE=<skin.wal\|dir>` | **`WinampModernDragProbe`, not the dump harness** — how much of each window a press can actually drag, sampled on a 3px grid through the real `shouldDragWindow` policy against a real scene. Per container: `drag=` / `none=` (no object under the pointer, which does not drag either) / `blocked=` with the objects doing the blocking, and `top24=` for the strip a person reaches for. This is the only way to tell "the skin claims its whole face" from "our hit test is wrong": Defix's player is **33%** draggable and every top blocker is the skin's own `move="0"` or a control, against a corpus median of ~84%. Add `WINAMP_MODERN_DRAG_WHY=1` for each blocker's `move`/`action`/`ghost`/script bindings, and `WINAMP_MODERN_DRAG_MAP=1` for an ASCII map of the face (`#` drag, `.` blocked, ` ` nothing) — the map is what makes "a 15px picture frame around the edge" obvious where a percentage does not |
+| `WINAMP_MODERN_GLUE_TRACE=1` | **live**: every script-glued window pair (`leader=<client> follower=<frame>`) and every restack, with each window's visibility. A skin that draws one window's border and title in a *second* window (B110) has that relationship only in its own MAKI, and the host learns it from the `frame.resize(client.getLeft(), …)` idiom — so "the frame is behind its client" and "the pair was never recorded" look identical on screen and are one line apart here. It is what found the recording bug: a standard frame writes **both** ways (`syncFrame` and `syncContent`), so the pair was recorded in both directions and the restack fought itself, whichever ran last winning. It also prints `GLUE-TRACE moved <window> -> <rect>` for **every** `.wal` window move, which is the line that separates "the frame never followed" from "the frame followed and something moved it afterwards" — the two halves of B110's live QA, and unanswerable from a screenshot |
+| `WINAMP_MODERN_DRAG_TRACE=1` | **live**, not headless: every press in a `.wal` window — the container, the skin point, whether ⌘ was held, the object under the pointer and what `shouldDragWindow` answers for it — plus, while a button is down, each `hitTest` with its verdict (`self (pixel)` / `self (holder)` / `subview <class>` / `nil (no visible pixel)`). The pair is what separates the two ways a drag can be dead, which look identical on screen: a press that *reaches* `mouseDown` and is refused by policy prints a `down … drags=false` line, while a press eaten above the view prints a `hitTest … -> subview …` line and no `down` at all. Read the `hitTest` half before concluding a press never arrives — a synthetic click posted against a stale window position also prints nothing, and reads exactly like a swallowed event |
+| `WINAMP_MODERN_DRAG_HOSTED=<skin.wal\|dir>` | the same measurement for the **NullPlayer-owned** windows: instantiates each `WinampModernHostedWindowRegistry` entry through `instantiateHostedWindow` and treats every host-window holder rect as covered by our own `NSView` (`S` in the map), which is what AppKit does. Prints `strip=<n>px` — the frame's title strip, the only handle a hosted window had before B57 — and `strip_drag=`. Across the corpus that strip is 15–45px; it found the projectM window at **6%** draggable on Nullsoft 2000 SP4 Lite. `classic fallback` means the skin has no usable standard frame and the standalone window opens instead |
+| `WINAMP_MODERN_DRAG_HOSTED_PNG=<dir>` | with the above: renders each hosted window to a PNG, **compositing the chrome over it** — a skin whose border is a second window is built by the frame script during the run, so the dump is the finished window rather than the half of it our own container covers. This is the instrument to reach for whenever a hosted window looks wrong: `surfaces=1` says a client area exists and is reachable and says *nothing* about where it is drawn, and reading it as success is what let a window whose chrome and contents were in different places be reported as fixed (2026-09-04) |
+| `WINAMP_MODERN_DRAG_HOSTED_TREE=1` | with the above: prints each hosted window's object tree and every graph root the frame script created (`NEWROOT`). What tells you whether a skin builds its chrome inline or in a second window, and which container it chose — `cont.clear.avs#2` is a copy, `cont.clear.avs` the declared one |
+| `WINAMP_MODERN_RENDER_GEOMETRY=<id>[,<id>]` | the resolved box of a named object and of its direct children, **including hidden ones**, with each child's declared `y`/`h`/`low`/`high`/`value`, the container's scroll percentage, and the **content / box / travel** it adds up to. `RENDER_PROBE` walks the visible scene, so anything inside a closed tab measures as absent — Big Bento Modern's settings pages live in one, and *"is this content taller than its box?"*, the whole question behind a scrollbar, could not be asked at all without this |
+| `WINAMP_MODERN_DRAW_PROFILE=1` | per-object draw cost, top 8 — which node costs the frame, without a sampling profiler |
+| `WINAMP_MODERN_DRAW_PROFILE_TOP=<n>` | widen that report. Eight rows name the worst offender; a *distribution* — one object or two hundred? — needs the tail, and on a large skin the answer is usually the tail |
+| `WINAMP_MODERN_FX_TRACE=1` | every `fx_*` call with its receiver: which layers a skin warps, and **when** it switches them on |
+| `WINAMP_MODERN_DRAW_FORMAT=1` | **live**, not headless: what the window actually composites in, printed once per view on its first `draw(_:)` — the context's `bpc=`/`bitmapInfo=`, the backing layer's `contentsFormat`, the window's depth limit and gamut, the screen's EDR headroom, and the window's and screen's colour spaces. Two findings came out of it, both for B119(2). **`bpc=0`** — the context `draw(_:)` is handed is a *display list*, not a bitmap, so everything the renderer records is scaled and colour-matched later, at replay, and `context.ctm` is **1.0 even at 100% on a Retina display**. And `layerFormat=RGBA8` with `edrMax=1.0`, which is what ruled out a structurally f16 backing store |
+| `WINAMP_MODERN_SEEK_TRACE=1` | **live**, not headless: each time the posted play position moves, every object the seek bar is made of together — id, type, action, `value=`, the value it resolves to, and its frame — over one header line carrying the host's clock and state. **All of them, in one place, is the point**: a seek bar is routinely more than one object, and a skin that draws two thumbs is two objects disagreeing, which no single value can show. It is what found B107's second thumb — cPro_MMD stacks `seeker` and `seeker2` on the identical frame `{{10,434},{480,20}}`, and they agreed for exactly as long as they shared a clock |
+| `WINAMP_MODERN_CALL_TRACE=1` | every MAKI method call with its arguments and result |
+| `WINAMP_MODERN_ACTION_TRACE=1` | **runs in the app as well as the harness.** Every `sendAction` with its **receiver**: `ACTION hide_comp param=pe -> group#sui.content`. `CALL_TRACE` prints the same call without saying who it was addressed to, and the receiver is the whole question for a script-to-script message, because a handler only hears an action bound to *that* object. Big Bento's side playlist narrows the SUI content from an action sent to `sui.content` on open and had no counterpart on close (BB30) — a pair that is invisible in every other probe |
+| `WINAMP_MODERN_MUTATION_TRACE=1` | **runs in the app as well as the harness.** Every ~2 s: how many attribute writes landed on the object graph, the top writers (attribute, object type/id, source location), **and how many full re-solves of the object tree they cost** — `writes=145 rate=71/s writers=75 resolves: layout=3 scene=8`. The two halves are the point: a write is only expensive because a cache did not survive it, so `resolves` at 60/s next to `writes` at 8/s is the defect, and either number alone reads as normal. A `drop(<caller>)` entry names a caller that threw the memoized scene away *by hand* rather than letting the generation invalidate it — which is how B52 was actually found: `drop(invalidateRectCaches())=955` in two seconds, ~460 discarded scenes a second on Big Bento Modern, none of them visible to any other probe. `WINAMP_MODERN_MUTATION_TRACE_INTERVAL=<seconds>` (default 2) and `WINAMP_MODERN_MUTATION_TRACE_TOP=<n>` (default 12) size the report. **It reports on a write, not on a clock** — a silent window prints nothing at all, which is an answer and not a broken instrument |
+| `WINAMP_MODERN_DEBUG_HOLDERS=1` | **live**, not headless: after every click in the player, the component holders the scene actually has (kind, id, frame) **and the host subviews still in the view hierarchy**. The two together are what split "two live surfaces drawn on top of each other" from "stale pixels nobody cleared" — a symptom that reads identically on screen. A subview whose holder is gone from the holder list is a surface the view layer failed to unmount (B24); a holder gone with no subview left over is a repaint question. It is also the only way to watch an SUI move one holder between places: cPro-Bento's playlist holder is `(671, 107, 194, 606)` as the right-hand column and `(9, 133, 850, 571)` as the Playlist tab, and the same log line names both |
+| `WINAMP_MODERN_VU_LOG=1` | **live**, not headless: once a second, the arriving buffer's peak and RMS, the tap cadence, how many ~13 ms blocks it was split into, and the 0…255 byte range the skin receives across them. `peak` against `blockRange` is the whole diagnosis for "the meter doesn't follow peaks and valleys" — a wide block range with a flat needle is a skin-side ballistics question, a narrow one is a measurement question. `RENDER_VU` exercises only the half of the path *above* the meter |
+| `WINAMP_MODERN_VIS_TRACE=1` | **live**, not headless: once a second **per analyzer site** (`vis/wide`, `vis/thin`, `component`), the bands that site drew and the peak caps over them — `bands=<n> pinned@1.0=<n> min/max/mean`, the twelve lowest bands, then the same for the caps. **`pinned@1.0` is the number to read.** It is what measured the defect B73 fixed — the old input was `AudioEngine`'s cooked display array and reported *52 of 75 bands at exactly 1.0* with a mean of 0.98, which is a row with no range and, over it, caps that can only draw a flat white line because every one has latched to the same ceiling. After B73 it reads 2–6 of 19 on loud passages: momentary peaks touching the top, not a row parked against it. The cap half is the other question B54 turned on — caps whose mean sits at the band mean are tracking the music; caps pinned while the bands move are parked. Per site because a skin draws a `<vis>` and a `{0000000A}` holder in the same frame, and one shared throttle let whichever drew first starve the other out of the log |
+| `WINAMP_MODERN_FIT_TRACE=1` | **live or headless**: one `FIT <layout> at <size> growth=<n> nodes=<n>` line per iteration of the content fit, which runs up to four times per layout. The fit is what decides a window's canvas *before* the first scene resolves, so a window that opens at the wrong size and then settles — or one that never settles — is diagnosed here and nowhere else; `growth=` going to zero is the fit converging, and four iterations with growth still non-zero is it giving up |
+| `WINAMP_MODERN_SHOW_WINDOWS=<id>[,<id>…]` | **DEBUG builds, live only**: opens the named skin windows at launch, exactly as the Skin Windows menu does, logging `WinampModern: opening skin window <id> (debug hook)`. The live counterpart of the harness's `WINAMP_MODERN_RENDER_SHOW` — a defect confined to a window a skin ships `default_visible="0"` cannot be reproduced from a cold launch without it |
+| `WINAMP_MODERN_RESIZE_TRACE=1` | **live**, not headless: every `WasabiSceneRenderer.resize(to:)` with its proposed, clamped and current canvas, a `noop=` verdict, and six frames of the caller. Read it **beside `MUTATION_TRACE`**: a resize marks every object in the whole skin dirty and drops both bitmap caches, so a `noop=true` line next to a `writes=5797 writers=1727` window is a stall nothing else attributes. That is how the analyzer's every-few-seconds stutter was found — a skin's own container animation (Big Bento's track notifier, sliding by writing geometry from `tickTargetAnimation`) proposed an *unchanged* size on most of its ticks, and every container in one skin shares one object graph, so the cost landed on the player |
+| `WINAMP_MODERN_VIS_FRAMES=<band>` | **live**, not headless: one line **per draw** for a single band — the clock gap the decay was computed against, the level the tap answered, and the height actually painted. The *sequence* is what separates the two things that both look like "jumpy": a `level` that repeats for three draws and then steps is an **input rate** problem (see `VIS_GAPS`), while a `bar` that sits below its own `level`, or converges somewhere under it, is a **smoothing** problem in the renderer. Nothing else tells them apart, and reasoning about the arithmetic instead got the falloff/attack composition wrong once already |
+| `WINAMP_MODERN_VIS_GAPS=1` | **live**, not headless: what the mixer tap actually delivers, once a second (`buffers=`, `rate=`, `short(<2048)=`, and the frame lengths among them), plus every break in the analyzer's input — a buffer that did not arrive, and the silence timeout it trips. `installTap(bufferSize: 2048)` is a **request, not a contract**, and this is the only thing that says so: measured on this mixer it hands over **4410 frames every 100 ms**, of which the full-stereo post keeps the first 2048 and drops the rest. So the analyzer sees 46 ms of every 100 ms of music, ten times a second, while the *oscilloscope* — fed by every 576-sample chunk of the same buffer — sees all of it. That asymmetry is why "the analyzer is not smooth and the scope is" is a statement about the **input**, not about the renderer |
+| `WINAMP_MODERN_VIS_STALL=<ms>` | **live**, not headless: every visualization-clock tick later than `<ms>`, with the gap and the interval it expected. The vis clock is the one clock whose stalls a person can *see* — it is usually the only thing on screen moving fast enough for a dropped frame to read as a stutter — so this is what turns "it hitches every few seconds" into a cadence to correlate against. A settled Big Bento playing a track reports **nothing**; the stalls it does report cluster in the first seconds after playback starts, while the server clients are syncing |
+| `WINAMP_MODERN_MAKI_TRACE=<program>` | every bytecode instruction of the matching programs, with the top of the value stack. Each line is tagged `[<source>#<param>/<instruction count>]` — the needle matches the XUI parameter **or** the source path, so it routinely matches many programs at once (every path under `/Skins/Big Bento Modern/` contains `big`), and untagged their instruction indices interleave into one stream that reads as a single program taking impossible jumps. The last resort, and the only thing that finds a wrong *result* from a handler that does not fail — it is how an integer-truncating unary minus was found collapsing a needle's angle to two positions |
+| `WINAMP_MODERN_MAKI_TRACE_LIMIT=<n>` | how many instructions `MAKI_TRACE` prints before it stops, default **4000** (`MakiBytecode.swift:708`). The budget exists because a trace of a layout routine outruns any scrollback, but it is also a trap: a trace that ends mid-handler looks exactly like a handler that stopped executing. If the last line is not the one you expected, **raise the limit before concluding anything** |
+| `WINAMP_MODERN_CORNERAMP_WAL=<path>` | the CornerAmp Redux fixture for `WinampModernPhase3Tests`, which skip without it. Separate from `WINAMP_MODERN_WAL` because those tests assert against that one skin's known object graph rather than whatever skin is being investigated |
+| `WINAMP_MODERN_RENDER_SETTLE=<seconds>` | pump the run loop before dumping, so timer-driven state has happened — and **between driven clicks**, because a skin that gates a transition on a timer (`if (anim.isRunning()) return; anim.start();`, Defix's tab switch) never releases the gate without one, and a working control measures as one that only responds the first time |
+
+
+Timing probes need an optimized build: `swift test -Xswiftc -O --filter WinampModernRenderDumpTests`
+(a debug build is ~6× slower and will mislead you; `swift test -c release` does not compile, because
+the test target uses `#if DEBUG` hooks). Two things that waste an afternoon: `cd`-ing out of the repo
+before `swift test` fails silently when the output is piped to `grep`, and the harness's skin
+configuration persists in the **xctest** UserDefaults domain between runs
+(`defaults delete com.apple.dt.xctest.tool` resets it).
+
+### What the probe models about windows
+
+The harness owns no windows, so everything a script can ask about one is answered by a model
+(`WinampModernRenderDumpTests.render`), and it is deliberately the *app's* model:
+
+- every **auxiliary** container gets a window at load and starts **closed**, unless the skin opens it
+  (`default_visible="1"`, minus the suppressed cases) or the run asks for it with
+  `WINAMP_MODERN_RENDER_SHOW`;
+- `show()` / `hide()` / `toggle()` from a script move it, so a second `isVisible()` in the same run —
+  including one after a driven `RENDER_CLICK` — answers what the first call left behind;
+- the **main player** is not an auxiliary, so it answers `nil` and falls back to the graph attribute,
+  exactly as `WinampModernMainWindowController.containerVisibilityQuery` does;
+- every container is **seeded with `onResize`** immediately after `runtime.start()`, where the app
+  puts `WinampModernMainView.scriptsDidStart()`. Each seeded container prints
+  `SEED onresize <container> -> N handlers`, and the per-container settle compares against those
+  frames, so a later settle still reports only what actually moved.
+
+**Why the seed is not optional.** It was missing until 2026-09-04, and it produced the same false
+report twice: B87 ("cPro's tab strip never runs its fit pass") and B115 ("a group's `onResize` is not
+dispatched at initial layout"). Both were written off a dump in which a skin's whole layout routine
+had genuinely never run — because the *harness* never ran it, not the app. WMP11-BlueVU is the clean
+case: `MainWindow.m` hangs its entire display band on `content.onResize`, every object in it is
+visible by markup default, and unseeded the probe showed `Songticker` and `SongInfo` at the identical
+frame while the app drew one clean string. The seed fires **130** dispatches across **70** containers
+in the corpus, so this was never one skin's problem.
+
+**Why it is not simply left uninstalled.** It was, until 2026-08-31, and that is what B83 turned out
+to be: with no `containerVisibilityQuery` the runtime falls back to the object's `visible` attribute,
+a `<layout>` almost never declares one, and so **every closed window measured as open**. ClassicPro's
+drawer menu asks exactly that question about its Widgets Manager
+(`getContainer("widgets.manager").getLayout("normal").isvisible()`), and the probe reported the row
+ticked with the window shut on all five cPro skins — a defect that only ever existed in the
+instrument. The app, which installs the query, had always answered it correctly, confirmed live.
+
+The general form is worth carrying to the next callback: **an uninstalled host callback does not
+measure "no host" — it measures whatever the fallback says**, and a fallback that reads a
+usually-absent attribute answers the same way for every skin in the corpus. When you add a probe that
+depends on one, install the model too.
+
+Use the probe to answer "is it missing art, bad geometry, or a script that never ran" before changing
+renderer code — `BITMAPS … missing=` distinguishes an unresolved resource from one that draws wrongly.
+
+**A dead control is usually a dead script, not a bad hit test.** `RENDER_CLICK` answers that in one
+run: it prints the object under the point, `bindings=`, and the handler count for each mouse event.
+`hits togglebutton#… bindings=false` with `onleftclick -> 0` means the script that should have hooked
+it never ran.
+
+> **Do not read `RENDER_XUI`'s `onscriptloaded=false` as "the script never ran."** It reports per-object
+> *bindings*, and on cPro-Bento it says `false` for **every** object in the skin, `layout id=normal`
+> included — whose scripts demonstrably run. An earlier phase pinned the inert tab strip on exactly
+> that misreading and chased the wrong thing for two phases; the real cause was `Group.init(parent)`
+> being a no-op. `RENDER_SCRIPTS` is the probe that observes execution, and `RENDER_CLICK`'s handler
+> chain is the one that shows where a message stops.
+
+**A control that responds but changes nothing is a chain that stops partway.** `RENDER_CLICK` prints
+the chain (`CproTabButton.onleftbuttonup -> CproTabs.onaction -> CentroSUI.onaction`) and every
+attribute the click moved. A chain that ends one hop early is a missing script-to-script route; a click
+that changes the right attributes but nothing on screen is a renderer gap.
+
+> **Gotcha:** the harness must install an `NSGraphicsContext` around `renderer.draw`. `drawText` ends
+> in `NSString.draw(in:withAttributes:)`, which renders into the *current* `NSGraphicsContext`, not
+> the `CGContext` it was handed. Without it every TrueType/system-font string is silently dropped from
+> the dump while the real app (always inside `NSView.draw`) shows them — the harness lies to you.
+
+> **`CLICK_WATCH`'s `frame=not laid out` is a harness artifact, not a dead surface.** The harness
+> renders each container standalone and keeps no live container-visibility model, so a markup
+> `TOGGLE param=<container id>` has nothing to move headlessly: the watched container reads
+> `frame=not laid out state=[]` however well the button works. Check it against a container you know
+> is fine — Defix's `pledit` is `default_visible="1"` and prints exactly the same. The
+> `changed container#X visible=…` lines you *do* see come from a **script** writing a graph
+> attribute, which is a different mechanism; do not read one as evidence and the other as its
+> absence. A markup `TOGGLE` to a container id can only be judged in the app — and it does work
+> there: Defix's `CONF` button (`action="TOGGLE" param="Config"`) opens its Skin Settings window,
+> confirmed live 2026-08-19, while measuring as stone dead headlessly.
+
+> **A corpus text scan must extract NSIS skins too, or it silently under-reports (B43).** A `.wal` is
+> *usually* a zip and *sometimes* an NSIS installer, and `unzip` fails on the latter without stopping
+> the loop — so a `for f in *.wal; do unzip …; done` scan quietly produces one directory fewer than
+> there are skins, and every `grep` over the result is wrong in a way nothing announces. Use `7zz`,
+> which reads both, and **check the extracted directory count against the skin count** before
+> trusting a "the corpus declares this N times" claim.
+>
+> This is not hypothetical: B43's first scan reported 15 `fliph`/`flipv` declarations across 5 skins
+> and concluded the change could not reach anything else. The one skin it missed —
+> `Nullsoft.Winamp.2000.SP4.Lite`, the only NSIS archive of the 35 — was then the *one* image in the
+> sweep that changed, and it read exactly like a regression in a skin the change had no business
+> touching. The tell that saved it was the opposite of the usual one: the diff was **reproducible in
+> isolation with matched defaults hygiene on both builds**, so it was real, and the scan was what was
+> wrong. Re-extracting with `7zz` found a 16th declaration and the "regression" was the fix working.
+
+> **Compare the sweep by pixels, not by PNG bytes.** A dump can hash differently on every run of the
+> *same* build while being pixel-identical — the encoder, not the renderer. One unexplained hash in a
+> 21-skin sweep is worth two minutes of checking before it is worth a bisect (Phase 45).
+>
+> **But diff in `RGB`, never `RGBA`.** Pillow's `getbbox()` on an RGBA difference image answers from
+> the **alpha** band, and every dump is fully opaque — so `ImageChops.difference(a, b).getbbox()` on
+> `.convert('RGBA')` images returns `None` for two images that look nothing alike. It reported a
+> 289-image sweep as 285 identical while the menu bar had visibly moved. `.convert('RGB')` on both
+> sides is the whole fix; if a diff comes back suspiciously clean, check that first (B36/B37).
+>
+> **Anexa's `main-shade` is genuinely nondeterministic**, not just an encoder artifact: two runs of
+> the same binary differ in the pixels around `(47, 38)-(75, 64)`. Discount it in a sweep.
+>
+> **Reset the xctest defaults domain before a before/after sweep, and take both halves of the pair
+> without running anything else in between.** Skin configuration persists in that domain (see above),
+> so *any* probe run between the two halves contaminates the second one — and a probe that calls
+> `runtime.start()` is enough on its own, because a skin's `onScriptLoaded` writes configuration.
+> This has produced a false regression: a `ColorMgr` pass whose "after" sweep was taken downstream of
+> a corpus-wide probe reported changed images in a skin the change could not touch, and the diff read
+> exactly like a real defect — **no new diagnostic, no failed handler, and reproducible against the
+> stale baseline** (two runs of the same binary agreed with each other, which is the check that
+> normally separates a real change from noise, and it passed). The tell is a skin changing that the
+> change has no mechanism to reach. `defaults delete com.apple.dt.xctest.tool`, then re-run.
+
+> **A click is driven when the loop reaches its container, so the clicked container is dumped
+> first.** The dump walks containers in declaration order and drives `RENDER_CLICK` inside that walk;
+> Defix's `Config` is second to last, so a click that changed the background art of five other
+> windows had already missed all five PNGs — the probe printed `changed layer#…` lines no image in
+> the dump could show. The clicked container is now hoisted to the front of the walk (Phase 45), so
+> everything else is rendered *after* the click. Nothing reorders the containers when no click is
+> driven.
+
+> **Drive a multi-click sequence with `RENDER_SETTLE`, or one click in the burst goes missing.**
+> Twelve clicks on Defix's *Body material* arrow with no settle between them step the background
+> `1…9, 11, 12` — one click leaves no write at all, reproducibly. With `RENDER_SETTLE=0.3` the same
+> twelve step `1…12`. The skin is not skipping a background (a fresh run from `lastcurBODY=9` reaches
+> `BG10` in one click); a burst with no run loop between the clicks is not a sequence the app can
+> produce. This is the same family as the note B11 carried about a timer undoing a page switch
+> mid-sequence.
+
+> **A bare `RENDER_CLOCK` ladder is not a motion verdict for a skin whose FX is switched on from
+> playback.** Defix's six windows hash identical at t = 0 / 0.25 / 1 / 4 with `SETTLE=3`, and its
+> reels are nonetheless warping — the FX is switched on from `onPlay`, which the ladder never sends.
+> Pair the ladder with `RENDER_FX=play`, and read a flat ladder as "nothing time-driven **at rest**".
+
+`RENDER_SETTLE` is usually the difference between a dump that means something and one that does not:
+Love is War Miku's whole opening animation (the display panel sliding to `y=84`, the character to
+`x=129`) runs on a 300ms timer, so without it the dump shows a scene the user never sees. And the
+load-time compatibility report is **clean** for anything a click reaches — a handler that fails on a
+missing method records nothing until something drives the event, which is why `RENDER_CLICK` prints its
+own report afterwards.
+
+> **An object a script creates is invisible to every walk — the graph one included.** The Phase 32
+> theme probe walked the whole graph precisely so a picker inside a closed drawer would still be
+> counted, and it *still* reported "multipass ships no `<ColorThemes:List>`". The list is real
+> (`xml/player-normal.xml:262`); it lives in a groupdef whose only instantiation site is a
+> `System.newGroupAsLayout` call, and that call was being refused. Nothing in the document, the graph
+> or the scene showed it, because it had never been built. Two rules follow: read a "the skin does not
+> ship X" verdict against `RENDER_SCRIPTS` **first** — a skin whose startup aborted ships nothing it
+> would have built; and a `SETTLE`d run after a click sees more of a skin than any static walk does
+> (multipass goes from 54 graph nodes to 118 when its drawer opens).
+
+**The dump only ever renders a skin's *initial* state.** A defect a script mutation introduces later
+(a font swapped at runtime, an object shown after a click) is invisible to it. `WinampModernCrashRepro`
+is the opt-in harness for that case: it fires every standard event at every object in graph order,
+redrawing after each, then sweeps the clock. It was written for a live-run crash it still does not
+reproduce — extend it rather than starting over.
+
+> **Anything a skin controls can reach CoreText, and a nil there kills the process.**
+> `NSString.size(withAttributes:)` aborts with `attempt to insert nil object` if any attribute value
+> is null — inside `NSView.draw`, so it is an app crash, not a bad frame. AppKit/CoreText
+> constructors are imported as non-optional but can still return null, and **only an `Optional`
+> binding sees it** (`let font: NSFont? = …`). `WasabiResources.font` therefore returns `NSFont?`,
+> point sizes are clamped to a finite 1…256, and a skin TrueType with no PostScript name is rejected.
+> Apply the same discipline to any new skin-derived value handed to a system API.
+
+**A skin asking for a different window size prints `SCALE request <factor> -> <level>%`.** The dump
+installs `uiScaleRequested` before `start()` and reports every `layout.setScale`, named as the UI Size
+level the app would snap to — so a button asking for 250% is not confused with one asking for 200%,
+and nine identical lines from one click is the expected shape, not a bug (Defix registers the
+`SCALING` pulse once per script, and each holder scales its own layout). The harness owns no windows,
+so this is the only headless view of the request; what it cannot show is the resize itself.
+
+`WinampModernRenderPixelTests` is the synthetic guard for all of the above: a banded atlas whose crop
+origin, upright orientation, tiling, and `fitparent` sizing are asserted per pixel. When you touch
+`WasabiSceneRenderer`, verify a fix *fails* without the change before trusting it.
+
+### What the render host is playing (BB27, 2026-08-25)
+
+`RenderHost` answers a **full** track: title, display title, *artist* and *album*. The protocol's
+defaults for the last two are `""`, which is a playing-nothing state no window in the app is ever in,
+and it hides a whole class of defect — a notifier is three stacked readouts, so with two of them empty
+its vertical arrangement measures as one line and no collision between the rows is visible at all.
+That is how a title box overlapping the artist beneath it survived a clean render dump. Both strings
+are deliberately long enough to need more room than a toast declares, because auto-width and ticker
+behaviour are only exercised by a string that does not fit.
+
+### The corpus census — one structural row per installed skin
+
+`scripts/wal_skin_census.sh <outdir>` is the sweep's reporting sibling. It runs one render-dump pass
+and one `WINAMP_MODERN_DRAG_HOSTED` pass over the corpus and writes **one TSV row per archive** —
+sha256, compatibility level, findings by severity and code, arrangement, where every managed surface
+ended up, container/layout/node counts, resolved and unresolved bitmaps, which NullPlayer-owned
+windows got a skin frame, whether the archive ships the author's `screenshot.png`, and the git rev it
+was measured at. It answers "what is the state of the whole corpus" where the sweep answers "did my
+change move anything". No engine code: everything in a row already existed on a dump line.
+
+```sh
+scripts/wal_skin_census.sh <outdir>                 # census.tsv, plus render.txt/hosted.txt/damaged.txt
+scripts/wal_skin_census.sh <outdir> --parse-only    # re-derive census.tsv from a capture already there
+scripts/wal_skin_census.sh <outdir> --corpus <dir>  # one skin alone, for a damaged-log re-run
+```
+
+It inherits the sweep's freeze rule, its dirty-tree refusal and its redirect-don't-pipe rule, and
+`--parse-only` exists so a parsing or rating change can be checked against a known-good capture
+without paying five minutes for another one. Two things about it are load-bearing:
+
+- **The enumeration rule is `*.[wW][aA][lL]`, `-type f`, and the script prints the count it
+  measured.** A plain `*.wal` glob drops `Defix Hi-END 200.WAL` — one of the six skins that carries a
+  letter — and a bare `*` picks up the `ClassicProEngine` **directory**, which is a shared engine tree
+  and not an archive. The corpus also moves: four skins landed overnight on 2026-09-05, so a document
+  asserting a fixed number goes wrong in a way that looks right. On 2026-09-06 it measured **79
+  archives, 75 distinct skins** — four archives are byte-identical duplicates under a second filename,
+  which the sha256 column makes visible. **Count per file where a row is per file, per distinct skin
+  where a row is per skin.**
+- **`damaged` is a column, not an afterthought.** The sweep's interleaved writes eat whole blocks of
+  the log at random in about half of all passes, so a census that inherited the sweep but not this
+  would emit *silently missing fields*. A skin whose log came back damaged gets a row carrying its
+  identity and the flag and nothing else, and is named for a solo re-run. Two consecutive passes on
+  an unchanged tree (2026-09-06) came back byte-identical, with one skin damaged in both; run alone it
+  produced a full row.
+
+**A count in this guide is dated by its corpus, and the date cannot be recovered from `git blame`.**
+Sentences like "19 of the 36 installed skins ship `<slider>`" are measurements: the denominator is a
+timestamp on the numerator, and rewriting 36 to today's 75 leaves a count that was never measured
+against 75. Such a sentence keeps its number and says *then installed*. Only a sentence asserting how
+big the corpus **is** adopts the current figure. Do not date them from `git blame` — it gives the day
+the line was last edited, not the day the count was taken, and doing so once put the 30-skin corpus
+and the 36-skin corpus on the same date in two different files. If the prose does not already carry
+the measurement date, leave it undated.
+
+**What the census cannot do is grade.** Its `fully-skinned` / `player-skinned` /
+`partly-skinned` / `does-not-load` rating says every piece the skin declares found a home with its
+artwork resolved — it does not say anything is drawn
+right, and three skins rate `fully-skinned` while rendering an empty main player window (B145). The rating
+is defined, with the measurements that ruled out the obvious alternatives, in
+`.claude/skills/wal-skin-report/SKILL.md` → *The census rating is not a grade*; the user-facing list
+it feeds is `docs/winamp-modern/skin-compatibility.md`.
+
+### The corpus render sweep — the regression proof for any engine-wide change
+
+A change to loading, initialization, script startup, hit testing or **drawing** reaches every skin,
+so the proof that it broke none of them is a before/after capture across the whole installed corpus.
+`WINAMP_MODERN_WAL` takes a **directory** as well as a single archive (B72, 2026-08-30) and loops the
+corpus inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has. Measured over the 69 skins then installed: **69 skins in
+~100 seconds**, against ~25 minutes for the shell loop it replaces.
+
+**A clean sweep proves the default state and nothing else.** Every skin renders in its *stored
+default configuration*, so a change can pass 287 of 288 images and still break a skin badly, because
+the defect lives in a state the sweep never enters. 2026-08-24: a change to MAKI `onScriptLoaded`
+dispatch swept clean and still took the panel sizing out of Big Bento Modern — the affected path only
+runs on a non-default Multi Content View page, and the user found it in seconds. Read a clean sweep as
+"no regression in the default state", never as "verified". When a fix targets behaviour reached
+through a setting, a tab or a dragged splitter, reproduce *that* state explicitly
+(`WINAMP_MODERN_RENDER_CONFIG` / `RENDER_SET` seed it headlessly) and hand the build over to be
+checked on screen.
+
+It is a committed script. Do not paste a shell function out of this file:
+
+```sh
+scripts/wal_render_sweep.sh capture <outdir>        # one pass: raw.txt, invariants.txt, png/
+scripts/wal_render_sweep.sh compare <base> <curr>   # invariants diff + per-image maxdelta report
+```
+
+`capture` takes `--allow-dirty` (see the freeze rule below) and `--corpus <dir>`, which is how you
+run **one skin alone** — point it at a directory holding just that archive. That check is worth
+knowing: if a skin's lines come back when it runs by itself, the sweep capture was the problem and
+not the code.
+
+**`compare` does the half that used to be done by hand and mostly therefore not at all.** It diffs
+the invariant lines *and* compares every dumped PNG, reporting per image: identical, `maxdelta=N`
+over a pixel count and bounding box, or present on one side only. Read the magnitude before calling
+a difference a regression — a **maxdelta of 1** is one LSB (the tiling rewrite left 12 of 288 that
+way), and a handful of pixels at **≤5/255 with every full-coverage and every empty pixel unchanged**
+is a rasteriser difference, not a glyph that moved (the CoreText text conversion left 5 of 590 that
+way). A glyph in a different *place* moves hundreds of pixels and shows up as such.
+
+> **`compare` was half-blind until 2026-09-03, and silently.** Every dump is RGBA, and Pillow 9.5
+> made `Image.getbbox()` on an image *with* an alpha channel consider the **alpha alone**. The
+> difference image's bbox therefore came back `None` for any change that repainted a pixel without
+> changing its opacity, and the pair was counted **identical**. Measured on B109: BLAKK's boombox
+> moved a 191x10 volume bar and the sweep reported all 590 images clean; the true count for that
+> change was 14. It now passes `alpha_only=False`. Two lessons, both already in this file and both
+> paid for again: a comparison that cannot fail is not a proof, and **check the instrument against a
+> change you can see** before trusting it about the ones you cannot. If a sweep of a drawing change
+> comes back perfectly clean, that is a reason to suspect the compare, not to relax.
+
+**One corpus image is nondeterministic, and it is not your change.** Anexa's `main-shade` draws an
+analog clock from wall time, so it differs between two runs of the *same* build — measured 2026-09-04
+at `maxdelta=130 over 83 px`, a bbox that moves every pass. Any sweep of a drawing change will report
+it. Confirm it the cheap way before spending a thought on it: capture twice off one build with
+`--corpus` a directory holding just that archive, and compare those two.
+
+Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
+the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
+resolved/missing bitmap counts. Every archive prints **`SKIN <file.wal>`** first, which is what makes
+one flat capture readable: every other line is keyed by `<container>/<layout>`, and those are not
+unique across skins. A skin that fails to load prints `SKIN <file.wal> FAILED <error>` and the sweep
+carries on — one broken archive must not abandon the other 68, and the failure lands in the diff
+where you will see it. In a directory run each skin gets **its own subdirectory** of PNGs, named for
+the archive, so skins cannot collide on a shared container name.
+
+**Capture the baseline in a worktree, never with `git stash`** — a stash relinks `.build` under the
+user's running app:
+
+```sh
+git worktree add ../nullplayer-base HEAD
+cp -R .build/arm64-apple-macosx/debug/*.framework \
+      .build/arm64-apple-macosx/debug/*.dylib ../nullplayer-base/.build/arm64-apple-macosx/debug/
+(cd ../nullplayer-base && scripts/wal_render_sweep.sh capture /tmp/sweep/base)
+```
+
+Copying the vendored frameworks and dylibs across is not optional; without them the test bundle will
+not load. When your own change is still uncommitted and `Sources/` is otherwise at `HEAD`, you do not
+need the worktree at all — capture the baseline *before* you start editing.
+
+**The traps, all of them paid for, and which ones the script now handles for you:**
+
+- **A sweep is a build. Freeze the tree.** Editing anything under `Sources/` or `Tests/` mid-run
+  invalidates the pass, and with the old shell loop it failed *silently*: a run whose binary would
+  not compile wrote an **empty** capture, and an empty capture diffs as "everything changed." Adding
+  one new test file during a baseline pass emptied 15 of 36 captures that way (2026-08-29). One
+  invocation cannot be invalidated halfway, which is the real argument for directory mode — but the
+  rule still holds for the *pair* of passes. *Handled:* `capture` refuses a dirty tree without
+  `--allow-dirty`, and fails loudly below ~10 invariant lines per archive.
+- **Redirect the run to a file and grep the file.** Piping the sweep straight into `grep` drops
+  lines, reproducibly and with no error. *Handled:* the script redirects, and keeps **stderr in its
+  own file** — `2>&1` is not enough, because the runner's banners reach fd 2 through a second file
+  offset and overwrite stdout mid-line.
+- **Interleaved writes still eat whole blocks of the log, and they look exactly like a dropped
+  container.** Splitting stderr helps and does not cure it. Measured 2026-09-02: one pass lost 25 of
+  BLAKK.wal's invariant lines and another lost 3 of Itemskin.wal's, while every one of their PNGs
+  stayed byte-identical and **both skins came back identical when run alone**. Re-running does not
+  reliably clear it — four consecutive passes over one build damaged the same skin every time.
+  *Handled:* `capture` attributes each collision to its owning `SKIN` line and writes the names to
+  `damaged.txt`; `compare` leaves those skins out of the invariants diff and tells you to run each
+  alone. Their PNGs are unaffected and are still compared.
+- **Run the same build twice before believing any diff.** Verified 2026-09-02 on this corpus: two
+  passes over one unchanged build were byte-identical on all 590 images and differed on the
+  invariants only where a runner banner landed (which `compare` sets aside and counts separately).
+  Some skins can be genuinely non-deterministic — Anexa's `main/shade` draws an analogue clock from
+  the wall clock — so record which images those are *before* the change, or every later diff is
+  unreadable.
+
+### The golden images
+
+`WinampModernGoldenImageTests` (Phase 44, backlog B10) is the same idea at scene scale: five
+synthetic skins rendered **whole** and compared against committed PNGs in
+`Tests/NullPlayerAppTests/Goldens/WinampModern/`. Between them they cover the mechanisms the manual
+17-skin sweep exists to protect, one scene each:
+
+| Scene | Guards against |
+|---|---|
+| `group-clipping` | a sized `<group>` letting its children spill (Defix's reels over the song ticker) |
+| `group-background-box` | a `<group>` sized by its `background` bitmap losing that box, or painting a backing it said `drawbackground="0"` about (BLAKK's spectrum/volume drawer) |
+| `frame-collapsed` | a `<Wasabi:Frame>` pane's geometry or its clip (cPro-Bento's closed mini view over the volume slider) |
+| `animated-layer` | the wrong cell of an animation sheet — column, **row**, or a frame that will not advance against the clock |
+| `text-placement` | bitmap-font `align` × `valign`, and `leftpadding` |
+| `alpha-stack` | `alpha` reaching text and bitmaps alike (Phase 25.1) |
+
+The fixtures are built in code — an atlas of flat colour cells, and a bitmap font whose glyph cells
+are flat colours keyed to their position in the sheet — so nothing third-party is committed and a
+wrong glyph is a wrong colour. Every sprite blits at natural size and the animation clock is pinned,
+so the comparison is exact up to a ±2 per-channel tolerance for a resampler edge.
+
+```sh
+swift test --filter WinampModernGoldenImageTests                        # check
+WINAMP_MODERN_GOLDEN_UPDATE=1 swift test --filter WinampModernGoldenImageTests   # regenerate
+```
+
+A mismatch writes `<scene>.actual.png` and `<scene>.diff.png` (differing pixels in red) to
+`WINAMP_MODERN_GOLDEN_DUMP`, or the temporary directory. **Regenerate only for an intended change,
+and look at the diff before committing it** — a golden updated without being read is how a defect
+becomes the expectation.
+
+> **A golden nobody has seen fail is a blind instrument** (§"A blind instrument reads as a working
+> feature"). Each of these five was checked to fail under a deliberately reintroduced regression —
+> `isSizedGroup` → `false`, the animation row → `0`, the bitmap-font `valign` offset → top,
+> `WasabiFrame.dividerHalfThickness` → 2 — and to fail nowhere else. Do the same for a scene you add.
+> `group-background-box` was added that way and it earned its keep immediately: its first draft put
+> the oversized child at the group's origin, where it covered the backing exactly, so the
+> `drawbackground` half passed with the flag disabled. A scene that cannot see half of what it claims
+> to cover is the same blind instrument, one layer in.
+
+What they do **not** cover: the window layer. A defect that only exists once a scene is inside an
+`NSWindow` (Phase 42's playlist window opening and shutting on one click) measures clean here, and
+still needs `WINAMP_MODERN_DEBUG_CLICK` in the running app. Nor do they replace the 17-skin sweep for
+a change against real artwork — they catch the *mechanism* regressing under it.
+
+### The harness answers geometry from *before* `start()` (fixed 2026-08-24, BB20)
+
+`WinampModernRenderDumpTests` used to install `runtime.resolvedGeometryRequested` inside its
+per-container loop, long after `try runtime.start()`. Skins do nearly all of their layout in
+`onScriptLoaded`, so for the whole of it every `getWidth`/`getLeft`/`getGuiW` fell back to the raw
+markup attribute — `0` for a `w="0" relatw="1"` group, `-7` for a `w="-7"` one. Big Bento Modern's
+visualizer measured `getwidth() -> 0` headlessly against `346` in the app, and the harness **agreed
+with the symptom for the wrong reason**, which is worse than disagreeing with it.
+
+The app is the model: `wireContainerCallbacks` installs the closure *before* `scripts.start()` and
+consults every container's renderer in turn. The harness now builds a renderer per container up
+front, installs a closure that asks each of them, and the dump loop **reuses those same instances** —
+a second renderer would mean the scene the skin laid itself out against is not the scene that gets
+dumped. If you see a probe report a negative or zero width for a relatively-sized object, check this
+wiring before believing it.
+
+### Profiling the *running app*
+
+`RENDER_TIME` measures `renderer.draw` and nothing else, so it cannot see a cost in `layout()`, in a
+script's geometry reads, or on the playback tick. For "the UI is slow" or "it hangs", sample the
+process:
+
+```sh
+sample $(pgrep -f '.build/arm64-apple-macosx/debug/NullPlayer') 6 -file /tmp/np-sample.txt
+```
+
+Read the **Main Thread** tree and aggregate the `(in NullPlayer)` frames by subtree cost. Note the
+idle share first — a profile that is 43% idle is telling you the app is *not* CPU-bound and the
+question is what limits the repaint, not what the repaint costs. Two full graph walks were found this
+way that no headless probe could have shown; see
+[performance.md](performance.md) → *Profile the process, don't reason about the frame*.
+
+**A perf number is only a perf number on a `release` build, and `sample` is the only instrument that
+survives there.** Every `WINAMP_MODERN_*` probe is `#if DEBUG`, so a release build answers "no
+problem found" whether or not there was one — and debug is not a fixed offset from release, it is a
+different verdict: `71ffd874` recorded 96.2% main-thread busy in debug where release was 60.7%, and
+the whole post-B106 chase turned out to be that gap. Build with `./scripts/kill_build_run.sh` (no
+`--debug`) and take the numbers with `sample`. It is still a **live** session with the reporter
+driving — a skin has to be loaded and a track playing — so it obeys *The measurement loop that
+works* below, control window included.
+
+**Cut the thread block at the next `Thread_<id>:` line when you parse the output.** `sample` prints
+every thread into one indented tree and the blocks are not blank-line separated, so a parser that
+reads to the next empty line swallows all of them: B118 measured a leaf sum of 106202 against the
+main thread's true 7643 — a "1200% idle" that looks like a bug in the arithmetic and is a bug in the
+windowing. Then keep the two aggregations distinct. **Busy/idle is a sum over leaves** (they are
+disjoint), counting `mach_msg2_trap` / `semaphore_wait*` / `__psynch_cvwait` / `__workq_kernreturn` /
+`kevent` as idle. **A subtree cost is the outermost occurrence** of the symbol only — summing every
+frame that carries it multiplies recursion and closures. B118's WMP11-BlueVU numbers came out of
+exactly this shape: 77.9% busy, `drawScene` 52.8%, `drawWarped` 25.0%, against cPro-Bento's 49.6% /
+31.1% / 0.1% on the same build and the same local file.
+
+### Driving a click in the *running app*
+
+`WINAMP_MODERN_DEBUG_CLICK=[<container>@]<x>,<y>[;…]` (DEBUG builds) clicks skin points a few seconds
+after launch, two seconds apart, replaying exactly what `mouseUp` does. A bare `x,y` aims at the main
+player; `Config@360,50` aims at one of the skin's **other** windows (Phase 45) — which is where a
+configurator lives, and therefore where a click that changes every other window has to be driven. It exists because
+`RENDER_CLICK` **has no windows**: a defect that lives in the window layer measures as clean there.
+Defix's playlist button was the case — one tidy `CLICK action:` line in the harness, and a window
+that opened and shut again on every press in the app. Pair it with `WINAMP_MODERN_CALL_TRACE=1`,
+which turns the click into a readable chain:
+
+```sh
+WINAMP_MODERN_DEBUG_CLICK="92,251;92,251" WINAMP_MODERN_CALL_TRACE=1 \
+  ./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath "/abs/Skin.wal" > /tmp/x.log 2>&1
+```
+
+Coordinates are **skin pixels** in the main window's active layout — take them from
+`RENDER_PROBE`'s `frame=` for the object you want.
+
+### Playing a video — or a track — in the *running app*
+
+`WINAMP_MODERN_DEBUG_PLAY=/abs/film.mp4` (DEBUG builds) starts a local video six seconds after
+launch — after `DEBUG_CLICK`'s points, so a tab a click opens is the surface the film lands in. It
+exists because the app takes no file argument and `application(_:openFiles:)` accepts audio
+extensions only, so before it the video path could not be driven from a cold launch at all:
+
+**An audio path is loaded into the engine and played instead** (B52). Every performance defect in
+this window is a defect of the *playing* window — the vis clock, the playback tick, the readouts a
+skin's scripts rewrite — and there is no other way to reach that state from a cold launch, which is
+what makes a `sample` run reproducible rather than a description of whatever the app happened to be
+doing. It is also the difference between measuring the analyzer and measuring the **scope**: those
+are two different repaint clocks (30 Hz and 60 Hz, B51), so a profile that does not say which one
+was on screen cannot be compared with one that does. `drawOscilloscope` appearing in the sample at
+all is the check that it was the scope.
+
+```sh
+WINAMP_MODERN_DEBUG_CLICK="97,118" WINAMP_MODERN_DEBUG_PLAY="/abs/film.mp4" \
+  ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode winampModern -winampModernSkinPath "/abs/Skin.wal"
+```
+
+Two things it measures that nothing else can. **The picture is placed twice** — a tab revealed by
+the play itself sets off the skin's own `onResize` cascade *after* the attaching turn, and a single
+placement leaves the picture parked over the box's opening geometry (a white slab down one side).
+And **switching away from the tab mid-film unparks it into NullPlayer's own window**, which is B20's
+rule (`detachVideoOutput` reveals when something is still playing) and not a defect.
+
+### Opening the visualization in the *running app*
+
+`-winampModernShowVisualization 1` (DEBUG builds) opens the visualization window a moment after
+launch, exactly as **Show Visualizations Window** does, and logs `WINAMP-MODERN-VIS: visible=<0/1>`.
+For a skin that declares an AVS container that is the skin's own window with the host's engine in it;
+for one that does not it is NullPlayer's own — and which of the two happened is the point of looking.
+
+```sh
+./.build/debug/NullPlayer -rememberStateEnabled 0 -uiMode winampModern \
+  -winampModernSkinPath "/abs/Skin.wal" -winampModernShowVisualization 1
+```
+
+The surface also logs one line each time its window is shown, which is the fastest way to split "no
+surface" from "wrong box" from "the engine refused to start":
+
+```
+WINAMP-MODERN-VIS: resume window=<title> visible=<0/1> box=<rect> engine=<name> rendering=<0/1>
+```
+
+`visible=0` or `rendering=0` there is the display-link lifetime trap (an engine will not start in a
+window that is not on screen yet, and nothing restarts one that never started).
+
+### Driving a key in the *running app*
+
+`WINAMP_MODERN_DEBUG_KEY=alt+g[;ctrl+w…]` (DEBUG builds) presses accelerators a few seconds after
+launch, two seconds apart, and logs `WinampModern debug key <accel> consumed=<0/1>`. The keyboard
+counterpart of `DEBUG_CLICK`, and the only way to see a key handler act on a **window** —
+winampmodern566's `ctrl+w` shades one, and the harness owns no windows. It dispatches from the
+controller rather than from a focused view, so `isActive()` answers for whichever window is actually
+key: `ctrl+w` reads `consumed=0` while the main window has focus, which is the gate working, not a
+failure.
+
+To exercise the *real* path (`NSEvent` → accelerator → responder chain), activate the app and post a
+keystroke:
+
+```sh
+osascript -e 'tell application "System Events" to set frontmost of (first process whose unix id is (do shell script "pgrep -x NullPlayer") as integer) to true'
+osascript -e 'tell application "System Events" to keystroke "g" using {option down}'
+```
+
+> **`print` is block-buffered when stdout is a file, `NSLog` is not.** A run redirected with
+> `> log 2>&1` interleaves them out of order and can end with the last few hundred `CALL-TRACE`
+> lines missing entirely — which reads exactly like "the handler never ran". Judge a live key run by
+> what it *did* (a `resizeWindow` line, a window that moved), or flush before you read.
+
+Load a developer archive directly (DEBUG builds):
+
+```sh
+./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath /abs/path/Skin.wal
+```
+
+This still goes through `WinampModernSkinLoader` and its VFS — it is an acceptance hook, not a
+filesystem bypass.
+
+Run the engine tests:
+
+```sh
+swift test --filter WinampModern                    # all synthetic coverage, headless
+swift test --filter WinampModernPhase7Tests         # fuzz / stress / limits
+swift test --filter WinampModernGoldenImageTests    # the committed golden images (see above)
+```
+
+Opt-in tests against user-supplied skins (nothing third-party is committed, so these skip unless the
+env var is set):
+
+```sh
+WINAMP_MODERN_WAL=/path/CornerAmp_Redux.wal swift test --filter WinampModernPhase3Tests
+WINAMP_MODERN_WAL=/path/WinampModern.wal     swift test --filter WinampModernPhase4Tests
+WINAMP_MODERN_ENGINE=/path/ClassicPro_2.01.exe \
+  WINAMP_MODERN_WAL=/path/cPro__Bento.wal    swift test --filter WinampModernPhase6Tests
+```
+
+Each phase expects a specific fixture — Phase 4 asserts Winamp Modern's 354×280 geometry, so
+cPro-Bento is the wrong fixture for it.
+
+---
+
+## Debugging a live defect: what this subsystem taught the hard way
+
+A GUI-only report ("the playlist shows no data", "the speakers don't animate") cost **three wrong
+mechanisms in a row** before instrumentation settled it in one run. The rules below are the cheap
+version of that afternoon.
+
+### Instrument before you reason
+
+This always-paid debugging rule lives in [the skill router](../SKILL.md#rules-for-extending-this-subsystem).
+The probe table above is the canonical command reference.
+
+### Reading a probe without fooling yourself (BB28, 2026-08-25)
+
+Four of these turned a working instrument into a wrong finding, each of which then grew its own
+hypothesis. They are properties of the probes, not of any skin.
+
+- **`RENDER_SET` prints its `SET [...] = ... handlers=n` line *after* the write returns.** Filtering
+  the log "from the SET line onwards" therefore shows you everything *except* the dispatch you asked
+  for. A whole afternoon's "the page never switches on a config change" came from that window: the
+  switch was in the log, above the marker. Before filtering by any marker line, check whether the
+  harness prints it before or after the work.
+- **`CALL-TRACE`'s `-> ` is empty for every object-returning call.** `MakiValue.stringValue` answers
+  `""` for both `.null` and `.object`, so `findobject(x) -> ` says *nothing* about whether the lookup
+  found anything. Counting those as null lookups reads a healthy run as 1009 failures.
+- **`RENDER_SCRIPTS`' `ran=` only records events dispatched at a program's *owner object*.** An event
+  delivered to a **dynamic** object — every `ondatachanged` on a config attribute — never appears
+  there, so a handler that runs on every write measures as one that never runs.
+- **`TRACE_MAKI`'s `SETVISIBLE` line is the script's *write*, not what gets drawn.** `isVisible`
+  consults `WinampModernBentoMultiContentView.forcedVisibility` before it reads the `visible`
+  attribute, so a pane the host overrides is logged as shown and drawn as hidden. A fixed panel and
+  a broken one emit byte-identical traces. This closed BB28 as already-fixed in 2026-08-31's triage,
+  but only after the same trace had first been misread as a live reproduction — the log was
+  unchanged because the fix was never in the log's reach. Any question of the form *is this on
+  screen* is a **pixel** question; `SETVISIBLE` answers only *who asked for it*.
+
+The general negative-result rule lives in
+[the skill router](../SKILL.md#rules-for-extending-this-subsystem). `WINAMP_MODERN_TRACE_MAKI`
+remains the tiebreaker for **did this handler run** — it records handler entry whether or not the
+body does anything — but never for **is this on screen**, which only pixels answer.
+
+### Arm a draw-order dump *late*, never on the first draw
+
+A skin reveals layers **in response to the host**, so a dump armed on an object's first draw is taken
+before the skin has reacted to anything. BB18: the waveform-seeker strip was covered by
+`waveseeker.rounder.bg`, which Big Bento's own timer shows *because* the host claimed the component.
+The first-draw dump listed only a slider thumb and a 5 px end cap after it, read as "nothing
+overpaints this", and sent the investigation down several wrong paths over many rebuild cycles. Arm
+it after the skin's timers have run at least once.
+
+The sibling rule: a component box measuring a **uniform colour** means something painted over it,
+however empty the startup draw order looks. Identify the colour against the skin's own bitmaps (there
+it was `songticker.background.center2`) rather than treating it as "nothing drew".
+
+### Sharing the app with the user
+
+Live QA is a shared machine, and both halves of that go wrong in ways that look like code defects.
+
+**Own the launch, and redirect its output to a file.** `NSLog` from a binary started by
+`kill_build_run.sh` goes to *that process's* stderr — if the user launches, the log is on their screen
+and invisible to you. Launch it yourself with `> /tmp/np.log 2>&1`, wait for a known line before asking
+for anything, then ask only for what they alone can do (reproduce the state, click, press play).
+2026-08-25 (BB28): the loop stalled for several exchanges because each of us thought the other was
+driving — the user was clicking in an app my tooling had never started, while my `pgrep` checks
+"confirmed" a state that was never true.
+
+**Say which build the running app is, in the same sentence as the question.** 2026-08-30: the user
+judged three builds in quick succession, praising one a frame trace then proved wrong, and calling
+another a regression when it was the build they had liked — a relaunch had landed mid-message. Their
+perception and your `pkill`/relaunch cycle drift apart within seconds. When a fix is judged worse,
+revert and re-confirm the baseline before stacking another change on an unknown starting point.
+
+**Stop driving the moment the user starts testing.** 2026-09-03 (B107): after the user said *"I just
+tested with modern"* the synthetic clicks kept going, and their click on the skin's stop button landed
+in the middle of an automated repro — a film stopped 20 s short, which reads exactly like a code
+defect and cost a build, a backtrace probe and a wrong hypothesis before the stack showed a real
+`mouseUp`. Two drivers on one mouse manufactures evidence that looks like a bug. Once the user is in
+the app, hand the repro over and read the log they produce.
+
+**A report of current behaviour is not a change of requirements.** Same session: the task (B107) said a
+finished film must stop being the transport's target — the transport *resets*. The user reported a
+ghost thumb in Modern and added *"in classic mode there was no change and seek sits at the end"*. Read
+as a preference rather than a symptom, that aside produced the opposite of the task, shipped as a fix,
+and two wasted build-test cycles. Before reversing a decision the task already made, re-read the task
+entry; if an offhand remark seems to contradict it, quote the requirement back and ask.
+
+### The measurement loop that works: mark, window, control (B117, 2026-09-04)
+
+The division of labour that measured, fixed and confirmed B117(b) in one sitting: **the agent owns
+the process and the log; the reporter owns the mouse.** The reporter is happy to drive — treat a
+task needing live QA as an interactive session, not as blocked work.
+
+**1. Arm the probes at launch, and know you cannot change your mind.** Every probe is
+`ProcessInfo.processInfo.environment[...]` read **once**, in a `static let`, at process start. There
+is no toggling one on later, and an app already running reports nothing no matter what you export.
+Decide the full set before launching, and prefer too many over a relaunch. All of them are
+`#if DEBUG`, so a release build answers "no problem found" whether or not there was one.
+
+**2. Launch it yourself, not through `kill_build_run.sh`.** That script does not redirect `NSLog`
+and — the trap that cost 10 minutes here — **does not exit after building**; it stays attached to the
+app it launched, so a "timeout" is the app running, not a slow compile. Build with it if you need the
+vendored frameworks ad-hoc signed, then relaunch the binary directly with the env set:
+
+```bash
+pkill -x NullPlayer
+WINAMP_MODERN_VIS_GAPS=1 WINAMP_MODERN_VIS_STALL=50 \
+  .build/arm64-apple-macosx/debug/NullPlayer > <scratchpad>/run.log 2>&1 &
+```
+
+**3. Mark the log before every run.** One log accumulates many runs, and "the last N lines" is not a
+window — the reporter's setup clicks are in there too. Record the line count and the wall clock:
+
+```bash
+wc -l < run.log > mark_A ; date "+%H:%M:%S"
+# ... the run ...
+tail -n +$(( $(cat mark_A) + 1 )) run.log > run_A.txt
+```
+
+**4. Ask for one precise thing, then time it yourself.** Name the skin, the *source kind* (local file
+vs stream — they are different code paths and the difference was the whole of B117(b)), the duration,
+and **"hands off the UI"** — a click mid-window writes mutations that pollute the comparison. Then
+run `sleep <n>` as a background command rather than asking the reporter to report back; the harness
+re-invokes you when it exits. Allow for skin load and stream buffering: 30 s of playback wants a
+50 s timer.
+
+**5. Always take a control.** One window proves nothing. Change exactly one variable and re-run: the
+same stream on a different skin is what turned "streaming is broken" into "streaming is broken behind
+a stalled main thread", and it is what the two-condition diagnosis rests on. A before/after on the
+same skin and source is the other required pair — B117(b)'s fix is credible because 58% → 1.0%
+dropouts was measured on the identical setup.
+
+**6. Report distributions, never samples.** `n / min / median / p90 / max` over the window. A
+median of 139 ms and a max of 18042 ms are different findings, and a tail of eight log lines shows
+neither. `awk` over the extracted numbers, not eyeballing.
+
+**7. Read whole log lines, never independently-grepped halves.** `MUTATION_TRACE` prints its
+`writes=…/resolves:…` summary and its top-writer list as separate lines. Grepping each with its own
+`grep -o` and pairing the results *manufactured a causal claim that was false* — the top-writer list
+came from a `writers=12` window and the resolve counts from a `writers=41` one. Partition by window
+and count, or you will invent a mechanism. The same applies to any probe with a multi-line report.
+
+**8. Hand the fix back for on-screen judgment before writing anything down.** The reporter's *"it
+looks much better now"* comes first; the confirming numbers come second; `TASKS.md`, the skill docs
+and any test come last. See `verify-before-investing`.
+
+### A measured value written into a doc goes stale silently (B50, 2026-08-26)
+
+The `PLAYLIST holder` row above carried the sentence *"Measured: Big Bento `text=22`"*. It was true
+when written and **false within the same commit that wrote it** — an 18px clamp landed alongside it,
+so the number the harness could actually print was 18. Nothing failed: a stale number in a table
+reads exactly like a fresh one, and the next person plans against it. B50's rewrite of that row began
+by re-running six skins rather than editing the numbers by hand, and the re-run is what surfaced that
+**micro moved 13 → 11** — a real behaviour change in a skin nobody had thought to check.
+
+Two rules fall out of it, and they are cheap:
+
+- **Date a measured value, or do not record it.** Every number in these files should say when it was
+  taken; an undated one cannot be audited and will be trusted for ever.
+- **Re-measure before quoting, never edit the figure to match the new code.** The measurement is the
+  point. Editing `22` to `18` by reasoning would have produced the right number for Bento and still
+  missed micro entirely.
+
+The same trap bit `skills/ui-guide/SKILL.md`, which documents the classic main window as setting
+`.low` interpolation with a rationale — and the code sets nothing at all (B47). A snippet in a doc is
+a claim about code, and it decays at the speed the code changes.
+
+### Driving clicks in the running app: `CGEvent`, never System Events (2026-08-25)
+
+Live QA needs synthetic clicks, and the obvious tool is wrong. `osascript -e 'tell application
+"System Events" to click at {x, y}'` **reports success and does nothing** to this app — it answers
+with the window it thinks it clicked, so it reads exactly like a click that landed on a dead control.
+Two working controls (BLAKK's `PL` toggle and its Switch Player Mode button) were nearly filed as
+defects on that evidence.
+
+Post real events instead — a `mouseMoved` to the point, then `leftMouseDown`/`leftMouseUp` through
+`CGEvent(mouseEventSource:mouseType:mouseCursorPosition:mouseButton:)` at `.cghidEventTap`, with a
+~60 ms gap. A double-click is the same pair twice with `.mouseEventClickState` set to 1 then 2. A
+~15-line Swift file does it; keep one in the scratchpad.
+
+Mapping a probe coordinate to a screen point is direct, because a `.wal` window is borderless and the
+skin's (0,0) is the window's top-left: **screen = window origin + skin coordinate**, both in
+top-left-origin points. Take the object's box from `RENDER_PROBE` (`frame=(246.0, 36.0, 14.0, 13.0)`)
+and click its **centre** — a 14×13 button hit at its declared corner is a coin-flip. Read the window
+origin from `CGWindowListCopyWindowInfo` rather than the Accessibility API, which also lets
+`screencapture -o -l <windowID>` grab one window even when another sits on top of it. Occlusion
+matters here: `.wal` skins stack their windows at the same origin, so a full-screen capture often
+photographs the playlist instead of the player.
+
+### Raise the build under test with System Events **by unix id**
+
+`NSRunningApplication.activate()` from a background process is refused by recent macOS: it returns,
+changes nothing, and the frontmost app stays where it was — so a synthetic keystroke goes to whatever
+the *user* is typing in (twice during BB31 that was the chat window driving the session). A real
+CGEvent click raises the window when nothing occludes it; when something does, this works:
+
+```sh
+osascript -e 'tell application "System Events" to set frontmost of first process whose unix id is <pid> to true'
+```
+
+**By unix id, never by name** — `activate application "NullPlayer"` launches the *installed* copy
+instead of the build under test ([[applescript-activate-launches-installed-app]]). Gate every
+synthetic keystroke on the app actually being frontmost afterwards, and refuse to type if it is not:
+a keystroke that lands in the wrong window is worse than no keystroke, because the log then shows
+nothing and reads exactly like a dead control.
+
+`WINAMP_MODERN_CALL_TRACE=1` also prints the **receiver** of every call
+(`setxmlparam(x,70) on layout#normal`), which is the question a geometry or visibility trace is
+always really asking, and an `UNSUPPORTED` line for a method that is not implemented — the call that
+aborts a handler otherwise leaves a trace that simply stops. Keyboard entry into an `<edit>` prints
+`EDIT key <code> focused=<id>` and `EDIT onenter -> <id> handlers=<n>` under the same variable.
+
+### The measurement that finds scale bugs
+
+**Histogram the frames a meter actually uses against the frames it has.** A healthy meter spreads;
+a broken one piles on one:
+
+```sh
+grep -oE 'CALL-TRACE gotoframe\([0-9]+\)' /tmp/x.log | grep -oE '[0-9]+' | sort -n | uniq -c
+```
+
+Defix's cone: **frame 0 for 96.5% of a track**, out of 25 frames. That is a *scale* bug, not a dead
+script — the script was running perfectly and being handed numbers at the bottom of its range. Two
+have now been found this way (`getLeftVUMeter`, Phase 29; `getVisBand`, Phase 30), and one is still
+open: the `<vis>` analyzer reads the raw levels directly as a fraction of height, so a full-scale
+band draws at ~15%.
+
+**Any host number handed to skin artwork must be in the unit the artwork is cut for.** Winamp's meter
+values are vis bytes on a logarithmic sweep; a linear magnitude × 255 is the recurring mistake.
+
+### A structural probe is not a picture (B117/B138, 2026-09-04/05)
+
+`surfaces=1` from the hosted-window sweep says a client area exists and is reachable; it says nothing
+about **where it is drawn**. 2026-09-04 a hosted-frame fix was reported as working on
+`surfaces=1, strip=48px, drag=88%` and a corpus diff of exactly one skin, and the user's screenshot
+showed the chrome and the contents in different places — every number the probe measured was right,
+and blind to the only thing that mattered. Render it (`WINAMP_MODERN_DRAG_HOSTED_PNG`) or run it,
+then hand it over.
+
+2026-09-05 sharpened the same lesson for *sizes*: the dump asks a renderer how big its window is
+**after** `runtime.start()`, and the app's window tiler asks **before** it, so a window-size fix hung
+off the post-start fit printed `AVS/normal: 354x278` in a clean corpus sweep while the running app
+placed the window at `354x30` and the reporter's screen never changed. `WINAMP_MODERN_PLACE_TRACE=1`
+in the app is one line and settles it; a green sweep does not. That session then took five more rounds
+because each new symptom was answered with a plausible mechanism instead of a measurement; the ones
+that landed came from reading pixels out of the reporter's own screenshot and window frames out of the
+accessibility API.
+
+### A number that moved is not the symptom that was reported (B138, 2026-09-05)
+
+The shade round trip had two faults stacked on one screen, and fixing the measurable one — the window
+came back 500x500 instead of 691x541, visible in a single `resizeWindow` log line — produced a
+confident "fixed" while the reporter's actual complaint, the empty playlist pane, was still there in
+the screenshot taken to prove it. The reporter said "not fixed" twice before the claim was withdrawn.
+Two habits fall out.
+
+- **Reproduce the reporter's own steps end to end before believing anything.** A "fresh launch" that
+  has been resized and shaded by your own probing is not a fresh launch, and a wrong reading of it
+  ("the bug is there at launch too") sends the whole diagnosis somewhere else.
+- **Drive the repro yourself where you can.** `System Events` `click at` silently delivers nothing to
+  this app, so a 35-line CGEvent clicker built in the scratchpad was what finally made the round trip
+  repeatable, and a pixel-diff of the window against its launch state was what made "fixed" a
+  measurement instead of an opinion. See *Driving a click in the running app*.
+
+### Verify window geometry in the running app, not in your head
+
+Window geometry has no useful armchair form. B56 cost four confident statically-reasoned fixes — each
+wrong, two of them regressions — before anyone launched the app. The loop for measuring it is in the
+`testing` skill (*Window geometry: measure it, never reason about it*);
+`WINAMP_MODERN_PLACE_TRACE=1` is the probe for this subsystem, and the window arrangement itself is
+in [components.md](components.md).
+
+### Ask for the live trace **first**, not fourth
+
+A GUI-only report on a scripted control cost **five** rebuild-and-retest rounds before anyone looked
+at a `CALL-TRACE` log, and the log then named the cause in one line. The rounds were spent reading
+source and reasoning about which hop *might* be broken; every one of those guesses was a real defect,
+and none of them was the one the user was hitting.
+
+```sh
+WINAMP_MODERN_CALL_TRACE=1 ./scripts/kill_build_run.sh > /tmp/x.log 2>&1
+```
+
+Then read the **arguments**, not just the call names. The scrollbar case was settled by a histogram:
+
+```sh
+grep -oE "scrolltopercent\([-0-9]+\)" /tmp/x.log | sort | uniq -c
+```
+
+`setposition(113) → scrolltopercent(-14)`, then `118 → -19`, then `123 → -24`. The chain was running
+perfectly and every number was out of range — a `high="100"` slider being stepped past its own end,
+against a script computing `99 - position`. No amount of reading the engine would have shown that,
+because nothing in the engine was failing.
+
+**Two habits this is the cheap version of.** Ask for the trace after the *first* failed retest, not
+the fourth. And when a trace shows a handler running, check what it is being *handed* before
+concluding the handler is fine — a method being called proves nothing; its arguments are the finding.
+
+### When a fix changes nothing on screen, look for the *next* fault
+
+This always-paid rule lives in [the skill router](../SKILL.md#rules-for-extending-this-subsystem).
+The stacked-fault examples remain in the historical task records.
+
+### Reading MAKI disassembly without fooling yourself
+
+- **`op25` is a call, `op33` a return.** A block sitting after a handler's `op33` is often a
+  *subroutine*, entered from somewhere else entirely. Defix's playlist readouts live in one whose only
+  caller is `onTextChanged`; read carelessly it looks like `onTimer` work, and the `onTimer` beside it
+  merely stops a spinner.
+- **Attributing an instruction to "the last `--- handler ---` above it" is wrong** for shared
+  subroutines. Find the callers: `grep -oE '[0-9]+: op[0-9]+ -> <target>'`.
+- **`strings` on a `.maki` hides method names**, because the constant pool stores a trailing index
+  byte: `gotoFrame` appears as `gotoFrame)`. An anchored `^gotoFrame$` finds nothing and invites the
+  conclusion that the script cannot animate at all. Grep loosely.
+
+### Look at the running app
+
+`screencapture -x -R<x>,<y>,<w>,<h> out.png` against the window bounds from System Events settles a
+"it looks wrong" report in seconds, and the skin's own `screenshot.png` is the reference to compare
+it against. Defix's speaker cabinet turned out to render **correctly** — the cone is black because the
+art is black — which retired "very dark" as a defect and left the real question (does it move?) in
+focus.
+
+### The order that made Phase 33 cheap
+
+multipass went from "a static picture, nothing works" to a `full`-compatibility skin in one session.
+Not because the bugs were easy — there were seven, in four different layers — but because of the
+order they were found in. Reuse it.
+
+1. **Read the skin's own `.m` sources when the archive ships them.** multipass ships all fourteen.
+   The whole diagnosis is `system.m`'s eleven-initialiser `onScriptLoaded` and line 72 of
+   `drawers.m`; disassembly would have taken an afternoon to reach the same sentence. Check for
+   `scripts/*.m` before `RENDER_DISASM`.
+2. **`RENDER_SCRIPTS` first, always.** One `failed=… does not support method 'x'` line explained
+   every symptom in the report at once. A skin whose startup aborted does not *have* features to
+   debug, and any conclusion about what it "ships" drawn before that line is checked is worthless
+   (Phase 32 recorded a real widget as absent for exactly this reason).
+3. **Fix the abort, then re-measure before touching anything else.** Six of the seven faults only
+   became *visible* after the one above them was gone: the abort hid the dead togglebutton, which hid
+   the invisible seek bar, which hid its unclickable region, which hid the VM's integer division.
+   Peeling in order costs one measurement each; guessing at the stack costs a rewrite.
+4. **Ask what *kind* of object the skin built a control from before concluding it has none.**
+   "There's no seek bar" — there is; it is an `<animatedlayer>` plus a `Map`, not a `<slider>`, and
+   nothing that greps for `slider` will ever find it.
+5. **Corroborate a VM-semantics decision in a second, unrelated codebase.** "Is MAKI's `/` integer
+   division?" was settled by finding `integerToString(newvol / 255 * 100) + "%"` in ClassicPro's
+   engine — a different author, the same idiom, and under integer division both are `0%`. One skin is
+   an anecdote; two independent ones are the language's semantics.
+6. **A one-skin fix is a claim about every skin: run the sweep.** The division fix turned out to
+   repair cPro-Bento's `Volume: 0%`, MMD3's volume bar and two skins' slider fills. The same sweep is
+   what proves a change *didn't* break the other sixteen — and note that one skin (Anexa's shade)
+   renders differently run-to-run on an unchanged build, so diff the sweep against itself before
+   reading a difference as a regression.
+7. **Corpus-scan the attribute, not the button.** "This button does nothing" was `action="SYSMENU"`;
+   grepping the 17 installed skins for `action="…"` found nine dead buttons across five skins and
+   listed exactly what is still inert. One grep turns a bug report into a coverage decision.
+
+### A blind instrument reads as a working feature
+
+Three of this subsystem's probes were silently blind, and each one made a real defect look absent —
+and the last row is the mirror of the same fault, an instrument reporting a feature that works as broken:
+
+| Blind spot | Symptom it produced | Fixed by |
+|---|---|---|
+| Could not open a `default_visible="0"` window | Speaker cones unmeasurable; `onSetVisible` never fired | `RENDER_SHOW` |
+| Injected spectrum was a **constant** ramp | Cones identical at every level, so "dead" | `RENDER_VU` now scales it |
+| No component host, so `PE_Info` never *changed* | `onTextChanged` could never be observed | harness stands a synthetic queue |
+| Empty queue, so every `PlEdit` walk took its empty branch | The playlist API looked exercised and reached nothing | `RENDER_PLAYLIST` |
+| No windows, so `containerVisibilityQuery` answers nil and **every object reads visible** | Defix's `ML` button asks a tab page in a shut window whether it is showing; headlessly the page always answers yes, so a button that could only ever *close* its window measured as a working toggle (B22) | `WINAMP_MODERN_CALL_TRACE=1` in the app — the `isvisible()` and the `hide()` it leads to sit two lines apart |
+| No windows, so a doubled window **toggle** cancels invisibly | Defix's playlist button measured as one clean action while flashing open/shut in the app | `WINAMP_MODERN_DEBUG_CLICK` in the app |
+| `RENDER_SCRIPTS` prints `ran=`/`failed=` **before** `RENDER_EVENTS` drives anything | Big Bento Modern's `animbutton` reported `failed=-` while its `onPause` aborted on every pause (BB23) | `CALL_TRACE` + `RENDER_EVENTS`; read `failed=` as *load-time* only |
+| **A draw-order dump taken at startup cannot see a layer the skin reveals later** | BB18: the waveform-seeker strip was covered by `waveseeker.rounder.bg`, which Big Bento's own timer shows *because* the host claimed the component — so the dump, armed on the strip's first draw, listed only a slider thumb and a 5px end cap after it and read as "nothing overpaints this" | Arm the dump **late**, after the skin's timers have run at least once, whenever the object under investigation is one the skin reacts to. A uniform fill over a component box (`rgb(40,42,48)` there — `songticker.background.center2`) means something painted over it, however empty the startup order looks |
+| **The mirror: a dump read without the events the app seeds reports a *working* feature as broken** | B87 was first filed as "cPro's tab strip never runs its fit pass — tab 4 clipped to 6px, tabs 5-7 absent", straight off a `RENDER_DUMP`. The fit pass hangs off `onResize`, which `WinampModernMainView.scriptsDidStart()` seeds in the app and the dump did not; with `RENDER_EVENTS=onresize` all seven tabs are there at 32px, exactly as on screen. A whole entry was written against an artifact, and the real defect (the labels inside those tabs) had to be found again. **B115 was the same mistake again** — the seeding gap is now closed in the harness itself (see *What the probe models about windows*), so this particular lie is no longer available | The seed is automatic now; `RENDER_EVENTS=onresize` is only needed to **re**-drive after `RENDER_SIZE`, or the fit pass has nothing to fit. The general rule stands: before filing a defect off a dump, ask which event the app seeds that the probe did not |
+| **A handler that ran and took *no* branch looks exactly like a handler that worked** | Bento's tab strip: `ran=onscriptloaded failed=-` on all three tab scripts while none of them laid anything out, because its three-way mode `if` has no `else` and every member of the radio group read `"0"` (BB29) | `RENDER_SETTINGS=1` — a radio group sitting at `0 (default 0)` on *every* member is the tell, and it is one line. `RENDER_DISASM=@<xml>` is what then shows the missing `else` |
+
+The general visibility rule lives in
+[the skill router](../SKILL.md#rules-for-extending-this-subsystem); the table above is the concrete
+catalog of blind spots.
+
+A corollary for the last row: a handler that only fails on a **driven** event is invisible to the
+per-program report, and its signature in `CALL_TRACE` is a call sequence that simply *stops* mid-block
+(`setstartframe`, `setendframe`, then nothing). Dispatch fails closed on a missing **signature**, so
+the failing call never prints at all — the gap is the instruction after the last line you can see.

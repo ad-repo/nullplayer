@@ -15,7 +15,7 @@ class CLIDisplay {
     func printTrackInfo(_ track: Track?) {
         guard let track else { return }
         let artist = track.artist ?? "Unknown Artist"
-        let title = track.title ?? "Unknown Title"
+        let title = track.title
         let album = track.album ?? ""
         var info = "\nNow Playing: \(artist) - \(title)"
         if !album.isEmpty {

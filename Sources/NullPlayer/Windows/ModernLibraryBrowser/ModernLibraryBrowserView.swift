@@ -2458,7 +2458,6 @@ class ModernLibraryBrowserView: NSView {
         let headerColumns = headerColumnsForCurrentContent()
         
         // Draw column headers
-        var contentListY = listAreaY
         if let columns = headerColumns {
             let headerY = listAreaY + listAreaHeight - columnHeaderHeight
             let headerRect = NSRect(x: fullListRect.minX, y: headerY,
@@ -2471,12 +2470,10 @@ class ModernLibraryBrowserView: NSView {
                                  height: columnHeaderHeight)
             contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
             context.fill(gapRect)
-            contentListY = listAreaY
         }
         
         // Content area
         let contentHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
-        let contentTopY = headerColumns != nil ? (listAreaY + listAreaHeight - columnHeaderHeight) : (listAreaY + listAreaHeight)
         let listRect = NSRect(x: fullListRect.minX, y: listAreaY,
                               width: fullListRect.width, height: contentHeight)
         
@@ -8361,31 +8358,12 @@ class ModernLibraryBrowserView: NSView {
             do {
                 try await Task.sleep(nanoseconds: 500_000_000)
                 try Task.checkCancellation()
-                
-                if let ratingKey = currentTrack.plexRatingKey {
-                    // Plex: rating is already 0-10 scale
-                    try await PlexManager.shared.serverClient?.rateItem(
-                        ratingKey: ratingKey,
-                        rating: normalizedRating > 0 ? normalizedRating : nil
-                    )
-                } else if let subsonicId = currentTrack.subsonicId {
-                    // Subsonic: convert 0-10 to 0-5
-                    let subsonicRating = normalizedRating / 2
-                    try await SubsonicManager.shared.setRating(songId: subsonicId, rating: subsonicRating)
-                } else if let jellyfinId = currentTrack.jellyfinId {
-                    // Jellyfin: convert 0-10 to 0-100
-                    let jellyfinRating = normalizedRating * 10
-                    try await JellyfinManager.shared.setRating(itemId: jellyfinId, rating: jellyfinRating)
-                } else if currentTrack.url.isFileURL {
-                    // Local file: store 0-10 scale
-                    if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
-                        MediaLibrary.shared.setRating(
-                            for: libraryTrack.id,
-                            rating: normalizedRating > 0 ? normalizedRating : nil
-                        )
-                    }
-                }
-                
+
+                // Per-source scales and conversions live in `TrackRatingService`, so this row and a
+                // `.wal` skin's star row cannot disagree about what three stars means.
+                try await TrackRatingService.shared.setRating(
+                    normalizedRating > 0 ? normalizedRating : nil, for: currentTrack)
+
                 try await Task.sleep(nanoseconds: 300_000_000)
                 await MainActor.run { hideRatingOverlay() }
             } catch is CancellationError { } catch { NSLog("Rating failed: %@", error.localizedDescription) }
@@ -8396,61 +8374,16 @@ class ModernLibraryBrowserView: NSView {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
             currentTrackRating = nil; return
         }
-        
-        if let ratingKey = currentTrack.plexRatingKey {
-            // Plex: fetch from server (0-10 scale)
-            Task {
-                do {
-                    if let details = try await PlexManager.shared.serverClient?.fetchTrackDetails(trackID: ratingKey) {
-                        await MainActor.run {
-                            currentTrackRating = details.userRating.map { Int($0) }; needsDisplay = true
-                        }
-                    }
-                } catch { }
-            }
-        } else if let subsonicId = currentTrack.subsonicId {
-            // Subsonic: fetch from server (1-5 scale, convert to 0-10)
-            Task {
-                do {
-                    if let song = try await SubsonicManager.shared.serverClient?.fetchSong(id: subsonicId) {
-                        await MainActor.run {
-                            currentTrackRating = song.userRating.map { $0 * 2 }; needsDisplay = true
-                        }
-                    }
-                } catch { }
-            }
-        } else if let jellyfinId = currentTrack.jellyfinId {
-            // Jellyfin: fetch from server (0-100 scale, convert to 0-10)
-            Task {
-                do {
-                    if let song = try await JellyfinManager.shared.serverClient?.fetchSong(id: jellyfinId) {
-                        await MainActor.run {
-                            currentTrackRating = song.userRating.map { $0 / 10 }; needsDisplay = true
-                        }
-                    }
-                } catch { }
-            }
-        } else if let embyId = currentTrack.embyId {
-            // Emby: fetch from server (0-100 scale, convert to 0-10)
-            Task {
-                do {
-                    if let song = try await EmbyManager.shared.serverClient?.fetchSong(id: embyId) {
-                        await MainActor.run {
-                            currentTrackRating = song.userRating.map { $0 / 10 }; needsDisplay = true
-                        }
-                    }
-                } catch { }
-            }
-        } else if currentTrack.url.isFileURL {
-            // Local file: read from library (already 0-10 scale)
-            if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
-                currentTrackRating = libraryTrack.rating
-            } else {
-                currentTrackRating = nil
-            }
-            needsDisplay = true
-        } else {
-            currentTrackRating = nil
+
+        // A local file answers from the library without a round trip; every server source has to be
+        // asked, and `TrackRatingService` owns each one's scale. The guard re-checks the track on the
+        // way back so a rating that arrives after the song changed cannot land on the new one.
+        currentTrackRating = TrackRatingService.shared.localRating(for: currentTrack)
+        needsDisplay = true
+        Task { @MainActor in
+            let rating = await TrackRatingService.shared.rating(for: currentTrack)
+            guard WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
+            currentTrackRating = rating; needsDisplay = true
         }
     }
     
@@ -8557,7 +8490,6 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildRateSubmenuForLocalAlbum(albumId: String) -> NSMenu {
         let menu = NSMenu(title: "Rate")
-        let current = MediaLibrary.shared.albumRating(for: albumId)
         for stars in 1...5 {
             let rating = stars * 2
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
@@ -10849,7 +10781,7 @@ class ModernLibraryBrowserView: NSView {
             if expanded, let tracks = localPlaylistTracks[key] {
                 for t in tracks {
                     let duration = t.duration.map { Int($0) }
-                    let title = t.title ?? "Unknown"
+                    let title = t.title
                     displayItems.append(ModernDisplayItem(id: "\(key)-\(t.url.absoluteString)", title: title, info: formatDuration(duration), indentLevel: 1, hasChildren: false, type: .localPlaylistTrack(t)))
                 }
             }
@@ -12628,7 +12560,7 @@ class ModernLibraryBrowserView: NSView {
             if folder.hasChildren {
                 toggleExpand(item)
             }
-        case .youtubeChannel(let channel): toggleExpand(item)
+        case .youtubeChannel: toggleExpand(item)
         case .youtubeVideo(let video):
             if YouTubeManager.shared.isDownloaded(video.videoId) {
                 if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {

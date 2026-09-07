@@ -47,6 +47,14 @@ protocol MainWindowProviding: ModeDependentWindow {
 
     /// Remove the activity indicator overlay.
     func hideActivity()
+
+    /// Constrain a frame restored from saved state to what this window can actually render.
+    ///
+    /// Classic and NullPlayer-modern main windows are fixed-size, so their saved frame is always
+    /// valid. A `.wal` skin sizes itself from its own layout and is freely resizable between that
+    /// layout's `minimum_*`/`maximum_*`, so a frame saved in another session (or another skin) can
+    /// be smaller than anything the scene can draw. The saved top-left is always preserved.
+    func clampRestoredFrame(_ frame: NSRect) -> NSRect
 }
 
 // MARK: - Default Implementations
@@ -62,6 +70,8 @@ extension MainWindowProviding {
     func setNeedsDisplay() {
         window?.contentView?.needsDisplay = true
     }
+
+    func clampRestoredFrame(_ frame: NSRect) -> NSRect { frame }
 
     func showActivity(_ message: String) {
         guard let content = window?.contentView else { return }

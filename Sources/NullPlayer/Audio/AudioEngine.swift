@@ -1643,12 +1643,44 @@ class AudioEngine {
         }
     }
     
+    #if DEBUG
+    private static let tracesTap = ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_GAPS"] != nil
+    private static let tapTraceLock = NSLock()
+    private static var tapTraceCounts: [Int: Int] = [:]
+    private static var tapTraceReported: CFAbsoluteTime = 0
+    private static func traceTapBuffer(frames: Int) {
+        guard tracesTap else { return }
+        tapTraceLock.lock()
+        tapTraceCounts[frames, default: 0] += 1
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - tapTraceReported >= 1 else { return tapTraceLock.unlock() }
+        let elapsed = tapTraceReported > 0 ? now - tapTraceReported : 1
+        let counts = tapTraceCounts
+        tapTraceCounts.removeAll(keepingCapacity: true)
+        tapTraceReported = now
+        tapTraceLock.unlock()
+        let total = counts.values.reduce(0, +)
+        let short = counts.filter { $0.key < 2_048 }.values.reduce(0, +)
+        let shape = counts.sorted { $0.key < $1.key }
+            .map { "\($0.key)x\($0.value)" }.joined(separator: " ")
+        NSLog("%@", "WM-VIS-GAP tap buffers=\(total) rate=\(Int(Double(total) / elapsed))/s "
+              + "short(<2048)=\(short) frames=[\(shape)]")
+    }
+    #endif
+
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         guard spectrumNeeded || waveformNeeded || stereoNeeded || fullStereoNeeded || magnitudesNeeded else { return }
         guard let channelData = buffer.floatChannelData else { return }
 
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0 else { return }
+        #if DEBUG
+        // `WINAMP_MODERN_VIS_GAPS` — what the mixer tap actually delivers, once a second: how many
+        // buffers, the frame lengths among them, and how many were too short to publish full-rate
+        // stereo. `installTap(bufferSize:)` is a *request*, not a contract, and a consumer that
+        // needs a whole 2048 frames silently gets nothing from a shorter one.
+        Self.traceTapBuffer(frames: frameCount)
+        #endif
         let channelCount = Int(buffer.format.channelCount)
         let bufferSampleRate = buffer.format.sampleRate
 
@@ -2177,7 +2209,7 @@ class AudioEngine {
             startTimeUpdates()
             
             // Report resume to Plex
-            if let track = currentTrack {
+            if currentTrack != nil {
                 PlexPlaybackReporter.shared.trackDidResume(at: currentTime)
             }
             
@@ -3816,8 +3848,10 @@ class AudioEngine {
                 if dur > 0 { fileDurations[item.id] = dur }
             }
             guard !fileDurations.isEmpty else { return }
+            // Snapshot before the actor hop: `MainActor.run`'s closure is @Sendable.
+            let durationUpdates = fileDurations
             await MainActor.run { [weak self] in
-                self?.applyDurationUpdates(fileDurations)
+                self?.applyDurationUpdates(durationUpdates)
             }
         }
     }
@@ -4203,7 +4237,10 @@ class AudioEngine {
         // Stop local video playback before loading audio track.
         // Skip when casting — cast() handles video→audio teardown via mismatch check,
         // so calling stopVideo() here would race with castNewTrack.
-        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback && !isAnyCastingActive {
+        // `isVideoContentActive`, not `isVideoActivePlayback`: the latter goes false at end of
+        // media, and a film that has run out still owns its window — it has to be torn down here
+        // or it is left hanging over the app while the new audio track plays.
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoContentActive && !isAnyCastingActive {
             NSLog("loadTrack: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }
@@ -4246,7 +4283,10 @@ class AudioEngine {
 
         // Stop local video playback before loading audio track.
         // Skip when casting — cast() handles video→audio teardown via mismatch check.
-        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback && !isAnyCastingActive {
+        // `isVideoContentActive`, not `isVideoActivePlayback`: the latter goes false at end of
+        // media, and a film that has run out still owns its window — it has to be torn down here
+        // or it is left hanging over the app while the new audio track plays.
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoContentActive && !isAnyCastingActive {
             NSLog("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }

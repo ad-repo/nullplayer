@@ -111,7 +111,7 @@ class AudioOutputManager {
         
         for result in results {
             switch result.endpoint {
-            case .service(let name, let type, let domain, let interface):
+            case .service(let name, let type, let domain, _):
                 // Create a discovered AirPlay device
                 let uid = "airplay:\(name).\(type).\(domain)"
                 let device = AudioOutputDevice(

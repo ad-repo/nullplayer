@@ -100,6 +100,119 @@ Tests/
 | Audio models | 6 | AudioOutputDevice |
 | Other | 17 | Various utility tests |
 
+## Window geometry: measure it, never reason about it
+
+**A claim about where a window ends up is only ever worth what the measurement behind it is worth.**
+Placement, docking, stacking and overlap have no useful armchair form: they depend on frames that move
+during launch, sizes that settle a layout pass later, and an ordering between skin load, state
+restoration and window reveal that is nowhere near obvious in the source. Reading the code and
+reasoning it through produces answers that are plausible, specific, and wrong.
+
+This is not hypothetical. B56 (`.wal` windows opening on top of each other) took four confident
+statically-reasoned fixes — each shipped, each wrong, two of them regressions — before anyone launched
+the app. The first measurement identified the real cause in one run.
+
+### The loop
+
+```bash
+pkill -9 -x NullPlayer; sleep 1
+WINAMP_MODERN_PLACE_TRACE=1 .build/arm64-apple-macosx/debug/NullPlayer > /tmp/run.log 2>&1 &
+sleep 12                       # let restore + the layout pass settle
+PID=$(pgrep -x NullPlayer)
+
+# Drive the UI: menu items by name, addressing the debug build by pid — never by app
+# name, which launches the *installed* copy instead.
+osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
+  to click menu item \"Equalizer\" of menu 1 of menu bar item \"Windows\" of menu bar 1"
+
+# Read the finished layout back, rather than judging it by eye or by screenshot.
+osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
+  to get {position, size} of every window"
+```
+
+The accessibility dump is flattened — *n* positions then *n* sizes — and its origin is **top-left**,
+unlike AppKit's. Convert once, then check every pair for intersection arithmetically. "It looks fine"
+is not a result; a table of frames is.
+
+### What to instrument
+
+Trace the *decision* and the *outcome* separately, behind an env var, and make the pair distinguish
+causes that look identical from outside — the value a placement chose, and the frame the window
+actually has once it is on screen. A good origin followed by a bad frame means something moved it
+afterwards, which is a different bug from choosing badly. `WINAMP_MODERN_PLACE_TRACE` is the worked
+example (see `winamp-modern-skin-guide/reference/harness.md`); document any new probe in its owning
+skill in the same change.
+
+### Unit-test the pure part
+
+Whatever geometry can be lifted out of AppKit should be, and then tested as a property rather than by
+example: *no two slots may overlap, whatever the inputs*. `WinampModernWindowTilingTests` is the model,
+and it caught a real overlap bug in the tiler that the manual pass had missed.
+
+## Profiling: measure the build the user runs
+
+The geometry rule above has a performance counterpart, and it fails the same way — plausibly.
+
+**Fix what is algorithmic from any profile; measure release before going further.** A table rebuilt
+per call, a `CharacterSet` constructed per character, a CoreText pass re-answering a constant — the
+optimizer fixes none of those, so a debug profile is enough to justify the work. Ordinary code
+executed often is the opposite case: that is where debug-vs-release decides whether there is a
+problem at all. Once the named defects are gone and what is left is drawing and interpretation doing
+genuine work, **stop and profile release**, because the remaining "problem" may not exist there.
+
+Worked example (2026-09-01, `winamp-modern-skin-guide/reference/performance.md`): a "cPro skins feel
+slow" report was chased through five rounds on a debug build. The first four found real defects. The
+fifth chased an artifact — the release build of the same tree ran at **60.7%** main-thread busy
+against debug's **96.2%**, and the measurement that said so cost ten minutes and was run last.
+
+### The metric that works across builds
+
+Not a frame counter, and not a `#if DEBUG` probe. **Busy fraction** from `sample`: leaf frames
+sitting in `mach_msg2_trap` / `semaphore_wait` / `__psynch_cvwait` / `kevent` are idle, everything
+else is busy. It answers "is this thread the constraint?" in one number, in either configuration.
+
+```sh
+sample $(pgrep -f 'arm64-apple-macosx/release/NullPlayer') 10 -file /tmp/np.txt
+```
+
+### Five ways a profile lies
+
+- **A `#if DEBUG` instrument reports nothing in release, and nothing looks like success.**
+  `WINAMP_MODERN_VIS_STALL` cannot fire in a release build, so a release run shows zero dropped
+  frames whether or not any occurred. Read a silent instrument as *not running* until proven
+  otherwise: prove the probe fires at all before believing a run that found nothing.
+- **Summing a recursive symbol multiplies it.** `sample` prints one frame per level, so aggregating
+  by "every frame carrying this name" counts a tree walk once per depth: `append` read as **73%** of
+  the main thread against a true **12.2%**. Inclusive share counts only the **outermost** occurrence
+  on each stack.
+- **Substring matching catches a symbol's own closures.** `refreshWaveformDemand` also appears as
+  `closure #4 in …` and `partial apply for closure #4 in …` on the same stack — three frames, one
+  call. Match whole symbol names.
+- **The app was not in the state you believe, and the profile still looks fine.** A 10-second sample
+  of NullPlayer showing a comfortable 10.3% busy was taken while playback had silently stopped —
+  a valid-looking number for a question nobody asked. The same window, actually playing, measured
+  23.7%. Worse, a window that is **occluded does not repaint at all** (B51), so a sample taken while
+  the app sits behind a terminal reports the draw path as free. Before trusting a sample, prove the
+  state: screenshot the window by its **window id** (`screencapture -o -x -l <id>`, never `-R <rect>`,
+  which photographs whatever is frontmost at those coordinates), confirm a clock or meter is
+  *advancing* between two shots, and confirm the app is frontmost.
+- **A repaint benchmark is not a frame rate.** `WINAMP_MODERN_RENDER_TIME` redraws the entire scene
+  each iteration; the app repaints only what was invalidated. Big Bento Modern measures 30 ms/frame
+  in the harness and leaves the main thread 23.7% busy in the app — the first is the cost of a
+  resize, the second is what a user feels. Sample the app before optimizing against the harness. See
+  `winamp-modern-skin-guide/reference/performance.md` → *Big Bento Modern's 30 ms frame is a repaint*.
+
+### Compare identical state, or do not compare
+
+A profile taken while idle and one taken while playing are not a before and after, however tempting
+the arrangement. The same session produced `evaluateLayerFXMesh 63.1% → 28.3%` from two runs in
+different playback states, which is not a result. Capture the *same* state — same skin, same windows
+open, same audio playing — or report the two runs separately and say why.
+
+Finally: a share going **up** after a fix usually means the total went down, not that something
+regressed. Check the absolute sample counts and the busy fraction before reading a rising percentage
+as a problem.
+
 ## UI Tests
 
 Location: `Tests/NullPlayerUITests/`
@@ -159,6 +272,20 @@ if CommandLine.arguments.contains("--ui-testing") {
     return
 }
 ```
+
+### `NULLPLAYER_SKIN` — launch straight into a given classic skin
+
+**DEBUG builds only** (`AppDelegate.swift:56`). Set it to the path of a `.wsz` and the app loads that
+skin at launch instead of the stored one, so a skin-specific check needs no clicking through the
+Skins menu and leaves the user's selection alone:
+
+```bash
+NULLPLAYER_SKIN=/abs/path/Skin.wsz ./.build/arm64-apple-macosx/debug/NullPlayer
+```
+
+It loads a **classic** skin only — a `.wal` is selected with `-winampModernSkinPath` and a modern
+skin through its own preference. Useful for the "test with multiple skins" rule above, since a wrong
+skin is one of the commoner reasons a UI check passes locally and fails for someone else.
 
 ## Running Tests
 
@@ -266,12 +393,39 @@ sleep(5)
 XCTAssertTrue(playingIndicator.exists)
 ```
 
+### Dynamic AppKit Menus
+
+Test dynamic `NSMenu` builders through the real builder whenever the behavior depends on mode. Save
+and restore `WindowManager.shared.uiMode` with `defer`, then assert the resulting flat item titles,
+relative placement, separators, submenu ownership, represented object, action, and check state. If a
+menu section normally depends on a loaded skin or live controller, keep the production section
+appender internal and feed it synthetic rows; this tests the real `NSMenuItem` construction without
+loading an archive or inventing a test-only runtime path. Always cover the empty input so a missing
+section cannot leave a stray separator.
+
 ## Test Data and Fixtures
 
 Test audio files are located in `Tests/Fixtures/`:
 - `test-short.mp3` - 5 second silence for quick tests
 - `test-3min.mp3` - 3 minute track for seek tests
 - `test-metadata.mp3` - File with full ID3 tags
+
+### Golden images (Winamp Modern `.wal` renderer)
+
+`Tests/NullPlayerAppTests/Goldens/WinampModern/` holds five committed PNGs that
+`WinampModernGoldenImageTests` renders synthetic skins against — the CI cover for group clipping,
+`<Wasabi:Frame>` slicing, animated-layer framing, bitmap-font text placement and per-object `alpha`.
+The fixtures are generated in code (no third-party artwork is committed), the comparison is the whole
+canvas, and a failure writes `<scene>.actual.png` / `<scene>.diff.png` to `WINAMP_MODERN_GOLDEN_DUMP`
+or the temporary directory.
+
+```sh
+WINAMP_MODERN_GOLDEN_UPDATE=1 swift test --filter WinampModernGoldenImageTests
+```
+
+Regenerate **only** for an intended rendering change, and read the diff before committing it. A new
+scene is only worth adding once you have watched it fail with the behaviour it guards deliberately
+broken — see `skills/winamp-modern-skin-guide/reference/harness.md` §*The golden images*.
 
 ## Reporting Test Issues
 

@@ -1,0 +1,969 @@
+# Rendering a `.wal` skin
+
+Reference for the `winamp-modern-skin-guide` skill: clipping, hit testing, text and fonts, the drawable elements, colour themes, and animated layers.
+
+#### An `<nstatesbutton>`'s three artwork attributes are all *prefixes* — and a click has to count
+
+`image`, `hoverImage` and `downImage` on an `nstatesbutton` name a **family**, not a bitmap: the id
+that resolves is `<attribute><state>`. ClassicPro's mute is `image="mute.1." hoverimage="mute.2."
+downimage="mute.3." nstates="2"` and the bitmaps it declares are `mute.1.0` … `mute.3.1`. Suffixing
+only `image` leaves the hover and the press naming ids nothing answers, and an unresolved id draws
+**nothing** — so the button vanishes under the pointer and whatever is behind it shows through. On a
+near-black skin that reads as "the button turns black on mouseover", and it hid three of cPro-Bento's
+controls (mute, shuffle, repeat), two of which were driving the engine correctly all along. Fall back
+down the family — pressed → hover → the rest state's own artwork → the bare base — so a skin that
+ships no hover frame stays visible rather than blinking out.
+
+**Which state is showing has three sources, in this order** (`WasabiSceneRenderer.nStatesButtonState`):
+
+1. A `cfgattrib` binding — the preference **is** the state, and `cfgvals="0;1;-1"` maps its *values*
+   onto the states positionally, so the state is the value's **index** in that list, not the value.
+   ClassicPro's repeat is `nstates="3"` with exactly that list (off / playlist / track); NullPlayer's
+   engine has one repeat flag, so only the first two are reachable.
+2. The object's own counted position (`value`), which is what a **click** advances.
+3. The `id`, for a skin that draws shuffle/repeat and binds nothing (boom names its artwork
+   `Player.shuffle-Selected`); the view's click path reads the same host flags back.
+
+An `nstatesbutton` is a togglebutton that counts, so `toggleActivation` has to accept one and cycle
+it `(value + 1) % nstates`, dispatching `onToggle` as it does for a plain togglebutton. ClassicPro's
+mute is unbound and `mute_but.onToggle` — save the volume, zero it, restore it — is the *whole* of
+its behaviour, so while only `togglebutton` was accepted the button was inert however completely the
+engine implemented it. `setActivated` must write `value` alongside `activated` for the same reason:
+they are one state spelled twice (`getActivated()` reads the first, `getCurCfgVal()` the second), and
+a persisted mute restored with `setActivated(true)` otherwise came up lit while still counting itself
+on state 0.
+
+#### A `cfgattrib` control has no `action` — the binding *is* what it does
+
+`cfgattrib="{GUID};Name"` binds a control to a Winamp preference, and a skin both **writes** it from
+its configurator and **reacts** to it. Defix's settings window is nine of these, each a *pair* of
+togglebuttons over one rect: a `ghost="1"` one carrying `image`/`activeImage` that shows the state,
+and a bare `rectrgn="1"` one that takes the click. Neither carries an `action`, so `performAction`
+had nothing to run and every switch in that window was inert, while the indicator beside it painted
+its "off" artwork whatever the stored value was.
+
+Both halves are needed, and the second is the one that is easy to miss:
+
+- `WinampModernScriptRuntime.toggleConfigAttribute(of:)` flips the stored value **and dispatches
+  `onDataChanged`** to every dynamic object registered against the same attribute. A skin applies a
+  setting from that event, not by polling — writing the value silently moves the switch and changes
+  nothing on screen until the skin is reloaded. Turning off Defix's "Window control bar" is
+  observable precisely because the event reaches its script: `playlist.CotrolBAR` and the SUI tab
+  strip `grid.s2` hide, and `FRAMING_GROUP` re-lays out.
+- `configStateProvider` lets the renderer read the binding for a togglebutton's active state, so the
+  indicator follows the value. Every renderer shares the one runtime, so a switch and any control it
+  mirrors in another window always agree. **Every path that draws a scene has to wire it** — both app
+  paths do, and the render harness did not, which is why Defix's configurator dumped nine `OFF`
+  indicators against three settings that ship as `1` (fixed Phase 45; a blind instrument reporting a
+  defect the app does not have).
+
+**There are three ways a value gets written, and they must all be the same way.** The host's Skin
+Settings window and a `cfgattrib` control already shared `setConfigAttribute`; a **script's own
+`ConfigAttribute.setData`** did not, and dispatched `onDataChanged` to the calling object alone.
+That is not a detail: a skin registers the same attribute once **per script**, so every other window
+holds a different object for it, and the whole point of the write is that they hear about it. Defix's
+configurator changes its 31 backgrounds by storing a `BG` id and then pulsing a `Bg Chng` attribute —
+one `setData`, five windows' `STANDARDFRAME` scripts each re-reading the id and re-imaging nine frame
+slices. Dispatching to the caller alone repainted the configurator's own background and left the
+player, both speaker cabinets, the playlist and the library wearing the old artwork (Phase 45).
+
+##### Some `cfgattrib` values are the **host's**, not the skin's — and a bound control keeps no state of its own
+
+Most bindings address skin-private preferences, and those live in `WinampModernConfiguration`. Four
+do not: they are Winamp's own playback options, which the skin merely *draws*. Measured across the
+30 skins then installed they are also by far the most common bindings there are —
+`{45F3F7C1-…};Repeat` ×52, `;Shuffle` ×50, `{FC3EAF78-…};Enable crossfading` ×32,
+`{F1239F09-…};Crossfade time` ×12 — so `WinampModernConfigBridge` maps exactly those to
+`WinampModernHost` (`shuffleEnabled`, `repeatEnabled`, `crossfadeEnabled`, `crossfadeSeconds`, the
+last two backed by `AudioEngine`'s Sweet Fades). Everything it does not name still goes to the
+skin's namespace.
+
+**Storing one of these in the skin's namespace as well gives one setting two homes**, and they drift
+the moment either side moves. Shuffle was stored twice — the attribute, plus `host.shuffleEnabled`
+toggled by an `xmlID == "shuffle"` case in the view — so one click flipped it twice and came back
+where it started. Keep the `xmlID` route for skins that bind *nothing* (boom draws shuffle and
+repeat with `activeimage` artwork and no `cfgattrib` at all), but only in the `else` of the binding.
+
+Two reads have to answer from the binding rather than from the object, and each one was a defect:
+
+- **`getActivated()`**. For a bound control the stored preference *is* the activation — that is why
+  `toggleActivation` refuses these and never writes `activated`. Answering from the attribute
+  reported every bound button as off forever.
+- **`getPosition()`** on a bound *slider*, in its own `low…high` unit. mmd3 seeds its crossfade
+  readout with `slidercb.onSetPosition(slidercb.getPosition())` at load.
+
+And a bound slider's **drag** is in that unit too, not Winamp's 0…255. Every explicitly-ranged
+slider in the corpus is one of these: five crossfade sliders cut `high="20"`, and Anaheim's
+`brightness.adjust` at `low="-4096" high="4096"`, which had been handed a 0…255 that meant nothing
+to the script reading it. Skin markup is untrusted, so a bridged number is clamped into the range
+the app itself offers (`WinampModernConfigBridge.crossfadeSecondsRange`) rather than accepted as
+given — and because the control reads its position back from the host, the readout shows the clamped
+value instead of lying about a duration the engine never took.
+
+##### `onActivate` — how a skin shows that a toggle is on
+
+Wasabi raises `onActivate(int activated)` whenever a button's activation changes, whoever changed
+it. It is **not** `onToggle`: skins hang their *indicator* off this one, and it had no dispatch site
+in the engine at all, so no `.wal` skin could show a toggle's state. mmd3's Crossfade/Shuffle/Repeat
+buttons use the same bitmap for `image` and `activeImage` on purpose — the indication is entirely
+six `ghost="1"` layers whose alpha `playertools.m` sets as `activated * 255` from `getActivated()`
+at load and from `onActivate` thereafter. Every probe showed the buttons working and the skin
+looking dead, because `RENDER_PROBE` read `activated=0` and `alpha=0` on a script that had run
+clean. 8 of the 30 skins then installed declare a handler.
+
+Dispatch it from all three places activation can move — `toggleActivation`, `setActivated` (never
+`setActivatedNoCallback`, which exists precisely to stay silent), and a `cfgattrib` write — and for
+the last, to **every** object bound to that attribute: a skin declares the same switch once per
+layout, and its indicators are per-layout too.
+
+**A setting can also move from outside the skin**, and a `.wal` indicator is written once and never
+polled — so a shuffle toggled in NullPlayer's own Playback menu left mmd3's lamp on the old state,
+the same drift arriving by a different road. `WinampModernMainWindowController` observes
+`.audioPlaybackOptionsChanged` and calls `refreshBridgedConfigState()`, which re-raises `onActivate`
+(and `onSetPosition` for a bound slider) for a bridged value that actually moved. It caches the
+settled value on the skin's own write too, so one click is still one event.
+
+> The sweep earned its keep here. Making the crossfade slider report a real position pushed
+> multipass's arithmetic onto `MakiValue.integerValue`'s `Int32(clamping: Int64(value))`, whose
+> `Int64(_:)` **traps** on the infinity MAKI's unchecked `/` produces — a trap on skin input, which
+> the security model forbids. A pre-existing engine bug that nothing had reached before.
+
+> Not every attribute a skin registers appears in its own configurator. Defix's songticker mode
+> (`Disable`/`Modern`/`Classic Songticker Scrolling`) is registered with `newAttribute` for **Winamp's**
+> preferences dialog and appears nowhere in its own Skin Settings window. The host's
+> **Winamp Modern → Skin Settings...** is where those live (Phase 27), and they work: the skin's
+> `onDataChanged` writes `ticker="bounce"` for Modern and `ticker="scroll"` for Classic.
+> **Its three modes are a radio group the skin does not enforce** — the handler tests `Disable`
+> first, so ticking *Modern* while `Disable` is still `1` leaves the ticker off. Unticking `Disable`
+> is the other half, and no host heuristic should guess that: Winamp's dialog offers the same three
+> checkboxes and the same skin logic decides. The skin ships `Disable = 1`, which is why an untouched
+> profile's ticker does not scroll.
+
+#### `<AlbumArt>` needs a host that actually has the cover
+
+`WinampModernHost.albumArtwork` has a protocol-extension default of `nil`, and for a long time the
+production host never overrode it — so every `<AlbumArt>` in every `.wal` skin drew its
+`notfoundImage` forever, which reads as "this skin has no cover art support" rather than as a missing
+host property. `WinampModernAudioEngineHost` supplies it from `NowPlayingManager`, which already
+fetches art for every source (local tags, Plex, Subsonic, Jellyfin, Emby) to feed the system Now
+Playing panel — a skin's cover is that same image, not a second fetch.
+
+Two things this must get right: the `CGImage` is cached **per track id**, because `albumArtwork` is
+read inside `draw` and converting an `NSImage` there re-rasterises the art every repaint; and the
+cache is dropped on a track change, or the previous track's cover stays on screen over the new one's
+title. Art arrives asynchronously, so the window controller repaints on
+`NowPlayingManager.artworkDidLoadNotification` — with playback paused nothing else would.
+
+#### `alpha` belongs to the object, not to one kind of drawing
+
+It is set once per scene node, before the type-specific draw, so text and bitmap fonts fade with
+everything else. Skins stack several readouts in one slot and show one at a time purely by moving
+their alphas — Defix does it with Kbps / KHz / Channels and again with Extension / Broadcasting — and
+while only the bitmap paths honoured it, all of them printed on top of each other. `setAlpha` writes
+the same attribute, so the script path needs nothing of its own.
+
+#### `fliph` / `flipv` mirror the content inside the object's own box (B43, 2026-08-24)
+
+Same shape of rule as `alpha` above, and it was missing for the same reason: both attributes were
+ignored **engine-wide** — neither string appeared anywhere in `Sources/`. They are applied once per
+scene node, at the seam every kind of drawing passes through, not in the bitmap path, because the
+attribute belongs to the *object* rather than to one way of filling it.
+
+The reflection is about the object's **own frame**, which makes it an *involution*: it maps `minX` to
+`maxX` and back, so applying it twice is the identity and a flipped object still covers exactly the
+rect it declares. Nothing about hit testing or layout changes when a skin turns one around. Two
+placement details matter:
+
+- **After both clips.** `node.clip` and any region mask are set in the unflipped space, so an object
+  cannot escape its box by mirroring and a region map stays where its author put it.
+- **Children are their own scene nodes**, so flipping a `<group>` turns its own background around and
+  leaves the objects inside it alone.
+
+Read the flags with `WasabiGeometrySpec.flag`, the same `atoi(value) != 0` reader `relat*` uses — a
+second, subtly different reading of `"1"` in the renderer is exactly the bug that cost a session on
+Big Bento's album art (B42).
+
+**What skins use it for is a mirrored pair drawn as one figure.** All 16 declarations in the corpus
+are on `<vis>`:
+
+| skin | declarations | what it builds |
+|---|---|---|
+| Big Bento Modern, + Windows 10 edition | 4 each (inherited by both Light overlays) | the header **butterfly**: `main.vis` (`fliph="1"`) beside `main.vis2`, 144px each, so the two meet low-frequency-to-low-frequency in the middle, over two `flipv="1"` reflection strips |
+| Styx | 4 | a 2×2 quad covering all four combinations — a kaleidoscope, and the best test case in the corpus |
+| multipass | 2 | `player.vis.2b` / `player.vis.4b`, reflections |
+| Enkera | 1 | `nvis2` |
+| Nullsoft.Winamp.2000.SP4.Lite | 1 | the **same** `<vis id="shade.vis">` declared **twice in the identical box**, the second `flipv="1"` — the classic Winamp mirrored scope |
+
+That last one is the pattern to recognise: two identical declarations in one box are not a skin bug
+and not a double draw, they are a trace and its reflection. Ignored, the pair coincides exactly and
+reads as a single thin line.
+
+#### An image param is a *load*, and a failed load changes nothing
+
+`setXmlParam("image", …)` (and `bitmap`, `background`, the button/slider state images) only takes
+effect when the new id resolves to a registered resource; an unknown id — the empty string included —
+leaves the object wearing what it already had, which is what Winamp shows for a bitmap that never
+loaded. Defix builds every background id by prefixing a preference it never seeds
+(`getPrivateString(getSkinName(), "BG", "")`), so taking those writes literally asked for
+`"" + "_background_material.Element.top.left"` nine times per window and stripped the skin's wood
+panelling off the player, both speakers, the playlist and the library.
+
+#### A layout's `background=` is the window's backing — id **or** path, with a fallback (B90, 2026-08-31)
+
+`background=` is read as a declared `<bitmap>` id first and as a **path inside the skin** second, the
+same either/or `loadMap` and `<bitmapfont file=>` already take. The path is tried against the
+declaring file's own directory, then the skin root: Itemskin's `<layout background="notifier\config.png">`
+sits in `notifier/notifier.xml` and is written from the root. It is the corpus's only path-form
+declaration, and resolving only the id form left its whole 300x422 notifier-preferences window
+transparent.
+
+The same either/or reaches every *other* bitmap attribute through the registry rather than through
+this call: see [loading.md](loading.md) -> *An attribute that names an image file gets an implicit
+bitmap* (B94).
+
+When neither form resolves and the object is a **layout**, the frame is filled with the palette's
+`contentBackground`. 13 skins name a resource that comes from Winamp's own Wasabi base skin, which we
+ship no equivalent of — `component.basetexture` (14), `wasabi.frame.basetexture` (15),
+`studio.BaseTexture` (11), `wasabi.frame` (1). Most never show, because the skin paints its own chrome
+over the top; where the layout background is the *only* backing the window vanishes, and its controls
+with it — EPS High-End's notifier preferences draws every control in the skin's near-white list
+colours against nothing at all.
+
+Two bounds keep the fill honest, and both are pinned in `WinampModernB90Tests`:
+
+- **Only when the skin asked.** A layout that declares no `background=` stays transparent — that is
+  every `sysregion`-shaped player in the corpus, and filling those would square each one off.
+- **Only a layout.** A group with an unresolvable background still draws nothing: a group has no
+  region of its own (see *hit-testing*), so an opaque fill there slabs over whatever the layout put
+  behind it.
+
+Corpus sweep, 441 renders: **15 changed**, and 8 of those are Big Bento dialogs already opaque where
+the fill landed underneath existing chrome.
+
+#### `desktopalpha="0"` — the window is a region, not a rectangle (B114, 2026-09-04)
+
+`<layout desktopalpha="0">` says the window has **no per-pixel alpha**. The rule is Win32's region:
+every pixel the skin painted is inside the window and **opaque**, every pixel at alpha 0 is
+**outside** it. `desktopalpha="1"` is the opt in to per-pixel alpha and a layout that says nothing
+keeps the transparency it has always had.
+
+WMP11-BlueVU is the reported case, and its shape is worth recognising: `glass_bg_left_left.png`,
+`glass_bg_left_right.png` and `glass_bg_right.png` are **alpha 0 in every pixel**, deliberately, and
+`Glass.Left` paints a translucent sheen over them. `RENDER_PROBE main/normal` correctly reports no
+node covering the display area — because there is nothing to cover it with. **Composite the dump over
+black before theorising about any report of this shape**; for this skin that reproduces its own
+shipped `screenshot.png`.
+
+**It is a shape, not a fill, and EPS High-End is the control experiment.** The first fix filled the
+layout's rect black and let the `sysregion` cut carve it — and blacked out the gap between that
+skin's speaker feet. EPS declares its two speakers from the *same* artwork (`background="speaker"`)
+with `desktopalpha="0"` on the left and `desktopalpha="1"` on the right; they are meant to look
+identical and do in Winamp, so an empty pixel must stay out of the window rather than going black.
+The measurement said so from the start and was misread: over the reported area **9829 of 9831**
+changed pixels were *partially* transparent and only 2 were empty.
+
+`WasabiSceneRenderer` renders the scene into a readable buffer and promotes its alpha — non-zero to
+255, zero left alone. In a premultiplied buffer the colours are *already* the composite over black,
+so that one channel is the whole fix; the window context cannot be read back, which is why there is a
+buffer. It is held across frames and sized to the caller's clip, so a targeted repaint pays for its
+own rect.
+
+Three traps in that buffer, all measured on `main/normal` at 2x against a 2.81 ms/frame baseline, and
+all of them things to copy rather than rediscover:
+
+- **Do the pixel pass in vImage.** A Swift loop over the alpha byte cost **7.5 ms**, and rewriting it
+  a word at a time made it **22.4** — an unoptimised build is where a per-pixel loop is worst, and a
+  debug build is what live QA runs. `vImageTableLookUp_ARGB8888` with an identity table on the three
+  colour channels does it in **0.19 ms**.
+- **RGBA, not BGRA.** BGRA is the window server's native layout and the wrong destination here: the
+  skin's artwork is RGBA, so the scene pass paid a swizzle per bitmap and went to **4.8 ms**. One
+  conversion at the blit beats one per bitmap.
+- **Rebind `NSGraphicsContext.current`.** Not every string goes through CoreText —
+  `WinampModernSurfaceStyle` draws its labels with `NSString.draw`, which takes its destination from
+  that global. Left pointing at the caller's context, impulse's Configuration window lost its slider
+  labels and its "Hold Time" caption: 841 pixels of text drawn into the wrong buffer and then buried
+  by the blit.
+
+Cost after all three: **3.63 ms/frame** against 2.81, debug. Corpus sweep, 590 renders: **2 changed**
+— WMP11-BlueVU's display area, and 7 pixels at maxdelta 2 on EPS's left speaker where the
+silhouette's anti-aliased fringe goes opaque.
+
+#### Layer fill modes
+
+- **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome
+  depends on this — `wasabi.frame.top` is a 10×18 sprite stretched across the whole titlebar, and the
+  menubar/titlebar streaks are 5–10px sprites stretched to hundreds of pixels. Drawing them at
+  natural size paints one sprite and leaves the rest of the bar blank.
+- **`tile`/`tilex`/`tiley`**: repeat the bitmap instead. Bento-style frames tile their
+  top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
+  edges leave a visible seam grid.
+
+#### Bitmap interpolation follows UI Size × backing scale, not the asset's stretch
+
+Ordinary `.wal` artwork uses nearest-neighbour filtering only when the scene's effective device
+scale is an exact integer and the bitmap is not actually being reduced. On Retina that makes 100%
+UI Size a crisp 2× and 150% a crisp 3×, while 125% stays smoothly filtered at 2.5×. Any real
+downscale stays smooth even if the surrounding UI scale is an integer; nearest would discard source
+pixels and alias.
+
+The integer test belongs to the CTM's basis vectors, **not** to
+`device destination size / bitmap source size`. A skin may deliberately stretch a 79px logo to 83
+skin pixels without changing the fact that its whole UI is at 2×. Using the asset ratio there picks
+smooth filtering at an integer UI Size and makes one stretched icon disagree with every native-sized
+icon beside it. `WasabiBitmapInterpolationPolicy` makes this decision once, and both the direct draw
+and `WasabiSceneRenderer`'s pre-scaled cache use its answer.
+
+Do not diagnose every soft edge as interpolation. Big Bento's 79×15
+`window.titlebar.text.winamp` source contains many partially transparent white edge pixels — the
+anti-aliasing is authored into `window/window.png`. Nearest preserves each of those pixels as a 2×2
+block; it cannot turn baked alpha into a hard binary outline. During live B47 QA the hamburger icon
+was the useful control (hard edges became crisp), while the WINAMP word remained intentionally soft.
+Inspect the source alpha before changing the filter to chase that look.
+
+#### A skin spells the axis two ways, and `"v"` is not a typo
+
+`orientation` decides whether a slider's thumb travels up or across, and skins write it **both** ways
+for the same thing. Across the installed corpus:
+
+| Spelling | Slider declarations |
+|---|---|
+| `vertical` | 158 |
+| `v` / `V` | **49**, in 8 skins |
+| `horizontal` | 21 |
+
+Testing for `== "vertical"` therefore made 49 of them *horizontal* — Big Bento Modern ×4, Anexa,
+Enkera, Lobe and The_Nokia_5220. It produced two symptoms that look unrelated:
+
+- **The thumb drew along the wrong axis.** Anexa's, Lobe's and cPro-Bento's equalizers could never
+  show a curve: ten band sliders whose thumbs all slid sideways within their own column.
+- **A drag read the wrong coordinate.** `updateSlider` took its value from the pointer's **x** across
+  a bar 16px wide, so the position snapped to one end rather than following the mouse — which is what
+  made Big Bento Modern's settings scrollbar impossible to drag (BB19).
+
+`WasabiSceneRenderer.isVerticalOrientation` is the single answer; use it rather than comparing the
+attribute. Note `<ProgressGrid>` has its **own** vocabulary for this (`up`/`down`/`left`/`right`, the
+edge it grows from) and is deliberately not folded in.
+
+#### `<ProgressGrid>` — the bar's *filled* part
+
+`left` cap + stretched (or tiled) `middle` + `right` cap, growing from the edge `orientation` names
+(`right`/`down` anchor at the near edge, `left`/`up` at the far one). It carries no `action` of its
+own, so the value comes from the sibling that does — the `<slider>` drawn over the same rect — and
+both go through the renderer's one `normalizedValue(of:)`.
+
+Skins pair the two and give the slider a thumb that is deliberately invisible: Love is War Miku's seek
+"thumb" is a **1×1 pixel**, and the grid is the only thing that shows a position anywhere in the
+window. Drawing nothing for the grid left its seek bar an empty white box — which reads as a blank
+text field, not as a seek bar.
+
+#### A seek slider reads the clock and nothing else
+
+`action="SEEK"` is **terminal** in `normalizedValue(of:)`: with a duration it is
+`currentTime / duration`, and without one it is **zero**. It must never fall through to the generic
+`value` / `cfgattrib` branch beneath it, however plausible that reads as a fallback.
+
+A seek bar is routinely **more than one object stacked on one frame** — cPro_MMD declares two
+sliders, `seeker` and `seeker2`, both at `{{10,434},{480,20}}`; stock Winamp Modern declares a
+`Seeker` and a `SeekerGhost`. A script writes `setValue` on some of them as the film plays. While
+they all read the clock they agree and the skin draws one thumb, so a per-object value looks right
+under every kind of inspection. The moment the duration went to zero the written slider read back
+its own stored 255 while its twin read 0, and the bar drew **a thumb at each end**. Nothing about
+that is specific to the end of a film — any moment without a duration does it — and nothing about it
+is visible from a single object's value, which is what `WINAMP_MODERN_SEEK_TRACE=1` exists to print
+(`reference/harness.md`).
+
+The general lesson, and it is not about sliders: **a value that silently changes its source when a
+clock goes away is correct for exactly as long as anyone is looking at it.** Two readers of the same
+quantity agree while they share a source and split when one of them falls back, and the split shows
+up as a drawing defect nowhere near the code that caused it.
+
+Pinned by `WinampModernB107Tests`.
+
+#### A skin's own right-click menus
+
+A script builds them with `new PopupMenu`, `addCommand(title, id, checked, disabled)`,
+`addSeparator()`, `addSubMenu(child, title)` and shows one with `popAtMouse()`, which **blocks** and
+answers the id the user picked (0 = nothing). Three things this needs, and all three were missing at
+once, so no `.wal` skin could show a menu at all:
+
+- `addSubMenu` — without it the whole `onRightButtonUp` handler fails closed at the first submenu.
+- A **presenter**: `WinampModernScriptRuntime.popupPresenter` is installed by the main view
+  (`presentScriptPopup`), which builds an `NSMenu` from the resolved tree and runs it at the mouse.
+  Unset, `popAtMouse` answers 0 and the skin concludes the user cancelled.
+- `addCommand`'s fourth argument is **disabled**, not "separator" — storing it in the separator slot
+  turns every greyed-out row into a divider.
+
+**A fourth, found in Phase 31: the right button is a *pair* of events and a skin picks either half.**
+The view sent only `onRightButtonUp`. Defix hangs all four of its "what does this button open" menus
+off `onRightButtonDown`, so they were unreachable while the skin, the presenter and `popAtMouse` all
+worked perfectly. `WinampModernMainView` now sends `onrightbuttondown` on the press and
+`onrightbuttonup` + `onrightclick` on the release, and the release goes to whatever the *press*
+claimed — `popAtMouse` runs its own tracking loop, so by the time the up arrives the pointer is
+wherever the user dismissed the menu, usually not over the control any more.
+
+**A fifth, found in B91: a menu opened from a *left-button-down* handler needs the button up first.**
+`onLeftButtonDblClk` is dispatched from `mouseDown` — Winamp's ordering, and what a skin expects — so
+`popAtMouse` opens `NSMenu.popUp` while the left button is still physically down. AppKit then runs the
+menu in press-and-drag tracking, and the release that *ends* the double-click arrives milliseconds
+later over no item and dismisses it before it has drawn. The menu is built, shown and thrown away, and
+the user sees a double-click that does nothing. `presentScriptPopup` drains the pending
+`.leftMouseUp` (bounded, so it cannot hang the main thread) before popping, scoped to the double-click
+dispatch so a press-and-hold menu keeps the drag-to-pick Winamp gives it.
+
+The reason this hid for so long is that the two buttons fail differently: the right-button menus come
+from `rightMouseUp`, where the button is *already* released, so every one of them worked. Hal's Eye
+has one of each on the same object — right-click picks the visualization, double-click picks the
+rotation speed — and only the second was dead, which is the signature. **No probe can see this**: the
+harness's popup presenter never holds a mouse button, so `RENDER_CLICK` reports the menu building
+correctly, which is exactly what it does.
+
+`WINAMP_MODERN_RENDER_CLICK` prints the menu a right-click builds, which is the fastest way to see
+whether the failure is the menu or what it does afterwards. **It drove only `onrightbuttonup` until
+Phase 31**, and so reported four dead buttons on a skin that implements them fully — the reason a
+skin file carried "builds no `PopupMenu` of its own" for several phases. A probe's silence is a
+statement about the probe until you have checked it drives the event.
+
+#### A skin opening its own windows
+
+Not every window request is a host action. A skin may open one of its own containers from script —
+`getContainer("SUI").show()` — with no `TOGGLE` and nothing else for the host to see; Defix's SUI is
+reachable *only* this way (its round buttons send the skin's own `sendAction("opentab", …)`, which
+`skin.xml`'s `onAction` answers with exactly that). `show`/`hide` on a top-level container therefore
+raises `WinampModernScriptRuntime.containerVisibilityRequested`, and
+`WinampModernMainWindowController` opens or orders out the matching auxiliary window.
+
+Two constraints on that path, both load-bearing:
+
+- **It is idempotent.** Skins call `show()` from timers; acting on a request for the state the window
+  is already in would re-front it 30 times a second. The controller compares against
+  `window.isVisible` and drops the rest.
+- **It is wired after `scripts.start()`** (in `makeSurfaceCoordinator`), so a `show()` from
+  `onScriptLoaded` cannot pop windows open at launch.
+
+`Container.toggle()` is the same route with the direction read back first, and the direction must come
+from the **window**, never from the graph's `visible` attribute (`containerVisibilityQuery`, the read
+half of the pair). A window's visibility changes by four routes that never write that attribute — a
+markup `TOGGLE`, the Windows menu, this call, and the window's own close button — so an
+attribute-read toggle inverts after the first manual close. For the same reason the aux window's close
+button goes through `setAuxiliaryWindow` rather than calling `orderOut` itself: closing a window is a
+scene becoming invisible, and a skin that lights its console button from that window's layout
+`onSetVisible` (Ujola Cat) was left with a lit button and nothing on screen.
+
+
+##### An `<animatedlayer>` is one frame, not one sheet
+
+Its `image` is a **strip** and `framewidth`/`frameheight` say how it is cut, so a layer that declares
+no `w`/`h` of its own is one *frame* big. Taking the sheet made multipass's seek bar a 139×364 box
+where the skin drew a 139×13 one — one frame stretched over twenty-eight frames' worth of height, then
+clipped by the enclosing display group to a transparent sliver, so the skin's only seek indicator was
+invisible while the script driving it worked perfectly.
+
+Its **region** is the union of its frames: a point is clickable if *any* frame paints there. Testing
+only the frame on screen is wrong for the commonest use of the type — a fill animation is transparent
+ahead of the playhead, which is precisely where a seek click lands. Phase 33.
+
+##### Artwork-less `<Wasabi:Button text="…">`
+
+A deliberate exception to the identifier-only rule for the seeded Wasabi standard-library shells. Three
+measured skins (CornerAmp, mmd3's `ctsbig`, Anexa) put a bare `<Wasabi:Button text="Switch">` under
+their theme list, and such a button names **no `image=` at all**, so it resolves no bitmap whatever
+the skin declares. (An earlier version of this note said no `.wal` ships `wasabi.button.*` artwork.
+That is wrong — **49 of the 70 corpus skins then installed declare some**, Bio-Nid, Firefox and T800 116 ids each,
+and CornerAmp and Anexa are themselves among them. The containment was never the corpus-wide absence;
+it is the `text=` and no-bitmap test below. Corrected while measuring B95.) The renderer draws a 1px border in `palette.listText` with the label centred, but
+only when the instance resolves *no* bitmap and carries a non-empty `text=` — a skin with its own
+button artwork never reaches the fallback.
+
+##### Window-chrome buttons with no artwork (B95, 2026-09-01)
+
+The third instance of the same deliberate exception, and reached the same way — only after the
+bitmap branch has failed. A Winamp3-era skin writes
+`<button action="CLOSE" image="wasabi.button.exit"/>` and declares no `<bitmap>` for it, because the
+artwork lived in Wasabi's built-in resources rather than in the archive. Such a button resolved no
+image, **sized itself to 0x0** and vanished: `Winamp 3.0 Default` has 24 references and not one
+declaration, so its player had no menu, no minimize, no windowshade and no close.
+
+`WasabiChromeButtons` names the roles the corpus actually references — `appmenu`, `sysmenu`,
+`minimize`, `maximize`, `restore`, `winshade`, `close`, `exit`, `more`, `less` and the four
+`label.arrow.*` — and nothing else. An unresolved id under the prefix that is not one of them is
+left alone: this draws a known control, not a box around every id that failed to resolve. The state
+suffix (`.pressed`, `.active`, …) is stripped before the match, because a skin routinely writes the
+pressed id as the resting `image=` on one of a button's two alpha-gated copies.
+
+- **The default size is measured.** `Winamp 3.0 Default`'s three right-hand buttons sit at `x="230"`,
+  `x="244"` and `x="261"` in a 275-wide window, so each is 14 wide and the last ends flush with the
+  edge; the 9 is the title strip (`WasabiStandardFrames.titleHeight`) less the `y="3"` they declare,
+  twice. It applies **per axis and only where the skin states none** — a button with its own `w`/`h`
+  keeps them.
+- **It is opaque to hit testing.** The glyph is a real surface, so `isRenderable` accepts it; without
+  that the button drew and could not be clicked.
+- **Contained by construction.** A skin that ships the artwork resolves a bitmap and never reaches
+  here. Formamp declares 20 of the `wasabi.button.*` ids and corneramp_redux most of the rest, and
+  both keep every piece they ship.
+
+##### A standard frame whose artwork stayed in Winamp (B121, 2026-09-04)
+
+The fourth instance of the same exception, one level up from the buttons: not a control inside the
+title bar but **the title bar, the plate and the border themselves**. Winamp kept `wasabi.frame.*`,
+`wasabi.titlebar.*` and `wasabi.panel.*` in its base skin, so a skin written against them declares no
+window artwork at all and its windows drew as bare content on nothing — no border, no backing, and any
+label the skin painted in a light colour invisible with it (`Winamp 3.0 Default`'s equalizer band
+captions were the reported case, along with "missing window borders and backgrounds"). B95 had already
+brought such a frame's `content=` group and title text into the graph; nothing ever painted the frame.
+
+`WasabiStandardFrames.hostedAttribute` marks the instance at initialization, under the **same
+`!claimedBySkin` gate** the content instantiation uses, and the renderer paints plate, strip and border
+before the type chain so the title and client group draw over it. Three properties matter:
+
+- **Contained by the groupdef, not by the tag.** A skin that supplies `wasabi.standardframe.*` paints
+  its own frame and is never marked. Corpus-wide only **three** skins ship none — `Winamp 3.0 Default`,
+  `jvc.tape.v0.5`, `Overdrive_2` — plus `TomK`, which defines three flavours and instantiates a fourth.
+  Those four are the entire blast radius, and the render sweep for the change moved exactly their 10
+  images out of 590 (the 11th, Anexa's `main-shade`, is the wall-clock face that differs between two
+  runs of one build).
+- **Painted from `WinampModernSurfaceStyle`, never a fixed grey.** The strip has to read on a skin of
+  either polarity, and this is already the palette NullPlayer's own windows beside the skin use — so a
+  hosted frame and the playlist window next to it are one surface. Same argument as the chrome buttons'
+  single-colour line work.
+- **It is chrome, not a reconstruction.** No attempt is made to imitate the Winamp3 frame's bevel or
+  its hatched title rules; that is Nullsoft's artwork. When a report compares a skin against its own
+  `screenshot.png`, only the *content* half of that picture is reproducible from the archive — see
+  [skins/winamp-3-0-default.md](../skins/winamp-3-0-default.md).
+
+##### `<Wasabi:TitleBox>` is a body, not just a border
+
+A title box **names its body by group id**, exactly as a standard frame does:
+
+```xml
+<Wasabi:TitleBox id="radarbox" x="1" y="12" w="-3" h="70" relatw="1"
+                 title=" THIS BUTTON MUST BE TURNED ON FOR GRAPHICS SMOOTHING"
+                 content="dtabox.content" />
+```
+
+The difference is *who instantiates it*. A standard frame's own `standardframe.maki` does the
+`newGroup(getParam("content"))` and every skin ships that script; the title box's equivalent lives
+inside Winamp, so the tag resolved to nothing and **the entire content group stayed out of the
+graph** — not merely undrawn, absent. Bio-Nid's only settings window is one title box, which is why
+it came up as a slab of frame with a hole in it, and why "empty window" was the right description of
+a missing *object*, not a missing paint. `WasabiTitleBox` supplies both halves: the initializer
+expands `content` beneath the box (beside the `<Wasabi:Frame>` pane expansion, for the same reason),
+and the renderer draws the label and the box.
+
+Reach when this landed: **9 of the 35 skins then installed, 33 declarations** — Bio-Nid, BLAKK, Core-X5,
+Ebonite, Enkera, impulse, Itemskin, Shield_Amp, Styx.
+
+Three things worth keeping:
+
+- **The artwork is Winamp's.** No `.wal` in the corpus ships a `wasabi.titlebox.*` bitmap, so the box
+  is drawn, on the same deliberate exception as an artwork-less `<Wasabi:Button>` above. It takes the
+  instance's own `color=` when it states one (Bio-Nid, Core-X5) and the skin's list colour otherwise.
+- **The label sits above the border, not in a gap cut through it.** Winamp cuts the gap; matching that
+  means measuring the label in whatever font draws it, which may be one of the skin's bitmap fonts,
+  and a gap that does not match the text is worse than no gap. The body inset clears both either way.
+- **The inset is calibrated, not invented.** Shield_Amp and Itemskin each wrap one 20px row in
+  `h="40"` with the row at `y="0"`, which puts the body 18px down with 6px under it —
+  `WasabiTitleBox.contentInset`.
+
+##### A title box that declares no height is as tall as its body needs
+
+Four of impulse's five say `<Wasabi:TitleBox x="320" y="5" w="-325" relatw="1" title="Skin Options"
+content="…"/>` and nothing more — no `h`, no `relath` — so the box resolved to no height and its body
+was laid out inside nothing. In Winamp the standard library's own object supplies the height from the
+content group.
+
+**Measured, never a constant.** The height is the body's own content height plus the inset the body
+already sits in (`WasabiTitleBox.contentInset`, 18 above and 6 below), which is the only number that
+makes the box fit exactly what it was drawn around. The body's content height comes from the two
+sources Wasabi resolves any auto height from, in order:
+
+1. `autoheightsource="<id>"` naming a descendant — all four of impulse's content groups state one.
+2. Otherwise the lowest edge any child reaches.
+
+Both answer the child's **bottom** (`y + h`), not its own height: a group sized to the height of its
+last row would clip everything above it, and impulse's Notifier Options names a 10px slider sitting at
+`y="120"`. Relative geometry is skipped rather than resolved — a child anchored to the height being
+computed has no answer, and one that states a relative height is asking to *fill* the box, not to size
+it. A body that says nothing measurable leaves the box exactly as declared; inventing a number is
+worse than leaving it.
+
+Checked against impulse, the one skin that needs it: `Skin Options` measures 74 + 24 = 98 under a box
+at `y="5"` with the next at `y="110"`, and `Glass Opacity` 13 + 24 = 37 at `y="273"` with the next at
+`y="319"` — a 7–9px gap in all three cases, which is the spacing the skin's own *sized* box has.
+
+##### The Wasabi standard form widgets are the primitives they wrap
+
+`<Wasabi:Text>` (55 declarations / 13 skins), `<Wasabi:CheckBox>` (67 / 5), `<Wasabi:EditBox>` (14 /
+5), `<Wasabi:HSlider>` (9 / 4) and `<Wasabi:DropDownList>` — 156 declarations across 15 skins, the
+widest measured demand there was. Each is a conventional XUI tag whose body lives in Winamp, so each
+resolved to a structure-free shell and became an inert node. **This is what an empty settings page
+usually is**: with the title box implemented, Styx's Config drew three labelled boxes and two were
+empty, because their bodies are these widgets.
+
+The measured insight is that **Winamp's own definition of each is a thin wrapper around one primitive
+this engine already has.** The three skins that ship a *replacement* for one all say so — Lobe, Big
+Bento Modern and ZDL each write `<groupdef id="wasabi.text.group" xuitag="Wasabi:Text"
+embed_xui="wasabi.text" h="12"><text …/></groupdef>`. So `WasabiFormWidgets` is a **type
+substitution**, applied once in `WasabiSkinInitializer` where the object is created, and everything
+downstream — drawing, hit testing, `cfgattrib` binding, script dispatch, geometry — follows with
+nothing else to teach:
+
+| Tag | Becomes | Notes |
+|---|---|---|
+| `Wasabi:Text` | `text` | |
+| `Wasabi:EditBox` / `EditBox2` | `edit` | plus a drawn field, since Winamp fills one with a native child window |
+| `Wasabi:HSlider` | `slider` | seeds the conventional `wasabi.slider.horizontal.*` ids |
+| `Wasabi:CheckBox` | `togglebutton` | plus a drawn box; `radioid` makes it a radio |
+| `Wasabi:DropDownList` | `button` | plus a drawn box, arrow and menu |
+
+Four things worth keeping:
+
+- **The `else` is the whole containment.** The substitution runs only when `types.definition(forInstance:)`
+  resolved nothing, so a skin that defines the tag itself never reaches it. That is how Big Bento
+  Modern keeps its own search box and how Styx and Shield_Amp keep their own `Wasabi:CustomDropDownList`
+  wrappers — all three of that tag's users define it, which is why only the inner `Wasabi:DropDownList`
+  needed implementing.
+- **A slider is the case that argues against drawing.** 19 of the 36 skins then installed
+  ship `wasabi.slider.horizontal.button`, including all four that use the tag, so the substitution seeds
+  those ids and the skin's own artwork draws. Only a skin shipping neither reaches the flat track and
+  drawn thumb. A check box is the opposite — **no** `.wal` ships `wasabi.checkbox.*` — so it is drawn,
+  on the same deliberate exception as an artwork-less `<Wasabi:Button>` above.
+- **A `radioid` check box is a radio, and that is half the tag**: 32 of the 67 declarations carry the
+  attribute. It draws round, its set is looked up from the top of its own tree (`radioid` is flat, and
+  Styx's pairs live in two different content groups of one window), and clicking the member already on
+  leaves it on. Only members that actually *change* are told, because `onToggle` is what a skin reads
+  the choice from.
+- **A drop-down needs an object to be found, not just drawn.** Styx's and Shield_Amp's
+  `customdropdownlist.maki` are the same script: `findObject("dropdownlist.text")`, then
+  `onTextChanged` writes the pick to a private string. The initializer expands an invisible `<text
+  id="dropdownlist.text">` beneath the control for exactly that — the drop-down draws its own label
+  from `default`, so a visible one would print the selection twice.
+
+What still does not draw: `<Wasabi:RadioGroup>` (9 declarations) is a bare grouping id with no
+geometry and is correctly inert.
+
+#### A tab sheet names its pages, and one of them is showing
+
+`<Wasabi:TabSheet children="config.stuff;themes.stuff;changelog.stuff">` is the third widget of this
+shape, after a standard frame's `content=` and a title box's: it **names its body by group id** and
+the object that instantiates it lives in Winamp. Nothing was instantiated, so Shield_Amp's
+Configuration and Anexa's colour window were empty slabs over three working pages each (B14).
+
+Four things it is worth knowing the reason for:
+
+- **The pages are ordinary objects, and visibility is the whole mechanism.** `WasabiTabSheet` expands
+  one `<group>` per page, inset below the 20px strip, and marks all but one `visible="0"`. An
+  invisible object leaves the scene with its subtree, so a hidden page neither draws nor answers the
+  pointer — the renderer needs no concept of a page beyond that, and neither does the hit test.
+- **A tab's label is its page groupdef's own `name`.** All four declaring skins spell it that way and
+  nothing else in the markup names a tab; the attribute survives onto the instance because a
+  groupdef's defaults merge onto it.
+- **The artwork is conventional and Bio-Nid describes it.** Bio-Nid replaces the widget wholesale, and
+  its `wasabi.tabsheet.button.selected.group` / `.unselected.group` are the closest thing the corpus
+  has to Winamp's own definition: a nine-slice of `wasabi.tabsheet.button.*` for the selected tab, the
+  `.shade.*` set plus a `.bottom` lip for an unselected one pushed 3px down, `h="20"`, and
+  `autowidthsource="text"` on the label. Shield_Amp and mmd3 ship those bitmaps without the groupdefs,
+  so the strip reads them the way the standard slider reads `wasabi.slider.horizontal.*` — the skin's
+  own artwork when it has any, a drawn strip when it does not.
+- **The containment is an explicit stamp, not the `else` above.** A tab sheet keeps its own type name
+  whether or not a definition claimed the tag, so a skin shipping `<groupdef xuitag="Wasabi:TabSheet">`
+  would get its own body *and* a strip drawn over it. The initializer stamps
+  `nullplayer.tabsheet="1"` only when the tag resolved to our own artwork-less shell, and the drawing,
+  the hit test and the click all key off that stamp.
+
+#### A binding can turn a box on; its absence must not turn one off
+
+`drawCheckBox` asked `configStateProvider?(object) ?? activated`. The provider answers `false` for
+**two different questions** — a bound `cfgattrib` that is off, and an object that names no attribute
+at all — and the `??` only falls through when the whole provider is nil. It is installed in the app
+and nil in the harness, so `activated` was consulted *only headlessly*: every test and every render
+dump agreed the box worked, and in the app every **unbound** box drew from the binding's "no".
+
+Every radio in the corpus is unbound, so all of them drew permanently empty however completely
+`selectRadioMember` flipped them — while a bound check box beside them (Styx's *Always on top*)
+worked, which is the asymmetry that gives it away. The rule is now
+`WasabiFormWidgets.isOn(_:boundState:)` — the same `||` `resolvedBitmapID` uses to pick an
+`activeimage` — and it is one function so the draw cannot drift from it again. B66, found in B14's
+live QA on Shield_Amp and Styx (2026-08-29). The button half of that `||` was **not** actually
+there until BB26 put it there; see below.
+
+The instrument was blind to it too, and that is the reusable half: `WINAMP_MODERN_RENDER_CLICK` only
+ever called `toggleActivation`, never the `selectRadioMember` the view runs **first** and returns on,
+so it reported `CLICK toggled … activated=1` for a radio nothing in the app was flipping. It now
+mirrors `performAction(for:)`'s order and prints `CLICK radio <id> set=<radioid> activated=<0/1>`.
+
+#### A button's own `activated` is the fourth source of an `activeimage`
+
+`resolvedBitmapID` decided a button was active from three places, all of them **external** to the
+object: a hard-coded `shuffle`/`repeat` `xmlID`, an `EQ_TOGGLE`/`EQ_AUTO` `action`, and a `cfgattrib`
+binding through `configStateProvider`. The button's own `activated` attribute — what
+`setActivated`/`setActivatedNoCallback` write from MAKI, and what `toggleActivation` writes on a
+click — was never read, though `setActivated`'s own doc comment said *"`activated` is what
+`getActivated()` and a togglebutton's `activeimage` read."* The runtime and the renderer disagreed
+about that, and the renderer is the one the user sees.
+
+So a button that only a **script** activates could never light, and neither could a plain
+`<togglebutton>` flipped by an ordinary click: `toggleActivation` wrote the attribute, dispatched
+`onToggle` and `onActivate`, and returned true — every observable except the artwork.
+
+**Reported as a rating row, which is what makes it worth reading twice.** Big Bento's file-info row
+"draws five dots, not stars" (BB26). The dots are not the defect: `window/rating.png` is a four-cell
+strip — filled star, grey star, **dot**, red X — and `infocomp.rating.empty` *is* the dot, so an
+unrated row is drawn correctly. `fileinfo.maki` fills the row by calling `setActivated` on
+`rate.1…5`, and that was the unreachable case. The rating itself round-tripped to the server the
+whole time (`PlexServerClient: Rated item 656141 with rating 8`), so the symptom pointed at storage
+and the defect was in the draw. Measure which half is broken before believing the report's framing.
+
+**Reach:** 1618 `<button>`/`<togglebutton>` declarations in the corpus carry an `activeimage`; 864
+are named by one of the three external sources and **754, across 39 of the 53 skin trees, are not**
+(Bento 98, T800 27, ZDL Reel-To-Reel 25, Bio-Nid 23, BLAKK 21, Rika 21).
+
+**Nothing moved at rest**, and that is checkable rather than hoped for: **no** corpus skin declares
+`activated="1"` in its markup, so no skin's launch appearance changes and a render sweep is
+byte-identical. The artwork only moves once a script or a click writes the attribute — which is
+exactly the state the sweep cannot reach, and why this survived every static dump. `RENDER_CLICK`
+prints `CLICK toggled <id> activated=<0/1>` and reported that flip correctly all along; it reports
+the *attribute*, not the bitmap the flip resolves to. BB26, live on Big Bento Modern (2026-08-31).
+
+#### A `TOGGLE` button's lamp is its **window's** state, not the button's
+
+For a `<togglebutton action="TOGGLE" param="guid:pl">` the `activeimage` is a claim about a *window*.
+`activated` is a click counter `toggleActivation` maintains beside the action, reconciled with
+nothing, so once BB26 gave the attribute the power to draw, those lamps read backwards whenever the
+window does not start closed — which at launch is common. Reported as *"they are reflective of the
+start state; if the window launches at launch then the toggle gets reversed"*. Closing the window by
+its own close button or from a menu is the same desync arriving by another road. 194 declarations
+across the 31 skins then installed; roughly half name a component and half one of the skin's own container ids.
+
+The lamp now asks, through `WasabiSceneRenderer.toggleTargetVisibleProvider`, and the answer wins
+outright — `activated` is not consulted when there is one, or the second copy simply returns. The
+provider is installed by `WinampModernMainView` on its own renderer and gated to `action="TOGGLE"`;
+`toggleTargetIsVisible(parameter:)` walks the **same three roads `routeComponentToggle` walks, in its
+order**, which is the point: a lamp resolving differently from the click beneath it is the defect in
+another costume.
+
+| The parameter is… | The lamp reads |
+|---|---|
+| the colour-theme or About GUID | nothing — a menu is not a window |
+| a component the surface coordinator handles | `isSurfaceVisible`, unless the surface is **embedded** |
+| a component with an auxiliary container of its own | that container's window |
+| a component with neither | NullPlayer's own window (`isPlaylistVisible` and its three siblings) |
+| one of the skin's container ids | the hosted-window materializer, then the auxiliary containers |
+| anything else | nothing |
+
+Three things this cost, each worth keeping:
+
+- **Nil is a real answer, and the common one.** An embedded surface is as visible as the player and
+  has no open/closed of its own — answering `isMainWindowVisible()` there would pin the lamp lit,
+  which is a different wrong answer. `routeComponentToggle` returns early for those too, so the click
+  does nothing either, and `activated` at least tracks the clicks.
+- **Nothing in that query may walk the scene.** The first version asked
+  `renderer.componentHolders()` whether the kind was an in-player holder; that builds `sceneNodes()`,
+  the scene walk is what asks the lamp question, and the app died in a 4500-frame stack overflow at
+  skin load. Ask the surface *catalog*, which is declarative. A re-entrancy guard on
+  `toggleTargetIsVisible` makes the next such mistake a dark lamp instead of a crash.
+- **A lamp lives in a different window from the one that moved**, so
+  `WinampModernMainWindowController.refreshToggleLamps()` marks every container's view for display on
+  a visibility change — `setAuxiliaryWindow`, `toggleAuxiliaryWindow`, and the materializer's
+  `visibilityDidChange`.
+
+**`toggleActivation` still writes `activated`**, and must: a skin's own `onToggle` reads it back with
+`getActivated()`, and multipass's bottom drawer opens from nothing else. The renderer simply prefers
+the authoritative answer. Do not read this as "stop honouring `activated`" — that is BB26's case.
+BB36, live on the corpus (2026-08-31); manual QA covered both parameter roads and all four
+open/closed transitions.
+
+`type=` and `windowtype=` are not read — see
+[../compatibility/wasabi-surface.md](../compatibility/wasabi-surface.md).
+
+#### Animated layers are played as a range
+
+`animatedlayer` is a sprite sheet plus a play head, and scripts drive it as a range:
+`setStartFrame(getCurFrame())`, `setEndFrame(target)`, `setSpeed(msPerFrame)`, `play()`, then poll
+`isPlaying()` (MMD3's rotary volume/bass/treble knobs are exactly this). `WasabiAnimation` makes the
+play head a pure function of the elapsed time since `play()`, which is what keeps the renderer and the
+script runtime agreeing on the current frame without either owning a clock. `stop()` freezes the head
+where it actually is, and an explicit `playing` beats the XML's `autoplay`.
+
+#### `relat*="2"` is a **percentage**, every other non-zero value is additive
+
+`relatx`/`relaty`/`relatw`/`relath` read as `atoi(value)`, and the number matters:
+
+| value | meaning |
+|---|---|
+| `0`, absent, non-numeric (`"%"`) | absolute |
+| `2` | **percentage** of the parent's span — `span * value / 100` |
+| any other non-zero (`1`, `5`, `"1px"`) | additive — `value + span` |
+
+Corpus census (2026-08-31, 53 skins + the ClassicPro engine): `1` ×8197, `0` ×360, **`2` ×89**,
+`"%"` ×10, `5` ×2. Every value the 89 carry is in 0…100, where additive geometry here is
+overwhelmingly *negative* (`w="-14" relatw="1"` anchors from the right). A 0…100 distribution is a
+percentage's and nothing else's.
+
+**This corrects Phase 56, and the way it was wrong is the useful part.** Phase 56 found `relat="2"`
+being tested as `== 1`, failing, and falling through to *absolute* geometry — Big Bento Modern's
+dimmed album-art backdrop drew at a literal 99×100 box, "a small crisp second copy of the cover" —
+and fixed it by making any non-zero value relative. That is a real fix for a real defect, but it only
+ever discriminated **absolute from relative**: 99% of a large parent is a large backdrop too, so the
+percentage reading fixes the same symptom equally well. Additive-vs-percent was never measured.
+
+It also cited Ebonite_2_1's `<group w="0" h="0" relatw="2" relath="2"/>` as ruling the percentage
+out, reading it as the fill-the-parent idiom that 0% would collapse. That group carries **`alpha="0"`**
+— it is an invisible Layer FX holder and draws nothing under either reading, so it cannot settle
+anything. Its four neighbours in the same file are `x="3" y="0" w="85" h="93" relat*="2"`
+album-art/layerfx pairs: percentage insets, and the identical shape to ClassicPro's cover below.
+
+What settles it is an object the additive reading cannot place at **any** parent size. ClassicPro's
+Now Playing widget insets its cover in a jewel case:
+
+```xml
+<AlbumArt id="main.albumart" x="12" y="4" w="85" h="93"
+          relatx="2" relaty="2" relatw="2" relath="2" notfoundimage="cover.notfound"/>
+```
+
+Against its correctly-sized 80×74 case at (110, 211), additive resolves to **(202, 289, 165×167)** —
+the whole cover outside its own clip, drawn nowhere, and reported as "there is an empty box". Percent
+gives (119.6, 214, 68×68.8): a cover inset in a case, which is what the markup describes.
+
+Verified after the change: Big Bento's backdrop is 792×1100 inside its 800×1100 group — still
+oversized, so Phase 56's own symptom does not return. Corpus sweep over 53 skins moved one line.
+`WinampModernPhase56Tests` carries the full argument and both worked examples.
+
+#### `<Menu>` — one entry of a skin's own menu bar
+
+```xml
+<groupdef id="menugroup.file" autowidthsource="File.txt" h="16">
+  <menu:button_normal  id="File.up.btn"    x="0" y="0"/>
+  <menu:button_pressed id="File.down.btn"  x="0" y="0" visible="0"/>
+  <menu:button_hover   id="File.hover.btn" x="0" y="0" visible="0"/>
+  <layer id="File.txt" image="txt.menu.file" x="0" y="0"/>
+  <Menu id="File.menu" menugroup="main" next="Play.menu" prev="Help.menu"
+        x="0" y="0" h="16" w="0" relatw="1" menu="WA5:File"
+        normal="File.up.btn" hover="File.hover.btn" down="File.down.btn"/>
+</groupdef>
+```
+
+The object **draws nothing**. It is a hit region over three sibling objects it owns, swapping which
+of them is visible as the pointer arrives, presses and leaves; `menu=` names the **host's** menu to
+pop. The entry is a handle on one of Winamp's own menus, not a menu the skin builds.
+
+**`normal` is painted at rest.** The markup says so — `visible="1"` on the normal layer and
+`visible="0"` on the other two — and Nullsoft's own skin confirms it from the other direction: stock
+Winamp Modern's `menu.button.normal` groupdef is literally `<!-- Dummy -->`, an empty group, and it
+is the one of the three left visible. A `<Menu>` swaps states; it never hides the bar at rest. Worth
+recording because the alternative reading — that Winamp reveals `normal` only while the menugroup is
+active — would have been an engine-level way to hide the `(255,0,128)` filler four cPro skins ship in
+place of cut menu artwork, and it is not what Winamp does. That filler has its own answer; see
+[classicpro.md](classicpro.md).
+
+Hit testing: a `<Menu>` carries no artwork and no `action=`, so `isInteractive` names it explicitly.
+Its box is declared (`w="0" relatw="1" h="21"`) and `object(at:)` skips the alpha test for an object
+with no bitmap, so the whole rect is live — which is what a menu entry needs.
+
+The entry claims the **press**, before the divider, the resize border and the window-drag
+fall-through. It has to outrank all three: a menu bar lives on the titlebar, which is also a
+`move="1"` drag surface *and*, measured on ClassicPro, a strip covered by the window's own top
+`resize=` handle — so checked after those, a click on *File* was answered by the resizer and no menu
+opened. The entries are a 172×20 island in the middle of the bar, so corners and edges stay
+grabbable.
+
+`menugroup`/`next`/`prev` chain the entries for traversal and for "hover moves the open menu".
+NullPlayer opens each entry on its own click; the group is read but that traversal is **not**
+implemented.
+
+`WasabiMenuBar` owns the model; `ContextMenuBuilder.winampModernMenuBarMenu(for:)` owns the routing
+and is gated on `uiMode.controllerFamily == .winampModern`.
+
+**A group whose `autowidthsource` names a bitmap label sizes to nothing**, so its `<Menu>` inherits a
+zero box and cannot be clicked — `autoWidth` answers only for `<text>`, `<songticker>` and check
+boxes. winampmodern566 and The_Nokia_5220 are both affected (12 declarations each); ClassicPro is
+not, because it points `autowidthsource` at a `<text>`. Open as **B79**.
+
+## A declared-empty group clips to nothing — it is a reveal window
+
+`w="0"` on a group whose box the skin **declared** is not a missing answer, it is the answer. Wasabi's
+progress-reveal idiom is a sized group the script widens from 0 with the full-width "filled" artwork
+parked inside it, and the group's box is the aperture that artwork shows through.
+
+`append(…)` used to fall back to the *parent's* clip whenever the resolved box was empty
+(`parentClip.intersection(resolved.isEmpty ? parentClip : resolved)`), so all of the artwork painted
+at once. cPro2 Dark Aluminum is the measured case and it is spectacular, because in that skin the
+whole top panel *is* the seek control: `two.info.seeker.active` (`w="0" h="40"`) and
+`two.info.seeker.finder` (`w="0"`, `alpha="175"`) each hold a 550px lit layer. Unclipped, both painted
+across the entire info band, so it read as two flat colour blocks with a hard seam that **jumped to
+wherever the pointer went** — reported as *"clicking the top area recolours the UI"* — and the bar
+could never reflect the track position, because the width it is drawn from meant nothing.
+`action="SEEK"` on the slider over it worked the whole time, which is why clicking moved playback
+while the paint did not follow.
+
+**Only a *declared* box does this.** A group whose height we inferred, or failed to, keeps the
+inherited clip — the same reason `isSizedGroup` gates ordinary clipping: clipping children to a guess
+erases content that is really there, which is a worse failure than the overhang it prevents. The
+empty clip is built as an explicit zero-size rect pinned inside the parent clip rather than
+`CGRect.null`, so `intersects` and `CGContext.clip(to:)` both behave.
+
+The same bug was quietly damaging `211786-Cpro_Winamp_Modern`, whose beat-vis bars spilled out of
+their box across the window chrome; it is not a cPro2-only shape.
+
+## A `<group>`'s `background` bitmap states its box (B109, 2026-09-03)
+
+A group that declares no `w`/`h` is the size of its **`background`** bitmap. That is a *declaration*,
+not an inference, so it satisfies `isSizedGroup` and the group clips its children — which is the whole
+point of the attribute for the many groups that pair it with `drawbackground="0"`, where the bitmap is
+never painted and exists only to say how big the group is. Read with the section above: the two
+together are "a group clips to the box its author gave it, however the author gave it."
+
+**BLAKK's boombox is the measured case, and it is a drawer.** `blakk.bb.group.SpecVol` is
+`background="player.bb-SpecVol-map"` (192x14) at (122,84), holding two child groups that slide
+*through* it: the spectrum sits at `y=0` and the volume bar at `y=14`, and `boombox2.maki`'s
+`moveDrawer` shifts both up by 14 on mouse-over, so the volume takes the spectrum's place while the
+spectrum leaves through the top. The aperture **is** the effect. With the group resolving 0x0 it
+clipped nothing, so both halves drew at once — the volume bar parked permanently over the seek bar as
+a second, wrong progress bar (the reported symptom) — and hovering the player sent the spectrum
+climbing out over the song ticker and the timer instead of disappearing.
+
+**Per axis, and only where nothing more specific answered.** `autowidthsource`/`autoheightsource` name
+a *child* to size to and beat the backing artwork, because a backing is often a narrow tile meant to
+stretch: mmd3's component title bar is `background="component.titlebg" autowidthsource="titlebar"`,
+and taking the tile's width clipped every hosted component's title to `CO`. The background fills in an
+axis whose intrinsic size is still zero, never one already answered.
+
+**`drawbackground="0"` suppresses the paint**, and had been a no-op until now purely because a group's
+box resolved to 0x0 and the draw was free. impulse is the corpus's heaviest user: its display, mini
+and stick vis groups each name a dot-matrix `...vis.region` mask, which we were painting as if it were
+artwork — a static LCD grid that looked plausible and was never in the skin's picture.
+
+**Corpus reach**, measured before the change: 102 group instances across 37 of the 69
+skins then installed
+carry a `background` and no `w`/`h`. The before/after sweep moved **13 of 590 images across 7 skins**,
+every one an improvement or a 1px edge: BLAKK fixed, **Styx's notifier went from an empty gold band to
+its full Now Playing text** (its rows are relative children of a group that had no box to be relative
+to), Anexa lost stray fragments outside the player's body and gained the rings around its two dials,
+impulse stopped painting its three region masks, and mmd3/MMD3-4-5/corneramp/Styx-normal moved a
+single column or a diagonal's antialiasing.
+
+**Knowingly not implemented: the background is also the group's *region*.** In Wasabi that bitmap
+shapes the group as well as sizing it — impulse's dot matrix is a mask its vis is meant to show
+*through*, which is how that skin gets its LCD look. We clip rectangularly. Nothing in the corpus is
+visibly wrong for it today; it is the next step if a skin turns up whose group is a non-rectangle.
+
+Golden scene: `group-background-box` ([harness.md](harness.md) -> *The golden images*). Both halves —
+the box, and `drawbackground` — were checked to fail under a deliberately reintroduced regression and
+to fail nowhere else.
+
+## `autoheightsource` sizes a plain `<group>`, not only a `<Wasabi:TitleBox>`
+
+It was read for the title box alone, so every other group carrying it resolved to **no height**. That
+is invisible at first glance, because a group does not clip to its own box — the children still draw
+where they always did.
+
+What it breaks is `onResize`. A zero-height group is not a resize target, so a script hung on the
+group's own `onResize` never runs. ClassicPro engine two's whole transport band is
+`<group id="two.playback" autoheightsource="two.playback.left">` with no `h`, and
+`playback-layout.maki`'s `g.onResize` is what centres the transport strip (`w/2 − 112`), picks the
+normal/mini/micro band from the window width, and places the volume group. With it dead the buttons
+stayed hard left at their declared `x=8`, the visualization sat on top of them at the same x, and the
+volume slider never appeared — a layout bug with no missing element and no diagnostic.
+
+Both sources are the ones Wasabi resolves any auto height from, and both answer the child's **bottom**
+rather than its own height: an `autoheightsource="<id>"` naming a descendant, else the lowest edge any
+child reaches (`contentBottom`).

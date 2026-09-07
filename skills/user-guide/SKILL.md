@@ -26,7 +26,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **PeppyMeter** | Skinnable analog VU meter — needle/bar meters that track left/right levels; right-click to pick a meter or enable Random | Context menu or Window menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, and Met Museum Art (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss and Tripex (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In Original and Original-Metal UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the Classic library browser. The Data tab shows:
 - **Play Time** summary (day/week/month/year/all-time)
@@ -262,7 +262,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - **Reference Tuning**: Pitch-shift playback to a different reference frequency. Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog (source/target Hz, ±2400 cents). Applies to local files and HTTP streams; unavailable while casting because remote renderers have no local audio graph to insert the pitch shifter into. Persists across launches; the CLI also accepts `--tuning`, `--tuning-source`, and `--tuning-offset-cents` as session-only overrides.
 - **Playback Speed**: Tempo-preserving speed control from `0.25×` to `4.0×`, with presets plus Custom…. Applies to local files and HTTP streams; unavailable while casting. Persists across launches.
 - **Balance**: Stereo pan submenu (slider plus Left / Center / Right presets), backed by `engine.balance` and mirrored by the classic Balance Slider sprite. Gives Original and Original-Metal UI and menu-only/Compact workflows access to balance without a face slider. Persists across launches.
-- **Remember State on Quit**: `AppStateManager.restorePlaylistState` restores playlist contents and ordering; it intentionally does not restore the selected track, seek position, or playing state
+- **Remember State on Quit**: Restores window layout, audio/EQ state, and playlist contents, but not the selected track, seek position, or playing state. See `../app-state/SKILL.md` for the complete persistence and reset policy.
 
 ### Sleep Timer
 Accessible via **Playback > Sleep Timer** (or the right-click context menu).
@@ -318,7 +318,8 @@ skill for internals.
 Off, Spectrum, Cava, Enhanced, Ultra, Fire, JWST, Lightning, Matrix, Snow, EKG, vis_classic.
 Double-click cycles visual modes; select one from **Visuals > Main Window > Mode**. When Cava is
 selected, the same submenu exposes its independent Color Preset, Bars, Smoothing, and Bass Tilt
-controls.
+controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is hidden — that skin
+family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
 the ProjectM/Geiss/Tripex/Met visualization host.
@@ -350,6 +351,48 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Original skins use `skin.json` format
 - Portable Original skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Original > Load Skin...**
 - Bundled Original skins: NeonWave (default), Skulls
+
+### Winamp Modern (`.wal`) Mode
+- **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Import .wal Skin...**.
+- **Skins > Modern > Default Skin (Black)** is the plain placeholder skin that ships with the app —
+  what Modern mode loads on a first run, before any skin is imported. NullPlayer bundles no Winamp
+  skins; this one is our own. It gives the mode a working player window (transport, seek, volume,
+  PL and ML buttons) and is meant to be replaced by a skin the user imports.
+- Many of these skins draw their own **About page** — the artwork the skin author wrote about the
+  skin. Where the skin has one, it opens in the skin's own window: from whatever control the skin
+  binds to it (often a logo or corner bolt), or from **Help > About This Skin** in the skin's own
+  menu bar. **About nullPlayer** stays where it is and still shows the app's own panel; a skin that
+  draws no About page falls back to it.
+
+- **Skins > Modern > Skin Colors...** overrides the colours NullPlayer draws its own surfaces in —
+  the embedded Media Library and playlist — when a skin's own palette is hard to read. One row per
+  colour role, with the contrast ratio against the surface that colour actually lands on; anything
+  under 3:1 is flagged with a warning, never blocked. **Your colour is used exactly as picked**, even
+  where the app would otherwise substitute a more readable one.
+- Overrides are stored **per skin and per colour theme**, because a skin's themes re-tint the same
+  roles differently — the panel's header names the theme you are editing. **Reset** beside a row
+  clears that one colour in that theme; **Reset This Skin** at the foot clears every colour under
+  every theme of the skin, and asks first.
+- The entry appears only in Modern mode with a skin loaded. Classic and Original skins are unaffected,
+  and each skin keeps its own colours.
+
+### The ClassicPro Engine (cPro Skins)
+- cPro skins are not self-contained: they need the third-party **ClassicPro** engine, which NullPlayer
+  cannot bundle. Without it, a cPro skin will not load.
+- **Skins > Modern > Download ClassicPro Engine...** opens the download page; **Import ClassicPro
+  Engine...** (**Reimport...** once one is installed) accepts the installer `.exe`, a `.zip`, or an
+  already-extracted engine folder. The extraction happens inside NullPlayer — the installer is never
+  executed.
+- A greyed status line under the menu item says what is installed: **Engine: verified 2.01** for the
+  build NullPlayer is tested against, **⚠ Engine: untested build** for any other, and **⚠ Engine:
+  unexpected contents** if the tested installer produced an engine we do not recognize (worth
+  reporting — it means the extraction itself went wrong).
+- Importing an unrecognized engine asks first. **Cancel** keeps the engine already installed, exactly
+  as it was; **Import Anyway** proceeds. cPro skins may render incorrectly against an untested build,
+  so the first time a skin actually uses one, a warning offers to reimport.
+- An engine imported by an earlier build holds a stubbed PlaylistPro definition, which strips the
+  **playlist search bar** from `one`-family cPro skins (cPro-Bento among them). Reimporting the
+  installer is what fixes it — there is no automatic repair.
 
 ### UI Size Mode
 - **Original/Original-Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**
@@ -393,12 +436,6 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
 - Hold, auto-cycle, auto-random, intensity, audio info, help overlay, and effect selection are right-click context-menu only.
-
-### Met Museum Art
-- **→ / ← / R**: Advance to another artwork
-- **F**: Toggle fullscreen
-- **Escape**: Exit fullscreen
-- Department, slideshow interval, transition, aspect ratio, audio-modulated effects, beat-triggered changes, attribution, and cache clearing are right-click context-menu only.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

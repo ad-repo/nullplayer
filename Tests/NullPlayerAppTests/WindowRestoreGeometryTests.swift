@@ -202,4 +202,238 @@ final class WindowRestoreGeometryTests: XCTestCase {
         XCTAssertEqual(restored.height, 116, accuracy: 0.001)
         XCTAssertEqual(restored.maxY, savedNetworkMonitorFrame.maxY, accuracy: 0.001)
     }
+
+    // MARK: - A `.wal` main frame belongs to the skin that saved it
+
+    /// The reported case, with its real numbers: Big Bento Modern's main layout is 1536×878 and
+    /// winampmodern566's is 354×280. `mainWindowFrame` is one global key, so Bento's size was
+    /// restored onto 566 — and 566 declares `max=16384x16384`, so the restore clamp had nothing to
+    /// catch. Its top-anchored titlebar and bottom-anchored player bar ended up at opposite ends of a
+    /// near-fullscreen window, which reads on screen as the skin having split into two windows.
+    func testAWalFrameSavedUnderAnotherSkinKeepsTheLoadedSkinsSize() {
+        let bentoFrame = NSRect(x: 97, y: 99, width: 1536, height: 878)
+
+        let restored = AppStateManager.mainFrameForRestore(
+            saved: bentoFrame,
+            ownSize: NSSize(width: 354, height: 280),
+            savedUnderSkin: "Big Bento Modern",
+            loadedSkin: "winampmodern566",
+            isWinampModern: true
+        )
+
+        XCTAssertEqual(restored.size, NSSize(width: 354, height: 280))
+        // The position is the user's, not the skin's, so it survives — anchored at the same top-left,
+        // the corner Winamp resizes a window around.
+        XCTAssertEqual(restored.minX, bentoFrame.minX, accuracy: 0.001)
+        XCTAssertEqual(restored.maxY, bentoFrame.maxY, accuracy: 0.001)
+    }
+
+    /// The same skin coming back is the ordinary case, and a size the user dragged must survive it.
+    func testAWalFrameSavedUnderTheSameSkinRestoresVerbatim() {
+        let dragged = NSRect(x: 200, y: 300, width: 900, height: 500)
+
+        XCTAssertEqual(
+            AppStateManager.mainFrameForRestore(
+                saved: dragged,
+                ownSize: NSSize(width: 354, height: 280),
+                savedUnderSkin: "winampmodern566",
+                loadedSkin: "winampmodern566",
+                isWinampModern: true
+            ),
+            dragged
+        )
+    }
+
+    /// Every state written before the skin name was recorded decodes as `nil`. That never matches a
+    /// loaded skin, so an old state falls back to the skin's own size — which is how the stale Bento
+    /// frame already sitting in a user's preferences gets corrected on the next launch.
+    func testAStateFromBeforeTheSkinNameWasRecordedFallsBackToTheSkinsSize() {
+        let restored = AppStateManager.mainFrameForRestore(
+            saved: NSRect(x: 97, y: 99, width: 1536, height: 878),
+            ownSize: NSSize(width: 354, height: 280),
+            savedUnderSkin: nil,
+            loadedSkin: "winampmodern566",
+            isWinampModern: true
+        )
+
+        XCTAssertEqual(restored.size, NSSize(width: 354, height: 280))
+    }
+
+    // MARK: - A live UI-mode switch gives the main window the incoming mode's size (B49)
+
+    /// The reported case, with its real numbers: `.wal` (Ebonite, 197×297) → Classic left the
+    /// classic player drawing its 275×116 skin scaled down inside a 197×297 window, because the
+    /// rebuild stamped the *outgoing* frame onto the freshly created target-mode window.
+    func testModeSwitchGivesTheMainWindowTheIncomingModesOwnSize() {
+        let ebonite = NSRect(x: 420, y: 300, width: 197, height: 297)
+
+        let switched = WindowManager.mainFrameForModeSwitch(
+            outgoing: ebonite,
+            ownSize: NSSize(width: 275, height: 116)
+        )
+
+        XCTAssertEqual(switched.size, NSSize(width: 275, height: 116))
+    }
+
+    /// The position is the user's, not the mode's, so it survives the switch — anchored at the same
+    /// top-left, the corner `applyDoubleSize` resizes around.
+    func testModeSwitchKeepsTheOutgoingWindowsTopLeft() {
+        let ebonite = NSRect(x: 420, y: 300, width: 197, height: 297)
+
+        let switched = WindowManager.mainFrameForModeSwitch(
+            outgoing: ebonite,
+            ownSize: NSSize(width: 275, height: 116)
+        )
+
+        XCTAssertEqual(switched.minX, ebonite.minX, accuracy: 0.001)
+        XCTAssertEqual(switched.maxY, ebonite.maxY, accuracy: 0.001)
+    }
+
+    /// The rule is unconditional, so it has to hold in the growing direction too — the pair the
+    /// bug report did not cover. Classic (275×116) → Ebonite must not leave the `.wal` skin's
+    /// 197×297 layout inside a 275×116 box.
+    func testModeSwitchAppliesInTheGrowingDirectionToo() {
+        let classic = NSRect(x: 120, y: 640, width: 275, height: 116)
+
+        let switched = WindowManager.mainFrameForModeSwitch(
+            outgoing: classic,
+            ownSize: NSSize(width: 197, height: 297)
+        )
+
+        XCTAssertEqual(switched.size, NSSize(width: 197, height: 297))
+        XCTAssertEqual(switched.minX, classic.minX, accuracy: 0.001)
+        XCTAssertEqual(switched.maxY, classic.maxY, accuracy: 0.001)
+    }
+
+    /// Modern → Classic differ in height alone (145 vs 116). A same-width pair is exactly where a
+    /// width-only or "resize when it looks wrong" guard would quietly do nothing.
+    func testModeSwitchCorrectsAHeightOnlyDifference() {
+        let modern = NSRect(x: 300, y: 500, width: 275, height: 145)
+
+        let switched = WindowManager.mainFrameForModeSwitch(
+            outgoing: modern,
+            ownSize: NSSize(width: 275, height: 116)
+        )
+
+        XCTAssertEqual(switched.height, 116, accuracy: 0.001)
+        XCTAssertEqual(switched.maxY, modern.maxY, accuracy: 0.001)
+    }
+
+    /// Two modes that happen to agree on a size must come out of the switch unmoved and unresized.
+    func testModeSwitchIsAnIdentityWhenBothModesShareASize() {
+        let frame = NSRect(x: 250, y: 410, width: 275, height: 116)
+
+        XCTAssertEqual(
+            WindowManager.mainFrameForModeSwitch(
+                outgoing: frame,
+                ownSize: NSSize(width: 275, height: 116)
+            ),
+            frame
+        )
+    }
+
+    /// The switch rule and the launch-restore rule are the same rule, so a `.wal` frame put through
+    /// either path has to land in the same place. If they ever diverge, a switch and a relaunch
+    /// would leave the window somewhere different.
+    func testModeSwitchAgreesWithTheLaunchRestoreRule() {
+        let bentoFrame = NSRect(x: 97, y: 99, width: 1536, height: 878)
+        let ownSize = NSSize(width: 354, height: 280)
+
+        XCTAssertEqual(
+            WindowManager.mainFrameForModeSwitch(outgoing: bentoFrame, ownSize: ownSize),
+            AppStateManager.mainFrameForRestore(
+                saved: bentoFrame,
+                ownSize: ownSize,
+                savedUnderSkin: "Big Bento Modern",
+                loadedSkin: "winampmodern566",
+                isWinampModern: true
+            )
+        )
+    }
+
+    /// Classic and modern windows are the app's own, not a skin's, so the rule must not touch them —
+    /// their saved size is the only size they have.
+    func testANonWalModeRestoresItsSavedFrameUntouched() {
+        let saved = NSRect(x: 625, y: 768, width: 344, height: 145)
+
+        XCTAssertEqual(
+            AppStateManager.mainFrameForRestore(
+                saved: saved,
+                ownSize: NSSize(width: 275, height: 116),
+                savedUnderSkin: nil,
+                loadedSkin: "winampmodern566",
+                isWinampModern: false
+            ),
+            saved
+        )
+    }
+
+    // MARK: - Restoring onto a screen that is not the one it was saved on
+
+    private let screen = NSRect(x: 0, y: 0, width: 1440, height: 850)
+
+    /// The whole session comes back as a unit. Clamping each window on its own is what would destroy
+    /// the docking: two windows flush against each other, clamped independently against the same
+    /// edge, come back overlapping instead of touching.
+    func testAClusterSavedOffTheScreenComesBackWithDockingIntact() {
+        let saved: [String: NSRect] = [
+            "main": NSRect(x: 2200, y: 900, width: 275, height: 116),
+            "equalizer": NSRect(x: 2200, y: 784, width: 275, height: 116),
+            "playlist": NSRect(x: 2200, y: 552, width: 275, height: 232)
+        ]
+
+        let corrected = AppStateManager.correctedRestoredFrames(saved, screens: [screen], force: false)
+
+        for (key, frame) in corrected {
+            XCTAssertTrue(WindowPlacement.isReachable(frame, screens: [screen]),
+                          "\(key) came back unreachable at \(NSStringFromRect(frame))")
+            XCTAssertEqual(frame.size, saved[key]!.size, "restore never resizes")
+        }
+        XCTAssertEqual(corrected["main"]!.minY, corrected["equalizer"]!.maxY, "still docked")
+        XCTAssertEqual(corrected["equalizer"]!.minY, corrected["playlist"]!.maxY, "still docked")
+        XCTAssertEqual(corrected["main"]!.minX, corrected["playlist"]!.minX, "still left-aligned")
+    }
+
+    /// A window deliberately parked mostly past the bottom edge is a *placement*, not a strand. Its
+    /// top-left corner is on screen, so it is left exactly where the user put it.
+    func testAPartlyParkedWindowIsLeftAlone() {
+        let saved: [String: NSRect] = [
+            "main": NSRect(x: 100, y: 400, width: 275, height: 116),
+            "playlist": NSRect(x: 100, y: -180, width: 275, height: 232)
+        ]
+        XCTAssertEqual(AppStateManager.correctedRestoredFrames(saved, screens: [screen], force: false),
+                       saved)
+    }
+
+    /// The session is suspect, not provably stranded: the screen it was saved on is gone, so the
+    /// correction runs anyway rather than trusting coordinates measured on a desktop that no longer
+    /// exists.
+    func testAMissingSavedScreenForcesTheCorrection() {
+        let gone = NSRect(x: 0, y: 0, width: 2560, height: 1400)
+        XCTAssertTrue(AppStateManager.savedScreenIsMissing(NSStringFromRect(gone), screens: [screen]))
+        XCTAssertFalse(AppStateManager.savedScreenIsMissing(NSStringFromRect(screen),
+                                                            screens: [screen]))
+    }
+
+    /// An old saved state never recorded a screen. Unknown is not the same as changed — those
+    /// sessions keep the old behaviour of being trusted until a frame is provably off screen.
+    func testAStateWithNoRecordedScreenIsNotTreatedAsChanged() {
+        XCTAssertFalse(AppStateManager.savedScreenIsMissing(nil, screens: [screen]))
+    }
+
+    /// A cluster taller than the display cannot be saved by one offset. It anchors to the visible
+    /// top — where the title bars are — and whatever is still outside is moved on its own, accepting
+    /// overlap, because overlapping windows are preferable to hidden ones.
+    func testAClusterTallerThanTheScreenStillEndsUpAllReachable() {
+        let saved: [String: NSRect] = [
+            "main": NSRect(x: 3000, y: 800, width: 275, height: 232),
+            "playlist": NSRect(x: 3000, y: 200, width: 275, height: 600),
+            "equalizer": NSRect(x: 3000, y: -200, width: 275, height: 400)
+        ]
+        let corrected = AppStateManager.correctedRestoredFrames(saved, screens: [screen], force: false)
+        for (key, frame) in corrected {
+            XCTAssertTrue(WindowPlacement.isReachable(frame, screens: [screen]),
+                          "\(key) is still unreachable at \(NSStringFromRect(frame))")
+        }
+    }
 }

@@ -166,6 +166,7 @@ let package = Package(
                 .unsafeFlags(["-F", "Frameworks"]),
             ],
             linkerSettings: [
+                .linkedFramework("WebKit"),
                 .unsafeFlags([
                     "-L", "Frameworks",
                     "-L", "/opt/homebrew/lib",
@@ -186,9 +187,13 @@ let package = Package(
         .testTarget(
             name: "NullPlayerAppTests",
             dependencies: [
-                "NullPlayer"
+                "NullPlayer",
+                "ZIPFoundation"
             ],
-            path: "Tests/NullPlayerAppTests"
+            path: "Tests/NullPlayerAppTests",
+            // Committed golden PNGs for the `.wal` render sweep. They are read from the source tree
+            // by path (so an update run rewrites them in place), not from a resource bundle.
+            exclude: ["Goldens"]
         ),
     ],
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors

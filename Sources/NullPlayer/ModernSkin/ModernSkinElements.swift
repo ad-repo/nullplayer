@@ -17,10 +17,25 @@ enum ModernSkinElements {
     static let baseMainSize = NSSize(width: 275, height: 116)
     
     /// Base scale factor for modern UI rendering (configurable via skin.json window.scale)
-    static var baseScaleFactor: CGFloat = 1.25
+    ///
+    /// Read from everywhere, written from exactly one place. `private(set)` plus a named setter is
+    /// what makes that true rather than merely intended: these two are process-wide mutable state
+    /// that every Original window's geometry is derived from, and an assignment from anywhere else
+    /// would silently resize the whole UI.
+    static private(set) var baseScaleFactor: CGFloat = 1.25
     
     /// UI Size multiplier (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
-    static var sizeMultiplier: CGFloat = 1.0
+    static private(set) var sizeMultiplier: CGFloat = 1.0
+    
+    /// Apply a newly-loaded skin's `window.scale`. `ModernSkinEngine` owns this; nothing else.
+    static func applyBaseScaleFactor(_ scale: CGFloat) {
+        baseScaleFactor = scale
+    }
+    
+    /// Apply a UI Size change. `WindowManager` owns this; nothing else.
+    static func applySizeMultiplier(_ multiplier: CGFloat) {
+        sizeMultiplier = multiplier
+    }
     
     /// Effective scale factor combining base scale and size multiplier
     static var scaleFactor: CGFloat { baseScaleFactor * sizeMultiplier }
