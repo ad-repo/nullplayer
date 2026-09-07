@@ -99,6 +99,20 @@ final class WMPXMLTests: XCTestCase {
         XCTAssertEqual(subview.attribute("top"), "4")
     }
 
+    /// Corona, Alpine7618_v09 and Official_Xbox_XP are authored with CR-only line endings. Counting
+    /// only line feeds put every diagnostic in them at line 1 with a five-digit column, which is a
+    /// location nobody can act on.
+    func testLocationsCountCarriageReturnsAndCRLFAsLineBreaks() throws {
+        for terminator in ["\n", "\r", "\r\n"] {
+            let document = try WMPXMLParser().parse(
+                "<THEME>\(terminator)<VIEW/>\(terminator)<VIEW id=\"b\"/>", path: "eol.wms")
+            let views = try XCTUnwrap(document.roots.first).children
+            XCTAssertEqual(views.map(\.location.line), [2, 3],
+                           "line endings spelled \(terminator.debugDescription) were not counted")
+            XCTAssertEqual(views.map(\.location.column), [1, 1])
+        }
+    }
+
     private func code(_ xml: String, limits: WMPXMLLimits = .production) -> WMPDiagnosticCode? {
         WMPSkinTestSupport.failureCode { try WMPXMLParser(limits: limits).parse(xml, path: "fixture.wms") }
     }

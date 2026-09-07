@@ -84,9 +84,14 @@ struct WMPXMLParser {
         var column = 1
         var nodeCount = 0
 
+        // `isNewline`, not `== "\n"`. Corona, Alpine and Official_Xbox_XP are authored with CR-only
+        // line endings, and counting only line feeds reported every diagnostic in them at line 1 with
+        // a five-digit column — which is what libxml2 was quietly getting right before. A location is
+        // the first thing triage reads; one that always says line 1 is worse than none.
+        // Swift folds a CRLF pair into a single `Character`, so this counts it once.
         func advance(over range: Range<Int>) {
             for i in range {
-                if chars[i] == "\n" { line += 1; column = 1 } else { column += 1 }
+                if chars[i].isNewline { line += 1; column = 1 } else { column += 1 }
             }
         }
 
@@ -112,7 +117,7 @@ struct WMPXMLParser {
 
         while index < chars.count {
             guard chars[index] == "<" else {
-                if chars[index] == "\n" { line += 1; column = 1 } else { column += 1 }
+                if chars[index].isNewline { line += 1; column = 1 } else { column += 1 }
                 index += 1
                 continue
             }
