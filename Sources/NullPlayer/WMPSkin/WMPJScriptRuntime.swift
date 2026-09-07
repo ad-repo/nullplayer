@@ -133,8 +133,21 @@ struct WMPJScriptExpressionResult: Hashable, Codable {
     let error: String?
 }
 
+/// One host object-model access observed inside the bootstrap: what was touched, whether it was a
+/// read or a write, what answered, and whether the member was recognised at all. This is the
+/// measured-demand record `WMP_CALL_TRACE` prints — the only thing that catches a member answering
+/// a plausible-but-wrong default, which a static scan of the source cannot see.
+struct WMPJScriptCall: Hashable, Codable, Sendable {
+    enum Kind: String, Hashable, Codable, Sendable { case read, write }
+    let path: String
+    let kind: Kind
+    let value: WMPJSONValue?
+    let recognised: Bool
+}
+
 struct WMPJScriptTransaction: Hashable, Codable {
     let version: Int
+    let calls: [WMPJScriptCall]
     let expressions: [WMPJScriptExpressionResult]
     let mutations: [WMPJScriptMutation]
     let hostCommands: [WMPJScriptHostCommand]
@@ -229,7 +242,7 @@ final class WMPJScriptRuntime: @unchecked Sendable {
 (function () {
   'use strict';
   var batch = __WMP_BATCH_JSON__;
-  var out = {version:1, expressions:[], mutations:[], hostCommands:[], preferences:[], timers:[], diagnostics:[], repaintHints:[]};
+  var out = {version:1, calls:[], expressions:[], mutations:[], hostCommands:[], preferences:[], timers:[], diagnostics:[], repaintHints:[]};
   var reads = [];
   var timerToken = 0;
   function scalar(v) {
@@ -240,6 +253,18 @@ final class WMPJScriptRuntime: @unchecked Sendable {
   function warn(code, message) {
     if (out.diagnostics.length < 256) out.diagnostics.push({code:code, message:String(message)});
   }
+  // Every host read and write goes through here. `reads` is the per-expression dependency list the
+  // topological sort needs; `out.calls` is the measured-demand trace WMP_CALL_TRACE prints. They are
+  // recorded together so a member can never appear in one and be missing from the other.
+  function note(path, value, recognised) {
+    reads.push(path);
+    if (out.calls.length < 4096) out.calls.push({path:path, kind:'read', value:scalar(value), recognised:recognised !== false});
+    return value;
+  }
+  function noteWrite(path, value, recognised) {
+    if (out.calls.length < 4096) out.calls.push({path:path, kind:'write', value:scalar(value), recognised:recognised !== false});
+    return value;
+  }
   function command(action, value) {
     if (out.hostCommands.length < 256) out.hostCommands.push({action:action, value:value === undefined ? null : scalar(value)});
   }
@@ -248,12 +273,13 @@ final class WMPJScriptRuntime: @unchecked Sendable {
     return new Proxy(state, {
       get:function(target, property) {
         if (property === '__wmpID') return id;
-        reads.push(id + '.' + String(property).toLowerCase());
-        if (Object.prototype.hasOwnProperty.call(target, property)) return target[property];
-        warn('unsupported-member', id + '.' + String(property)); return 0;
+        var path = id + '.' + String(property).toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(target, property)) return note(path, target[property], true);
+        warn('unsupported-member', id + '.' + String(property)); return note(path, 0, false);
       },
       set:function(target, property, value) {
         value = scalar(value); target[property] = value;
+        noteWrite(id + '.' + String(property).toLowerCase(), value, true);
         if (out.mutations.length < 4096) out.mutations.push({targetID:id, property:String(property), value:value});
         if (out.repaintHints.length < 4096) out.repaintHints.push(id);
         return true;
@@ -272,35 +298,37 @@ final class WMPJScriptRuntime: @unchecked Sendable {
     play:function(){command('play');}, pause:function(){command('pause');}, stop:function(){command('stop');},
     previous:function(){command('previous');}, next:function(){command('next');},
     fastForward:function(){command('scanForward');}, fastReverse:function(){command('scanReverse');},
-    get currentPosition(){reads.push('player.controls.currentposition'); return Number(host.currentTime || 0);},
-    set currentPosition(v){command('seekSeconds', v);},
-    get currentPositionString(){reads.push('player.controls.currentpositionstring'); return String(host.elapsedText || '0:00');}
+    get currentPosition(){return note('player.controls.currentposition', Number(host.currentTime || 0), true);},
+    set currentPosition(v){noteWrite('player.controls.currentposition', v, true); command('seekSeconds', v);},
+    get currentPositionString(){return note('player.controls.currentpositionstring', String(host.elapsedText || '0:00'), true);}
   };
   var settings = {
-    get volume(){reads.push('player.settings.volume'); return Number(host.volume || 0) * 100;},
-    set volume(v){command('volumePercent', v);},
-    get balance(){reads.push('player.settings.balance'); return Number(host.balance || 0) * 100;},
-    set balance(v){command('balancePercent', v);},
-    get mute(){reads.push('player.settings.mute'); return !!host.muted;},
-    set mute(v){command('setMute', !!v);},
-    getMode:function(name){reads.push('player.settings.' + String(name).toLowerCase()); return name === 'shuffle' ? !!host.shuffle : name === 'loop' ? !!host.repeatMode : false;},
+    get volume(){return note('player.settings.volume', Number(host.volume || 0) * 100, true);},
+    set volume(v){noteWrite('player.settings.volume', v, true); command('volumePercent', v);},
+    get balance(){return note('player.settings.balance', Number(host.balance || 0) * 100, true);},
+    set balance(v){noteWrite('player.settings.balance', v, true); command('balancePercent', v);},
+    get mute(){return note('player.settings.mute', !!host.muted, true);},
+    set mute(v){noteWrite('player.settings.mute', !!v, true); command('setMute', !!v);},
+    getMode:function(name){var known = name === 'shuffle' || name === 'loop'; return note('player.settings.getmode(' + String(name).toLowerCase() + ')', name === 'shuffle' ? !!host.shuffle : name === 'loop' ? !!host.repeatMode : false, known);},
     setMode:function(name,v){command(name === 'shuffle' ? 'setShuffle' : name === 'loop' ? 'setRepeat' : 'unsupported', !!v);},
-    getString:function(key){reads.push('preferences.' + String(key)); return batch.preferences[String(key)] || '';},
+    getString:function(key){return note('preferences.' + String(key), batch.preferences[String(key)] || '', true);},
     setString:function(key,value){out.preferences.push({key:String(key), value:String(value)});}
   };
   var media = {name:String(host.title || ''), duration:Number(host.duration || 0), durationString:String(host.durationText || '0:00'),
-    getItemInfo:function(name){var key=String(name).toLowerCase(); return key === 'artist' ? String(host.artist||'') : key === 'album' ? String(host.album||'') : key === 'title' ? String(host.title||'') : '';}};
+    getItemInfo:function(name){var key=String(name).toLowerCase(); var known = key==='artist'||key==='album'||key==='title'; return note('player.currentmedia.getiteminfo(' + key + ')', known ? (key === 'artist' ? String(host.artist||'') : key === 'album' ? String(host.album||'') : String(host.title||'')) : '', known);}};
   var playlistItems=[]; try { playlistItems=JSON.parse(String(host.playlistJSON||'[]')); } catch(e) { warn('playlist-data','invalid playlist snapshot'); }
   var playlist = {count:Number(host.playlistCount || 0), item:function(index){index=Math.floor(Number(index)); if(index<0||index>=playlistItems.length)return null; var item=playlistItems[index]; return {name:String(item.title||''),duration:Number(item.duration||0),getItemInfo:function(name){return String(name).toLowerCase()==='artist'?String(item.artist||''):'';}};}, attributeCount:3, getAttributeName:function(index){return ['name','artist','duration'][Number(index)]||'';}};
   var network = {bufferingProgress:Number(host.bufferingProgress || 0), receptionQuality:Number(host.receptionQuality || 0), bandWidth:0};
   var player = {controls:controls, settings:settings, currentMedia:media, currentPlaylist:playlist,
-    network:network, playState:String(host.state || 'stopped'), status:String(host.status || '')};
+    network:network,
+    get playState(){return note('player.playstate', String(host.state || 'stopped'), true);},
+    get status(){return note('player.status', String(host.status || ''), true);}};
   globalThis.player=player; globalThis.elements=elements; globalThis.network=network;
   var eqGains=[]; try { eqGains=JSON.parse(String(host.eqGainsJSON||'[]')); } catch(e) {}
-  var eq={}; Object.defineProperty(eq,'enabled',{get:function(){return !!host.eqEnabled;},set:function(v){command('setEQEnabled',!!v);}});
-  for(var eqIndex=0;eqIndex<10;eqIndex++)(function(index){Object.defineProperty(eq,'gainLevel'+(index+1),{get:function(){return Number(eqGains[index]||0);},set:function(v){command('setEQBand:'+index,v);}});})(eqIndex);
+  var eq={}; Object.defineProperty(eq,'enabled',{get:function(){return note('eq.enabled', !!host.eqEnabled, true);},set:function(v){noteWrite('eq.enabled', !!v, true); command('setEQEnabled',!!v);}});
+  for(var eqIndex=0;eqIndex<10;eqIndex++)(function(index){var band='eq.gainlevel'+(index+1);Object.defineProperty(eq,'gainLevel'+(index+1),{get:function(){return note(band, Number(eqGains[index]||0), true);},set:function(v){noteWrite(band, v, true); command('setEQBand:'+index,v);}});})(eqIndex);
   globalThis.eq=eq; globalThis.vis=element('vis',{currentEffect:String(host.currentEffect||'nullplayer-bars'),currentPreset:String(host.currentPreset||'default')});
-  var theme={}; Object.defineProperty(theme,'currentViewID',{get:function(){return String(host.viewID||'');},set:function(v){command('setCurrentView',String(v));}}); globalThis.theme=theme;
+  var theme={}; Object.defineProperty(theme,'currentViewID',{get:function(){return note('theme.currentviewid', String(host.viewID||''), true);},set:function(v){noteWrite('theme.currentviewid', String(v), true); command('setCurrentView',String(v));}}); globalThis.theme=theme;
   globalThis.ActiveXObject=undefined; globalThis.WScript=undefined; globalThis.Enumerator=undefined;
   globalThis.setTimeout=function(fn,ms){ if(out.timers.length>=256)return 0; var source=typeof fn==='function'?'('+fn.toString()+')()':String(fn); var token=++timerToken; out.timers.push({token:token,periodMilliseconds:Math.max(8,Math.floor(Number(ms)||0)),repeats:false,source:source}); return token; };
   globalThis.setInterval=function(fn,ms){var token=setTimeout(fn,ms); if(token)out.timers[out.timers.length-1].repeats=true; return token;};

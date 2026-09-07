@@ -1,6 +1,107 @@
+import CoreGraphics
 import Foundation
 import XCTest
 @testable import NullPlayer
+
+// MARK: - The probe harness
+//
+// `.wmz` had one opt-in PNG dump and a skipped test, which is how 6,044 lines of engine reached a
+// state where only 4 of 14 corpus archives load and `swift test` stayed green throughout. The
+// `.wal` subsystem paid for the lesson first: *a vertical-flip and a wrong crop origin survived
+// 490+ green tests because nothing ever rendered a frame.* Structural cleanliness measures almost
+// nothing.
+//
+// So this file is the instrument, not a test of the engine. It prints one machine-readable line per
+// measured fact, keyed by view, inside a `SKIN <file.wmz>` block, and `scripts/wmp_skin_census.sh`
+// and `scripts/wmp_render_sweep.sh` parse those lines. Every flag is documented once, canonically,
+// in `skills/wmp-skin-guide/reference/harness.md` — add a flag there in the same change that adds
+// it here, and never restate a command anywhere else.
+//
+//   WMP_SKIN=<file-or-directory>   the archive, or a directory swept in one process invocation
+//   WMP_RENDER_DUMP=<dir>          write every view to PNG, per-skin subdirectory in a sweep
+//   WMP_RENDER_PROBE=<view|all>    every scene node: type, id, resolved frame, clip, paint, attrs
+//   WMP_RENDER_BITMAPS=1           resolved bitmap count and every one that failed, with missing=
+//   WMP_RENDER_SCRIPTS=1           per program: bytes, declared handlers, whether it evaluated
+//   WMP_RENDER_EXPR=1              every JScript: geometry expression, its value, its order, deps
+//   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
+//   WMP_RENDER_CLICK=<view>@x,y[;x,y…]   drive clicks in order and report what each one moved
+//   WMP_RENDER_SETTLE=<seconds>    pump the run loop and drive onTimer before measuring
+//   WMP_RENDER_SIZE=<W>x<H>        resize before measuring, then re-drive onResize
+//
+// A skin that fails to load prints `SKIN <file> FAILED <error>` and the sweep carries on: one
+// broken archive must not abandon the other thirteen, and with 10 of 14 rejected today a harness
+// that stopped on the first failure would measure nothing at all.
+
+/// Everything the harness prints for one archive. Held as a value so a directory sweep and a
+/// single-archive run take byte-identical paths and their captures diff cleanly.
+struct WMPProbe {
+    let env: [String: String]
+
+    var wantsProbe: Bool { env["WMP_RENDER_PROBE"] != nil }
+    var wantsBitmaps: Bool { env["WMP_RENDER_BITMAPS"] != nil }
+    var wantsScripts: Bool { env["WMP_RENDER_SCRIPTS"] != nil }
+    var wantsExpressions: Bool { env["WMP_RENDER_EXPR"] != nil }
+    var wantsCallTrace: Bool { env["WMP_CALL_TRACE"] != nil }
+
+    var requestedSize: WMPSize? {
+        guard let spec = env["WMP_RENDER_SIZE"] else { return nil }
+        let parts = spec.lowercased().split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+        return WMPSize(width: CGFloat(parts[0]), height: CGFloat(parts[1]))
+    }
+
+    var settleSeconds: TimeInterval {
+        max(0, min(30, Double(env["WMP_RENDER_SETTLE"] ?? "") ?? 0))
+    }
+
+    /// `<view>@x,y[;x,y…]`. Several points in one run is how a second click is checked to undo the
+    /// first: state that does not survive between them is the defect, not the harness.
+    var clicks: (viewID: String, points: [WMPPoint])? {
+        guard let spec = env["WMP_RENDER_CLICK"] else { return nil }
+        let halves = spec.split(separator: "@", maxSplits: 1).map(String.init)
+        guard halves.count == 2 else { return nil }
+        let points = halves[1].split(separator: ";").compactMap { entry -> WMPPoint? in
+            let pair = entry.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard pair.count == 2 else { return nil }
+            return WMPPoint(x: CGFloat(pair[0]), y: CGFloat(pair[1]))
+        }
+        return points.isEmpty ? nil : (halves[0], points)
+    }
+
+    func probes(_ viewID: String) -> Bool {
+        guard let spec = env["WMP_RENDER_PROBE"] else { return false }
+        return spec.isEmpty || spec == "1" || spec.caseInsensitiveCompare("all") == .orderedSame
+            || spec.caseInsensitiveCompare(viewID) == .orderedSame
+    }
+}
+
+/// The script pass, or an honest line saying why there wasn't one.
+///
+/// The helper is built as a dependency of this test target, so under `swift test` it is normally
+/// present at `.build/debug/WMPScriptIsolationHelper`. When it is not, every script-derived line
+/// below would silently read as "this skin has no scripts" — which is false for **14 of 14** corpus
+/// archives. A probe that reports nothing must first prove it could have seen something, so the
+/// absence is printed as `runtime=unavailable` rather than left as silence.
+struct WMPScriptPass {
+    let session: WMPPhase5Session?
+    let unavailableReason: String?
+
+    init(archiveData: Data, defaults: UserDefaults) {
+        let helper = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".build/debug/WMPScriptIsolationHelper")
+        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
+            session = nil
+            unavailableReason = "helper not executable at \(helper.path)"
+            return
+        }
+        // The production deadline is 0.25 s per transaction. The harness is not measuring latency
+        // and a corpus archive re-evaluates up to 87 KB of JScript per pass, so it uses a generous
+        // one: a timeout here would be reported as a script failure that the app does not have.
+        session = WMPPhase5Session(runtime: WMPJScriptRuntime(helperURL: helper, timeout: 5),
+                                   preferences: WMPPreferenceStore(skinData: archiveData, defaults: defaults))
+        unavailableReason = nil
+    }
+}
 
 final class WMPRenderDumpTests: XCTestCase {
     private let pixels: [UInt8] = [
@@ -68,34 +169,605 @@ final class WMPRenderDumpTests: XCTestCase {
         XCTAssertEqual(bottomAlpha, 0)
     }
 
-    func testOptInRenderDumpForUserSuppliedSkin() async throws {
-        guard let path = ProcessInfo.processInfo.environment["WMP_TEST_WMZ"], !path.isEmpty else {
-            throw XCTSkip("Set WMP_TEST_WMZ to a user-supplied .wmz; local skins/ is never committed.")
-        }
-        let skin = try await WMPSkinLoader().load(from: URL(fileURLWithPath: path))
-        let viewID = skin.views.first(where: { $0.id.caseInsensitiveCompare("vPlayer") == .orderedSame })?.id
-            ?? skin.views.first?.id
-        let selected = try XCTUnwrap(viewID)
+    // MARK: - Instrument proofs
+    //
+    // Three `.wal` harness blind spots each made a real defect look absent, so a probe is not
+    // trusted about absence until it has been shown reporting a presence. These run on every plain
+    // `swift test`; if one of them stops holding, the corresponding sweep column is lying.
+
+    /// `WMP_RENDER_BITMAPS` separates "art is absent" (Class C) from "art draws wrong" (Class B),
+    /// and it can only do that if it actually notices an absence. Rename the asset the markup asks
+    /// for and the probe must name it.
+    func testRenderBitmapsProbeReportsAMissingAsset() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .bmp)
+        let xml = """
+        <THEME><VIEW id="main" width="8" height="6">
+          <IMAGE id="present" left="0" top="0" width="2" height="2" image="pixel.bmp"/>
+          <IMAGE id="absent" left="4" top="0" width="2" height="2" image="renamed.bmp"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("pixel.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
         let store = WMPImageStore(provider: skin.archive)
-        let output: URL
-        if let configured = ProcessInfo.processInfo.environment["WMP_RENDER_DUMP_DIR"], !configured.isEmpty {
-            output = URL(fileURLWithPath: configured, isDirectory: true)
-        } else {
-            output = try WMPSkinTestSupport.temporaryDirectory()
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tally = WMPHarness.bitmapTally(scene: scene, skin: skin, imageStore: store)
+        XCTAssertEqual(tally.resolved, 1)
+        XCTAssertEqual(tally.missing, ["renamed.bmp"])
+    }
+
+    /// The probe must name the nodes the renderer actually drew, with the frames it drew them at —
+    /// "a node exists" says nothing about where it landed, which is the whole Class B distinction.
+    func testRenderProbeReportsResolvedFramesForEveryDrawnNode() async throws {
+        let xml = """
+        <THEME><VIEW id="main" width="40" height="20">
+          <SUBVIEW id="pane" left="4" top="2" width="20" height="10" backgroundColor="#102030"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let lines = WMPHarness.probeLines(scene: scene, skin: skin)
+        let pane = try XCTUnwrap(lines.first { $0.contains("id=pane") })
+        XCTAssertTrue(pane.contains("frame=4,2 20x10"), pane)
+        XCTAssertTrue(pane.contains("paint=fill:#102030"), pane)
+    }
+
+    /// `WMP_RENDER_EXPR` is the layout engine's only witness for the 13 of 14 corpus skins that
+    /// compute geometry in JScript. An expression that silently answers 0 is the difference between
+    /// a skin and a blank window, so the probe must report both the value and the fact it resolved.
+    func testExpressionProbeReportsSourceAndResolvedValue() async throws {
+        let xml = """
+        <THEME><VIEW id="main" width="100" height="40">
+          <SUBVIEW id="pane" left="0" top="0" width="jscript:view.width - 20" height="10"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let lines = WMPHarness.expressionLines(scene: scene, skin: skin, viewID: "main", output: nil)
+        let width = try XCTUnwrap(lines.first { $0.contains("pane.width") })
+        XCTAssertTrue(width.contains("view.width - 20"), width)
+        XCTAssertTrue(width.contains("-> 80"), width)
+    }
+
+    // MARK: - The corpus sweep
+
+    /// `WMP_SKIN` accepts a file **or a directory**. Directory mode sweeps the whole corpus in one
+    /// process invocation: the `.wal` sweep does 79 archives in ~5 minutes where a shell loop over
+    /// them took 25, and the startups were nearly all of the difference. One invocation also cannot
+    /// be invalidated halfway — a sweep is a build, and an edit landing mid-loop silently wrote
+    /// *empty* captures that then diffed as "everything changed".
+    func testSweepsSkinOrCorpus() async throws {
+        let env = ProcessInfo.processInfo.environment
+        // WMP_TEST_WMZ is the flag this harness shipped with. Kept as an alias so the Phase 0–8
+        // handoff docs' invocations still run; WMP_SKIN is the documented name.
+        guard let path = env["WMP_SKIN"] ?? env["WMP_TEST_WMZ"], !path.isEmpty else {
+            throw XCTSkip("Set WMP_SKIN to a .wmz file or a directory of them. "
+                + "See skills/wmp-skin-guide/reference/harness.md.")
         }
-        var records: [WMPRenderDumpRecord] = []
+        let root = URL(fileURLWithPath: path)
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        // The enumeration rule, applied: `-type f` and a case-insensitive extension. A corpus is
+        // allowed to hold a directory, and `.WMZ` is a real spelling.
+        let archives: [URL] = isDirectory.boolValue
+            ? ((try? FileManager.default.contentsOfDirectory(at: root,
+                    includingPropertiesForKeys: [.isRegularFileKey])) ?? [])
+                .filter { $0.pathExtension.lowercased() == "wmz"
+                    && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            : [root]
+        guard !archives.isEmpty else { throw XCTSkip("No .wmz archives under \(path).") }
+
+        let dumpRoot = (env["WMP_RENDER_DUMP"] ?? env["WMP_RENDER_DUMP_DIR"]).map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+        }
+        if let dumpRoot {
+            try FileManager.default.createDirectory(at: dumpRoot, withIntermediateDirectories: true)
+        }
+        // The harness must not write the user's real preferences: `theme.savePreference` is the
+        // second-ranked host call in the corpus (116 occurrences) and a sweep would persist every
+        // skin's idea of its own state into the app the user then launches.
+        let suite = "wmp.harness.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+
+        let probe = WMPProbe(env: env)
+        print("HARNESS \(archives.count) archive(s) from \(path)")
+        for archive in archives {
+            // The sweep's own frame. Every other line is keyed by view, which is not unique across
+            // skins, so without this a directory run is an unattributable wall of text. Printed for
+            // a single archive too, so one skin's capture and its row in a sweep stay identical.
+            print("SKIN \(archive.lastPathComponent)")
+            let dump = dumpRoot.map { root -> URL in
+                archives.count > 1
+                    ? root.appendingPathComponent(archive.deletingPathExtension().lastPathComponent,
+                                                  isDirectory: true)
+                    : root
+            }
+            do {
+                try await WMPHarness.measure(archive: archive, dump: dump, probe: probe, defaults: defaults)
+            } catch {
+                // One unloadable archive must not abandon the rest — with 10 of 14 rejected today,
+                // stopping here would measure nothing. The failure is printed where the diff sees it.
+                print("SKIN \(archive.lastPathComponent) FAILED \(WMPHarness.oneLine(error))")
+            }
+            fflush(stdout)
+        }
+        // The harness asserts nothing about the corpus: 10 of 14 archives are expected to fail
+        // today, and a red test would stop the sweep from producing the rows that rank the work.
+        // The census and the sweep read the printed lines; this only proves the run completed.
+        XCTAssertFalse(archives.isEmpty)
+    }
+}
+
+// MARK: - Line production
+
+/// Every line the harness prints, in one place, so the grammar the census and sweep parse has a
+/// single definition. Nothing here is used by the app.
+enum WMPHarness {
+
+    static func oneLine(_ error: Error) -> String {
+        let text = (error as? WMPFailure)?.errorDescription ?? "\(error)"
+        return text.replacingOccurrences(of: "\n", with: " · ")
+    }
+
+    static func measure(archive: URL, dump: URL?, probe: WMPProbe, defaults: UserDefaults) async throws {
+        let started = CFAbsoluteTimeGetCurrent()
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let loadMilliseconds = (CFAbsoluteTimeGetCurrent() - started) * 1_000
+        let archiveData = (try? Data(contentsOf: archive)) ?? Data()
+
+        let bytes = skin.archive.entries.reduce(UInt64(0)) { $0 &+ $1.uncompressedSize }
+        print("LOAD definition=\(skin.definitionPath) encoding=\(skin.textEncoding.rawValue) "
+            + "entries=\(skin.archive.entries.count) bytes=\(bytes) views=\(skin.views.count) "
+            + "nodes=\(skin.graph.allNodes.count) scripts=\(skin.scripts.count) "
+            + "resources=\(skin.resources.count) loadms=\(String(format: "%.1f", loadMilliseconds))")
+        for line in findingLines(skin.diagnostics) { print(line) }
+        for line in compatibilityLines(skin) { print(line) }
+
+        let pass = WMPScriptPass(archiveData: archiveData, defaults: defaults)
+        if let reason = pass.unavailableReason {
+            // Printed once per archive whether or not WMP_RENDER_SCRIPTS asked, because every
+            // script-derived line below goes quiet without it and quiet reads as "no scripts".
+            print("SCRIPTS programs=\(skin.scripts.count) runtime=unavailable (\(reason))")
+        }
+        if probe.wantsScripts { for line in scriptLines(skin: skin, pass: pass) { print(line) } }
+
+        let store = WMPImageStore(provider: skin.archive)
+        let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
         for view in skin.views {
-            let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: view.id)
-            records.append(try await WMPRenderer(imageStore: store).dump(scene: scene, to: output))
+            do {
+                try await measure(view: view.id, skin: skin, builder: builder, imageStore: store,
+                                  pass: pass, dump: dump, probe: probe)
+            } catch {
+                print("RENDER-DUMP \(view.id) FAILED \(oneLine(error))")
+            }
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(records).write(to: output.appendingPathComponent("render-report.json"), options: .atomic)
-        XCTAssertEqual(records.count, skin.views.count)
-        XCTAssertTrue(records.allSatisfy {
-            FileManager.default.fileExists(atPath: output.appendingPathComponent($0.pngFilename).path)
-        })
-        XCTAssertGreaterThan(try XCTUnwrap(records.first { $0.viewID == selected }).resolvedNodeCount, 0)
-        print("WMP render dump (untracked): \(output.path)")
+        if let session = pass.session { await session.teardown() }
+    }
+
+    private static func measure(view viewID: String, skin: WMPLoadedSkin, builder: WMPSceneBuilder,
+                                imageStore: WMPImageStore, pass: WMPScriptPass,
+                                dump: URL?, probe: WMPProbe) async throws {
+        // The size the scene is measured at. `WMP_RENDER_SIZE` reproduces the user's window, which
+        // for an expression-driven layout is a different layout, not the same one scaled.
+        var scene = try await builder.build(viewID: viewID, requestedSize: probe.requestedSize)
+
+        var output: WMPPhase5Output?
+        if let session = pass.session {
+            await session.prepareForViewSwitch()
+            // The load pass: scripts evaluate and every `JScript:` geometry expression resolves,
+            // exactly as the app's first transaction does. Its overrides are what the scene is then
+            // rebuilt with, so a dumped PNG shows script-driven layout rather than raw markup.
+            output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                                            snapshot: WMPHostSnapshot(), event: nil)
+            if probe.requestedSize != nil {
+                // A resize is a second layout pass, not a re-scale: the expressions must run again
+                // against the new `view.width`/`view.height` before anything is measured.
+                output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                                                snapshot: WMPHostSnapshot(),
+                                                event: eventFor(name: "onResize", skin: skin, viewID: viewID))
+            }
+            if probe.settleSeconds > 0 {
+                // Timer-driven state — Corona drives its transport readouts from `onTimer` — has not
+                // happened yet when the load pass returns. Pump the run loop so anything the host
+                // scheduled can fire, then drive the skin's own onTimer handlers, which is what
+                // actually moves state under today's runtime.
+                RunLoop.current.run(until: Date().addingTimeInterval(probe.settleSeconds))
+                if let timer = eventFor(name: "onTimer", skin: skin, viewID: viewID) {
+                    output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                                                    snapshot: WMPHostSnapshot(), event: timer)
+                }
+            }
+            if let output, output.overrides != .empty {
+                scene = try await builder.build(viewID: viewID, requestedSize: probe.requestedSize,
+                                                overrides: output.overrides)
+            }
+            for diagnostic in output?.diagnostics ?? [] {
+                print("SCRIPT-DIAG \(viewID) [\(diagnostic.code)] \(diagnostic.message)")
+            }
+        }
+
+        print("RENDER-DUMP \(viewID): \(WMPNumber.format(scene.canvasSize.width))x"
+            + "\(WMPNumber.format(scene.canvasSize.height)), \(scene.metrics.resolvedNodeCount) nodes, "
+            + "\(scene.commands.count) commands, \(scene.hits.count) hits, "
+            + "\(scene.widgets.count) widgets, \(scene.metrics.unresolvedNodeCount) unresolved")
+
+        if probe.probes(viewID) {
+            for line in probeLines(scene: scene, skin: skin) { print(line) }
+        }
+        if probe.wantsBitmaps {
+            let tally = bitmapTally(scene: scene, skin: skin, imageStore: imageStore)
+            print("BITMAPS \(viewID): resolved=\(tally.resolved) missing=\(tally.missing.joined(separator: " "))")
+        }
+        if probe.wantsExpressions {
+            for line in expressionLines(scene: scene, skin: skin, viewID: viewID, output: output) { print(line) }
+        }
+        if probe.wantsCallTrace {
+            for line in callTraceLines(viewID: viewID, output: output, unavailable: pass.unavailableReason) {
+                print(line)
+            }
+        }
+        if let clicks = probe.clicks, clicks.viewID.caseInsensitiveCompare(viewID) == .orderedSame {
+            scene = await drive(clicks: clicks.points, on: scene, viewID: viewID, skin: skin,
+                                builder: builder, pass: pass, probe: probe)
+        }
+        if let dump {
+            try FileManager.default.createDirectory(at: dump, withIntermediateDirectories: true)
+            let record = try await WMPRenderer(imageStore: imageStore).dump(scene: scene, to: dump)
+            print("PNG \(viewID): \(record.pngFilename)")
+        }
+    }
+
+    // MARK: Findings and compatibility
+
+    static func findingLines(_ diagnostics: [WMPDiagnostic]) -> [String] {
+        var counts: [String: (WMPDiagnostic, Int)] = [:]
+        for diagnostic in diagnostics {
+            let key = "\(diagnostic.code.rawValue)|\(diagnostic.message)"
+            counts[key] = (diagnostic, (counts[key]?.1 ?? 0) + 1)
+        }
+        return counts.values.sorted {
+            $0.0.code.rawValue == $1.0.code.rawValue ? $0.0.message < $1.0.message
+                : $0.0.code.rawValue < $1.0.code.rawValue
+        }.map { diagnostic, count in
+            "FINDING [\(diagnostic.severity.rawValue)] \(diagnostic.code.rawValue) ×\(count) "
+                + diagnostic.message.replacingOccurrences(of: "\n", with: " ")
+        }
+    }
+
+    /// The static half of the demand tally: what the markup and the scripts *ask for*, minus what
+    /// the engine claims to implement. It ranks Class A work. It is not a substitute for
+    /// `WMP_CALL_TRACE`, which is the only thing that catches a member that is recognised and
+    /// answers wrong.
+    static func compatibilityLines(_ skin: WMPLoadedSkin) -> [String] {
+        let report = skin.compatibilityReport
+        let tags = report.tags.filter { !supportedTags.contains($0.name) }
+        let members = report.members.filter { !supportsMember($0.name) }
+        var lines = ["COMPAT unknown-tags=\(tags.count) unknown-members=\(members.count) "
+            + "resources-missing=\(skin.resources.filter { $0.status == .missing }.count) "
+            + "resources-unsupported=\(skin.resources.filter { $0.status == .unsupported }.count)"]
+        lines += tags.sorted { $0.count > $1.count }.map { "UNKNOWN tag \($0.name) ×\($0.count)" }
+        lines += members.sorted { $0.count > $1.count }.prefix(40)
+            .map { "UNKNOWN member \($0.name) ×\($0.count)" }
+        return lines
+    }
+
+    // MARK: The scene probe
+
+    /// Type, id, resolved frame, clip, paint and authored attributes for every node the scene
+    /// actually placed. A node existing says nothing about where it is drawn; this is the line that
+    /// says where.
+    static func probeLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
+        let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        return scene.commands.map { command in
+            let node = nodesByID[command.stableID]
+            let paint: String
+            switch command.paint {
+            case let .fill(color): paint = "fill:\(color)"
+            case let .image(image):
+                let crop = image.sourceRect.map { " crop=\($0)" } ?? ""
+                let key = image.colorKey.map { " colorKey=\($0)" } ?? ""
+                paint = "image:\(image.resourcePath)\(crop)\(key)\(image.tiled ? " tiled" : "")"
+            case let .text(text): paint = "text:\(text.value)"
+            }
+            let attributes = (node?.attributes ?? []).prefix(12)
+                .map { "\($0.name)=\(condense($0.rawValue))" }.joined(separator: " ")
+            return "PROBE \(scene.viewID)/\(command.stableID) \(node?.kind.description ?? "?") "
+                + "id=\(command.nodeID ?? "-") frame=\(command.frame) "
+                + "clip=\(command.clipRect.map(String.init(describing:)) ?? "-") z=\(command.zIndex) "
+                + "paint=\(paint) attrs=[\(attributes)]"
+        }
+    }
+
+    // MARK: Bitmaps
+
+    /// Separates "art is absent" (Class C, small) from "art draws wrong" (Class B, expensive). A
+    /// path counts as resolved only when the store actually decoded it: a resource that resolves in
+    /// the archive and then fails to decode is missing as far as the screen is concerned.
+    static func bitmapTally(scene: WMPScene, skin: WMPLoadedSkin,
+                            imageStore: WMPImageStore) -> (resolved: Int, missing: [String]) {
+        var resolved = Set<String>(), missing = Set<String>()
+        for command in scene.commands {
+            guard case let .image(image) = command.paint else { continue }
+            if (try? imageStore.image(for: image.resourcePath, colorKey: image.colorKey)) != nil {
+                resolved.insert(image.resourcePath)
+            } else {
+                missing.insert(image.resourcePath)
+            }
+        }
+        // A resource the loader could not resolve at all never reaches a paint command, so the scan
+        // above cannot see it. Those are exactly the renamed and absent assets this probe exists to
+        // name, so they are added from the registration list. An authored path that is *empty* is
+        // named `<empty>` rather than inserted blank: a blank entry disappears into the space-
+        // separated list and the probe would under-report by one with nothing to show for it.
+        for registration in skin.resources where registration.status != .available {
+            let authored = registration.authoredPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            missing.insert(authored.isEmpty ? "<empty:\(registration.attributeName)>" : authored)
+        }
+        return (resolved.count, missing.sorted(by: WMPPath.less))
+    }
+
+    // MARK: Expressions
+
+    /// 13 of 14 corpus skins compute their geometry in JScript, so this is the layout engine's
+    /// witness. Both evaluators are reported: the static grammar in `WMPInitialLayoutExpression`
+    /// that the scene builder uses today, and — when the script runtime ran — the value the real
+    /// context produced, with the dependency order it was evaluated in.
+    static func expressionLines(scene: WMPScene, skin: WMPLoadedSkin, viewID: String,
+                                output: WMPPhase5Output?) -> [String] {
+        guard let view = skin.views.first(where: { $0.id.caseInsensitiveCompare(viewID) == .orderedSame })?.node
+        else { return [] }
+        var resolver = WMPInitialLayoutResolver(graph: skin.graph, view: view, canvas: scene.canvasSize)
+        let order = Dictionary(uniqueKeysWithValues: output?.expressionOrder.enumerated()
+            .map { ($0.element.lowercased(), $0.offset) } ?? [])
+        let results = Dictionary(output?.expressions.map { ($0.key.lowercased(), $0) } ?? []) { first, _ in first }
+
+        var lines: [String] = []
+        for node in skin.graph.allNodes {
+            for attribute in node.attributes {
+                let name = attribute.name.lowercased()
+                guard ["left", "top", "width", "height"].contains(name) else { continue }
+                let source: String
+                switch attribute.value {
+                case let .jScript(text): source = text
+                case let .binding(kind, path) where kind == .property: source = path
+                default: continue
+                }
+                let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
+                let key = "\(id).\(name)"
+                let statically: String
+                if let property = WMPInitialLayoutResolver.Property(rawValue: name) {
+                    switch resolver.resolve(node, property: property) {
+                    case let .value(value): statically = WMPNumber.format(value)
+                    case let .unresolved(reason): statically = "UNRESOLVED(\(reason))"
+                    }
+                } else { statically = "UNRESOLVED(no property)" }
+                let result = results[key.lowercased()]
+                let live = result.map { entry -> String in
+                    if let error = entry.error { return "ERROR(\(condense(error)))" }
+                    return entry.value?.number.map { WMPNumber.format(CGFloat($0)) }
+                        ?? entry.value?.string ?? "null"
+                } ?? "-"
+                let deps = result?.dependencies.joined(separator: ",") ?? ""
+                let position = order[key.lowercased()].map { "#\($0)" } ?? "#-"
+                lines.append("EXPR \(scene.viewID)/\(key) \(position): \(condense(source)) "
+                    + "-> \(statically) live=\(live) deps=[\(deps)]")
+            }
+        }
+        return lines
+    }
+
+    // MARK: Scripts
+
+    /// Read this before believing anything about what a skin contains. All 14 corpus archives ship
+    /// JScript; a skin whose handlers never ran looks identical, from the outside, to one that has
+    /// none.
+    static func scriptLines(skin: WMPLoadedSkin, pass: WMPScriptPass) -> [String] {
+        let total = skin.scriptSources.values.reduce(0) { $0 + $1.utf8.count }
+        let state = pass.unavailableReason.map { "unavailable (\($0))" } ?? "available"
+        var lines = ["SCRIPTS programs=\(skin.scripts.count) bytes=\(total) runtime=\(state)"]
+        for registration in skin.scripts.sorted(by: { WMPPath.less($0.authoredPath, $1.authoredPath) }) {
+            guard let path = registration.resolvedPath, let source = skin.scriptSources[path] else {
+                lines.append("SCRIPT \(registration.authoredPath): status=\(registration.status.rawValue)")
+                continue
+            }
+            let handlers = declaredHandlers(in: source)
+            lines.append("SCRIPT \(registration.authoredPath): bytes=\(source.utf8.count) "
+                + "handlers=[\(handlers.joined(separator: ","))]")
+        }
+        // Handlers declared on the markup itself, which is where a skin puts its transport wiring.
+        var inline: [String: Int] = [:]
+        for node in skin.graph.allNodes {
+            for attribute in node.attributes {
+                guard case .handler = attribute.value else { continue }
+                inline[attribute.name.lowercased(), default: 0] += 1
+            }
+        }
+        if !inline.isEmpty {
+            lines.append("SCRIPT inline: " + inline.sorted { $0.value > $1.value }
+                .map { "\($0.key)×\($0.value)" }.joined(separator: " "))
+        }
+        return lines
+    }
+
+    private static func declaredHandlers(in source: String) -> [String] {
+        let pattern = #"function\s+([A-Za-z_$][A-Za-z0-9_$]*)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(source.startIndex..<source.endIndex, in: source)
+        var names: [String] = []
+        for match in regex.matches(in: source, range: range) {
+            guard let swiftRange = Range(match.range(at: 1), in: source) else { continue }
+            let name = String(source[swiftRange])
+            if !names.contains(name) { names.append(name) }
+        }
+        return names
+    }
+
+    private static func eventFor(name: String, skin: WMPLoadedSkin, viewID: String) -> WMPJScriptEvent? {
+        var handlers: [String] = []
+        for node in skin.graph.allNodes {
+            for attribute in node.attributes {
+                guard case let .handler(event, source) = attribute.value,
+                      event.caseInsensitiveCompare(name) == .orderedSame else { continue }
+                handlers.append(source)
+            }
+        }
+        guard !handlers.isEmpty else { return nil }
+        return WMPJScriptEvent(name: name, targetID: viewID, handlers: handlers)
+    }
+
+    // MARK: Call trace
+
+    /// Every host object-model access with what answered and whether the member was recognised. The
+    /// ranked `UNRECOGNISED` tail is the Class A backlog; the recognised lines are the only place a
+    /// member answering a plausible-but-wrong default is visible at all.
+    static func callTraceLines(viewID: String, output: WMPPhase5Output?,
+                               unavailable: String?) -> [String] {
+        guard let output else {
+            return ["CALLS \(viewID): none (\(unavailable ?? "no script transaction"))"]
+        }
+        var lines = output.calls.map { call in
+            "CALL \(viewID) \(call.path) \(call.kind.rawValue) "
+                + "value=\(call.value?.string ?? "null") \(call.recognised ? "ok" : "UNRECOGNISED")"
+        }
+        var counts: [String: (Int, Bool)] = [:]
+        for call in output.calls {
+            let existing = counts[call.path] ?? (0, true)
+            counts[call.path] = (existing.0 + 1, existing.1 && call.recognised)
+        }
+        lines += counts.sorted { $0.value.0 == $1.value.0 ? $0.key < $1.key : $0.value.0 > $1.value.0 }
+            .map { "CALLS \(viewID) \($0.key) ×\($0.value.0) \($0.value.1 ? "ok" : "UNRECOGNISED")" }
+        return lines
+    }
+
+    // MARK: Clicks
+
+    /// Several points in order, because a second click undoing the first is the thing worth
+    /// checking: under a runtime that cannot hold state between events it does not, and that is the
+    /// defect this probe is here to make visible rather than infer.
+    private static func drive(clicks: [WMPPoint], on scene: WMPScene, viewID: String,
+                              skin: WMPLoadedSkin, builder: WMPSceneBuilder,
+                              pass: WMPScriptPass, probe: WMPProbe) async -> WMPScene {
+        var scene = scene
+        let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        var previous = WMPSceneOverrides.empty
+        for point in clicks {
+            let where_ = "\(viewID)@\(WMPNumber.format(point.x)),\(WMPNumber.format(point.y))"
+            guard let target = WMPHitTester(hits: scene.hits).hitTest(point) else {
+                print("CLICK \(where_) MISS")
+                continue
+            }
+            let node = nodesByID[target.stableID]
+            let handlers: [String] = (node?.attributes ?? []).compactMap { attribute in
+                guard case let .handler(event, source) = attribute.value,
+                      event.caseInsensitiveCompare("onClick") == .orderedSame else { return nil }
+                return source
+            }
+            print("CLICK \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) kind=\(target.kind) "
+                + "action=\(target.action.map(String.init(describing:)) ?? "-") "
+                + "sticky=\(target.sticky) handlers=\(handlers.count)")
+            guard let session = pass.session, !handlers.isEmpty else { continue }
+            let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                snapshot: WMPHostSnapshot(),
+                event: WMPJScriptEvent(name: "onClick", targetID: target.nodeID, handlers: handlers))
+            // Every attribute changed anywhere in the graph, not only on the object that was hit:
+            // a skin's click handler routinely moves a sibling pane, and a probe that reported only
+            // the target would call that click inert.
+            for line in changeLines(from: previous, to: output.overrides, nodes: nodesByID) {
+                print("CLICK \(where_) \(line)")
+            }
+            previous = output.overrides
+            for command in output.hostCommands {
+                print("CLICK \(where_) command=\(command.action) value=\(command.value?.string ?? "-")")
+            }
+            for diagnostic in output.diagnostics {
+                print("CLICK \(where_) [\(diagnostic.code)] \(diagnostic.message)")
+            }
+            // The compatibility surface taken *after* driving the event: a member is only demanded
+            // once the handler that reaches it has run.
+            if probe.wantsCallTrace {
+                let unrecognised = Set(output.calls.filter { !$0.recognised }.map(\.path)).sorted()
+                print("CLICK \(where_) unrecognised=[\(unrecognised.joined(separator: ","))]")
+            }
+            if let rebuilt = try? await builder.build(viewID: viewID, requestedSize: probe.requestedSize,
+                                                      overrides: output.overrides) {
+                scene = rebuilt
+                print("CLICK \(where_) after: \(rebuilt.commands.count) commands, "
+                    + "\(rebuilt.metrics.unresolvedNodeCount) unresolved")
+            }
+        }
+        return scene
+    }
+
+    private static func changeLines(from before: WMPSceneOverrides, to after: WMPSceneOverrides,
+                                    nodes: [Int: WMPNode]) -> [String] {
+        var changes: [String] = []
+        for (address, value) in after.geometry.sorted(by: { addressOrder($0.key, $1.key) })
+        where before.geometry[address] != value {
+            changes.append("\(name(address, nodes))=\(WMPNumber.format(value))")
+        }
+        for (address, value) in after.properties.sorted(by: { addressOrder($0.key, $1.key) })
+        where before.properties[address] != value {
+            changes.append("\(name(address, nodes))=\(condense(value.string ?? "null"))")
+        }
+        guard !changes.isEmpty else { return ["changed=[]"] }
+        return ["changed=[\(changes.joined(separator: " "))]"]
+    }
+
+    private static func addressOrder(_ lhs: WMPScenePropertyAddress, _ rhs: WMPScenePropertyAddress) -> Bool {
+        lhs.stableID == rhs.stableID ? lhs.property < rhs.property : lhs.stableID < rhs.stableID
+    }
+
+    private static func name(_ address: WMPScenePropertyAddress, _ nodes: [Int: WMPNode]) -> String {
+        "\(nodes[address.stableID]?.xmlID ?? "node\(address.stableID)").\(address.property)"
+    }
+
+    // MARK: Shared
+
+    private static func condense(_ value: String) -> String {
+        let flat = value.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        return flat.count <= 80 ? flat : String(flat.prefix(77)) + "…"
+    }
+
+    private static let supportedTags: Set<String> = [
+        "theme", "view", "subview", "text", "image", "button", "buttongroup", "buttonelement",
+        "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "dropdownplaylist",
+        "playelement", "pausebutton", "stopelement", "prevelement", "nextelement", "rewbutton",
+        "rewelement", "ffwdbutton", "ffwdelement", "returnbutton", "shufflebutton",
+        "equalizersettings", "popup", "wmpeffects", "video", "wmpvideo", "player", "network", "script"
+    ]
+
+    private static func supportsMember(_ path: String) -> Bool {
+        let parts = path.lowercased().split(separator: ".").map(String.init)
+        guard parts.count >= 2 else { return false }
+        let object: String, member: String
+        switch parts[0] {
+        case "player" where parts.count >= 3:
+            switch parts[1] {
+            case "controls": object = "controls"; member = parts[2]
+            case "settings": object = "settings"; member = parts[2]
+            case "currentmedia": object = "media"; member = parts[2]
+            case "currentplaylist": object = "playlist"; member = parts[2]
+            case "network": object = "network"; member = parts[2]
+            default: object = "player"; member = parts[1]
+            }
+        case "metadata": object = "metadata"; member = parts[1]
+        case "theme": object = "theme"; member = parts[1]
+        case "view": object = "view"; member = parts[1]
+        case "eq": object = "eq"; member = parts[1]
+        case "vis": object = "vis"; member = parts[1]
+        case "ipl", "ddpl": object = "playlist"; member = parts[1]
+        default:
+            object = parts[0]; member = parts[1]
+            if WMPJScriptCompatibility.supports(object: "element", member: member) { return true }
+        }
+        return WMPJScriptCompatibility.supports(object: object, member: member)
     }
 }

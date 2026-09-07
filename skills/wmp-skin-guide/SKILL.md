@@ -6,9 +6,20 @@ description: Windows Media Player .wmz/.wms skin engine, bounded loading, retain
 # Windows Media Player skin engine
 
 Read this skill before changing `Sources/NullPlayer/WMPSkin/` or
-`Sources/NullPlayer/Windows/WMPSkin/`. The phased contract is in
-`docs/wmp-skin-integration-plan.md`; the current security decisions and locked limits are in
-`docs/wmp-skin/phase-0-decision-record.md`.
+`Sources/NullPlayer/Windows/WMPSkin/`. The current security decisions and locked limits are in
+`phase-0-decision-record.md`.
+
+**Measure before you reason.** `reference/harness.md` is the canonical probe and corpus reference —
+every env-var flag, the line grammar, `scripts/wmp_skin_census.sh` and `scripts/wmp_render_sweep.sh`,
+and the traps those scripts enforce. No other file restates a command; add a flag there in the same
+change that adds it. The ranked backlog it feeds is `WMP_TASKS.md` at the repo root.
+
+**The `phase-*-handoff.md` files are unverified narrative.** Check every claim in them against the
+code before relying on it: phase 7 asserts that WMP "remains explicitly unavailable in release/MAS
+products through `AppCapabilities.wmpSkinMode`", and `AppCapabilities.supports` returns `true`
+unconditionally unless `EDITION_CUSTOM` is defined, which nothing defines. That is a false claim,
+not a self-qualified one. The census likewise found their corpus numbers wrong in both directions —
+see `reference/harness.md` § "What the harness measured".
 
 ## Isolation boundary
 
@@ -18,9 +29,6 @@ Winamp Modern types about WMP markup. Change shared application files only when 
 satisfy the requirement; keep that seam minimal, gate it explicitly on the WMP controller family,
 and prove all existing modes retain their behavior. Record every shared path and the rejected local
 alternatives in the phase handoff.
-
-Implementation runs only from `/Users/ad/Projects/nullplayer-wmp-skin-support` on
-`feat/wmp-skin-support`. Run the hard worktree preflight in the plan before writing or building.
 
 Never put WMP input work on the main thread. Archive validation/inflation, decoding, XML/graph/report
 construction, image work, expressions, and helper-process communication run on a WMP-owned background

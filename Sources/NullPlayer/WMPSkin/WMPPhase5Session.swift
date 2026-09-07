@@ -7,6 +7,27 @@ struct WMPPhase5Output: Sendable {
     let diagnostics: [WMPJScriptDiagnostic]
     let repaintNodeIDs: Set<Int>
     let timerRequests: [WMPJScriptTimerRequest]
+    /// Every host object-model access the transaction made, in order. Carried for `WMP_CALL_TRACE`;
+    /// no production path reads it.
+    let calls: [WMPJScriptCall]
+    /// Every `JScript:` geometry expression's result, and the order they were evaluated in.
+    /// Carried for `WMP_RENDER_EXPR`; no production path reads either.
+    let expressions: [WMPJScriptExpressionResult]
+    let expressionOrder: [String]
+
+    init(overrides: WMPSceneOverrides, hostCommands: [WMPJScriptHostCommand],
+         diagnostics: [WMPJScriptDiagnostic], repaintNodeIDs: Set<Int>,
+         timerRequests: [WMPJScriptTimerRequest], calls: [WMPJScriptCall] = [],
+         expressions: [WMPJScriptExpressionResult] = [], expressionOrder: [String] = []) {
+        self.overrides = overrides
+        self.hostCommands = hostCommands
+        self.diagnostics = diagnostics
+        self.repaintNodeIDs = repaintNodeIDs
+        self.timerRequests = timerRequests
+        self.calls = calls
+        self.expressions = expressions
+        self.expressionOrder = expressionOrder
+    }
 }
 
 final class WMPPreferenceStore: @unchecked Sendable {
@@ -133,7 +154,9 @@ actor WMPPhase5Session {
             committedOverrides = overrides
             return WMPPhase5Output(overrides: overrides, hostCommands: transaction.hostCommands,
                                    diagnostics: diagnostics, repaintNodeIDs: repaint,
-                                   timerRequests: transaction.timers)
+                                   timerRequests: transaction.timers, calls: transaction.calls,
+                                   expressions: transaction.expressions,
+                                   expressionOrder: orderedExpressions.map(\.key))
         }
     }
 
