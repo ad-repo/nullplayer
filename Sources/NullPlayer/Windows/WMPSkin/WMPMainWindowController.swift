@@ -247,14 +247,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             self.host.perform(action, value: value)
             self.refreshHostState()
         }
-        view.onScriptEvent = { [weak self] name, targetID in
-            self?.dispatchScriptEvent(name: name, targetID: targetID)
+        view.onScriptEvent = { [weak self] name, targetID, targetStableID in
+            self?.dispatchScriptEvent(name: name, targetID: targetID, targetStableID: targetStableID)
         }
         view.onElementValueChanged = { [weak self] stableID, targetID, value in
             guard let self, let scriptRuntime = self.scriptRuntime else { return }
             Task {
                 await scriptRuntime.setWidgetValue(stableID: stableID, value: value)
-                self.dispatchScriptEvent(name: "change", targetID: targetID)
+                self.dispatchScriptEvent(name: "change", targetID: targetID, targetStableID: stableID)
             }
         }
         view.onSpectrumDemandChanged = { [weak self] active in
@@ -510,10 +510,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
-    private func dispatchScriptEvent(name: String, targetID: String?) {
+    /// `targetStableID` is the node the input actually landed on. It is what scopes the dispatch,
+    /// because an authored `id` is optional in a `.wmz` and `targetID == nil` means "every handler
+    /// in the view" — correct for `load` or `timer`, catastrophic for a click. Corona leaves its
+    /// compact-mode button unnamed, so clicking it ran all 16 of the view's `onClick` handlers at
+    /// once: the file dialog, both drawers, and `ToggleSuperCompact()`, which switched the skin to
+    /// a compact view that renders indistinguishably from the player and persisted it.
+    private func dispatchScriptEvent(name: String, targetID: String?, targetStableID: Int? = nil) {
         guard let skin = loadedSkin else { return }
         dispatchScriptTransaction(WMPJScriptEvent(name: name, targetID: targetID,
-            handlers: Self.handlers(in: skin, event: name, targetID: targetID, viewID: activeViewID)))
+            handlers: Self.handlers(in: skin, event: name, targetID: targetID,
+                                    targetStableID: targetStableID, viewID: activeViewID)))
     }
 
     private func dispatchHostEvents(_ names: [String]) {
@@ -579,7 +586,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     static func handlers(in skin: WMPLoadedSkin, event: String, targetID: String?,
-                         viewID: String? = nil) -> [String] {
+                         targetStableID: Int? = nil, viewID: String? = nil) -> [String] {
         let wanted = event.lowercased().replacingOccurrences(of: "_", with: "")
         var scope: Set<Int>?
         if let viewID, let view = skin.views.first(where: {
@@ -593,7 +600,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         return skin.graph.allNodes.filter { node in
             scope?.contains(node.stableID) != false
         }.filter { node in
-            targetID == nil || node.xmlID?.caseInsensitiveCompare(targetID ?? "") == .orderedSame
+            // An exact node beats an authored id: the id may be absent, and absent must mean
+            // "this one node", never "all of them".
+            if let targetStableID { return node.stableID == targetStableID }
+            return targetID == nil
+                || node.xmlID?.caseInsensitiveCompare(targetID ?? "") == .orderedSame
                 || (targetID == "view" && node.kind == .view)
         }.flatMap { node in
             node.attributes.compactMap { attribute -> String? in

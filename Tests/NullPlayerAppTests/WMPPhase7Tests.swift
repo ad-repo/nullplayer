@@ -5,6 +5,57 @@ import XCTest
 @testable import NullPlayer
 
 final class WMPPhase7Tests: XCTestCase {
+
+    /// The overlays paint their own `bounds`, never the `dirtyRect` handed to them.
+    ///
+    /// AppKit is free to pass a dirty rect larger than the view, and was measured doing exactly
+    /// that: Corona's 320x240 spectrum pane received `{{-269, -26}, {596, 468}}` — the whole window
+    /// in its own coordinates. A layer-backed view does not clip that (`masksToBounds` is false), so
+    /// `dirtyRect.fill()` washed the translucent backdrop over the entire skin. Reported as "a giant
+    /// black box over the player"; identified by the arithmetic that
+    /// `calibratedWhite 0.04, alpha 0.9` over white is (34,34,34), which is what the screen read.
+    @MainActor
+    func testAnOverlayNeverPaintsOutsideItsOwnBounds() throws {
+        let window = NSSize(width: 596, height: 468)
+        let frame = NSRect(x: 269, y: 26, width: 320, height: 240)
+        // The exact rect AppKit was observed handing the view: the whole window, in view space.
+        let oversized = NSRect(x: -frame.origin.x, y: -frame.origin.y,
+                               width: window.width, height: window.height)
+
+        for overlay in [WMPEffectsSurfaceView(frame: frame), WMPPlaylistSurfaceView(frame: frame)] as [NSView] {
+            let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil,
+                pixelsWide: Int(window.width), pixelsHigh: Int(window.height),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            NSColor.clear.setFill()
+            NSRect(origin: .zero, size: window).fill(using: .copy)
+            // Bitmap contexts are bottom-left; these overlays are flipped, so place the view's
+            // bottom-left edge such that it occupies top-left rows 26..266.
+            let transform = NSAffineTransform()
+            transform.translateX(by: frame.origin.x,
+                                 yBy: window.height - frame.origin.y - frame.height)
+            transform.concat()
+            overlay.draw(oversized)
+            NSGraphicsContext.restoreGraphicsState()
+
+            // `colorAt` is top-left origin: the overlay owns columns 269..589, rows 26..266.
+            let outside = ["left of the pane": NSPoint(x: 10, y: 140),
+                           "above the pane": NSPoint(x: 400, y: 8),
+                           "below the pane": NSPoint(x: 400, y: 400)]
+            for (name, point) in outside {
+                let alpha = rep.colorAt(x: Int(point.x), y: Int(point.y))?.alphaComponent ?? 1
+                XCTAssertEqual(alpha, 0, accuracy: 0.02,
+                               "\(type(of: overlay)) painted \(name) — outside its own bounds")
+            }
+            // ...and it still paints itself, or the assertions above pass for the wrong reason.
+            let inside = rep.colorAt(x: Int(frame.midX), y: Int(frame.midY))?.alphaComponent ?? 0
+            XCTAssertGreaterThan(inside, 0.5, "\(type(of: overlay)) did not paint its own bounds")
+        }
+    }
+
     func testCorpusReportEmitsFactsDemandMetricsAndConfidenceWithoutPixels() async throws {
         let xml = """
         <THEME><VIEW id="main" width="80" height="40">

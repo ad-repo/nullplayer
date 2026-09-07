@@ -33,6 +33,18 @@
 
 ### Bug Fixes
 
+- **A Windows Media Player skin no longer turns into a black box while a track plays.** The spectrum
+  pane painted the dirty rectangle AppKit handed it rather than its own bounds, and AppKit passes one
+  larger than the view — the whole window, in the pane's own coordinates — which a layer-backed view
+  does not clip. A 320x240 visualization therefore washed its translucent backdrop over the entire
+  skin. The playlist pane had the same defect.
+- **Clicking a Windows Media Player skin control that has no name no longer triggers every other
+  button.** Handler dispatch matched on the skin author's optional `id` and treated a missing one as
+  "no filter", so one click on an unnamed control ran every `onClick` in the view at once. In Corona
+  that opened the file dialog, toggled both drawers and switched the player into its compact view —
+  which is persisted, and looks almost identical to the full player, so it read as the playlist and
+  equalizer drawers no longer opening.
+
 - **A film watched to the end is now marked watched on Plex, Jellyfin and Emby** — and a queued
   video playlist moves on to the next film by itself. The video engine reports a film running out as
   a pause rather than as an ending, and NullPlayer was taking it at its word: the server was told the

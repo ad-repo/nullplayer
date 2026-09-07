@@ -3,7 +3,9 @@ import AppKit
 final class WMPMainView: NSView {
     var onInteractionChanged: ((WMPInteractionState, Set<Int>) -> Void)?
     var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
-    var onScriptEvent: ((String, String?) -> Void)?
+    /// `(event, authored id, stable graph id)`. The stable id is what scopes the dispatch: a
+/// `.wmz` is free to leave a control unnamed, and an authored id is therefore optional.
+    var onScriptEvent: ((String, String?, Int?) -> Void)?
     var onElementValueChanged: ((Int, String?, Double) -> Void)?
     var onSpectrumDemandChanged: ((Bool) -> Void)?
     private var image: NSImage?
@@ -20,6 +22,7 @@ final class WMPMainView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+
 
     func present(_ cgImage: CGImage, scene: WMPScene, dirtyBounds: WMPRect? = nil) {
         let previous = self.scene
@@ -156,7 +159,7 @@ final class WMPMainView: NSView {
         guard let target else { beginWindowDrag(event); return }
         capturedTarget = target
         notify(interaction.press(target))
-        onScriptEvent?("mousedown", target.nodeID)
+        onScriptEvent?("mousedown", target.nodeID, target.stableID)
         window?.makeFirstResponder(self)
         if case .beginScan = target.action { onAction?(target.action!, nil) }
         if isSlider(target) { performSlider(target, event: event) }
@@ -175,12 +178,12 @@ final class WMPMainView: NSView {
         let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
         let result = interaction.release(over: target)
         notify(result.changed)
-        onScriptEvent?("mouseup", capturedTarget?.nodeID)
+        onScriptEvent?("mouseup", capturedTarget?.nodeID, capturedTarget?.stableID)
         defer { capturedTarget = nil }
         guard let capturedTarget else { return }
         if case .beginScan = capturedTarget.action { onAction?(.endScan, nil); return }
         guard result.activated == capturedTarget.stableID else { return }
-        onScriptEvent?("click", capturedTarget.nodeID)
+        onScriptEvent?("click", capturedTarget.nodeID, capturedTarget.stableID)
         guard let action = capturedTarget.action,
               action != .seek, action != .volume, action != .balance else { return }
         onAction?(action, nil)
@@ -207,7 +210,7 @@ final class WMPMainView: NSView {
         }
         if event.keyCode == 49 || event.keyCode == 36 {
             if let action = target.action { onAction?(action, nil) }
-            else { onScriptEvent?("click", target.nodeID) }
+            else { onScriptEvent?("click", target.nodeID, target.stableID) }
             return
         }
         if [123, 124, 125, 126].contains(event.keyCode), target.kind.lowercased().contains("slider") {
@@ -273,7 +276,7 @@ final class WMPMainView: NSView {
             widgetValues[target.stableID] = value
             onElementValueChanged?(target.stableID, target.nodeID, value)
         }
-        onScriptEvent?("change", target.nodeID)
+        onScriptEvent?("change", target.nodeID, target.stableID)
     }
 
     private func synchronizeWidgetViews(_ widgets: [WMPWidget]) {

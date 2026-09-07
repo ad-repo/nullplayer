@@ -20,7 +20,11 @@ final class WMPPlaylistSurfaceView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.08, alpha: 0.9).setFill(); dirtyRect.fill()
+        // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
+        // itself — here the whole 596x468 window arrives as {{-269, -26}, {596, 468}} in this
+        // view's coordinates — and a layer-backed view does not clip it (`masksToBounds` is
+        // false). Filling it painted this surface's translucent wash over the entire skin.
+        NSColor(calibratedWhite: 0.08, alpha: 0.9).setFill(); bounds.fill()
         let visibleRows = max(1, Int(bounds.height / rowHeight))
         for index in firstVisibleIndex..<min(snapshot.playlistItems.count, firstVisibleIndex + visibleRows) {
             let rect = NSRect(x: 0, y: CGFloat(index - firstVisibleIndex) * rowHeight,
@@ -145,7 +149,11 @@ final class WMPEffectsSurfaceView: NSView {
     func updateSpectrum(_ levels: [Float]) { self.levels = levels; needsDisplay = true }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.04, alpha: 0.9).setFill(); dirtyRect.fill()
+        // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
+        // itself — here the whole 596x468 window arrives as {{-269, -26}, {596, 468}} in this
+        // view's coordinates — and a layer-backed view does not clip it (`masksToBounds` is
+        // false). Filling it painted this surface's translucent wash over the entire skin.
+        NSColor(calibratedWhite: 0.04, alpha: 0.9).setFill(); bounds.fill()
         guard !levels.isEmpty else { return }
         let count = min(32, levels.count), width = bounds.width / CGFloat(count)
         NSColor.systemGreen.setFill()

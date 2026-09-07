@@ -25,6 +25,40 @@ final class WMPScriptRuntimeTests: XCTestCase {
         return try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive(entries))
     }
 
+    /// A `.wmz` is free to leave a control unnamed, and Corona does: the button that switches it to
+    /// its compact view is a bare `<BUTTON onClick="ToggleSuperCompact();">`. Dispatch filtered on
+    /// the authored `id` and read a missing one as "no filter", so one click on that button ran
+    /// **every** `onClick` in the view — the file dialog, both drawers and the view switch — leaving
+    /// the skin in a compact view that renders like the player and is persisted across launches.
+    /// Reported as "the playlist and eq drawers no longer open"; measured live as
+    /// `event name=click target=nil handlers=16`.
+    func testAnUnnamedNodeDispatchesOnlyItsOwnHandler() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <BUTTON id="named" left="0" top="0" width="10" height="10" onClick="named();"/>
+            <BUTTON left="20" top="0" width="10" height="10" onClick="unnamed();"/>
+            <BUTTON left="40" top="0" width="10" height="10" onClick="other();"/>
+        </VIEW></THEME>
+        """)
+        func node(_ match: (WMPNode) -> Bool) throws -> WMPNode {
+            try XCTUnwrap(skin.graph.allNodes.first(where: match))
+        }
+        let unnamed = try node { $0.xmlID == nil && $0.attributes.contains {
+            $0.name.caseInsensitiveCompare("onClick") == .orderedSame } }
+        let named = try node { $0.xmlID == "named" }
+
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "click", targetID: nil,
+                                                        targetStableID: unnamed.stableID, viewID: "main"),
+                       ["unnamed();"], "an unnamed node must dispatch its own handler alone")
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "click", targetID: "named",
+                                                        targetStableID: named.stableID, viewID: "main"),
+                       ["named();"])
+        // View-scoped events still fan out on purpose: `load`, `timer` and the playstate events
+        // depend on it, so a nil target must keep meaning "the whole view".
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "click", targetID: nil,
+                                                        viewID: "main").count, 3)
+    }
+
     func testCompatibilityTableIsClosedAndChecked() {
         XCTAssertTrue(WMPJScriptCompatibility.supports(object: "controls", member: "play"))
         XCTAssertTrue(WMPJScriptCompatibility.supports(object: "theme", member: "currentViewID"))
@@ -393,7 +427,7 @@ final class WMPScriptRuntimeTests: XCTestCase {
         let view = WMPMainView(frame: window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 20, height: 20))
         window.contentView = view; view.present(image, scene: scene)
         var events: [String] = []
-        view.onScriptEvent = { name, target in events.append("\(name):\(target ?? "-")") }
+        view.onScriptEvent = { name, target, _ in events.append("\(name):\(target ?? "-")") }
         let down = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 10, y: 10),
             modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
             eventNumber: 1, clickCount: 1, pressure: 1))
