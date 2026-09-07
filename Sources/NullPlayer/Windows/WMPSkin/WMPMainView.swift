@@ -32,7 +32,17 @@ final class WMPMainView: NSView {
             let yScale = bounds.height / scene.canvasSize.height
             setNeedsDisplay(NSRect(x: dirtyBounds.x * xScale, y: dirtyBounds.y * yScale,
                                    width: dirtyBounds.width * xScale, height: dirtyBounds.height * yScale))
-        } else { needsDisplay = true }
+        } else {
+            needsDisplay = true
+            // A `.wmz` window is shaped by its own artwork: Corona's player block occupies the
+            // right 346 of a 596-wide view and the rest is transparent, because that is where its
+            // playlist pane slides in. AppKit caches a borderless window's shadow from the content
+            // it first drew — which here is the *opaque* unskinned player the controller shows
+            // first — so without this the skin sits inside a full-rectangle drop shadow that reads
+            // as a dark box around it. Only on a full present: a dirty-rect repaint (hover, a
+            // moving slider) cannot change the silhouette, and invalidating per frame is expensive.
+            window?.invalidateShadow()
+        }
         setAccessibilityChildren(nil)
     }
 
