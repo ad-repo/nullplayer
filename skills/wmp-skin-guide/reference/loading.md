@@ -16,6 +16,54 @@ unknowable.
 
 Never relax a limit to make a skin load.
 
+That rule is about the skin, not about the bound. A bound whose *shape* is wrong for the format is a
+defect in the bound, and widening it is a fix rather than a relaxation — but only when the guard it
+was standing in for is still standing. The test to apply is: name what the bound protects against,
+then show that something else still provides that protection at the new value. `imageDimension` is
+the worked example; see below.
+
+## The image bounds: an area guard and an axis sanity check
+
+`WMPPhase0Limits.imagePixels` (32 Mpx) is the memory guard. It is what bounds an allocation, it is
+checked everywhere an image is admitted — archive sniff, `WMPArchive`, `WMPImageStore`,
+`WMPMappingImage` — and `WMPImageStore` carries a decoded-bytes bound beside it.
+
+`WMPPhase0Limits.imageDimension` (32,768) is **not** a second memory guard. For anything remotely
+square the area bound binds first: an image 32,768 wide that also passes 32 Mpx is at most 976 tall.
+The axis bound exists only to keep `bytesPerRow` arithmetic far from overflow (32,768 x 4 = 128 KiB
+per row) and to reject a declared dimension that is nonsense on its face.
+
+It was 8,192, which is a texture-size number and the wrong shape for this format. A WMP slider,
+progress bar or volume control is authored as **one horizontal filmstrip of frames**, so a perfectly
+ordinary skin resource is thousands of pixels wide and a few dozen tall. Across the 180 installed
+archives exactly four images exceed 8,192 on an axis and all four are filmstrips:
+
+| skin | file | declared | area |
+|---|---|---|---|
+| `pharaoh` | `seek_steps.bmp` | 15990x20 | 320 Kpx |
+| `Nautical` | `vol_slider.bmp` | 9494x144 | 1.4 Mpx |
+| `The_Doobie_Brothers` | `vol_anim.bmp` | 9152x45 | 412 Kpx |
+| `Ice` | `Vid-set.bmp` | 9144x12 | 110 Kpx |
+
+The largest is three orders of magnitude under the area bound, so the old value was costing three
+skins their entire load and a fourth its only view while protecting nothing (`W33`). Reproduce the
+table by reading the BMP header of every `.bmp` entry in the corpus — 3,684 of them — and sorting by
+`max(width, height)`.
+
+Two details that cost time if rediscovered:
+
+* **`Nautical/vol_slider.bmp` is a GIF.** `GIF89a` magic, `.bmp` extension. The archive-level sniff
+  in `WMPPhase0ArchiveAuditor.auditContent` reads BMP headers only, so it never saw the file; the
+  rejection came later, from `WMPImageStore` asking ImageIO. That is why `Nautical` **loaded** and
+  then failed to rasterize its one view, and why counting rejections undercounted this code's reach
+  by one skin. Extension does not imply format anywhere in this corpus.
+* **The fixtures pin the two bounds separately.** `oversized-image.wmz` is 8193x8193 and is rejected
+  by the *area* bound — it stopped exercising the axis bound entirely when the axis bound moved, and
+  kept passing, which is the shape of a test that has quietly stopped testing anything.
+  `oversized-image-axis.wmz` (32769x10, 328 Kpx) is the axis-bound case, and
+  `filmstrip-image.wmz` (15990x20) is the admitted case that fails if anyone narrows the bound back
+  toward a texture size.
+
 ## Text decoding — `WMPTextDecoder`
 
 Order: UTF-8 BOM, UTF-16LE BOM, UTF-16BE BOM, **BOM-less UTF-16 sniff**, UTF-8, Windows-1252.
@@ -179,8 +227,9 @@ across six skins fail `WMP0032` because their size is computed in script. A skin
 nothing is indistinguishable from a rejection to anyone using the app — which is why `WMP_TASKS.md`
 Tier 1 did not empty when the loader stopped rejecting. Load level is a floor, never a result.
 
-On the 180-archive corpus at rev `0c63320b` that floor holds at **177 of 180 loading and 508 views
+On the 180-archive corpus at rev `9939e871` that floor holds at **180 of 180 loading and 515 views
 laying out**, with **12** skins still loading and drawing nothing — every one of them `WMP0032`,
-which is now the only cause left. The three remaining rejections are all `WMP0015` (`WMP_TASKS.md`
-W33), and a fourth `WMP0015` costs `Nautical` its only view *after* the skin loads, so a rejection
-count is not the whole of that code's reach either.
+which is now the only cause left. **There are no rejections left in the corpus at all**, which
+raises the stakes on the paragraph above rather than lowering them: load level is now a constant,
+and every remaining defect is a rendering or runtime one that only a dumped PNG or a `SCRIPT-DIAG`
+line can see. `WMP0015` was the last rejecting code and it went with W33.

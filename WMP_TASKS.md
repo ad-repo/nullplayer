@@ -16,8 +16,14 @@ reproducible by a command recorded next to it.
 
 **Reach numbers below are `scripts/wmp_skin_census.sh` output, measured 2026-09-07 at rev
 `1d7e63bd` over the 180 archives in `WMPSkins/`.** Reproduce with
-`scripts/wmp_skin_census.sh /tmp/wmp/census`. **177 of 180 load, and 508 views lay out**, re-measured
-at rev `0c63320b` after W32; a row below that still cites 175/506 or 171/482 was not re-measured then.
+`scripts/wmp_skin_census.sh /tmp/wmp/census`. **180 of 180 load, and 515 views lay out**, re-measured
+at rev `9939e871` after W33; a row below that still cites 177/508, 175/506 or 171/482 was not
+re-measured then.
+
+**There are no loading rejections left in the corpus.** Load level is now a constant, so it can no
+longer rank anything: every entry below is a rendering or runtime defect, and only a dumped PNG or a
+`SCRIPT-DIAG` line can see one. A row whose evidence is a census column is by that fact measuring
+structure, not result.
 
 Numbers taken before rev `61f8955a` were measured with an instrument that dropped three blocks of
 its own output (W35), so a count from an earlier capture is short by an unknown amount rather than
@@ -30,15 +36,10 @@ deleted; five *name*-similar pairs (`Ginger Man`/`Ginger_man`, `QuickSilver`/`(2
 `Project Gotham Racing 2`/`(1)`, `The Unit`/`TheUnit`) are different releases of the same skin with
 differing `.wms` and `.js`, and are kept deliberately as separate test cases.
 
-## Tier 1 — loading, and views that load then draw nothing (177 of 180 archives load)
+## Tier 1 — views that load and then draw nothing (all 180 archives load)
 
-### 1a. The 3 rejections
-
-W33 is the whole of this tier now that W32 has closed.
-
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W33 | `WMP0015` oversized image | **3 of 3 rejections, plus 1 view** | `Ice`, `pharaoh`, and `The_Doobie_Brothers`, which reached this only once W30 stopped rejecting it earlier: `vol_anim.bmp` declares 9152×45, past the 8,192 bound. A filmstrip that wide is an ordinary WMP authoring idiom, so check what the bound is protecting against a *strip* before widening it — 9152×45 is 412 Kpx, nowhere near the 32 Mpx area bound that sits beside it. W32 added a fourth case that is **not** a rejection and so is easy to miss: `Nautical` loads, lays its one view out, and then fails to rasterize it on `vol_slider.bmp` at 9494×144 — same idiom, same bound, one `RENDER-DUMP … FAILED`. Whatever widens the bound should be measured against all four. |
+Tier 1a held the loading rejections and is **empty**: W33 closed the last of them and moved to the
+archive. Nothing goes back in this tier unless a *new* archive is rejected.
 
 ### 1b. Views that load and then draw nothing
 
@@ -46,9 +47,9 @@ Still the largest single class, and indistinguishable from a rejection to anyone
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W6 | A view whose size is computed in script must still lay out | **86 views across 47 skins** (`WMP0032`), re-measured at rev `0c63320b` | "View requires positive literal width and height for static layout." **12 skins load and produce zero layouts** (`aoe`, `bluegrid`, `cerulean`, `circle`, `claw`, `cyberchannel`, `Darkling`, `digitaldj`, `iconic`, `Miniplayer`, `Radio`, `YIL!OMA2K`) — 17 before W7 landed, then 11, then 12 as W30 let `cyberchannel` in far enough to reach this. It is now the **only** cause left of a skin that loads and draws nothing, and the count keeps rising as the remaining rejections clear: a probe cannot see a defect in a skin it rejects, and W31 alone added two views (`Need_for_Speed_Underground/mediaSwitcherView`, `controlView`) and one skin. W32 moved neither number: both archives it admitted lay their views out. Phase 4 work; ranked in Tier 1 because it is a total blackout. |
+| W6 | A view whose size is computed in script must still lay out | **89 views across 48 skins** (`WMP0032`), re-measured at rev `9939e871` | "View requires positive literal width and height for static layout." **12 skins load and produce zero layouts** (`aoe`, `bluegrid`, `cerulean`, `circle`, `claw`, `cyberchannel`, `Darkling`, `digitaldj`, `iconic`, `Miniplayer`, `Radio`, `YIL!OMA2K`) — 17 before W7 landed, then 11, then 12 as W30 let `cyberchannel` in far enough to reach this. It is now the **only** cause left of a skin that loads and draws nothing, and the count rose every time the remaining rejections cleared: a probe cannot see a defect in a skin it rejects. W31 alone added two views (`Need_for_Speed_Underground/mediaSwitcherView`, `controlView`) and one skin; W32 moved neither number, since both archives it admitted lay their views out; W33 added **3 views and 1 skin**, all of them `pharaoh` (3 of its 4 views fail; `Ice` and `The_Doobie_Brothers` lay every view out). That inflation is over — there are no rejections left to clear, so from rev `9939e871` this count only moves when the defect itself does. Phase 4 work; ranked in Tier 1 because it is a total blackout. |
 | W34 | `WMP0033` image decode failed | 4 views, 4 skins | |
-| W8 | A view draws its transparency key instead of keying it out | **23 views across 21 skins** | Re-measured at rev `1d7e63bd` by counting opaque `#FF00FF` in every dumped PNG, not by reading a census column — a structural probe cannot see this. Worst: `Plus! Mecha/mediaSwitcherView` 44.6%, `Main_Street/mini` 40.5%, `Plus! Professional/mediaSwitcherView` 33.1%, `polygon/view-2` 33.0%, `deepbluesomething/MainPlayer` 31.8%, `Ducky/view-2` 28.3%; threshold 5% of view area. `Alpine7618_v09/view-2` was the first case found and is below that threshold. Class B, and much larger than the single skin it was filed as. |
+| W8 | A view draws its transparency key instead of keying it out | **37 views across 34 skins** | Re-measured at rev `9939e871` over all 515 dumped PNGs by counting *opaque* key-coloured pixels, not by reading a census column — a structural probe cannot see this, because a view that draws its key is structurally perfect. Threshold 5% of view area. **The key is not always magenta**, which is why the previous figure of 23 views across 21 skins was short by a third: scanning `#FF00FF` **and** `#FF0000` separately finds **11 views that are pure red with no magenta at all**. Worst overall: `v2_underworld/start` 74.7% red, `Cubist/view-2` 54.2% red, `pharaoh/view-2` 51.0% red, `The_Doobie_Brothers/view-2` 50.4% magenta, `Plus! Mecha/mediaSwitcherView` 44.6%, `Main_Street/mini` 40.5%, `Plus! Professional/mediaSwitcherView` 33.1%, `polygon/view-2` 33.0%, `gadget/view-2` 32.8% red, `Tomb Raider 2/view-2` 32.0% red. `Alpine7618_v09/view-2` was the first case found and is below the threshold. W33 added three of these (`pharaoh`, `The_Doobie_Brothers`, `Ice`) by admitting the skins at all. Do not hard-code the two colours into the fix or the next measurement — the key is whatever the markup declares. Class B, and far larger than the single skin it was filed as. |
 | W9 | `Official_Xbox_XP` paints an opaque black `VIDEO` placeholder over its own art | 1 skin measured | `census/png/Official_Xbox_XP/mainBox@1x.png`. Fixed by Phase 5's hosted video surface. |
 
 ## Tier 1c — live-reported, 2026-09-07, not yet reproduced headlessly

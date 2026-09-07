@@ -25,7 +25,21 @@ enum WMPPhase0Limits {
     static let wrapperDirectories = 1
     static let xmlDepth = 256
     static let xmlNodes = 100_000
-    static let imageDimension = 8_192
+    /// A per-axis sanity ceiling, not the memory guard. `imagePixels` below is what bounds an
+    /// allocation, and it binds first for anything square: a 32,768-wide image that also satisfies
+    /// the 32 Mpx area bound is at most 976 tall. The axis bound exists to keep `bytesPerRow`
+    /// arithmetic far from overflow (32,768 x 4 = 128 KiB per row) and to reject a declared
+    /// dimension that is nonsense on its face.
+    ///
+    /// It was 8,192, which is a texture-size number and the wrong shape for this format: a WMP
+    /// slider or progress bar is authored as one horizontal filmstrip of frames, so a legitimate
+    /// skin resource is routinely thousands of pixels wide and a few dozen tall. Across the 180
+    /// installed archives exactly four images exceed 8,192 on an axis and all four are filmstrips
+    /// — `pharaoh/seek_steps.bmp` 15990x20, `Nautical/vol_slider.bmp` 9494x144 (a GIF named
+    /// `.bmp`), `The_Doobie_Brothers/vol_anim.bmp` 9152x45 and `Ice/Vid-set.bmp` 9144x12. The
+    /// largest is 412 Kpx, three orders of magnitude under the area bound, so the old value was
+    /// costing three skins their whole load and a fourth its only view while protecting nothing.
+    static let imageDimension = 32_768
     static let imagePixels: UInt64 = 32_000_000
     static let scriptBytes: UInt64 = 4 * 1_024 * 1_024
     static let expressionDependencyDepth = 128

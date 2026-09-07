@@ -156,8 +156,21 @@ def main() -> None:
     archive("deep-xml.wmz", [("deep.wms", deep.encode(), False)], stored=True)
     many_nodes = "<?xml version=\"1.0\"?><THEME>" + "<TEXT/>" * 100001 + "</THEME>"
     archive("excess-xml-nodes.wmz", [("nodes.wms", many_nodes.encode(), False)], stored=True)
+    # 8193x8193 is 67 Mpx, so this one is rejected by WMPPhase0Limits.imagePixels (32 Mpx). It no
+    # longer exercises the per-axis bound at all — that moved to 32,768 when W33 closed — which is
+    # why the two fixtures below exist. Keep all three: they pin the two bounds separately and the
+    # shape that must be *admitted* between them.
     archive("oversized-image.wmz", [("skin.wms", simple.encode(), False),
                                      ("huge.bmp", bmp(1, 1)[:18] + struct.pack("<ii", 8193, 8193) + bmp(1, 1)[26:], False)])
+    # 32769x10 is 328 Kpx, far under the area bound, so only WMPPhase0Limits.imageDimension can
+    # reject it. Without this the per-axis bound has no test.
+    archive("oversized-image-axis.wmz", [("skin.wms", simple.encode(), False),
+                                          ("wide.bmp", bmp(1, 1)[:18] + struct.pack("<ii", 32769, 10) + bmp(1, 1)[26:], False)])
+    # The idiom W33 was costing four skins: one horizontal filmstrip of slider frames. These are the
+    # real dimensions of pharaoh/seek_steps.bmp, the widest image in the 180-archive corpus. It must
+    # load, and a regression that narrows the axis bound back toward a texture size fails here.
+    archive("filmstrip-image.wmz", [("skin.wms", simple.encode(), False),
+                                     ("seek_steps.bmp", bmp(1, 1)[:18] + struct.pack("<ii", 15990, 20) + bmp(1, 1)[26:], False)])
     archive("oversized-script.wmz", [("skin.wms", simple.encode(), False),
                                       ("huge.js", b" " * (4 * 1024 * 1024 + 1), False)])
 

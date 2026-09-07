@@ -124,6 +124,7 @@ final class WMPArchiveTests: XCTestCase {
             ("excess-entry-bytes.wmz", .entryTooLarge),
             ("excess-archive-bytes.wmz", .totalSizeExceeded),
             ("oversized-image.wmz", .oversizedImage),
+            ("oversized-image-axis.wmz", .oversizedImage),
             ("oversized-script.wmz", .oversizedScript), ("crc-corrupt.wmz", .crcMismatch)
         ]
         for (name, expected) in archiveCases {

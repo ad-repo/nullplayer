@@ -17,7 +17,7 @@ final class WMPPhase0ArchiveTests: XCTestCase {
         XCTAssertEqual(WMPPhase0Limits.wrapperDirectories, 1)
         XCTAssertEqual(WMPPhase0Limits.xmlDepth, 256)
         XCTAssertEqual(WMPPhase0Limits.xmlNodes, 100_000)
-        XCTAssertEqual(WMPPhase0Limits.imageDimension, 8_192)
+        XCTAssertEqual(WMPPhase0Limits.imageDimension, 32_768)
         XCTAssertEqual(WMPPhase0Limits.imagePixels, 32_000_000)
         XCTAssertEqual(WMPPhase0Limits.scriptBytes, 4 * 1_024 * 1_024)
         XCTAssertEqual(WMPPhase0Limits.expressionDependencyDepth, 128)
@@ -33,6 +33,18 @@ final class WMPPhase0ArchiveTests: XCTestCase {
         for name in ["widgets.wmz", "wrapper-directory.wmz", "two-view.wmz"] {
             XCTAssertNoThrow(try WMPPhase0ArchiveAuditor.audit(url: fixtures.appendingPathComponent(name)), name)
         }
+    }
+
+    /// The half of the image bounds that is easy to lose: a WMP slider or progress bar is authored
+    /// as one horizontal filmstrip of frames, so a legitimate resource is thousands of pixels wide
+    /// and a few dozen tall. An axis bound set to a texture size rejects the idiom while protecting
+    /// nothing — 15990x20 is 320 Kpx against a 32 Mpx area bound — and it cost `pharaoh`, `Ice` and
+    /// `The_Doobie_Brothers` their whole load and `Nautical` its only view (W33). `imagePixels`
+    /// stays the memory guard and `oversized-image-axis.wmz` pins the axis bound above.
+    func testFilmstripImageIsAdmittedByBothImageBounds() {
+        XCTAssertNoThrow(try WMPPhase0ArchiveAuditor.audit(
+            url: fixtures.appendingPathComponent("filmstrip-image.wmz")))
+        XCTAssertNoThrow(try WMPArchive(url: fixtures.appendingPathComponent("filmstrip-image.wmz")))
     }
 
     func testEncodingFixturesCarryExpectedBOMs() throws {
@@ -56,6 +68,7 @@ final class WMPPhase0ArchiveTests: XCTestCase {
             ("deep-xml.wmz", .xmlDepthExceeded),
             ("excess-xml-nodes.wmz", .xmlNodeLimitExceeded),
             ("oversized-image.wmz", .oversizedImage),
+            ("oversized-image-axis.wmz", .oversizedImage),
             ("oversized-script.wmz", .oversizedScript),
             ("crc-corrupt.wmz", .crcMismatch),
         ]
