@@ -10,7 +10,6 @@ assemble_app() {
     # Derive subdirectories from the bundle path
     local CONTENTS_DIR="$APP_BUNDLE/Contents"
     local MACOS_DIR="$CONTENTS_DIR/MacOS"
-    local HELPERS_DIR="$CONTENTS_DIR/Helpers"
     local FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
     local RESOURCES_DIR="$CONTENTS_DIR/Resources"
     local HOMEBREW_REF_PATTERN='^(/opt/homebrew|/usr/local)/'
@@ -40,7 +39,6 @@ assemble_app() {
     log_info "Creating app bundle structure..."
     rm -rf "$APP_BUNDLE"
     mkdir -p "$MACOS_DIR"
-    mkdir -p "$HELPERS_DIR"
     mkdir -p "$FRAMEWORKS_DIR"
     mkdir -p "$RESOURCES_DIR"
 
