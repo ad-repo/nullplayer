@@ -25,6 +25,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `projectm-milkdrop`: MilkDrop; `metal-gotchas`: Metal rules
 - `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode
+- `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs
 
 ## Architecture
 

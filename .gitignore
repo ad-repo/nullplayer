@@ -75,3 +75,5 @@ Frameworks/libprojectM-4.4.dylib
 # opencode agent workspace (contains node_modules)
 .opencode/
 .dual-graph/
+skills/skin-screenshots/scripts/winhelper
+skills/skin-screenshots/scripts/.raw/
