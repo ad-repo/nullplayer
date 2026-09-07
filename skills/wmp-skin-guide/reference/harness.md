@@ -266,3 +266,29 @@ in a skin it rejects, and neither can you:
 Both were found by *looking at the PNGs*. The census reports both skins as clean loads with resolved
 bitmaps, which is exactly the blind spot the harness notes warn about: a structural probe says a node
 exists, never that it is drawn right.
+
+## After Phase 3 (180-archive corpus, rev `c8a843e4`)
+
+The script runtime became one persistent `JSContext` per skin session. Loading did not change and
+was not expected to; what changed is what runs after it. The census's default pass now drives each
+view's own `onLoad`, the way the app does — a harness that skipped it was measuring a skin nobody
+sees.
+
+| | rev `ada068ff` | rev `c8a843e4` |
+|---|---|---|
+| archives loaded | 171 of 180 | 171 of 180 |
+| views laid out | 482 | 482 |
+| paint commands | 9,120 | **9,186** |
+| widgets | 1,396 | **1,436** |
+| unresolved nodes | 2,393 | **2,352** |
+| `expression-error` corpus-wide | every expression in most skins | **1**, plus 8 `invalid-geometry` |
+| distinct `UNRECOGNISED` members | (not comparable — measured statically) | **6** |
+
+`compare`: **442 images identical, 40 differing, none lost, none new.** Every difference is script
+state now being applied, and they were looked at rather than counted: `Plus! Aquarium/view-2` went
+from a **blank page** to the whole skin; `WoW/videoView` gained the logo its `onLoad` sets;
+`Grinch/view-2` and `Plus! SlimLine/perfectVSkin` *lost* pixels because their scripts hide a video
+pane and a stray close box when nothing is playing, which is what WMP does.
+
+The remaining 228 handler errors are ranked in `WMP_TASKS.md`, and 102 of them are one missing host
+object (`mediacenter`).

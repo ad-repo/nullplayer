@@ -408,9 +408,10 @@ final class WMPObjectModel {
     /// `svPlaylist.moveTo(…)` reads as an empty string, fails with a bare `TypeError`, and the
     /// method never appears in the demand tally that ranks the work.
     static let elementMethodVocabulary: Set<String> = [
-        "moveto", "resizeto", "show", "hide", "close", "minimize", "maximize", "appenditem",
-        "removeallitems", "removeitem", "deleteitem", "getitem", "selectitem", "setcolumnresizemode",
-        "setfocus", "invoke", "click", "play", "stop", "next", "previous"
+        "moveto", "resizeto", "alphablendto", "show", "hide", "close", "minimize", "maximize",
+        "appenditem", "removeallitems", "removeitem", "deleteitem", "getitem", "selectitem",
+        "setcolumnresizemode", "setcolumnwidth", "setfocus", "invoke", "click", "play", "stop",
+        "next", "previous"
     ]
 
     /// `PLAYLIST`, `DROPDOWNPLAYLIST` and the `ITEMSPLAYLIST` the corpus actually ships — the last

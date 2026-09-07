@@ -48,44 +48,40 @@ Still the largest single class, and indistinguishable from a rejection to anyone
 | W8 | A view draws its transparency key instead of keying it out | **23 views across 21 skins** | Re-measured at rev `1d7e63bd` by counting opaque `#FF00FF` in every dumped PNG, not by reading a census column — a structural probe cannot see this. Worst: `Plus! Mecha/mediaSwitcherView` 44.6%, `Main_Street/mini` 40.5%, `Plus! Professional/mediaSwitcherView` 33.1%, `polygon/view-2` 33.0%, `deepbluesomething/MainPlayer` 31.8%, `Ducky/view-2` 28.3%; threshold 5% of view area. `Alpine7618_v09/view-2` was the first case found and is below that threshold. Class B, and much larger than the single skin it was filed as. |
 | W9 | `Official_Xbox_XP` paints an opaque black `VIDEO` placeholder over its own art | 1 skin measured | `census/png/Official_Xbox_XP/mainBox@1x.png`. Fixed by Phase 5's hosted video surface. |
 
-## Tier 2 — the script runtime cannot hold state (Phase 3)
+## Tier 2 — the script runtime, after Phase 3
 
-**Ranked host-member demand, measured over the 180-archive corpus** (`UNKNOWN member` tallies from
-`WMP_CALL_TRACE=1`). This list *is* the Phase 3 backlog; work it top-down and re-measure after every
-change, because each member added lets the scripts run further and surfaces the next one.
+The runtime is one persistent `JSContext` per skin session with a native Swift object model
+(`skills/wmp-skin-guide/reference/object-model.md`). **Everything below is re-measured at rev
+`c8a843e4` over the 180-archive corpus**, with the harness now driving each view's own `onLoad` the
+way the app does. Reproduce with `scripts/wmp_skin_census.sh /tmp/wmp/census` and rank the
+`SCRIPT-DIAG [handler-error]` lines in `render.txt`; the pre-Phase-3 table that stood here was
+measured against a runtime that could not run a handler to its second statement, and every number in
+it is void.
 
-| Member | Skins | | Member | Skins |
-|---|---|---|---|---|
-| `view.close` | 148 | | `theme.savePreference` | 92 |
-| `player.openState` | 145 | | `metadata.textWidth` | 91 |
-| `player.currentMedia.imageSourceWidth` | 144 | | `metadata.scrolling` | 91 |
-| `player.launchURL` | 121 | | `theme.loadPreference` | 90 |
-| `view.returnToMediaCenter` | 116 | | `player.currentMedia.imageSourceHeight` | 90 |
-| `view.minimize` | 115 | | `metadata.width` | 90 |
-| `eq.reset` | 112 | | `eq.previousPreset` | 88 |
-| `metadata.value` | 98 | | `theme.openView` | 85 |
-| `player.URL` | 95 | | `view.size` | 81 |
-| `theme.openDialog` | 93 | | `player.controls.isAvailable` | 80 |
-| `eq.nextPreset` | 93 | | `theme.closeView` | 79 |
-| `eq.currentPresetTitle` | 93 | | `mediacenter.effectType` / `.effectPreset` | 73 each |
+Corpus effect of the change: **228 handler errors remain, from a state where Corona's `OnLoad` could
+not reach its second line**; expressions are now essentially solved — **1 `expression-error` and 8
+`invalid-geometry` across all 482 views**. Commands drawn 9,120 → **9,186**, widgets 1,396 →
+**1,436**, unresolved nodes 2,393 → **2,352**, and 40 of 482 dumped PNGs changed with **none lost and
+none blank** (`scripts/wmp_render_sweep.sh compare`).
 
-`vidset.brightness` / `.contrast` / `.hue` / `.saturation` (52–64 each) and `player.settings.volume`
-(56) follow. Note `metadata.*` and `vidset.*` are **element-id globals**, not host objects — more
-evidence for the "every element id is a global" contract.
+### 2a. What still stops a handler, ranked by skins
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W20 | One persistent `JSContext` per skin session, replacing the fresh-process-per-transaction model | all skins ship JScript; `script_runtime=available` on all 158 measured | Retire `Sources/WMPScriptIsolationHelper/` and its `Package.swift`/`assemble_app.sh`/packaging-check wiring **in the same change**. |
-| W21 | The probe pass evaluates expressions with no scripts loaded | Corona: every `eq*.left` fails `ReferenceError: Can't find variable: GetEqSliderLeft` | `WMPPhase5Session.transact` sends `scripts: []` in its topology probe, and one failure empties the whole ordered list, so **no** expression evaluates. |
-| W22 | `theme.loadString` | Corona `OnLoad` aborts on it | The first member that actually stops a handler. |
+| W37 | `mediacenter` is not a host object | **102 of 171 loading skins** | `ReferenceError: Can't find variable: mediacenter`. By far the largest single cause left, and it is one object: the corpus reads `mediacenter.effectType`/`.effectPreset` (73 each) and calls into it from `onLoad`. Decide what it can honestly answer before implementing — a recognised-but-stubbed object here would be invisible in the tally, which is the trap `INERT` exists for. |
+| W38 | `alphaBlendTo` on an element | **~18 skins** (`vidBack` 14, `timeColon` 4, `mainBack2` 2, …) | The third of WMP's element animation methods beside `moveTo`/`resizeTo`, which are implemented as immediate endpoints; the same treatment applies — set the alpha now, track the tween as rendering work. It is already in `elementMethodVocabulary`, so it reports as `UNRECOGNISED` demand rather than dying as a bare `TypeError`. Same for `setColumnWidth` (2 skins). |
+| W39 | `eq.speakerSize` | 18 skins | Plus `eq.enableSplineTension` and `eq.enhancedAudio` at 1 each. WMP's speaker/spatial settings; the engine has no equivalent, so this is an honest `inert()` candidate rather than a feature. |
+| W40 | An element the skin names is in another view | 4 + 2 + 2 skins | `Can't find variable: pl`, `playlistframe.setColumnResizeMode (no such element)`, `pl.setColumnWidth`. Handlers are now scoped per view, but a script's *globals* are the current view's elements only. Find out what WMP does with a cross-view reference before choosing. |
+| W41 | `theme.closeView` | 5 skins | Also `player.currentMedia.sourceURL` (4). Both are small and both are real. |
+| W42 | A skin function is missing because its program never registered | ~12 skins, 1–2 each | `skin_init`, `loadVidPrefs`, `UpdateMetaData`, `checkForContent`, `Init`, `gears`… Each is one skin's own function, so the cause is upstream: a `.js` that failed to resolve, evaluated with an error, or is a `res://` entry. Diagnose from `SCRIPT`/`SCRIPTS` lines before writing any object-model code. |
 
-### Unimplemented elements, same corpus
+### 2b. Recognised, answered, and nothing behind them (`INERT`)
 
-`effects` 150 · `videosettings` 87 · `customslider` 84 · `controls` 74 · `pauseelement` 66 ·
-`prevbutton` 47 · `playbutton` 47 · `nextbutton` 46 · `stopbutton` 44 · `currentpositiontext` 14 ·
-`itemsplaylist` 12 · `progressbar` 11 · `editbox` 10 · `listbox` 9 · `statustext` 7 · `mutebutton` 7.
-
-The four transport buttons are one cluster of ~45 skins each and are probably one fix.
+These do **not** stop a handler; they are the ranked list of "properties skins set that nothing
+renders", which is Phase 5 rendering work rather than runtime work. Top by skins:
+`playlist1.itemPlayingColor` / `.itemPlayingBackgroundColor` / `.disabledItemColor` (15 each),
+`vidback.alphaBlendTo` (14), `timeN.upToolTip` (10 each), the `playlist1.itemSelected*` family (9
+each). Full column: `inert_calls` in `census.tsv`.
 
 ## Tier 3 — drawing the skin's own controls (Phase 5)
 
@@ -95,6 +91,9 @@ Tracked in the recovery plan until the corpus loads and the census can rank thes
 
 | ID | Item | Landed |
 |---|---|---|
+| W20 | One persistent `JSContext` per skin session, replacing the fresh-process-per-transaction model | Phase 3 — `WMPScriptRuntime` + `WMPObjectModel`, with `Sources/WMPScriptIsolationHelper/` and its `Package.swift`/`assemble_app.sh`/signing/verification wiring retired in the same change, recorded as **Amendment 2** to the Phase 0 decision record including what the process boundary bought that is genuinely weaker now. Proven on Corona: `OnLoad` runs to completion (ten `eq.presetTitle`, ten `popupPreset.appendItem`, `ipl.setColumnResizeMode` ×3, `theme.loadPreference` ×3) with **zero** script diagnostics, and two clicks on `bPlaylist` open the playlist pane and then close it again — state held between events, which the old model could not do at all. |
+| W21 | The probe pass evaluated expressions with no scripts loaded | Phase 3 — expressions now run in the same context the skin's programs were evaluated in, so `JScript:GetEqSliderLeft(1)` resolves; a failing expression costs itself alone instead of emptying the ordered list, and a cycle costs only the keys inside it. Corpus-wide the whole class is down to **1 `expression-error` and 8 `invalid-geometry` across 482 views**. Three semantics came out of measuring rather than reasoning: the owning element is in scope (`svBottomLeft.width-left`), the `with` proxy must answer `has` only for properties the element genuinely owns (claiming every name swallowed `GetEqSliderLeft` and cost all ten equaliser sliders their geometry), and the corpus authors a trailing `;` inside the attribute. |
+| W22 | `theme.loadString` | Phase 3 — implemented as `inert()`: every corpus use names a string inside `wmploc.dll`, which does not exist on macOS, so the empty string is the whole of what can honestly be answered. It gets its own `INERT` word in the call trace and its own `inert_calls` census column, because a stub that reads as working is worse than a missing member. |
 | W10 | `WMP_SKIN=<path>` accepts a **directory**, sweeping the corpus in one process | Phase 1 |
 | W11 | The nine probe flags, documented canonically in `skills/wmp-skin-guide/reference/harness.md` | Phase 1 |
 | W12 | `scripts/wmp_skin_census.sh` and `scripts/wmp_render_sweep.sh` | Phase 1 — 14 rows, 18 PNGs, both halves of `compare` proven against a change that can be seen |
