@@ -23,7 +23,14 @@ extension WMPResourceProviding {
     /// Resolve like WMP: first relative to the declaring file, then from the skin root.
     func resolve(_ authoredPath: String, relativeTo declaringPath: String) throws -> String? {
         let value = authoredPath.replacingOccurrences(of: "\\", with: "/")
-        guard !value.isEmpty, !value.hasPrefix("/"), !value.contains(":"), !value.utf8.contains(0) else {
+        // An empty attribute names no entry, so it resolves to nothing — which is what every caller
+        // already means by "no such resource". It is an authoring omission, not a sandbox escape,
+        // and lumping it in with one cost 39 views across 36 skins: `WMPSceneBuilder` resolves
+        // resources while it walks, so a single `image=""` threw the whole view away and six skins
+        // drew nothing at all. `WMPSkinLoader` already warns `WMP0023 Optional image resource is
+        // empty` for the same attribute, so the diagnostic was never the thing that was missing.
+        guard !value.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        guard !value.hasPrefix("/"), !value.contains(":"), !value.utf8.contains(0) else {
             throw WMPFailure(WMPDiagnostic(.resourceEscapesProvider,
                 "Resource path '\(authoredPath)' is absolute, drive-qualified, or invalid."))
         }

@@ -117,6 +117,13 @@ final class WMPArchiveTests: XCTestCase {
         XCTAssertEqual(WMPSkinTestSupport.failureCode {
             try provider.resolve("../../escape", relativeTo: "views/main.wms") as Any
         }, .resourceEscapesProvider)
+        // An empty attribute names no entry: nothing to resolve, and nothing to reject. Throwing
+        // here is what killed 39 views across 36 corpus skins (W7).
+        XCTAssertNil(try provider.resolve("", relativeTo: "views/main.wms"))
+        XCTAssertNil(try provider.resolve("   ", relativeTo: "views/main.wms"))
+        XCTAssertEqual(WMPSkinTestSupport.failureCode {
+            try provider.resolve("C:/windows/win.ini", relativeTo: "views/main.wms") as Any
+        }, .resourceEscapesProvider)
     }
 
     private func code(_ paths: [String]) -> WMPDiagnosticCode? {

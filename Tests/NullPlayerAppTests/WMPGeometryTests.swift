@@ -129,4 +129,40 @@ final class WMPGeometryTests: XCTestCase {
         XCTAssertEqual(hit.action, .seek)
         XCTAssertEqual(WMPHitTester(hits: scene.hits).hitTest(WMPPoint(x: 80, y: 16))?.action, .seek)
     }
+
+    /// W7. `image=""` is an omission, not an escape, and it must cost that one image and nothing
+    /// else. It used to throw out of the scene walk and take the whole view with it: 39 views across
+    /// 36 corpus skins, six of which (`Beck`, `Melvin`, `MSN`, `Spider-man`, `springflower`,
+    /// `tubeframe`) drew literally nothing as a result. The warning was never missing — the loader
+    /// has always emitted `WMP0023 Optional image resource is empty` — only the survival was.
+    func testAnEmptyResourceAttributeCostsOneImageAndNotTheView() async throws {
+        let art = try WMPSkinTestSupport.encodedImage(width: 8, height: 8,
+            rgba: [UInt8](repeating: 255, count: 8 * 8 * 4), type: .bmp)
+        let xml = """
+        <THEME><VIEW id="main" width="100" height="80" backgroundImage="">
+          <SUBVIEW id="blank" left="0" top="0" width="20" height="20" backgroundImage=""/>
+          <SUBVIEW id="drawn" left="30" top="30" width="8" height="8" backgroundImage="art.bmp"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        XCTAssertTrue(skin.diagnostics.contains {
+            $0.code == .resourceMissing && $0.severity == .warning
+                && $0.message.contains("is empty")
+        }, "the empty attribute must still be reported: \(skin.diagnostics)")
+
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let byID = Dictionary(uniqueKeysWithValues: skin.graph.allNodes.compactMap { node in
+            node.xmlID.map { ($0, node.stableID) }
+        })
+        XCTAssertEqual(scene.geometries[byID["blank"]!]?.absoluteFrame,
+                       WMPRect(x: 0, y: 0, width: 20, height: 20))
+        XCTAssertEqual(scene.geometries[byID["drawn"]!]?.absoluteFrame,
+                       WMPRect(x: 30, y: 30, width: 8, height: 8))
+        XCTAssertTrue(scene.commands.contains { $0.stableID == byID["drawn"]! },
+                      "the sibling with real artwork must still be drawn")
+    }
 }

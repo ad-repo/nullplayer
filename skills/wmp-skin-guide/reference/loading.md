@@ -64,6 +64,14 @@ precisely where the Foundation error code does not.
 | `WMP0036` | tag left open at end of file | the node keeps its children and siblings, because a node is attached to its parent when it *opens* | 0 today |
 | — | unknown tag | stays in the graph as `.unknown(name)` for the compatibility report | see `COMPAT`/`UNKNOWN` lines |
 | `WMP0029` | `res://`, `file:`, `http(s):`, `activex:` resource | that one entry is skipped; a `scriptFile` list keeps its siblings (Corona's `res://wmploc.dll/RT_TEXT/#132` warns and its four real programs still register) | 15 |
+| `WMP0023` | an **empty** resource attribute (`image=""`) | it names no entry, so it resolves to nothing and that one image is skipped; the node and its view still lay out | 40 views, 36 skins (180-archive corpus) |
+
+The empty-resource row is the one entry here measured against the **180**-archive corpus, and it is
+in this table because it was not: an empty path was classified with absolute and drive-qualified
+paths and thrown as `WMP0024`, which is a sandbox rejection, and `WMPSceneBuilder` resolves resources
+as it walks — so one `image=""` discarded the entire view. It cost 40 views across 36 skins, six of
+which drew nothing at all. The loader had warned about the same attribute the whole time. **An
+authoring omission is not a sandbox escape**; keep the two apart when adding a resource check.
 
 All three duplicate values measured so far are *identical* on both spellings, so last-wins is
 currently invisible. The diagnostic names the discarded value precisely so the first case where they
@@ -110,3 +118,7 @@ All 14 archives load. Two of them (`claw`, `iconic`) still produce **zero** layo
 across six skins fail `WMP0032` because their size is computed in script. A skin that loads and draws
 nothing is indistinguishable from a rejection to anyone using the app — which is why `WMP_TASKS.md`
 Tier 1 did not empty when the loader stopped rejecting. Load level is a floor, never a result.
+
+On the 180-archive corpus at rev `61f8955a` that floor holds at 159 of 180 loading and 469 views
+laying out, with **11** skins still loading and drawing nothing — every one of them `WMP0032`, which
+is now the only cause left.
