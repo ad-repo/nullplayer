@@ -14,6 +14,17 @@ NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft
 
 No Winamp skins are distributed with the project
 
+### General Features
+
+- 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
+- Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
+- Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
+- Intelligent radio mix generation for all sources
+- Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
+- Sonos content filtering for unsupported lossless formats and improved playlist support
+- Drag-and-drop, macOS Now Playing integration, and [Discord Music Presence](https://github.com/ungive/discord-music-presence)
+- Headless CLI for querying libraries, playback, and routing to local outputs or cast devices, full color terminal cover art rendering
+
 ### Backend Support
 
 - Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, YouTube and local files
@@ -62,17 +73,6 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
 - **Audio Analysis** — Friture-style multi-pane window: Scope, Levels (peak/RMS), Spectrogram, Octave, Pitch, and Delay
 - **PeppyMeter** — skinnable analog VU meter (needle/bar) with 25 templates and a random auto-switch mode
 - **Flow** — live network throughput graph with selectable interface
-
-### General Features
-
-- 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
-- Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
-- Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
-- Intelligent radio mix generation for all sources
-- Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
-- Sonos content filtering for unsupported lossless formats and improved playlist support
-- Drag-and-drop, macOS Now Playing integration, and [Discord Music Presence](https://github.com/ungive/discord-music-presence)
-- Headless CLI for querying libraries, playback, and routing to local outputs or cast devices, full color terminal cover art rendering
 
 ### Agentic Development Support
 
