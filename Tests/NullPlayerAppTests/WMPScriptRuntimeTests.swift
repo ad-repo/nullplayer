@@ -239,6 +239,68 @@ final class WMPScriptRuntimeTests: XCTestCase {
         await session.teardown()
     }
 
+    /// The view's own timer is a *host* timer. Corona's compact view collapses its video panel
+    /// entirely through this — `RegisterTimerEvent` then `view.timerInterval = leastInterval` — and
+    /// its player view declares `timerInterval="4000"` in markup to drive its transport readouts.
+    /// Wiring `setTimeout` and not this left both views frozen with no diagnostic to say why.
+    func testWritingViewTimerIntervalPostsAHostTimerCommand() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60" timerInterval="0" onTimer="Tick();"/></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onLoad", targetID: "main", handlers: ["view.timerInterval = 50;"]))
+        XCTAssertTrue(output.hostCommands.contains {
+            $0.action == "setViewTimerInterval" && $0.value == .number(50)
+        })
+        XCTAssertEqual(WMPMainWindowController.authoredTimerInterval(in: skin, viewID: "main"), 0)
+        await session.teardown()
+    }
+
+    /// An element answers the geometry it is *drawn* at, not only what markup authored. Corona's
+    /// `ResizeY` animates `svVideo` to 0 and gives up on the first tick if it reads 0 to begin
+    /// with — which is what an authored-attributes-only model reports for an element sized by its
+    /// background bitmap.
+    func testElementGeometryAnswersTheLayoutTheSkinIsDrawnAt() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <SUBVIEW id="pane" left="0" top="0" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onLoad", targetID: "main", handlers: ["pane.top = pane.height;"]),
+            geometry: [pane.stableID: WMPRect(x: 0, y: 0, width: 10, height: 41)])
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: pane.stableID, property: "top")], 41,
+                       "the element answered its authored height instead of the drawn one")
+        await session.teardown()
+    }
+
+    /// `FILE_OPEN` is the only route to a track in WMP mode, because the auxiliary NullPlayer
+    /// windows stay hidden until they have WMP-owned chrome. It is inert on purpose: the picker is
+    /// main-actor work the script queue must not block on, so the skin's own `player.URL = newFile`
+    /// line does nothing and the host plays the result.
+    func testOpenDialogPostsAFileCommandAndIsCountedInert() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60"/></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "main",
+                         handlers: ["var f = theme.openDialog('FILE_OPEN', 'FILES_ALLMEDIA');"]))
+        XCTAssertTrue(output.hostCommands.contains { $0.action == "openFileDialog" })
+        // The member *read* that resolves the function is live; the call is what has nothing behind
+        // it, and that is the one the demand tally must show as inert.
+        let call = try XCTUnwrap(output.calls.first { $0.path == "theme.opendialog" && $0.kind == .invoke })
+        XCTAssertEqual(call.resolution, .inert)
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" })
+        await session.teardown()
+    }
+
     func testSessionDetectsDependencyCycleWithoutCommittingPartialGeometry() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="100" height="50"><SUBVIEW id="a" left="0" top="0"

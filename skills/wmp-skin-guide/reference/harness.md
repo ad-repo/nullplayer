@@ -47,13 +47,13 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 |---|---|---|
 | `WMP_SKIN` | file **or directory** | the archive(s) to measure — required |
 | `WMP_RENDER_DUMP` | directory | one PNG per view; per-skin subdirectory in a sweep |
-| `WMP_RENDER_PROBE` | `all` or a view id | `PROBE` — every drawn node's type, id, resolved frame, clip, z, paint and authored attributes |
+| `WMP_RENDER_PROBE` | `all` or a view id | `PROBE` — every drawn node's type, id, resolved frame, clip, z, paint and authored attributes; plus a `WIDGET` line per widget — the AppKit-hosted surfaces the scene image does **not** contain |
 | `WMP_RENDER_BITMAPS` | `1` | `BITMAPS` — resolved count and every path that failed to load, with `missing=` |
 | `WMP_RENDER_SCRIPTS` | `1` | `SCRIPTS`/`SCRIPT` — per program: bytes, declared handlers, and the runtime's availability |
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
 | `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]` | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after |
-| `WMP_RENDER_SETTLE` | seconds | pump the run loop, then drive the skin's `onTimer` handlers, before measuring |
+| `WMP_RENDER_SETTLE` | seconds | run the **view's own timer loop** for that long before measuring — at the period the skin asks for, honouring every `setViewTimerInterval` its handlers post back, rebuilding the scene between ticks |
 | `WMP_RENDER_SIZE` | `<W>x<H>` | build at that size and re-drive `onResize` — an expression-driven layout is a *different* layout, not the same one scaled |
 
 `WMP_TEST_WMZ` and `WMP_RENDER_DUMP_DIR` are accepted aliases for `WMP_SKIN` and `WMP_RENDER_DUMP`
@@ -98,6 +98,7 @@ SCRIPT inline: <event>×<n> …
 SCRIPT-DIAG <view> [<code>] <message>
 RENDER-DUMP <view>: <W>x<H>, <n> nodes, <c> commands, <h> hits, <w> widgets, <u> unresolved
 RENDER-DUMP <view> FAILED <error>
+WIDGET <view>/<stableID> <kind> id=<id> frame=<f> clip=<c> visible=<f|none>
 PROBE <view>/<stableID> <kind> id=<id> frame=<f> clip=<c> z=<n> paint=<…> attrs=[…]
 BITMAPS <view>: resolved=<n> missing=<space-separated paths>
 EXPR <view>/<id>.<prop> #<order>: <source> -> <static> live=<live> deps=[…]
@@ -107,6 +108,13 @@ CLICK <view>@x,y hit=<id>#<stableID> kind=<k> action=<a> sticky=<b> handlers=<n>
 CLICK <view>@x,y changed=[…] | command=<…> | unrecognised=[…] | after: <…> | MISS
 PNG <view>: <filename>
 ```
+
+`WIDGET` is the only line about the AppKit overlays — playlist, equaliser, popup, effects, video —
+and they are **not in the dumped PNG at all**: the renderer draws the scene, and these are `NSView`s
+hosted over it. A skin can therefore dump a perfect frame and look wrong on screen, which is exactly
+what happened on 2026-09-07 (W43, W9). `visible=none` means the scene clipped the widget out; the
+overlay is positioned from `frame`, so a widget with `visible=none` that still shows on screen is a
+defect in the hosting, not in the scene.
 
 `INERT` is a member that is recognised, answers, and has nothing behind it — `theme.loadString` can
 only ever return the empty string, because there is no `wmploc.dll` on macOS. It gets its own word
@@ -201,10 +209,13 @@ spots each made a real defect look absent. Four checks run on every plain `swift
 `compare` was checked the same way on 2026-09-07: a one-pixel **colour-only** change (alpha
 untouched) to one dumped PNG and a one-character change to one invariant line, each reported.
 
-**Two things a clean sweep does not prove.** It measures the default state and nothing else — not a
-tab, a setting, a drag, a hover, a timer, or anything time-driven. And a structural probe is not a
-picture: a node existing says nothing about where it is drawn. Only a rendered frame, or the user
-driving the real app, says that.
+**Three things a clean sweep does not prove.** It measures the default state and nothing else — not a
+tab, a setting, a drag, a hover, or anything driven by live playback. A structural probe is not a
+picture: a node existing says nothing about where it is drawn. And **a correct dumped frame is not a
+correct window**: the AppKit overlays, the window's shape and its shadow, and every repaint decision
+live outside the renderer. On 2026-09-07 the headless `vPlayer` and `viewTiny` frames were correct in
+every state tested while the live app showed a dark box the size of the window, drawers that were
+never erased, and a black panel during playback. Only the reporter driving the app found any of them.
 
 ---
 

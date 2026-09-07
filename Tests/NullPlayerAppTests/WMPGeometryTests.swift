@@ -165,4 +165,61 @@ final class WMPGeometryTests: XCTestCase {
         XCTAssertTrue(scene.commands.contains { $0.stableID == byID["drawn"]! },
                       "the sibling with real artwork must still be drawn")
     }
+    /// A script's `visible` outranks the markup. Corona's `SetPane` switches its video and
+    /// visualization panes purely by writing `vid.visible` / `vis.visible`, and a builder reading
+    /// only the authored attribute drew whichever pane the author happened to leave on — which is
+    /// how an opaque video pane ended up over the artwork as soon as playback started.
+    func testAScriptVisibleOverrideOutranksTheAuthoredAttribute() async throws {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="40" height="20">
+              <SUBVIEW id="shown" left="0" top="0" width="10" height="10" backgroundColor="#FF0000"/>
+              <SUBVIEW id="hidden" left="10" top="0" width="10" height="10" visible="false"
+                       backgroundColor="#00FF00"/>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let shown = try XCTUnwrap(skin.graph.nodes(id: "shown").first)
+        let hidden = try XCTUnwrap(skin.graph.nodes(id: "hidden").first)
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[.init(stableID: shown.stableID, property: "visible")] = .bool(false)
+        overrides.properties[.init(stableID: hidden.stableID, property: "visible")] = .bool(true)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        XCTAssertFalse(scene.commands.contains { $0.stableID == shown.stableID },
+                       "a script hid this element and it was still drawn")
+        XCTAssertTrue(scene.commands.contains { $0.stableID == hidden.stableID },
+                      "a script revealed this element and it was not drawn")
+    }
+
+    /// The natural size of a background bitmap fills in an *unstated* dimension. It must never
+    /// overwrite one the skin computed: Corona's compact view collapses `svVideo` to height 0
+    /// through its own timer, and the bitmap kept stamping its own height back over it, leaving a
+    /// black panel across the window.
+    func testIntrinsicArtworkSizeDoesNotOutrankAScriptResolvedDimension() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 4, height: 4,
+            rgba: Array(repeating: UInt8(255), count: 64), type: .bmp)
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="20" height="20">
+              <SUBVIEW id="pane" left="0" top="0" backgroundImage="pane.bmp"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("pane.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let store = WMPImageStore(provider: skin.archive)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let intrinsic = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        XCTAssertEqual(intrinsic.geometries[pane.stableID]?.localFrame.height, 4)
+
+        var overrides = WMPSceneOverrides.empty
+        overrides.geometry[.init(stableID: pane.stableID, property: "height")] = 0
+        let collapsed = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+            .build(viewID: "main", overrides: overrides)
+        XCTAssertEqual(collapsed.geometries[pane.stableID]?.localFrame.height, 0)
+        XCTAssertFalse(collapsed.commands.contains { $0.stableID == pane.stableID },
+                       "a collapsed pane was still painted at its artwork's height")
+    }
+
 }

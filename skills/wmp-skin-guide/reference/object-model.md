@@ -63,6 +63,24 @@ names a string inside `wmploc.dll`, which does not exist on macOS — so they an
 
 ---
 
+## What a property read answers, and who wins
+
+Three rules, each of which was a live defect first:
+
+1. **An element answers the geometry it is *drawn* at.** Every transaction is handed
+   `WMPScene.scriptGeometry` — the local frame of every node the last scene resolved — and element
+   state is synced from it before anything runs. WMP's `element.height` includes a height that came
+   from background artwork or an alignment stretch, and a script tests exactly that: Corona's
+   `ResizeY` animates `svVideo` to 0 and **gives up on the first tick if it reads 0 to begin with**,
+   which is what an authored-attributes-only model reports for an element sized by its bitmap.
+2. **A script value outranks the markup.** `visible` is resolved from the override before the
+   authored attribute — Corona's `SetPane` switches its video and visualization panes purely by
+   writing `vid.visible` / `vis.visible`, and a builder reading only markup draws whichever the
+   author left on.
+3. **A script value outranks the artwork's natural size.** The intrinsic size of a background bitmap
+   fills in an *unstated* dimension; it never overwrites one the skin computed. It did, and every
+   rebuild stamped 241 px back over the height the script had just set.
+
 ## Elements
 
 Every element id is a global, and a write to one of its properties mutates the retained graph and
@@ -82,6 +100,16 @@ empty string, dies with a bare `TypeError`, and never appears in the tally that 
 Implemented today: `moveTo`, `resizeTo` (endpoint applied immediately — the tween is *not* drawn
 yet), `appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` on the playlist
 kinds including the unmodelled `ITEMSPLAYLIST`, and `close`/`minimize` on the view.
+
+## `theme.openDialog`
+
+`FILE_OPEN` posts an `openFileDialog` host command and answers the empty string, counted **inert**.
+WMP hands the chosen path back to the script synchronously; an `NSOpenPanel` is main-actor work that
+the script queue must never block on (`DispatchQueue.main.sync` is banned in this subsystem), so the
+host opens the picker and plays the result while the skin's own `player.URL = newFile` line does
+nothing. It is not cosmetic: **WMP mode has no other route to a track**, because the auxiliary
+NullPlayer windows stay hidden until they have WMP-owned chrome, and before this the only way to
+start playback was to leave WMP mode and come back.
 
 ---
 
@@ -110,10 +138,20 @@ it. The model this replaced emptied the whole ordered list on any single failure
 
 ## Timers
 
+There are **two** kinds and a skin uses both.
+
 `setTimeout`/`setInterval` record a bounded request and keep the **function**, not its text: the
 request's `source` is `__wmpTimer:<token>` and firing it invokes the stored closure. Re-evaluating a
 function's text — all a stateless runtime could do — loses every variable it captured, which is most
 of what a skin's timers are for. Count and minimum period stay inside `WMPPhase0Limits`.
+
+**`view.timerInterval` is the other one, and it is how a `.wmz` animates.** It is a host timer, not a
+scene property: a write posts `setViewTimerInterval` and the controller runs a repeating task that
+dispatches the view's authored `onTimer` handlers at that period, with zero stopping it. The view's
+markup `timerInterval` starts it before any script runs. Corona's compact view collapses its video
+panel entirely through this — `RegisterTimerEvent` then `view.timerInterval = leastInterval` — and its
+player view declares `timerInterval="4000"` to drive its transport readouts. Wiring `setTimeout` and
+not this left both views frozen in their authored state with no diagnostic anywhere to say why.
 
 ---
 

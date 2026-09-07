@@ -123,6 +123,38 @@ queue, with the object model as the security boundary — see Amendment 2 in
   has a WMP host, hide or disable it; missing skin chrome uses only an app-authored WMP-neutral
   fallback.
 
+## Presenting a skin in a window
+
+Learned by driving the real app on 2026-09-07, after a headless sweep said everything was fine. Each
+of these was invisible to the harness and visible in the first minute of live QA.
+
+- **A skinned WMP window carries no macOS shadow.** It is genuinely shaped — Corona is transparent
+  across the 250 px its playlist slides into and the 124 px its equaliser drops into — and AppKit
+  caches a borderless window's shadow from whatever content it last saw. On a shape that changes with
+  every drawer and every repaint that goes stale, and a stale shadow over a transparent region reads
+  as a dark box the size of the window. `invalidateShadow()` on each present fixed it, then on each
+  frame change fixed it again, then playback's continuous repaints brought it back a third time. So
+  `hasShadow` is **off** while a skin is shown and on for the opaque app-authored player. There is no
+  drop shadow in Windows Media Player to lose.
+- **A script transaction repaints in full.** The dirty region cannot be derived from what a handler
+  *wrote*: it writes `svEqualizer.top` and a whole subtree moves that it never mentioned, and a
+  `SUBVIEW` carries no hit metadata at all, so the narrowed bounds collapse to roughly the button
+  that was clicked. Partial repaints belong to hover and slider drags, where only artwork state
+  changes — and there the dirty rect must union the **old and the new** frame of every node whose
+  geometry moved. Unioning only the old one erases correctly and paints only the overlap; unioning
+  neither never erases, and a closed drawer stays on screen forever.
+- **A new scene needs a layout pass.** The AppKit overlays are positioned in `layout()`, which AppKit
+  will not run just because a scene arrived, so an equaliser the skin slid away keeps its old frame.
+- **The overlays are not in the dumped PNG.** The renderer draws the scene; playlist, equaliser,
+  popup, effects and video are `NSView`s hosted over it, and `WMPVideoPlaceholderView` and
+  `WMPEffectsSurfaceView` both paint an opaque background. A skin can dump a perfect frame and look
+  wrong on screen. `WMP_RENDER_PROBE`'s `WIDGET` line is the only instrument that sees them; the
+  overlays currently ignore `WMPWidget.clipRect`, which is open as W43.
+- **`.wmz` mode must offer a route to a track.** The auxiliary NullPlayer windows stay hidden here
+  until they have WMP-owned chrome, so the skin's own Open button — `theme.openDialog('FILE_OPEN')` —
+  is the only one. Before it was implemented the only way to start playback was to leave WMP mode and
+  come back, which is not a mode.
+
 ## Phase 4 input and transport contracts
 
 - `WMPMappingImage` stores canonical, un-premultiplied RGB plus alpha in authored top-left row
