@@ -17,7 +17,8 @@ making the demand tally lie.
 **Measure before you reason.** `reference/harness.md` is the canonical probe and corpus reference —
 every env-var flag, the line grammar, `scripts/wmp_skin_census.sh` and `scripts/wmp_render_sweep.sh`,
 and the traps those scripts enforce. No other file restates a command; add a flag there in the same
-change that adds it. The ranked backlog it feeds is `WMP_TASKS.md` at the repo root.
+change that adds it. The ranked backlog it feeds is `WMP_TASKS.md` at the repo root, and a closed
+entry moves to `docs/wmp-skin/wmp-backlog-archive.md` in the same change that closes it.
 
 **The `phase-*-handoff.md` files are unverified narrative.** Check every claim in them against the
 code before relying on it: phase 7 asserts that WMP "remains explicitly unavailable in release/MAS
