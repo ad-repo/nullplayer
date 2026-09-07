@@ -84,6 +84,12 @@ queue, with the object model as the security boundary — see Amendment 2 in
 
 ## Static scene and image contracts
 
+- **A view is sized like any other node: authored literal, then script override, then the natural
+  size of its own `backgroundImage`.** WMP skins routinely author `<VIEW backgroundImage="...">` with
+  no width or height — the window *is* the bitmap — and demanding a positive literal at the root was
+  the largest single cause of a skin that loaded and then drew nothing (89 views across 48 skins).
+  The same artwork fallback already applied to every non-root node. A view with neither a size nor
+  artwork is still rejected: the builder never invents geometry.
 - `WMPSceneBuilder` resolves literal geometry plus the bounded static initial-layout grammar in
   `WMPInitialLayoutExpression`: finite numbers, parentheses, arithmetic, and geometry reads from
   deterministic IDs. `wmpprop:` is accepted only as an alias for that same geometry grammar.

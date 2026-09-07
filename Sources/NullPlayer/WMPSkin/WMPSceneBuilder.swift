@@ -32,8 +32,27 @@ struct WMPSceneBuilder: @unchecked Sendable {
             throw WMPFailure(WMPDiagnostic(.invalidGeometry, "WMP view '\(viewID)' does not exist."))
         }
         let view = registration.node
-        guard let authoredWidth = literal(view, "width"), authoredWidth > 0,
-              let authoredHeight = literal(view, "height"), authoredHeight > 0 else {
+        // A view sizes itself the way every other node does: an authored literal first, then a
+        // script override, then the natural size of its own background artwork. WMP skins routinely
+        // author a top-level `<VIEW backgroundImage="...">` with no width or height at all — the
+        // window *is* the bitmap — and rejecting those was the single largest cause of a skin that
+        // loads and then draws nothing.
+        func viewDimension(_ name: String) throws -> CGFloat? {
+            if let value = literal(view, name), value > 0 { return value }
+            if let value = overrides.geometry[WMPScenePropertyAddress(stableID: view.stableID,
+                                                                      property: name.lowercased())],
+               value.isFinite, value > 0 { return value }
+            return nil
+        }
+        var authoredWidth = try viewDimension("width")
+        var authoredHeight = try viewDimension("height")
+        if authoredWidth == nil || authoredHeight == nil,
+           let (_, path) = try resolveResource(view, names: ["backgroundImage", "background"]) {
+            let intrinsic = try imageStore.image(for: path).size
+            if authoredWidth == nil, intrinsic.width > 0 { authoredWidth = intrinsic.width }
+            if authoredHeight == nil, intrinsic.height > 0 { authoredHeight = intrinsic.height }
+        }
+        guard let authoredWidth, let authoredHeight else {
             throw WMPFailure(WMPDiagnostic(.invalidGeometry,
                 "View '\(viewID)' requires positive literal width and height for static layout.",
                 location: view.location))
@@ -95,14 +114,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
         }
 
         func resource(_ node: WMPNode, names: [String]) throws -> (String, String)? {
-            for name in names {
-                guard let attribute = node.attribute(named: name) else { continue }
-                guard case let .resource(authored) = attribute.value else { continue }
-                if let path = try loadedSkin.archive.resolve(authored, relativeTo: loadedSkin.definitionPath) {
-                    return (name, path)
-                }
-            }
-            return nil
+            try resolveResource(node, names: names)
         }
 
         func walk(_ node: WMPNode, parentFrame: WMPRect, parentAuthoredSize: WMPSize,
@@ -371,6 +383,19 @@ struct WMPSceneBuilder: @unchecked Sendable {
             interpolation: .low, mappingMask: mappingMask)
         return WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID, frame: frame,
             clipRect: clip, zIndex: z, documentOrder: node.stableID, paint: .image(image))
+    }
+
+    /// Resolve the first authored resource attribute among `names` to a path inside the archive.
+    /// Shared by the view root, which must resolve its background before any nested helper exists.
+    private func resolveResource(_ node: WMPNode, names: [String]) throws -> (String, String)? {
+        for name in names {
+            guard let attribute = node.attribute(named: name) else { continue }
+            guard case let .resource(authored) = attribute.value else { continue }
+            if let path = try loadedSkin.archive.resolve(authored, relativeTo: loadedSkin.definitionPath) {
+                return (name, path)
+            }
+        }
+        return nil
     }
 
     private func literal(_ node: WMPNode, _ name: String) -> CGFloat? {

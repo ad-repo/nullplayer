@@ -222,4 +222,69 @@ final class WMPGeometryTests: XCTestCase {
                        "a collapsed pane was still painted at its artwork's height")
     }
 
+    /// A `<VIEW>` with no authored width or height is sized by its own background artwork — the
+    /// window *is* the bitmap. Rejecting those was the largest cause of a skin that loaded and then
+    /// drew nothing (W6): 89 views across 48 skins, 12 of which produced no layout at all.
+    func testViewWithoutAuthoredSizeTakesItsBackgroundArtworkSize() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 24, height: 9,
+            rgba: Array(repeating: UInt8(255), count: 24 * 9 * 4), type: .bmp)
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" backgroundImage="back.bmp">
+              <SUBVIEW id="pane" left="1" top="2" width="4" height="3" backgroundColor="#110000"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("back.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        XCTAssertEqual(scene.canvasSize, WMPSize(width: 24, height: 9))
+        XCTAssertEqual(scene.geometries[pane.stableID]?.absoluteFrame,
+                       WMPRect(x: 1, y: 2, width: 4, height: 3))
+    }
+
+    /// The artwork is only the last resort: an authored literal wins, and a script-supplied override
+    /// outranks the bitmap for a view whose size its own `.js` computes.
+    func testViewSizePrefersAuthoredLiteralThenScriptOverrideOverArtwork() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 24, height: 9,
+            rgba: Array(repeating: UInt8(255), count: 24 * 9 * 4), type: .bmp)
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME>
+              <VIEW id="literal" width="40" height="30" backgroundImage="back.bmp"/>
+              <VIEW id="computed" backgroundImage="back.bmp"/>
+            </THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("back.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let literalScene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "literal")
+        XCTAssertEqual(literalScene.canvasSize, WMPSize(width: 40, height: 30))
+
+        let computed = try XCTUnwrap(skin.graph.nodes(id: "computed").first)
+        var overrides = WMPSceneOverrides.empty
+        overrides.geometry[.init(stableID: computed.stableID, property: "width")] = 100
+        overrides.geometry[.init(stableID: computed.stableID, property: "height")] = 60
+        let scripted = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "computed", overrides: overrides)
+        XCTAssertEqual(scripted.canvasSize, WMPSize(width: 100, height: 60))
+    }
+
+    /// A view with neither an authored size nor background artwork still has no size to invent, and
+    /// the builder never guesses one.
+    func testViewWithNoSizeAndNoArtworkIsStillRejected() async throws {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" backgroundColor="#000000"/></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let code = await WMPSkinTestSupport.failureCode {
+            try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        }
+        XCTAssertEqual(code, .invalidGeometry)
+    }
+
 }

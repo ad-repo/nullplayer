@@ -33,6 +33,13 @@
 
 ### Bug Fixes
 
+- **Windows Media Player skins that draw their whole window as one bitmap now open.** A `.wms` may
+  give its view a background image and no size at all — the window simply *is* that bitmap — and
+  NullPlayer was rejecting those, falling back to the unskinned player. A view is now measured the
+  way every part inside it already was: the size the skin wrote, else the size its own script
+  computes, else the natural size of its background artwork. Across a 180-skin library this brings
+  52 more windows to life, including Age of Empires, Claw, Cyber Channel, Digital DJ, Circle's
+  video, playlist and settings windows, and Microsoft's own Mini Player.
 - **A Windows Media Player skin no longer turns into a black box while a track plays.** The spectrum
   pane painted the dirty rectangle AppKit handed it rather than its own bounds, and AppKit passes one
   larger than the view — the whole window, in the pane's own coordinates — which a layer-backed view
