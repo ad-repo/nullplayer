@@ -141,6 +141,21 @@ git rev it was measured at. This is the only honest source for the reach numbers
 `--parse-only` re-derives the TSV from a previous run's logs without paying the sweep again — it is
 how a parsing change is checked against a capture that is already known-good.
 
+### `scripts/wmp_corpus_exclusions.txt`
+
+The blacklist both scripts read before anything measures. Each script links the in-scope archives
+into `<outdir>/corpus` (a hard link, because the harness enumerates with `isRegularFile` and a
+symlink is not one) and sweeps *that*, so an excluded skin cannot reach a log, a PNG, or a column —
+filtering afterwards would still let its diagnostics rank work. Both print what they dropped and the
+count they actually measured; the corpus denominator in `WMP_TASKS.md` is that number, not the
+directory listing.
+
+A skin belongs here when no work in this engine changes its outcome — not when it is merely broken.
+The standing entry is `Darkling.wmz`, authored against WMP's Party Mode host (`PartyMode.*`), which
+this player has no equivalent of; its own `OnLoad` catches the missing host and draws a "designed for
+Party Mode" panel, exactly as real WMP does outside Party Mode. Record the reason in the file next to
+the entry, and treat removing a line as a decision.
+
 ### `scripts/wmp_render_sweep.sh capture|compare`
 
 *Did my change move anything?* `capture` writes the invariant lines **and** every PNG; `compare`

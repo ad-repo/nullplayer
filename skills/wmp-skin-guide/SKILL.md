@@ -14,6 +14,12 @@ the canonical reference for the persistent `JSContext`, the three member resolut
 (`ok`/`INERT`/`UNRECOGNISED`), element and expression semantics, and how to add a member without
 making the demand tally lie.
 
+**Not every skin in the corpus is work.** `scripts/wmp_corpus_exclusions.txt` is the blacklist both
+corpus scripts read, and a skin belongs on it when no work in this engine changes its outcome —
+`Darkling` is authored against WMP's Party Mode host and draws its own "designed for Party Mode"
+panel without one, exactly as real WMP does. An excluded archive never ranks work; see
+`reference/harness.md`.
+
 **Measure before you reason.** `reference/harness.md` is the canonical probe and corpus reference —
 every env-var flag, the line grammar, `scripts/wmp_skin_census.sh` and `scripts/wmp_render_sweep.sh`,
 and the traps those scripts enforce. No other file restates a command; add a flag there in the same
@@ -88,8 +94,13 @@ queue, with the object model as the security boundary — see Amendment 2 in
   size of its own `backgroundImage`.** WMP skins routinely author `<VIEW backgroundImage="...">` with
   no width or height — the window *is* the bitmap — and demanding a positive literal at the root was
   the largest single cause of a skin that loaded and then drew nothing (89 views across 48 skins).
-  The same artwork fallback already applied to every non-root node. A view with neither a size nor
-  artwork is still rejected: the builder never invents geometry.
+  The same artwork fallback already applied to every non-root node. **A view with no size and no
+  artwork of its own is then sized by the union of the subtree it can place from literals and
+  artwork alone** — `iconic` hangs its whole player off one `<SUBVIEW backgroundImage="base.gif">`.
+  That union descends into a container whose own size is unknown and ignores `visible`, because a
+  skin authors every wrapper hidden and turns one on in `onLoad`. Anything needing script
+  contributes nothing, and a view with an empty union is still rejected: the builder never invents
+  geometry.
 - `WMPSceneBuilder` resolves literal geometry plus the bounded static initial-layout grammar in
   `WMPInitialLayoutExpression`: finite numbers, parentheses, arithmetic, and geometry reads from
   deterministic IDs. `wmpprop:` is accepted only as an alias for that same geometry grammar.

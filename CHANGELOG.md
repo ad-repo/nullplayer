@@ -33,6 +33,11 @@
 
 ### Bug Fixes
 
+- **A Windows Media Player skin built around one big picture now opens.** Some `.wms` files give
+  their window no size and no artwork of its own, and hang the entire player off a single panel
+  inside it. NullPlayer rejected those and fell back to the unskinned player; it now measures such a
+  window by what it contains, so the skin comes up at exactly the size its own artwork asks for.
+  `iconic` is one of these.
 - **Windows Media Player skins that draw their whole window as one bitmap now open.** A `.wms` may
   give its view a background image and no size at all — the window simply *is* that bitmap — and
   NullPlayer was rejecting those, falling back to the unskinned player. A view is now measured the

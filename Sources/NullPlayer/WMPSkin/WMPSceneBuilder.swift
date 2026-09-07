@@ -52,6 +52,19 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if authoredWidth == nil, intrinsic.width > 0 { authoredWidth = intrinsic.width }
             if authoredHeight == nil, intrinsic.height > 0 { authoredHeight = intrinsic.height }
         }
+        if authoredWidth == nil || authoredHeight == nil {
+            // Neither a literal nor its own artwork: the window is sized by what it contains.
+            // WMP fits such a view to its content, and skins rely on it — `iconic` hangs its whole
+            // player off one `<SUBVIEW backgroundImage="base.gif">`, and `Darkling` wraps four
+            // resolution-specific subviews its script picks between. Rejecting these was a total
+            // blackout for both. Only geometry the builder can place without executing script
+            // counts, and visibility is deliberately ignored: Darkling authors every one of its
+            // wrappers `visible="false"` and turns one on in `onLoad`, so a union of the visible
+            // children alone is empty.
+            let union = try contentUnionSize(of: view)
+            if authoredWidth == nil, union.width > 0 { authoredWidth = union.width }
+            if authoredHeight == nil, union.height > 0 { authoredHeight = union.height }
+        }
         guard let authoredWidth, let authoredHeight else {
             throw WMPFailure(WMPDiagnostic(.invalidGeometry,
                 "View '\(viewID)' requires positive literal width and height for static layout.",
@@ -432,6 +445,42 @@ struct WMPSceneBuilder: @unchecked Sendable {
              .returnButton, .shuffleButton, .playlist, .dropdownPlaylist, .popup: return true
         default: return false
         }
+    }
+
+    /// The extent of the subtree a node can place using authored literals and artwork alone, in
+    /// the node's own coordinates. Anything script-driven contributes nothing rather than a guess —
+    /// the builder never invents geometry — but a container whose own size is unknown is still
+    /// descended into at its known origin, which is how `Darkling`'s unsized `viewWrapper` reports
+    /// the walls beneath it.
+    private func contentUnionSize(of node: WMPNode) throws -> WMPSize {
+        var extent = WMPSize(width: 0, height: 0)
+        for child in node.children {
+            if isNonLayout(child.kind) {
+                let nested = try contentUnionSize(of: child)
+                extent = WMPSize(width: max(extent.width, nested.width),
+                                 height: max(extent.height, nested.height))
+                continue
+            }
+            guard let left = child.attribute(named: "left") == nil ? 0 : literal(child, "left"),
+                  let top = child.attribute(named: "top") == nil ? 0 : literal(child, "top") else { continue }
+            var width = literal(child, "width")
+            var height = literal(child, "height")
+            if width == nil || height == nil,
+               let (_, path) = try resolveResource(child, names: intrinsicSizeResourceNames(for: child.kind)) {
+                let intrinsic = try imageStore.image(for: path).size
+                if width == nil, intrinsic.width > 0 { width = intrinsic.width }
+                if height == nil, intrinsic.height > 0 { height = intrinsic.height }
+            }
+            if width == nil || height == nil {
+                let nested = try contentUnionSize(of: child)
+                if width == nil, nested.width > 0 { width = nested.width }
+                if height == nil, nested.height > 0 { height = nested.height }
+            }
+            guard let width, let height, width > 0, height > 0 else { continue }
+            extent = WMPSize(width: max(extent.width, left + width),
+                             height: max(extent.height, top + height))
+        }
+        return extent
     }
 
     private func intrinsicSizeResourceNames(for kind: WMPElementKind) -> [String] {

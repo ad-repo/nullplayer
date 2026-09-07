@@ -49,6 +49,32 @@ readonly MINIMUM_INVARIANT_LINES_PER_SKIN=2
 # PROBE/EXPR/CALL lines are deliberately out: they are for isolating one defect, not for regression.
 readonly INVARIANT_PATTERN='^(HARNESS |SKIN |LOAD |COMPAT |UNKNOWN |FINDING \[|SCRIPTS |SCRIPT |RENDER-DUMP |BITMAPS |PNG )'
 
+# ---- exclusions ---------------------------------------------------------------------------------
+# A blacklisted archive is dropped before anything measures it, by linking the corpus into a farm of
+# the archives that are in scope and sweeping that. Filtering afterwards would still let an excluded
+# skin's diagnostics into the logs the backlog is ranked from, which is the whole point of excluding
+# it. The list and its reasons are scripts/wmp_corpus_exclusions.txt.
+exclusion_farm() {  # <corpus> <farmdir> <tool-name> -> prints the measured count on stdout
+    local src="$1" farm="$2" tool="$3" name dropped=0 kept=0
+    local list; list="$(dirname "$0")/wmp_corpus_exclusions.txt"
+    rm -rf "$farm"; mkdir -p "$farm"
+    while IFS= read -r archive; do
+        name=$(basename "$archive")
+        if [ -f "$list" ] && grep -v '^[[:space:]]*#' "$list" | grep -qxF "$name"; then
+            dropped=$((dropped + 1))
+            echo "$tool: excluded $name (scripts/wmp_corpus_exclusions.txt)" >&2
+            continue
+        fi
+        # Hard link, not a symlink: the harness enumerates with `isRegularFile`, which a symlink
+        # is not, and the sweep then reports an empty corpus instead of an excluded one. Copy only
+        # if the farm lands on another volume.
+        ln "$archive" "$farm/$name" 2>/dev/null || cp "$archive" "$farm/$name"
+        kept=$((kept + 1))
+    done < <(find "$src" -maxdepth 1 -type f -name '*.[wW][mM][zZ]')
+    [ "$dropped" -gt 0 ] && echo "$tool: $dropped archive(s) excluded; measuring $kept" >&2
+    echo "$kept"
+}
+
 usage() {
     cat >&2 <<'USAGE'
 usage:
@@ -90,6 +116,14 @@ capture() {
     fi
 
     mkdir -p "$out/png"
+    # Sweep the farm, not the installed directory: an excluded skin must not reach the captures the
+    # comparison is made from. See scripts/wmp_corpus_exclusions.txt.
+    archives=$(exclusion_farm "$corpus" "$out/corpus" wmp_render_sweep)
+    corpus="$out/corpus"
+    if [ "$archives" -eq 0 ]; then
+        echo "wmp_render_sweep: every archive is excluded" >&2
+        exit 1
+    fi
     echo "wmp_render_sweep: capturing $archives skins -> $out"
     # Redirect, do not pipe. See the note at the top.
     WMP_SKIN="$corpus" \

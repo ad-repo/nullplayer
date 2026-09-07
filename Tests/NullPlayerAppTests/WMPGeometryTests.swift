@@ -245,6 +245,30 @@ final class WMPGeometryTests: XCTestCase {
                        WMPRect(x: 1, y: 2, width: 4, height: 3))
     }
 
+    /// A view with no size and no artwork of its own is sized by the content it can place: `iconic`
+    /// hangs its whole player off one `<SUBVIEW backgroundImage="base.gif">` and was a total
+    /// blackout until the union was the last fallback (W6). The union descends into a container
+    /// whose own size is unknown, and ignores `visible` — a skin authors every wrapper hidden and
+    /// turns one on in `onLoad`.
+    func testViewWithoutSizeOrArtworkIsSizedByItsContent() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 24, height: 9,
+            rgba: Array(repeating: UInt8(255), count: 24 * 9 * 4), type: .bmp)
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" backgroundColor="#000000">
+              <SUBVIEW id="wrapper">
+                <SUBVIEW id="art" left="6" top="1" backgroundImage="back.bmp" visible="false"/>
+              </SUBVIEW>
+              <SUBVIEW id="small" left="0" top="0" width="4" height="3" backgroundColor="#110000"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("back.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        XCTAssertEqual(scene.canvasSize, WMPSize(width: 30, height: 10))
+    }
+
     /// The artwork is only the last resort: an authored literal wins, and a script-supplied override
     /// outranks the bitmap for a view whose size its own `.js` computes.
     func testViewSizePrefersAuthoredLiteralThenScriptOverrideOverArtwork() async throws {

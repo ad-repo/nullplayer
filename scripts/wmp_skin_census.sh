@@ -42,6 +42,32 @@ readonly CORPUS_DEFAULT="$HOME/Library/Application Support/NullPlayer/WMPSkins"
 readonly MINIMUM_INVARIANT_LINES_PER_SKIN=2
 readonly INVARIANT_PATTERN='^(HARNESS |SKIN |LOAD |COMPAT |UNKNOWN |FINDING \[|SCRIPTS |RENDER-DUMP |BITMAPS )'
 
+# ---- exclusions ---------------------------------------------------------------------------------
+# A blacklisted archive is dropped before anything measures it, by linking the corpus into a farm of
+# the archives that are in scope and sweeping that. Filtering afterwards would still let an excluded
+# skin's diagnostics into the logs the backlog is ranked from, which is the whole point of excluding
+# it. The list and its reasons are scripts/wmp_corpus_exclusions.txt.
+exclusion_farm() {  # <corpus> <farmdir> <tool-name> -> prints the measured count on stdout
+    local src="$1" farm="$2" tool="$3" name dropped=0 kept=0
+    local list; list="$(dirname "$0")/wmp_corpus_exclusions.txt"
+    rm -rf "$farm"; mkdir -p "$farm"
+    while IFS= read -r archive; do
+        name=$(basename "$archive")
+        if [ -f "$list" ] && grep -v '^[[:space:]]*#' "$list" | grep -qxF "$name"; then
+            dropped=$((dropped + 1))
+            echo "$tool: excluded $name (scripts/wmp_corpus_exclusions.txt)" >&2
+            continue
+        fi
+        # Hard link, not a symlink: the harness enumerates with `isRegularFile`, which a symlink
+        # is not, and the sweep then reports an empty corpus instead of an excluded one. Copy only
+        # if the farm lands on another volume.
+        ln "$archive" "$farm/$name" 2>/dev/null || cp "$archive" "$farm/$name"
+        kept=$((kept + 1))
+    done < <(find "$src" -maxdepth 1 -type f -name '*.[wW][mM][zZ]')
+    [ "$dropped" -gt 0 ] && echo "$tool: $dropped archive(s) excluded; measuring $kept" >&2
+    echo "$kept"
+}
+
 usage() {
     cat >&2 <<'USAGE'
 usage:
@@ -84,7 +110,17 @@ rev=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 measured=$(date +%Y-%m-%d)
 mkdir -p "$out"
 
-echo "wmp_skin_census: $archives archives in $corpus -> $out (rev $rev)"
+# Everything downstream — the sweep, the sha256 rows, the denominator — sees the farm, not the
+# installed directory, so an excluded skin cannot reach a column.
+source_corpus="$corpus"
+archives=$(exclusion_farm "$corpus" "$out/corpus" wmp_skin_census)
+corpus="$out/corpus"
+if [ "$archives" -eq 0 ]; then
+    echo "wmp_skin_census: every archive in $source_corpus is excluded" >&2
+    exit 1
+fi
+
+echo "wmp_skin_census: $archives archives in $source_corpus -> $out (rev $rev)"
 
 if [ "$parse_only" -eq 0 ]; then
     # Redirect, do not pipe. Every probe is on: the census is the one pass that pays for the whole
