@@ -430,9 +430,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu Actions
     
     @objc func showAbout() {
-        // Create custom About window
+        // Create custom About window.
+        // The layout below runs top-down from `y`, consuming a fixed 426pt: 30 top inset,
+        // 112 icon, 40 name, 28 version, 50 tagline, 20 separator, 42 credits, 40 buttons,
+        // 36 disclaimer, 28 OK. Size the window from that total rather than hardcoding a
+        // height, so the panel keeps an even bottom margin instead of a dead gap (it was
+        // 540pt tall, leaving 132pt of empty background under the OK button).
         let windowWidth: CGFloat = 340
-        let windowHeight: CGFloat = 540
+        let contentHeight: CGFloat = 426
+        let bottomPadding: CGFloat = 24
+        let windowHeight: CGFloat = contentHeight + bottomPadding
         
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
@@ -479,7 +486,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback player for modern personal media")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "Your media. Your backend. Your home devices. Your UI.")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -500,7 +507,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         thanksLabel.alignment = .center
         thanksLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
         contentView.addSubview(thanksLabel)
-        y -= 24
+        y -= 42   // 18 label + a blank line's worth of gap before the buttons
 
         // // sthanks
         // let sthanksLabel = NSTextField(labelWithString: "Thanks to u/SpaXter25 for QE and PD")
