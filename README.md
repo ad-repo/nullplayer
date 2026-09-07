@@ -1,44 +1,33 @@
-<img width="1920" height="180" alt="top-bar-neon" src="https://github.com/user-attachments/assets/578a9307-2aef-4a17-9e5f-b35cf0c6c311" />
+## NullPlayer. Your media. Your backend. Your home devices. Your UI.
 
-## NullPlayer is a native throwback media player for macOS written in Swift. I has both original skin systema nd also Supports all Winamp skin types (2.X-5.X) with a first-class headless CLI for automation, multi-source playback, and casting across Sonos, Chromecast, UPnP/DLNA, Youtube, local media servers, and internet radio.
+<img width="500" height="500" alt="nullplayer-skins" src="https://github.com/user-attachments/assets/c2c4a3e1-3287-4d6a-a77b-2c0d0569b20a" />
 
-## **If you enjoy NullPlayer, please ⭐ STAR ⭐ the project on GitHub!**
-
-
-## NullPlayer is a 100% clean-room hobby project and is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, or anyone else.
-
-
-[![NullPlayer Demo](https://img.youtube.com/vi/hsnVpIh1TnA/hqdefault.jpg)](https://youtu.be/hsnVpIh1TnA)
-<img width="480" height="300" alt="G7KICo" src="https://github.com/user-attachments/assets/1415a6e8-9e56-471c-bf9a-9d82eacb0cd2" />
-
-![MixCollage-12-Mar-2026-03-38-PM-191](https://github.com/user-attachments/assets/b26003a8-bb5d-45ca-9504-2a3e13079fe9)
-<img width="733" height="184" alt="Screenshot 2026-04-05 at 8 52 33 PM" src="https://github.com/user-attachments/assets/3f602a8d-b9bb-43d1-af75-89e4fcb06d08" />
-<img width="1389" height="660" alt="Screenshot 2026-04-05 at 8 54 54 PM" src="https://github.com/user-attachments/assets/4f2dc824-e90e-4f28-b151-02dc05727cdf" />
-<img width="1383" height="632" alt="Screenshot 2026-04-05 at 8 56 50 PM" src="https://github.com/user-attachments/assets/18ccac12-28b2-4a8c-9cea-b742d325c610" />
-<img width="1266" height="559" alt="Screenshot 2026-04-05 at 9 14 34 PM" src="https://github.com/user-attachments/assets/92104d80-c6d2-43f3-bad0-cf626c009919" />
-<img width="1646" height="844" alt="Screenshot 2026-04-05 at 9 21 27 PM" src="https://github.com/user-attachments/assets/8d08d61c-66fb-4ec3-8197-cd2df614444b" />
-
+## **If you enjoy NullPlayer please ⭐ STAR ⭐ the project on GitHub**
 
 ## Features
 
-NullPlayer is 100% open source and built as a clean-room effort; no Winamp or WACUP source code has been viewed. It is the **first and only open-source engine capable of rendering Winamp 5 (`.wal`) skins**, letting you run original Winamp 5 skins on macOS.
+NullPlayer is 100% open source and built as a clean-room effort; no Winamp or WACUP source code has been copied or viewed
 
-### Server Support
+Nullplayer is the **first and only open-source engine capable of rendering Winamp 5 (`.wal`) skins**, letting you run original Winamp 5 skins on macOS
+
+NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, or anyone else. No Winamp skins are distributed with the project.
+
+### Backend Support
+
 - Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local files
-- Server integration for Plex (PIN auth), Jellyfin, Emby, and Navidrome/Subsonic with scrobbling
+- Server integration for Plex, Jellyfin, Emby, and Navidrome/Subsonic with scrobbling
 - Local media library with metadata parsing, editing, and management
-- Mixed playlists — combine tracks or video from any sources (local, Plex, Jellyfin, Emby, Subsonic/Navidrome, radio, youtube) into a single playlist
+- Mixed playlists — combine tracks or video from any sources (local, Plex, Jellyfin, Emby, Subsonic/Navidrome, radio, movies, Youtube) into a single playlist
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
-- Intelligent radio mix generation for all sources
-- Stream Ripper — rip URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
-- YouTube source — subscribe to channels, browse uploads, download audio/video ad-free (requires `yt-dlp` + `ffmpeg`)
+- Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
+- YouTube as a library source — subscribe to channels, browse uploads, download audio/video ad-free (requires `yt-dlp` + `ffmpeg`)
 
 ### Skin System Support
 
 - Classic mode: full `.wsz` Winamp 2.X skin support with window snapping and docking
 - Winamp Modern (`.wal`) skin support (Winamp 5.X and ClassicPro); the ClassicPro Windows plug-in engine is extracted from the user-supplied installer and runs natively on macOS
 - Original mode: JSON-based skin system with color theming, custom assets, procedural backgrounds, and bloom effects and full skinning documentation for authors
-- Original-Metal mode: seven brushed-metal finishes with backlit-green LCD displays
+- Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
 - Live skin switching. Cycle through Classic, Modern, Original, and Original-Metal skins with no restart or interuption in playback
 - 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 
@@ -55,8 +44,9 @@ NullPlayer is 100% open source and built as a clean-room effort; no Winamp or WA
 - Cava spectrum analyzer — bar spectrum with mono/stereo modes, gradient presets, and configurable smoothing
 - PeppyMeter — skinnable analog VU meter with 25 templates and auto-switch mode
 - Flow network monitor — live throughput graph with selectable interface
+- Compact Mode — menu-bar-only app with embedded mini player (Classic, Original, and Original-Metal)
 
-### Visualizations
+### Visualization Support
 
 NullPlayer's visualizations span its windows, from the in-skin main-window display to full-screen engines:
 
@@ -77,9 +67,9 @@ All visualization choices persist across launches.
 ### General Features
 
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
+- Intelligent radio mix generation for all sources
 - Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
 - Sonos content filtering for unsupported lossless formats and improved playlist support
-- Compact Mode — menu-bar-only app with embedded mini player (Classic, Original, and Original-Metal)
 - Drag-and-drop, macOS Now Playing integration, and [Discord Music Presence](https://github.com/ungive/discord-music-presence)
 - Headless CLI for querying libraries, playback, and routing to local outputs or cast devices, full color terminal cover art rendering
 
