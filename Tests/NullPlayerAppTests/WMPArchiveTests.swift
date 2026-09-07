@@ -55,6 +55,37 @@ final class WMPArchiveTests: XCTestCase {
         XCTAssertEqual(WMPSkinTestSupport.failureCode { try WMPArchive(url: junk) }, .invalidArchive)
     }
 
+    /// Two corpus archives ship a second `.wms` that is an author's leftover template, not a
+    /// second skin: `Nautical` carries `sample.wms` beside `Nautical.wms`, `Sports` carries
+    /// `saltmine.wms` beside `ExtremeSports.wms`. Both are skins WMP shipped, and rejecting them
+    /// for it was a black window. The rule is archive order; the losers are warned about, not
+    /// silently dropped. Ordering here is the assertion — `makeArchive` writes entries as given,
+    /// and the second file sorts *before* the first alphabetically, so a rule that sorted the
+    /// candidates would pick `a-leftover.wms` and fail this test.
+    func testPicksTheFirstSkinDefinitionInArchiveOrderAndWarnsAboutTheRest() throws {
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data("<THEME/>".utf8)),
+            WMPTestArchiveEntry("a-leftover.wms", data: Data("<THEME/>".utf8))
+        ])
+        let archive = try WMPArchive(url: url)
+        XCTAssertEqual(archive.skinDefinitionPath, "theme.wms")
+        XCTAssertEqual(archive.diagnostics.count, 1)
+        let warning = try XCTUnwrap(archive.diagnostics.first)
+        XCTAssertEqual(warning.code, .ambiguousSkinDefinition)
+        XCTAssertEqual(warning.severity, .warning, "a second .wms must never reject the skin")
+        XCTAssertTrue(warning.message.contains("a-leftover.wms"),
+                      "the discarded definition must be named: \(warning.message)")
+    }
+
+    /// The single-definition case — 178 of the 180 corpus archives — carries no finding at all, so
+    /// the census counts `WMP0022` as real ambiguity rather than as noise on every skin.
+    func testASingleSkinDefinitionProducesNoAmbiguityWarning() throws {
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data("<THEME/>".utf8))
+        ])
+        XCTAssertTrue(try WMPArchive(url: url).diagnostics.isEmpty)
+    }
+
     func testRejectsUnsafePathsSymlinksCaseCollisionsAndBadRootShapes() throws {
         XCTAssertEqual(code(["theme.wms", "../escape"]), .pathTraversal)
         XCTAssertEqual(code(["theme.wms", "/absolute"]), .absolutePath)
@@ -73,7 +104,9 @@ final class WMPArchiveTests: XCTestCase {
         ])
         XCTAssertEqual(WMPSkinTestSupport.failureCode { try WMPArchive(url: collision) }, .caseCollision)
 
-        XCTAssertEqual(code(["a.wms", "b.wms"]), .ambiguousSkinDefinition)
+        // A second `.wms` is no longer a bad root shape; it is a warning, and the archive loads.
+        // See `testPicksTheFirstSkinDefinitionInArchiveOrderAndWarnsAboutTheRest`.
+        XCTAssertNil(code(["a.wms", "b.wms"]))
         XCTAssertEqual(code(["one/two/theme.wms"]), .wrapperDepthExceeded)
         XCTAssertEqual(code(["Wrapper/theme.wms", "outside.bmp"]), .wrapperDepthExceeded)
         XCTAssertEqual(code(["readme.txt"]), .invalidRoot)

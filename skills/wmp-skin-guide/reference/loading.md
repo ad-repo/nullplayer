@@ -134,6 +134,36 @@ any file whose central directory is not where its record says it is are left alo
 written to disk, no limit was relaxed, and the CRC of every repaired entry is still verified before
 the provider is exposed.
 
+## Which `.wms` is the skin, when there is more than one
+
+Two of the 180 archives hold two: `Nautical` ships `Nautical.wms` beside a leftover `sample.wms`,
+`Sports` ships `ExtremeSports.wms` beside the `saltmine.wms` template it was authored from. Both are
+skins Microsoft shipped with WMP 7, so the Player picks one, and `WMP0022` rejecting them was a black
+window over a working skin.
+
+**The rule is archive order: the first `.wms` an enumeration of the archive yields.** The others are
+named in a `WMP0022` **warning**, never a rejection.
+
+The corpus names the right *answer* without naming the *rule*, and the two must be kept apart. The
+answer came from resource resolution: `sample.wms` references 22 images and scripts and **all 22**
+are absent from the archive, `saltmine.wms` references 39 and **38** are absent, while both shipping
+definitions resolve every resource they name. That is ground truth for validating a rule — it is
+deliberately not the rule, because resolving every candidate in order to choose between them is work
+the loader should not do and would decide nothing in the other 178 archives.
+
+Against that ground truth three cheap rules are **indistinguishable**: archive order, case-insensitive
+alphabetical order, and newest modification time each pick the shipping file in both archives. Archive
+order is implemented because it is the only one with warrant outside this corpus — it is what a loader
+that enumerates entries and takes the first match does, and the WMP SDK's packaging guidance to add the
+skin definition file to the archive first is only meaningful advice if written order is what the Player
+reads. Alphabetical and mtime agreeing here is a coincidence of two archives whose leftovers sort late
+and are older. The warning names the discarded files precisely so the first archive this picks wrong
+appears in the census instead of being decided in silence; it fires exactly twice corpus-wide today,
+both correct.
+
+The shape rule is unchanged and still applies to whichever file is selected: at the root, or under one
+wrapper directory.
+
 ## Case sensitivity
 
 Tag names, attribute names and element ids are all case-insensitive; the corpus spells `<THEME>` and
@@ -149,6 +179,8 @@ across six skins fail `WMP0032` because their size is computed in script. A skin
 nothing is indistinguishable from a rejection to anyone using the app — which is why `WMP_TASKS.md`
 Tier 1 did not empty when the loader stopped rejecting. Load level is a floor, never a result.
 
-On the 180-archive corpus at rev `36e91df9` that floor holds at **175 of 180 loading and 506 views
+On the 180-archive corpus at rev `0c63320b` that floor holds at **177 of 180 loading and 508 views
 laying out**, with **12** skins still loading and drawing nothing — every one of them `WMP0032`,
-which is now the only cause left. The five remaining rejections are `WMP0015` ×3 and `WMP0022` ×2.
+which is now the only cause left. The three remaining rejections are all `WMP0015` (`WMP_TASKS.md`
+W33), and a fourth `WMP0015` costs `Nautical` its only view *after* the skin loads, so a rejection
+count is not the whole of that code's reach either.

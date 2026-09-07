@@ -180,7 +180,12 @@ scripts/wmp_render_sweep.sh compare  /tmp/wmp-sweep/base /tmp/wmp-sweep/curr
   prefix scan saw **one**, because the splice consumes the record prefix that would have betrayed
   it. So both scripts also check each loaded block's `RENDER-DUMP` count against the `views=` its own
   `LOAD` line declares (a view that fails still emits `RENDER-DUMP <view> FAILED`), and flag a
-  second `LOAD` inside one block. Damaged skins are listed in `damaged.txt`, get a row carrying
+  second `LOAD` inside one block. **Count distinct view ids, not lines.** A view that lays out and
+  then fails to rasterize emits *both* — the stats dump and the `FAILED` one — so when W32 admitted
+  `Nautical` (one view, laid out, then `WMP0015` on `vol_slider.bmp`) the arithmetic read 2 against
+  `views=1` and called the block damaged when nothing had been lost. Reading a live defect as a lost
+  log block is this check's own failure mode, pointed the wrong way, and it survived a solo re-run —
+  which is what distinguishes it from a real splice. Damaged skins are listed in `damaged.txt`, get a row carrying
   identity and nothing else, and are left out of the diff. Re-run one alone with
   `--corpus <a directory holding just that archive>`. Their PNGs are unaffected and still compare.
 - **Compare pixels, not alpha.** Pillow 9.5 made `getbbox()` on an RGBA image consider the alpha

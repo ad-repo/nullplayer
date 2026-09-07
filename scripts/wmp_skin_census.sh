@@ -167,9 +167,15 @@ for line in render:
 # A splice is only the *visible* half of a lost write, and the invisible half is the common one:
 # of the three losses in the 180-archive run at rev 171cf89a, the scan above saw one. The other two
 # blocks simply stopped, because the splice consumed the record prefix that would have betrayed it.
-# `views=` is the block's own declaration of how many RENDER-DUMP lines must follow (a view that
-# fails still emits `RENDER-DUMP <view> FAILED`), so a short block is arithmetic rather than
-# inference. A rejected archive carries no LOAD line and is not a block with rows missing.
+# `views=` is the block's own declaration of how many views must report (a view that fails still
+# emits `RENDER-DUMP <view> FAILED`), so a short block is arithmetic rather than inference. A
+# rejected archive carries no LOAD line and is not a block with rows missing.
+#
+# Count **distinct view ids**, not RENDER-DUMP lines. A view that lays out and then fails to
+# rasterize emits both lines — the stats dump, then the FAILED one — so `Nautical` reported 2 dumps
+# against `views=1` and was called a damaged log when nothing had been lost. Reading a live defect
+# (its `vol_slider.bmp` is W33) as a lost log block is the exact failure this check exists to catch,
+# pointed the wrong way.
 for name, lines in blocks.items():
     loads = [line for line in lines if line.startswith("LOAD ")]
     if len(loads) > 1:
@@ -178,8 +184,9 @@ for name, lines in blocks.items():
     if not loads:
         continue
     declared = re.search(r"\bviews=(\d+)", loads[0])
-    dumps = sum(1 for line in lines if line.startswith("RENDER-DUMP "))
-    if declared and int(declared.group(1)) != dumps:
+    reported = {m.group(1) for m in
+                (re.match(r"RENDER-DUMP (\S+?):? (?:FAILED|\d)", line) for line in lines) if m}
+    if declared and int(declared.group(1)) != len(reported):
         damaged.add(name)
 
 with open(os.path.join(out, "damaged.txt"), "w") as handle:

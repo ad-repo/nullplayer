@@ -65,6 +65,9 @@ final class WMPArchive: WMPResourceProviding {
     let rootPrefix: String?
     let entries: [WMPArchiveEntryInfo]
     let skinDefinitionPath: String
+    /// Findings the archive layer carries rather than throws. Empty for every archive that names
+    /// its skin definition unambiguously, which is 178 of the 180 in the corpus.
+    let diagnostics: [WMPDiagnostic]
 
     private let archive: Archive
     private let archiveLock = NSLock()
@@ -143,11 +146,12 @@ final class WMPArchive: WMPResourceProviding {
             throw WMPFailure(WMPDiagnostic(.invalidRoot,
                 "Archive must contain one .wms file at its root or inside one wrapper directory."))
         }
-        guard candidates.count == 1 else {
-            throw WMPFailure(WMPDiagnostic(.ambiguousSkinDefinition,
-                "Archive contains multiple .wms skin definitions; no deterministic WMP selection rule applies."))
-        }
-        let components = candidates[0].1.split(separator: "/")
+        // Two corpus archives carry a second `.wms` -- an author's leftover template, not a second
+        // skin -- and rejecting them for it was a black window over a skin Windows Media Player
+        // ships and loads. Take the first in archive order; see `selectSkinDefinition` for the
+        // evidence behind that rule and for why the discarded ones are named in a warning.
+        let selection = Self.selectSkinDefinition(among: candidates)
+        let components = selection.chosen.1.split(separator: "/")
         guard components.count == 1 || components.count == 2 else {
             throw WMPFailure(WMPDiagnostic(.wrapperDepthExceeded,
                 "The .wms file may be nested beneath at most one wrapper directory."))
@@ -181,8 +185,8 @@ final class WMPArchive: WMPResourceProviding {
                 compressedSize: entry.compressedSize, uncompressedSize: entry.uncompressedSize))
         }
 
-        let relativeWMS = prefix == nil ? candidates[0].1
-            : String(candidates[0].1.dropFirst(prefix!.count + 1))
+        let relativeWMS = prefix == nil ? selection.chosen.1
+            : String(selection.chosen.1.dropFirst(prefix!.count + 1))
 
         // Validate every stream and CRC before exposing even a read-only provider.
         for (entry, normalized) in files {
@@ -225,6 +229,44 @@ final class WMPArchive: WMPResourceProviding {
         canonicalPathsByFoldedPath = canonical
         entries = publicEntries.sorted { WMPPath.less($0.path, $1.path) }
         skinDefinitionPath = canonical[WMPPath.fold(relativeWMS)] ?? relativeWMS
+        diagnostics = selection.diagnostics
+    }
+
+    /// Which `.wms` is the skin, when an archive holds more than one.
+    ///
+    /// Two of the 180 corpus archives do: `Nautical` ships `Nautical.wms` beside a leftover
+    /// `sample.wms`, and `Sports` ships `ExtremeSports.wms` beside the `saltmine.wms` template it
+    /// was authored from. Both are skins Microsoft shipped with Windows Media Player 7, so WMP
+    /// plainly picks one, and rejecting them was a black window over a working skin.
+    ///
+    /// The corpus names the right answer without naming the rule. The leftover file in each is an
+    /// unused template: `sample.wms` references 22 images and scripts and **all 22** are absent
+    /// from the archive; `saltmine.wms` references 39 and 38 are absent. The shipping definition
+    /// resolves every one of its resources in both. That is ground truth, not a rule — resolving
+    /// every candidate's resources to choose between them is work the loader should not do, and it
+    /// would decide nothing in the 178 archives that carry one `.wms`.
+    ///
+    /// Against that ground truth, three cheap rules are indistinguishable: **archive order**,
+    /// case-insensitive **alphabetical** order, and **newest modification time** each pick the
+    /// shipping file in both archives. Archive order is the one implemented, because it is the one
+    /// with warrant outside this corpus: it is what a loader that enumerates entries and takes the
+    /// first match does, and the WMP SDK's packaging guidance — add the skin definition file to the
+    /// archive first — is only meaningful advice if the order entries were written in is what the
+    /// Player reads. Alphabetical and mtime agreeing here is a coincidence of two archives whose
+    /// leftovers happen to sort late and be older.
+    ///
+    /// The discarded candidates are named in a `WMP0022` **warning**, so the first archive where
+    /// this rule picks wrong shows up in the census instead of being decided in silence.
+    private static func selectSkinDefinition(
+        among candidates: [(Entry, String)]
+    ) -> (chosen: (Entry, String), diagnostics: [WMPDiagnostic]) {
+        guard candidates.count > 1 else { return (candidates[0], []) }
+        let chosen = candidates[0]
+        let discarded = candidates.dropFirst().map { $0.1 }.joined(separator: ", ")
+        return (chosen, [WMPDiagnostic(.ambiguousSkinDefinition,
+            "Archive contains \(candidates.count) .wms skin definitions; loading '\(chosen.1)', the "
+            + "first in archive order, and ignoring \(discarded).",
+            severity: .warning)])
     }
 
     private static func validateImageHeader(_ data: Data, path: String, limits: WMPArchiveLimits) throws {

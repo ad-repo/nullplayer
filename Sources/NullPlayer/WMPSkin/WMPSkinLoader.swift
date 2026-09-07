@@ -92,7 +92,7 @@ struct WMPSkinLoader {
         let graph = WMPObjectGraph(document: document)
         // The parser's own tolerances -- a repeated attribute, a tag left open -- are findings the
         // skin carries, not silence. They rank Class A/B work in the census.
-        var diagnostics = document.diagnostics + graph.diagnostics
+        var diagnostics = archive.diagnostics + document.diagnostics + graph.diagnostics
 
         let views = graph.allNodes.compactMap { node -> WMPViewRegistration? in
             guard node.kind == .view else { return nil }
