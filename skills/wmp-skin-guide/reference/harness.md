@@ -51,7 +51,7 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_RENDER_BITMAPS` | `1` | `BITMAPS` — resolved count and every path that failed to load, with `missing=` |
 | `WMP_RENDER_SCRIPTS` | `1` | `SCRIPTS`/`SCRIPT` — per program: bytes, declared handlers, and the runtime's availability |
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
-| `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and whether the member was recognised |
+| `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
 | `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]` | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after |
 | `WMP_RENDER_SETTLE` | seconds | pump the run loop, then drive the skin's `onTimer` handlers, before measuring |
 | `WMP_RENDER_SIZE` | `<W>x<H>` | build at that size and re-drive `onResize` — an expression-driven layout is a *different* layout, not the same one scaled |
@@ -101,12 +101,17 @@ RENDER-DUMP <view> FAILED <error>
 PROBE <view>/<stableID> <kind> id=<id> frame=<f> clip=<c> z=<n> paint=<…> attrs=[…]
 BITMAPS <view>: resolved=<n> missing=<space-separated paths>
 EXPR <view>/<id>.<prop> #<order>: <source> -> <static> live=<live> deps=[…]
-CALL <view> <path> <read|write> value=<v> <ok|UNRECOGNISED>
-CALLS <view> <path> ×<n> <ok|UNRECOGNISED>
+CALL <view> <path> <read|write|invoke> value=<v> <ok|INERT|UNRECOGNISED>
+CALLS <view> <path> ×<n> <ok|INERT|UNRECOGNISED>
 CLICK <view>@x,y hit=<id>#<stableID> kind=<k> action=<a> sticky=<b> handlers=<n>
 CLICK <view>@x,y changed=[…] | command=<…> | unrecognised=[…] | after: <…> | MISS
 PNG <view>: <filename>
 ```
+
+`INERT` is a member that is recognised, answers, and has nothing behind it — `theme.loadString` can
+only ever return the empty string, because there is no `wmploc.dll` on macOS. It gets its own word
+and its own census column (`inert_calls`) because a stub that reads as working is the most expensive
+bug this engine can carry; `reference/object-model.md` is the contract.
 
 `EXPR` reports **both** evaluators: `->` is the static grammar in `WMPInitialLayoutExpression` that
 the scene builder uses, and `live=` is the value the real script context produced. `live=-` with

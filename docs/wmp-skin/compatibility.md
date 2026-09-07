@@ -51,11 +51,13 @@ defined for them. They never fall back to Classic, Original, Original-Metal, or 
 
 ## Expressions and bindings
 
-- JScript geometry expressions execute only in `WMPScriptIsolationHelper`.
+- JScript geometry expressions execute in the skin session's own `JSContext` (`WMPScriptRuntime`),
+  where they can call the skin's own functions and read live element state. The exact member surface
+  is `skills/wmp-skin-guide/reference/object-model.md`.
 - Reads are captured as dependencies. Resolvable expressions commit in stable topological order.
 - Missing IDs, cycles, non-finite/negative sizes, depth overflow, and pass overflow do not partially
   mutate the visible scene.
-- Resize publishes the proposed view size to a helper transaction, resolves dependencies, and swaps
+- Resize publishes the proposed view size to a script transaction, resolves dependencies, and swaps
   one completed immutable scene. Drawing continues with the previous scene while work is pending.
 - `wmpprop:` and `wmpenabled:` share one coalescing registry. Transaction origins suppress echoes.
 
@@ -73,9 +75,12 @@ skin to 512 entries. Reset removes only that skin namespace.
 
 ActiveX, registry, shell/process APIs, arbitrary URLs, skin-authored HTML, filesystem/network
 handles, native-object reflection, modal script UI, WMP plug-ins, DLLs, and Objective-C bridging are
-not available. Script input/output is bounded JSON. A timeout, crash, allocation failure, malformed
-response, or explicit teardown terminates the helper process, cancels timers, keeps the last valid
-static scene, and disables script for that skin session.
+not available: every capability reachable from skin code is a member on `WMPObjectModel`, and each
+one is a value read off an immutable host snapshot or a typed command posted back to the main actor.
+An unrecognised member aborts the one handler that touched it and is counted as measured demand; a
+runaway script is stopped by the in-context execution-time limit and costs its own transaction.
+Teardown drops the context, cancels timers, and keeps the last valid scene. See Amendment 2 in
+`phase-0-decision-record.md`.
 
 ## Phase 7 corpus findings
 

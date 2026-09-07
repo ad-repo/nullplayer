@@ -10,8 +10,7 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "NullPlayer", targets: ["NullPlayer"]),
-        .executable(name: "WMPScriptIsolationHelper", targets: ["WMPScriptIsolationHelper"])
+        .executable(name: "NullPlayer", targets: ["NullPlayer"])
     ],
     dependencies: [
         // ZIP extraction for .wsz skin files
@@ -168,6 +167,9 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("WebKit"),
+                // The WMP skin engine runs skin JScript in an in-process JSContext whose only
+                // reachable surface is `WMPObjectModel`; see the wmp-skin-guide skill.
+                .linkedFramework("JavaScriptCore"),
                 .unsafeFlags([
                     "-L", "Frameworks",
                     "-L", "/opt/homebrew/lib",
@@ -176,15 +178,6 @@ let package = Package(
                     "-framework", "VLCKit",
                     "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
                 ]),
-            ]
-        ),
-        .executableTarget(
-            name: "WMPScriptIsolationHelper",
-            dependencies: [],
-            path: "Sources/WMPScriptIsolationHelper",
-            exclude: ["WMPScriptIsolationHelper.entitlements"],
-            linkerSettings: [
-                .linkedFramework("JavaScriptCore")
             ]
         ),
         .testTarget(
@@ -198,8 +191,7 @@ let package = Package(
             name: "NullPlayerAppTests",
             dependencies: [
                 "NullPlayer",
-                "ZIPFoundation",
-                "WMPScriptIsolationHelper"
+                "ZIPFoundation"
             ],
             path: "Tests/NullPlayerAppTests",
             // Committed golden PNGs for the `.wal` render sweep. They are read from the source tree

@@ -13,6 +13,7 @@
   bundled `WMPScriptIsolationHelper`, one fresh process and JavaScriptCore realm per evaluation
   batch, with a parent-owned deadline. A missed deadline terminates and reaps the helper before a
   replacement is launched. A main-process `JSContext` and an in-app `WKWebView` are prohibited.
+  — **Superseded by Amendment 2.** The `WKWebView` prohibition stands; the helper does not.
 - The Phase 0 helper is a security/feasibility proof and is not connected to a player mode. Phase 5
   must retain the framed protocol and process boundary while adding the typed WMP command/event
   vocabulary; it may amortize startup only if teardown and hard-stop properties remain equivalent.
@@ -50,6 +51,59 @@ finding that the ratio rejection had been hiding.
 **This is not a precedent for relaxing a limit to make a skin load.** The rule stands: never do
 that. This amendment holds because the limit was mis-specified against its own threat model, and the
 argument is about the threat, not about the thirteen skins.
+
+## Amendment 2 — the isolation boundary moves from the process to the object model
+
+**Date:** 2026-09-07 · **Corpus:** the 180 archives in `WMPSkins/`
+
+Phase 5's "GO with the helper-process architecture" is **superseded**. Skin JScript now runs in one
+persistent `JSContext` per skin session, inside the app process, on a WMP-owned serial queue.
+`Sources/WMPScriptIsolationHelper/` and its packaging, signing and verification wiring are retired
+in the same change. The prohibition on an in-app `WKWebView` stands.
+
+**Why the process model had to go, and it is not performance.** It could not hold a variable between
+two events. A WMP skin *is* held state: `g_paneCurrent` is written by one click handler and read by
+the next, so under a fresh realm per transaction a pane opened and could never close. It also could
+not let a `JScript:` geometry attribute call a function from the skin's own `.js` file, because the
+pass that ordered the expressions was sent no scripts at all — and one such failure emptied the whole
+ordered list, so *no* expression evaluated anywhere in the view. Corona's ten equaliser sliders and
+its main pane width all resolve through exactly that path.
+
+The alternative that keeps a process — a persistent helper with the object model behind RPC — puts an
+IPC round trip behind each of ~500 geometry reads per layout pass, per resize.
+
+**What the process boundary actually bought, and where it lives now.** It denied skin code the
+ambient capabilities of a JavaScript host: native objects, files, network, UI, player internals. None
+of that is reachable from a bare `JSContext` either — JavaScriptCore's global object has no `fetch`,
+no `require`, no `XMLHttpRequest`, no file API — and the WMP bootstrap additionally leaves
+`ActiveXObject`, `WScript`, `Enumerator`, `VBArray` and `GetObject` undefined. Every capability the
+skin *can* reach is a member on `WMPObjectModel`: each one is either a value read off an immutable
+`WMPHostSnapshot` or a typed command posted back to the main actor. Nothing in it touches
+`AudioEngine`, AppKit or the file system.
+`testDeniedGlobalsStayUndefinedInTheSessionContext` holds that surface closed.
+
+**What it bought that is genuinely weaker now: the hard stop.** A hostile process could be killed. A
+hostile `JSContext` cannot, so two things replace it. The context runs on its own serial queue, so a
+skin that loops forever wedges that queue and nothing else — the app stays live and every other mode
+is untouched. And the queue's context carries JavaScriptCore's execution-time limit, set to
+`WMPPhase0Limits.scriptExecutionSeconds` (0.25 s, the same deadline the helper was given).
+
+That limit is reached through a symbol the framework exports but does not declare publicly, resolved
+by name at context creation. **If it is ever absent the runtime keeps working and is unbounded**, and
+`WMPScriptContext.executionLimitApplied` says which happened;
+`testHostileLoopIsBoundedAndTheSessionStillAnswers` skips rather than lying when it is unavailable,
+and would hang rather than pass silently if the limit regressed while claiming to be applied. This is
+a real reduction in guarantee, recorded here rather than papered over.
+
+**Every other Phase 0 limit stands.** Timer count and period, preference size and per-skin hash
+namespacing, expression passes and dependency depth, and the whole archive contract are unchanged and
+still enforced. `WMPPhase0Limits.scriptMessageBytes` and `scriptInFlightBytes` bounded a wire format
+that no longer exists; they stay in the table for the codes that reference them.
+
+**Fail closed per handler, never per session.** An unrecognised member aborts the one handler that
+touched it and is tallied as measured demand. The old session-wide `scriptsDisabled` kill switch is
+deleted: a skin puts its whole startup in one handler, so one missing member already costs many
+unrelated features, and a kill switch made that invisible instead of visible.
 
 ## Threat model
 
@@ -90,8 +144,7 @@ of the trusted computing base.
 | Active timers / minimum period | 256 / 8 ms (120 Hz effective maximum) |
 | Preference value | 64 KiB, namespaced per skin hash |
 | Script message / in-flight bytes | 1 MiB / 16 MiB |
-| Helper address space / open descriptors | 256 MiB / 16 |
-| Evaluation deadline / termination grace | caller-selected; proof uses 50 ms / 50 ms |
+| Script execution time | 0.25 s per transaction, enforced in-context (see Amendment 2) |
 
 `WMPPhase0Limits` is the executable source of truth. Phase 1 may move it into production WMP types
 without changing values unless corpus evidence and a new decision-record entry justify the change.
@@ -188,7 +241,7 @@ Darwin, and the system JavaScriptCore framework. App assembly installs it at
 - MAS assembly signs the helper first with the distribution identity and restricted entitlements,
   then signs the enclosing app. The helper asks for App Sandbox only; it has no network, file, UI,
   automation, or inheritance entitlement.
-- `scripts/verify_wmp_phase0_packaging.sh` verifies the nested signature, sandbox entitlement, and
+- *(Retired with Amendment 2.)* `scripts/verify_wmp_phase0_packaging.sh` verified the nested signature, sandbox entitlement, and
   absence of client/server network entitlements.
 - No third-party runtime, new dylib, JavaScript source package, XPC interface, or license payload is
   added. JavaScriptCore is supplied by macOS.

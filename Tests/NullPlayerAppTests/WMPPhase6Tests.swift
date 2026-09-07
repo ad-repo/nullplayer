@@ -5,11 +5,6 @@ import XCTest
 @testable import NullPlayer
 
 final class WMPPhase6Tests: XCTestCase {
-    private var helperURL: URL {
-        URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".build/debug/WMPScriptIsolationHelper")
-    }
-
     func testSceneInventoriesCompletedWidgetsAndHostedSurfaces() async throws {
         let archive = try WMPSkinTestSupport.makeArchive([
             WMPTestArchiveEntry("skin.wms", data: Data("""
@@ -36,17 +31,37 @@ final class WMPPhase6Tests: XCTestCase {
     }
 
     func testScriptCompatibilityProvidesPlaylistEQAndViewCommands() async throws {
-        let runtime = WMPJScriptRuntime(helperURL: helperURL, timeout: 0.5)
-        let playlist = "[{\"title\":\"One\",\"artist\":\"Artist\",\"duration\":42}]"
-        let transaction = try success(await runtime.transact(WMPJScriptBatch(
-            scripts: ["var n=player.currentPlaylist.item(0).name; eq.gainLevel3=7; theme.currentViewID='tiny';"],
-            expressions: [.init(key: "view.width", source: "player.currentPlaylist.item(0).duration")],
-            host: ["playlistCount": .number(1), "playlistJSON": .string(playlist),
-                   "eqGainsJSON": .string("[0,0,0,0,0,0,0,0,0,0]"), "viewID": .string("full")]
-        )))
-        XCTAssertEqual(transaction.expressions.first?.value, .number(42))
-        XCTAssertTrue(transaction.hostCommands.contains { $0.action == "setEQBand:2" && $0.value == .number(7) })
-        XCTAssertTrue(transaction.hostCommands.contains { $0.action == "setCurrentView" && $0.value == .string("tiny") })
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="full" width="400" height="240" onLoad="Setup();" scriptFile="s.js">
+              <SUBVIEW id="pane" left="0" top="0" width="JScript:player.currentPlaylist.item(0).duration;" height="10"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("s.js", data: Data("""
+            function Setup() {
+                var n = player.currentPlaylist.item(0).name;
+                eq.gainLevel3 = 7;
+                theme.currentViewID = 'tiny';
+            }
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        var snapshot = WMPHostSnapshot()
+        snapshot.playlistCount = 1
+        snapshot.playlistItems = [.init(title: "One", artist: "Artist", duration: 42)]
+        let suite = "WMPPhase6Tests.script.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let runtime = WMPScriptRuntime(preferences: WMPPreferenceStore(skinData: Data("six".utf8),
+                                                                       defaults: defaults))
+        let output = await runtime.transact(skin: skin, viewID: "full",
+            size: .init(width: 400, height: 240), snapshot: snapshot,
+            event: .init(name: "load", targetID: "full",
+                         handlers: WMPMainWindowController.handlers(in: skin, event: "load", targetID: nil)))
+        XCTAssertEqual(output.expressions.first?.value, .number(42))
+        XCTAssertTrue(output.hostCommands.contains { $0.action == "setEQBand:2" && $0.value == .number(7) })
+        XCTAssertTrue(output.hostCommands.contains { $0.action == "setCurrentView" && $0.value == .string("tiny") })
+        await runtime.teardown()
     }
 
     @MainActor
@@ -132,10 +147,6 @@ final class WMPPhase6Tests: XCTestCase {
         controller.switchView(to: "full")
         try await waitUntil { controller.window?.frame.size == NSSize(width: 240, height: 120) }
         controller.prepareForUITeardown(); controller.window?.close()
-    }
-
-    private func success(_ result: Result<WMPJScriptTransaction, WMPPhase0Diagnostic>) throws -> WMPJScriptTransaction {
-        switch result { case let .success(value): return value; case let .failure(error): throw error }
     }
 
     @MainActor

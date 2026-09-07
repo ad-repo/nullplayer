@@ -1,6 +1,6 @@
 ---
 name: wmp-skin-guide
-description: Windows Media Player .wmz/.wms skin engine, bounded loading, retained graph, compatibility reporting, rendering, isolated JScript, and WMP-specific app-mode integration.
+description: Windows Media Player .wmz/.wms skin engine, bounded loading, retained graph, compatibility reporting, rendering, the persistent JScript runtime and host object model, and WMP-specific app-mode integration.
 ---
 
 # Windows Media Player skin engine
@@ -8,6 +8,11 @@ description: Windows Media Player .wmz/.wms skin engine, bounded loading, retain
 Read this skill before changing `Sources/NullPlayer/WMPSkin/` or
 `Sources/NullPlayer/Windows/WMPSkin/`. The current security decisions and locked limits are in
 `phase-0-decision-record.md`.
+
+**The script runtime and everything skin JScript can reach is `reference/object-model.md`.** It is
+the canonical reference for the persistent `JSContext`, the three member resolutions
+(`ok`/`INERT`/`UNRECOGNISED`), element and expression semantics, and how to add a member without
+making the demand tally lie.
 
 **Measure before you reason.** `reference/harness.md` is the canonical probe and corpus reference —
 every env-var flag, the line grammar, `scripts/wmp_skin_census.sh` and `scripts/wmp_render_sweep.sh`,
@@ -31,8 +36,9 @@ and prove all existing modes retain their behavior. Record every shared path and
 alternatives in the phase handoff.
 
 Never put WMP input work on the main thread. Archive validation/inflation, decoding, XML/graph/report
-construction, image work, expressions, and helper-process communication run on a WMP-owned background
-executor. Never use `DispatchQueue.main.sync`. Hand only completed immutable snapshots and typed host
+construction, image work, expressions, and script evaluation run on a WMP-owned background
+executor — the script context has its own serial queue, so a skin that loops forever wedges that
+queue and nothing else. Never use `DispatchQueue.main.sync`. Hand only completed immutable snapshots and typed host
 commands to `MainActor`, where the work is limited to AppKit presentation.
 
 WMP owns a dedicated app-authored unskinned player. On a fresh public-release profile with no
@@ -70,8 +76,10 @@ fallback. Existing users keep their persisted mode.
 - Graph IDs and registry order are deterministic. Duplicate authored IDs are retained and warned,
   not silently collapsed.
 
-Skin JScript must never run in the app process. Phase 5 uses the killable helper-process architecture
-selected by Phase 0 and must repeat its hard-stop/restart security gate before product exposure.
+Skin JScript runs in one persistent in-process `JSContext` per skin session, on a WMP-owned serial
+queue, with the object model as the security boundary — see Amendment 2 in
+`phase-0-decision-record.md` for why the helper process was retired and what that costs. An in-app
+`WKWebView` remains prohibited.
 
 ## Static scene and image contracts
 
@@ -79,8 +87,10 @@ selected by Phase 0 and must repeat its hard-stop/restart security gate before p
   `WMPInitialLayoutExpression`: finite numbers, parentheses, arithmetic, and geometry reads from
   deterministic IDs. `wmpprop:` is accepted only as an alias for that same geometry grammar.
   Calls, assignments, statements, script globals, ambiguous/unknown IDs, cycles, and excessive
-  dependency depth remain unresolved diagnostics; never route them through in-process JScript or
-  invent fallback geometry.
+  dependency depth stay unresolved *for the scene builder*, which never executes skin code and never
+  invents fallback geometry. The general path is the live context in `WMPScriptRuntime`, whose
+  resolved values arrive as scene overrides; the static grammar remains the fast, script-free
+  evaluator the builder uses before any transaction has run.
 - Scene coordinates remain top-left throughout layout, clipping, dirty bounds, hit metadata, and
   paint commands. Core Graphics conversion happens once in `WMPRenderer`; images and text each use
   an explicit counter-transform so pixels and glyphs remain upright.
@@ -138,19 +148,23 @@ selected by Phase 0 and must repeat its hard-stop/restart security gate before p
 - Both the skinned and app-authored unskinned WMP players use this same host. Custom-drawn controls
   publish accessibility children with stable `wmp.*` identifiers.
 
-## Phase 5 script, expression, and binding contracts
+## Script, expression, and binding contracts
 
-- `WMPJScriptRuntime` is the only production route for skin JScript. It sends a versioned, bounded
-  JSON batch to a fresh `WMPScriptIsolationHelper` process. The compatibility bootstrap exposes only
-  the checked table in `docs/wmp-skin/compatibility.md`; it never bridges a native object.
-- Every batch has a parent deadline. Timeout, crash, protocol failure, allocation failure, or
-  teardown terminates and reaps the helper. The session then disables script, cancels timers, emits
-  one actionable diagnostic, and retains its last committed scene overrides.
+- `WMPScriptRuntime` is the only production route for skin JScript: one persistent `JSContext` per
+  skin session, one transaction at a time, expressions then handlers. `reference/object-model.md`
+  is the contract for what it exposes; do not add a member without reading its rules.
+- A skin's programs evaluate once per session, **after** the view's elements are installed as
+  globals and the host objects are bound, because skins run top-level code that touches both.
+- Fail closed per handler, never per session: an unrecognised member aborts that one handler and is
+  tallied as measured demand. There is no session-wide script kill switch — a skin puts its whole
+  startup in one handler, and a kill switch makes that invisible rather than visible.
+- Authored handlers are selected **per view**. A `.wmz` declares every view in one file, so an
+  unscoped scan runs another view's `onLoad` against elements that do not exist in this one.
 - Expression reads form a per-view dependency graph. Resolve in stable topological order and commit
   one immutable scene. Missing/ambiguous IDs, cross-view reads, cycles, non-finite values, negative
   sizes, and depth/pass overflow never partially update the visible scene.
 - Resizes evaluate from proposed view dimensions off-main. AppKit keeps drawing the last scene until
-  the resolved replacement is complete; never synchronously rendezvous with helper work.
+  the resolved replacement is complete; never synchronously rendezvous with script work.
 - `WMPObservablePropertyRegistry` owns both `wmpprop:` and `wmpenabled:`. Coalesce host snapshots,
   retain committed values across batches, and tag origins so script echoes cannot create feedback.
 - Host timers enforce the Phase 0 count and period limits. Preferences are bounded and namespaced by
@@ -208,8 +222,6 @@ tests first, the user-supplied `WMP_TEST_WMZ` corpus check when available, then 
   `WMP_CORPUS_REPORT_DIR` selects an external report directory for the opt-in Phase 7 test.
 - Fuzz/mutation outcomes are success or `WMPFailure`; exercise archive metadata/payloads, strict
   text, XML, attributes/colors, mapping images, image decode, and bridge bounds.
-- Helper stdout is bounded while reading, not after `readDataToEndOfFile`; request size is rejected
-  before process launch. Teardown assertions use `activeProcessCount` only as read-only evidence.
 - Render at the window's current backing scale and rebuild when backing properties change. Keep 1×
   and 2× correctness in original-fixture tests; never add real-skin goldens.
 - Corpus-driven compatibility defaults must remain narrow. Empty optional images warn; text outside

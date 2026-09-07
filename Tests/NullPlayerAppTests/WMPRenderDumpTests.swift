@@ -123,30 +123,25 @@ struct WMPProbe {
     }
 }
 
-/// The script pass, or an honest line saying why there wasn't one.
+/// The script pass.
 ///
-/// The helper is built as a dependency of this test target, so under `swift test` it is normally
-/// present at `.build/debug/WMPScriptIsolationHelper`. When it is not, every script-derived line
-/// below would silently read as "this skin has no scripts" — which is false for **14 of 14** corpus
-/// archives. A probe that reports nothing must first prove it could have seen something, so the
-/// absence is printed as `runtime=unavailable` rather than left as silence.
+/// It used to be able to be *absent*: the runtime lived in a helper process built beside the test
+/// binary, and when that binary was missing every script-derived line below went quiet — which
+/// reads exactly like a skin with no scripts, and is false for every corpus archive. The runtime is
+/// now in-process, so there is nothing to be missing; `unavailableReason` stays only so the
+/// `runtime=` field of the `SCRIPTS` line keeps its grammar and a future failure has somewhere
+/// honest to be reported.
 struct WMPScriptPass {
-    let session: WMPPhase5Session?
+    let session: WMPScriptRuntime?
     let unavailableReason: String?
 
     init(archiveData: Data, defaults: UserDefaults) {
-        let helper = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".build/debug/WMPScriptIsolationHelper")
-        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
-            session = nil
-            unavailableReason = "helper not executable at \(helper.path)"
-            return
-        }
-        // The production deadline is 0.25 s per transaction. The harness is not measuring latency
-        // and a corpus archive re-evaluates up to 87 KB of JScript per pass, so it uses a generous
-        // one: a timeout here would be reported as a script failure that the app does not have.
-        session = WMPPhase5Session(runtime: WMPJScriptRuntime(helperURL: helper, timeout: 5),
-                                   preferences: WMPPreferenceStore(skinData: archiveData, defaults: defaults))
+        // The production budget is 0.25 s per transaction. The harness is not measuring latency and
+        // a corpus archive evaluates up to 87 KB of JScript in one pass, so it uses a generous one:
+        // a timeout here would be reported as a script failure the app does not have.
+        session = WMPScriptRuntime(preferences: WMPPreferenceStore(skinData: archiveData,
+                                                                   defaults: defaults),
+                                   executionSeconds: 5)
         unavailableReason = nil
     }
 }
@@ -443,14 +438,16 @@ enum WMPHarness {
         // for an expression-driven layout is a different layout, not the same one scaled.
         var scene = try await builder.build(viewID: viewID, requestedSize: probe.requestedSize)
 
-        var output: WMPPhase5Output?
+        var output: WMPScriptOutput?
         if let session = pass.session {
             await session.prepareForViewSwitch()
-            // The load pass: scripts evaluate and every `JScript:` geometry expression resolves,
-            // exactly as the app's first transaction does. Its overrides are what the scene is then
-            // rebuilt with, so a dumped PNG shows script-driven layout rather than raw markup.
+            // The load pass: the skin's programs evaluate, every `JScript:` geometry expression
+            // resolves, and the view's own `onLoad` handlers run — exactly what the app's first
+            // transaction does. Driving `onLoad` here is not optional detail: it is where a skin
+            // sets up its panes, and a harness that skipped it measured a skin nobody sees.
             output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
-                                            snapshot: WMPHostSnapshot(), event: nil)
+                                            snapshot: WMPHostSnapshot(),
+                                            event: eventFor(name: "onLoad", skin: skin, viewID: viewID))
             if probe.requestedSize != nil {
                 // A resize is a second layout pass, not a re-scale: the expressions must run again
                 // against the new `view.width`/`view.height` before anything is measured.
@@ -605,7 +602,7 @@ enum WMPHarness {
     /// that the scene builder uses today, and — when the script runtime ran — the value the real
     /// context produced, with the dependency order it was evaluated in.
     static func expressionLines(scene: WMPScene, skin: WMPLoadedSkin, viewID: String,
-                                output: WMPPhase5Output?) -> [String] {
+                                output: WMPScriptOutput?) -> [String] {
         guard let view = skin.views.first(where: { $0.id.caseInsensitiveCompare(viewID) == .orderedSame })?.node
         else { return [] }
         var resolver = WMPInitialLayoutResolver(graph: skin.graph, view: view, canvas: scene.canvasSize)
@@ -694,15 +691,11 @@ enum WMPHarness {
         return names
     }
 
+    /// Exactly what the app dispatches, through the app's own selector — including its view scope,
+    /// so the harness cannot measure a skin the app never runs.
     private static func eventFor(name: String, skin: WMPLoadedSkin, viewID: String) -> WMPJScriptEvent? {
-        var handlers: [String] = []
-        for node in skin.graph.allNodes {
-            for attribute in node.attributes {
-                guard case let .handler(event, source) = attribute.value,
-                      event.caseInsensitiveCompare(name) == .orderedSame else { continue }
-                handlers.append(source)
-            }
-        }
+        let handlers = WMPMainWindowController.handlers(in: skin, event: name, targetID: nil,
+                                                        viewID: viewID)
         guard !handlers.isEmpty else { return nil }
         return WMPJScriptEvent(name: name, targetID: viewID, handlers: handlers)
     }
@@ -712,23 +705,40 @@ enum WMPHarness {
     /// Every host object-model access with what answered and whether the member was recognised. The
     /// ranked `UNRECOGNISED` tail is the Class A backlog; the recognised lines are the only place a
     /// member answering a plausible-but-wrong default is visible at all.
-    static func callTraceLines(viewID: String, output: WMPPhase5Output?,
+    static func callTraceLines(viewID: String, output: WMPScriptOutput?,
                                unavailable: String?) -> [String] {
         guard let output else {
             return ["CALLS \(viewID): none (\(unavailable ?? "no script transaction"))"]
         }
         var lines = output.calls.map { call in
             "CALL \(viewID) \(call.path) \(call.kind.rawValue) "
-                + "value=\(call.value?.string ?? "null") \(call.recognised ? "ok" : "UNRECOGNISED")"
+                + "value=\(call.value?.string ?? "null") \(Self.resolutionText(call.resolution))"
         }
-        var counts: [String: (Int, Bool)] = [:]
+        var counts: [String: (Int, WMPMemberResolution)] = [:]
         for call in output.calls {
-            let existing = counts[call.path] ?? (0, true)
-            counts[call.path] = (existing.0 + 1, existing.1 && call.recognised)
+            let existing = counts[call.path] ?? (0, .live)
+            // The worst resolution any of them got: a member that answers live once and
+            // unrecognised once is not a working member.
+            let worst: WMPMemberResolution
+            if existing.1 == .unrecognised || call.resolution == .unrecognised { worst = .unrecognised }
+            else if existing.1 == .inert || call.resolution == .inert { worst = .inert }
+            else { worst = .live }
+            counts[call.path] = (existing.0 + 1, worst)
         }
         lines += counts.sorted { $0.value.0 == $1.value.0 ? $0.key < $1.key : $0.value.0 > $1.value.0 }
-            .map { "CALLS \(viewID) \($0.key) ×\($0.value.0) \($0.value.1 ? "ok" : "UNRECOGNISED")" }
+            .map { "CALLS \(viewID) \($0.key) ×\($0.value.0) \(Self.resolutionText($0.value.1))" }
         return lines
+    }
+
+    /// `INERT` is its own word on purpose. A member that is recognised and answers a plausible
+    /// default is the most expensive phantom bug this engine can carry — it disappears from the
+    /// demand tally and reads as working — so the ones that have no host behind them say so.
+    static func resolutionText(_ resolution: WMPMemberResolution) -> String {
+        switch resolution {
+        case .live: return "ok"
+        case .inert: return "INERT"
+        case .unrecognised: return "UNRECOGNISED"
+        }
     }
 
     // MARK: Clicks

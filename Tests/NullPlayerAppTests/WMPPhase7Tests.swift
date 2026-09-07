@@ -5,11 +5,6 @@ import XCTest
 @testable import NullPlayer
 
 final class WMPPhase7Tests: XCTestCase {
-    private var helperURL: URL {
-        URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".build/debug/WMPScriptIsolationHelper")
-    }
-
     func testCorpusReportEmitsFactsDemandMetricsAndConfidenceWithoutPixels() async throws {
         let xml = """
         <THEME><VIEW id="main" width="80" height="40">
@@ -168,29 +163,6 @@ final class WMPPhase7Tests: XCTestCase {
         let descriptorsAfter = openDescriptorCount()
         XCTAssertLessThanOrEqual(descriptorsAfter, descriptorsBefore + 8,
             "Rapid load teardown leaked file descriptors")
-    }
-
-    func testBridgeRejectsOversizedInputBeforeLaunchAndLeavesNoProcess() {
-        let isolation = WMPScriptIsolation(helperURL: helperURL)
-        let result = isolation.evaluate(script: String(repeating: "x",
-            count: WMPPhase0Limits.scriptMessageBytes + 1))
-        guard case let .failed(diagnostic) = result else { return XCTFail("Oversized input was accepted") }
-        XCTAssertEqual(diagnostic.code, .scriptMessageTooLarge)
-        XCTAssertEqual(isolation.activeProcessCount, 0)
-    }
-
-    func testBridgeStopsReadingOversizedHelperResponse() throws {
-        let directory = try WMPSkinTestSupport.temporaryDirectory()
-        let helper = directory.appendingPathComponent("oversized-helper")
-        try Data("#!/bin/sh\nhead -c 1048582 /dev/zero\nsleep 5\n".utf8).write(to: helper)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
-        let isolation = WMPScriptIsolation(helperURL: helper, timeout: 1, terminationGrace: 0.05)
-        let started = Date()
-        let result = isolation.evaluate(script: "1")
-        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
-        guard case let .failed(diagnostic) = result else { return XCTFail("Oversized response was accepted") }
-        XCTAssertTrue(diagnostic.code == .scriptCrashed || diagnostic.code == .scriptProtocolViolation)
-        XCTAssertEqual(isolation.activeProcessCount, 0)
     }
 
     @MainActor

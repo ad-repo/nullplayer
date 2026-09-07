@@ -1,5 +1,11 @@
 # WMP skin Phase 0 handoff
 
+> **Superseded in part (2026-09-07).** The helper-process script architecture this
+> describes was retired: skin JScript now runs in one persistent in-process `JSContext`
+> per skin session with the object model as the boundary. See Amendment 2 in
+> `phase-0-decision-record.md` and `skills/wmp-skin-guide/reference/object-model.md`.
+> Like every handoff here, the rest is unverified narrative — check it against the code.
+
 ## Repository state at phase start
 
 ```text

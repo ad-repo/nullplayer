@@ -27,6 +27,11 @@ enum WMPPhase0Limits {
     static let minimumTimerPeriodMilliseconds = 8
     static let preferenceValueBytes = 64 * 1_024
     static let scriptMessageBytes = 1 * 1_024 * 1_024
+    /// Wall-clock budget for one script transaction. It replaced the helper process's per-batch
+    /// deadline when the runtime moved in-process (Amendment 2); the number is the same 0.25 s the
+    /// helper was given, and it is enforced by JavaScriptCore's execution-time limit rather than by
+    /// killing a process.
+    static let scriptExecutionSeconds: TimeInterval = 0.25
     static let scriptInFlightBytes = 16 * 1_024 * 1_024
 }
 

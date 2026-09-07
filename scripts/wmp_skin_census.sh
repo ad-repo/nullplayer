@@ -198,7 +198,7 @@ BITMAPS = re.compile(r"^BITMAPS (\S+): resolved=(\d+) missing=(.*)$")
 SCRIPTS = re.compile(r"^SCRIPTS programs=(\d+)(?: bytes=(\d+))? runtime=(\S+)")
 UNKNOWN_TAG = re.compile(r"^UNKNOWN tag (\S+) ×(\d+)")
 UNKNOWN_MEMBER = re.compile(r"^UNKNOWN member (\S+) ×(\d+)")
-CALLS = re.compile(r"^CALLS \S+ (\S+) ×(\d+) (ok|UNRECOGNISED)")
+CALLS = re.compile(r"^CALLS \S+ (\S+) ×(\d+) (ok|INERT|UNRECOGNISED)")
 
 COLUMNS = ["file", "sha256", "duplicate_of", "damaged", "load", "reject_codes",
            "encoding", "entries", "views", "nodes", "scripts", "script_runtime",
@@ -206,7 +206,7 @@ COLUMNS = ["file", "sha256", "duplicate_of", "damaged", "load", "reject_codes",
            "layouts", "layout_nodes", "commands", "hits", "widgets", "unresolved",
            "bitmaps_resolved", "bitmaps_missing", "missing_bitmaps",
            "unknown_tags", "unknown_members", "top_unknown_members",
-           "traced_calls", "unrecognised_calls",
+           "traced_calls", "unrecognised_calls", "inert_calls",
            "measured_rev", "measured_at"]
 
 def cell(value):
@@ -241,7 +241,7 @@ for name in files:
     commands = hits = widgets = unresolved = 0
     resolved, missing = 0, set()
     unknown_tags, unknown_members = [], []
-    traced, unrecognised = 0, set()
+    traced, unrecognised, inert = 0, set(), set()
 
     for line in lines:
         if (match := LOAD.match(line)):
@@ -273,6 +273,10 @@ for name in files:
             traced += int(match.group(2))
             if match.group(3) == "UNRECOGNISED":
                 unrecognised.add(match.group(1))
+            elif match.group(3) == "INERT":
+                # Recognised, answered, and nothing behind it. Counted apart from `ok` because a
+                # stub that reads as working is the most expensive bug this engine can carry.
+                inert.add(match.group(1))
 
     row.update(findings_error=severities.get("error", 0),
                findings_warning=severities.get("warning", 0),
@@ -284,7 +288,8 @@ for name in files:
                top_unknown_members=" ".join(
                    "%sx%d" % pair for pair in sorted(unknown_members, key=lambda p: -p[1])[:6]) or "-",
                traced_calls=traced,
-               unrecognised_calls=" ".join(sorted(unrecognised)[:8]) or "-")
+               unrecognised_calls=" ".join(sorted(unrecognised)[:8]) or "-",
+               inert_calls=" ".join(sorted(inert)[:8]) or "-")
     rows.append(row)
 
 path = os.path.join(out, "census.tsv")

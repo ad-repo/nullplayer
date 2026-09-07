@@ -47,12 +47,6 @@ assemble_app() {
     # Step 4: Copy executable and write PkgInfo
     log_info "Copying executable..."
     cp "$BUILD_DIR/NullPlayer" "$MACOS_DIR/"
-    if [[ ! -x "$BUILD_DIR/WMPScriptIsolationHelper" ]]; then
-        log_error "WMP script isolation helper missing at $BUILD_DIR/WMPScriptIsolationHelper"
-        exit 1
-    fi
-    cp "$BUILD_DIR/WMPScriptIsolationHelper" "$HELPERS_DIR/"
-    chmod 755 "$HELPERS_DIR/WMPScriptIsolationHelper"
     printf 'APPL????' > "$CONTENTS_DIR/PkgInfo"
 
     # Step 5: Copy frameworks
