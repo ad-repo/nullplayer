@@ -204,9 +204,9 @@ number from them against the code before relying on it. This is census output.
 | 7 of 10 rejections are `WMP0025` (text encoding) | **0 encoding rejections.** The decoder already resolves the corpus: utf16LE ×11, windows1252 ×2 |
 | 3 of 10 rejections are `WMP0027` (duplicate attribute) | **all 4 rejections are `WMP0027`** — Alpine7618_v09, anemone, Official_Xbox_XP, The Unit, exactly the four skins measured as carrying duplicate attributes |
 
-So the whole of the Tier-1 loading blocker is the lenient-XML-parser work (`W2`), and the decoder
-work (`W1`) is no longer ranked ahead of it. Two further clusters the census surfaced, which the
-plan had folded into later phases:
+So the whole of the Tier-1 loading blocker was the lenient-XML-parser work (`W2`), and the decoder
+work (`W1`) was not ranked ahead of it. Two further clusters the census surfaced, which the plan had
+folded into later phases:
 
 - **`WMP0032`, 7 views across 5 skins** — "View requires positive literal width and height for
   static layout". A view whose size is computed in script renders nothing at all, which is why
@@ -216,3 +216,36 @@ plan had folded into later phases:
 
 Every count above carries the corpus it was measured against. Do not rewrite an old numerator
 against a new denominator.
+
+## After Phase 2 (14-skin corpus, rev `733d3631`)
+
+`load ok=14`. The four `WMP0027` rejections are gone; see `reference/loading.md` for what replaced
+the parser and what it now tolerates. Re-measured against the **new 14-archive denominator**, so
+these are not comparable line-for-line with the numbers above:
+
+| | rev `055063ed` (10 loading) | rev `733d3631` (14 loading) |
+|---|---|---|
+| archives loaded | 10 | **14** |
+| rejections | 4 × `WMP0027` | **0** |
+| `WMP0032` blacked-out views | 7 across 5 skins | 9 across 6 skins |
+| `WMP0024` killed views | 2 | 3 |
+| `WMP0034` duplicate attributes | — (the code did not exist) | 19 across 4 skins |
+| render dumps | 18 PNGs | 25 PNGs |
+
+**What the sweep proved about collateral damage.** All 18 pre-existing PNGs are byte-identical. The
+only invariant lines that moved are diagnostic *locations*, and they moved because the new parser
+points at a tag's opening `<` where libxml2 reported the position the tag ended at — verified by hand
+against `corona.wms`, where `svTop` opens on line 42 and its closing `>` is on line 46. Nothing else
+in any block changed: no counts, no node ids, no bitmap resolution, no layout shapes.
+
+**Two Class B defects became visible only because the skins now load** — a probe cannot see a defect
+in a skin it rejects, and neither can you:
+
+- `Alpine7618_v09/view-2@1x.png` renders its art in the lower ~150 px of a 517×412 view and flat
+  `#FF00FF` everywhere else: the transparency key is not applied to the uncovered background (`W8`).
+- `Official_Xbox_XP/mainBox@1x.png` has `WMPWidgetViews`' opaque black `VIDEO` placeholder painted
+  over the skin's own artwork (`W9`).
+
+Both were found by *looking at the PNGs*. The census reports both skins as clean loads with resolved
+bitmaps, which is exactly the blind spot the harness notes warn about: a structural probe says a node
+exists, never that it is drawn right.

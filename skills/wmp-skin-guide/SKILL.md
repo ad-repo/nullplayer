@@ -50,11 +50,15 @@ fallback. Existing users keep their persisted mode.
   CRC failure. The provider is read-only and never extracts to disk.
 - A skin contains exactly one unambiguous `.wms` at root or under one wrapper directory. Resources
   resolve relative to the declaring file and then the skin root, never outside the provider.
-- Text decoding is strict BOM-aware UTF-8/UTF-16LE/UTF-16BE, with a deterministic Windows-1252
-  fallback for unmarked legacy WMP text. Do not guess other ANSI code pages, shell out to `iconv`,
-  accept malformed surrogates, or allow embedded NULs.
-- XML retains authored tag/attribute spelling and source locations while bounding depth and node
-  count. Unknown elements stay in the graph for compatibility reporting.
+- Text decoding is BOM-aware UTF-8/UTF-16LE/UTF-16BE, then a **positional** BOM-less UTF-16 sniff,
+  then a deterministic Windows-1252 fallback for unmarked legacy WMP text. Do not guess other ANSI
+  code pages, shell out to `iconv`, accept malformed surrogates, or allow embedded NULs.
+- XML is parsed by a hand-rolled lenient parser, **not** `XMLParser` — libxml2 aborts on a duplicate
+  attribute before the delegate runs, which rejected 4 of 14 archives. It retains authored
+  tag/attribute spelling, **attribute document order**, and source locations while bounding depth and
+  node count. Unknown elements stay in the graph for compatibility reporting.
+- `reference/loading.md` is the contract for both: what is tolerated, what stays fatal, and the two
+  things (attribute order, CR-only line endings) that look cosmetic and are not.
 - Attribute parsing classifies expressions, bindings, handlers, colors, and resources without
   executing skin code. `res://` and optional missing artwork warn; path escapes and required missing
   scripts fail.
