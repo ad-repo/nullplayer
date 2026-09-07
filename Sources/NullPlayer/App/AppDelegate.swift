@@ -102,6 +102,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppStateManager.shared.restoreSettingsState { [weak self] in
             self?.loadDiagnosticWMPSkinIfRequested()
+            // Everything the launch puts on screen is finally up: the player at its restored frame,
+            // the skin's own windows at their final sizes, and any hosted window the session had
+            // open. This is the first moment a `.wal` arrangement can be computed — see
+            // `WinampModernMainWindowController.arrangeWindows`.
+            self?.windowManager.arrangeWinampModernWindows()
             if shouldRestoreCompactMode {
                 // The main window was created but never revealed, so force its snapshot to
                 // "visible" — exiting Compact Mode must restore it onscreen.
@@ -114,7 +119,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Mark app as ready for file opens
         isAppReady = true
-        
+
         // If files were passed at launch (double-clicked to open), play them
         if !pendingFilesToOpen.isEmpty {
             processPendingFiles()
@@ -123,6 +128,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             AppStateManager.shared.restorePlaylistState()
         }
 
+        #if DEBUG
+        // Phase 1 acceptance harness: `-winampModernAcceptanceLoop 1` drives the mode-switch
+        // acceptance loop (Classic→Modern→Metal→WinampModern→Classic, repeated) and asserts the
+        // correct controller family after each swap, then terminates with a PASS/FAIL log line.
+        if UserDefaults.standard.bool(forKey: "winampModernAcceptanceLoop") {
+            runWinampModernAcceptanceLoop()
+        }
+        // B20a live check: `-winampModernShowVisualization 1` opens the visualization window the way
+        // the menu does, once the skin's scene has settled. For a `.wal` skin that declares an AVS
+        // container that is the skin's own window, filled with the host's engine; for one that does
+        // not it is NullPlayer's own — and which of the two happened is the whole point of looking.
+        if UserDefaults.standard.bool(forKey: "winampModernShowVisualization") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.windowManager.showProjectM()
+                NSLog("WINAMP-MODERN-VIS: visible=%@",
+                      self?.windowManager.isProjectMVisible == true ? "1" : "0")
+            }
+        }
+        #endif
     }
 
     private func loadDiagnosticWMPSkinIfRequested() {
@@ -135,6 +159,61 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               let controller = windowManager.mainWindowController as? WMPMainWindowController else { return }
         controller.importSkin(from: URL(fileURLWithPath: path))
     }
+
+    #if DEBUG
+    /// DEBUG-only Phase 1 acceptance loop. Repeatedly live-switches through all four UI modes and
+    /// verifies the running main-window controller matches the target mode's controller family
+    /// after each swap. Logs `WINAMP-MODERN-ACCEPTANCE: PASS/FAIL` and terminates. Because
+    /// `reloadUI(to:)` can defer the swap (Compact Mode), each step chains via its completion.
+    private func runWinampModernAcceptanceLoop() {
+        let sequence: [PlayerUIMode] = [.classic, .modern, .metal, .winampModern, .classic]
+        let rounds = 3
+        var steps: [PlayerUIMode] = []
+        for _ in 0..<rounds { steps += sequence }
+        NSLog("WINAMP-MODERN-ACCEPTANCE: starting — %d switches", steps.count)
+
+        func expectedControllerMatches(_ mode: PlayerUIMode) -> Bool {
+            let controller = windowManager.mainWindowController
+            switch mode.controllerFamily {
+            case .classic:
+                return controller is MainWindowController
+            case .nullPlayerModern:
+                return controller is ModernMainWindowController
+            case .winampModern:
+                return controller is WinampModernMainWindowController
+            case .wmp:
+                return controller is WMPMainWindowController
+            }
+        }
+
+        func step(_ index: Int) {
+            guard index < steps.count else {
+                NSLog("WINAMP-MODERN-ACCEPTANCE: PASS — %d switches, no crash, controllers matched",
+                      steps.count)
+                NSApp.terminate(nil)
+                return
+            }
+            let target = steps[index]
+            windowManager.reloadUI(to: target) { [weak self] in
+                guard let self else { return }
+                let ok = self.windowManager.uiMode == target && expectedControllerMatches(target)
+                if !ok {
+                    NSLog("WINAMP-MODERN-ACCEPTANCE: FAIL at step %d — target=%@ uiMode=%@ controller=%@",
+                          index, target.displayName, self.windowManager.uiMode.displayName,
+                          String(describing: type(of: self.windowManager.mainWindowController)))
+                    NSApp.terminate(nil)
+                    return
+                }
+                NSLog("WINAMP-MODERN-ACCEPTANCE: step %d/%d → %@ OK",
+                      index + 1, steps.count, target.displayName)
+                // Yield to the run loop between swaps so AppKit can settle teardown/rebuild.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { step(index + 1) }
+            }
+        }
+        // Start after settling the initial launch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { step(0) }
+    }
+    #endif
     
     // MARK: - UI Testing Mode
     
@@ -367,10 +446,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // MARK: - Menu Actions
     
-    @objc private func showAbout() {
-        // Create custom About window
+    @objc func showAbout() {
+        // Create custom About window.
+        // The layout below runs top-down from `y`, consuming a fixed 426pt: 30 top inset,
+        // 112 icon, 40 name, 28 version, 50 tagline, 20 separator, 42 credits, 40 buttons,
+        // 36 disclaimer, 28 OK. Size the window from that total rather than hardcoding a
+        // height, so the panel keeps an even bottom margin instead of a dead gap (it was
+        // 540pt tall, leaving 132pt of empty background under the OK button).
         let windowWidth: CGFloat = 340
-        let windowHeight: CGFloat = 540
+        let contentHeight: CGFloat = 426
+        let bottomPadding: CGFloat = 24
+        let windowHeight: CGFloat = contentHeight + bottomPadding
         
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
@@ -417,7 +503,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback player for modern personal media")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "Your media. Your backend. Your home devices. Your UI.")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -438,7 +524,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         thanksLabel.alignment = .center
         thanksLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
         contentView.addSubview(thanksLabel)
-        y -= 24
+        y -= 42   // 18 label + a blank line's worth of gap before the buttons
 
         // // sthanks
         // let sthanksLabel = NSTextField(labelWithString: "Thanks to u/SpaXter25 for QE and PD")

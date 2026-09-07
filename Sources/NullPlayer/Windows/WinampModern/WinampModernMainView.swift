@@ -1,0 +1,3080 @@
+import AppKit
+
+final class WinampModernMainView: NSView {
+    let renderer: WasabiSceneRenderer
+    let scripts: WinampModernScriptRuntime
+    let host: WinampModernHost
+    weak var componentHost: WinampModernComponentHost?
+    /// Live library surfaces by holder id. Typed, so each one can be told about a palette change, a
+    /// UI Size change, and its own teardown (Phase 13.8).
+    private var librarySurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
+    /// Live video surfaces by holder id, on the same typed handle for the same reasons (B20).
+    private var videoSurfaces: [WasabiObjectID: WinampModernVideoSurface] = [:]
+    /// Live visualization surfaces by holder id — the skin's AVS window, filled with the host's own
+    /// visualization engine rather than the engine-drawn analyzer (B20a).
+    private var visualizationSurfaces: [WasabiObjectID: WinampModernVisualizationSurface] = [:]
+    /// Live synthesized host-window surfaces by holder id. The bridge may hand the same adapter back
+    /// when a holder returns; this dictionary tracks only the holders present in this scene right now.
+    private var hostedWindowSurfaces: [WasabiObjectID: WinampModernHostedSurface] = [:]
+    /// Independent WebKit surfaces for `<browser>` elements. Each is non-cached and keeps its own
+    /// history, completely independent from the bridge's cached Media Library surface.
+    private var browserSurfaces: [WasabiObjectID: WinampModernBrowserSurface] = [:]
+    /// MAKI may navigate a browser from `onScriptLoaded`, before AppKit has performed the first
+    /// layout. Keep the last request per object and apply it when reconciliation creates the view.
+    private var pendingBrowserRequests: [WasabiObjectID: WinampModernBrowserRequest] = [:]
+
+    /// UI Size, as a multiplier on the skin's own pixel grid. The scene is always laid out in skin
+    /// pixels — the scale is applied once at the drawing boundary and undone once at the input
+    /// boundary, so nothing in the graph, the renderer, or a script ever sees it.
+    var skinScale: CGFloat = 1 {
+        didSet {
+            guard skinScale != oldValue else { return }
+            setFrameSize(scaledCanvasSize)
+            pushLibraryContentScale()
+            for surface in videoSurfaces.values { surface.applySkinScale(skinScale) }
+            for surface in visualizationSurfaces.values { surface.applySkinScale(skinScale) }
+            for surface in hostedWindowSurfaces.values { surface.applySkinScale(skinScale) }
+            for surface in browserSurfaces.values { surface.applySkinScale(skinScale) }
+            invalidateRectCaches()
+            // UI Size is not graph state, so the memoized scene cannot see it move.
+            renderer.invalidateSceneCache()
+            needsLayout = true
+            needsDisplay = true
+        }
+    }
+
+    var scaledCanvasSize: NSSize {
+        NSSize(width: (renderer.canvasSize.width * skinScale).rounded(),
+               height: (renderer.canvasSize.height * skinScale).rounded())
+    }
+
+    /// How large the embedded Media Library draws its content: UI Size, times the Text Size setting
+    /// resolved against *this* scene's canvas. One number, so the library and the playlist beside it
+    /// move together and cannot drift.
+    var libraryContentScale: CGFloat {
+        skinScale * renderer.textScale.contentScale(canvasHeight: renderer.canvasSize.height)
+    }
+
+    /// Tell every live library surface the current number.
+    ///
+    /// Called from everything that can move either factor — including **every canvas change**, since
+    /// `auto` is keyed on canvas height: without that, resizing a Big Bento window leaves the library
+    /// at a stale scale while the playlist next to it grows.
+    func pushLibraryContentScale() {
+        let scale = libraryContentScale
+        for surface in librarySurfaces.values { surface.applyContentScale(scale) }
+    }
+
+    private var pressedObject: WasabiObject?
+    private var rightPressedObject: WasabiObject?
+    private var pressedEQHolder: WasabiObject?
+    private var draggedDivider: WasabiObject?
+    private var hoveredObject: WasabiObject?
+    private var isDraggingWindow = false
+    private var windowDragStartPoint: NSPoint = .zero
+    /// A press on a layer that acts on the button *up* and has nothing to do on the down: the drag is
+    /// primed here and only becomes real once the pointer has travelled, so the layer keeps its click
+    /// (B59). Nil whenever no such press is open.
+    private var primedDragWindow: NSWindow?
+    /// Whether the open press has already moved the window, so the release drops the click it would
+    /// otherwise have performed.
+    private var pressMovedWindow = false
+    /// Whether the handler running right now is a **double-click**, which is dispatched from the
+    /// press with the button still physically down. Only `presentScriptPopup` reads it — see the
+    /// mouse-up drain there.
+    private var isDispatchingDoubleClick = false
+    /// A drag on a `resize="…"` handle: which window edges it moves, and the frame and screen
+    /// pointer the drag started from. Measured from the start rather than accumulated per delta, so a
+    /// drag that runs into the layout's minimum and comes back out again lands where the pointer is.
+    private var activeResizeEdges: WasabiResizeEdges?
+    private var resizeStartFrame: NSRect = .zero
+    private var resizeStartMouse: NSPoint = .zero
+    /// Whether this view is the one currently showing a resize cursor, so leaving a handle puts the
+    /// arrow back without stomping on a cursor somebody else set.
+    private var showsResizeCursor = false
+    private var lastPlaybackState: PlaybackState = .stopped
+    /// Last volume the scripts were told about, 0…255. −1 until the first update.
+    private var lastPostedVolume: Int32 = -1
+
+    /// Last value sent to `onPostedPosition`, so the post happens on change rather than ten times a
+    /// second. -1 is "never posted", which no real position can be.
+    private var lastPostedPosition: Int32 = -1
+
+    /// `WINAMP_MODERN_SEEK_TRACE=1` — every object the seek bar is made of, and the value each one
+    /// resolves to, each time the posted position moves.
+    ///
+    /// A seek bar is routinely more than one object: a `<slider action="SEEK">` the renderer places
+    /// from the host clock, and beside it a ghost or fill layer a script places from
+    /// `onPostedPosition`. When the two disagree the skin draws two thumbs, and which of them is
+    /// stale is invisible from any single value — so this prints all of them together.
+    static let seekTrace = ProcessInfo.processInfo.environment["WINAMP_MODERN_SEEK_TRACE"] == "1"
+
+    private func traceSeekObjects(posted: Int32) {
+        guard Self.seekTrace else { return }
+        NSLog("SEEK_TRACE posted=%d hostTime=%.2f hostDuration=%.2f state=%@",
+              posted, host.currentTime, host.duration, String(describing: host.playbackState))
+        for node in renderer.sceneNodes() {
+            let object = node.object
+            let type = object.typeName.lowercased()
+            let action = object.attributes["action"]?.lowercased() ?? "-"
+            let id = object.attributes["id"] ?? object.attributes["xuitag"] ?? "-"
+            let looksRelevant = action == "seek" || type == "slider" || type == "progressgrid"
+                || id.lowercased().contains("seek")
+            guard looksRelevant else { continue }
+            NSLog("SEEK_TRACE   id=%@ type=%@ action=%@ value=%@ normalized=%.4f frame=%@",
+                  id, type, action, object.attributes["value"] ?? "-",
+                  Double(renderer.normalizedValue(of: object)),
+                  NSStringFromRect(NSRectFromCGRect(node.frame)))
+        }
+    }
+    /// Last title the scripts were told about, so `onTitleChange` fires per track rather than per
+    /// redraw. `nil` until the first update, which is not the same as the empty "no track" title.
+    private var lastPostedTitle: String?
+    private var tracking: NSTrackingArea?
+    private var animationTimer: Timer?
+    /// Key/resign observers for this view's own window, feeding `renderer.isWindowActive`.
+    /// Kept here rather than on the controller because every `.wal` window — the player, each
+    /// auxiliary container, each hosted window — is one of these views, and each answers for itself.
+    private var activeStateObservers: [NSObjectProtocol] = []
+    private(set) var isTornDown = false
+    private var sceneIsVisible = false
+    var canvasSizeDidChange: ((CGSize) -> Void)?
+    /// A click landed in this window: dismiss any `autoclose="1"` popup that is not this one. The
+    /// controller owns the windows, so it does the closing.
+    var didClickInWindow: ((WasabiObjectID) -> Void)?
+    /// Returns true if the skin provides a separate native window for the kind and it was toggled.
+    var componentWindowToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// A web address the skin wants opened, and where it wants it. Owned by the window layer rather
+    /// than answered here: the destination browser can live in another container's view, and the
+    /// external route has to ask the user first (B40).
+    var webNavigationRequested: ((WinampModernWebNavigationTarget, String) -> Void)?
+    /// Show/hide one of the skin's *own* container windows by id, for a `TOGGLE` whose parameter
+    /// names a container rather than a component.
+    var containerWindowToggleRequested: ((String) -> Bool)?
+    /// Ask the surface coordinator to toggle a surface — the same route the View menu takes, so a
+    /// skin button and a menu item can never resolve differently. Returns false before the
+    /// coordinator exists (during `scripts.start()`), where the older direct routing still applies.
+    var surfaceToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// Whether a surface a `TOGGLE` addresses is on screen, for the lamp on the button that
+    /// toggles it (BB36). Nil means "no window to answer for" — an embedded surface, or a kind the
+    /// coordinator does not handle — and the button falls back to its own `activated`. The write
+    /// side is `surfaceToggleRequested`; the two must resolve through the same catalog, which is why
+    /// both are supplied by the same owner.
+    var surfaceVisibilityQuery: ((WinampModernComponentKind) -> Bool?)?
+    /// The container-id half of the same question: is the skin's own window named by this `TOGGLE`
+    /// parameter on screen? Nil when no window of that name exists. Matches
+    /// `containerWindowToggleRequested`'s routing, hosted windows included.
+    var containerWindowVisibilityQuery: ((String) -> Bool?)?
+    /// The container that shows this skin's own About page, when it has one — either the container
+    /// the skin wrapped around `skin.about.group` or the one synthesized for it
+    /// (`WasabiSurfaceSynthesizer.aboutRoute`). Nil is the ordinary case for a skin that defines no
+    /// About page, and it is what sends `TOGGLE guid:{D6201408-…}` to NullPlayer's own panel.
+    var skinAboutContainerID: String?
+    /// Re-entrancy guard for `toggleTargetIsVisible(parameter:)`.
+    private var isResolvingToggleLamp = false
+    /// The window commands a skin draws on its titlebar, routed to whoever owns the window layer.
+    ///
+    /// They cannot be answered from here with the obvious AppKit calls. `performClose(_:)` *simulates
+    /// a click on the close button*, and a `.wal` window is `.borderless` — it has none, so the call
+    /// beeps and returns; that is why no skin's close button did anything. And Close/Minimize are
+    /// Winamp's, not one window's: closing the player quits (as the classic skin's close button does),
+    /// while closing a playlist window only hides that window, and minimizing takes the whole set of
+    /// skin windows down together rather than leaving the rest of the skin on screen.
+    var closeRequested: (() -> Void)?
+    var minimizeRequested: (() -> Void)?
+
+    /// The main window drives the shared script runtime's *global* callbacks (theme, actions, mouse
+    /// position, EQ). Auxiliary container windows render and take input against the same runtime but
+    /// must not clobber those single-owner callbacks, so they pass `drivesScripts: false`.
+    ///
+    /// Layout switching and resizing are **not** in that set: they are addressed to a container, and
+    /// the window controller routes them to the view that owns it (Phase 13.3).
+    private let drivesScripts: Bool
+
+    /// The container this view renders — the address a script's `switchToLayout`/`resize` carries.
+    var containerID: WasabiObjectID { renderer.container.stableID }
+
+    init(renderer: WasabiSceneRenderer, scripts: WinampModernScriptRuntime,
+         host: WinampModernHost, componentHost: WinampModernComponentHost? = nil,
+         drivesScripts: Bool = true) {
+        self.renderer = renderer
+        self.scripts = scripts
+        self.host = host
+        self.componentHost = componentHost
+        self.drivesScripts = drivesScripts
+        super.init(frame: NSRect(origin: .zero, size: renderer.canvasSize))
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        setAccessibilityIdentifier("winampModernMainView")
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Winamp Modern skin player")
+        if drivesScripts { wireScriptCallbacks() } else { wireAuxiliaryRepaint() }
+        // A `TOGGLE` button's lamp asks the same routing its click takes (BB36). Installed here
+        // rather than beside the other providers in the controller because the answer is
+        // container-scoped — `componentHolders()` is this scene's, not the skin's.
+        renderer.toggleTargetVisibleProvider = { [weak self] object in
+            guard let self, object.attributes["action"]?.uppercased() == "TOGGLE" else { return nil }
+            return toggleTargetIsVisible(parameter: object.attributes["param"])
+        }
+        // Every `.wal` window repaints on a colour-theme switch, whichever window triggered it, and
+        // so does any AppKit content it hosts.
+        renderer.themeCoordinator.addObserver(self) { [weak self] in
+            self?.paletteDidChange()
+        }
+        updateAnimationTimer()
+    }
+
+    /// Run the 30 Hz repaint clock when this scene has anything that moves on its own.
+    ///
+    /// Re-evaluated rather than decided once: a **Layer FX** layer only becomes one when its script
+    /// turns FX on, which happens in `onScriptLoaded` — after this view is built — and a skin may
+    /// turn it on later still (Defix's display styles are switched from its settings window).
+    func updateAnimationTimer() {
+        // Cheap first: this is reachable from a script mutation, which for a warped layer happens
+        // 30 times a second, and the scene walk below is not something to do on that path.
+        guard !isTornDown, animationTimer == nil else { return }
+        invalidateRectCaches()
+        guard !animatingRects().isEmpty else { return }
+        let timer = Timer(timeInterval: 1 / 30, repeats: true) { [weak self] _ in
+            self?.animationTick()
+        }
+        // `.common`, not the default mode: a timer scheduled on the default mode alone stops firing
+        // for as long as AppKit runs a tracking loop, so the reels froze while the window was dragged
+        // or a menu was open and lurched forward when it ended.
+        RunLoop.main.add(timer, forMode: .common)
+        animationTimer = timer
+    }
+
+    /// One frame of self-driven animation: build what moved *before* asking for the paint.
+    ///
+    /// Evaluating a Layer FX mesh runs the skin's callbacks per grid vertex through the MAKI
+    /// interpreter, and doing it lazily from the renderer put that work inside `draw`. Here it is
+    /// still the main thread — a MAKI callback has to be — but it is off the paint path, so the frame
+    /// AppKit is composing is not the one waiting for the interpreter.
+    private func animationTick() {
+        guard !isTornDown else { return }
+        scripts.refreshLayerFXMeshes()
+        repaintAnimatingObjects()
+    }
+
+    /// Drop every derived rect **this view** caches. Called wherever the scene may have changed
+    /// shape — a layout switch, a resize, a UI Size change, a script mutating the graph.
+    ///
+    /// It deliberately does **not** drop the renderer's memoized scene any more. That cache is keyed
+    /// on the graph's own generation, so a mutation invalidates it without being told and a
+    /// *non*-mutation must not: dropping it from here threw the scene away 220 times a second on Big
+    /// Bento Modern — every graph notification, times every container window it fans out to, plus
+    /// `updateAnimationTimer` on the way past — and each drop bought a full recursive re-solve of the
+    /// object tree at the next draw (B52). The inputs the generation genuinely cannot see keep their
+    /// own explicit `invalidateSceneCache()`: a layout switch, a resize, a theme change, and the
+    /// host's playback state.
+    private func invalidateRectCaches() {
+        animatingRectsCache = nil
+        objectRectCache.removeAll()
+        visualizationRectsCache = nil
+        timeRectsCache = nil
+    }
+
+    /// The boxes of everything in this scene that moves on its own — animated layers, song tickers,
+    /// ticker text, and any layer whose script has switched Layer FX on.
+    ///
+    /// Repainting *these* rather than the whole window is what keeps an animation smooth: Defix's
+    /// player costs 19.3 ms a frame repainted whole at Retina scale and 6.9 ms clipped to its meters,
+    /// and a 33 ms animation step cannot survive the first number. Cached because the scene walk is
+    /// not free and the boxes only move when the scene itself does.
+    private func animatingRects() -> [NSRect] {
+        if let animatingRectsCache { return animatingRectsCache }
+        let rects = renderer.sceneNodes().compactMap { node -> NSRect? in
+            let object = node.object
+            let type = object.typeName.lowercased()
+            var animates = ["animatedlayer", "songticker"].contains(type)
+            if !animates, type == "text" {
+                // A plain `text` that opts into ticker scrolling also needs the redraw clock.
+                let ticker = (object.attributes["ticker"] ?? "0").lowercased()
+                animates = !["0", "off", "false", "no"].contains(ticker)
+            }
+            if !animates { animates = scripts.layerFXState(of: object)?.enabled == true }
+            guard animates else { return nil }
+            return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+        }
+        animatingRectsCache = rects
+        return rects
+    }
+
+    private func repaintAnimatingObjects() {
+        guard !isTornDown else { return }
+        let rects = animatingRects()
+        // A scene with a great many moving parts is cheaper to repaint in one pass than to invalidate
+        // piece by piece.
+        guard !rects.isEmpty, rects.count <= 24 else {
+            needsDisplay = true
+            return
+        }
+        for rect in rects { setNeedsDisplay(rect) }
+    }
+
+    /// Dropped whenever the scene itself may have changed shape.
+    private var animatingRectsCache: [NSRect]?
+
+    /// Switch this view's container to one of its own layouts. Returns false when the container has
+    /// no such layout, so a script's `switchToLayout` on a container we do not host is a no-op rather
+    /// than a resize of the wrong window.
+    @discardableResult
+    func activateLayout(id: String) -> Bool {
+        guard (try? renderer.activateLayout(id: id)) != nil else { return false }
+        // **Forget the layout we came from before anything can diff against it** (B138).
+        //
+        // `lastResizeFrames` is the previous *scene*, and `dispatchResize` reads an id that is in it
+        // but no longer among the targets as an object that collapsed to nothing — it tells that
+        // object `onResize(x, y, 0, 0)`, which is right for a pane the user closed and wrong for a
+        // layout the window merely switched away from. cPro is the measured case: shading the player
+        // sent its `centro.playlist1` — an object of the **normal** layout, not the shade one — a
+        // 0-wide resize, and `CentroSUI.m` answers that with `if (w < 10) area_right.hide()`. The
+        // pane was then hidden with nothing to bring it back, so unshading returned a player with a
+        // dead grey column where the playlist had been.
+        //
+        // Cleared here rather than at the seeding dispatch below, because a script that moves
+        // something while the new layout is coming up settles the geometry and runs a *diffing* pass
+        // of its own before that line is reached — which is the pass that actually did the damage.
+        lastResizeFrames.removeAll()
+        didBeginLayoutSwitchForTesting?()
+        // Winamp creates a layout the first time it is shown, and scripts branch on `getLayout()`
+        // answering NULL before that; record the creation so a later lookup can find it.
+        scripts.markLayoutRealized(renderer.layout)
+        invalidateRectCaches()
+        // A different layout is a different subtree with its own splitters, and `persistableFrames()`
+        // only ever sees the active one — so without this a divider dragged in the shade layout would
+        // be stored and then never restored (B44a). Placed after `activateLayout`, which has already
+        // set the new canvas size the offsets are clamped against.
+        renderer.restorePersistedFramePositions()
+        setFrameSize(scaledCanvasSize)
+        canvasSizeDidChange?(scaledCanvasSize)
+        // A different layout is a different scene, so nothing carries over: every object in it hears
+        // its geometry for the first time, exactly as it does when the window first comes up.
+        dispatchResize(seeding: true)
+        // A different layout is a different canvas height, which is what `auto` Text Size is keyed on.
+        pushLibraryContentScale()
+        needsDisplay = true
+        return true
+    }
+
+    /// Resize this view's canvas (clamped by the active layout) and its window with it.
+    func applyCanvasResize(_ proposed: CGSize) {
+        // The renderer first, so a tick that proposes the size the canvas already has can stop here
+        // rather than paying for the rest. `invalidateRectCaches` repaints the whole window and
+        // re-pushes the palette to every hosted surface, and `dispatchResize` runs `onResize`
+        // through the interpreter for every object in the container — neither is something to do 30
+        // times a second for a size that did not move. A skin's own container animation proposes an
+        // unchanged size on most of its ticks; see the guard in `WasabiSceneRenderer.resize(to:)`.
+        let previous = renderer.canvasSize
+        let accepted = renderer.resize(to: proposed)
+        guard accepted != previous || frame.size != scaledCanvasSize else { return }
+        invalidateRectCaches()
+        setFrameSize(scaledCanvasSize)
+        canvasSizeDidChange?(scaledCanvasSize)
+        dispatchResize(seeding: false)
+        // `auto` Text Size is keyed on canvas height, so a user resize moves it.
+        pushLibraryContentScale()
+        needsDisplay = true
+    }
+
+    /// Give the scene's scripts their geometry, once, straight after `scripts.start()`.
+    ///
+    /// A script that only assigns state inside `onResize` has none of it until the event has fired.
+    /// ClassicPro's `beat.m` is exactly that: `showBeat`/`showPromo` are written nowhere else, so with
+    /// the event never dispatched they stayed false, the beat display was visible only from its XML
+    /// state, and the first `System.onPlay()` → `refreshView()` → `showGroup(0)` hid both display
+    /// groups with nothing able to bring either back. That is the reported "the visualization goes away
+    /// when you play a track".
+    ///
+    /// Not gated on `drivesScripts`: a resize is addressed to a *container*, not to the runtime's
+    /// single-owner callbacks, so every container window seeds its own scene (Phase 13.3).
+    /// Tell this container's scripts that its window came on screen, or left it.
+    ///
+    /// A `.wal` skin starts and stops its animation from `onSetVisible` — Defix's cassette reels turn
+    /// their Layer FX on there, and its speaker cabinets start their timer there — so a window shown
+    /// with `orderFront` alone (an AppKit call the graph never hears about) leaves the scene frozen.
+    func setSceneVisible(_ visible: Bool) {
+        sceneIsVisible = visible
+        scripts.notifyContainerVisibility(containerID: containerID, visible: visible)
+        if visible {
+            updateAnimationTimer()
+            // The surfaces are made during a layout pass, which for a window that opens later has
+            // already happened while it was still hidden — and an engine refused a start then is
+            // never asked again. This is the ask (B20a).
+            layoutSubtreeIfNeeded()
+            for surface in visualizationSurfaces.values { surface.resumeRendering() }
+            for surface in hostedWindowSurfaces.values { surface.resume() }
+            needsDisplay = true
+        } else {
+            for surface in hostedWindowSurfaces.values { surface.suspend() }
+        }
+    }
+
+    /// Visibility of host-owned consumers is stricter than Wasabi window visibility: an occluded or
+    /// miniaturized native window is still logically shown to the skin, but its timers/display links
+    /// must stop until pixels can be seen again.
+    func setHostedContentActive(_ active: Bool) {
+        for surface in hostedWindowSurfaces.values {
+            if active { surface.resume() } else { surface.suspend() }
+        }
+    }
+
+    func hasHostedWindowSurface(_ id: WinampModernHostedWindowID) -> Bool {
+        renderer.componentHolders().contains { holder in
+            holder.hostedWindowID == id && hostedWindowSurfaces[holder.object.stableID] != nil
+        }
+    }
+
+    func scriptsDidStart() {
+        // Before the seeding dispatch, so a script whose state is only assigned in `onResize` is told
+        // the geometry the user actually left behind rather than the skin's default and then a
+        // correction (B44).
+        restorePersistedFramePositions()
+        dispatchResize(seeding: true)
+        // A skin turns Layer FX on from `onScriptLoaded`, so only now can this scene know whether it
+        // has a warped layer to keep repainting.
+        updateAnimationTimer()
+    }
+
+    // MARK: - Splitter persistence (B44)
+
+    /// Put every splitter back where the user dragged it. The scene state itself lives on the
+    /// renderer, which already owns the container id and the skin's configuration store; this is the
+    /// window layer's handle on it, and the one place that knows the view may be torn down.
+    @discardableResult
+    func restorePersistedFramePositions() -> Bool {
+        guard !isTornDown else { return false }
+        return renderer.restorePersistedFramePositions()
+    }
+
+    /// Tell whatever moved that it moved, after a change this view did not itself cause — a script
+    /// collapsing a splitter, hiding a group, reparenting one. Cheap when nothing actually moved: the
+    /// frames are compared against the last dispatch and an unchanged scene dispatches nothing.
+    func dispatchResizeIfChanged() {
+        dispatchResize(seeding: false)
+    }
+
+    /// This window was moved on the desktop, by the user's drag or by anything else. Wasabi's
+    /// `onMove()`; see `WinampModernScriptRuntime.dispatchWindowMove`.
+    func dispatchWindowMoved() {
+        guard !isTornDown else { return }
+        scripts.dispatchWindowMove(container: renderer.container, layout: renderer.layout)
+    }
+
+    /// Wasabi's `onUserResize()` — the resize the user dragged, which a standard frame answers by
+    /// resizing the window it is glued to. See `WinampModernScriptRuntime.dispatchWindowUserResize`.
+    func dispatchWindowUserResized() {
+        guard !isTornDown else { return }
+        scripts.dispatchWindowUserResize(container: renderer.container, layout: renderer.layout,
+                                         size: renderer.canvasSize)
+    }
+
+    /// Resolved frames at the last dispatch, so only an object whose own box actually moved is told
+    /// about it — Wasabi does not resize what did not change.
+    private var lastResizeFrames: [WasabiObjectID: CGRect] = [:]
+
+    /// What the next *diffing* resize will compare against. The B138 defect was entirely a question
+    /// of what this held part-way through a layout switch, and that instant is reachable from no
+    /// other observation.
+    var resizeBaselineForTesting: [WasabiObjectID: CGRect] { lastResizeFrames }
+
+    /// Called inside `activateLayout` once the baseline is dropped and before anything can dispatch
+    /// — the moment a script's own geometry settle lands in the running app. Test seam only.
+    var didBeginLayoutSwitchForTesting: (() -> Void)?
+
+    private func dispatchResize(seeding: Bool) {
+        guard !isTornDown else { return }
+        let targets = renderer.resizeTargets()
+        scripts.dispatchResize(targets: targets, previous: seeding ? nil : lastResizeFrames)
+        // Recorded *after* the handlers ran: a script that re-solves its own geometry from `onResize`
+        // has already moved things, and the next comparison has to be against where they now are.
+        lastResizeFrames = Dictionary(renderer.resizeTargets().map { ($0.object.stableID, $0.frame) },
+                                      uniquingKeysWith: { _, latest in latest })
+    }
+
+    /// The palette moved — the skin switched colour theme, or the user set a colour by hand (B146).
+    /// The renderer has already dropped whatever its own caches held.
+    ///
+    /// Embedded surfaces are told directly; the *fallback* windows have no handle on this view, so
+    /// they learn about it from the notification (Phase 16.2). Both have to happen, because a skin
+    /// can have one of each open at the same time.
+    ///
+    /// A colour override reuses this whole fan-out rather than growing a parallel one: the work is
+    /// identical, and a second route is a second place for a surface to be forgotten. `internal`
+    /// for that reason — the controller calls it after writing an override.
+    func paletteDidChange() {
+        for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
+        for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
+        for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
+        let style = WinampModernSurfaceStyle(palette: renderer.palette)
+        for surface in hostedWindowSurfaces.values { surface.applyPalette(style) }
+        NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
+        needsDisplay = true
+    }
+
+    /// An auxiliary container window renders the shared graph but must not clobber the single-owner
+    /// callbacks, so it takes repaints — and only repaints — through a sink of its own.
+    ///
+    /// Without this, a script that ticks in an auxiliary container updated the graph and nothing ever
+    /// redrew it: MAKI timers belong to the runtime, so `onTimer` fires wherever the object lives, but
+    /// every repaint route was owned by the main window. Defix's playlist box (`Items:`/`Time:`, both
+    /// written from `onTimer`) and its speaker cones (`SpeakerVis`, stepped the same way) are the two
+    /// measured cases.
+    private func wireAuxiliaryRepaint() {
+        scripts.addAuxiliaryRepaintSink(owner: self) { [weak self] object in
+            guard let self, !self.isTornDown else { return }
+            // Scoped: a warped layer on the *main* window fires this 30 times a second, and this
+            // window has no business repainting for it.
+            if let object {
+                guard self.owns(object) else { return }
+                self.setNeedsDisplay(for: object)
+                return
+            }
+            self.invalidateRectCaches()
+            self.needsLayout = true
+            self.needsDisplay = true
+            self.updateAnimationTimer()
+        }
+    }
+
+    /// Whether `object` is inside the container this view renders. Walks the retained graph's parent
+    /// chain, which is cheap and is the only thing that distinguishes "not laid out yet in my scene"
+    /// (repaint me) from "belongs to another window" (do not).
+    private func owns(_ object: WasabiObject) -> Bool {
+        var node: WasabiObject? = object
+        while let current = node {
+            if current === renderer.container { return true }
+            node = current.parent
+        }
+        return false
+    }
+
+    private func wireScriptCallbacks() {
+        scripts.graphDidMutate = { [weak self] in
+            // A script can add or remove a component holder — cPro builds its Media Library holder
+            // when that tab is first opened — so a graph change has to re-run surface reconciliation,
+            // not just repaint. Without this the tab opens onto an empty hole.
+            self?.invalidateRectCaches()
+            self?.needsLayout = true
+            self?.needsDisplay = true
+            // A script can also turn Layer FX on outside load (switching Defix's display style does
+            // exactly that), and the warp needs the repaint clock from that moment on.
+            self?.updateAnimationTimer()
+        }
+        // The light path a warped layer takes 30 times a second: repaint, nothing else.
+        scripts.repaintRequested = { [weak self] in self?.needsDisplay = true }
+        // Lighter still when the runtime can name what moved — only that rect is repainted.
+        scripts.objectRepaintRequested = { [weak self] object in self?.setNeedsDisplay(for: object) }
+        scripts.actionRequested = { [weak self] action, parameter in
+            self?.performAction(action: action, parameter: parameter)
+        }
+        scripts.focusRequested = { [weak self] object in self?.focusEdit(object) }
+        scripts.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
+        scripts.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
+        scripts.mousePositionRequested = { [weak self] in
+            self?.currentMousePositionInSkinPixels() ?? .zero
+        }
+        scripts.equalizerEnabledRequested = { [weak self] in
+            self?.componentHost?.equalizerSnapshot().enabled ?? false
+        }
+        // MAKI's EQ scale is −127…127; the engine's is ±12 dB.
+        scripts.equalizerBandRequested = { [weak self] band in
+            guard let gains = self?.componentHost?.equalizerSnapshot().bandGainsDB,
+                  gains.indices.contains(band) else { return 0 }
+            return Int((gains[band] / 12 * 127).rounded())
+        }
+        scripts.equalizerBandSetterRequested = { [weak self] band, value in
+            let clamped = max(-127, min(127, value))
+            self?.componentHost?.equalizerSetBandGainDB(band, gainDB: Float(clamped) / 127 * 12)
+            self?.needsDisplay = true
+        }
+        scripts.equalizerPreampRequested = { [weak self] in
+            guard let preamp = self?.componentHost?.equalizerSnapshot().preampDB else { return 0 }
+            return Int((preamp / 12 * 127).rounded())
+        }
+        scripts.equalizerPreampSetterRequested = { [weak self] value in
+            let clamped = max(-127, min(127, value))
+            self?.componentHost?.equalizerSetPreampDB(Float(clamped) / 127 * 12)
+            self?.needsDisplay = true
+        }
+        // A skin's own right-click menus (Love is War Miku's visualization presets, MMD3's display
+        // menu) are built by a script and shown through `popAtMouse`. With no presenter installed
+        // that call answered 0 — "the user picked nothing" — so those menus never appeared at all.
+        scripts.popupPresenter = { [weak self] items, point in
+            self?.presentScriptPopup(items, at: point) ?? 0
+        }
+        scripts.themeSwitchRequested = { [weak self] name in
+            guard let self else { return false }
+            let changed = self.renderer.activateTheme(name)
+            if changed { self.needsDisplay = true }
+            return changed
+        }
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isOpaque: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// Claim the keyboard for the window, so a skin's own `System.onKeyDown` handlers can be reached
+    /// at all — until Phase 43 this answered `playlistHasFocus`, and a `.wal` window that had never
+    /// had a playlist row clicked was never first responder, so no key ever arrived here.
+    ///
+    /// Safe to take unconditionally because `keyDown` below is a *fall-through*: menu equivalents go
+    /// through `performKeyEquivalent` before any of this, and anything neither the playlist nor a
+    /// script consumes is handed straight back to the responder chain, which is exactly where it went
+    /// when the view refused focus. Delete stays gated on `playlistHasFocus` — the queue must not be
+    /// edited from the player chrome.
+    override var acceptsFirstResponder: Bool { true }
+    private var playlistHasFocus = false
+
+    override func resignFirstResponder() -> Bool {
+        playlistHasFocus = false
+        return true
+    }
+
+    /// The keyboard, in the order the two claims on it were added.
+    ///
+    /// 1. Delete / Forward Delete remove the selected playlist row — but only while the playlist
+    ///    surface in this window owns focus, so the key never reaches the queue from the chrome.
+    /// 2. Everything else is offered to the skin as `System.onKeyDown("<accelerator>")`. Five skins
+    ///    in the corpus handle it — multipass and winampmodern566 toggle their EQ drawer on `alt+g`,
+    ///    winampmodern566 also shades its playlist on `ctrl+w` and its album-art window on `alt+a`,
+    ///    Defix closes its playlist search line on `esc`. A handler that reached its `complete;`
+    ///    consumed the key; anything else falls through to the responder chain unchanged.
+    /// The `<edit>` this window's keyboard is going to, if any. A skin asks for it with `setFocus()`
+    /// (Big Bento's playlist search) and a click into the box takes it too.
+    private var focusedEdit: WasabiObject?
+
+    /// Give the keyboard to an `<edit>`, or take it back (`nil`).
+    ///
+    /// The object a skin focuses is as often the wrapper as the control, and the box it shows in the
+    /// same handler is a *descendant* — so an object that is not itself an edit is searched for one.
+    func focusEdit(_ object: WasabiObject?) {
+        let edit = object.flatMap { Self.editControl(in: $0) }
+        guard edit !== focusedEdit else { return }
+        focusedEdit = edit
+        renderer.focusedEditID = edit?.stableID
+        if edit != nil { window?.makeFirstResponder(self) }
+        needsDisplay = true
+    }
+
+    private static func editControl(in object: WasabiObject) -> WasabiObject? {
+        if object.typeName.lowercased().components(separatedBy: ":").last == "edit" { return object }
+        var stack = object.children
+        while let node = stack.popLast() {
+            if node.typeName.lowercased().components(separatedBy: ":").last == "edit" { return node }
+            stack.append(contentsOf: node.children)
+        }
+        return nil
+    }
+
+    /// Type into the focused `<edit>`, as Wasabi's native edit box does.
+    ///
+    /// Winamp's edit is a real child window and the skin never sees the keystrokes; it hears the three
+    /// events instead — `onEnter` when Return is pressed (Big Bento runs its playlist search from it),
+    /// `onAbort` on Escape (its own `Hidden Features.txt`: *"When in the search box, hit Escape to
+    /// close it"*), and `onEditUpdate` per keystroke for a skin that filters as you type.
+    ///
+    /// Returns whether the key was consumed: everything printable is, so a letter typed into a search
+    /// box can never also reach a skin accelerator or the playlist.
+    private func typeIntoFocusedEdit(_ event: NSEvent) -> Bool {
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil {
+            NSLog("EDIT key %d focused=%@", Int(event.keyCode), focusedEdit?.xmlID ?? "none")
+        }
+        guard let edit = focusedEdit else { return false }
+        // ⌘-anything stays with the menus — Select All, Copy, Quit.
+        if event.modifierFlags.contains(.command) { return false }
+        var text = edit.attributes["text"] ?? ""
+        switch event.keyCode {
+        case 53:                                   // Escape
+            focusEdit(nil)
+            _ = try? scripts.dispatch(object: edit, event: "onabort")
+            needsDisplay = true
+            return true
+        case 36, 76:                               // Return, Enter
+            let reached = (try? scripts.dispatch(object: edit, event: "onenter")) ?? -1
+            if ProcessInfo.processInfo.environment["WINAMP_MODERN_CALL_TRACE"] != nil {
+                NSLog("EDIT onenter -> %@#%@ handlers=%d text=%@",
+                      edit.typeName, edit.xmlID ?? "-", reached, text)
+            }
+            needsDisplay = true
+            return true
+        case 51:                                   // Delete
+            guard !text.isEmpty else { return true }
+            text.removeLast()
+        default:
+            guard let typed = event.characters, !typed.isEmpty,
+                  typed.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
+            else { return false }
+            text += typed
+        }
+        _ = edit.setAttribute("text", value: text)
+        _ = edit.setAttribute(WasabiTextMetrics.scriptTextKey, value: text)
+        _ = try? scripts.dispatch(object: edit, event: "oneditupdate")
+        needsDisplay = true
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // The focused edit first, and unconditionally: a search box that lets `d` through to a skin
+        // accelerator is not a text field.
+        if typeIntoFocusedEdit(event) { return }
+        let deleteKeys: Set<UInt16> = [51, 117]   // Delete, Forward Delete
+        if playlistHasFocus, deleteKeys.contains(event.keyCode), let host = componentHost {
+            let snapshot = host.playlistSnapshot()
+            guard snapshot.selectedIndex >= 0, snapshot.selectedIndex < snapshot.rows.count else { return }
+            host.playlistRemove(row: snapshot.selectedIndex)
+            clampPlaylistScroll()
+            needsDisplay = true
+            return
+        }
+        if let accelerator = WinampModernKeyAccelerator.accelerator(for: event),
+           scripts.dispatchKeyDown(accelerator) {
+            // A handler may have moved a config attribute, a layout or a window; the same repaint the
+            // click path takes after a script runs.
+            needsDisplay = true
+            return
+        }
+        // The visualization window's own keys (←/→, R, F, P, C), in the window that is showing the
+        // visualization — after the skin has had its say, so a skin accelerator always wins (B20a).
+        if let surface = hostedVisualizationSurface, surface.handleKeyDown(event) { return }
+        super.keyDown(with: event)
+    }
+
+    /// Scroll the drawn playlist so a row is on screen — `PlEdit.showTrack(n)`. A no-op in a window
+    /// whose skin embeds no playlist holder, which is most of them: the script still runs.
+    func revealPlaylistRow(_ row: Int) {
+        guard let host = componentHost,
+              let holder = renderer.componentHolders().first(where: { $0.kind == .playlist }) else { return }
+        renderer.revealPlaylistRow(row, rowCount: host.playlistSnapshot().rows.count, in: holder.frame,
+                                   holder: holder.object)
+        needsDisplay = true
+    }
+
+    /// Keep the scroll offset inside the list after a removal or a queue replacement, so a deleted
+    /// tail does not leave the view scrolled past the end.
+    func clampPlaylistScroll() {
+        guard let host = componentHost,
+              let holder = renderer.componentHolders().first(where: { $0.kind == .playlist }) else { return }
+        renderer.scrollPlaylist(byRows: 0, rowCount: host.playlistSnapshot().rows.count,
+                                in: holder.frame, holder: holder.object)
+    }
+
+    override func updateTrackingAreas() {
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area)
+        tracking = area
+        super.updateTrackingAreas()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Live host subviews (e.g. the embedded library) handle their own region.
+        for sub in subviews.reversed() {
+            if let hit = sub.hitTest(point) {
+                traceHitTest(point, verdict: "subview \(type(of: hit))")
+                return hit
+            }
+        }
+        guard bounds.contains(point) else {
+            traceHitTest(point, verdict: "outside bounds \(bounds)")
+            return nil
+        }
+        let skin = skinPoint(point)
+        if renderer.componentHolder(at: skin) != nil {
+            traceHitTest(point, verdict: "self (holder)")
+            return self
+        }
+        let visible = renderer.containsVisiblePixel(at: skin)
+        traceHitTest(point, verdict: visible ? "self (pixel)" : "nil (no visible pixel)")
+        return visible ? self : nil
+    }
+
+    private func traceHitTest(_ point: NSPoint, verdict: String) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_TRACE"] != nil else { return }
+        guard NSEvent.pressedMouseButtons != 0 else { return }
+        NSLog("%@", "WINAMP-MODERN-DRAG: hitTest container=\(containerID) view=\(point) "
+              + "skin=\(skinPoint(point)) -> \(verdict)")
+        #endif
+    }
+
+    /// Called at the top of every layout pass, before surfaces reconcile. The controller uses it to
+    /// re-check embedded-page exclusivity: a skin script can open its tab on its own timer, *after*
+    /// the reveal that forced a different page open, and a reveal-time check cannot see a page that
+    /// does not exist yet.
+    var willReconcileSurfaces: (() -> Void)?
+
+    override func layout() {
+        super.layout()
+        willReconcileSurfaces?()
+        // Creating and adding subviews from inside `draw` is a re-entrant view-hierarchy mutation
+        // during a draw cycle; reconciliation belongs here, and drawing only draws.
+        reconcileHostedSurfaces()
+        let browsers = renderer.browserNodes()
+        reconcileBrowserSurfaces(browsers)
+        layoutHostedSubviews(browsers: browsers)
+        cachedHolders = nil
+    }
+
+    /// Invalidate just one skin object's box (plus a pixel of slop for resampling at the edges).
+    ///
+    /// Falls back to the whole view when this scene does not contain the object — it belongs to
+    /// another container's window, and only that window's view can place it.
+    private func setNeedsDisplay(for object: WasabiObject) {
+        guard !isTornDown else { return }
+        // Cached: this runs on the animation path (per warped layer, per script tick), and resolving
+        // geometry walks the scene.
+        if let cached = objectRectCache[ObjectIdentifier(object)] {
+            setNeedsDisplay(cached)
+            return
+        }
+        // The object's *painted* box, which includes its subtree: `alpha` is inherited, so fading a
+        // group repaints every descendant, and a child may hang outside a parent that does not clip.
+        guard let frame = renderer.paintedBounds(of: object) ?? renderer.resolvedGeometry(of: object)?.frame else {
+            needsDisplay = true
+            return
+        }
+        let rect = viewRect(fromSkin: frame).insetBy(dx: -2, dy: -2)
+        objectRectCache[ObjectIdentifier(object)] = rect
+        setNeedsDisplay(rect)
+    }
+
+    /// Per-object view rects for the targeted-repaint path, dropped with `animatingRectsCache`.
+    private var objectRectCache: [ObjectIdentifier: NSRect] = [:]
+
+    /// Repaint when this window gains or loses the keyboard — nothing else asks AppKit to, and the
+    /// active/inactive artwork is the half of a skin that only changes on focus.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        activeStateObservers.forEach(NotificationCenter.default.removeObserver)
+        activeStateObservers.removeAll()
+        guard let window else { return }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            activeStateObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: window, queue: .main) { [weak self] _ in
+                    guard let self, !self.isTornDown else { return }
+                    self.needsDisplay = true
+                })
+        }
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
+        #if DEBUG
+        Self.reportDrawFormatOnce(context: context, view: self)
+        #endif
+        // Only what is being repainted is cleared: a partial repaint (a meter that moved) must not
+        // blank the rest of the window it is not going to draw again.
+        context.clear(dirtyRect)
+        // Which of `activealpha`/`inactivealpha` every object paints at. Read here rather than
+        // cached on the notification: a window can lose key without either notification reaching us
+        // (the app deactivating, a sheet), and the read is one Boolean.
+        renderer.isWindowActive = window?.isKeyWindow ?? true
+        context.saveGState()
+        if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
+        renderer.draw(in: context, pressed: pressedObject?.stableID,
+                      hovered: hoveredObject?.stableID)
+        context.restoreGState()
+    }
+
+    #if DEBUG
+    /// `WINAMP_MODERN_DRAW_FORMAT=1` — the pixel format the window actually composites in, printed
+    /// once per view on its first `draw(_:)`.
+    ///
+    /// Written for B119(2), where `RGBAf16_*` frames in the replay looked like a deep-colour backing
+    /// store. They are not: this reports `layerFormat=RGBA8`, `layerEDR=false`, `edrMax=1.0`, so the
+    /// f16 is Core Graphics' *resampler*, not the destination.
+    ///
+    /// The other half of what it prints is the more useful half. `bpc=0` — the context `draw(_:)` is
+    /// handed is a **display list**, not a bitmap. Nothing the renderer records is scaled or
+    /// colour-matched while we are inside `draw(_:)`; that happens when Core Animation replays the
+    /// list, which is why `context.ctm` is 1.0 even at 100% on a Retina display, and why per-frame
+    /// image costs land after our own frame timing says the frame is over.
+    private static var drawFormatReported: Set<ObjectIdentifier> = []
+    private static let drawFormatProbe =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAW_FORMAT"] == "1"
+
+    private static func reportDrawFormatOnce(context: CGContext, view: WinampModernMainView) {
+        guard drawFormatProbe, drawFormatReported.insert(ObjectIdentifier(view)).inserted else { return }
+        let layer = view.layer
+        let screen = view.window?.screen
+        let name = view.window?.title ?? "<no window>"
+        NSLog("""
+              [draw/format] window=\(name) \
+              bpc=\(context.bitsPerComponent) bpp=\(context.bitsPerPixel) \
+              bitmapInfo=0x\(String(context.bitmapInfo.rawValue, radix: 16)) \
+              space=\(context.colorSpace?.name.map { $0 as String } ?? "nil") \
+              layerBacked=\(view.wantsLayer) layer=\(layer.map { String(describing: type(of: $0)) } ?? "nil") \
+              layerFormat=\(layer?.contentsFormat.rawValue ?? "nil") \
+              layerEDR=\(layer?.wantsExtendedDynamicRangeContent ?? false) \
+              depthLimit=\(view.window?.depthLimit.rawValue ?? -1) \
+              dynamicDepth=\(view.window?.hasDynamicDepthLimit ?? false) \
+              deepColor=\(view.window?.canRepresent(.p3) ?? false) \
+              edrMax=\(screen?.maximumExtendedDynamicRangeColorComponentValue ?? -1) \
+              edrPotential=\(screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? -1) \
+              windowSpace=\(view.window?.colorSpace?.localizedName ?? "nil") \
+              screenSpace=\(screen?.colorSpace?.localizedName ?? "nil") \
+              backingScale=\(view.window?.backingScaleFactor ?? 0)
+              """)
+    }
+    #endif
+
+    /// `WINAMP_MODERN_SURFACE_TRACE=1` — the hosted-surface reconcile, in the running app. The
+    /// headless harness installs no component host, so no surface is ever made there and this whole
+    /// path is invisible to every other probe.
+    static let surfaceTrace = ProcessInfo.processInfo.environment["WINAMP_MODERN_SURFACE_TRACE"] == "1"
+
+    /// Create a live surface for each library holder the scene now has, and **unmount** the ones whose
+    /// holder has gone (a layout switch, a script hiding the tab).
+    ///
+    /// Unmount, not tear down. The bridge owns one surface of each kind per skin and re-serves that
+    /// same instance when the holder comes back, so a terminal teardown here poisoned the cache: the
+    /// second visit to a tab re-added an already-torn-down surface, and the third found the teardown
+    /// latch already closed and never removed its view — cPro-Bento's library browser then stayed on
+    /// screen over every other tab (Media Library → Playlist → Media Library → Playlist, reported
+    /// 2026-08-21). The scene's own teardown still tears the surfaces down.
+    private func reconcileHostedSurfaces() {
+        guard !isTornDown else { return }
+        let holders = renderer.componentHolders()
+        var live: Set<WasabiObjectID> = []
+        for holder in holders where holder.kind == .library {
+            live.insert(holder.object.stableID)
+            guard librarySurfaces[holder.object.stableID] == nil,
+                  let surface = componentHost?.makeLibrarySurface() else { continue }
+            librarySurfaces[holder.object.stableID] = surface
+            surface.applyContentScale(libraryContentScale)
+            surface.applyPalette(renderer.palette)
+            addSubview(surface.view)
+        }
+        for (id, surface) in librarySurfaces where !live.contains(id) {
+            surface.unmountFromHolder()
+            librarySurfaces[id] = nil
+        }
+
+        var liveVideo: Set<WasabiObjectID> = []
+        var videoHolderAppeared = false
+        for holder in holders where holder.kind == .video {
+            liveVideo.insert(holder.object.stableID)
+            guard videoSurfaces[holder.object.stableID] == nil,
+                  let surface = componentHost?.makeVideoSurface() else { continue }
+            videoHolderAppeared = true
+            videoSurfaces[holder.object.stableID] = surface
+            // `noshowcmdbar="1"` — the holder's own instruction that it draws the transport itself.
+            surface.showsCommandBar =
+                WinampModernVideoHolder.showsCommandBar(holderAttributes: holder.object.attributes)
+            surface.applySkinScale(skinScale)
+            surface.applyPalette(renderer.palette)
+            addSubview(surface.view)
+        }
+        // Not every `{0000000A}` holder gets the engine: a letterbox strip is an analyzer's box, and
+        // the bridge vends one surface per skin, so a second holder asking for it stole the picture
+        // from the first. Everything not named here falls through to the renderer's analyzer (BB9).
+        let engineHolderID = WinampModernVisualizationHolder.engineHolder(among: holders)
+        let liveVis: Set<WasabiObjectID> = engineHolderID.map { [$0] } ?? []
+        if Self.surfaceTrace {
+            let boxes = holders.filter { $0.kind == .visualization }.map {
+                "\($0.object.xmlID ?? "-")#\($0.object.stableID)\(NSStringFromRect($0.frame))"
+            }
+            let line = "[surf/vis] reconcile engine="
+                + (engineHolderID.map(String.init(describing:)) ?? "none")
+                + " holders=" + boxes.joined(separator: " ")
+            NSLog("%@", line)
+        }
+        // **Unmount first, then mount.** The bridge vends one surface per skin, so the holder the
+        // engine moves *to* and the holder it moves *from* hand back the same object. With the mount
+        // pass first, that object was registered under both ids at once and the unmount pass then ran
+        // `unmountFromHolder()` on the instance the mount pass had just added — stopping the engine
+        // and pulling the view straight back out of the hierarchy. `[B]` kept the detached, stopped
+        // surface, and every later reconcile skipped it as already mounted, so the box stayed black
+        // for the rest of the session. That is Big Bento Modern's Visualization tab going black once
+        // the Multi Content View mini pane is ticked: ticking it adds a second eligible holder, and
+        // opening the tab flips the election from the mini pane to the tab (BB35).
+        for (id, surface) in visualizationSurfaces where !liveVis.contains(id) {
+            if Self.surfaceTrace {
+                let line = "[surf/vis] unmount #\(id)"
+                    + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
+                NSLog("%@", line)
+            }
+            surface.unmountFromHolder()
+            visualizationSurfaces[id] = nil
+        }
+        for holder in holders where holder.kind == .visualization {
+            guard holder.object.stableID == engineHolderID else { continue }
+            let surface: WinampModernVisualizationSurface
+            if let existing = visualizationSurfaces[holder.object.stableID] {
+                surface = existing
+            } else if let made = componentHost?.makeVisualizationSurface() {
+                visualizationSurfaces[holder.object.stableID] = made
+                made.applySkinScale(skinScale)
+                made.applyPalette(renderer.palette)
+                surface = made
+            } else {
+                continue
+            }
+            // **Attach every pass, not only on creation.** A surface is detached by an unmount above
+            // — the move this pass is completing — and the old "create it, add it, resume it once"
+            // shape could only ever start the engine on the pass that made it. Anything that left the
+            // view hierarchy afterwards had nothing to put it back (BB35).
+            guard surface.view.superview !== self else {
+                if Self.surfaceTrace {
+                    let line = "[surf/vis] attached \(holder.object.xmlID ?? "-")"
+                        + "#\(holder.object.stableID)"
+                        + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
+                    NSLog("%@", line)
+                }
+                continue
+            }
+            addSubview(surface.view)
+            if Self.surfaceTrace {
+                let line = "[surf/vis] mount \(holder.object.xmlID ?? "-")"
+                    + "#\(holder.object.stableID)"
+                    + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
+                NSLog("%@", line)
+            }
+            // A surface the bridge handed back was stopped when its holder went away, and the only
+            // other thing that starts an engine is a window becoming visible — which has already
+            // happened for a holder that lives in a window that is on screen.
+            surface.resumeRendering()
+        }
+        // What the renderer paints in the box behind them: bars are the skin's analyzer, and drawing
+        // one under a live engine is a second visualization nobody can see costing a repaint a frame.
+        renderer.hostedVisualizationHolders = liveVis
+
+        for (id, surface) in videoSurfaces where !liveVideo.contains(id) {
+            // Unparks the picture — the one video view in the app must never be left orphaned in a
+            // view that is about to leave the hierarchy — and leaves it hidden. The holder going away
+            // is a tab switch, not a stop, so the film plays on and the window it came from stays put.
+            surface.unmountFromHolder()
+            videoSurfaces[id] = nil
+        }
+        // …and the holder coming *back* is the tab being switched to again, which is the only moment
+        // that can park the picture there a second time: the reveal route runs on a *play* call, and
+        // the film has been playing all along. After a layout pass, because that is what gives the
+        // new box its frame, and asked of `hostedVideoSurface` so the largest visible box wins the
+        // same way the first parking did.
+        if videoHolderAppeared, sceneIsVisible,
+           WindowManager.shared.currentVideoPlayerController?.currentTitle != nil {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isTornDown else { return }
+                self.needsLayout = true
+                self.layoutSubtreeIfNeeded()
+                self.hostedVideoSurface?.attachVideoOutput()
+                self.hostedVideoSurface?.updateOutputPlacement()
+            }
+        }
+
+        var liveHostedWindows: Set<WasabiObjectID> = []
+        let hostedStyle = WinampModernSurfaceStyle(palette: renderer.palette)
+        for holder in holders {
+            guard case .hostWindow(let id) = holder.surfaceID else { continue }
+            liveHostedWindows.insert(holder.object.stableID)
+            guard hostedWindowSurfaces[holder.object.stableID] == nil,
+                  let surface = componentHost?.makeHostedWindowSurface(id: id) else { continue }
+            hostedWindowSurfaces[holder.object.stableID] = surface
+            surface.applySkinScale(skinScale)
+            surface.applyPalette(hostedStyle)
+            addSubview(surface.view)
+            if sceneIsVisible { surface.resume() }
+        }
+        for (id, surface) in hostedWindowSurfaces where !liveHostedWindows.contains(id) {
+            surface.suspend()
+            surface.unmountFromHolder()
+            hostedWindowSurfaces[id] = nil
+        }
+        cachedHolders = holders
+    }
+
+    private var cachedHolders: [WinampModernComponentHolder]?
+
+    /// Create/remove independent web surfaces for `<browser>` elements. They remain eagerly
+    /// instantiated for hidden tab groups, but do not perform their initial load until visible.
+    ///
+    /// Surfaces are created eagerly for ALL browser elements (including hidden tab groups) so they
+    /// are ready when a MAKI script toggles the parent visible. The view's `isHidden` tracks the
+    /// element's scene visibility.
+    private func reconcileBrowserSurfaces(_ browsers: [(object: WasabiObject, frame: CGRect)]) {
+        guard !isTornDown else { return }
+        var live: Set<WasabiObjectID> = []
+        for browser in browsers {
+            let id = browser.object.stableID
+            live.insert(id)
+            if browserSurfaces[id] == nil {
+                let markupRequest = WinampModernBrowserRequest.initial(
+                    attributes: browser.object.attributes,
+                    sourceLogicalPath: browser.object.source.path)
+                let request = pendingBrowserRequests.removeValue(forKey: id) ?? markupRequest
+                guard let surface = componentHost?.makeBrowserSurface(initialRequest: request) else { continue }
+                surface.setShowsLocationBar(!Self.suppressesHostLocationBar(
+                    browserID: browser.object.xmlID, parentID: browser.object.parent?.xmlID))
+                surface.applySkinScale(skinScale)
+                addSubview(surface.view)
+                browserSurfaces[id] = surface
+            } else if browserSurfaces[id]?.view.superview !== self,
+                      let view = browserSurfaces[id]?.view {
+                addSubview(view)
+            }
+            // **A holder with no area is not a surface.** `isBrowserVisible` answers "the element is
+            // in the scene", which a `<browser>` can be while resolving to nothing — Ebonite declares
+            // `<browser id="brw" fitparent="1"/>` in its Pledit, Video and Library layouts with no box
+            // of its own, and it resolves to 0x0 at the layout's origin. A `WKWebView` there is not
+            // merely invisible: its content is composited by another process, and an empty one parked
+            // at the window's top edge drew a band of uninitialized pixels into the top 12 rows of the
+            // window. That was invisible in every skin whose artwork covers its whole window and
+            // showed up the moment one did not — reported on Ebonite as a corner artifact that
+            // flickered while the window was dragged.
+            let visible = renderer.isBrowserVisible(browser.object) && !browser.frame.isEmpty
+            browserSurfaces[id]?.setVisible(visible)
+            if visible, let request = pendingBrowserRequests.removeValue(forKey: id) {
+                browserSurfaces[id]?.navigate(request)
+            }
+        }
+        var deleted: [WasabiObjectID] = []
+        for (id, surface) in browserSurfaces where !live.contains(id) {
+            if renderer.loadedSkin.runtime.graph.object(withID: id) == nil {
+                surface.prepareForUITeardown()
+                deleted.append(id)
+            } else {
+                // An inactive layout still owns this object. Unmount without destroying its WebKit
+                // history; reconciliation reattaches the same surface if that layout returns.
+                surface.setVisible(false)
+                surface.unmountFromHolder()
+            }
+        }
+        for id in deleted { browserSurfaces[id] = nil }
+    }
+
+    /// Route object-scoped MAKI navigation to this scene. A request before first layout is buffered;
+    /// a request for an object owned by another container returns false so the controller can ask
+    /// that container's view instead.
+    @discardableResult
+    func navigateBrowser(objectID: WasabiObjectID, address: String) -> Bool {
+        guard !isTornDown,
+              let object = renderer.loadedSkin.runtime.graph.object(withID: objectID),
+              owns(object), WasabiSceneRenderer.isBrowserElement(object) else { return false }
+        let request = WinampModernBrowserRequest(address: address,
+                                                 sourceLogicalPath: object.source.path)
+        if let surface = browserSurfaces[objectID] { surface.navigate(request) }
+        else {
+            pendingBrowserRequests[objectID] = request
+            needsLayout = true
+        }
+        return true
+    }
+
+    /// The `<browser>` in this scene a *global* request should land in — `System.navigateUrlBrowser`
+    /// and the `browser_search` / `browser_navigate` actions name no object at all (B40).
+    ///
+    /// **A visible one wins.** A skin keeps its reader in a tab that starts hidden and often ships a
+    /// second browser besides (cPro-Bento's `SC:UpdateSystem` update-check widget is one), so the box
+    /// the user can actually see is the one they asked to fill. With none visible the first is taken
+    /// and its surface holds the request until its tab is opened — the same buffering an early
+    /// `onScriptLoaded` navigation already gets.
+    func globalBrowserTarget() -> (object: WasabiObject, isVisible: Bool)? {
+        guard !isTornDown else { return nil }
+        let nodes = renderer.browserNodes()
+        if let visible = nodes.first(where: { renderer.isBrowserVisible($0.object) }) {
+            return (visible.object, true)
+        }
+        return nodes.first.map { ($0.object, false) }
+    }
+
+    /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
+    /// hand the picture over before showing the skin's video window, and to size that window from
+    /// the stream's own dimensions for `VID_1X` / `VID_2X`.
+    ///
+    /// **The biggest visible box wins.** A skin can hold the same component in several places at
+    /// once — cPro-Bento's video lives in its tab, in the mini view above the playlist column *and*
+    /// in the drawer — and a dictionary's first value is whichever the hash gave up, so the picture
+    /// landed in a different box between runs of the same build. The largest is the one the user
+    /// asked to see: the small ones are strips the skin leaves open beside it.
+    var hostedVideoSurface: WinampModernVideoSurface? {
+        let holders = renderer.componentHolders()
+            .filter { $0.kind == .video && videoSurfaces[$0.object.stableID] != nil }
+            .sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
+        if let best = holders.first { return videoSurfaces[best.object.stableID] }
+        return videoSurfaces.values.first
+    }
+
+    /// The visualization surface in this scene, if the skin's AVS holder made one. The host actions
+    /// (`VIS_NEXT`, `VIS_CFG`) and the Visualizations menu reach the running engine through it.
+    var hostedVisualizationSurface: WinampModernVisualizationSurface? { visualizationSurfaces.values.first }
+
+    /// The video holder's frame in skin pixels, for the sizing arithmetic `VID_1X` / `VID_2X` do:
+    /// the window grows by the difference between the box the skin drew and the box the stream wants.
+    var videoHolderFrame: CGRect? {
+        renderer.componentHolders().first { $0.kind == .video }?.frame
+    }
+
+    /// How far a video or visualization surface passes under the skin's surrounding artwork, in skin
+    /// pixels.
+    ///
+    /// Unconditional, and deliberately not gated on the glued-chrome pair being *recorded*. The pair
+    /// is learned from one particular script idiom (`chrome.resize(content.getLeft(), …)`, see
+    /// `borrowedWindowOrigin`), and a frame script that positions its chrome any other way is glued in
+    /// fact but unrecorded — Itemskin's video window records the pair and its visualizer does not, so
+    /// gating on it fixed one of the two and left the other with the seam.
+    ///
+    /// The cost is that on a skin that draws its border *inline* these two surfaces cover two skin
+    /// pixels of it. That is the right trade for these two only: both are opaque rectangles of
+    /// picture whose own edge carries no information, both sit inside a border that is tens of pixels
+    /// wide in every measured skin, and a transparent line down the edge of a window is far more
+    /// visible than two pixels of border. The library is in for the same reason once its window wears
+    /// a frame of this kind: two pixels of a list view's own padding is nothing, a hairline of desktop
+    /// down the window edge is not.
+    private var mountedSurfaceBleed: CGFloat { CGFloat(WasabiSurfaceSynthesizer.clientBleed) }
+
+    /// Position live host surfaces at their skin-provided holder frames, converting from top-left
+    /// skin coordinates to the view's bottom-left ones. Positioning only — nothing is created here.
+    private func layoutHostedSubviews(browsers: [(object: WasabiObject, frame: CGRect)]) {
+        guard !isTornDown else { return }
+        let holders = cachedHolders ?? renderer.componentHolders()
+        // Where the skin's border is a **second window** parked on this one, a client rect that stops
+        // a pixel short of the border's hole leaves a transparent gap the desktop shows through. The
+        // skin never sees it: Winamp's own video and visualization components draw black inside a
+        // black border. Ours do not, so the surface is grown to pass under the border — safe by
+        // construction, because the border is drawn over it from a window in front. Itemskin's
+        // visualizer states its client at `x="27"` against a hole that starts at 26.
+        let bleed = mountedSurfaceBleed
+        let canvas = CGRect(origin: .zero, size: renderer.canvasSize)
+        func placed(_ frame: CGRect) -> CGRect {
+            // Never past the window's own edge: a surface that already reaches it has no border to
+            // hide under, and growing it there would only push picture off the window.
+            viewRect(fromSkin: frame.insetBy(dx: -bleed, dy: -bleed).intersection(canvas))
+        }
+        for holder in holders where holder.kind == .library {
+            guard let surface = librarySurfaces[holder.object.stableID] else { continue }
+            surface.view.frame = placed(holder.frame)
+        }
+        for holder in holders where holder.kind == .visualization {
+            guard let surface = visualizationSurfaces[holder.object.stableID] else { continue }
+            surface.view.frame = placed(holder.frame)
+            if Self.surfaceTrace {
+                let line = "[surf/vis] layout \(holder.object.xmlID ?? "-")"
+                    + "#\(holder.object.stableID)"
+                    + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
+                    + " frame=\(NSStringFromRect(surface.view.frame))"
+                NSLog("%@", line)
+            }
+        }
+        for holder in holders where holder.kind == .video {
+            guard let surface = videoSurfaces[holder.object.stableID] else { continue }
+            surface.view.frame = placed(holder.frame)
+            // The picture is a child window parked on that box, and a child window follows its
+            // parent's moves but not a resize of the box inside it.
+            surface.updateOutputPlacement()
+        }
+        for holder in holders {
+            guard case .hostWindow = holder.surfaceID,
+                  let surface = hostedWindowSurfaces[holder.object.stableID] else { continue }
+            surface.view.frame = viewRect(fromSkin: holder.frame)
+        }
+        for browser in browsers {
+            guard let surface = browserSurfaces[browser.object.stableID] else { continue }
+            let parentFrame = renderer.resolvedGeometry(of: browser.object)?.parent
+            let frame = Self.browserSurfaceFrame(browserFrame: browser.frame,
+                                                 browserID: browser.object.xmlID,
+                                                 parentID: browser.object.parent?.xmlID,
+                                                 parentFrame: parentFrame)
+            surface.view.frame = viewRect(fromSkin: frame)
+        }
+    }
+
+    /// Big Bento Modern's four variants inherit one reader which draws a 38px Winamp browser
+    /// toolbar above `browserpro.browser`.
+    ///
+    /// **BB25 covered that row with the WebKit surface; BB15 uncovered it again, and the difference
+    /// is that the row is no longer inert.** When BB25 was closed the skin's toolbar was decoration
+    /// over a backend that did not exist, so filling the whole parent hid a duplicate of chrome we
+    /// already supplied. The provider drop-down on that row is now live — `XmlDoc`'s callback parser
+    /// fills it with the 31 entries of the skin's own `reader_providers.xml` — so covering it hides
+    /// a working control, which is a worse defect than the one BB25 fixed.
+    ///
+    /// The answer to "two toolbars" is therefore *whose wins*, not *cover it*: the browser keeps the
+    /// rectangle it authored, and `suppressesHostLocationBar` turns **our** chrome off for the one
+    /// structure that brings its own. Anything else still gets ours.
+    ///
+    /// **`usesSkinAuthoredReaderToolbar` is off, and the switch is the whole point.** Uncovering that
+    /// row is only an improvement once the row *works*, and three of its four buttons still do not:
+    /// `Browser.back()` and `Browser.forward()` are not implemented at all (the handler aborts on the
+    /// unknown method), and Refresh re-enters the navigate routine, which aborts on `getColor` —
+    /// script access to the skin's palette, which needs a colour-resolution seam the runtime does not
+    /// have. Switched on today the user trades working host chrome for a toolbar with one live
+    /// control, which is a worse defect than the duplicate BB25 was filed for. Finish those three and
+    /// flip this; the code below is what it flips to.
+    static let usesSkinAuthoredReaderToolbar = false
+
+    static func browserSurfaceFrame(browserFrame: CGRect, browserID: String?, parentID: String?,
+                                    parentFrame: CGRect?,
+                                    usesSkinToolbar: Bool = usesSkinAuthoredReaderToolbar) -> CGRect {
+        guard !usesSkinToolbar else { return browserFrame }
+        guard isBentoReader(browserID: browserID, parentID: parentID),
+              let parentFrame else { return browserFrame }
+        return parentFrame
+    }
+
+    /// Whether the skin draws its own reader toolbar over this `<browser>`, so the host must not add
+    /// a second one. Gated on the exact shared Bento reader structure rather than on a guess about
+    /// sibling controls: a skin that merely puts a button near a browser has not built an address
+    /// bar, and losing ours would leave it with no way to navigate at all.
+    static func suppressesHostLocationBar(browserID: String?, parentID: String?,
+                                          usesSkinToolbar: Bool = usesSkinAuthoredReaderToolbar) -> Bool {
+        usesSkinToolbar && isBentoReader(browserID: browserID, parentID: parentID)
+    }
+
+    /// The one shared structure the four Big Bento Modern variants inherit.
+    private static func isBentoReader(browserID: String?, parentID: String?) -> Bool {
+        browserID?.caseInsensitiveCompare("browserpro.browser") == .orderedSame
+            && parentID?.caseInsensitiveCompare("centro.browser") == .orderedSame
+    }
+
+    /// Top-left skin coordinates to the view's bottom-left ones, at the current UI Size.
+    private func viewRect(fromSkin rect: CGRect) -> NSRect {
+        NSRect(x: rect.minX * skinScale, y: bounds.height - rect.maxY * skinScale,
+               width: rect.width * skinScale, height: rect.height * skinScale)
+    }
+
+    /// A splitter's grab strip gets the resize cursor, so a divider the skin draws no artwork for is
+    /// still discoverable. Rects are re-derived whenever the divider moves.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard !isTornDown else { return }
+        for divider in renderer.frameDividers() {
+            addCursorRect(viewRect(fromSkin: divider.rect),
+                          cursor: divider.isVertical ? .resizeLeftRight : .resizeUpDown)
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        // The border's cursor is set from the same hit test the press uses, not from a cursor rect:
+        // a rect could only describe the handle's *box*, and the skin's exceptions to it — the
+        // interior disabler, a close button on the top strip — are expressed by what lies over that
+        // box. Promising a resize cursor where the press does something else is precisely the defect
+        // BB21 was filed for.
+        if let edges = renderer.resizeEdges(at: point) {
+            Self.cursor(for: edges).set()
+            showsResizeCursor = true
+        } else if showsResizeCursor {
+            NSCursor.arrow.set()
+            showsResizeCursor = false
+        }
+        // The thinger's caption names whichever icon the pointer is over, which is Winamp's own
+        // behaviour and the only way a one-icon-wide bucket (Lobe's is 40×25) can be read at all.
+        // Before the identity guard below: moving between two icons of the same bucket never changes
+        // the hovered *object*.
+        if renderer.focusComponentBucketIcon(at: point) { needsDisplay = true }
+        let next = renderer.object(at: point)
+        guard next !== hoveredObject else { return }
+        if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
+        // A `<Menu>` entry lights up under the pointer by swapping which of its three sibling objects
+        // is visible — the whole of what the object draws. Done here rather than from a script binding
+        // because a menu entry has none: `normal`/`hover`/`down` are markup, and the state machine
+        // over them is Winamp's, not the skin's.
+        if let previous = hoveredObject, WasabiMenuBar.isMenu(previous), previous !== openMenuObject {
+            WasabiMenuBar.apply(.normal, to: previous)
+        }
+        hoveredObject = next
+        if let next { _ = try? scripts.dispatch(object: next, event: "onenterarea") }
+        if let next, WasabiMenuBar.isMenu(next), next !== openMenuObject {
+            WasabiMenuBar.apply(.hover, to: next)
+        }
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if showsResizeCursor {
+            NSCursor.arrow.set()
+            showsResizeCursor = false
+        }
+        if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
+        if let previous = hoveredObject, WasabiMenuBar.isMenu(previous), previous !== openMenuObject {
+            WasabiMenuBar.apply(.normal, to: previous)
+        }
+        hoveredObject = nil
+        needsDisplay = true
+    }
+
+    #if DEBUG
+    /// Drive a left click at a skin point without a mouse — the app-side counterpart of the
+    /// harness's `WINAMP_MODERN_RENDER_CLICK`, reached through `WINAMP_MODERN_DEBUG_CLICK`.
+    ///
+    /// The harness renders containers standalone and owns no windows, so a defect that lives in the
+    /// *window* layer is invisible to it: Defix's playlist button measured as one clean toggle in
+    /// `RENDER_CLICK` while opening and shutting the window on every press in the app. This replays
+    /// exactly what `mouseUp` does, so the window layer is in the picture. Pair it with
+    /// `WINAMP_MODERN_CALL_TRACE=1`, which is what turns the click into a readable chain.
+    func debugClick(atSkinPoint point: CGPoint) {
+        guard let object = renderer.object(at: point) else {
+            NSLog("WinampModern debug click: nothing at %@", "\(point)")
+            return
+        }
+        NSLog("WinampModern debug click: %@#%@", object.typeName, object.xmlID ?? "-")
+        pressedObject = object
+        dispatch(object: object, event: "onleftbuttondown", point: point)
+        dispatch(object: object, event: "onleftbuttonup", point: point)
+        _ = try? scripts.dispatch(object: object, event: "onleftclick")
+        performAction(for: object)
+        pressedObject = nil
+        needsDisplay = true
+        logHolders(tag: "debug click")
+    }
+
+    /// `WINAMP_MODERN_DEBUG_HOLDERS=1` — after every click: the component holders the scene actually
+    /// has, and the live host subviews still in the hierarchy. A subview whose holder is gone is the
+    /// tab-overlap bug as a *live* view; a holder gone with no subview left is a stale-pixel bug.
+    func logHolders(tag: String) {
+        guard ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_HOLDERS"] != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self else { return }
+            let holders = self.renderer.componentHolders()
+                .map { holder -> String in
+                    // The holder's own id does not say which *group* it is: Big Bento declares the
+                    // same `<component id="vis">` in a mini group and a full-width one, so the chain
+                    // with each node's `visible` is what tells them apart — and names whoever left a
+                    // `visible="0"` group open.
+                    var chain: [String] = []
+                    var node: WasabiObject? = holder.object.parent
+                    var depth = 0
+                    while let current = node, depth < 32 {
+                        chain.append("\(current.xmlID ?? current.typeName)=\(current.attributes["visible"] ?? "-")")
+                        node = current.parent
+                        depth += 1
+                    }
+                    return "\(holder.kind.rawValue)#\(holder.object.xmlID ?? "-")\(holder.frame)"
+                        + "<\(chain.joined(separator: "<"))"
+                }
+                .joined(separator: " | ")
+            let subs = self.subviews
+                .map { "\(type(of: $0))\($0.frame)hidden=\($0.isHidden ? 1 : 0)" }
+                .joined(separator: " | ")
+            NSLog("WinampModern HOLDERS after %@: lib=%d brw=%d vid=%d vis=%d holders=[%@] subviews=[%@]",
+                  tag, self.librarySurfaces.count, self.browserSurfaces.count, self.videoSurfaces.count,
+                  self.visualizationSurfaces.count, holders, subs)
+        }
+    }
+
+    #endif
+
+    override func mouseDown(with event: NSEvent) {
+        // Before anything else this click might do: a transient popup elsewhere goes away, which is
+        // what `autoclose="1"` means and the only way a chromeless one can be dismissed.
+        didClickInWindow?(containerID)
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_TRACE"] != nil {
+            let object = renderer.object(at: point)
+            let drags = object.map { shouldDragWindow(from: $0) } ?? false
+            NSLog("%@", "WINAMP-MODERN-DRAG: down container=\(containerID) point=\(point) "
+                  + "cmd=\(event.modifierFlags.contains(.command)) "
+                  + "object=\(object?.typeName ?? "nil")#\(object?.xmlID ?? "-") drags=\(drags)")
+        }
+        #endif
+        // ⌘-drag moves the window from anywhere in it, whatever the skin claims that pixel is for
+        // (B59). Measured with `WINAMP_MODERN_DRAG_PROBE`: Defix's player is **33%** draggable and
+        // corneramp_redux **49%**, and every top blocker is the skin's own `move="0"` layer, its
+        // script-bound layer or a control — honouring those is B38.1's policy working correctly, so
+        // no change to `shouldDragWindow` can reach it. This is the host's escape hatch instead, and
+        // it outranks everything below because the point is to be reachable where nothing else is:
+        // over the menu bar, the resize border, a component holder, a slider, all of it.
+        // ⌘ is otherwise unused in this view's whole mouse path, and the press returns here without
+        // being dispatched, so no skin script sees an event it would otherwise have had.
+        if event.modifierFlags.contains(.command), let window {
+            beginWindowDrag(window, from: event)
+            return
+        }
+        // A menu-bar entry opens on the **press**, before the divider, the resize border and the
+        // window-drag fall-through below it. It has to outrank all three: a skin's menu bar lives on
+        // its titlebar, which is also a `move="1"` drag surface *and* — measured on ClassicPro — a
+        // strip covered by the window's own top `resize=` handle, so with the entries checked after
+        // those a click on File was answered by the resizer and the menu never opened. The entries
+        // are a 172x20 island in the middle of the bar, so the corners and edges stay grabbable.
+        if let menu = renderer.object(at: point), WasabiMenuBar.isMenu(menu) {
+            presentSkinMenuBarEntry(menu)
+            return
+        }
+        // A splitter's grab strip spans the full height of its frame, which means it crosses whatever
+        // the skin has laid over that column — cPro's tab strip runs straight through the 8px seam.
+        // So the divider only claims the click when nothing that outranks it is under it: a control
+        // the user can actually see always wins. An invisible mousetrap and a bare window-drag surface
+        // do not, or Big Bento's full-window `player.resizer.disable` layer makes its splitter
+        // undraggable while the cursor promises otherwise — see `objectOverridingDivider` (BB21).
+        if renderer.objectOverridingDivider(at: point) == nil,
+           let divider = renderer.frameDivider(at: point) {
+            draggedDivider = divider
+            return
+        }
+        // A `resize="…"` handle — the skin's own window border, and on a borderless window the only
+        // resize affordance there is. Before everything below: a border layer is a plain `<layer>`
+        // with no action, so `shouldDragWindow` would otherwise *move* the window off the very strip
+        // the user grabbed to stretch it, which is what the border is declared for.
+        // Only on the *first* click: 25 of the corpus's 393 handles also carry a command on the
+        // second one — a titlebar corner's `dblClickAction="SWITCH;shade"` is the common shape — and
+        // claiming the press unconditionally would take shade mode away from every skin that shades
+        // by double-clicking its own border (winampmodern566, Styx, Itemskin, mmd3). Dragging
+        // resizes, double-clicking still acts, which is the division Winamp makes.
+        if event.clickCount < 2, let edges = renderer.resizeEdges(at: point), let window {
+            activeResizeEdges = edges
+            resizeStartFrame = window.frame
+            resizeStartMouse = NSEvent.mouseLocation
+            return
+        }
+        if let holder = renderer.componentHolder(at: point) {
+            switch holder.kind {
+            case .playlist:
+                if let row = renderer.playlistRow(at: point, in: holder.frame, holder: holder.object) {
+                    if event.clickCount >= 2 { componentHost?.playlistPlay(row: row) }
+                    else { componentHost?.playlistSelect(row: row) }
+                    // Clicking a row is what gives this window the keyboard, and with it Delete.
+                    playlistHasFocus = true
+                    window?.makeFirstResponder(self)
+                    needsDisplay = true
+                }
+                return
+            case .equalizer:
+                pressedEQHolder = holder.object
+                updateEqualizer(holder: holder.object, frame: holder.frame, point: point)
+                return
+            case .video:
+                // A filled video box is a live subview and `hitTest` already gave it the click; this
+                // is the empty one (no output to lend yet), and a click on a black box does nothing.
+                return
+            case .visualization:
+                // The GL view passes every click through (`hitTest` returns nil), so a left click on
+                // a live engine is this view's to answer — and there is nothing to answer with. A
+                // right click gets the controls, in `rightMouseDown`.
+                return
+            // The seeker seeks. A whole-track waveform is a position bar the user reads as one, so
+            // a click lands where it is pointing — the same conversion the `action="SEEK"` slider
+            // makes, and the only interaction the strip has (BB18).
+            case .waveformSeeker:
+                let fraction = (point.x - holder.frame.minX) / max(1, holder.frame.width)
+                host.seek(to: host.duration * Double(min(max(fraction, 0), 1)))
+                return
+            case .library, .other:
+                return
+            }
+        }
+        // A colour-theme list: click a row to pick it out, double-click to apply it. Winamp-faithful —
+        // the skin's own `Switch` button is what a single click is *waiting* for — and the same code
+        // serves every window this view class backs, so mmd3's `ctsbig`, corneramp's `colorthemes`
+        // window and a drawer in the player are all one path.
+        if let list = renderer.colorThemeList(at: point),
+           let row = renderer.colorThemeListRow(at: point, in: list.object) {
+            renderer.selectColorThemeRow(row, in: list.object)
+            if event.clickCount >= 2, let name = renderer.selectedColorTheme(in: list.object) {
+                applyColorTheme(name)
+            }
+            needsDisplay = true
+            return
+        }
+        // A `<list>` a script filled — Big Bento's playlist search results. A click selects the row
+        // (which is what `getFirstItemSelected` reads back), a double-click is the skin's own
+        // `onDoubleClick`, which is how its search jumps to the track.
+        if let list = renderer.guiList(at: point), let row = renderer.guiListRow(at: point, in: list) {
+            WasabiGuiList.setSelection([row], on: list)
+            // `onDoubleClick(item)` — one argument, the row, counted off the single store at Big
+            // Bento's handler entry. It is how its search result opens the track it names.
+            if event.clickCount >= 2 {
+                _ = try? scripts.dispatch(object: list, event: "ondoubleclick",
+                                          arguments: [.integer(Int32(row))])
+            }
+            needsDisplay = true
+            return
+        }
+        // Winamp's thinger: clicking an icon in a `<componentbucket>` opens that component (B34).
+        // Answered here rather than through `performAction`, as the playlist rows and the colour-theme
+        // list above are, because the bucket carries no `action=` — the widget is Winamp's, and the
+        // skin ships only the box.
+        if let hit = renderer.componentBucketIcon(at: point) {
+            renderer.componentBucket.focus(hit.index)
+            routeComponentToggle(hit.icon.kind)
+            needsDisplay = true
+            return
+        }
+        // A `<Wasabi:TabSheet>` tab: clicking it shows that page and hides the rest (B14). Answered
+        // here, like the bucket icons above, because the widget is Winamp's — the skin declares the
+        // pages and the artwork and hangs no `action=` on the sheet for `performAction` to route.
+        if let tab = renderer.tabSheetTab(at: point) {
+            if WasabiTabSheet.select(index: tab.index, on: tab.object) {
+                needsLayout = true
+                needsDisplay = true
+            }
+            return
+        }
+        guard let object = renderer.object(at: point) else { return }
+        pressedObject = object
+        dispatch(object: object, event: "onleftbuttondown", point: point)
+        // A skin puts real commands on a double-click: cPro's beat display cycles its animation from
+        // `mouseTrap.onLeftButtonDblClk`, and a tab's own dblclk suppresses the drag-to-reorder.
+        if event.clickCount == 2 {
+            isDispatchingDoubleClick = true
+            dispatch(object: object, event: "onleftbuttondblclk", point: point)
+            isDispatchingDoubleClick = false
+        }
+        updateSlider(object, point: point)
+        // Focus follows the click, after the handlers: a skin shows its search box *from* the click
+        // that opens it (Big Bento's `pl.search.edit.rect`), so the `<edit>` is only under the pointer
+        // once those have run. A click that lands anywhere else gives the keyboard back.
+        focusEdit(renderer.editControl(at: point))
+        needsDisplay = true
+
+        if shouldDragWindow(from: object), let window {
+            beginWindowDrag(window, from: event)
+        } else if shouldPrimeWindowDrag(from: object), let window {
+            primedDragWindow = window
+            windowDragStartPoint = event.locationInWindow
+        }
+    }
+
+    /// Whether a press the drag policy refuses should nonetheless *prime* a drag, to be committed
+    /// only once the pointer has travelled `Self.dragThreshold` (B59).
+    ///
+    /// The case this exists for is measured: ClassicPro's toolbar is
+    /// `<layer id="doubleclick" x="0" y="0" w="0" h="27" relatw="1">` — the full width of the player,
+    /// pinned to the top, exactly where a person reaches for a titlebar — and `shouldDragWindow`
+    /// refuses it under "a layer a script hooks the mouse on is a control, not a handle". But the
+    /// only event that layer binds is **`onleftbuttonup`**; it exists to catch a double-click, and it
+    /// has nothing whatever to do on the press. Refusing the press to protect its click protects
+    /// nothing, and it costs the four cPro skins their entire title strip: measured `top24=0%`
+    /// draggable on a 500x500 player.
+    ///
+    /// So the deferral is deliberately narrow — a layer with **no `onleftbuttondown` binding**. That
+    /// is what makes it safe where B59 rated the general form risky: a layer that does bind the press
+    /// still gets it, on the press, exactly as before, and the threshold changes nothing for it.
+    /// `move="0"` and `action=` are still refusals, because there the skin has said what it wants.
+    func shouldPrimeWindowDrag(from object: WasabiObject) -> Bool {
+        guard !shouldDragWindow(from: object) else { return false }
+        guard object.typeName.lowercased() == "layer" else { return false }
+        guard object.attributes["move"] != "0", object.attributes["action"] == nil else { return false }
+        guard !scripts.hasBinding(for: object, event: "onleftbuttondown") else { return false }
+        return Self.mouseEvents.contains { scripts.hasBinding(for: object, event: $0) }
+    }
+
+    /// How far the pointer travels before a primed press becomes a drag — the same 3pt
+    /// `WinampModernHostedWindowDrag` uses, so the two feel like one gesture.
+    private static let dragThreshold: CGFloat = 3
+
+    /// Open a window-drag session for a press this view has decided is a handle.
+    private func beginWindowDrag(_ window: NSWindow, from event: NSEvent) {
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+        WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+    }
+
+    /// Stretch this view's window from the handle the press landed on.
+    ///
+    /// The scene itself is not resized here: `windowDidResize` already owns that for every `.wal`
+    /// window, whatever moved it.
+    private func resizeWindow(edges: WasabiResizeEdges) {
+        guard let window else { return }
+        let mouse = NSEvent.mouseLocation
+        let frame = Self.resizedFrame(from: resizeStartFrame, edges: edges,
+                                      deltaX: mouse.x - resizeStartMouse.x,
+                                      deltaY: mouse.y - resizeStartMouse.y,
+                                      minimum: window.contentMinSize,
+                                      maximum: window.contentMaxSize)
+        guard frame != window.frame else { return }
+        window.setFrame(frame, display: true)
+    }
+
+    /// Pure form of the resize rule, so it can be tested without a window or a mouse.
+    ///
+    /// The skin names its edges the way it draws them — `top` is the visual top — while an AppKit
+    /// frame is measured from its bottom-left, so each edge names both a size change and the corner
+    /// that has to stay still. The size is clamped to the layout's own limits **before** the origin
+    /// is derived from that fixed corner: clamping the frame afterwards instead lets a window that
+    /// has hit its minimum walk across the desktop as the pointer keeps going. `contentMinSize` /
+    /// `contentMaxSize` are the layout's declared range (`applyLayoutConstraints`), and on a
+    /// borderless window content and frame are the same box.
+    ///
+    /// The deltas are measured from where the press landed rather than accumulated per drag event,
+    /// so a drag that runs into the minimum and comes back out again lands under the pointer instead
+    /// of trailing it by however far it overshot.
+    static func resizedFrame(from start: NSRect, edges: WasabiResizeEdges,
+                             deltaX: CGFloat, deltaY: CGFloat,
+                             minimum: NSSize, maximum: NSSize) -> NSRect {
+        var size = start.size
+        if edges.contains(.right) { size.width += deltaX }
+        if edges.contains(.left) { size.width -= deltaX }
+        if edges.contains(.top) { size.height += deltaY }
+        if edges.contains(.bottom) { size.height -= deltaY }
+        size.width = min(max(size.width, minimum.width), maximum.width)
+        size.height = min(max(size.height, minimum.height), maximum.height)
+        var origin = start.origin
+        // The opposite corner is the anchor: dragging the left edge leaves the right one where it is.
+        if edges.contains(.left) { origin.x = start.maxX - size.width }
+        if edges.contains(.bottom) { origin.y = start.maxY - size.height }
+        return NSRect(origin: origin, size: size)
+    }
+
+    /// macOS ships no diagonal resize cursor, so a corner gets the crosshair — the same substitution
+    /// `BorderlessWindow` makes for the other window families.
+    private static func cursor(for edges: WasabiResizeEdges) -> NSCursor {
+        switch (edges.isHorizontal, edges.isVertical) {
+        case (true, true): return .crosshair
+        case (true, false): return .resizeLeftRight
+        default: return .resizeUpDown
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if let activeResizeEdges {
+            resizeWindow(edges: activeResizeEdges)
+            return
+        }
+        if let draggedDivider {
+            guard renderer.dragFrameDivider(draggedDivider, to: point) else { return }
+            // The panes moved, so anything hosted inside one (the embedded library) has to follow,
+            // the grab strip itself is somewhere else now, and the skin's own scripts want to know:
+            // cPro re-aligns its tab strip and swaps its side-view buttons from `onResize`.
+            dispatchResizeIfChanged()
+            needsLayout = true
+            needsDisplay = true
+            window?.invalidateCursorRects(for: self)
+            return
+        }
+        if let pressedEQHolder, let frame = renderer.frame(of: pressedEQHolder) {
+            updateEqualizer(holder: pressedEQHolder, frame: frame, point: point)
+            return
+        }
+        if let pressedObject {
+            dispatch(object: pressedObject, event: "onmousemove", point: point)
+            updateSlider(pressedObject, point: point)
+        }
+        if let primed = primedDragWindow {
+            let current = event.locationInWindow
+            let travel = hypot(current.x - windowDragStartPoint.x, current.y - windowDragStartPoint.y)
+            if travel >= Self.dragThreshold {
+                primedDragWindow = nil
+                pressMovedWindow = true
+                isDraggingWindow = true
+                windowDragStartPoint = current
+                WindowManager.shared.windowWillStartDragging(primed, fromTitleBar: true)
+            }
+        }
+        if isDraggingWindow, let window {
+            let current = event.locationInWindow
+            var origin = window.frame.origin
+            origin.x += current.x - windowDragStartPoint.x
+            origin.y += current.y - windowDragStartPoint.y
+            origin = WindowManager.shared.windowWillMove(window, to: origin)
+            window.setFrameOrigin(origin)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        if activeResizeEdges != nil {
+            activeResizeEdges = nil
+            return
+        }
+        if let draggedDivider {
+            // Where the user let go is the position that outlives the session (B44).
+            renderer.persistFramePosition(of: draggedDivider)
+            self.draggedDivider = nil
+            return
+        }
+        if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
+        let releasedOver = renderer.object(at: point)
+        // The drag session is closed **before** any action runs. A titlebar mousetrap is both a drag
+        // handle and a `dblclickaction="SWITCH;shade"` control, so its double-click ends in a layout
+        // switch that resizes the window — and doing that inside an open drag session hands the
+        // docking code a window that moved under it.
+        if isDraggingWindow, let window { WindowManager.shared.windowDidFinishDragging(window) }
+        isDraggingWindow = false
+        primedDragWindow = nil
+        // A press that moved the window is a drag, not a click — releasing it must not also fire the
+        // handler the layer carries, or every drag of cPro's toolbar ends in its double-click trap.
+        let moved = pressMovedWindow
+        pressMovedWindow = false
+        // **A slider drag ends with `onSetFinalPosition`, and a skin can hang real cleanup off it.**
+        // Wasabi raises it once, on release, after the last `onSetPosition` — cPro2's seek bar draws
+        // a "finder" overlay that follows the pointer from `onSetPosition` and clears it *only*
+        // there (`g_seekerFinder.setXmlParam("w", "0")`). With nothing dispatching it, that overlay
+        // stayed standing at the width of the last seek: the bar came out in two colours, the
+        // seeked-to stretch in the darker `down` artwork and the rest filling normally behind it
+        // (B129). Dispatched wherever the pointer was released, as Wasabi does — the drag belongs to
+        // the object that was pressed, not to whatever is under the mouse when it stops.
+        if let pressedObject { noteFinalPosition(on: pressedObject) }
+        if let pressedObject, !moved {
+            dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
+            if releasedOver === pressedObject {
+                _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
+                performAction(for: pressedObject)
+                // The *second* click carries its own command in Wasabi, and for most objects that
+                // carry one it is the only command they have: a titlebar mousetrap's
+                // `dblclickaction="SWITCH;shade"`, a song title's `TRACKINFO`. It runs after the
+                // normal click's action, as it does in Winamp — the two are independent attributes.
+                if event.clickCount >= 2 { performClickAction(.double, for: pressedObject) }
+            }
+        }
+        pressedObject = nil
+        needsDisplay = true
+        #if DEBUG
+        logHolders(tag: "mouseUp")
+        #endif
+    }
+
+    /// Wasabi's right button is a *pair* of events, and a skin is free to use either. Defix puts its
+    /// whole "what does this button open" menu on `onRightButtonDown` — four handlers, one per round
+    /// PL/EQ/ML/VD button, each building Video / Playlist Editor / Media Library / Equalizer /
+    /// Visualization / Explorer window with `popAtMouse` and writing the pick to `MainBtn1..4`. The
+    /// view used to send only `onrightbuttonup`, so all four menus were unreachable while the skin,
+    /// the popup presenter and the script all worked. Nothing here decides *which* event a skin
+    /// listens on; both are sent, as Winamp sends them.
+    override func rightMouseDown(with event: NSEvent) {
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        // A live visualization box answers for itself: the engine choice, the preset controls and the
+        // host's Visualizations menu, at the pointer. The GL view passes its clicks through, so this
+        // is the only place that right click can be caught (B20a).
+        if let holder = renderer.componentHolder(at: point), holder.kind == .visualization,
+           let surface = visualizationSurfaces[holder.object.stableID] {
+            popUpMenu(surface.buildMenu(), from: nil, atMouse: true)
+            return
+        }
+        // An **unhosted** `{0000000A}` pane answers with the same question a `<vis>` box does —
+        // which engine, which mode — against its own selection (BB9). A holder is found whatever is
+        // stacked on it, so the same two conditions the `<vis>` rule below carries apply: the pane
+        // has to be what the pointer is actually over, and a skin control sitting on it (Big Bento's
+        // `vis.full.buttons` overlap their pane) keeps its own right-button handler.
+        if renderer.componentHolder(at: point)?.kind == .visualization {
+            let claimed = renderer.object(at: point).map {
+                scripts.hasBinding(for: $0, event: "onrightbuttondown")
+                    || scripts.hasBinding(for: $0, event: "onrightbuttonup")
+            } ?? false
+            if !claimed {
+                showVisualizationHolderMenu(from: nil)
+                return
+            }
+        }
+        guard let object = renderer.object(at: point) else { return }
+        // A `<vis>` box nothing else has claimed answers for itself: which engine paints it, that
+        // engine's own options, and Winamp's own `<vis>` attributes (B53). Two conditions, and both
+        // are the skin's right to be left alone — the box has to be the **topmost** object at the
+        // point (Big Bento covers its own with an invisible `main.vis.trigger` layer carrying the
+        // skin's settings page, and that menu wins), and it must have no right-button handler of its
+        // own (Love is War Miku's `visualizer.maki` binds one).
+        if object.typeName.caseInsensitiveCompare("vis") == .orderedSame,
+           !scripts.hasBinding(for: object, event: "onrightbuttondown"),
+           !scripts.hasBinding(for: object, event: "onrightbuttonup") {
+            showVisualizationMenu(from: object)
+            return
+        }
+        rightPressedObject = object
+        dispatch(object: object, event: "onrightbuttondown", point: point)
+        needsDisplay = true
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        let releasedOver = renderer.object(at: point)
+        // The up goes to whatever the *down* claimed, mirroring the left button: `popAtMouse` runs
+        // its own tracking loop inside the down handler, so by the time the up arrives the pointer is
+        // wherever the user dismissed the menu, which is usually not over the button any more.
+        let object = rightPressedObject ?? releasedOver
+        rightPressedObject = nil
+        guard let object else { return }
+        dispatch(object: object, event: "onrightbuttonup", point: point)
+        // `onRightClick` takes no arguments (a handler that pops two off an empty stack underflows),
+        // and like the left one only fires when press and release agree on the target.
+        if releasedOver === object {
+            _ = try? scripts.dispatch(object: object, event: "onrightclick")
+            performClickAction(.right, for: object)
+        }
+        needsDisplay = true
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let point = skinPoint(convert(event.locationInWindow, from: nil))
+        let delta = event.deltaY > 0 ? -1 : (event.deltaY < 0 ? 1 : 0)
+        // The renderer has no scrollbar support, so the wheel is the *only* way down a colour-theme
+        // list — and mmd3's has 82 rows.
+        if let list = renderer.colorThemeList(at: point) {
+            guard delta != 0 else { return }
+            renderer.scrollColorThemeList(byRows: delta, in: list.object)
+            needsDisplay = true
+            return
+        }
+        // A script-filled `<list>` — the playlist search results. Same reason as the colour-theme
+        // list above: the renderer draws no scrollbar, so the wheel is the only way down it.
+        if let list = renderer.guiList(at: point) {
+            guard delta != 0 else { return }
+            renderer.scrollGuiList(byRows: delta, in: list)
+            needsDisplay = true
+            return
+        }
+        if let holder = renderer.componentHolder(at: point), holder.kind == .playlist,
+           let rowCount = componentHost?.playlistSnapshot().rows.count {
+            guard delta != 0 else { return }
+            renderer.scrollPlaylist(byRows: delta, rowCount: rowCount, in: holder.frame,
+                                    holder: holder.object)
+            needsDisplay = true
+            return
+        }
+        // Everything else the wheel can reach belongs to the skin, and it asks for it on the
+        // **layout** rather than on a control: all 84 `onMouseWheel*` bindings across the five corpus
+        // skins that declare them land on `layout#normal` or `layout#shade`, and each script decides
+        // whether the turn was meant for it with `isMouseOverRect()`. Big Bento Modern declares
+        // `config_vscrollbars` nine times over — once per settings page — so nine handlers run per
+        // notch and eight of them correctly do nothing. Without this dispatch the settings pages had
+        // no working scroll at all and anything past the fold was unreachable.
+        guard delta != 0 else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let handlers = (try? scripts.dispatch(object: renderer.layout,
+                                              event: delta < 0 ? "onmousewheelup" : "onmousewheeldown",
+                                              arguments: [.integer(1), .integer(3)])) ?? 0
+        guard handlers > 0 else {
+            super.scrollWheel(with: event)
+            return
+        }
+        needsDisplay = true
+    }
+
+    private func updateEqualizer(holder: WasabiObject, frame: CGRect, point: CGPoint) {
+        guard let snapshot = componentHost?.equalizerSnapshot(), frame.width > 0, frame.height > 0 else { return }
+        let slots = snapshot.bandGainsDB.count + 1 // preamp + bands
+        let slotWidth = frame.width / CGFloat(slots)
+        let slot = max(0, min(slots - 1, Int((point.x - frame.minX) / slotWidth)))
+        let normalized = max(0, min(1, 1 - (point.y - frame.minY) / frame.height))
+        let gainDB = Float(normalized * 24 - 12) // 0…1 → -12…12
+        if slot == 0 { componentHost?.equalizerSetPreampDB(gainDB) }
+        else { componentHost?.equalizerSetBandGainDB(slot - 1, gainDB: gainDB) }
+        needsDisplay = true
+    }
+
+    func updateTrackInfo() {
+        // `onTitleChange` is per *track*, not per redraw: `beat.m` resets its running VU maximum from
+        // it, so firing it on every info refresh would keep rescaling the beat animation mid-song.
+        let title = host.trackDisplayTitle
+        if title != lastPostedTitle {
+            lastPostedTitle = title
+            _ = try? scripts.dispatchSystem(event: "ontitlechange", arguments: [.string(title)])
+        }
+        needsDisplay = true
+    }
+
+    /// Ten times a second, for as long as a track plays.
+    ///
+    /// It used to end in `needsDisplay = true`, which is a **whole-window** repaint at the audio
+    /// engine's clock rate — 19.3 ms of Retina bitmap drawing, ten times a second, on the same main
+    /// thread the skin's 30 Hz animation is trying to use. That single line silently defeated every
+    /// targeted repaint Phase 28 added, and it is the measured cause of the choppy cassette: the
+    /// reels' own script was stepping evenly all along (`WINAMP_MODERN_RENDER_FX_SPIN`), the frames
+    /// were not arriving evenly. Only what a clock actually moves is invalidated now; anything a
+    /// *script* moves in response to `onPostedPosition` still comes back through
+    /// `objectRepaintRequested` and names its own rect.
+    func updateTime(current: TimeInterval, duration: TimeInterval) {
+        // A video session reports no transitions of its own — `videoPlaybackDidStart` fires once and
+        // nothing at all reports a pause — so the clock is the only place a `.wal` scene can learn
+        // that the film paused or resumed. One enum compare per tick, and `updatePlaybackState` does
+        // nothing unless the state actually moved.
+        if host.playbackState != lastPlaybackState { updatePlaybackState() }
+        // **A duration that goes away has to be posted too, as a zero.** Stock Winamp Modern's seek
+        // bar is two objects — a `Seeker` and a `SeekerGhost` — and the ghost's thumb is placed by
+        // the script that hears `onPostedPosition`, not by the clock the renderer draws the slider
+        // from. Skipping the post when there is no duration froze the ghost on its last value while
+        // the drawn slider went to zero, and the two thumbs came apart: one at the start, the
+        // abandoned one still parked at the end. Seen on MMD3 the moment a finished film stopped
+        // being the session (2026-09-03); the same split waits for anything else that ends a
+        // clock. Posted on change only, so an idle scene still dispatches nothing.
+        let posted = duration > 0 ? Int32(max(0, min(255, current / duration * 255))) : 0
+        if posted != lastPostedPosition {
+            lastPostedPosition = posted
+            for object in positionListeners {
+                _ = try? scripts.dispatch(object: object, event: "onpostedposition", arguments: [.integer(posted)])
+            }
+            traceSeekObjects(posted: posted)
+        }
+        let rects = timeDependentRects()
+        // An *empty* set means this scene has nothing the renderer draws from the clock, which is a
+        // real answer and not a classification failure: `display="time"`, a `seek` slider and a seek
+        // progress bar are the only things it draws from `host.currentTime`. A readout a *script*
+        // maintains (a bitmap-font clock filled with `setText`) repaints through `graphDidMutate`
+        // when the script writes it, which is the moment it actually changes.
+        guard rects.count <= 24 else {
+            needsDisplay = true
+            return
+        }
+        for rect in rects { setNeedsDisplay(rect) }
+    }
+
+    /// The boxes of everything whose drawing follows the playback clock: an elapsed-time readout, a
+    /// seek slider's thumb, a seek progress bar. Cached with the other rect scans.
+    /// The objects Winamp posts the play position to, ten times a second.
+    ///
+    /// This used to be `graph.objects(xmlID: "HiddenSeek")` alone — stock Winamp Modern's own name
+    /// for its off-screen seek slider — so a skin that calls its seek slider anything else never
+    /// heard the clock. ClassicPro engine "two" hangs its entire seek fill off
+    /// `two.info.seeker.slider.0`'s `onPostedPosition`, and in cPro2 Dark Aluminum the seek bar *is*
+    /// the whole top panel: it never advanced while a track played. Dragging it still worked, which
+    /// is what made this look like a paint bug rather than a missing event — a drag is the user's own
+    /// value change, and only the clock comes through here.
+    ///
+    /// The rule is the one `timeDependentRects` already uses to decide what repaints from the clock:
+    /// a seek slider is `action="SEEK"`, whatever it is named. `HiddenSeek` stays in the union so a
+    /// skin that names one without declaring the action keeps working; the ids are deduplicated
+    /// because stock declares both a `Seeker` and a `SeekerGhost` and a doubled post is a doubled
+    /// handler chain.
+    private var positionListeners: [WasabiObject] {
+        if let positionListenerCache { return positionListenerCache }
+        var seen: Set<WasabiObjectID> = []
+        var found: [WasabiObject] = []
+        func consider(_ object: WasabiObject) {
+            let isSeekSlider = object.typeName.caseInsensitiveCompare("slider") == .orderedSame
+                && object.attributes["action"]?.lowercased() == "seek"
+            if isSeekSlider, seen.insert(object.stableID).inserted { found.append(object) }
+            object.children.forEach(consider)
+        }
+        renderer.loadedSkin.runtime.graph.roots.forEach(consider)
+        for named in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenSeek")
+        where seen.insert(named.stableID).inserted {
+            found.append(named)
+        }
+        positionListenerCache = found
+        return found
+    }
+
+    /// Cleared with the skin, not with the layout: the graph a skin declares does not change when a
+    /// different layout is activated, and this is read ten times a second while a track plays.
+    private var positionListenerCache: [WasabiObject]?
+
+    func timeDependentRects() -> [NSRect] {
+        if let timeRectsCache { return timeRectsCache }
+        let rects = renderer.sceneNodes().compactMap { node -> NSRect? in
+            let object = node.object
+            let type = object.typeName.lowercased()
+            let display = object.attributes["display"]?.lowercased()
+            let action = object.attributes["action"]?.lowercased()
+            let follows: Bool
+            switch type {
+            case "text", "songticker": follows = display == "time"
+            case "slider": follows = action == "seek"
+            // A `progressgrid` with no action of its own takes its value from the slider it is
+            // paired with, so it has to be treated as a possible seek bar.
+            case "progressgrid": follows = action == "seek" || action == nil
+            default: follows = false
+            }
+            guard follows else { return nil }
+            return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+        }
+        timeRectsCache = rects
+        return rects
+    }
+
+    private var timeRectsCache: [NSRect]?
+
+    func updatePlaybackState() {
+        let state = host.playbackState
+        // Play/pause/stop artwork and the shuffle/repeat/EQ toggles are read from the *host*, not
+        // from the graph, so the renderer's memoized scene cannot see them change on its own.
+        renderer.invalidateSceneCache()
+        if state != lastPlaybackState {
+            // Winamp reports the *transition*, not the level, and a skin acts differently on each:
+            // ClassicPro's `beat.m` restarts its VU timer with a fresh running maximum on `onPlay` but
+            // resumes the existing one on `onResume`, and stops it on `onPause`. Sending `onPlay` for a
+            // resume (the previous behaviour) rescaled the animation every time the user unpaused, and
+            // a pause was reported as nothing at all.
+            switch (lastPlaybackState, state) {
+            case (.paused, .playing): _ = try? scripts.dispatchSystem(event: "onresume")
+            case (_, .playing): _ = try? scripts.dispatchSystem(event: "onplay")
+            case (.playing, .paused): _ = try? scripts.dispatchSystem(event: "onpause")
+            case (_, .stopped): _ = try? scripts.dispatchSystem(event: "onstop")
+            default: break
+            }
+            lastPlaybackState = state
+        }
+        let postedVolume = Int32(max(0, min(255, host.volume * 255)))
+        // A volume change from outside the skin (the menu bar, a keyboard shortcut, another window)
+        // has to reach the scripts too, or a readout the skin drives from `onVolumeChanged` sits on a
+        // stale number. `setVolume` fires its own, so this only covers what the skin did not do.
+        if postedVolume != lastPostedVolume {
+            lastPostedVolume = postedVolume
+            _ = try? scripts.dispatchSystem(event: "onvolumechanged", arguments: [.integer(postedVolume)])
+        }
+        // An equalizer change made outside the skin — a preset, the menu bar, the classic EQ window,
+        // a restored session — reaches the scripts on the same beat, and only when it moved.
+        scripts.refreshEqualizerState()
+        for object in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenVolume") {
+            _ = try? scripts.dispatch(object: object, event: "onpostedposition",
+                                      arguments: [.integer(postedVolume)])
+        }
+        needsDisplay = true
+    }
+
+    func updateSpectrum(_ levels: [Float]) {
+        host.spectrumLevels = levels
+        lastSpectrumArrival = CACurrentMediaTime()
+        startVisualizationClock()
+    }
+
+    /// **The visualization's own 60 Hz clock, because the audio's rate is not a frame rate.**
+    ///
+    /// The boxes used to repaint only when a spectrum notification arrived, which sounds like the
+    /// right beat and is not: `AudioEngine` taps `mixerNode` with a 2048-frame buffer, so a
+    /// notification lands about every **46 ms — 21 fps**, and everything in a `<vis>` moved in 21
+    /// steps a second however fast the display was. The bar and cap falloff are per *second*
+    /// (`WasabiVisStyle`), so with frames of their own they animate the whole way down instead of
+    /// stepping; and the oscilloscope has a genuinely new 576-sample chunk every 13 ms to show
+    /// (`WinampModernWaveformTap` queues them and plays them out in real time), which no amount of
+    /// repainting at 21 fps could ever reveal.
+    ///
+    /// Nothing here smooths, averages or levels the signal — that would buy motion by destroying the
+    /// detail the scope exists to show. It draws more of the frames the audio already contains.
+    ///
+    /// Only the visualization boxes are invalidated: a full repaint at this rate costs Defix 19.3 ms
+    /// a frame at Retina scale, and Big Bento Modern shows **six** boxes once its player pane is wide
+    /// enough — the case (BB21) that made a repaint-per-notification stall the main thread. The clock
+    /// runs only while there is something to show and stops itself once the decay is finished, so an
+    /// idle player pays nothing.
+    private func startVisualizationClock() {
+        guard !isTornDown, visualizationClock == nil, !visualizationRects().isEmpty else { return }
+        let timer = Timer(timeInterval: visualizationClockInterval, repeats: true) { [weak self] _ in
+            self?.visualizationTick()
+        }
+        // `.common`, for the animation timer's reason: a tracking loop (a menu, a window drag) must
+        // not freeze the visualization.
+        RunLoop.main.add(timer, forMode: .common)
+        visualizationClock = timer
+        // Paint the first frame now rather than a clock tick later: this is the moment audio started
+        // (or came back), and waiting up to 33 ms to acknowledge it is a visible hesitation. Not a
+        // full `visualizationTick`, which would re-enter this on the rate check.
+        invalidateVisualizationRects(visualizationRects())
+    }
+
+    /// **As fast as the box has new content, and no faster.** A repaint of the vis rects measured
+    /// ~4 ms on Big Bento Modern, so the difference between these two rates is about 15% of a core
+    /// against 4% — worth spending only where it shows.
+    ///
+    /// An **oscilloscope** has a genuinely new 576-sample chunk every 13 ms, so it gets the full
+    /// 60 Hz; below that the trace visibly steps. An **analyzer** — which is most skins — is fed by
+    /// the FFT, and `AudioEngine` taps `mixerNode` with a 2048-frame buffer, so its bands only change
+    /// about 21 times a second. Frames past 30 Hz there animate nothing but the falloff between two
+    /// identical sets of bars, which is not a difference anyone can see.
+    private var visualizationClockInterval: CFTimeInterval {
+        renderer.visualizationNeedsWaveform ? 1.0 / 60 : 1.0 / 30
+    }
+
+    private func visualizationTick() {
+        guard !isTornDown else { return }
+        #if DEBUG
+        // **The one clock whose stalls the user can see.** A dropped frame anywhere on the main
+        // thread shows up here first, because the visualization is usually the only thing on screen
+        // moving fast enough for a gap to read as a stutter. `WINAMP_MODERN_VIS_STALL=<ms>` reports
+        // every tick later than that, which is what turns "it hitches every few seconds" into a
+        // cadence and a stack to look for.
+        if let threshold = ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_STALL"]
+            .flatMap({ Double($0) }) {
+            let now = CACurrentMediaTime()
+            let gap = (now - lastVisualizationTick) * 1_000
+            if lastVisualizationTick > 0, gap > threshold {
+                NSLog("%@", "WM-VIS-STALL gap=\(Int(gap))ms expected=\(Int(visualizationClockInterval * 1_000))ms")
+            }
+            lastVisualizationTick = now
+        }
+        #endif
+        let rects = visualizationRects()
+        guard !rects.isEmpty else { return stopVisualizationClock() }
+        // A skin can switch modes under the clock (its own menu, `VIS_NEXT`, a script), and the rate
+        // follows the mode.
+        if let clock = visualizationClock,
+           abs(clock.timeInterval - visualizationClockInterval) > 0.001 {
+            stopVisualizationClock()
+            startVisualizationClock()
+        }
+        // Nothing to paint for a window nobody can see — behind another window, on another Space, or
+        // miniaturised. The timer keeps running (it costs ~0.5%) so the idle check below still
+        // retires it, but the repaints, which are the actual cost, stop.
+        let isVisible = window?.occlusionState.contains(.visible) ?? true
+        if isVisible { invalidateVisualizationRects(rects) }
+        // Stop once the audio has been quiet long enough for the scope to have flattened and no bar
+        // or cap is still falling. Until then the clock is what paints the decay out — and while
+        // occluded there are no draws, so there is nothing to wait for.
+        guard CACurrentMediaTime() - lastSpectrumArrival > Self.visualizationIdleTimeout,
+              !isVisible || !renderer.hasDecayingVisualizationState else { return }
+        stopVisualizationClock()
+    }
+
+    private func stopVisualizationClock() {
+        visualizationClock?.invalidate()
+        visualizationClock = nil
+    }
+
+    private func invalidateVisualizationRects(_ rects: [NSRect]) {
+        guard rects.count <= 24 else {
+            needsDisplay = true
+            return
+        }
+        for rect in rects { setNeedsDisplay(rect) }
+    }
+
+    /// **What tells the boxes the audio went quiet.**
+    ///
+    /// Nothing posts a "zero": the taps simply stop when playback pauses, stops, ends or moves to a
+    /// cast device, so `spectrumLevels` keeps whatever the music left in it and the analyzer would
+    /// redraw those same bars forever, however fast the clock above runs.
+    /// `updatePlaybackState` fires one `needsDisplay` at the transition — ~150 ms *before* either
+    /// decay has finished — and it does not fire at all for a cast.
+    ///
+    /// So the host's level meter, the one tap that runs for **every** `.wal` skin, reports the
+    /// transition (`WinampModernLevelMeter.onSilence`, on the main thread, once), and this zeroes the
+    /// input. The clock then paints the fall out at the skin's own `falloff` and stops itself when
+    /// nothing is left above the floor.
+    func beginVisualizationSilenceDecay() {
+        guard !visualizationRects().isEmpty else { return }
+        // Zeroed, not emptied: an empty spectrum means "no input" and the analyzer draws nothing at
+        // all, which reads as the bars vanishing rather than falling.
+        if !host.spectrumLevels.isEmpty {
+            host.spectrumLevels = [Float](repeating: 0, count: host.spectrumLevels.count)
+        }
+        startVisualizationClock()
+    }
+
+    /// How long after the last spectrum the clock may stop — past the tap's own silence timeout, so
+    /// the scope's flat line is certain to have been painted at least once.
+    private static let visualizationIdleTimeout: CFTimeInterval = 0.5
+    private var visualizationClock: Timer?
+    #if DEBUG
+    /// When `visualizationTick` last ran, for `WINAMP_MODERN_VIS_STALL` only.
+    private var lastVisualizationTick: CFTimeInterval = 0
+    #endif
+    private var lastSpectrumArrival: CFTimeInterval = 0
+
+    /// The boxes of every `<vis>`/`<eqvis>` in this scene, cached with the other animation rects.
+    private func visualizationRects() -> [NSRect] {
+        if let visualizationRectsCache { return visualizationRectsCache }
+        var rects = renderer.sceneNodes().compactMap { node -> NSRect? in
+            guard ["vis", "eqvis"].contains(node.object.typeName.lowercased()) else { return nil }
+            return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+        }
+        // A `{0000000A}` holder drawing its own analyzer (BB9) is not a `<vis>` and was invisible to
+        // the filter above, so nothing on this clock ever repainted it.
+        rects += renderer.analyzerComponentHolderFrames().map {
+            viewRect(fromSkin: $0).insetBy(dx: -2, dy: -2)
+        }
+        visualizationRectsCache = rects
+        return rects
+    }
+
+    private var visualizationRectsCache: [NSRect]?
+
+    func teardown() {
+        guard !isTornDown else { return }
+        renderer.themeCoordinator.removeObserver(self)
+        if let tracking { removeTrackingArea(tracking) }
+        tracking = nil
+        animationTimer?.invalidate()
+        animationTimer = nil
+        stopVisualizationClock()
+        pressedObject = nil
+        pressedEQHolder = nil
+        draggedDivider = nil
+        hoveredObject = nil
+        for surface in librarySurfaces.values { surface.prepareForUITeardown() }
+        librarySurfaces.removeAll()
+        for surface in videoSurfaces.values { surface.prepareForUITeardown() }
+        videoSurfaces.removeAll()
+        for surface in visualizationSurfaces.values { surface.prepareForUITeardown() }
+        visualizationSurfaces.removeAll()
+        for surface in hostedWindowSurfaces.values { surface.prepareForUITeardown() }
+        hostedWindowSurfaces.removeAll()
+        for surface in browserSurfaces.values { surface.prepareForUITeardown() }
+        browserSurfaces.removeAll()
+        pendingBrowserRequests.removeAll()
+        // Auxiliary container views share the skin's single script runtime and host; only the
+        // main (script-driving) view tears those down. Every view tears down its own renderer.
+        if drivesScripts { scripts.teardown() } else { scripts.removeAuxiliaryRepaintSink(owner: self) }
+        renderer.teardown()
+        canvasSizeDidChange = nil
+        componentWindowToggleRequested = nil
+        surfaceVisibilityQuery = nil
+        containerWindowVisibilityQuery = nil
+        renderer.toggleTargetVisibleProvider = nil
+        containerWindowToggleRequested = nil
+        surfaceToggleRequested = nil
+        webNavigationRequested = nil
+        activeStateObservers.forEach(NotificationCenter.default.removeObserver)
+        activeStateObservers.removeAll()
+        isTornDown = true
+    }
+
+    private func skinPoint(_ point: NSPoint) -> CGPoint {
+        CGPoint(x: point.x / skinScale, y: (bounds.height - point.y) / skinScale)
+    }
+
+    /// Where the pointer is right now in *this* view's skin pixels, or `nil` when the view is not in a
+    /// window. Every container window answers for its own scene, which is what `isMouseOverRect` needs
+    /// from the window that actually renders the receiver.
+    func currentMousePositionInSkinPixels() -> CGPoint? {
+        guard let window else { return nil }
+        return skinPoint(convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil))
+    }
+
+    /// A mouse event's x/y are in the receiver's **parent** coordinate space — the same space
+    /// `getLeft()`/`getTop()` answer in, and *not* the window-wide space `System.getMousePos*` uses.
+    ///
+    /// Three skins in the corpus say so independently. Lobe's seek dial and volume knob read
+    /// `map.getValue(x - anim.getLeft(), y - anim.getTop())`, and Rika's do the same: that only
+    /// indexes a 48×35 map if `x` is measured from the same origin as `getLeft()`. mmd3's knob is the
+    /// proof from the other side — it opens with `getMousePosX() - x + knob.getLeft() +
+    /// knob.getWidth()/2`, which is the object's centre in *cursor* space only if `getMousePosX() -
+    /// x` is the parent's origin. Sending the canvas point made Lobe's dial sample (213, 26) of a
+    /// 48-wide map, which is 0 everywhere, so every drag seeked to zero and every knob turn set the
+    /// volume to nothing.
+    private func dispatch(object: WasabiObject, event: String, point: CGPoint) {
+        let local = pointInParentSpace(of: object, canvasPoint: point)
+        _ = try? scripts.dispatch(object: object, event: event,
+                                  arguments: [.integer(Int32(local.x)), .integer(Int32(local.y))])
+    }
+
+    /// The canvas point in `object`'s parent's coordinates. Unchanged for anything whose parent sits
+    /// at the origin, which is why this was invisible until a skin put a knob inside a placed group.
+    func pointInParentSpace(of object: WasabiObject, canvasPoint: CGPoint) -> CGPoint {
+        guard let parent = renderer.resolvedGeometry(of: object)?.parent else { return canvasPoint }
+        return CGPoint(x: canvasPoint.x - parent.minX, y: canvasPoint.y - parent.minY)
+    }
+
+    /// Whether a press on `object` moves the window. Internal so the drag policy can be tested
+    /// against a real scene without synthesizing mouse events.
+    func shouldDragWindow(from object: WasabiObject) -> Bool {
+        let id = object.xmlID?.lowercased() ?? ""
+        if ["volume1", "seek1", "title1", "title2", "title3", "title4"].contains(id) { return false }
+        // `move="0"` is how a skin says "this piece of the window is not a handle" — T800's volume
+        // strip is a layer whose script owns the drag, and dragging the window off it loses the drag.
+        if object.attributes["move"] == "0" { return false }
+        let type = object.typeName.lowercased()
+        // `move="1"` is the skin *affirmatively* naming a drag handle, and it says so on far more
+        // than groups: across the 30 installed skins it appears 981 times on 14 different element
+        // types — `rect` 233, `text` 66, `grid` 36 — and honouring it only on `<group>` (421) left
+        // the other 560 declarations doing nothing. Big Bento Modern is the measured case: its
+        // titlebar is `<grid … move="1">` over a `<rect id="vic_mover" move="1" fitparent="1">`, so
+        // the window could only be dragged by whatever bare background happened to be topmost under
+        // the pointer — which is why it went undraggable after a trip through shade mode and back.
+        //
+        // A control is excluded even when it says `move="1"`: a button that both acts and drags
+        // would swallow its own click, and the skins that declare it (17 of the 981) are relying on
+        // Winamp's press-and-hold distinction, which this hit test does not model.
+        if object.attributes["move"] == "1", !Self.controlTypes.contains(type) { return true }
+        // The layout is the window's own background. A skin that paints the whole frame there and
+        // hangs only controls off it (T800) otherwise has nothing to drag by at all.
+        if type == "layout" { return true }
+        // A bare group has no artwork of its own, so a click reaching one landed on the background it
+        // covers, and without `move="1"` above the skin has not offered it as a handle.
+        if type == "group" { return false }
+        // A layer a script hooks the mouse on is a control, not a handle — the same thing `move="0"`
+        // says explicitly, for the skins that do not bother to say it. Love is War Miku's invisible
+        // `visual.trigger` is one: dragging the window off it would eat the click that cycles the
+        // visualization.
+        if type == "layer", Self.mouseEvents.contains(where: { scripts.hasBinding(for: object, event: $0) }) {
+            return false
+        }
+        return type == "layer" && object.attributes["action"] == nil
+    }
+
+    private static let mouseEvents = ["onleftbuttondown", "onleftbuttonup", "onleftclick",
+                                      "ondoubleclick", "onrightbuttondown"]
+
+    /// Element types whose press belongs to the control, not to the window — `move="1"` on one of
+    /// these is not taken as a drag handle.
+    private static let controlTypes: Set<String> = [
+        "button", "togglebutton", "nstatesbutton", "wasabi:button", "slider", "menu", "list",
+        "component", "browser", "edit", "editbox"
+    ]
+
+    /// Show a script-built menu at the mouse and answer the command id the user picked (0 = nothing).
+    ///
+    /// `popAtMouse` is synchronous in MAKI — the script reads the answer on the next line — and
+    /// `NSMenu.popUp` runs its own tracking loop, so the call blocks here exactly as the skin
+    /// expects. The menu is built from the resolved tree, so submenus nest.
+    /// `point` is `popAtXY`'s: window-client space, top-left origin, unscaled — the inverse of
+    /// `skinPoint`. `nil` is `popAtMouse`.
+    /// The `<Menu>` entry whose menu is on screen right now, so hover does not steal its `down`
+    /// state back while it is open.
+    private var openMenuObject: WasabiObject?
+
+    /// Open the host menu a skin's own menu-bar entry names, under the entry.
+    ///
+    /// The entry wears `down` for as long as the menu is up — `popUp` runs its own tracking loop and
+    /// returns when the menu closes, so the two lines around it are the whole state machine. On the
+    /// way out it goes back to `hover` or `normal` depending on where the pointer ended up, which is
+    /// what stops an entry the user rolled off during tracking from staying lit.
+    ///
+    /// An identifier the host does not serve opens nothing and leaves the entry alone. That is the
+    /// honest answer for a `WA5:` menu NullPlayer has no equivalent of, and it keeps the entry from
+    /// flashing `down` on a click that does nothing.
+    private func presentSkinMenuBarEntry(_ menu: WasabiObject) {
+        guard let identifier = WasabiMenuBar.hostMenuIdentifier(of: menu) else { return }
+        // A playlist-editor menu is one the app already builds for the `PE_*` toolbar buttons, and
+        // the rule in `WinampModernHostActionMenus` is that three routes to a feature must not drift
+        // apart — so a `<Menu menu="WA5:PE_File">` opens *that* menu rather than a second thinner one
+        // written here. Big Bento Modern declares three of them on its playlist header.
+        if let action = Self.playlistEditorMenuAction(for: identifier) {
+            withMenuEntryPressed(menu) { performHostAction(action, object: menu) }
+            return
+        }
+        guard let hostMenu = ContextMenuBuilder.winampModernMenuBarMenu(for: identifier),
+              hostMenu.numberOfItems > 0, let frame = renderer.frame(of: menu) else { return }
+        withMenuEntryPressed(menu) {
+            // Winamp drops its menus from the bottom-left of the entry, which is also where the
+            // skin's own `popAtXY` puts the drawer menu.
+            hostMenu.popUp(positioning: nil,
+                           at: NSPoint(x: frame.minX * skinScale,
+                                       y: bounds.height - frame.maxY * skinScale),
+                           in: self)
+        }
+    }
+
+    /// Hold the entry in its `down` state for as long as `present` is on screen. Every menu route
+    /// here runs AppKit's own tracking loop, which returns when the menu closes, so this is the whole
+    /// state machine. On the way out the entry goes back to `hover` or `normal` depending on where
+    /// the pointer actually ended up — otherwise an entry the user rolled off during tracking stays
+    /// lit with nothing under the mouse.
+    private func withMenuEntryPressed(_ menu: WasabiObject, present: () -> Void) {
+        openMenuObject = menu
+        WasabiMenuBar.apply(.down, to: menu)
+        needsDisplay = true
+        present()
+        openMenuObject = nil
+        let pointer = window.map { skinPoint(convert($0.mouseLocationOutsideOfEventStream, from: nil)) }
+        let stillInside = pointer.map { renderer.object(at: $0) === menu } ?? false
+        WasabiMenuBar.apply(stillInside ? .hover : .normal, to: menu)
+        needsDisplay = true
+    }
+
+    /// The `WA5:PE_*` identifiers the corpus declares on a `<Menu>`, mapped to the host action that
+    /// already owns each menu. Anything else is `nil` and goes to `ContextMenuBuilder`'s five.
+    private static func playlistEditorMenuAction(for identifier: String) -> WinampModernHostAction? {
+        switch identifier.lowercased() {
+        // Winamp's playlist File menu is New / Load / Save, which is exactly `PE_LIST`'s.
+        case "wa5:pe_file", "wa5:pe_playlist": return .playlistList
+        // `PE_MISC` is where the app keeps its Sort submenu.
+        case "wa5:pe_sort": return .playlistMisc
+        case "wa5:pe_add": return .playlistAdd
+        case "wa5:pe_rem": return .playlistRemove
+        case "wa5:pe_sel": return .playlistSelect
+        default: return nil
+        }
+    }
+
+    private func presentScriptPopup(_ items: [WinampModernPopupMenuItem], at point: CGPoint?) -> Int32 {
+        let target = ScriptPopupTarget()
+        let menu = build(popupMenu: items, target: target)
+        guard menu.numberOfItems > 0 else { return 0 }
+        let location: NSPoint?
+        if let point {
+            location = NSPoint(x: point.x * skinScale, y: bounds.height - point.y * skinScale)
+        } else {
+            location = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+        }
+        // A menu the skin opens **over its own visualization** also carries the host's engine picker
+        // (B53). Big Bento Modern is why: its `main.vis.trigger` layer claims the right button over
+        // the header analyzers to show the skin's settings page, so the host's own `<vis>` menu never
+        // opens there and the engine choice was unreachable from the box itself.
+        var skinModeCommands: Set<Int> = []
+        if let location, renderer.visualizationObject(at: skinPoint(location)) != nil {
+            skinModeCommands = appendSpectrumAnalyzerSection(to: menu)
+        }
+        // A menu asked for from a **double-click** has to wait for the button to come up before it
+        // tracks. `onLeftButtonDblClk` is dispatched from `mouseDown`, so the left button is still
+        // physically down here, and `popUp` opened while it is held runs in press-and-drag tracking
+        // mode: the release that ends the double-click arrives milliseconds later, lands on no item,
+        // and dismisses the menu before it has drawn. The menu was built, shown and thrown away, and
+        // the user saw a double-click that did nothing — Hal's Eye's rotation-speed menu, which is
+        // the only way to reach that skin's `Stop/Slow/Moderate/Fast` (B91). Draining the release
+        // first is what makes the tracking loop start from a settled button, and it is scoped to the
+        // double-click dispatch so a press-and-hold menu keeps the drag-to-pick Winamp gives it.
+        if isDispatchingDoubleClick, NSEvent.pressedMouseButtons & 1 != 0 {
+            // Bounded: the release is milliseconds away for a real double-click, and a wait that
+            // could not time out would be a hang on the main thread if it never arrived.
+            _ = NSApplication.shared.nextEvent(matching: .leftMouseUp,
+                                               until: Date(timeIntervalSinceNow: 1),
+                                               inMode: .eventTracking, dequeue: true)
+        }
+        menu.popUp(positioning: nil, at: location ?? .zero, in: self)
+        // The skin's mode rows and ours are one group, so picking one of the skin's is also a choice
+        // *against* whatever NullPlayer engine was drawing: the box goes back to Winamp's own
+        // analyzer, and the skin's own command runs on top of that as it always did. Without this,
+        // "Oscilloscope" would tick a row and change nothing on screen while Cava kept painting.
+        // `0` is "nothing chosen" — a dismissed menu, and also what our own rows leave behind — so it
+        // can never mean the user asked for the skin's engine back.
+        if target.chosen != 0, skinModeCommands.contains(Int(target.chosen)) {
+            WindowManager.shared.setWinampModernSpectrumAnalyzer(.skin)
+        }
+        return target.chosen
+    }
+
+    private func build(popupMenu items: [WinampModernPopupMenuItem],
+                       target: ScriptPopupTarget) -> NSMenu {
+        let menu = NSMenu()
+        // The skin owns whether a row is greyed out; AppKit's automatic enabling would second-guess
+        // it from the action's validation.
+        menu.autoenablesItems = false
+        for item in items {
+            if item.isSeparator {
+                menu.addItem(.separator())
+                continue
+            }
+            let entry = NSMenuItem(title: item.title, action: #selector(ScriptPopupTarget.pick(_:)),
+                                   keyEquivalent: "")
+            entry.target = target
+            entry.tag = Int(item.commandID)
+            entry.state = item.checked ? .on : .off
+            entry.isEnabled = !item.disabled
+            if !item.children.isEmpty {
+                entry.submenu = build(popupMenu: item.children, target: target)
+                entry.action = nil
+            }
+            menu.addItem(entry)
+        }
+        return menu
+    }
+
+    /// Carries the picked command out of `NSMenu.popUp`'s tracking loop.
+    private final class ScriptPopupTarget: NSObject {
+        var chosen: Int32 = 0
+        @objc func pick(_ sender: NSMenuItem) { chosen = Int32(sender.tag) }
+    }
+
+    private func updateSlider(_ object: WasabiObject, point: CGPoint) {
+        guard object.typeName.caseInsensitiveCompare("slider") == .orderedSame,
+              let frame = renderer.frame(of: object), frame.width > 0, frame.height > 0 else { return }
+        let vertical = WasabiSceneRenderer.isVerticalOrientation(object)
+        let value = vertical ? 1 - (point.y - frame.minY) / frame.height
+                             : (point.x - frame.minX) / frame.width
+        let normalized = max(0, min(1, value))
+        if let eq = WinampModernEQAction.decode(action: object.attributes["action"],
+                                                parameter: object.attributes["param"]),
+           let componentHost {
+            // ±12 dB through the host, which is the same value the thumb is drawn from.
+            eq.apply(normalized: normalized, to: componentHost)
+            // …and the skin hears its own equalizer move, as it does in Winamp. Before `notePosition`
+            // below, so the drag's own position is the last thing written to this slider.
+            scripts.refreshEqualizerState()
+        } else if WinampModernPanAction.matches(action: object.attributes["action"]) {
+            // The balance slider. The engine's unit is −1…+1 and the slider's is 0…1; both
+            // conversions live in `WinampModernPanAction` so the thumb cannot disagree with the drag.
+            host.balance = WinampModernPanAction.balance(normalized: normalized)
+        } else if object.attributes["action"] == nil,
+                  scripts.setConfigAttribute(of: object, normalized: normalized) {
+            // A slider bound to a `cfgattrib` carries no action — the binding *is* what it drives.
+            // mmd3's `sCrossfade` (`high="20"`) is the crossfade length, and four other skins spell
+            // the same control the same way.
+            WindowManager.shared.refreshWinampModernSurfaces()
+        } else {
+            switch object.attributes["action"]?.lowercased() {
+            case "seek": host.seek(to: host.duration * normalized)
+            case "volume": host.volume = normalized
+            default: break
+            }
+        }
+        // Wasabi moves the object's own position on a drag and tells the skin about it, whatever the
+        // slider drives. Skins hang their only feedback off that: multipass's balance and crossfade
+        // sliders print "Balance: Left +40%" on the song ticker from `onSetPosition` and nowhere else.
+        notePosition(normalized, on: object)
+        needsDisplay = true
+    }
+
+    /// Record a slider's position and dispatch `onSetPosition` — but only when the integer position
+    /// actually moved, which is what Wasabi does and what keeps a pair of sliders that write each
+    /// other's position from their own handler out of an endless round trip.
+    ///
+    /// The position is in the slider's **own** `low…high` unit, which defaults to Winamp's 0…255 and
+    /// so is unchanged for every action-driven slider in the corpus. It matters for the two kinds
+    /// that declare a range: a crossfade slider is cut `high="20"` and mmd3 prints the argument
+    /// straight into its readout as seconds, and Anaheim's brightness slider is `low="-4096"
+    /// high="4096"` and was being handed a 0…255 that meant nothing to the script reading it.
+    /// `onSetFinalPosition` — the end of a slider drag, in the same `low…high` unit `onSetPosition`
+    /// carries. Only for sliders, and only when one was actually driven: every other pressed object
+    /// releases without a position to report.
+    private func noteFinalPosition(on object: WasabiObject) {
+        guard object.typeName.caseInsensitiveCompare("slider") == .orderedSame else { return }
+        let target = scripts.embeddedControl(of: object) ?? object
+        let position = Int32(target.attributes["value"]
+                             ?? target.attributes["position"] ?? "") ?? 0
+        _ = try? scripts.dispatch(object: object, event: "onsetfinalposition",
+                                  arguments: [.integer(position)])
+    }
+
+    private func notePosition(_ normalized: CGFloat, on object: WasabiObject) {
+        let low = Double(object.attributes["low"] ?? "0") ?? 0
+        let high = Double(object.attributes["high"] ?? "255") ?? 255
+        let position = Int32((low + Double(normalized) * (high - low)).rounded())
+        guard object.attributes["value"] != String(position) else { return }
+        _ = object.setAttribute("value", value: String(position))
+        _ = try? scripts.dispatch(object: object, event: "onsetposition",
+                                  arguments: [.integer(position)])
+    }
+
+    private func performAction(for object: WasabiObject) {
+        // A Wasabi standard drop-down opens its list; nothing else this method does applies to it
+        // (B66).
+        if WasabiFormWidgets.kind(of: object) == .dropDownList {
+            presentDropDownList(object)
+            return
+        }
+        // A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and
+        // its set goes off, and clicking the one already on changes nothing. Before the toggle below,
+        // which would otherwise flip it back off.
+        if scripts.selectRadioMember(object) {
+            needsDisplay = true
+            return
+        }
+        // A togglebutton flips itself first, then tells the skin — the whole of some skins' UI hangs
+        // off that notification (multipass's bottom drawer opens from `onToggle` and nowhere else).
+        // It runs alongside whatever `action=` the button also carries, as it does in Wasabi.
+        if scripts.toggleActivation(of: object) { needsDisplay = true }
+        let action = object.attributes["action"]
+        let parameter = object.attributes["param"]
+        // The object comes with the action now: `action_target=` is an attribute of the *button*, and
+        // it is the only thing that says which list a colour-theme switch acts on.
+        performAction(action: action, parameter: parameter, object: object)
+        if action == nil {
+            // A `cfgattrib`-bound control carries no `action`: the binding *is* what it does. Defix's
+            // whole settings window is built this way, so without it every switch in that window
+            // moved nothing.
+            // Shuffle, repeat and crossfade reach the host from *inside* this call:
+            // `WinampModernConfigBridge` makes their attributes the host's own state, so for a bound
+            // button the write **is** the toggle, and the `xmlID` route below must not run as well —
+            // doing both flipped each of them twice and left the skin's lamp disagreeing with the
+            // engine.
+            if scripts.toggleConfigAttribute(of: object) {
+                WindowManager.shared.refreshWinampModernSurfaces()
+            } else {
+                // A skin that draws the buttons and binds nothing (boom names its artwork
+                // `Player.shuffle-Selected` and declares no `cfgattrib` at all) still has to work,
+                // and its id is the only thing that says what the button is for. The renderer reads
+                // the same host flags back through the matching `id ==` case in `resolvedBitmapID`.
+                switch object.xmlID?.lowercased() {
+                case "shuffle": host.shuffleEnabled.toggle()
+                case "repeat": host.repeatEnabled.toggle()
+                default: break
+                }
+            }
+        }
+        updatePlaybackState()
+    }
+
+    /// Open a `<Wasabi:DropDownList>` and apply what the user picks (B66).
+    ///
+    /// The pick is written back the way Winamp's own object writes it: `default` on the drop-down —
+    /// which is what it draws and what a script reads with `getXmlParam` — and then the label object
+    /// inside it is told, because `onTextChanged` on `dropdownlist.text` is where the skin persists
+    /// the choice. Styx's and Shield_Amp's `customdropdownlist.maki` are both exactly that handler,
+    /// so without the dispatch the list would change on screen and forget by the next launch.
+    private func presentDropDownList(_ object: WasabiObject) {
+        let items = WasabiFormWidgets.items(of: object)
+        guard !items.isEmpty, let frame = renderer.frame(of: object) else { return }
+        let current = WasabiFormWidgets.selection(of: object)
+        let target = ScriptPopupTarget()
+        let menu = NSMenu()
+        for (index, item) in items.enumerated() {
+            let entry = NSMenuItem(title: item, action: #selector(ScriptPopupTarget.pick(_:)),
+                                   keyEquivalent: "")
+            // Tags count from one so that zero keeps meaning "nothing chosen", as it does for a
+            // script-built popup.
+            entry.tag = index + 1
+            entry.target = target
+            entry.state = item == current ? .on : .off
+            menu.addItem(entry)
+        }
+        let rect = viewRect(fromSkin: frame)
+        menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: rect.minY), in: self)
+        guard target.chosen > 0, items.indices.contains(Int(target.chosen) - 1) else { return }
+        let picked = items[Int(target.chosen) - 1]
+        guard picked != current else { return }
+        _ = object.setAttribute("default", value: picked)
+        if let label = WasabiFormWidgets.dropDownLabel(of: object) {
+            _ = label.setAttribute("text", value: picked)
+            _ = try? scripts.dispatch(object: label, event: "ontextchanged",
+                                      arguments: [.string(picked)])
+        }
+        needsDisplay = true
+    }
+
+    /// Perform the command a skin hung on a double- or right-click, if it hung one there.
+    ///
+    /// Separate from `performAction(for:)` on purpose: these attributes do **not** flip a
+    /// togglebutton and do not fall through to the `cfgattrib` binding — they are a second, plain
+    /// command on the same object, and a mousetrap layer that carries one usually carries nothing
+    /// else at all.
+    private func performClickAction(_ gesture: WasabiClickGesture, for object: WasabiObject) {
+        guard let resolved = WasabiClickAction.resolve(object, gesture: gesture) else { return }
+        performAction(action: resolved.action, parameter: resolved.parameter, object: object)
+    }
+
+    private func performAction(action rawAction: String?, parameter rawParameter: String?, object: WasabiObject? = nil) {
+        // `ACTION;PARAM` is the other way a skin writes a parameter — mmd3, ZDL and winampmodern566
+        // spell every one of their layout switches that way, and winampmodern566 also writes
+        // `action="SWITCHTO;optionsgroup.misc"`. An explicit `param=` still wins.
+        let action: String?
+        let parameter: String?
+        if let rawAction {
+            (action, parameter) = WasabiClickAction.split(action: rawAction, parameter: rawParameter)
+        } else {
+            (action, parameter) = (nil, rawParameter)
+        }
+        switch action?.uppercased() {
+        case "PLAY": host.play()
+        case "PAUSE": host.pause()
+        case "STOP": host.stop()
+        case "PREV": host.previous()
+        case "NEXT": host.next()
+        case "EJECT": host.openFiles()
+        case "SWITCH":
+            // The user clicked a control that switches layout — a titlebar shade button, a
+            // `dblclickaction="SWITCH;shade"` mousetrap. That is a decision about how they want this
+            // window, so it outlives the session; a script's own `switchToLayout` does not (B44a).
+            if let parameter, activateLayout(id: parameter) { renderer.persistActiveLayout() }
+        // The window commands every skin puts on its titlebar. T800 draws all three (minimize,
+        // shade-switch, close) as 4×5px buttons on the machine's chest. The fallbacks are for a view
+        // with no controller over it (tests): never `performClose`, which a borderless window ignores.
+        case "MINIMIZE":
+            if let minimizeRequested { minimizeRequested() } else { window?.miniaturize(nil) }
+        case "CLOSE":
+            if let closeRequested { closeRequested() } else { window?.close() }
+        case "TOGGLE":
+            // `TOGGLE`'s parameter is a component (`Eq`, a GUID) **or one of the skin's own container
+            // ids** — Winamp toggles whichever window that names. Resolving only components left
+            // every container-addressed button dead, and Defix's `CONF` button is exactly one
+            // (`action="TOGGLE" param="Config"`): the whole configurator — the 31 backgrounds, the
+            // nine display styles, the songticker scrolling mode — was unreachable, so a preference
+            // the skin ships switched off could never be switched on.
+            // Winamp's preferences dialog, Colour Themes page. multipass's "open in preferences"
+            // button is `action="TOGGLE"` with this GUID as its parameter; we have no preferences
+            // dialog, and the popup below is the same list that dialog would show.
+            if parameter?.uppercased().contains(Self.colorThemePreferencesGUID) == true {
+                showColorThemeMenu()
+            } else if parameter?.uppercased().contains(Self.aboutWinampGUID) == true {
+                // Winamp's **About Winamp** window. ClassicPro's corner bolt is a multi-button whose
+                // default command is this GUID (`player.m`'s `bolt.onLeftClick`, branch 0), so with
+                // nothing answering it the logo did nothing at all until the user picked one of the
+                // other five from its right-click menu.
+                //
+                // Most skins draw this page themselves — twenty of the measured seventy define
+                // `skin.about.group`, the artwork Winamp instantiates on the "Skin" page of its own
+                // About box — so the skin's window is the answer wherever it exists, in the skin's
+                // own frame with the skin's own artwork. NullPlayer's AppKit panel is the fallback
+                // for a skin that draws none.
+                if let id = skinAboutContainerID, containerWindowToggleRequested?(id) == true { return }
+                NSApp.sendAction(#selector(AppDelegate.showAbout), to: nil, from: nil)
+            } else if let kind = WinampModernComponentRegistry.kind(for: parameter) {
+                routeComponentToggle(kind)
+            } else if let parameter, !parameter.isEmpty {
+                _ = containerWindowToggleRequested?(parameter)
+            }
+        case "EQ_TOGGLE":
+            // Winamp's `EQ_TOGGLE` turns the equalizer *on and off*. It is not a window command:
+            // showing the equalizer is `TOGGLE guid:eq`, which routes through the surface coordinator.
+            if let componentHost {
+                componentHost.equalizerSetEnabled(!componentHost.equalizerSnapshot().enabled)
+                needsDisplay = true
+            }
+        case "EQ_AUTO":
+            if let componentHost {
+                componentHost.equalizerSetAuto(!componentHost.equalizerSnapshot().auto)
+                // Switching auto-EQ on applies the track's genre preset, which moves every band.
+                scripts.refreshEqualizerState()
+                needsDisplay = true
+            }
+        case "EQ_PREAMP", "EQ_BAND":
+            // A *button* carrying a band action (a reset, a nudge) has no position to read; the
+            // slider path owns the values. Inert rather than wrong.
+            break
+        // The three colour-theme host actions. `_switch` applies whatever its list has picked out;
+        // `_next`/`_previous` step the applied theme directly and drag the list's selection along, so
+        // a skin that ships only the arrows (multipass) still cycles its 58 themes.
+        case "COLORTHEMES_SWITCH":
+            if let object, let list = renderer.colorThemeList(forAction: object),
+               let name = renderer.selectedColorTheme(in: list) {
+                applyColorTheme(name)
+            } else {
+                // No list to read: Defix's switch button names none and its skin ships none, and
+                // multipass's names a group that is never instantiated. In Winamp both would land in
+                // the preferences dialog; the popup is that list.
+                showColorThemeMenu()
+            }
+        case "COLORTHEMES_NEXT": stepColorTheme(by: 1)
+        case "COLORTHEMES_PREVIOUS": stepColorTheme(by: -1)
+        case "MENU":
+            if parameter?.lowercased() == "presets" { showEqualizerPresetMenu() }
+            // A bare `MENU` is the main menu, same as the button below.
+            else if Self.opensMainMenu(action: action, parameter: parameter) { showMainMenu(from: object) }
+        // Winamp's **main menu** — the "≡" at the top-left of a skin's title bar (`SYSMENU`) and the
+        // same menu on a window's control button (`CONTROLMENU`). Measured demand: SYSMENU in
+        // multipass, CornerAmp Redux, Overdrive_2, winampmodern566 and ZDL; CONTROLMENU in multipass,
+        // mmd3, Overdrive_2 and ZDL — and every one of them was dead, which reads as "the button in
+        // the corner does nothing" because that is exactly what it did.
+        //
+        // Winamp's menu there is Play file / Preferences / Skins / Exit and the window list.
+        // NullPlayer's own context menu is that menu — the one every other window in the app shows on
+        // right-click — so the button opens it rather than a second, thinner imitation.
+        case "SYSMENU", "CONTROLMENU":
+            showMainMenu(from: object)
+        // Winamp's two song-title commands, both reached through `dblclickaction=`/`rightclickaction=`
+        // rather than `action=`: the file-info dialog and the track's own context menu. Here they are
+        // the same File Info sheet and the same track menu the playlist windows already show, so the
+        // three routes to a track's details cannot drift apart.
+        // The skin's *internal* web route, and the other half of B40. A skin that offers "Web Reader"
+        // against "default browser" does not call a second navigation method for it — it addresses
+        // its own reader group with `sendAction(…)` (Big Bento's lyrics finder and its YouTube search
+        // both do, from `fileinfo_lyrics_finder.maki`), and `sendAction` already reaches here with
+        // the action and its parameter.
+        //
+        // **The two actions carry different things** and must not be read alike: `browser_navigate`
+        // hands over a finished `https://…`, while `browser_search` hands over the bare terms and
+        // leaves the engine to the reader.
+        case "BROWSER_NAVIGATE":
+            if let address = parameter, !address.isEmpty {
+                webNavigationRequested?(.internalBrowser, address)
+            }
+        case "BROWSER_SEARCH":
+            if let terms = parameter, !terms.isEmpty {
+                webNavigationRequested?(.internalBrowserSearch, terms)
+            }
+        case "TRACKINFO":
+            showTrackInfo()
+        case "TRACKMENU":
+            showTrackMenu(from: object)
+        // (`opensMainMenu` is the same decision, spelled once, for a test that cannot open a menu.)
+        //
+        // Winamp's four host-action families — the visualization, the playlist editor, the video
+        // window and the component bucket — are decoded and routed in
+        // `WinampModernHostActionMenus.swift` (backlog B5): 108 declarations across 11 of the 17
+        // measured skins, each of them a button whose click used to end here.
+        default:
+            if let action, let hostAction = WinampModernHostAction(action: action) {
+                performHostAction(hostAction, object: object)
+            }
+        }
+    }
+
+    /// Whether this markup action asks for the host's main menu. Internal so the routing can be
+    /// tested: presenting a menu runs AppKit's own tracking loop, which a headless test cannot enter.
+    static func opensMainMenu(action: String?, parameter: String?) -> Bool {
+        switch action?.uppercased() {
+        case "SYSMENU", "CONTROLMENU": return true
+        case "MENU": return parameter?.isEmpty != false
+        default: return false
+        }
+    }
+
+    /// The host's context menu, dropped under the button that asked for it (the mouse if that button
+    /// has no resolved frame — a script can raise this from anywhere).
+    private func showMainMenu(from object: WasabiObject?) {
+        let menu = ContextMenuBuilder.buildMenu()
+        popUpMenu(menu, from: object)
+    }
+
+    /// Drop a menu under the object that asked for it, or at the pointer.
+    ///
+    /// `atMouse` is what a right-click menu wants — Winamp pops it where the click was, and a
+    /// song-title ticker is wide enough that its top-left corner is nowhere near the pointer.
+    func popUpMenu(_ menu: NSMenu, from object: WasabiObject?, atMouse: Bool = false) {
+        guard menu.numberOfItems > 0 else { return }
+        let location: NSPoint
+        if let frame = object.flatMap({ renderer.frame(of: $0) }), !atMouse {
+            location = NSPoint(x: frame.minX * skinScale,
+                               y: bounds.height - frame.maxY * skinScale)
+        } else if let window {
+            location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        } else {
+            location = .zero
+        }
+        menu.popUp(positioning: nil, at: location, in: self)
+    }
+
+    /// Winamp's **File Info** for the playing track — what a song title's `dblclickaction="TRACKINFO"`
+    /// asks for, in six of the seventeen measured skins.
+    ///
+    /// Presented as a *sheet*, never `runModal()`: this action is reachable from a script
+    /// (`sendAction("TRACKINFO")`), and a skin is untrusted input — a modal run loop it can enter at
+    /// will is a hang the user cannot dismiss the app out of. A sheet needs a window, so with none
+    /// (the tests' detached view) it is simply inert.
+    private func showTrackInfo() {
+        guard let window, let track = WindowManager.shared.audioEngine.currentTrack else { return }
+        let alert = NSAlert()
+        alert.messageText = track.displayTitle
+        var lines = ["Artist: \(track.artist ?? "Unknown")",
+                     "Album: \(track.album ?? "Unknown")",
+                     "Duration: \(track.formattedDuration)"]
+        // The stream figures the skin's own readouts show, when the engine has them.
+        if host.bitrateKbps > 0 { lines.append("Bitrate: \(host.bitrateKbps) kbps") }
+        if host.sampleRateHz > 0 { lines.append("Sample rate: \(host.sampleRateHz) Hz") }
+        if host.channelCount > 0 { lines.append("Channels: \(host.channelCount)") }
+        lines.append(track.url.isFileURL ? "Path: \(track.url.path)" : "URL: \(track.url.absoluteString)")
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.beginSheetModal(for: window)
+    }
+
+    /// The track's own context menu — `rightclickaction="TRACKMENU"`, five of the seventeen skins.
+    ///
+    /// Winamp's is a menu *about the playing track*, not the player's main menu (which is what
+    /// `SYSMENU` already opens), so this is the same three commands the playlist windows offer for a
+    /// row, aimed at whatever is playing. With no track the items are shown disabled rather than the
+    /// menu suppressed: a right-click that produces nothing at all reads as a dead control.
+    private func showTrackMenu(from object: WasabiObject?) {
+        let track = WindowManager.shared.audioEngine.currentTrack
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let title = NSMenuItem(title: track?.displayTitle ?? "No Track", action: nil, keyEquivalent: "")
+        title.isEnabled = false
+        menu.addItem(title)
+        menu.addItem(.separator())
+        for (name, selector) in [("File Info...", #selector(showTrackInfoFromMenu(_:))),
+                                 ("Copy Title", #selector(copyTrackTitleFromMenu(_:)))] {
+            let item = NSMenuItem(title: name, action: selector, keyEquivalent: "")
+            item.target = self
+            item.isEnabled = track != nil
+            menu.addItem(item)
+        }
+        let reveal = NSMenuItem(title: "Reveal in Finder", action: #selector(revealTrackFromMenu(_:)),
+                                keyEquivalent: "")
+        reveal.target = self
+        reveal.isEnabled = track?.url.isFileURL == true
+        menu.addItem(reveal)
+        popUpMenu(menu, from: object, atMouse: true)
+    }
+
+    @objc private func showTrackInfoFromMenu(_ sender: Any?) { showTrackInfo() }
+
+    @objc private func copyTrackTitleFromMenu(_ sender: Any?) {
+        guard let track = WindowManager.shared.audioEngine.currentTrack else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(track.displayTitle, forType: .string)
+    }
+
+    @objc private func revealTrackFromMenu(_ sender: Any?) {
+        guard let track = WindowManager.shared.audioEngine.currentTrack, track.url.isFileURL else { return }
+        host.revealInFinder(track.url.path)
+    }
+
+    /// Winamp's preferences page for colour themes. A skin that opens it is asking for the same list
+    /// the popup below shows.
+    private static let colorThemePreferencesGUID = "53DE6284-7E88-4C62-9F93-22ED68E6A024"
+    /// Winamp's About Winamp window, the ClassicPro corner bolt's default command.
+    private static let aboutWinampGUID = "D6201408-476A-4308-BF1B-7BACA1124B12"
+
+    /// Apply a theme and repaint.
+    ///
+    /// `activateTheme` answers `false` for a theme that is *already* applied, and the coordinator
+    /// broadcasts nothing in that case — so the repaint cannot be left to the broadcast, or clicking
+    /// the row you are already wearing would leave the list's selection unpainted.
+    func applyColorTheme(_ name: String) {
+        _ = renderer.activateTheme(name)
+        renderer.syncColorThemeLists()
+        WindowManager.shared.refreshWinampModernSurfaces()
+        needsDisplay = true
+    }
+
+    /// Step the applied theme, wrapping at both ends — the skin's own next/previous buttons.
+    private func stepColorTheme(by delta: Int) {
+        let names = renderer.colorThemeNames
+        guard !names.isEmpty else { return }
+        let current = renderer.activeColorThemeIndex ?? 0
+        let next = ((current + delta) % names.count + names.count) % names.count
+        applyColorTheme(names[next])
+    }
+
+    /// The host's own colour-theme list, as a popup.
+    ///
+    /// The route for every skin that defines themes and ships no list to pick them from: Defix's
+    /// `colorthemes_switch` button, multipass's unresolvable target, and the preferences GUID above.
+    /// The applied theme is checked, so the popup answers "which one am I wearing?" as well.
+    private func showColorThemeMenu() {
+        let names = renderer.colorThemeNames
+        guard names.count > 1, let event = NSApp.currentEvent else { return }
+        let menu = NSMenu(title: "Color Themes")
+        let active = renderer.themes.activeTheme
+        for name in names {
+            let item = NSMenuItem(title: name, action: #selector(applyColorThemeFromMenu(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = name
+            if name.caseInsensitiveCompare(active) == .orderedSame { item.state = .on }
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func applyColorThemeFromMenu(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        applyColorTheme(name)
+    }
+
+    /// The skin's own "presets" button. Winamp opens the equalizer preset list from it; we build the
+    /// same list from `EQPreset.allPresets` and apply through the component host, so every EQ surface
+    /// (this window, an auxiliary one, the classic window) sees the change at once.
+    private func showEqualizerPresetMenu() {
+        guard componentHost != nil, let event = NSApp.currentEvent else { return }
+        let menu = NSMenu(title: "Equalizer Presets")
+        for preset in EQPreset.allPresets {
+            let item = NSMenuItem(title: preset.name, action: #selector(applyEqualizerPreset(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset.name
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func applyEqualizerPreset(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        componentHost?.equalizerApplyPreset(named: name)
+        // A preset moves ten bands and the preamp at once; the skin hears every one of them.
+        scripts.refreshEqualizerState()
+        WindowManager.shared.refreshWinampModernSurfaces()
+        needsDisplay = true
+    }
+
+    /// Route a component toggle to the skin's own surfaces first, then fall back to the classic
+    /// window. Embedded SUI components are always present, so a toggle over them must not spawn a
+    /// classic auxiliary window (that was the Phase 1 behaviour Phase 5 replaces).
+    func routeComponentToggle(_ kind: WinampModernComponentKind) {
+        if surfaceToggleRequested?(kind) == true { return }
+        if renderer.componentHolders().contains(where: { $0.kind == kind }) { return }
+        if componentWindowToggleRequested?(kind) == true { return }
+        componentHost?.toggleClassicWindow(for: kind)
+    }
+
+    /// The read side of `performAction`'s `TOGGLE`, walking the same three roads its parameter can
+    /// take, so a button's lamp and the button's own click can never disagree (BB36).
+    ///
+    /// Nil is a real answer and the common one: it means the parameter names no window — a GUID that
+    /// opens a menu or the About panel, a surface this skin draws *inside* a window it already owns,
+    /// or a container it never declared. The renderer falls back to the button's own `activated`
+    /// there, which is also what a skin's `onToggle` handler still reads.
+    private func toggleTargetIsVisible(parameter: String?) -> Bool? {
+        guard let parameter, !parameter.isEmpty else { return nil }
+        // Nothing this asks may walk the scene — the scene walk is the caller. The guard is here so
+        // a future query that does costs a dark lamp rather than a stack overflow.
+        guard !isResolvingToggleLamp else { return nil }
+        isResolvingToggleLamp = true
+        defer { isResolvingToggleLamp = false }
+        let upper = parameter.uppercased()
+        // The colour-theme preferences GUID opens a popup, which is not a window and has no lamp.
+        guard !upper.contains(Self.colorThemePreferencesGUID) else { return nil }
+        // The About GUID is a window exactly when the skin draws its own About page; the AppKit
+        // panel it otherwise falls back to has no lamp to answer for either.
+        if upper.contains(Self.aboutWinampGUID) {
+            guard let id = skinAboutContainerID else { return nil }
+            return containerWindowVisibilityQuery?(id)
+        }
+        if let kind = WinampModernComponentRegistry.kind(for: parameter) {
+            // A surface this skin draws *inside* a window it already owns has no open/closed of its
+            // own, and `routeComponentToggle` returns early for it — the query answers nil there.
+            // It is asked declaratively, from the surface catalog, and **never** from
+            // `renderer.componentHolders()`: that walks the scene, and the scene walk is what asks
+            // this question, so reading it here recursed until the stack ran out.
+            return surfaceVisibilityQuery?(kind)
+        }
+        return containerWindowVisibilityQuery?(parameter)
+    }
+}

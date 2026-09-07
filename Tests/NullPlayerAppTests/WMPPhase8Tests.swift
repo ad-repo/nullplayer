@@ -5,10 +5,17 @@ import XCTest
 
 @MainActor
 final class WMPPhase8Tests: XCTestCase {
-    func testCleanFirstLaunchResolvesToDedicatedUnskinnedWMPWithoutOriginalPreferenceReads() {
+    /// A clean first launch stays on Classic. WMP is opt-in: the engine loads only part of the
+    /// corpus, so it is a mode the user selects, never the one a fresh install lands in.
+    func testCleanFirstLaunchResolvesToClassicRatherThanWMP() {
+        let defaults = FirstLaunchDefaults()
+        XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .classic)
+    }
+
+    func testSelectedWMPModeResolvesToDedicatedUnskinnedWMPWithoutOriginalPreferenceReads() {
         let defaults = FirstLaunchDefaults()
 
-        let mode = PlayerUIMode.stored(in: defaults, forcedMode: nil)
+        let mode = PlayerUIMode.stored(in: defaults, forcedMode: .wmp)
         let controller = WindowManager.makeMainWindowController(for: mode)
 
         XCTAssertEqual(mode, .wmp)
@@ -17,7 +24,7 @@ final class WMPPhase8Tests: XCTestCase {
         XCTAssertFalse(controller is MainWindowController)
         XCTAssertFalse(controller is ModernMainWindowController)
         XCTAssertTrue(defaults.originalPreferenceReads.isEmpty,
-                      "A clean WMP launch must not inspect Original or Original-Metal preferences")
+                      "A WMP launch must not inspect Original or Original-Metal preferences")
         controller.prepareForUITeardown()
         controller.window?.close()
     }

@@ -27,6 +27,7 @@ final class WMPPhase3Tests: XCTestCase {
                     switch mode.controllerFamily {
                     case .classic: XCTAssertTrue(controller is MainWindowController)
                     case .nullPlayerModern: XCTAssertTrue(controller is ModernMainWindowController)
+                    case .winampModern: XCTAssertTrue(controller is WinampModernMainWindowController)
                     case .wmp: XCTAssertTrue(controller is WMPMainWindowController)
                     }
                     controller.prepareForUITeardown()

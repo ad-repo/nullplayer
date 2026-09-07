@@ -10,7 +10,7 @@ import AppKit
 // =============================================================================
 
 /// ProjectM visualization view with full skin support
-class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
+class ProjectMView: NSView, VisualizationMenuTarget {
     
     // MARK: - Properties
     
@@ -656,318 +656,30 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
         buildVisualizationMenu()
     }
 
+    /// The shared visualization menu (`VisualizationContextMenu`), which this view used to build
+    /// its own identical copy of — as did `ModernProjectMView`, and as did the `.wal` skin's
+    /// embedded AVS surface, with a shorter one that immediately read as truncated beside it.
     func buildVisualizationMenu() -> NSMenu {
-        let menu = NSMenu()
-        
-        let currentEngineType = visualizationGLView?.currentEngineType ?? .projectM
-        let isProjectMAvailable = visualizationGLView?.isProjectMAvailable ?? false
-        let isProjectMActive = currentEngineType == .projectM && isProjectMAvailable
-        let isGeissActive = currentEngineType == .geiss
-        let isTripexActive = currentEngineType == .tripex
-
-        // Preset navigation (only when projectM is available)
-        if isProjectMActive {
-            let presetName = visualizationGLView?.currentPresetName ?? "Unknown"
-            let currentPresetIndex = visualizationGLView?.currentPresetIndex ?? 0
-            let presetIndex = currentPresetIndex + 1
-            let presetCount = visualizationGLView?.presetCount ?? 0
-            let currentPresetPath = visualizationGLView?.presetPath(at: currentPresetIndex) ?? ""
-            let currentRating = presetRatingsStore.rating(forPresetPath: currentPresetPath)
-
-            let currentPresetItem = NSMenuItem(
-                title: "Preset: \(presetName) [\(starString(for: currentRating))] (\(presetIndex)/\(presetCount))",
-                action: nil,
-                keyEquivalent: ""
-            )
-            currentPresetItem.isEnabled = false
-            menu.addItem(currentPresetItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            let nextPresetItem = NSMenuItem(title: "Next Preset", action: #selector(nextPresetAction(_:)), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
-            nextPresetItem.target = self
-            menu.addItem(nextPresetItem)
-            
-            let prevPresetItem = NSMenuItem(title: "Previous Preset", action: #selector(previousPresetAction(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
-            prevPresetItem.target = self
-            menu.addItem(prevPresetItem)
-            
-            let randomPresetItem = NSMenuItem(title: "Random Preset", action: #selector(randomPresetAction(_:)), keyEquivalent: "r")
-            randomPresetItem.target = self
-            menu.addItem(randomPresetItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            let setDefaultItem = NSMenuItem(title: "Set Current to Default", action: #selector(setCurrentPresetAsDefault(_:)), keyEquivalent: "")
-            setDefaultItem.target = self
-            setDefaultItem.isEnabled = presetCount > 0
-            menu.addItem(setDefaultItem)
-
-            let rateCurrentMenu = NSMenu()
-            for rating in 0...5 {
-                let title = rating == 0
-                    ? "Clear Rating (\(starString(for: 0)))"
-                    : "\(rating) Gold (\(starString(for: rating)))"
-                let item = NSMenuItem(title: title, action: #selector(setCurrentPresetRatingFromMenu(_:)), keyEquivalent: "")
-                item.target = self
-                item.tag = rating
-                item.state = currentRating == rating ? .on : .off
-                rateCurrentMenu.addItem(item)
-            }
-            let rateCurrentMenuItem = NSMenuItem(title: "Rate Current Preset", action: nil, keyEquivalent: "")
-            rateCurrentMenuItem.submenu = rateCurrentMenu
-            menu.addItem(rateCurrentMenuItem)
-
-            let favoritesMenu = NSMenu()
-            let isCurrentPresetFavorite = presetRatingsStore.isFavorite(forPresetPath: currentPresetPath)
-            let toggleFavoriteTitle = isCurrentPresetFavorite
-                ? "Remove Current Preset from Favorites"
-                : "Add Current Preset to Favorites"
-            let toggleFavoriteItem = NSMenuItem(
-                title: toggleFavoriteTitle,
-                action: #selector(toggleCurrentPresetFavorite(_:)),
-                keyEquivalent: ""
-            )
-            toggleFavoriteItem.target = self
-            toggleFavoriteItem.isEnabled = presetCount > 0
-            favoritesMenu.addItem(toggleFavoriteItem)
-
-            let presetPaths = (0..<presetCount).map { visualizationGLView?.presetPath(at: $0) ?? "" }
-            let ratingsByPath = presetRatingsStore.ratings(forPresetPaths: presetPaths)
-            let favoritePaths = presetRatingsStore.favoritePresetPaths(forPresetPaths: presetPaths)
-
-            if !favoritePaths.isEmpty {
-                favoritesMenu.addItem(NSMenuItem.separator())
-                for i in 0..<presetCount {
-                    let name = visualizationGLView?.presetName(at: i) ?? "Preset \(i + 1)"
-                    let path = (presetPaths[i] as NSString).standardizingPath
-                    guard favoritePaths.contains(path) else { continue }
-                    let rating = ratingsByPath[path] ?? 0
-                    let title = "\(name) [\(starString(for: rating))]"
-                    let item = NSMenuItem(title: title, action: #selector(selectFavoritePresetFromMenu(_:)), keyEquivalent: "")
-                    item.target = self
-                    item.representedObject = path
-                    item.state = (i == currentPresetIndex) ? .on : .off
-                    favoritesMenu.addItem(item)
-                }
-            }
-
-            let favoritesMenuItem = NSMenuItem(title: "Favorites", action: nil, keyEquivalent: "")
-            favoritesMenuItem.submenu = favoritesMenu
-            menu.addItem(favoritesMenuItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            // Cycle mode options
-            let cycleOffItem = NSMenuItem(title: "Manual Only", action: #selector(setCycleModeOff(_:)), keyEquivalent: "")
-            cycleOffItem.target = self
-            cycleOffItem.state = presetCycleMode == .off ? .on : .off
-            menu.addItem(cycleOffItem)
-            
-            let cycleSeqItem = NSMenuItem(title: "Auto-Cycle", action: #selector(setCycleModeCycle(_:)), keyEquivalent: "c")
-            cycleSeqItem.target = self
-            cycleSeqItem.state = presetCycleMode == .cycle ? .on : .off
-            menu.addItem(cycleSeqItem)
-            
-            let cycleRandItem = NSMenuItem(title: "Auto-Random", action: #selector(setCycleModeRandom(_:)), keyEquivalent: "")
-            cycleRandItem.target = self
-            cycleRandItem.state = presetCycleMode == .random ? .on : .off
-            menu.addItem(cycleRandItem)
-            
-            // Cycle interval submenu
-            let intervalMenu = NSMenu()
-            for (name, seconds) in [("5 seconds", 5.0), ("10 seconds", 10.0), ("20 seconds", 20.0), ("30 seconds", 30.0), ("60 seconds", 60.0), ("2 minutes", 120.0)] {
-                let item = NSMenuItem(title: name, action: #selector(setCycleInterval(_:)), keyEquivalent: "")
-                item.target = self
-                item.tag = Int(seconds)
-                item.state = abs(presetCycleInterval - seconds) < 0.5 ? .on : .off
-                intervalMenu.addItem(item)
-            }
-            let intervalMenuItem = NSMenuItem(title: "Cycle Interval", action: nil, keyEquivalent: "")
-            intervalMenuItem.submenu = intervalMenu
-            menu.addItem(intervalMenuItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            // Presets submenu - list all available presets
-            if presetCount > 0 {
-                let presetsMenu = NSMenu()
-
-                for i in 0..<presetCount {
-                    let name = visualizationGLView?.presetName(at: i) ?? "Preset \(i + 1)"
-                    let path = presetPaths[i]
-                    let rating = ratingsByPath[path] ?? 0
-                    let title = "\(name) [\(starString(for: rating))]"
-                    let presetItem = NSMenuItem(title: title, action: #selector(selectPresetFromMenu(_:)), keyEquivalent: "")
-                    presetItem.target = self
-                    presetItem.tag = i
-                    presetItem.state = (i == (visualizationGLView?.currentPresetIndex ?? -1)) ? .on : .off
-                    presetsMenu.addItem(presetItem)
-                }
-                
-                let presetsMenuItem = NSMenuItem(title: "Presets", action: nil, keyEquivalent: "")
-                presetsMenuItem.submenu = presetsMenu
-                menu.addItem(presetsMenuItem)
-                
-                menu.addItem(NSMenuItem.separator())
-            }
-        } else if isGeissActive {
-            addGeissEffectsMenuItems(to: menu)
-        } else if isTripexActive {
-            addTripexEffectsMenuItems(to: menu)
-        }
-
-        // Visualization Engine selector
-        let engineMenu = NSMenu()
-
-        for engineType in VisualizationType.allCases {
-            let item = NSMenuItem(
-                title: engineType.displayName,
-                action: #selector(switchVisualizationEngine(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = engineType
-            item.state = (currentEngineType == engineType) ? .on : .off
-            engineMenu.addItem(item)
-        }
-
-        let engineMenuItem = NSMenuItem(title: "Visualization Engine", action: nil, keyEquivalent: "")
-        engineMenuItem.submenu = engineMenu
-        menu.addItem(engineMenuItem)
-
-        menu.addItem(NSMenuItem.separator())
-        
-        // Audio Sensitivity submenu (PCM gain multiplier)
-        let audioSensMenu = NSMenu()
-        let currentPCMGain = visualizationGLView?.pcmGain ?? 1.0
-        for (name, value) in [("Low (0.5x)", 5), ("Normal (1.0x)", 10), ("High (1.5x)", 15), ("Intense (2.0x)", 20), ("Max (3.0x)", 30)] {
-            let item = NSMenuItem(title: name, action: #selector(setAudioSensitivity(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = value
-            item.state = abs(currentPCMGain - Float(value) / 10.0) < 0.05 ? .on : .off
-            audioSensMenu.addItem(item)
-        }
-        let audioSensMenuItem = NSMenuItem(title: "Audio Sensitivity", action: nil, keyEquivalent: "")
-        audioSensMenuItem.submenu = audioSensMenu
-        menu.addItem(audioSensMenuItem)
-        
-        // Beat Sensitivity submenu (projectM beat detection threshold) - only for ProjectM
-        if isProjectMActive {
-            let beatSensMenu = NSMenu()
-            let currentBeatSens = visualizationGLView?.normalBeatSensitivity ?? 1.0
-            for (name, value) in [("Low (0.5)", 5), ("Normal (1.0)", 10), ("High (1.5)", 15), ("Max (2.0)", 20)] {
-                let item = NSMenuItem(title: name, action: #selector(setBeatSensitivityAction(_:)), keyEquivalent: "")
-                item.target = self
-                item.tag = value
-                item.state = abs(currentBeatSens - Float(value) / 10.0) < 0.05 ? .on : .off
-                beatSensMenu.addItem(item)
-            }
-            let beatSensMenuItem = NSMenuItem(title: "Beat Sensitivity", action: nil, keyEquivalent: "")
-            beatSensMenuItem.submenu = beatSensMenu
-            menu.addItem(beatSensMenuItem)
-        }
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Performance mode toggle
-        let isLowPower = visualizationGLView?.isLowPowerMode ?? true
-        let perfModeItem = NSMenuItem(
-            title: isLowPower ? "Quality: Optimized (30fps)" : "Quality: Full (60fps)",
-            action: #selector(togglePerformanceMode(_:)),
-            keyEquivalent: "p"
-        )
-        perfModeItem.target = self
-        menu.addItem(perfModeItem)
-
-        // Fullscreen option
-        let fullscreenItem = NSMenuItem(title: "Fullscreen", action: #selector(toggleFullscreenAction(_:)), keyEquivalent: "f")
-        fullscreenItem.target = self
-        menu.addItem(fullscreenItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Close
-        let closeItem = NSMenuItem(title: "Close", action: #selector(closeWindow(_:)), keyEquivalent: "")
-        closeItem.target = self
-        menu.addItem(closeItem)
-        
-        return menu
+        VisualizationContextMenu.build(target: self, options: .init(
+            cycleMode: presetCycleMode,
+            cycleInterval: presetCycleInterval,
+            tripexCycleMode: tripexCycleMode,
+            tripexCycleInterval: tripexCycleInterval))
     }
     
-    @objc private func nextPresetAction(_ sender: Any?) {
+    @objc func nextPresetAction(_ sender: NSMenuItem?) {
         hidePresetRatingOverlay()
         visualizationGLView?.nextPreset()
     }
     
-    @objc private func previousPresetAction(_ sender: Any?) {
+    @objc func previousPresetAction(_ sender: NSMenuItem?) {
         hidePresetRatingOverlay()
         visualizationGLView?.previousPreset()
     }
     
-    @objc private func randomPresetAction(_ sender: Any?) {
+    @objc func randomPresetAction(_ sender: NSMenuItem?) {
         hidePresetRatingOverlay()
         visualizationGLView?.randomPreset()
-    }
-
-    private func addGeissEffectsMenuItems(to menu: NSMenu) {
-        let currentEffectName = visualizationGLView?.currentGeissEffectName ?? "Mode 0"
-        let effectCount = visualizationGLView?.geissEffectCount ?? 0
-        let currentEffectItem = NSMenuItem(
-            title: "Effect: \(currentEffectName)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        currentEffectItem.isEnabled = false
-        menu.addItem(currentEffectItem)
-        menu.addItem(NSMenuItem.separator())
-
-        let nextEffectItem = NSMenuItem(title: "Next Effect", action: #selector(nextGeissEffectAction(_:)), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
-        nextEffectItem.target = self
-        menu.addItem(nextEffectItem)
-
-        let prevEffectItem = NSMenuItem(title: "Previous Effect", action: #selector(previousGeissEffectAction(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
-        prevEffectItem.target = self
-        menu.addItem(prevEffectItem)
-
-        let randomEffectItem = NSMenuItem(title: "Random Effect", action: #selector(randomGeissEffectAction(_:)), keyEquivalent: "r")
-        randomEffectItem.target = self
-        menu.addItem(randomEffectItem)
-
-        if effectCount > 0 {
-            menu.addItem(NSMenuItem.separator())
-            let effectsMenu = NSMenu()
-            for index in 0..<effectCount {
-                let name = visualizationGLView?.geissEffectName(at: index) ?? "Mode \(index + 1)"
-                let item = NSMenuItem(title: name, action: #selector(selectGeissEffectFromMenu(_:)), keyEquivalent: "")
-                item.target = self
-                item.tag = index
-                item.state = name == currentEffectName ? .on : .off
-                effectsMenu.addItem(item)
-            }
-            let effectsMenuItem = NSMenuItem(title: "Effects", action: nil, keyEquivalent: "")
-            effectsMenuItem.submenu = effectsMenu
-            menu.addItem(effectsMenuItem)
-        }
-
-        if let glView = visualizationGLView {
-            GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: self, visualizationView: glView)
-        }
-    }
-
-    private func addTripexEffectsMenuItems(to menu: NSMenu) {
-        guard let glView = visualizationGLView else { return }
-        let mode: TripexCycleMode
-        switch tripexCycleMode {
-        case .off:    mode = .off
-        case .cycle:  mode = .cycle
-        case .random: mode = .random
-        }
-        TripexMenuBuilder.addTripexConfigMenuItems(to: menu,
-                                                   target: self,
-                                                   visualizationView: glView,
-                                                   cycleMode: mode,
-                                                   cycleInterval: tripexCycleInterval)
     }
 
     // MARK: - TripexMenuTarget
@@ -988,60 +700,60 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
         UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
     }
 
-    @objc private func nextGeissEffectAction(_ sender: Any?) {
+    @objc func nextGeissEffectAction(_ sender: NSMenuItem?) {
         visualizationGLView?.nextGeissEffect()
     }
 
-    @objc private func previousGeissEffectAction(_ sender: Any?) {
+    @objc func previousGeissEffectAction(_ sender: NSMenuItem?) {
         visualizationGLView?.previousGeissEffect()
     }
 
-    @objc private func randomGeissEffectAction(_ sender: Any?) {
+    @objc func randomGeissEffectAction(_ sender: NSMenuItem?) {
         visualizationGLView?.randomGeissEffect()
     }
 
-    @objc private func selectGeissEffectFromMenu(_ sender: NSMenuItem) {
+    @objc func selectGeissEffectFromMenu(_ sender: NSMenuItem) {
         visualizationGLView?.selectGeissEffect(at: sender.tag)
     }
     
-    @objc private func setCurrentPresetAsDefault(_ sender: Any?) {
+    @objc func setCurrentPresetAsDefault(_ sender: NSMenuItem?) {
         visualizationGLView?.setCurrentPresetAsDefault()
     }
 
-    @objc private func setCurrentPresetRatingFromMenu(_ sender: NSMenuItem) {
+    @objc func setCurrentPresetRatingFromMenu(_ sender: NSMenuItem) {
         guard let preset = currentPresetIdentity() else { return }
         let rating = min(5, max(0, sender.tag))
         presetRatingsStore.setRating(rating, forPresetPath: preset.path, presetName: preset.name)
     }
     
-    @objc private func toggleCurrentPresetFavorite(_ sender: Any?) {
+    @objc func toggleCurrentPresetFavorite(_ sender: NSMenuItem?) {
         guard let preset = currentPresetIdentity() else { return }
         let isFavorite = presetRatingsStore.isFavorite(forPresetPath: preset.path)
         presetRatingsStore.setFavorite(!isFavorite, forPresetPath: preset.path, presetName: preset.name)
     }
     
-    @objc private func selectFavoritePresetFromMenu(_ sender: NSMenuItem) {
+    @objc func selectFavoritePresetFromMenu(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String,
               let index = presetIndex(forPath: path) else { return }
         hidePresetRatingOverlay()
         visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
     
-    @objc private func selectPresetFromMenu(_ sender: NSMenuItem) {
+    @objc func selectPresetFromMenu(_ sender: NSMenuItem) {
         let index = sender.tag
         hidePresetRatingOverlay()
         visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
     
-    @objc private func toggleFullscreenAction(_ sender: Any?) {
+    @objc func toggleFullscreenAction(_ sender: NSMenuItem?) {
         controller?.toggleFullscreen()
     }
     
-    @objc private func togglePerformanceMode(_ sender: Any?) {
+    @objc func togglePerformanceMode(_ sender: NSMenuItem?) {
         visualizationGLView?.toggleLowPowerMode()
     }
     
-    @objc private func closeWindow(_ sender: Any?) {
+    @objc func closeWindow(_ sender: NSMenuItem?) {
         window?.close()
     }
 
@@ -1106,12 +818,12 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
         visualizationGLView?.randomizeGeissPalette()
     }
 
-    @objc private func setAudioSensitivity(_ sender: NSMenuItem) {
+    @objc func setAudioSensitivity(_ sender: NSMenuItem) {
         let gain = Float(sender.tag) / 10.0
         visualizationGLView?.setPCMGain(gain)
     }
     
-    @objc private func setBeatSensitivityAction(_ sender: NSMenuItem) {
+    @objc func setBeatSensitivityAction(_ sender: NSMenuItem) {
         let sensitivity = Float(sender.tag) / 10.0
         visualizationGLView?.setNormalBeatSensitivity(sensitivity)
     }
@@ -1143,25 +855,25 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
         }
     }
     
-    @objc private func setCycleModeOff(_ sender: Any?) {
+    @objc func setCycleModeOff(_ sender: NSMenuItem?) {
         presetCycleMode = .off
         saveProjectMPresetCycleStateToDefaults()
         applyProjectMPresetCycleMode()
     }
     
-    @objc private func setCycleModeCycle(_ sender: Any?) {
+    @objc func setCycleModeCycle(_ sender: NSMenuItem?) {
         presetCycleMode = .cycle
         saveProjectMPresetCycleStateToDefaults()
         applyProjectMPresetCycleMode()
     }
     
-    @objc private func setCycleModeRandom(_ sender: Any?) {
+    @objc func setCycleModeRandom(_ sender: NSMenuItem?) {
         presetCycleMode = .random
         saveProjectMPresetCycleStateToDefaults()
         applyProjectMPresetCycleMode()
     }
     
-    @objc private func setCycleInterval(_ sender: NSMenuItem) {
+    @objc func setCycleInterval(_ sender: NSMenuItem) {
         presetCycleInterval = TimeInterval(sender.tag)
         saveProjectMPresetCycleStateToDefaults()
         applyProjectMPresetCycleMode()
@@ -1169,7 +881,7 @@ class ProjectMView: NSView, GeissMenuTarget, TripexMenuTarget {
 
     // MARK: - Visualization Engine Switching
 
-    @objc private func switchVisualizationEngine(_ sender: NSMenuItem) {
+    @objc func switchVisualizationEngine(_ sender: NSMenuItem) {
         guard let type = sender.representedObject as? VisualizationType else { return }
         if type != .projectM {
             hidePresetRatingOverlay()

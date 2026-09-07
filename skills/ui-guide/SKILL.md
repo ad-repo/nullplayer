@@ -221,6 +221,12 @@ When adding or refactoring top menu bar content:
 - Avoid `NSMenuItem.copy()` for action-bearing items; copied items can lose expected target/action behavior in this app.
 - Keep side effects (network discovery, long-running work) out of menu construction.
 - Prefer lifecycle startup for services and `menuNeedsUpdate(_:)` for state refresh when a menu opens.
+- Keep entries in the menu that owns their action, not merely the object they configure. In
+  `.winampModern`, **Text Size** is adjacent to **UI Size** in Windows, and named skin-owned windows
+  form a flat section after NullPlayer-owned windows; neither belongs in Skins. Filter the skin block
+  through the reconciled surface catalog so playlist, EQ, library, video, and visualization never
+  acquire duplicate rows. NullPlayer's **Compact Mode** and **Compact Window** are omitted because a
+  `.wal` skin owns its compact/shade layouts.
 - For Sonos room selection UX, use `SonosRoomCheckboxView` when persistent-open submenu behavior is required.
 - For library-browser column visibility menus, use `ColumnVisibilityCheckboxView` for persistent-open checkbox rows. Keep column preferences mode-scoped: Modern uses `BrowserVisible*Columns`; Classic uses `ClassicBrowserVisible*Columns`.
 
@@ -510,6 +516,8 @@ The offscreen buffer approach processes pixels at native resolution before scali
 5. **Drawing over skin sprites** - they already contain labels
 6. **Using blend modes for color conversion** - causes sub-pixel artifacts when scaling; use offscreen pixel manipulation instead
 7. **Tile seams on non-Retina** - visible lines at tile boundaries on 1x displays; requires background fill, overlap, and careful draw order (see non-retina-fixes skill)
+8. **Setting `NSTextField.backgroundColor` alone** - it is inert unless `drawsBackground = true`
+9. **Trusting a requested window frame without checking the result** - required Auto Layout constraints in the content tree can derive a larger minimum size, causing `setFrame` to return a different frame silently. Hidden views still contribute constraints; `isHidden` does not remove them, so remove the view from the hierarchy when its constraints must stop applying. Log the requested frame next to `window.frame` before theorising. See `winamp-modern-skin-guide/reference/components/video.md` for the worked 395pt case.
 
 ## Key Files
 
@@ -521,6 +529,7 @@ The offscreen buffer approach processes pixels at native resolution before scali
 | `Skin/MarqueeLayer.swift` | Main window marquee (bitmap font, CALayer-based) |
 | `Windows/Playlist/PlaylistView.swift` | Playlist view with bitmap font rendering |
 | `Windows/*/View.swift` | Window views |
+| `App/WindowPlacement.swift` | The single definition of "on screen" — pure `NSRect` statics |
 
 ## Art Visualizer Window
 
@@ -665,7 +674,9 @@ Key implementation details:
 
 ## UI Size Mode (Both UI Modes)
 
-UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, and **200%**.
+UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, **175%**, **200%**, **250%**, and **300%**.
+
+`UIScaleLevel.nearest(toScaleFactor:)` maps an arbitrary multiplier onto the ladder (ties to the larger level, ends clamp). It exists for callers that think in factors rather than menu rows — a `.wal` skin's `setScale`, which is answered by this system and not by a scale of the skin's own; 175/250/300 are on the ladder because that skin's configurator offers them.
 
 - **Scale levels**: `UIScaleLevel` stores percentage raw values (`"100"`, `"105"`, etc.); `scaleFactor` is `percent / 100`.
 - **Source of truth**: `WindowManager.uiScaleLevel`; the legacy `isDoubleSize` API remains a compatibility shim (`true` writes 150%, reads are true for any non-100% value).
@@ -674,6 +685,7 @@ UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%*
 - **Classic Library content**: the Library window remains freely stretchable, so its fonts must not derive from window bounds. `PlexBrowserView.contentScale` uses `WindowManager.classicScaleMultiplier` to scale bitmap text, system fonts, row height, column-header height, and matching text hit-test measurements. Manual Library resizing therefore adds space without changing text size, while changing **UI Size** scales the text and row metrics.
 - **Fast switching guard**: `WindowManager` tracks the last applied level separately from the requested level. If another UI Size change arrives during a resize pass, it records the pending value and applies only the final requested level after the current pass finishes, using the last actually-applied scale as the ratio base.
 - **Startup restoration**: `uiScaleLevel` is restored in `AppStateManager.restoreSettingsState()` before sub-windows are shown, so saved enlarged geometry is not double-applied during restore. Scale and window frames restore only when the saved and running `PlayerUIMode` values match exactly; Modern and Metal share controller families but have incompatible geometry and therefore count as a mismatch. A mismatch starts at 100% and uses default frames while mode-independent audio/EQ/playlist state still restores. Saved states without `uiScaleLevel` fall back from legacy `isDoubleSize=true` to 150% only for an exact-mode restore.
+- **App-state policy**: See `../app-state/SKILL.md` for session restore scope, preference ownership, edition scoping, and reset rules.
 - **Interaction with mode switching**: `reloadUI(to:)` captures the current `uiScaleLevel`, collapses to 100% in the current mode *before* the switch, then re-applies the captured level in the target mode after windows are recreated but **before** `enterCompactMode()` (so a Compact-Mode capture records the enlarged layout, not a 1x one). The two UI systems have different window geometry -- and modern layout is driven by the global `ModernSkinElements.sizeMultiplier` -- so forcing old-mode enlarged frames onto freshly-created target-mode windows renders them distorted. `prepareUIRuntime` also pins `sizeMultiplier` to the current `uiScaleLevel` when entering a modern family, so modern windows are *created* at the right base scale rather than inheriting a stale value. The collapse runs `applyDoubleSize()`, which temporarily force-docks every visible auxiliary into its canonical layout. `reloadUI` therefore captures every detached auxiliary frame first and restores those exact floating frames after re-applying UI Size. This applies whether the regular main window or Compact Window is active; docked windows are intentionally recomputed against the target family.
 - When title bars are hidden, all window drags pass `fromTitleBar: true` to allow undocking
 - Classic windows use drawing transform offset (`translateBy`) to shift the skin image up; modern windows use conditional `titleBarHeight`
@@ -699,6 +711,19 @@ untouched; audio state is deliberately never snapshotted.
 5. `audioEngine.applyEQLayout(forModernUI:)` — reprograms the shared fixed-21-band EQ node to the target layout (mirrors to the streaming player internally); guard-idempotent.
 6. `rebuildMainMenu()` via `(NSApp.delegate as? AppDelegate)?`.
 7. `recreateModeDependentLayout(snapshot)` — `showMainWindow()` + `makeKeyAndOrderFront`, restore sub-window visibility/frames via `show*(at:)`, re-push presentation state; restore Compact Mode last.
+
+**The main window keeps the outgoing *position* and the incoming *size*.** Every family lays its
+main window out at its own base size — classic `Skin.mainWindowSize * scale`, modern off
+`ModernSkinElements`, a `.wal` skin at whatever its own layout declares — so
+`recreateModeDependentLayout` must not stamp the snapshot's whole frame onto the freshly created
+target-mode window. `WindowManager.mainFrameForModeSwitch(outgoing:ownSize:)` keeps the snapshot's
+origin, substitutes the new window's own size, and anchors the top-left (the corner
+`applyDoubleSize` resizes around). It runs **unconditionally**: the UI Size re-apply below happens
+only when the captured level is not 100%, so relying on it left `.wal` (Ebonite, 197×297) → Classic
+drawing a 275×116 skin scaled down inside a 197×297 window at 100% — and the bug correspondingly
+*vanished* at any other UI Size, which is what pinned the mechanism. This is the same rule
+`AppStateManager.mainFrameForRestore` applies at launch (see the `winamp-modern-skin-guide`
+rendering reference, BB2c); a test asserts the two agree.
 
 **Audio-consumer ordering safety**: consumer sets in `AudioEngine` (spectrum/waveform/
 stereo/magnitudes) are **ref-counted** (`[String: Int]`), so a late `remove` from an old
@@ -934,7 +959,7 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
 
 Complex snapping logic in `WindowManager`:
 - Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens
-- `Snap to Default` centers main window on its current screen (not always the primary display)
+- `Snap to Default` centers main window on its current screen (not always the primary display); measures against `visibleFrame` and top-anchors a stack too tall to fit. One press recovers everything and a second is a no-op — see **Off-Screen Window Recovery**
 - Coordinated minimize: uses `addChildWindow`/`removeChildWindow` in `windowWillMiniaturize`/`windowDidDeminiaturize` to temporarily make docked windows children of the main window so they animate into the dock together. Child relationships are removed on restore.
 - **Center stack collapse**: `slideUpWindowsBelow(closingFrame:)` in `WindowManager` slides docked windows up when a stack window is hidden. Called from `toggleEqualizer/Playlist/Spectrum/Waveform` — capture the frame BEFORE `orderOut`, then call it. Uses BFS over `dockThreshold`-adjacent windows (by vertical gap + horizontal overlap). Must set `isSnappingWindow = true` during moves to prevent the docking feedback loop.
 
@@ -959,6 +984,82 @@ Implementation details:
 - Programmatic moves are filtered by `shouldTreatMoveAsDrag(...)` so startup restore/snapping does not arm drag state or post false highlights
 - **Connected window highlight**: at `mouseDown`, all peer windows receive a `white @ 15% opacity` overlay via `connectedWindowHighlightDidChange` notification. Cleared when drag ends or `.separate` mode is resolved. All 10 dockable views (5 classic + 5 modern) observe this notification.
 - `isMovingDockedWindows` flag prevents re-entrant `windowWillMove` calls while peers are being repositioned
+
+## Off-Screen Window Recovery
+
+`Sources/NullPlayer/App/WindowPlacement.swift` is the **single definition of "on screen"** for the
+whole app. Pure statics over `NSRect` (no `NSWindow`, no `NSScreen` lookup), so the rule is
+unit-testable and every caller provably applies the same one. Do not re-derive it locally.
+
+The rule it encodes: **overlapping windows are preferable to hidden ones.** A window on top of
+another is a nuisance the user fixes with one drag; a window with no title bar on screen is
+ungrabbable and the app is unusable for anyone who does not know Snap To Default exists. Every
+placement path defers to this ranking.
+
+| Function | Contract |
+|---|---|
+| `isReachable(_:screens:)` | The window's **top-left corner** is on some screen. Top edge inclusive (`maxY == screen.maxY` is where every oversized rescue lands); bottom edge exclusive |
+| `hostScreen(for:screens:)` | Largest intersection → nearest by centre distance → first screen |
+| `rescued(_:into:)` | Moves, **never resizes**. Larger than the screen on an axis → that axis aligns to the visible top-left |
+| `groupOffset(union:into:)` | One offset for a whole docked cluster, preserving every relative position |
+
+**Reachability is the top-left corner, not the whole frame.** That corner carries the title bar and
+drag area in all three modes, and the definition deliberately leaves the classic habit of parking a
+window mostly past the bottom or right edge intact — that window is *placed*, not stranded, and a
+sweep that yanked it back would be the bug.
+
+**Never resize to recover.** A classic sub-window's size is pinned by `applyDoubleSize`
+(`minSize == maxSize`) and a `.wal` window's size *is* the skin. `WindowManager.recenteredPlayerFrame`
+is the one exception and already shrinks correctly.
+
+**Clusters move as a unit.** Per-window clamping is what destroys docking: two windows flush against
+each other, clamped independently against the same edge, come back overlapping instead of touching.
+Rescue paths compute one `groupOffset` from the cluster's union, then rescue individually only what
+that offset could not save (a cluster larger than the display).
+
+### The safety net
+
+`WindowManager.ensureAllWindowsOnScreen()` walks `allWindows()`, moves each stranded window with its
+`findDockedWindows(to:)` cluster, guards with `isSnappingWindow = true`, ends with
+`postLayoutChangeNotification()`, and skips miniaturized windows and full-screen ProjectM. Call
+sites:
+
+- end of the `+0.1s` block in `AppStateManager.applySettingsStateAfterReload` (after `completion?()`,
+  so the `.wal` arrangement has already run)
+- `NSApplication.didChangeScreenParametersNotification`, **debounced** onto the next runloop pass —
+  macOS posts it repeatedly while a display reconfigures and the frames are not settled until it stops
+- end of `applyUIScaleLevelChangeIfNeeded`
+- after a `.wal` skin load in `ContextMenuBuilder` (three sites)
+
+Per `CLAUDE.md` this runs in **all three modes deliberately** — it is not justified as a no-op. An
+unreachable window is equally unusable in Classic, Original/Modern and Winamp Modern, and the rule is
+mode-independent. Verify it separately in each.
+
+### Restore
+
+`AppState.mainScreenVisibleFrame` records the screen the main window was on at save time. On restore,
+`AppStateManager.savedScreenIsMissing` compares it to the present screens; a mismatch forces
+`correctedRestoredFrames` to run **unconditionally** rather than only on a provable strand, because
+absolute desktop coordinates mean nothing without the desktop they were measured on. The field is
+optional with `decodeIfPresent`, so old states decode unchanged and answer `false` — unknown is not
+the same as changed.
+
+`correctedRestoredFrames` sees the main frame and every sub-frame **together** (they were decoded up
+front at the `applySettingsStateAfterReload` seam for exactly this reason) so one offset can bring the
+whole docked session back.
+
+### Winamp Modern tiler
+
+`WinampModernTiler.nextSlot` clamps its slot back onto the region on both axes. This **reverses** the
+original design, which let columns march right rather than overlap. For a skin wider than half the
+display (EPS, Big Bento, cPro-Bento) column 2 began past `region.maxX`, so every window after the
+first column was placed entirely off screen. `tiledOrigin` correspondingly never returns `nil` for
+want of a free slot — it returns the last slot rescued onto the region, because both call sites read
+`nil` as "leave it where it is" and where it is was the problem.
+
+**Regression risk:** Itemskin (B69) overlays a script-positioned *pinned* frame window exactly on each
+component window. Pinned moves bypass the clamp by design, so tiler changes can separate the pair —
+test Itemskin explicitly.
 
 ## Related Documentation
 

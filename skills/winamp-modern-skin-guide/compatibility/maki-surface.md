@@ -1,0 +1,704 @@
+# Winamp Modern (`.wal`) — MAKI surface
+
+Part of [compatibility.md](../compatibility.md). Implemented and unimplemented script methods, the event surface, and dispatch behavior.
+
+## MAKI
+
+**Supported opcodes** — stack push/pop/assignment; equality and ordered comparison; conditional and
+unconditional branches; host/global method calls; local call/return; move; pre/post
+increment/decrement; arithmetic and modulo; bitwise and logical operations; allocation; delete.
+
+**Supported API** — the authoritative list is `signature(for:)` in `WinampModernScriptRuntime.swift`.
+By area:
+
+- **Playback host**: playback state, current time, duration, volume, shuffle/repeat, title/info,
+  spectrum levels, transport (play/pause/stop/prev/next), seek, file-open
+- **GUI mutation**: `setxmlparam`, `resize`, `show`, `hide`, `toggle` (each invalidates the view). An
+  image-valued param (`image`, `bitmap`, `background`, the button/slider state images) is a **load**:
+  an id the skin never registered — the empty string included — leaves the object wearing the artwork
+  it already had, as a failed load does in Winamp. Defix names its background art from a preference it
+  never seeds, so taking those writes literally stripped the wood panel off the player and the frame
+  off every other window. Phase 25
+- **Lookups**: containers, layouts, object descendants, script group, script parameter/token access
+- **System**: viewport/application coordinates; `getMonitorWidth` / `getMonitorHeight` for the whole
+  display containing the player (logical screen points, not Retina backing pixels); runtime/skin identity, integer/string/float
+  conversion (`integerToString`, `stringToInteger`, `floatToString`, `stringToFloat`) and the casts
+  (`Integer`, `Float`, `String`, `Boolean` — a script mixing a float with an int-typed API needs
+  them, which is where a volume handler lives), date helpers, `random(max)` (0…max-1; a
+  non-positive bound answers 0 rather than trapping, because every call site is an animation timer),
+  per-skin `getPublicInt`/`setPublicInt`
+- **`PopupMenu`**: `addCommand(title, id, checked, disabled)`, `addSeparator`, `addSubMenu(child,
+  title)`, `checkCommand`, `popAtMouse`, `popAtXY(x, y)` — shown as a real `NSMenu` through
+  `popupPresenter`, which the main view installs. `popAtMouse` pops at the mouse; `popAtXY` at the
+  given point, in the window-client space `clientToScreenX/Y` answer in (Phase 24). Both block and
+  answer the picked id (0 = cancelled)
+- **Events dispatched to scripts** — see the table below
+- **Timers**: bounded scheduling (see limits)
+- **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
+  `getStartFrame`, `getEndFrame`, `setSpeed`, `setAutoReplay`, `play`/`stop`, `isPlaying` — the play
+  head is a pure function of the
+  time since `play()` (`WasabiAnimation`), so the renderer and the script always agree on the current
+  frame. **The preamble is four calls, not three**: skins write
+  `setStartFrame; setEndFrame; setAutoReplay; setSpeed; play` as one block, so a missing signature
+  anywhere in it abandons the whole handler — `setAutoReplay` was the gap, and it is what stuck Big
+  Bento Modern's play/pause button in *paused* (`skins/big-bento-modern.md` → BB22). `setAutoReplay`
+  writes the same `autoreplay` attribute the markup carries, which decides what a layer does with no
+  explicit `playing` and therefore does not disturb a range `play()` started right after it.
+  **The read halves are how a skin pages a sheet by hand** (B91): a manual or a slideshow asks the
+  layer where its own ends are rather than hard-coding a count, so an *unset* range has to answer the
+  whole sheet — `getStartFrame` 0, `getEndFrame` `getLength() - 1` — and a set one is clamped into it.
+  Hal's Eye caches both in `onScriptLoaded` and clamps its Back/Next buttons against them, so the
+  missing `getEndFrame` signature left the end frame at 0, which is also the current frame: both
+  guards read *already at the end* and both buttons did nothing. 4 corpus skins call it
+- **`Map`**: `loadMap`, `inRegion`, `getValue`, `getWidth`, `getHeight`, `getARGBValue(x, y, channel)`
+  — a bitmap the script samples. `new Map` and `new Timer` are indistinguishable at construction
+  (class GUIDs are not in the archive), so a dynamic object becomes a map on its first `loadMap`.
+  `loadMap` takes **either a declared bitmap id or a VFS path**; ClassicPro's "is the plugin
+  installed?" probe is the path form (`…/engine/image/installed.png`, width 1). The `getARGBValue`
+  channel index is **BGRA** — pinned by `player.maki` building `colorbandpeak="r,g,b"` from channels
+  2, 1, 0
+- **`Region`**: `loadFromMap(map, threshold, reversed)`, `loadFromBitmap(bitmapid)`, `offset(dx, dy)`,
+  and `<object>.setRegion(r)`
+  — plus the short `<object>.setRegionFromMap(map, threshold, reversed)`, which skips the intermediate
+  object. Clips one control to a shape taken from a map's red channel: **reversed** keeps every pixel
+  at or below the threshold (how a skin fills a bar as its value rises), the plain form everything at
+  or above. `offset` moves the shape in map pixels, for skins whose map covers a whole window rather
+  than the control. **`loadFromBitmap` is the same region without the `Map` in front of it**: the
+  shape is the named bitmap's own opaque area, which is `threshold: 0` taken through the existing
+  mask builder — that already drops a zero-alpha pixel, so admitting every value is exactly the
+  silhouette rule and nothing more (B91). It sits mid-initialiser in the four skins that call it, so
+  failing closed on it cost each of them everything the handler had left to do: Hal's Eye's eye never
+  started rotating, and BLAKK's seek bar and boombox spectrum drew unclipped and permanently full.
+  Settled by the same first-call rule as `Map`. `setRegion` with anything that is
+  not a loaded region clears the clip, and a map that cannot be resolved leaves the control
+  **unclipped** rather than clipping it away to nothing. The region does not affect hit testing: T800
+  drags its volume by tracking the mouse across the *whole* strip, most of which the region has
+  clipped away
+- **`XmlDoc`**: `load`, `exists` — **inert**. The callback-driven parser is not implemented, so a
+  document always reports that it does not exist and every caller takes its own skip path. Cost: a
+  skin's optional `ClassicPro.xml` extras (songticker antialiasing, custom beat-vis names) are ignored
+- **Window scaling**: `<layout>.setScale(f)` is answered by **NullPlayer's own UI Size** — the level
+  nearest the requested factor — and by nothing else. A `.wal` scene is always laid out on the skin's
+  pixel grid, with UI Size applied at the view's drawing and input boundaries, so a second
+  layout-local scale would be a rival for the same pixels. `getScale()` therefore still answers **1**
+  whatever size the windows are drawn at: the layout's own scale really is 1, and ClassicPro's resize
+  arithmetic (which multiplies by it) is in skin pixels. On a receiver that is not a layout the call
+  is accepted and inert. Measured demand: Defix's seven configurator buttons (100, 125, 150, 175,
+  200, 250, 300 — the ladder gained 175/250/300 for them), Ebonite's `standardframe.m` and boom's
+  `prefs.m`; all three call it on a layout. **Not** dispatched: `onScale`, the layout event Wasabi
+  raises when a scale changes (Ebonite uses it to keep two layouts in step, which our one global
+  scale already does)
+- **Object validity**: `isInvalid()` is true for a null receiver *and* for an object whose declared
+  bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
+  and asking that layer whether it is invalid
+- **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, on the window's canvas — *not*
+  the space a mouse event's x/y use, which is the receiver's parent; see
+  [reference/scripting.md](../reference/scripting.md) §*Rotary controls*), `getEQ`, `getEqBand`/`setEqBand` and `getEqPreamp`/`setEqPreamp` (MAKI's −127…127 scale ↔ the
+  engine's ±12 dB), `atan`. Both setters **announce the change** (`onEqBandChanged` /
+  `onEqPreampChanged`, Phase 41) exactly as `setVolume` does
+- **`List`**: `addItem`, `enumItem`, `getNumItems`, `removeItem`, `removeAll`, `findItem` (objects
+  match by identity, other values by string form); bounded at 4096 items.
+  **`BitList`**: `setSize`, `getSize`, `setItem`, `getItem` — same backing store, holding flags
+- **`WinampConfig`**: `getGroup(guid)` → `getInt`/`getBool`/`getString`, resolved against the skin's
+  own namespaced configuration, never real Winamp settings. Unset reads 0/""/false, which is also the
+  right answer for the one item ClassicPro asks about (`"frequencies"` = 0, the classic EQ frequencies
+  NullPlayer's `EQConfiguration.classic10` uses). The setters are deliberately absent
+- **Children**: `getNumChildren`, `enumChildren(i)`
+- **`System.getCurrentTrackRating()`** — always 0 (unrated). NullPlayer's playback `Track` carries no
+  user rating (the library's rating is in `MediaLibrary`, which is not on the host adapter), so the
+  ClassicPro ratings widget draws no stars rather than aborting its script
+- **Runtime instantiation**: `System.newGroup(id)` creates a registered groupdef's subtree under the
+  calling script's group, and `<object>.init(parent)` **moves it where the script wants it**. The new
+  subtree's own scripts start on that attachment, not on creation — a script's first act is to look
+  around from its own group, so starting it before `init` gives it the wrong parent. A group that is
+  never `init`'d still starts, once the outermost dispatch unwinds. Phase 24
+- **`System.newGroupAsLayout(id)`** — Winamp gives the groupdef its own borderless floating layout,
+  owned by the layout its `owner="<container>,<layout>"` attribute names. Ours is an **overlay child of
+  that owner layout**, appended last, keeping a `group` type — and the coordinates say that is the
+  right answer rather than a compromise: multipass positions the result with
+  `resize(layout.getLeft() + 54, layout.getTop() + 217, 164, 78)`, our root layout answers 0 for both
+  (window-local), and (54, 217) is exactly where the author's own commented-out `<group x="9" y="62"/>`
+  inside drawer.bottom (45, 155) would have put it — confirmed by `RENDER_CLICK_WATCH`. It must **not**
+  be typed `layout`: `resize` on a layout is a *window* resize. No `owner=` falls back to the calling
+  script's own layout; a caller with no layout above it (a `skin.xml`-level script) answers null.
+  Phase 33 — this one method's absence aborted multipass's entire startup
+- **`ColorMgr.getGammaSet(name)` → `GammaSet.apply()`** — the colour-theme picker. Bound **by class
+  GUID**, the way `PlEdit` is: `ColorMgr` is a second system-flagged global beside `System`, and
+  `apply` is gated to `GammaSet` so a same-named method on another class still gets no arity. A
+  binding job, not a rendering one — `WasabiColorThemeCatalog` already held the sets and
+  `System.setColorTheme` already had the switch route, and `apply()` lands on that same route so the
+  two cannot disagree. An unknown theme name yields the object anyway and `apply()` is inert, because
+  refusing at `getGammaSet` would abort the caller's whole handler. Demand: Big Bento Modern's 77
+  themes ×2 files, **and Ebonite_2_1**, which is why this is not a Bento-only item. BB8
+- **`ColorMgr.getColor(id)` → `Color.getRed/getGreen/getBlue`**, and their `…WithGamma` spellings.
+  The colour is resolved once at creation through `WasabiSceneRenderer.resolvedColor` — references
+  followed, gammagroup and the live colour theme applied — so a widget that paints itself from the
+  skin's palette agrees with the palette.
+
+  **The three `…WithGamma` getters answer the same numbers, and that is the reading rather than a
+  stub (B128, 2026-09-05).** In Winamp the plain getters hand back the colour as declared and the
+  gamma ones hand it back after the active `<gammaset>`; here `getColor` has *already* applied it, so
+  there is no un-gamma'd form left to distinguish. ClassicPro's Web Reader needs all three: every
+  provider URL carrying a `%COLOR:LBG%` token goes through `convert_address.mi`'s `getColorHex()`,
+  which reads red, green and blue and hex-encodes them, so the miss aborted `surfSelected()` one
+  statement before its `navigateUrl` and the reader tab loaded no page at all. The same `getColor`
+  gap is what `WinampModernMainView.usesSkinAuthoredReaderToolbar` records as blocking Big Bento's
+  Refresh button; that half is worth re-measuring now
+- **`GroupList.instantiate(groupdef, count)`** — the *list's* own expansion, the second argument a
+  **count** and not an index (the author of Big Bento Modern says so in his own comment, and the
+  bytecode agrees). A `<GroupList>` is a vertical stack, so each entry is stamped with the two things
+  a groupdef cannot carry: it spans the list's width (`x="0" w="0" relatw="1"` — the entries declare no
+  `w=` and would otherwise be zero-wide, with negative contents) and it sits below the sum of the
+  earlier entries' **declared** heights. Anything that is not a `GroupList` keeps the geometry
+  `newGroup` would have given it. Bounded at 64 per call on top of the shared object budget. This is
+  how a WACUP-era skin ships its options: Big Bento's nine config pages and its SUI equalizer tab are
+  each an empty list plus a scrollbar in XML, and every control on them arrives through this call —
+  which is why all four variants reported `unsupported` while drawing perfectly. BB7
+- **`System.getApplicationPath()`** — where the *player* is installed, as against `getSettingsPath`'s
+  where it keeps its configuration. A string, not a capability: every route onward is already
+  sandboxed (`File.load`/`exists` are a no-op and a constant `false`, `System.navigateUrl` is inert),
+  so a skin probing for Winamp's `/Lang/*.wlz` packs correctly finds nothing and takes its
+  "not installed" branch. The domino behind `instantiate` — with the config pages finally built, the
+  Localization page's own script ran and aborted here. BB7.
+
+  **It answers the VFS root, not the host directory the binary sits in (B128, 2026-09-05).** The host
+  path is the honest answer to "where is the binary" and the wrong answer to every question a skin
+  asks with it: a skin concatenates onto this and hands the result straight back to `XmlDoc.load` or
+  `File.exists`, which resolve **inside** the WAL VFS — where `/Applications/…` can never name
+  anything, whatever is really on disk. ClassicPro's Web Reader is what made it matter: its only
+  route to the provider list it needs is
+  `getApplicationPath() + "\Plugins\ClassicPro\engine\xui\CentroSUI\_v2\Reader\source\_en-us.xml"`,
+  and the engine is mounted at exactly `@WINAMPPATH@\Plugins\classicPro\engine`. Answering
+  `@WINAMPPATH@` (`WalVirtualFileSystem.winampRoot`, `/`) makes that resolve; the doubled separator
+  the caller's own `\` produces is dropped by canonicalization, and the `/Lang` probes still find
+  nothing and still take their "not installed" branch. It widens nothing — the VFS is read-only and
+  a skin can already write `@WINAMPPATH@` in its own markup
+- **`ToggleButton.setActivatedNoCallback(bool)`** — `setActivated` without the `onToggle` it would
+  otherwise send. A skin uses it to follow state it is already reacting to; the plain setter there
+  re-enters its own notification. Phase 33. Note this is the silent write for a state that **did**
+  move — a `setActivated` that changes nothing is already silent on its own (B111, below)
+- **`GuiObject.getClassName()`** — the object's Wasabi class (`layer`, `button`, `togglebutton`,
+  `slider`…). multipass's style switcher walks one list of mixed objects and branches on
+  `strUpper(getClassName())` to decide which artwork attributes to swap. Phase 33
+- **`Container.close()`** — the `hide()` route: a container is a window, anything else stops in the
+  graph. Phase 33
+- **`Container.toggle()`** — `show`/`hide` with the direction read back first. Ujola Cat's Color
+  Themes and cat buttons carry no `action` at all: `getContainer("colorthemes").toggle()` is the whole
+  handler, and a fail-closed refusal took both buttons with it. The direction comes from the **host's
+  window state** (`containerVisibilityQuery`), not from the graph's `visible` attribute, which the
+  host never writes when a window is opened from the Windows menu or closed from its own titlebar —
+  read off the attribute the toggle inverts after the first manual close. `isVisible()` answers from
+  the same place, in **two terms and only two**: the window the object lives in, asked of the host,
+  and then the object's **own** `visible` attribute. Nothing inside a closed window is visible; inside
+  an open one the object's attribute is the whole answer, and the ancestor **groups** between the two
+  are deliberately not consulted. Both halves were learned the hard way — walking the group chain
+  broke cPro-Bento, whose script shows a tab page whose parent group is still hidden, and reading the
+  attribute alone broke Defix, whose `ML` button asks a tab page in a shut window and read its stale
+  `visible="1"` as "already showing, close it" (B22)
+- **`GuiObject.isActive()`** — "does my window have the keyboard?", answered by walking up to the
+  object's **container** and asking the host whether that window is key. The gate a skin puts in front
+  of a key handler: `onKeyDown` reaches every program in the skin whatever window is focused, so
+  winampmodern566's playlist asks it (of its content group *and* of that container's `shade` layout —
+  both resolve to the same window, which is the only thing that can be focused) before acting on
+  `ctrl+w`. With no host to ask — the headless harness — every object reads active, so a probe can
+  still drive a handler that gates on it. Unimplemented before Phase 43, and fail-closed dispatch
+  meant it aborted the whole handler
+- **`System.isAppActive()`** — answered honestly (`NSApp.isActive`; `true` with no application, i.e.
+  the harness), unlike its `isMinimized`/`isKeyDown` neighbours. Skins *gate work* on it: multipass's
+  drawer Focus Mode returns early from its 100 ms timer while the app is inactive, so a hardcoded
+  `false` would have stopped the drawers permanently. Phase 33
+- **`System.strUpper(s)`** — beside `strLower`. Phase 33
+- **Paint order**: `bringToFront` / `bringToBack` — sibling order within the parent. Phase 24
+- **Per-skin string config**: `getPrivateString` / `setPrivateString`, beside the integer pair.
+  Phase 24 — `CproTabs.m` stores its tab order here
+- **Resolved geometry**: `getLeft`/`getTop`/`getWidth`/`getHeight` and `getGuiX/Y/W/H` answer where the
+  object actually **landed**, in its parent's coordinates, supplied by the window that renders its
+  container. The declared attribute is only the fallback for an object the active scene cannot place.
+  Reading the markup instead is wrong for any relative geometry: cPro's tab strip is `w="-4"
+  relatw="1"`, and `getWidth()` = −4 made its script squeeze every tab to its minimum. Phase 24
+- **Window-manager notifications**: `beforeRedock()`, `redock()`, `snapAdjust(x, y, w, h)` — deliberate
+  no-ops (NullPlayer places `.wal` windows itself and has no docking model for them), but they must
+  *exist*: a missing method aborts the whole handler, and this trio is what stopped the stock Winamp
+  Modern skin's CONFIG button from ever opening its equalizer drawer. Their arities were read out of the
+  bytecode with `WINAMP_MODERN_RENDER_DISASM`, not guessed — a wrong argument count desynchronises the
+  interpreter's stack. Phase 24
+- **`debugString(message, level)`** — a skin's own trace output, dropped. Phase 24
+- **`clientToScreenX/Y` and `screenToClientX/Y`** — relative to the receiver's **parent** client area,
+  which is the space `getLeft()`/`getTop()` already answer in. Every measured call site is the idiom
+  `b.clientToScreenX(b.getLeft())` — receiver and coordinate the same object — which only makes sense
+  under that reading: taking it as the receiver's *own* box double-counts, and taking it as pure
+  identity loses the parent chain (that is what put ClassicPro's tab menu at the window's left edge
+  instead of under its tab). "Screen" is the window's client space: a `.wal` window is borderless and
+  positioned by us, so the window origin is a constant that cancels in the round trip every caller
+  makes, and `popAtXY` places its menu in the same window the point came from. The stock skin's
+  titlebar exercises the other shape — `layout.clientToScreenX(…)` out, titlebar **group**
+  `screenToClientX(…)` back, then `− group.getLeft()` — and both objects hang off the layout, so it
+  returns the input and the correction lands. Phase 24
+- **`popAtXY(x, y)`** — a script-built menu at a computed point, in the same coordinates the
+  conversions above answer in. ClassicPro's tab-strip right-click menu and its drawer's "goto" menu.
+  Phase 24
+- **`System.getExtension(path)`** — the extension of a filename, without the dot, from the last path
+  component (Windows separators included). Defix reads it off the playing item for its format readout.
+  Phase 25
+- **`System.getPath(path)` / `System.removePath(path)`** — the directory half and the leaf half of a
+  path, the way `getExtension` is the tail. Pure string work on a string the host already handed out
+  (Windows separators included); neither opens anything or reaches the filesystem. B38
+- **`System.getDecoderName(item)`** — Winamp names the *input plugin* decoding the item; the honest
+  equivalent here is the codec NullPlayer is decoding, from the track's own extension
+  (`WinampModernHost.decoderName`), with "HTTP Stream" for a stream that has none. Skins print it as a
+  *Decoder* readout. B38
+- **`System.getPlayItemMetaDataString(key)`** — one field of the playing item, as a string. The whole
+  key table lives on the **host** (`WinampModernHost.playItemMetadata(forKey:)`), not in the runtime's
+  switch, so the render harness and every test double answer exactly as the live app does. Keys match
+  case-insensitively; an unknown key is `""`. B38, B46
+
+  | Key(s) | Answer |
+  |---|---|
+  | `title` / `artist` / `album` | the playing `Track`'s own tags |
+  | `albumartist` (or `album artist`), `composer`, `comment`, `year`, `track`/`tracknumber`, `disc`/`discnumber`, `bpm` | the **library row** for the playing file — a `Track` does not carry these |
+  | `genre` | the library row, falling back to the `Track` (which does carry it, for server sources) |
+  | `filename` / `filepath` | `trackPath`. Display only: nothing in the seam opens a path a script hands back, and the panels immediately split it with `getPath`/`getExtension` |
+  | `format` / `decoder` | `decoderName` — **deliberately the same string**, see below |
+  | `length` | whole **seconds** |
+  | `bitrate`, `srate`/`samplerate` | numbers; `0` is reported as `""` |
+  | `stereo` | the flag `"1"`/`"0"`, not a channel count; `""` when unknown |
+  | `timeelapsed` / `timeremaining` | formatted `m:ss` (`h:mm:ss` past an hour) |
+  | `rating` | **stars, 0–5** — the same field as `getCurrentTrackRating()` |
+  | `streamname` / `streamurl` / `streamtitle` / `streamgenre` | the current radio station, for a radio track only |
+  | `publisher`, `vbr`, `streamtype` | `""`, permanently — see the rule below |
+
+  **`""` is the answer for anything unknown, and it is load-bearing**: a file-info panel reads an
+  empty field as "this track has no such tag" and hides that line, which is what Winamp does too.
+  Never substitute a placeholder to fill a line. The corollary bit a whole release: a line that is
+  ticked in a skin's own components menu and still absent is a *missing key*, not a broken toggle.
+
+  **The units are measured, not guessed**, and a guess gets them wrong. Every corpus caller of
+  `length` wraps it in `integerToTime(stringToInteger(l))`, which pins it to `integerToTime`'s own
+  unit — **milliseconds**, see *Time is milliseconds* below (B64); `stereo` and `vbr` are
+  compared against the literal `"1"`, which makes them flags; `timeelapsed`/`timeremaining` go
+  straight into `setText`, which makes them pre-formatted. Read the call site before adding a key.
+
+  **`format` and `decoder` answer the same string on purpose.** Winamp shows a decoder ("Nullsoft
+  MPEG Audio Decoder") and a format ("MPEG-1 Layer 3") that describe one thing; deriving a second
+  string here from the path extension would let two lines of the same panel disagree.
+
+  **A streaming track answers from the `Track`, not from nothing.** Plex/Jellyfin/Emby/Subsonic
+  tracks have no library row, so they fill title/artist/album/genre plus the shared
+  `bitrate`/`srate`/`stereo`/`length`/`format` and leave the library-only tags empty. Radio adds the
+  four `stream*` fields from `RadioManager.currentStation`; `streamtitle` is the ICY now-playing line
+  and is read **live**, never cached with the row, because it changes within one track.
+
+  **`publisher`, `vbr` and `streamtype` are listed as explicit empty cases rather than left to the
+  default**, so that "empty" stays visibly a decision. Nothing in NullPlayer stores a publisher tag,
+  and the engine never learns whether a file is VBR or what flavour of shoutcast a stream is.
+
+- **`System.getCurrentTrackRating()` / `setCurrentTrackRating(stars)` / `onCurrentTrackRated(stars)`**
+  — the playing track's rating in **stars, 0–5**, which is Winamp's unit. B46
+
+  The scale is the thing to get right: NullPlayer's internal rating is **0–10** (a star is two
+  points) and every backend keeps its own — Plex 0–10, Subsonic 0–5, Jellyfin and Emby 0–100, the
+  local library 0–10. All of that conversion belongs to **`TrackRatingService`**, which the Library
+  Browser's ART-mode star row and this seam both go through; do not convert at a call site, or the
+  two surfaces will disagree about what three stars means.
+
+  Reading is asynchronous for every source but a local file. The host answers the local rating
+  immediately (0 for a server track), fires one fetch per track, and announces the late answer
+  through `onCurrentTrackRated` — which is why the event has to be dispatchable and why a star row
+  lights up a moment after a Plex track starts. A write caches optimistically before the round trip,
+  so the widget that was just clicked reads back its own value instead of snapping to the old one.
+
+  Before B46 `getCurrentTrackRating` was hard-coded to 0 and `setCurrentTrackRating` **was not in the
+  method table at all** — a star click threw `unsupported`, which aborts the rest of that handler.
+  A missing setter is not a dead button; it is a dead handler.
+- **`<object>.setText(s)`** — a **non-empty** value outranks the object's `display=` binding, and
+  `setText("")` hands it back. Winamp has no precedence here at all (there the binding *writes* the
+  text), so this rule is what stands in for that; the full order and why an override never expires are
+  in [reference/scripting.md](../reference/scripting.md) → *What a text object shows*. B39
+- **`System.getIdealVideoWidth()` / `getIdealVideoHeight()`** — **0**, for the same reason
+  `hasVideoSupport` is false, and also what Winamp answers for an audio track. B38
+- **`System.hasVideoSupport()`** — **false**. A `.wal` video holder gets the neutral backing every
+  unhosted component kind gets, so a skin that asks is told the truth and lays itself out without a
+  video tab. Phase 25
+- **`System.newDynamicContainer(id)`** — **implemented, per calling program** (B110, 2026-09-03).
+  Winamp builds a fresh instance of a declared container so a skin can have several of the same window
+  at once. Here the **first program** to ask for an id is answered with the declared container, exactly
+  as every caller was before; a **second program** asking for the same id gets a live copy of its own —
+  a real root in the graph, with its own `stableID`, its own window, and a distinct container id
+  (`sc.alphaframe#2`) so everything that addresses a window by id still finds one window. The same
+  program asking twice gets back the copy it already holds, which is what keeps a skin that closes and
+  re-opens its frame on every hide from leaking a window per toggle. A container the skin declared
+  `dynamic="0"` is never copied. `getContainer(id)` is unchanged and always names the declared one.
+
+  The copy is built from the container's own **XML**, not cloned from the graph, so it goes through the
+  same groupdef expansion and script binding the declared one did; its opening layout is realized (or
+  `getLayout` answers NULL for it, and the caller's next statement is always
+  `frame_cont.getLayout(…)`). Copies are excluded from the window arrangement, from snap/dock targets,
+  from the window menu and from visibility persistence: where a copy goes is the script's business, and
+  Ebonite's is parked on its client's exact rect. Cap: 12 live copies per declared id.
+
+  Measured reach after the change (2026-09-03 corpus sweep, 70 archives): **8 skins** build at least one
+  copy — Ebonite (4), cPro2 Dark Aluminum (2, `searchresults`), Defix Hi-END 200 (2, `browserpro`), the
+  four Big Bento Modern variants and WMP11-BlueVU (1 each, `searchresults`).
+- **`<container>.isDynamic()`** — **implemented** (B110): `dynamic="1"` on the declaration. Ebonite's
+  standard frame branches on it — `if (!comp_layout.getContainer().isDynamic()) system.onScriptLoaded();`
+  — and an unimplemented method aborts the whole handler, so until this answered its
+  `onSetVisible` died two statements before `frame_layout.show()`.
+- **`System.onScriptLoaded()` called as a method** — **dispatchable** (B110), and **scoped to the
+  calling program**. It means "run my own startup body again", which is how a frame closed on hide is
+  rebuilt on the next show. Broadcast like the other system events it would re-initialise every program
+  in the archive — 44 of them in Ebonite — on every re-show.
+- **`onUserResize(x, y, w, h)`** — **dispatchable** (B110), fired only for a resize the user is actually
+  dragging (`NSWindow.inLiveResize`). Distinct from `onResize`, which fires on any box change: a
+  standard frame answers `onUserResize` by resizing the window it is glued to, so firing it on a
+  programmatic resize would have the two windows resizing each other.
+- **`<object>.setFontSize(px)`** — writes the same pixel height the XML attribute carries. Phase 25
+- **Layer FX** (`fx_setEnabled/Wrap/Rect/BgFx/Clear/Realtime/Localized/Bilinear/AlphaMode/Speed`,
+  `fx_setGridSize(w, h)`, `fx_update`, `fx_restart`, and the `fx_get*` readbacks) — **implemented**,
+  Phase 28. A skin's rotating parts are not sprite strips: an analog VU needle or a spinning cassette
+  reel is one still image warped through the skin's own callbacks, so before this they were silently
+  **frozen** (nothing failed, and the compatibility report stayed clean while most of a skin's meters
+  stood still).
+
+  How it works here: the layer is covered by a grid of `fx_setGridSize` **cells**; the skin's callback
+  is evaluated once per grid **vertex** per frame into a source-coordinate mesh, and every destination
+  pixel takes its source from the bilinear interpolation of the four vertices around it. A rotation is
+  affine in x/y, so even a 1×1 grid (Defix's cassette reels) reproduces one exactly.
+  `WasabiLayerFX.swift` owns the model and the resampler; `WinampModernScriptRuntime.layerFXMesh`
+  evaluates; `WasabiSceneRenderer.layerFXProvider` draws.
+
+  **`fx_onGetPixelR` answers with the source *angle* and `fx_onGetPixelD` with the source *distance*
+  (R for rotation, D for distance)** — the opposite of how the parameter names in `std.mi` read.
+  Measured from Defix's needle and cassette scripts, which return `argument0 + rotation` where the
+  rotation is degrees ÷ 57.295 (= 180/π); a radius answer would slide a needle along its own length
+  instead of sweeping it. Coordinates are normalized 0…1, top-left origin, centre (0.5, 0.5), angle
+  growing clockwise.
+
+  Not implemented, and not yet asked for by anything measured: `fx_onGetPixelA` (per-vertex alpha),
+  `fx_setBgFx(1)` (warping the backdrop rather than the layer's own image), and `fx_setSpeed` as a
+  host-driven animation clock — the skins in the corpus drive their own timers and call `fx_update()`.
+
+  A warp is a CPU resample on the paint path, so it is bounded: vertices per layer and warped surface
+  size both have ceilings, and the mesh is cached until `fx_update()` unless `fx_setRealtime(1)`. The
+  warped raster is cached with the mesh that produced it, so a repaint the skin did not ask for (a
+  neighbouring object moving, AppKit widening a partial invalidation) does not re-run the pixel loop
+  for a warp that has not moved a vertex. Phase 29.
+
+  **The mesh is evaluated off the paint path.** Running the skin's callbacks per vertex through the
+  interpreter is main-thread work — MAKI is single-threaded and the graph is not thread-safe — but it
+  does not have to happen *inside* `NSView.draw`. The window's 30 Hz clock calls
+  `refreshLayerFXMeshes()` first and invalidates second, so the frame AppKit is composing is never
+  the one waiting for the VM. Phase 29.
+- **MAKI's math library** — `sqrt`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`,
+  `log`, `log10`, `exp`, `abs`, all `System` methods. Phase 28. Domain errors answer 0 rather than a
+  NaN that would travel into a coordinate. Missing `sqrt` alone kept Defix's needles frozen *after*
+  Layer FX worked: its `onTimer` aborted on the first call, every tick, and the abort is invisible
+  unless you look at `WINAMP_MODERN_RENDER_SCRIPTS=1`'s `failed=` column
+- **`onSetVisible` when a window is shown** — Phase 28. A `.wal` skin starts and stops its animation
+  from this handler (Defix's cassette reels switch their Layer FX on there; its speaker cabinets start
+  their `getVisBand` timer there), and showing a native window with `orderFront` never touches the
+  Wasabi graph. Every visible object in the container's subtree is told, once per actual change
+  (`notifyContainerVisibility(containerID:visible:)`)
+- **`System.getPlaylistLength()`** — the number of tracks in the queue, answered from the same
+  snapshot `PE_Info` is built from so a skin showing both cannot disagree with itself. Phase 30
+- **`onTextChanged(newtext)` on host-bound text** — raised when the content of a `display=`-bound
+  text, a songticker, or the playlist status line **changes**, including the first time it becomes
+  non-empty. Literals never raise it. This is the only signal some skins take that a host readout is
+  worth re-reading: Defix writes its playlist `Items:`/`Time:` from a subroutine whose sole caller is
+  this handler. Polled from the window controller's host-state hooks plus a 1 Hz beat. Phase 30
+- **`<browser>.navigateUrl(url)`** — navigates only the addressed embedded browser through the host's
+  scheme policy. A call on a non-browser GUI object is quietly inert. **A scheme-less address is
+  repaired to HTTPS** rather than looked for in the WAL VFS (B40): Winamp readers write
+  `www.google.com/search?q=…` with no scheme, and treating that as a skin-local path is what made a
+  lyrics search come back as *"The skin-local page could not be found"*.
+- **`System.navigateUrl(url)`** — the **user's default browser**, behind a first-use confirmation
+  sheet remembered per skin (B40). Not a synonym for the next row: in Winamp this method *is* "hand
+  this to the user's browser", which is the branch a skin takes when its own setting says so.
+- **`System.navigateUrlBrowser(url)`** — the player's own browser: the scene's `<browser>`, a visible
+  one preferred over one in a closed tab, and the external route as a last resort for a skin that
+  ships none. Both global forms go through `WinampModernWebNavigationPolicy` (HTTP/HTTPS, real host).
+- **`System.setClipboardText(text)`** — writes the string to the system pasteboard as **plain text
+  only**, after `clearContents()`, bounded to 64 KB. There is deliberately no read: Winamp declares
+  no matching getter, and a skin that could read the pasteboard would be reading what the user last
+  copied in another application. The corpus callers are copy commands on a skin's own right-click
+  menus (Defix's playlist, the ClassicPro engine's file-info, shade-info and album-art menus), and
+  they sit *inside* the handler that builds the rest of the menu — so while it was missing, the
+  fail-closed dispatch took those menus' other entries down with the copy (BB13).
+- **`System.urlEncode(term)`** — RFC 3986 unreserved set, everything else escaped; stricter than
+  `.urlQueryAllowed` because the argument is one term being pasted into a query the skin assembles.
+  It sits *inside* the expression that builds a URL, so while it was missing the whole handler
+  aborted and the buttons that called it did nothing at all — one layer before navigation.
+- **`System.getVisBand(channel, band)`** — one spectrum band as a vis byte (0…255), the unit
+  `getLeftVUMeter`/`getRightVUMeter` already answer in and the one meter artwork is cut for. `std.mi`
+  documents the band range as **0…75**, so a request is resampled into whatever band count the host's
+  analyser produces (75 today) rather than indexed straight into it. The source is the one spectrum
+  tap every other visualization window consumes (`AudioEngine` → `updateSpectrum` →
+  `host.spectrumLevels`); it is **mono**, so both channels answer the same value.
+
+  **This is deliberately not where the drawn analyzer reads any more.** B73 moved
+  `<vis mode="1">` and the `{0000000A}` holder onto NullPlayer's own FFT
+  (`WinampModernAnalyzerTap`, `reference/rendering/vis.md`), because `spectrumLevels` is a saturating
+  *display* array. `getVisBand` stays here on purpose — it is a script-facing contract answering in
+  Winamp's vis byte, and a skin's scripted meters agreeing with each other matters more than their
+  agreeing with the bars. So the two *can* now disagree about the same audio, which is the trade B73
+  accepted knowingly. Phase 27. **On a decibel scale since Phase 30**: the tap's
+  linear magnitude scaled by 255 put ordinary music at the very bottom of the range (measured on
+  Defix: mean 4, max 39 out of 255, its 25-frame cone on frame 0 for 96.5% of a track), so the
+  magnitude is mapped through `20·log10` over a 60 dB window. Same material after: mean 139, max 232
+- **`System.getLeftVUMeter()` / `getRightVUMeter()`** — program level per channel as a vis byte
+  (0…255), measured by `WinampModernLevelMeter` as **linear peak amplitude, unsmoothed**, off the
+  main thread. **Not the spectrum**, and not a perceptual value: the skin owns the curve and the
+  ballistics. Defix maps the byte through `73.813 · x^¼ − 100`, clamps at 0, and applies its own
+  attack and decay before it turns a needle, so the host's only job is to hand over the same
+  excursion Winamp does. Phase 27.5 → 28 → 29, and each step was a different way of getting the
+  *scale* wrong:
+  - Reading a peak band out of the bar-display tap (before 27.5) was wrong twice over — that tap is
+    mono, so both needles moved together, and its bands are already normalised so bars fill their
+    window, so ×255 sat at the ceiling and **every needle in every skin pinned**.
+  - Routing it through `PeppyMeterLevelModel` (27.5) wore PeppyMeter's calibration: dBFS over a
+    −42 dB floor with VU ballistics, i.e. the same signal compressed and smoothed twice before the
+    skin's own curve saw it. The two surfaces want different measurements of one tap, so the `.wal`
+    meter now owns its own (Phase 28).
+  - **RMS** (28) is an energy average, and Winamp's byte is an excursion. Music that peaks at full
+    scale measures 0.05–0.15 RMS; against Defix's own artwork that is the bottom sixth of the sweep
+    (0.1 → 34%, 0.3 → 60%, measured with `WINAMP_MODERN_RENDER_VU`), and a mean-square over a whole
+    buffer averages away exactly the transients a VU is watched for. **Peak** (29) puts loud material
+    at 0.5–1.0, which is the swing the artwork is cut for.
+  - **Peak over a whole tap buffer** (29) is nearly a *constant* on dense music — the buffer is
+    50–100 ms and something in it is always loud — so the needle then sat high and still. Winamp
+    measures a 576-sample vis block (~13 ms at 44.1 kHz), and that is where the dynamics are. Each
+    arriving buffer is split into blocks of that length and **played out one at a time as real time
+    passes** (29.5), so a skin polling every 17 ms sees successive blocks rather than the same number
+    five times over. It costs one buffer of latency, which is what a VU looks like anyway. The
+    cadence is taken from the interval between arrivals, because the buffer carries no duration of
+    its own and the decimated and streaming paths post different lengths.
+  - **Nothing ever said "silence"** (29.5). The tap simply stops posting when playback stops, pauses,
+    ends, or moves to a cast device, so the last value stuck and the needles hung wherever the music
+    left them. Running off the end of the played-out blocks *is* the silence signal: the last block
+    is held for 150 ms to ride out jitter between buffers, and after that the meter reads 0.
+
+  `WINAMP_MODERN_VU_LOG=1` prints the buffer's peak and RMS, the block spread within it, and the byte
+  the skin receives — the difference between the last two entries above is visible as `peak` (one
+  number for the buffer) against `blockRange` (the spread across it).
+
+  The tap is the shared stereo PCM notification, received with `queue: nil` and measured on the
+  posting thread; the main thread only reads the played-out block. Registering with `queue: .main`
+  delivers *synchronously* and blocks the real-time audio tap — see `PeppyMeterLevelModel`.
+- **`<AlbumArt>.isLoading()`** — whether the current track's cover is still being fetched, from
+  `NowPlayingManager`'s real in-flight state; false for a track that already has its cover, for a
+  cached miss, with nothing playing, and for any receiver that is not an `<AlbumArt>`. Skins poll it
+  from a timer (Defix's playlist window aborted its `ontimer` on the miss every single tick), so a
+  stub answering "yes" would be a spinner that never stops. Phase 27
+- **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
+
+**Events dispatched to scripts.** Occurrence counts are call sites across the ClassicPro engine's
+`.m` sources, which is the largest measured script corpus.
+
+| Event | Dispatched | From / why not |
+|---|---|---|
+| `onScriptLoaded` | yes | at `start()`, and per subtree when a runtime group is attached. Object-owned scripts first, then the XUI params, then a skin-level `<scripts>` block — which sits at the end of `skin.xml` and may assume the rest of the skin is configured (Defix's lays out its whole SUI tab strip from the tab labels' `getAutoWidth()`) |
+| `onScriptUnloading` | yes (Phase 24) | first thing in `teardown()`, while timers and the graph are still alive |
+| `onSetXuiParam` | yes | after `onScriptLoaded`, to the owning XUI instance's own programs only |
+| `onMove` | yes (B69) | the **window** moved on the desktop, by any route (drag, `place`, the tiler, state restoration). Arity 0, addressed at the `<container>` and its active layout only — a move changes nothing inside the scene, so unlike `onResize` the rest of the graph is not told. 6 skins bind it: Ebonite, Itemskin, Defix, both Big Bentos, winampmodern566 |
+| `onResize` | yes (Phase 24) | a canvas change, a layout activation, a divider drag, **and whenever a script's own mutation moves something** (it settles once as the outermost event unwinds); plus one seeding pass after `start()`. Only objects whose own box moved, each with its own parent-relative `(x, y, w, h)`. **Not** from a UI Size change, which moves only the drawing boundary |
+| `onPlay` / `onStop` / `onPause` / `onResume` | yes (pause/resume Phase 24) | an explicit transition table: stopped→playing sends `onPlay`, paused→playing `onResume`, playing→paused `onPause`. Never both `onPlay` and `onResume` for one resume |
+| `onTitleChange` | yes (Phase 24) | per track, not per redraw — scripts reset per-track state from it |
+| `onSetVisible` | yes (Phase 24) | from `show`/`hide`, on the object whose visibility actually changed. A `hide()` that would leave a layout with no visible control for a positional host action is undone when the event settles, and the restore dispatches `onSetVisible(1)` — see `reference/scripting.md` → *A layout must not be left with no way to seek* |
+| `scrollToPercent` | yes | a viewport offset on the container's children, `0` = top; travel is whatever the children overflow by. See `reference/scripting.md` → *Scrolling* |
+| `getPosition` / `setPosition` | yes | on an `embed_xui` wrapper they address the **embedded control**, and `setPosition` clamps to a declared `low…high` — see `reference/scripting.md` → *`embed_xui`* |
+| `onTimer` | yes | from the timer's own tick, **and as a method** — `Timer.onTimer()` is "run the body now". The dynamic-object receiver was added 2026-08-24; the GUI and `System` receivers already had it |
+| `onLeftButtonDblClk` | yes (Phase 24) | `mouseDown` with `clickCount == 2` |
+| `onMouseWheelUp` / `onMouseWheelDown` | yes | **two** arguments, dispatched at the **layout** — see `reference/scripting.md` → *The mouse wheel is a layout event*. NullPlayer's own colour-theme list and playlist holder take the wheel first |
+| mouse down/up/click/move, `onEnterArea`/`onLeaveArea`, `onRightButtonUp` | yes | with the click's x/y |
+| `onVolumeChanged` | yes | `setVolume`, and any change made outside the skin |
+| `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |
+| `onToggle` | yes | from `setActivated` **when the activation actually changes** (B111) **and, since Phase 33, from a user click**: a togglebutton flips its own `activated` and then notifies, as in Wasabi. Until then the only sender was a script talking to itself, so a togglebutton a person clicked was inert however completely the skin implemented it — multipass's bottom drawer opens from this event and from nothing else. `setActivatedNoCallback` is the deliberate silent write **for a state that moved**; an unchanged `setActivated` sends nothing at all, and that is what lets a skin call it from inside the very event its own handler answers. Dispatching it unconditionally is how Itemskin came up silent — see *A write that changes nothing is not an event* below. A `cfgattrib`-bound control is excluded: the stored preference *is* its state, and it has `onDataChanged` as its route |
+| `onActivate(activated)` | yes (B32) | the **indicator's** event, not `onToggle`'s twin: raised whenever a button's activation changes, whoever changed it — and **only** when it changes (B111). Sent from `toggleActivation`, `setActivated` (never `setActivatedNoCallback`), a `cfgattrib` write — and, unlike `onToggle`, a bound control is **not** excluded, because for it the stored preference *is* the activation. A `cfgattrib` write reaches every object bound to that attribute, since a skin declares the same switch once per layout. It had no sender at all before, so no skin could show a toggle's state: mmd3 gives Crossfade/Shuffle/Repeat identical `image` and `activeImage` and does the whole indication with six `ghost="1"` layers at `activated * 255`. 8 of the 30 skins installed when this was measured declare a handler. A change made **outside** the skin (NullPlayer's Playback menu, a restored session) arrives through `refreshBridgedConfigState()` on `.audioPlaybackOptionsChanged` — an indicator is written once and never polled |
+| `onDataChanged` | yes | from every write through `setConfigAttribute`, to every object bound to that attribute in creation order — **and as a method** (`attribute.onDataChanged()`), which is how a skin applies its stored settings at load. The method receiver was added 2026-08-26 (BB32); until then the call was inert and a skin's whole settings pass was skipped at launch. See `reference/scripting.md` → *An event handler is also a method* |
+| `onSeek(newpos)` | callable, never sent (B64) | Winamp raises it on a seek; nothing here does, because the one corpus handler does not need it. It is in `dispatchableEventArity` so a skin can **call** it, which is how Anexa fills both its progress bars — a 99 ms timer whose whole body is `System.onSeek(getPosition())`. `newpos` is milliseconds, like `getPosition` |
+| `onKeyDown(key)` | yes (Phase 43) | a **System** event carrying Winamp's own accelerator **string** — `"alt+g"`, `"ctrl+w"`, `"esc"` — not a virtual keycode, and **lowercase**: two of the three handlers compare without normalising first. Reaches every program whatever window is focused, as in Winamp, which is why a skin that means one window gates on `isActive()`. macOS modifiers map literally (Control→`ctrl`, Option→`alt`, Shift→`shift`, in that order); **Command is not folded onto `ctrl`**, so a ⌘ event is no accelerator at all and the app's menu equivalents keep working. A handler that reaches MAKI's `complete;` consumes the key; anything else falls back to the responder chain. Three of the 17 skins bind one: multipass and winampmodern566 toggle their EQ drawer on `alt+g`, winampmodern566 also shades its playlist on `ctrl+w` and its album-art window on `alt+a`, Defix closes its playlist search line on `esc`. Rika and T800 ship Winamp's stock `playlisteditor.maki`, whose `onKeyDown(Int vkcode)` is the **edit control's** — a GUI receiver and an integer, a different event — and neither loads that program. Drive it with `WINAMP_MODERN_RENDER_KEY` (harness) or `WINAMP_MODERN_DEBUG_KEY` (the app) |
+| `onEqBandChanged(band, value)` / `onEqPreampChanged(value)` | yes (Phase 41) | whoever moved the equalizer: the skin's own slider, `System.setEqBand`/`setEqPreamp`, a preset, `EQ_AUTO`, the menu bar, the classic equalizer window, a restored session. One funnel (`refreshEqualizerState()`), dispatching only what changed, driven from every playback-state hook and a 1 Hz safety poll; the first observation announces, so a readout written only from this handler learns its opening value. `band` is 0-based (the XML `param=` is 1-based); `value` is MAKI's −127…127, the scale `getEqBand` answers in — Rika slices a region map at `128 - value`. Every `EQ_BAND`/`EQ_PREAMP` slider's position is synced **before** the events go out, because multipass's eleven `ledfillbar` bars ignore both arguments and re-read their `parentslider` |
+| `onDock` / `onUndock` (3 / 3) | **no** | no docked-state model for `.wal` windows |
+| `onShowLayout` / `onHideLayout` (2 / 2) | **no** | shade↔normal transitions |
+| `onMouseWheelUp` / `Down` (2 / 2) | **no** | the wheel is consumed by the embedded playlist |
+| `onCreateLayout`, `onNotify`, `onOpenUrl` (1–2 each) | **no** | minor. `onTextChanged` *is* dispatched — see the bullet above this table |
+
+### A write that changes nothing is not an event
+
+`setActivated`, and every setter shaped like it, notifies only when the value **actually moves**. An
+unchanged write is silent, and that silence is load-bearing: it is what lets a skin call the setter
+from inside the very event its own handler answers, without arming itself.
+
+Itemskin is the measured case (B111, 2026-09-04) and the reason this is written down. Its
+`onVolumeChanged` deactivates the mute and ATT buttons on every volume change —
+
+```
+onVolumeChanged(v) { if (!muted) { att.setActivated(0); mute.setActivated(0); } muted = 0; }
+mute.onToggle(on)  { if (on) { savedVolume = getVolume(); setVolume(0); } else setVolume(savedVolume); }
+```
+
+— and both buttons are *already* off, so in Winamp those two calls do nothing at all. Dispatching
+them unconditionally ran each `onToggle`'s **false** branch, which answers with
+`setVolume(savedVolume)` — a variable that stays `0` until a real mute fills it in. `setVolume` then
+re-raised `onVolumeChanged`, so the skin zeroed the host volume at load, the slider could not lift it
+(every drag re-entered the same loop), and the zero was persisted into the next launch. The app came
+up **silent on that skin and no other**: it is the only archive in the corpus that binds `onToggle`
+to the volume, which is why one wrong dispatch rule read as one broken skin.
+
+Two things generalise from it:
+
+- **The corpus does not sample this rule evenly.** Nothing else in the 70 skins then installed hangs an audible side
+  effect off `onToggle`, so a full render sweep is green either way. The failure is only reachable
+  through the *app*, with sound.
+- **The symptom was two removes from the cause.** "Audio does not work" is not a scripting report,
+  and the mute never appears in the skin's markup — `<Togglebutton id="volume.mute" />` is declared
+  with no image, no action and no coordinates, a 0×0 object a user can never click.
+  `WINAMP_MODERN_CALL_TRACE=1` named it in one line (`setvolume(0)` with nobody asking) where the
+  markup and the disassembly both read as innocent.
+
+**Script events callable as methods.** A script may invoke one of its own handlers directly to reuse
+it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —
+see `dispatchableEventArity` — because the stack cannot be unwound without one. This works for
+**system** events too (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
+
+**Time is milliseconds**, throughout: `System.getPosition()`, `System.getPlayItemLength()`,
+`System.seekTo()`, `System.onSeek`'s argument, `System.integerToTime()`'s argument, and the `length`
+key of `getPlayItemMetaDataString` / `PE_Info.getMetaData`. They move as one family — a skin reads two
+of them into the same expression, so splitting the unit makes a skin disagree with itself.
+
+Most of the corpus only ever divides two of them into a ratio and cannot tell seconds from
+milliseconds, so the unit has to be read off the skins that do **absolute** arithmetic. Two
+independent ones say milliseconds: Styx's notifier formats the length by hand from
+`getPlayItemLength()/1000`, and Anexa scales its progress bar with `int devby = len/255;
+setRegionFromMap(map, pos/devby, 1)` — which in seconds narrows to `devby == 0` for every track under
+4:15, takes the script's own `if (devby <= 0) return;` and draws nothing (B64).
+
+**Arithmetic.** `+`, `−`, `*` keep an Int result an Int; **`/` is always real division**, and the
+narrowing happens on the **store** into a declared variable (opcodes 48 and 3), which is where MAKI's
+own type system puts it. This is not a detail: every skin writes percentages as `value / 255 * 100`
+over two Ints — multipass's seek readout and its `seekTo(length * (pos / 255))`, ClassicPro's
+`integerToString(newvol / 255 * 100) + "%"` — and read as integer division *every one of them is
+zero*. The symptoms were a seek bar that always sought to 0:00 and a cPro-Bento that reported
+`Volume: 0%` at every level. Phase 33.
+
+**Robustness rules** (each earned from a real skin, and each keeping one skin defect from taking down
+a whole script):
+
+- A method call on a **null object** is a no-op returning null, as in Winamp — not an abort. MMD3
+  checks menu commands from a function that also runs before the menu exists.
+- A **member** on a null object reads as its declared type's default and writes nowhere, for the same
+  reason. ClassicPro's tab strip opens every click with `closeTab(lastActiveT)`, and on the first click
+  `lastActiveT` is NULL while `closeTab` reads `.ID` off it — throwing there meant no tab could ever be
+  activated. A member on a non-null non-object still fails closed: the compiler cannot emit one, so it
+  means the stack is not what the instruction thinks it is. Phase 24
+- `sendAction(action, param, x, y, p1, p2)` is delivered to the addressed object as
+  `onAction(…, source)` **as well as** to the host's action handler. It is the channel the standard
+  library's own `sendMessage`/`onMessage` pair rides on, so without it every internal script-to-script
+  message in a skin was silently dropped. Phase 24
+- `setPosition` fires `onSetPosition` **only on a change**. Skins pair two sliders that write each
+  other's position from that handler. A **user drag** goes through the same rule (Phase 37): the view
+  writes the dragged slider's 0…255 `value=` and dispatches `onSetPosition` with it, so a skin whose
+  only feedback is that handler — multipass prints "Balance: Left +40%" on its song ticker from it —
+  works under the mouse and not only under a script.
+- `getPosition()` on a **host-bound** slider answers the host, not the object's `value=` (B129). The
+  renderer has always drawn the thumb from `host.volume`, the playback clock, the balance or the EQ
+  snapshot; the script side read an attribute that nothing writes until the user drags *that* slider,
+  so a skin sizing its own artwork from the position it reads back got 0 at load and after every
+  change made anywhere else. ClassicPro's `sc_sliderbar.m` runs cPro2's volume fill *and* its hover
+  glow off `max*mySlider.getPosition()/255`, and with 0 for the position both layers were the right
+  artwork zero pixels wide. Answered in the slider's own `low…high`, the same unit `onSetPosition`
+  carries; a slider with no action, or one bound to a `cfgattrib`, is unchanged.
+- `onSetFinalPosition(pos)` is dispatched when a slider drag **ends**, once, after the last
+  `onSetPosition` and wherever the pointer was released — the drag belongs to the object that was
+  pressed (B129). A skin can hang real cleanup off it: cPro2's seek bar draws a "finder" overlay that
+  follows the pointer from `onSetPosition` and clears it *only* there, so while this went undispatched
+  the overlay stayed standing at the width of the last seek — the bar came out in two colours, the
+  seeked-to stretch in the darker `down` artwork and the rest filling normally behind it.
+- Event dispatch is **re-entrancy guarded** per (object, event): the interpreter's own call-depth
+  budget cannot see native recursion through dispatch, and an unguarded pair overflowed the stack.
+
+**Not supported**
+
+- Any method not in `signature(for:)` — fails closed with `.unsupportedScriptCapability` and is
+  recorded in the compatibility report's `unsupportedMethods` bucket
+- Unsupported opcodes fail closed; they never become silent no-ops
+- **Region set operations** — `Region.add`, `sub`, `stretch`, `copy` and the `getBoundingBox*`
+  readers. No measured skin calls them; a region is built from one map or bitmap and used.
+  (`loadFromBitmap` was in this list until B91, on the same "no measured skin calls it" reasoning —
+  four of them do. The list is only as good as the last grep behind it.)
+  `WindowHolder.setRegionFromMap` and `MouseRedir.setRegion` share the region model but not the
+  window-shaping half: a region on a container does not reshape the window
+
+**Never guess an arity.** The bytecode does not encode a call's argument count, so a wrong `signature`
+desynchronises the interpreter's stack — silently, and long after the call. `WINAMP_MODERN_RENDER_DISASM`
+reads it out instead: the compiler emits the receiver, then one push per argument, then the call, so the
+*net* stack effect between receiver and call is the count (mind the binary operators — opcode 64 is `+`,
+which pops two and pushes one). That is how `beforeRedock()` and `snapAdjust(x, y, w, h)` were settled.
+
+**Failure granularity.** A method miss aborts *that script event only*; the remaining scripts still
+run and the skin loads degraded, with every failure collected into the compatibility report. It
+cannot degrade any finer than the event: the bytecode does not encode a call's argument count, so
+without a signature the interpreter cannot unwind the stack and must abandon the event rather than
+guess. This is why each needed method has to be implemented rather than stubbed.
+
+**Measured demand — cPro-Bento startup.** As of 2026-08-17 (Phase 24): **none.** The target reports
+zero error-severity findings and zero unsupported methods at startup, at compatibility level
+`degraded`.
+
+**Measured demand — cPro-Bento once its scripts are actually driven** (Phase 24, after `onResize`,
+`onTitleChange`, `onPlay` and a tab click). Counts are call sites in the ClassicPro main-window script
+set; the whole engine's totals are larger. **Recorded, not implemented** — each would need a host seam
+of its own and none is behind a reported symptom. `popAtXY` and `clientToScreen*` were on this list and
+came off it in Phase 24; the tab strip's right-click menu (`Show Status Bar` / `Auto Close Tab`) now
+opens under its tab, measured with `RENDER_CLICK`, which prints the point the menu is placed at:
+
+| Method | Sites | What it costs |
+|---|---|---|
+| `parser_addCallback` / `parser_start` / `parser_destroy` | 5 / 4 / 4 | `XmlDoc` callback parsing — the optional `classicpro.xml` extras |
+| `enqueueFile` | 5 | the skin adding files to the queue |
+| ~~`getTextWidth`~~ | 4 | implemented in B38 — a script measuring a string itself rather than through `getAutoWidth` |
+| `playTrack` / `clear` | 3 / 3 | script-driven playlist control |
+| ~~`getItemLabel`~~ / `getAttributeName` | 3 / 3 | `getItemLabel` implemented with the guilist; `getAttributeName` has no corpus call site |
+| `getItemFocused` / ~~`setSubItem`~~ | 2 / 2 | `setSubItem` implemented with the guilist; `getItemFocused` has no corpus call site — see the `<list>` note in [reference/components.md](../reference/components.md) |
+| ~~`getMonitorWidth` / `getMonitorHeight`~~ | 2 / 2 | implemented in B41; player-window display bounds in logical screen points; live multi-display QA pending |
+| `getComponentName` | 2 | naming a hosted component |
+| ~~`getDecoderName`~~ / `deleteByPos` | 1 / 1 | `getDecoderName` implemented in B38; `deleteByPos` minor |
+
+Across the whole engine (every container, not just the main window) the list also carries the
+`Winamp:Browser` events, ~~`setClipboardText`~~ (8) and `shutdown` (1). `setClipboardText` was
+implemented in BB13; the `fx_*` family was on this list until Phase 28 implemented it.
+
+Phase 12 emptied the queue a second time, after `Wasabi:Frame` let the SUI's own scripts run for the
+first time: `additem`, `getnumchildren`, `getgroup`, `getcurrenttrackrating`, `oneqfreqchanged` (a
+system event called as a method), then `setsize` — plus a *parse* failure, which is worse than a
+method miss because it fails the whole skin: opcode 104's immediate is a type offset plus an
+"is object" flag, so an object-typed `Member` is `0x0100 | classIndex`, not a value kind.
+
+Getting there took three waves, because each fix let a script run further and reach the next miss —
+so re-measure after every change rather than working from a static list (193 methods are *referenced*
+across the engine but never reached at startup):
+
+1. `getargbvalue`, `getwidth`/`getheight` (on `Map`), `getitembyguid`, `getposition`, `getscale`,
+   `isinvalid`, `setredraw`, `setregionfrommap`, `getdateyear`
+2. `delete` (opcode 97) underflowing the value stack — see the note below — then `load`/`exists`
+   (`XmlDoc`), `getfilesize`, `getlanguageid`
+3. `switchskin`, `getpublicstring`/`setpublicstring`, `getcurcfgval`, `onaction` as a method
+
+> **`delete` is an expression.** The compiler emits `push; delete; pop`, so the delete opcode must
+> leave its operand for that discard pop. Consuming it underflowed the stack and killed every script
+> that deletes anything — which stayed invisible for eight phases because those scripts aborted
+> earlier on a missing method.
+
+**Measured demand — Winamp Modern startup.** Three methods as of Phase 12 (`getgroup` and
+`getnumchildren` were implemented for cPro), none of which block the window from rendering:
+`clienttoscreenx` (×10), `snapadjust`, `debugstring`.
+
+> A method listed in `signature(for:)` but stubbed in dispatch does **not** appear in either list — it
+> looks implemented. `newgroup` hid there and cost the entire Winamp Modern window body. Omit the
+> signature instead of stubbing.
+- `messagebox` — denied (no arbitrary modal host UI)
+- `System.navigateUrl` / `System.navigateUrlBrowser` — **implemented since B40**, typed and gated:
+  see the rows above and *The four routes a skin reaches the web by* in `reference/components/browser.md`.
+  The external one is the only path from a `.wal` skin to `NSWorkspace`, and it asks first
+- `newgroup` — **implemented**: expands a registered groupdef as a child of the calling script's group, and starts the scripts the new subtree declares (bounded by the load-time object budget and `maximumRuntimePrograms`)
+- Popup menus use an inert command model with an injected presenter
+- `getPublicInt`/`setPublicInt` are per-skin namespaced, not truly app-global

@@ -1,71 +1,77 @@
-# NullPlayer
+## NullPlayer. Your media. Your backend. Your home devices. Your UI.
 
-<img width="1920" height="180" alt="top-bar-neon" src="https://github.com/user-attachments/assets/578a9307-2aef-4a17-9e5f-b35cf0c6c311" />
+<img width="500" height="500" alt="nullplayer-skins" src="https://github.com/user-attachments/assets/c2c4a3e1-3287-4d6a-a77b-2c0d0569b20a" />
 
-## A throwback open-source music player for macOS written in Swift, with a first-class headless CLI for automation, multi-source playback, and casting across Sonos, Chromecast, UPnP/DLNA, local media servers, and internet radio.
-
-## This is a 100% clean room hobby project and is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, or anyone else.
-
-## **If you enjoy NullPlayer, please ⭐ STAR ⭐ the project on GitHub!**
-
-
-[![nullPlayer Demo](https://img.youtube.com/vi/hsnVpIh1TnA/hqdefault.jpg)](https://youtu.be/hsnVpIh1TnA)
-<img width="480" height="300" alt="G7KICo" src="https://github.com/user-attachments/assets/1415a6e8-9e56-471c-bf9a-9d82eacb0cd2" />
-
-![MixCollage-12-Mar-2026-03-38-PM-191](https://github.com/user-attachments/assets/b26003a8-bb5d-45ca-9504-2a3e13079fe9)
-<img width="733" height="184" alt="Screenshot 2026-04-05 at 8 52 33 PM" src="https://github.com/user-attachments/assets/3f602a8d-b9bb-43d1-af75-89e4fcb06d08" />
-<img width="1389" height="660" alt="Screenshot 2026-04-05 at 8 54 54 PM" src="https://github.com/user-attachments/assets/4f2dc824-e90e-4f28-b151-02dc05727cdf" />
-<img width="1383" height="632" alt="Screenshot 2026-04-05 at 8 56 50 PM" src="https://github.com/user-attachments/assets/18ccac12-28b2-4a8c-9cea-b742d325c610" />
-<img width="1266" height="559" alt="Screenshot 2026-04-05 at 9 14 34 PM" src="https://github.com/user-attachments/assets/92104d80-c6d2-43f3-bad0-cf626c009919" />
-<img width="1646" height="844" alt="Screenshot 2026-04-05 at 9 21 27 PM" src="https://github.com/user-attachments/assets/8d08d61c-66fb-4ec3-8197-cd2df614444b" />
-
+## **If you enjoy NullPlayer please ⭐ STAR ⭐ the project on GitHub**
 
 ## Features
 
-- Library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
-- Plex Media Server integration with PIN-based authentication
-- Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
-- Emby media server integration with music and video streaming, scrobbling, and library browsing
-- Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
-- Stream Ripper — paste a URL and rip it to lossless FLAC, MP3, or an MP4 video file (requires `yt-dlp` + `ffmpeg`, see [Requirements](#requirements)), with metadata tags, embedded cover art, metadata-based filenames, and a `.cue` sheet generated from chapter timestamps
-- YouTube source — subscribe to channels in the Radio tab, browse uploads, and download audio (FLAC / MP3) or video (720p / 1080p) ad-free to a folder you choose (requires `yt-dlp` + `ffmpeg`, see [Requirements](#requirements)); downloads play locally and cast like any track
-- `.cue` sheet support — open a `.cue` (or an audio file with a sibling `.cue`) to virtually split one backing file into per-track, gapless playlist rows; an optional library setting (off by default, needs ffmpeg) physically splits cue albums on import into per-track FLACs, organized into a per-album folder named from the source's metadata
-- Inteligent radio mix generation for all sources
-- Navidrome/Subsonic server integration with scrobbling support
-- Local media library with metadata parsing, editing, library management
-- ProjectM visualizations with 100 included. Users can download more
-- Geiss and Tripex visualizations — ports of classic Winamp-era visualizers with native macOS/OpenGL rendering and runtime controls
-- Met Museum Art visualization — public-domain artwork slideshow with department filters, transitions, and optional audio-reactive effects
-- Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
-- Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
-- Much better Sonos playlist support than the current PlexAmp (Jan 2026)
-- Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
-- Original UI skin system, with many skins included. Its open JSON format makes custom skins easy to create
-- Original-Metal — a hi-fi faceplate look with seven brushed-metal finishes (Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, Copper)
-- Windows Media Player skin mode loads user-supplied `.wmz`/`.wms` skins through a bounded, isolated engine; fresh installs start in its built-in unskinned player and can import a skin from the UI
-- Switch between Classic, Original, Original-Metal, and Windows Media Player live, with no restart — playback and mode-independent state continue while the main player rebuilds
-- Original Spenctrum analysis visualization system
-- Audio Analysis window — Friture-style multi-pane analyzer with a live oscilloscope, stereo peak/RMS level meters, and a scrolling Metal spectrogram (Viridis colormap)
-- Cava spectrum analyzer — a cava-style bar spectrum in a dedicated window and in the main-window display, with mono/stereo modes, skin-following gradient and metallic color presets, and configurable bars, smoothing, and bass tilt
-- Flow network monitor — a live download/upload throughput window with a scrolling history graph and selectable network interface
-- PeppyMeter — a skinnable analog VU meter window (needle and bar meters) with 25 bundled templates and a random auto-switch mode
-- Album art visualization system with user selected effects
-- Original and Original-Metal modes with a 21-band EQ, Classic mode with a standard 10-band EQ
-- Reference Tuning for pitch-shifting local playback and HTTP streams to a different reference frequency, with 432 Hz, 440 Hz, and custom source/target Hz options
-- Compact Mode — collapse to a single menu-bar app (Dock icon hidden, status-bar item) showing the Library Browser with an embedded mini player bar; works with Classic, Original, and Original-Metal
-- Classic window snapping and docking behavior
-- Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
-- Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (VLCKit/libVLC)
-- Gapless playback for seamless track transitions
-- Sweet Fades (crossfade) with configurable fade duration
-- Sleep Timer — timed (5 min – 12 hr with volume fade-out), end of current track, or end of queue
-- Media Drag and drop support
-- Album/Cover/Movie art browser with visualizations
-- Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
-- AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
-- macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
-- [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
-- Headless CLI mode for querying libraries, starting playback, and routing to local outputs or cast devices (no GUI, no Dock icon)
+NullPlayer is 100% open source and built as a clean-room effort; no Winamp or WACUP source code has been copied or viewed
+
+Nullplayer is the **first and only open-source engine capable of rendering Winamp 5 (`.wal`) skins**, letting you run original Winamp 5 skins on macOS
+
+NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, or anyone else. No Winamp skins are distributed with the project.
+
+### Backend Support
+
+- Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local files
+- Server integration for Plex, Jellyfin, Emby, and Navidrome/Subsonic with scrobbling
+- Local media library with metadata parsing, editing, and management
+- Mixed playlists — combine tracks or video from any sources (local, Plex, Jellyfin, Emby, Subsonic/Navidrome, radio, movies, Youtube) into a single playlist- Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
+- Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
+- YouTube as a library source — subscribe to channels, browse uploads, download audio/video ad-free (requires `yt-dlp` + `ffmpeg`)
+
+### Skin System Support
+
+- Classic mode: full `.wsz` Winamp 2.X skin support with window snapping and docking
+- Winamp Modern (`.wal`) skin support (Winamp 5.X and ClassicPro); the ClassicPro Windows plug-in engine is extracted from the user-supplied installer and runs natively on macOS
+- Original mode: JSON-based skin system with color theming, custom assets, procedural backgrounds, and bloom effects and full skinning documentation for authors
+- Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
+- Windows Media Player mode: loads user-supplied `.wmz`/`.wms` skins through a bounded, isolated engine; import, select, remove, and switch views from the UI menu, or fall back to a built-in unskinned player
+- Live skin switching. Cycle through Classic, Modern, Original, Original-Metal, and Windows Media Player skins with no restart or interuption in playback
+- 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
+
+### Media Support
+
+- Audio codecs: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
+- Video codecs: MKV, MP4, MOV, AVI, WebM, HEVC (VLCKit/libVLC)
+- `.cue` sheet support - virtual split cue/flac into ephemeral playlist items or optionally split to multiple tagged files on import
+
+### Unique Nullplayer Windows
+
+- Visualizations -  ProjectM (100 presets included), Geiss and Tripex ports, album art effects, and spectrum analyzer
+- Audio Analysis window — oscilloscope, stereo peak/RMS meters, scrolling Metal spectrogram
+- Cava spectrum analyzer — bar spectrum with mono/stereo modes, gradient presets, and configurable smoothing
+- PeppyMeter — skinnable analog VU meter with 25 templates and auto-switch mode
+- Flow network monitor — live throughput graph with selectable interface
+- Compact Mode — menu-bar-only app with embedded mini player (Classic, Original, and Original-Metal)
+
+### Visualization Support
+
+NullPlayer's visualizations span its windows, from the in-skin main-window display to full-screen engines:
+
+- **Main Window** — 12 inline modes on the player's own display: Off, Classic 19-band, Cava bar, Enhanced, Ultra, Fire, JWST (deep-space), Lightning, Matrix, Snow, EKG, and the vis_classic analyzer port; cycle with a double-click or pick from **Visuals > Main Window > Mode**
+- **Spectrum Window** — dedicated 84-bar analyzer with 9 modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow) and skin-matched styles
+- **Cava** — a cava-style bar spectrum (clean-room vDSP port) in its own window and inline in the main window, with mono/stereo modes, gradient color presets, and configurable bars, smoothing, and bass tilt
+- **ProjectM/MilkDrop** — 100+ bundled presets with OpenGL rendering and fullscreen support
+- **Geiss** — port of Ryan Geiss's classic visualization with runtime controls (sensitivity, gamma, beat detection, palettes, auto-switch)
+- **Tripex** — Winamp-era 3D visualization port
+- **Album Art Visualizer** — 30 audio-reactive effects (Core Image) transforming album art in the Library Browser
+- **Winamp Modern (`.wal`) skins** — the skin draws its own in-skin visualizations, including workscope/oscilloscope analyzers and custom engine visuals (e.g. the MMD3 and ClassicPro beat visualizers) 
+- **Audio Analysis** — Friture-style multi-pane window: Scope, Levels (peak/RMS), Spectrogram, Octave, Pitch, and Delay
+- **PeppyMeter** — skinnable analog VU meter (needle/bar) with 25 templates and a random auto-switch mode
+- **Flow** — live network throughput graph with selectable interface
+
+All visualization choices persist across launches.
+
+### General Features
+
+- Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
+- Intelligent radio mix generation for all sources
+- Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
+- Sonos content filtering for unsupported lossless formats and improved playlist support
+- Drag-and-drop, macOS Now Playing integration, and [Discord Music Presence](https://github.com/ungive/discord-music-presence)
+- Headless CLI for querying libraries, playback, and routing to local outputs or cast devices, full color terminal cover art rendering
 
 ## Installation
 
@@ -243,6 +249,50 @@ Library data is stored as a SQLite database at `~/Library/Application Support/Nu
 | `deleteBackup(at:)` | Deletes a backup file |
 
 Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
+
+## Skins
+
+NullPlayer has four looks - Modern, Classic, Original, and Original-Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
+
+### Winamp Modern (`.wal`) / ClassicPro
+
+ClassicPro skins (such as cPro-Bento, cPro2 Dark Aluminum, and the cPro Insomnis family) depend on the **ClassicPro plug-in**, which ships in a Windows installer. NullPlayer extracts that installer internally — no Wine, no external tools — but you must supply the installer. You can download it directly from **Skins > Modern > Download ClassicPro Engine...** and that will open a browser to the Softpedia download page.
+
+**Only `ClassicPro_2.01.exe` is supported.** Other versions or builds are not recognized; importing them shows a clear warning and the engine stays inactive.
+
+To set up:
+
+1. Open **Skins > Modern > Download ClassicPro Engine...** to fetch `ClassicPro_2.01.exe`.
+2. Import the installer via **Skins > Modern > Import ClassicPro Engine…** (it stays as a single private copy and is not run as a program).
+3. Import a ClassicPro skin via **Skins > Modern > Import .wal Skin...**, then select it from **Skins > Modern**.
+
+NullPlayer's Winamp Modern support is built through clean-room reverse engineering, verified against a corpus of real-world skins. The [skin compatibility report](docs/winamp-modern/skin-compatibility.md) is the current corpus of `.wal` skins tested in that effort — every Winamp 5.x skin the engine has been measured against, its compatibility grade, and what is still known to be outstanding on it. It is updated as the engine improves and new skins are measured.
+
+### Winamp Classic Mode
+
+Classic `.wsz` skin support. The app starts with a native macOS appearance and ships with one original NullPlayer skin (Silver). To apply a skin, use **Skins > Load Skin...** to open a `.wsz` file, or place skin files in `~/Library/Application Support/NullPlayer/Skins/` and select them from the Skins menu. Thousands of community-created skins can be downloaded from the **Skins > Get More Skins...** menu link, which opens the [Winamp Skin Museum](https://skins.webamp.org).
+
+### Nullplayer Original Mode
+
+A custom skin engine built from scratch with a neon cyberpunk aesthetic. Original skins are JSON-configured and support:
+
+- **Color palette theming** -- define 12 named colors and the entire UI adapts
+- **Custom PNG image assets** -- optionally replace any UI element with your own artwork
+- **Procedural grid backgrounds** -- configurable Tron-style perspective grids
+- **Bloom/glow post-processing** -- Metal-based glow effects on bright UI elements
+- **Custom fonts** -- bundle TTF/OTF fonts or use any system font
+- **Animations** -- sprite frame cycling and parametric effects (pulse, glow, rotate, color cycle)
+
+The bundled default skin ("NeonWave") is fully programmatic -- zero image assets, pure palette-driven rendering.
+
+**Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
+
+**Skin installation**: Place skin folders or `.nsz` bundles in the compatibility directory `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Skins > Original**.
+
+### Nullplayer Original-Metal Mode
+
+A hi-fi hardware faceplate look, selected from **Skins > Original-Metal**, with seven finishes — Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, and Copper. Each finish restyles the whole player (chrome, panels, sliders, transport, and EQ) with a backlit-green LCD for the time and track displays and a spectrum analyzer matched to the finish.
+
 
 ## CLI Mode
 
@@ -481,35 +531,6 @@ NullPlayer does not collect or transmit personal data to the developer. Playback
 and usage history is stored only in the app's local SQLite database. See the
 [Privacy Policy](PRIVACY.md) for details about local storage and user-directed
 network features.
-
-## Skins
-
-NullPlayer has three looks — Classic, Original, and Original-Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
-
-### Classic Mode
-
-Classic `.wsz` skin support. The app starts with a native macOS appearance and ships with one original NullPlayer skin (Silver). To apply a skin, use **Skins > Load Skin...** to open a `.wsz` file, or place skin files in `~/Library/Application Support/NullPlayer/Skins/` and select them from the Skins menu. Thousands of community-created skins can be downloaded from the **Skins > Get More Skins...** menu link, which opens the [Winamp Skin Museum](https://skins.webamp.org).
-
-### Original Mode
-
-A custom skin engine built from scratch with a neon cyberpunk aesthetic. Original skins are JSON-configured and support:
-
-- **Color palette theming** -- define 12 named colors and the entire UI adapts
-- **Custom PNG image assets** -- optionally replace any UI element with your own artwork
-- **Procedural grid backgrounds** -- configurable Tron-style perspective grids
-- **Bloom/glow post-processing** -- Metal-based glow effects on bright UI elements
-- **Custom fonts** -- bundle TTF/OTF fonts or use any system font
-- **Animations** -- sprite frame cycling and parametric effects (pulse, glow, rotate, color cycle)
-
-The bundled default skin ("NeonWave") is fully programmatic -- zero image assets, pure palette-driven rendering.
-
-**Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
-
-**Skin installation**: Place skin folders or `.nsz` bundles in the compatibility directory `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Skins > Original**.
-
-### Original-Metal Mode
-
-A hi-fi hardware faceplate look, selected from **Skins > Original-Metal**, with seven finishes — Brushed Steel, Aluminum, Gunmetal, Anodized Black, Brass, Bronze, and Copper. Each finish restyles the whole player (chrome, panels, sliders, transport, and EQ) with a backlit-green LCD for the time and track displays and a spectrum analyzer matched to the finish.
 
 ## License
 

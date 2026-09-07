@@ -29,6 +29,42 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Current video title
     private(set) var currentTitle: String?
 
+    /// True from the moment a film reaches its own end until something plays again. **Read by every
+    /// mode**: `WindowManager.isVideoActivePlayback` and `.videoPlaybackState` answer from it, so a
+    /// finished film stops being the transport's target and stops reading `.paused` forever in
+    /// Classic and Original too, and the `.wal` host (`WinampModernAudioEngineHost.videoSession` /
+    /// `.videoTransport`) keys its session on the same flag.
+    ///
+    /// The session itself is deliberately *not* cleared. `clearLoadedContentState()` belongs to the
+    /// paths that also close the window; end of media leaves the picture up on its last frame with
+    /// the film still loaded, so it can be seeked back and replayed. What ends is the session, not
+    /// the content.
+    ///
+    /// **It cannot be driven from `.ended` alone.** Measured 2026-09-02 against the vendored VLCKit:
+    /// a local `.mp4` running out reports `VLCMediaPlayerState.paused`, and no `.ended` ever arrives
+    /// — the log goes `Playing` … `Paused` and stops. The view now reads that pause for what it is
+    /// (`VideoPlayerView.isAtEndOfMedia`) and fires `onPlaybackFinished` from it, which is what
+    /// restores finish-scrobbling and playlist advance. This flag additionally latches at the stop
+    /// transition (`updatePlayingState`), which covers a film parked at its end by any other route.
+    /// Latched rather than computed live: a film left parked at its end stops reporting a position
+    /// after a while, and a live check then reads the corpse as a fresh session again.
+    private(set) var didReachEndOfMedia = false
+
+    /// Whether the film is sitting at its own end *right now*. Only ever read at the moment playback
+    /// stops, while VLCKit's clock still answers. One rule, owned by the view, so the flag and the
+    /// finished-callback can never disagree about where the end is.
+    private var isParkedAtEndOfMedia: Bool { videoPlayerView.isAtEndOfMedia }
+
+    /// The one place the flag goes true, so the readout is reset exactly once per film however the
+    /// end was noticed — the end-of-film pause, a source that really does report `.ended`, or the
+    /// stop-transition latch below.
+    private func markReachedEndOfMedia() {
+        guard !didReachEndOfMedia else { return }
+        NSLog("VideoPlayerWindowController: reached end of media (t=%.2f dur=%.2f)", currentTime, duration)
+        didReachEndOfMedia = true
+        WindowManager.shared.videoPlaybackDidReachEndOfMedia()
+    }
+
     /// Lightweight video track used by the main window for artwork lookup.
     private(set) var currentArtworkTrack: Track?
     
@@ -185,6 +221,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     private func clearLoadedContentState() {
         currentTitle = nil
+        // A newly loaded film must never inherit the previous one's ended state.
+        didReachEndOfMedia = false
         currentArtworkTrack = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
@@ -398,6 +436,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             // Record analytics before advancing playlist
             self.recordVideoPlayEvent()
 
+            // A queued film's callback loads the next item and starts it, which clears the flag
+            // through `updatePlayingState(true)` anyway; the guard keeps it honest in between.
+            if !self.isFromPlaylist {
+                self.markReachedEndOfMedia()
+            }
+
             // Advance playlist if this video was from the playlist
             if self.isFromPlaylist {
                 NSLog("VideoPlayer: Video finished from playlist, invoking callback")
@@ -556,14 +600,15 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                         self.videoPlayerView.hideTrackSelectionPanel()
                         return nil
                     }
-                    self.close()
+                    self.dismissVideoOutput()
                     return nil
                 }
             case 49: // Space - toggle play/pause
                 self.togglePlayPause()
                 return nil
             case 3: // F key - toggle fullscreen
-                window.toggleFullScreen(nil)
+                if self.isVideoOutputHosted { self.enterFullScreenReclaimingOutput() }
+                else { window.toggleFullScreen(nil) }
                 return nil
             case 1: // S key - cycle subtitles
                 self.videoPlayerView.cycleSubtitleTrack()
@@ -631,9 +676,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = title
         currentArtworkTrack = Track(url: url, title: title, mediaType: .video)
         window?.title = title
+        revealVideoOutput()
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: "video")
         WindowManager.shared.videoPlaybackDidStart()
@@ -685,9 +729,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = track.displayTitle
         currentArtworkTrack = track
         window?.title = track.displayTitle
+        revealVideoOutput()
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: true, plexHeaders: headers)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         WindowManager.shared.videoPlaybackDidStart()
@@ -744,9 +787,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = movie.title
         currentArtworkTrack = PlexManager.shared.convertToTrack(movie)
         window?.title = movie.title
+        revealVideoOutput()
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: true, plexHeaders: headers)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: "movie")
         WindowManager.shared.videoPlaybackDidStart()
@@ -802,9 +844,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = title
         currentArtworkTrack = PlexManager.shared.convertToTrack(episode)
         window?.title = title
+        revealVideoOutput()
         videoPlayerView.play(url: url, title: title, isPlexURL: true, plexHeaders: headers)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: "tv")
         WindowManager.shared.videoPlaybackDidStart()
@@ -857,9 +898,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = movie.title
         currentArtworkTrack = JellyfinManager.shared.convertToTrack(movie)
         window?.title = movie.title
+        revealVideoOutput()
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: "movie")
         WindowManager.shared.videoPlaybackDidStart()
@@ -914,9 +954,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = title
         currentArtworkTrack = JellyfinManager.shared.convertToTrack(episode)
         window?.title = title
+        revealVideoOutput()
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: "tv")
         WindowManager.shared.videoPlaybackDidStart()
@@ -965,9 +1004,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = movie.title
         currentArtworkTrack = EmbyManager.shared.convertToTrack(movie)
         window?.title = movie.title
+        revealVideoOutput()
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: "movie")
         WindowManager.shared.videoPlaybackDidStart()
@@ -1022,9 +1060,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = title
         currentArtworkTrack = EmbyManager.shared.convertToTrack(episode)
         window?.title = title
+        revealVideoOutput()
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: "tv")
         WindowManager.shared.videoPlaybackDidStart()
@@ -1074,9 +1111,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = track.displayTitle
         currentArtworkTrack = track
         window?.title = track.displayTitle
+        revealVideoOutput()
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         WindowManager.shared.videoPlaybackDidStart()
@@ -1125,9 +1161,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = track.displayTitle
         currentArtworkTrack = track
         window?.title = track.displayTitle
+        revealVideoOutput()
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         WindowManager.shared.videoPlaybackDidStart()
@@ -1181,6 +1216,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isPlaying = false
         clearLoadedContentState()
         WindowManager.shared.videoPlaybackDidStop()
+        // A parked picture lives over the skin's own video window, which declares `autoclose="1"`:
+        // the component closing is what shuts that window. Unpark before closing, so no child window
+        // is left hanging off a skin window that a skin or mode switch may take away next.
+        if isVideoOutputHosted {
+            _ = WindowManager.shared.hideWinampModernVideoSurface()
+            WindowManager.shared.detachWinampModernVideoOutput()
+        }
         close()
     }
 
@@ -1315,6 +1357,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Update playing state (called from VideoPlayerView)
     func updatePlayingState(_ playing: Bool) {
         isPlaying = playing
+        // The single funnel every playback transition goes through — which is what makes seeking an
+        // ended film back and pressing play restore the session the `.wal` host reads, and what
+        // catches the end of media that VLCKit reports as a plain pause.
+        if playing {
+            didReachEndOfMedia = false
+        } else if isParkedAtEndOfMedia {
+            markReachedEndOfMedia()
+        }
     }
     
     // MARK: - Video Casting
@@ -1630,15 +1680,153 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Keyboard Shortcuts
     
     @objc func toggleFullScreen(_ sender: Any?) {
-        window?.toggleFullScreen(sender)
+        if isVideoOutputHosted { enterFullScreenReclaimingOutput() }
+        else { window?.toggleFullScreen(sender) }
     }
+
+    // MARK: - Hosting the picture in a `.wal` skin's video window (B20)
+
+    /// True while this window is parked as a child of the skin's video window.
+    private(set) var isVideoOutputHosted = false
+    /// The free-floating frame to come back to, and the limits that go with it.
+    private var frameBeforeHosting: NSRect?
+    private var minSizeBeforeHosting: NSSize?
+
+    /// Whether the picture is on screen. A hosted window is a *child* window, so it is visible
+    /// exactly when the skin's video window it hangs off is.
+    var isVideoOutputVisible: Bool { window?.isVisible == true }
+
+    /// The stream's own pixel size, or `.zero` before the decoder knows it.
+    var presentationSize: CGSize { videoPlayerView?.presentationSize ?? .zero }
+
+    /// Winamp's command bar over the picture, which a skin's holder can switch off.
+    var showsVideoControlBar: Bool {
+        get { videoPlayerView?.showsControlBar ?? true }
+        set { videoPlayerView?.showsControlBar = newValue }
+    }
+
+    /// The narrowest window the command bar will allow. A box narrower than this cannot show the bar
+    /// at all — its constraints are what the window's minimum size is derived from.
+    var videoControlBarMinimumWidth: CGFloat { videoPlayerView?.controlBarMinimumWidth ?? 0 }
+
+    /// Park this window over a `.wal` skin's video box, as a child of the skin's window.
+    ///
+    /// **Not** a reparent of the video view. Moving `videoPlayerView` into the skin's view tree was
+    /// the obvious shape — it is what the `.library` surface does — and it does not survive contact
+    /// with the video engine: VLCKit installs its own output view under `playerHostView` and sizes
+    /// that view's ancestors, so the skin window's content view ran away by tens of thousands of
+    /// pixels on the first frame, and the picture only appeared once something else forced a
+    /// relayout. A child window is the isolation that fixes it by construction: AppKit gives it its
+    /// own layout tree, so nothing the decoder does to its view can reach the skin's, while
+    /// `addChildWindow` keeps it glued to the skin window as that window moves, hides and closes.
+    func hostOutputWindow(over host: NSView) {
+        guard let window, let parent = host.window else { return }
+        if frameBeforeHosting == nil { frameBeforeHosting = window.frame }
+        if minSizeBeforeHosting == nil { minSizeBeforeHosting = window.minSize }
+        videoPlayerView?.isEmbeddedInSkin = true
+        // A skin's video box is routinely smaller than the free window's 480×270 floor, and
+        // `setFrame` is clamped by `minSize` — without this the picture would sit in a window too
+        // big for the hole it is filling.
+        window.minSize = NSSize(width: 1, height: 1)
+        window.hasShadow = false
+        if window.parent !== parent {
+            window.parent?.removeChildWindow(window)
+            parent.addChildWindow(window, ordered: .above)
+        }
+        isVideoOutputHosted = true
+        updateHostedOutputFrame(over: host)
+        window.orderFront(nil)
+    }
+
+    /// Keep the parked window on the box. Called whenever the skin lays its holder out again — a
+    /// window resize, a layout switch, a UI Size change.
+    func updateHostedOutputFrame(over host: NSView) {
+        guard isVideoOutputHosted, let window, let parent = host.window else { return }
+        let inParent = host.convert(host.bounds, to: nil)
+        window.setFrame(parent.convertToScreen(inParent), display: true)
+        #if DEBUG
+        // The frame AppKit *granted*, not the one asked for. A window whose content carries required
+        // Auto Layout constraints has a minimum size derived from them and silently refuses anything
+        // smaller — which is the whole of this feature's hardest defect, and invisible without this.
+        if abs(window.frame.width - inParent.width) > 1 || abs(window.frame.height - inParent.height) > 1 {
+            NSLog("WinampModern video: box %@ refused, window took %@",
+                  NSStringFromSize(inParent.size), NSStringFromSize(window.frame.size))
+        }
+        #endif
+    }
+
+    /// Unpark: back to a free-floating window of its own, at the frame and limits it had before.
+    /// `reveal` shows it, which is what a still-playing video needs when the skin's box goes away.
+    func reclaimVideoOutput(reveal: Bool) {
+        guard let window else { return }
+        if isVideoOutputHosted {
+            window.parent?.removeChildWindow(window)
+            window.hasShadow = true
+            if let minSizeBeforeHosting { window.minSize = minSizeBeforeHosting }
+            if let frameBeforeHosting { window.setFrame(frameBeforeHosting, display: false) }
+            frameBeforeHosting = nil
+            minSizeBeforeHosting = nil
+        }
+        videoPlayerView?.isEmbeddedInSkin = false
+        isVideoOutputHosted = false
+        if reveal {
+            showWindow(nil)
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            window.orderOut(nil)
+        }
+    }
+
+    /// `VID_FS` with a parked picture. A child window cannot go fullscreen, so it is unparked first
+    /// and this window goes fullscreen on its own — the same window `VID_FS` has always used.
+    /// Leaving fullscreen parks it back over the skin's box.
+    func enterFullScreenReclaimingOutput() {
+        let wasHosted = isVideoOutputHosted
+        reclaimVideoOutput(reveal: true)
+        shouldReturnOutputToSkinAfterFullScreen = wasHosted
+        window?.toggleFullScreen(nil)
+    }
+
+    /// Set while a parked picture is borrowed back for fullscreen, so exiting returns it.
+    private var shouldReturnOutputToSkinAfterFullScreen = false
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        guard shouldReturnOutputToSkinAfterFullScreen else { return }
+        shouldReturnOutputToSkinAfterFullScreen = false
+        // One turn later: AppKit is still restoring this window's own frame and style as the
+        // notification lands, and re-parenting inside that leaves it parked at the fullscreen size.
+        DispatchQueue.main.async { WindowManager.shared.hostVideoOutputInWinampModernSkin() }
+    }
+
+    /// Where a play call reveals the picture. Parked, that is the skin's own video window (the
+    /// `autoopen="1"` every measured holder declares); otherwise this window, exactly as before.
+    private func revealVideoOutput() {
+        if WindowManager.shared.hostVideoOutputInWinampModernSkin() { return }
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Escape, and anything else that means "put the picture away". Hosted, that hides the skin's
+    /// own video window (`autoclose="1"`) and leaves playback alone for the skin to reopen; in this
+    /// controller's own window it closes, which is the stop it has always been.
+    func dismissVideoOutput() {
+        if isVideoOutputHosted, WindowManager.shared.hideWinampModernVideoSurface() { return }
+        close()
+    }
+
+    /// The video view's own context menu — play/pause, skip, audio and subtitle tracks, settings.
+    ///
+    /// Exposed so a `.wal` skin's `VID_MISC` button opens the same menu the video window offers on
+    /// right-click rather than a second, thinner imitation of it. Its items target the video view, so
+    /// it works wherever it is popped up.
+    var contextMenu: NSMenu? { videoPlayerView?.menu }
     
     /// Handle Escape key via standard macOS cancel operation
     @objc func cancel(_ sender: Any?) {
-        if let window = window, window.styleMask.contains(.fullScreen) {
+        if let window, window.styleMask.contains(.fullScreen) {
             window.toggleFullScreen(nil)
         } else {
-            close()
+            dismissVideoOutput()
         }
     }
 }

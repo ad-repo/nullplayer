@@ -37,6 +37,13 @@ class EQView: NSView {
     
     /// Region manager for hit testing
     private let regionManager = RegionManager.shared
+
+    /// Set when this view is mounted inside a `.wal` skin's own standard frame (B55). The frame
+    /// draws the title bar, the close button and the window drag, so this view draws and hit-tests
+    /// only the equalizer itself.
+    private var hostedContext: WinampModernHostedSurfaceContext?
+    /// The window drag the body keeps while the skin's frame owns the chrome (B57).
+    private var hostedDrag = WinampModernHostedWindowDrag()
     
     // MARK: - Layout Constants
     
@@ -103,6 +110,10 @@ class EQView: NSView {
         )
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
+        // A `.wal` colour-theme switch recolours this window when it is a Winamp Modern fallback
+        // (Phase 16); the style is re-derived on each draw, so a repaint is the whole job.
+        NotificationCenter.default.addObserver(self, selector: #selector(skinDidChange),
+                                               name: .winampModernThemeDidChange, object: nil)
     }
     
     /// Handle track change for Auto EQ
@@ -284,8 +295,67 @@ class EQView: NSView {
     
     // MARK: - Scaling Support
     
+    /// The classic layout minus its title bar — what a hosted view draws, since the skin's frame
+    /// supplies the chrome around it.
+    private static let hostedContentSize = NSSize(width: Skin.baseEQSize.width,
+                                                  height: Skin.baseEQSize.height - Layout.titleBarHeight)
+
+    /// Where every control sits, in classic layout units. Vertical positions never move — only the
+    /// horizontal ones, and only for a hosted view, which is as wide as the player it docks under
+    /// (B55) rather than the 275 the classic artwork was cut for. Drawing and hit testing both read
+    /// this, so they cannot disagree about where a slider is.
+    private struct Metrics {
+        let onOff: NSRect
+        let auto: NSRect
+        let presets: NSRect
+        let preamp: NSRect
+        let graph: NSRect
+        let bands: [NSRect]
+
+        static let classic = Metrics(width: Skin.baseEQSize.width)
+
+        /// The classic margins are preserved and the *gaps* absorb the extra width: the buttons and
+        /// the preamp stay left-anchored, PRESETS keeps its 14px right margin, the graph well spans
+        /// what is left between them, and the ten bands spread evenly across the same span the
+        /// classic layout gives them (78 → 21 from the right edge).
+        init(width: CGFloat) {
+            let rightMargin = Skin.baseEQSize.width - (Layout.presetsRect.maxX)
+            onOff = Layout.onOffRect
+            auto = Layout.autoRect
+            presets = NSRect(x: max(auto.maxX, width - rightMargin - Layout.presetsRect.width),
+                             y: Layout.presetsRect.minY,
+                             width: Layout.presetsRect.width, height: Layout.presetsRect.height)
+            preamp = Layout.preampRect
+            let graphGap = SkinElements.Equalizer.graphRect.minX - Layout.autoRect.maxX
+            graph = NSRect(x: SkinElements.Equalizer.graphRect.minX,
+                           y: SkinElements.Equalizer.graphRect.minY,
+                           width: max(0, presets.minX - graphGap - SkinElements.Equalizer.graphRect.minX),
+                           height: SkinElements.Equalizer.graphRect.height)
+            let lastClassicBandX = Layout.bandStartX + 9 * Layout.bandSpacing
+            let bandsRightMargin = Skin.baseEQSize.width - (lastClassicBandX + Layout.bandWidth)
+            let lastX = max(Layout.bandStartX,
+                            width - bandsRightMargin - Layout.bandWidth)
+            let spacing = (lastX - Layout.bandStartX) / 9
+            bands = (0..<10).map { index in
+                NSRect(x: Layout.bandStartX + CGFloat(index) * spacing, y: Layout.bandY,
+                       width: Layout.bandWidth, height: Layout.bandHeight)
+            }
+        }
+    }
+
+    /// The classic constants unchanged for a standalone window; widened for a hosted one.
+    private var metrics: Metrics {
+        guard hostedContext != nil, scaleFactor > 0 else { return .classic }
+        return Metrics(width: bounds.width / scaleFactor)
+    }
+
     /// Calculate scale factor based on current bounds vs original size
     private var scaleFactor: CGFloat {
+        // Hosted: the width is the skin frame's to give, so only the height sets the scale and the
+        // layout spreads to fill what is left.
+        if hostedContext != nil {
+            return bounds.height / Self.hostedContentSize.height
+        }
         let originalSize = Skin.baseEQSize
         let scaleX = bounds.width / originalSize.width
         let scaleY = bounds.height / originalSize.height
@@ -296,7 +366,17 @@ class EQView: NSView {
     private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
         let originalSize = Skin.baseEQSize
         let scale = scaleFactor
-        
+
+        // Hosted: the drawing is the title-bar-less content, centred in the holder. Invert exactly
+        // that transform, and answer in the *classic* frame of reference so every Layout rect — all
+        // of which include the title bar in their y — keeps working unchanged.
+        if hostedContext != nil {
+            guard scale > 0 else { return point }
+            let fromTop = bounds.height - point.y
+            return NSPoint(x: point.x / scale,
+                           y: Self.hostedContentSize.height - fromTop / scale)
+        }
+
         if scale == 1.0 {
             return point
         }
@@ -330,6 +410,21 @@ class EQView: NSView {
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
 
+        // Mounted in a `.wal` skin's own frame (B55): the frame draws the chrome, so this view draws
+        // the controls only, scaled into the client area the holder gave it.
+        if hostedContext != nil {
+            let style = WindowManager.shared.winampModernSurfaceStyle ?? .fallback
+            context.scaleBy(x: scale, y: scale)
+            context.translateBy(x: 0, y: -Layout.titleBarHeight)
+            let layoutWidth = scale > 0 ? bounds.width / scale : Skin.baseEQSize.width
+            drawWinampModernNormalMode(
+                style: style, context: context, isActive: true,
+                drawBounds: NSRect(x: 0, y: 0, width: layoutWidth, height: Skin.baseEQSize.height),
+                drawsChrome: false)
+            context.restoreGState()
+            return
+        }
+
         // When hiding title bars, shift content up to clip the title bar off the top
         let hidingTitleBar = WindowManager.shared.hideTitleBars
 
@@ -358,8 +453,14 @@ class EQView: NSView {
         // Use original bounds for drawing (scaling is applied via transform)
         let drawBounds = NSRect(origin: .zero, size: originalSize)
 
-        // Draw normal mode
-        drawNormalMode(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
+        // Draw normal mode — the flat palette version when this window is a `.wal` skin's fallback
+        // equalizer (Phase 16), the classic sprites otherwise.
+        if let style = WindowManager.shared.winampModernSurfaceStyle {
+            drawWinampModernNormalMode(style: style, context: context, isActive: isActive,
+                                       drawBounds: drawBounds, drawsChrome: true)
+        } else {
+            drawNormalMode(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
+        }
 
         context.restoreGState()
 
@@ -401,9 +502,161 @@ class EQView: NSView {
         renderer.drawEQGraph(bands: bands, isEnabled: isEnabled, in: context)
     }
     
+    // MARK: - Winamp Modern drawing (Phase 16)
+
+    /// The equalizer for a `.wal` skin that declares none of its own.
+    ///
+    /// Every rect comes from this view's own `Layout` — the same numbers `hitTestSlider`,
+    /// `updateSlider`, and the button hit tests use — so the controls stay exactly where they were
+    /// and only their appearance changes. dB runs +12 at the top of a slider to −12 at the bottom,
+    /// matching `updateSlider`.
+    ///
+    /// `drawsChrome` is false when the view is mounted in a skin's own standard frame (B55): the
+    /// frame already draws the border, the title and the close button, so drawing them again would
+    /// put a second title bar inside the window's real one.
+    private func drawWinampModernNormalMode(style: WinampModernSurfaceStyle, context: CGContext,
+                                            isActive: Bool, drawBounds: NSRect, drawsChrome: Bool) {
+        let body = drawsChrome
+            ? drawBounds
+            : NSRect(x: 0, y: Layout.titleBarHeight, width: drawBounds.width,
+                     height: drawBounds.height - Layout.titleBarHeight)
+        context.setFillColor(style.background.cgColor)
+        context.fill(body)
+
+        if drawsChrome {
+            context.setFillColor(style.barBackground.cgColor)
+            context.fill(NSRect(x: 0, y: 0, width: drawBounds.width, height: Layout.titleBarHeight))
+            context.setStrokeColor(style.border.cgColor)
+            context.setLineWidth(1)
+            context.stroke(drawBounds.insetBy(dx: 0.5, dy: 0.5))
+
+            // Guarded against the bar it lands on (B48).
+            let titleColor = isActive ? style.legibleText(style.currentText, on: style.barBackground)
+                                      : style.legibleDimText(on: style.barBackground)
+            let title = "EQUALIZER"
+            let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: 1.4)
+            WinampModernSurfaceStyle.drawText(
+                title,
+                at: NSPoint(x: (drawBounds.width - titleWidth) / 2,
+                            y: (Layout.titleBarHeight - WinampModernSurfaceStyle.classicCharHeight * 1.4) / 2),
+                scale: 1.4, color: titleColor, in: context)
+
+            if !WindowManager.shared.hideTitleBars {
+                let close = Layout.closeHitRect
+                if pressedButton == .close {
+                    context.setFillColor(style.pressedFill.cgColor)
+                    context.fill(close)
+                }
+                let glyph = close.insetBy(dx: 6, dy: 4)
+                context.setStrokeColor(titleColor.cgColor)
+                context.beginPath()
+                context.move(to: CGPoint(x: glyph.minX, y: glyph.minY))
+                context.addLine(to: CGPoint(x: glyph.maxX, y: glyph.maxY))
+                context.move(to: CGPoint(x: glyph.maxX, y: glyph.minY))
+                context.addLine(to: CGPoint(x: glyph.minX, y: glyph.maxY))
+                context.strokePath()
+            }
+        }
+
+        let metrics = self.metrics
+        drawWinampModernEQButton("ON", rect: metrics.onOff, on: isEnabled,
+                                 pressed: false, style: style, context: context)
+        drawWinampModernEQButton("AUTO", rect: metrics.auto, on: isAuto,
+                                 pressed: false, style: style, context: context)
+        drawWinampModernEQButton("PRESETS", rect: metrics.presets, on: false,
+                                 pressed: pressedButton == .eqPresets, style: style, context: context)
+
+        drawWinampModernEQGraph(style: style, context: context, rect: metrics.graph)
+
+        drawWinampModernEQSlider(value: CGFloat(preamp), rect: metrics.preamp,
+                                 label: "PRE", style: style, context: context)
+        for (index, rect) in metrics.bands.enumerated() {
+            drawWinampModernEQSlider(value: CGFloat(bands[index]), rect: rect,
+                                     label: Layout.frequencies[index], style: style, context: context)
+        }
+    }
+
+    private func drawWinampModernEQButton(_ label: String, rect: NSRect, on: Bool, pressed: Bool,
+                                          style: WinampModernSurfaceStyle, context: CGContext) {
+        let fill: NSColor = pressed ? style.pressedFill : (on ? style.selectionBackground : style.background)
+        context.setFillColor(fill.cgColor)
+        context.fill(rect)
+        context.setStrokeColor(style.divider.cgColor)
+        context.setLineWidth(1)
+        context.stroke(rect.insetBy(dx: 0.5, dy: 0.5))
+        let color = on ? style.selectionText : style.text
+        let width = WinampModernSurfaceStyle.measuredWidth(label, scale: 1)
+        WinampModernSurfaceStyle.drawText(
+            label,
+            at: NSPoint(x: rect.midX - width / 2,
+                        y: rect.midY - WinampModernSurfaceStyle.classicCharHeight / 2),
+            scale: 1, color: color, in: context)
+    }
+
+    /// A vertical track with a thumb at the band's dB, plus the band label beneath it.
+    private func drawWinampModernEQSlider(value: CGFloat, rect: NSRect, label: String,
+                                          style: WinampModernSurfaceStyle, context: CGContext) {
+        let track = NSRect(x: rect.midX - 1.5, y: rect.minY + 2, width: 3, height: rect.height - 4)
+        context.setFillColor(style.divider.cgColor)
+        context.fill(track)
+
+        // Centre line: 0 dB, so a flat band reads as flat at a glance.
+        context.setFillColor(style.border.cgColor)
+        context.fill(NSRect(x: rect.minX, y: rect.midY - 0.5, width: rect.width, height: 1))
+
+        let normalized = min(1, max(0, (value + 12) / 24))
+        let thumbCenterY = track.maxY - track.height * normalized
+        let thumb = NSRect(x: rect.minX, y: thumbCenterY - 3, width: rect.width, height: 6)
+        context.setFillColor((isEnabled ? style.selectionBackground : style.divider).cgColor)
+        context.fill(thumb)
+        context.setStrokeColor(style.text.cgColor)
+        context.setLineWidth(1)
+        context.stroke(thumb.insetBy(dx: 0.5, dy: 0.5))
+
+        let labelWidth = WinampModernSurfaceStyle.measuredWidth(label, scale: 0.8)
+        WinampModernSurfaceStyle.drawText(label,
+                                          at: NSPoint(x: rect.midX - labelWidth / 2, y: rect.maxY + 2),
+                                          scale: 0.8, color: style.dimText, in: context)
+    }
+
+    /// The response curve, in the same well and with the same interpolation the classic graph uses,
+    /// drawn in the skin's own colours.
+    private func drawWinampModernEQGraph(style: WinampModernSurfaceStyle, context: CGContext,
+                                         rect: NSRect) {
+        context.setFillColor(style.background.cgColor)
+        context.fill(rect)
+        context.setStrokeColor(style.divider.cgColor)
+        context.setLineWidth(1)
+        context.stroke(rect.insetBy(dx: 0.5, dy: 0.5))
+        context.setFillColor(style.divider.cgColor)
+        context.fill(NSRect(x: rect.minX, y: rect.midY - 0.5, width: rect.width, height: 1))
+
+        guard isEnabled, bands.count >= 10 else { return }
+        context.saveGState()
+        context.clip(to: rect)
+        context.setStrokeColor(style.text.cgColor)
+        context.setLineWidth(1)
+        context.beginPath()
+        let maxXIndex = max(1, Int(rect.width.rounded(.down)) - 1)
+        for xIndex in 0...maxXIndex {
+            let bandPosition = CGFloat(xIndex) / CGFloat(maxXIndex) * 9.0
+            let lowerBand = min(8, Int(floor(bandPosition)))
+            let upperBand = min(9, lowerBand + 1)
+            let t = bandPosition - CGFloat(lowerBand)
+            let value = CGFloat(bands[lowerBand])
+                + (CGFloat(bands[upperBand]) - CGFloat(bands[lowerBand])) * t
+            let normalized = min(1, max(0, (value + 12) / 24))
+            let point = CGPoint(x: rect.minX + CGFloat(xIndex),
+                                y: rect.minY + rect.height * (1 - normalized))
+            if xIndex == 0 { context.move(to: point) } else { context.addLine(to: point) }
+        }
+        context.strokePath()
+        context.restoreGState()
+    }
+
     // MARK: - Public Methods
-    
-    func skinDidChange() {
+
+    @objc func skinDidChange() {
         needsDisplay = true
     }
     
@@ -425,8 +678,10 @@ class EQView: NSView {
         
         // Window dragging is handled by macOS via isMovableByWindowBackground
         
-        // Close button (checked first for priority, enlarged hit area) - skip when title bars hidden
-        if !WindowManager.shared.hideTitleBars && Layout.closeHitRect.contains(skinPoint) {
+        // Close button (checked first for priority, enlarged hit area) - skip when title bars hidden,
+        // and when the skin's own frame owns the chrome (B55).
+        if hostedContext == nil && !WindowManager.shared.hideTitleBars
+            && Layout.closeHitRect.contains(skinPoint) {
             pressedButton = .close
             needsDisplay = true
             return
@@ -434,14 +689,15 @@ class EQView: NSView {
         
         
         // Toggle buttons
-        if Layout.onOffRect.contains(skinPoint) {
+        let metrics = self.metrics
+        if metrics.onOff.contains(skinPoint) {
             isEnabled.toggle()
             WindowManager.shared.audioEngine.setEQEnabled(isEnabled)
             needsDisplay = true
             return
         }
         
-        if Layout.autoRect.contains(skinPoint) {
+        if metrics.auto.contains(skinPoint) {
             isAuto.toggle()
             
             // Only persist Auto EQ state if "Remember State" is enabled
@@ -458,7 +714,7 @@ class EQView: NSView {
             return
         }
         
-        if Layout.presetsRect.contains(skinPoint) {
+        if metrics.presets.contains(skinPoint) {
             pressedButton = .eqPresets
             needsDisplay = true
             return
@@ -477,7 +733,14 @@ class EQView: NSView {
             return
         }
         
-        // Not on any control - start window drag
+        // Not on any control - start window drag. Hosted, the skin's frame owns the chrome but not
+        // the drag: its title strip is 15–45px, so the body stays a handle here as it is standalone
+        // (B57, correcting B55).
+        if hostedContext != nil {
+            hostedDrag.prime(event, context: hostedContext)
+            return
+        }
+
         // Only allow undocking if dragging from title bar area
         // When title bars are hidden, all drags allow undocking
         let isTitleBarArea: Bool
@@ -503,6 +766,11 @@ class EQView: NSView {
             return
         }
         
+        if hostedContext != nil {
+            hostedDrag.drag(event)
+            return
+        }
+
         // Handle window dragging
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
@@ -520,6 +788,8 @@ class EQView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
+        // A press that moved the window is not also a click on whatever it started over.
+        if hostedContext != nil, hostedDrag.end() { return }
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToOriginalCoordinates(viewPoint)
         let skinPoint = NSPoint(x: point.x, y: originalWindowSize.height - point.y)
@@ -532,8 +802,10 @@ class EQView: NSView {
                     window?.close()
                 }
             case .eqPresets:
-                if Layout.presetsRect.contains(skinPoint) {
-                    showPresetsMenu(at: point)
+                if metrics.presets.contains(skinPoint) {
+                    // The menu positions itself in *view* coordinates, so it must be given the click
+                    // where it actually landed, not the unscaled layout point.
+                    showPresetsMenu(at: viewPoint)
                 }
             default:
                 break
@@ -552,25 +824,19 @@ class EQView: NSView {
     }
     
     private func hitTestSlider(at point: NSPoint) -> Int? {
+        let metrics = self.metrics
         // Check preamp (skin coordinates - y increases downward)
-        let preampRect = Layout.preampRect
+        let preampRect = metrics.preamp
         if point.x >= preampRect.minX && point.x <= preampRect.maxX &&
            point.y >= preampRect.minY && point.y <= preampRect.minY + preampRect.height {
             return -1
         }
         
         // Check bands
-        for i in 0..<10 {
-            let rect = NSRect(
-                x: Layout.bandStartX + CGFloat(i) * Layout.bandSpacing,
-                y: Layout.bandY,
-                width: Layout.bandWidth,
-                height: Layout.bandHeight
-            )
-            
+        for (index, rect) in metrics.bands.enumerated() {
             if point.x >= rect.minX && point.x <= rect.maxX &&
                point.y >= rect.minY && point.y <= rect.minY + rect.height {
-                return i
+                return index
             }
         }
         
@@ -580,17 +846,8 @@ class EQView: NSView {
     private func updateSlider(at point: NSPoint) {
         guard let index = draggingSlider else { return }
         
-        let rect: NSRect
-        if index == -1 {
-            rect = Layout.preampRect
-        } else {
-            rect = NSRect(
-                x: Layout.bandStartX + CGFloat(index) * Layout.bandSpacing,
-                y: Layout.bandY,
-                width: Layout.bandWidth,
-                height: Layout.bandHeight
-            )
-        }
+        let metrics = self.metrics
+        let rect = index == -1 ? metrics.preamp : metrics.bands[index]
         
         // Calculate value from position (skin coordinates - y=0 at top)
         // Bottom of slider = +12dB, Top of slider = -12dB
@@ -632,5 +889,40 @@ class EQView: NSView {
     
     override func menu(for event: NSEvent) -> NSMenu? {
         return ContextMenuBuilder.buildMenu()
+    }
+}
+
+// MARK: - Winamp Modern hosted surface (B55)
+
+/// Mounted inside the skin's own standard frame when a `.wal` skin declares no equalizer of its own.
+/// The whole equalizer goes in — bands, preamp, ON/AUTO/PRESETS and the curve — rather than the
+/// `drawEqualizerComponent` stub a synthesized `<component guid:eq>` holder would resolve to.
+extension EQView: WinampModernHostedSurface {
+    var view: NSView { self }
+
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
+        hostedContext = context
+        autoresizingMask = [.width, .height]
+        loadCurrentEQState()
+        needsDisplay = true
+    }
+
+    func applyPalette(_ style: WinampModernSurfaceStyle) { needsDisplay = true }
+
+    func applySkinScale(_ scale: CGFloat) { needsDisplay = true }
+
+    /// The equalizer draws only when something changes, so there is no render loop to run or stop.
+    func resume() {
+        loadCurrentEQState()
+        needsDisplay = true
+    }
+
+    func suspend() {}
+
+    func unmountFromHolder() { removeFromSuperview() }
+
+    func prepareForUITeardown() {
+        removeFromSuperview()
+        hostedContext = nil
     }
 }

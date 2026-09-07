@@ -428,6 +428,25 @@ For non-Plex backends, preserve both `Track.contentType` and sample rate from se
 
 ## Troubleshooting
 
+### Confirming a cast is live from outside the app — use `nettop`, not `lsof`
+
+Sonos control is **short-lived fire-and-forget SOAP** to ports 1400 and 1443, polled every 5 s. The
+connections open, transfer and close in well under 100 ms, so **`lsof` sampling does not see them**:
+113 `lsof` samples across 20 s — four whole poll windows — returned nothing but an unrelated SSDP
+UDP socket, on a session that was demonstrably casting. Reading "not casting" off that is wrong, and
+it is the kind of blind instrument that reads exactly like a real negative.
+
+Use per-connection monitoring instead, which catches them in `TimeWait`:
+
+```sh
+nettop -p $(pgrep -f 'NullPlayer') -x -J bytes_out -l 12 2>/dev/null | grep -E ':1400|:1443'
+```
+
+A live cast shows repeated short connections to the household's speakers (`sonos1.lan`,
+`sonoszp.lan`, …). Counting the matched lines across a switch is also the cheapest way to prove a
+cast **survived** a UI mode change: 33 connections across a `winampModern → Classic` swap, 15 in the
+sample after swapping back.
+
 ### Devices Not Found
 1. Check UPnP is enabled in Sonos app settings
 2. Ensure devices are on same network/VLAN

@@ -1,0 +1,409 @@
+#### How a colour resolves (BB2a, 2026-08-25)
+
+Everything a skin colours — a `<rect color=…>`, a `<vis colorband1=…>`, and the `WasabiPalette` roles
+NullPlayer's own surfaces draw with — goes through `resolvedColor` / `objectColor`. A colour that
+fails to resolve does not disappear; it becomes a **fallback**, and the two fallbacks are loud:
+`unparseableColor` is **white** and `contentBackground`'s literal is **black**. So the symptom to
+recognise is *"a white slab"* or *"a black rectangle"* where the skin plainly names a colour — not a
+subtly wrong shade.
+
+Three ways a declared colour used to be lost, all fixed and all worth knowing because each has a
+different signature:
+
+1. **A colour resource may name another colour resource.** `<color id="wasabi.list.text"
+   value="color.display"/>` — the value is an *id*, not a triple. Big Bento Modern writes nearly its
+   whole palette this way. The walk to the literal is bounded and cycle-guarded, and the **referring**
+   declaration's `gammagroup` wins where it has one, so the channels are tinted once, by the group the
+   id that was asked for names.
+2. **Bitmaps and colours are different tables.** Wasabi keeps them apart, and skins rely on it: Big
+   Bento declares `wasabi.list.background` as a `<color>` in `system-colors.xml` *and* as a tiled
+   `<bitmap>` in `system-elements.xml`. A single flat registry let the bitmap win, and a colour lookup
+   then found an image with no `color=` — which the palette chain skips, landing on black.
+   `WalResourceRegistry.resolvedColorDefinition` indexes the colour-carrying declarations separately;
+   `resolvedDefinition` still answers the bitmap, so tiling that image is unaffected. A `$solid` /
+   `$gradient` bitmap counts as colour-carrying, because its pixels *are* its `color=` attribute.
+   **Within that colour table a real `<color>` outranks a generated bitmap**, whichever is declared
+   last — Ebonite_2_1 declares the same id as a `<color>` at 70,70,70 ("lists/trees item background")
+   and a `$solid` at 237,237,237 ("Tree background bitmap (tile)"), the tile last, and its list text
+   is white: taking the tile painted white on near-white. Two `<color>`s of one id keep ordinary
+   last-wins; the ranking is about *kind*, not order.
+3. **`#rrggbb` is a literal.** Enkera declares its entire palette in hex; Sony_Walkman its analyzer
+   (`colorband1="#808589"`), Big Bento its 22 analyzer bands. The parse is deliberately strict — only
+   a `#`-prefixed token — so a bare `abcdef` stays a resource id, which is what the caller already
+   tried it as.
+
+`WINAMP_MODERN_RENDER_PALETTE=1` prints every role, every link of its chain, and why each link
+answered or did not. **Use it before changing a colour path**: it distinguishes "the skin never
+declared it" from "a colour theme crushed it" from "the chain skipped a bitmap", which look identical
+on screen. See `harness.md`.
+
+#### A resolved colour is not yet a *readable* one (B48, 2026-08-25)
+
+Every role resolves from its **own** id chain, and nothing in Wasabi checks that a foreground and the
+background it lands on can be seen together. A skin declaring two colour families therefore hands us
+a mongrel pairing that neither family's author intended. Winamp never hits this: its Media Library is
+a native Win32 list, so the OS guarantees a legible selection. We draw those rows ourselves, so the
+guarantee has to be ours.
+
+**Measured across all 36 skins then installed:** 23 drew an unreadable selected row (< 1.5:1), **nine of
+them at exactly 1.00:1** — text and highlight the same colour — and 5 an unreadable window title,
+with 22 more weak (< 3:1). Big Bento is the type specimen: highlight from
+`studio.list.item.selected` (orange `color.selected.active`), row text from
+`wasabi.list.text.selected` (pale blue-grey `color.display`) — **1.06:1**; and a *current* row over
+that same bar is orange on orange at **1.00:1**.
+
+The guarantee lives in `WinampModernSurfaceStyle`, which already *derives* roles by blending rather
+than inventing, and which is **nil in classic mode** — so classic cannot be reached by it:
+
+- `legible(preferring:on:)` returns the **first of the skin's own colours** that clears
+  `minimumContrast` (3.0, WCAG's large-text bar), and only falls back to black or white — whichever
+  is further from the background — when every one of them would be invisible. That fallback always
+  clears: for any background, one extreme is at least ~4.5:1 away. **Ordering is the policy**: a skin
+  that gives us anything usable is never overridden.
+- `selectedText` is the stored role for a highlighted row: `currentText` → `selectionText` →
+  `listText` → `contentBackground`, judged against `selectionBackground`.
+- `legibleDimText(on:)` is for inactive titles and hints. `dimText` is a 40% blend toward the
+  background, so a naive guard fails it almost everywhere and would snap every inactive title to full
+  strength — erasing the active/inactive distinction corpus-wide to fix five skins. It backs the
+  blend off in stages (40% → 25% → 12% → full) instead.
+- `composited(_:over:)` flattens a translucent fill first. `PlexBrowserView`'s focused search field
+  draws over a **half-alpha** highlight; judging the written colour rather than the composited one
+  leaves that one state unreadable while the opaque row beside it is fixed.
+
+**Two draw paths need it, and missing the second is the easy mistake.** NullPlayer's AppKit surfaces
+go through the style (`PlexBrowserView`'s four selection sites and its title, `WinampModernChrome`,
+`PlaylistView`, `EQView`). But the skin's **own** playlist panel and `<ColorThemes:List>` are drawn by
+`WasabiRenderer` straight from `WasabiPalette`, never touching a style — that is
+`WasabiRenderer.legibleRowColor`, and it was the half that live QA caught after the first pass looked
+complete on the library panel.
+
+**Where it deliberately stops: text the skin declares for its own controls.** Formamp's window
+background is `(0,0,0,206)` — translucent by design, never opaque anywhere — and its `<text>` objects
+name `color=80,80,80` (title), `120,120,120` (artist), `100,100,100` (timer). Over a bright desktop
+that composites to black-on-black, and it is still not ours to change: guarding a colour an author
+spelled out is overruling the design, not fixing our legibility. Closed as won't-do. The same reading
+applies to any quiet-by-design skin — Lobe, micro.
+
+`PlaylistColors.selectedText` (declared **twice**, `Skin/Skin.swift` and
+`NullPlayerCore/Skin/SkinTypes.swift` — out of step is a build error, not a silent regression)
+defaults to `currentText`, which is exactly what the draw sites read before it existed. Classic `.wsz`
+skins are a zero-pixel change by construction and `SkinLoader` needed no edit.
+
+#### A list plate and a text-field plate are different surfaces (B113, 2026-09-04)
+
+`WasabiPalette` resolves each role from its own chain, and `contentBackground` — the plate under
+every list NullPlayer draws inside a skin — used to lead with **`wasabi.edit.background`**. That id
+names a *text field*, not a list, and a skin that declares both means them differently. **11 of the
+69 corpus skins do**, and six were drawing plain row text below 3:1 on the wrong plate:
+
+| Skin | old plate | new plate | row text | contrast |
+|---|---|---|---|---|
+| Itemskin | 42,42,42 | 220,175,0 | 80,70,0 | 1.52 → 4.59 |
+| K-jr, k_jr_…_d329ymw | 42,42,42 | 255,255,255 | 0,0,0 | 1.46 → 21.0 |
+| Pure Inspired ×2 | 42,42,42 | 74,74,74 | 0,0,0 | 1.46 → 2.37 |
+| WMP11-BlueVU | 96,96,96 | 10,10,10 | 40,113,233 | 1.39 → 4.36 |
+| micro | 96,96,96 | 24,24,24 | 140,140,140 | 1.87 → 5.28 |
+| Nullsoft 2000 SP4 Lite | 0,0,180 | 255,255,255 | 0,0,0 | 1.66 → 21.0 |
+| Lobe | 75,75,75 | 124,131,124 | 0,0,0 | 2.41 → 5.39 |
+| multipass | 75,75,75 | 38,38,38 | 106,206,255 | 4.94 → 8.57 |
+| MoonLight | 42,42,42 | 246,246,246 | 140,140,140 | 4.27 → 3.11 |
+
+Itemskin was the live report — *"is there a filter in front of the displays?"*, everything a muddy
+olive. There was no filter and no missing gamma (see the empty-`(default)`-gammaset note below,
+which is what the first diagnosis blamed): the skin's rows are dark olive **on gold**, which is its
+whole display language, and we were painting them on its charcoal edit colour. B48 cannot save this
+— `legibleRowColor` deliberately leaves *unselected* rows alone, and unselected-row-on-plate is
+exactly the pairing that was wrong.
+
+**The check that decides which id a skin means, without launching it:** `wasabi.list.column.background`,
+the header strip, is unambiguously part of the list. In all 11 it sits in the same lightness family
+as `wasabi.list.background` and not as `wasabi.edit.background` — MoonLight's column is 233,233,233
+beside a 246,246,246 list and a 42,42,42 edit, so its near-white playlist inside a dark skin is the
+author's design, not our regression, even though it is the one skin whose contrast *falls*.
+
+**The role is split, because the fix would otherwise break the other half.** `<Wasabi:EditBox>` and
+`<Wasabi:DropDownList>` are the surface `wasabi.edit.background` names, and they are drawn by us
+(`drawStandardFormWidget`, `drawDropDownList`) — promoting the list colour alone moved Itemskin's
+settings dropdowns onto the gold plate. `WasabiPalette.editBackground` keeps them where they were,
+falling back to `contentBackground` for a skin that names no edit colour. **A legibility guard must
+judge against the plate its own draw filled**: the drop-down label's `legible(preferring:on:)` was
+still weighed against `contentBackground`, so the first pass turned a white label dark-on-dark on
+the very skin it was fixing.
+
+Proof for a change of this shape: `WINAMP_MODERN_RENDER_PALETTE=1` over the corpus reports every
+link of every chain in one pass, so the old and new winner can be read off **without** rebuilding —
+the chain lines list each id's resolution regardless of order. Then the render sweep: invariants
+identical, 565 of 590 images identical, and the 25 that moved are these 11 skins' list surfaces plus
+`Anexa/main-shade`, which is nondeterministic by nature.
+
+#### A marker only marks when it differs from what surrounds it (B122, 2026-09-04)
+
+Reported on **Firefox** as *"the playlist current playing track loses highlight when the track is
+advanced"*, and *"I don't see this on all skins"*. Firefox declares no playlist window, so its
+playlist is the container we synthesize and `drawPlaylistComponent` draws — where two of its
+declarations collide:
+
+| Role | Firefox id | Value | On the plate |
+|---|---|---|---|
+| `contentBackground` | `wasabi.list.background` | `7,92,129` | — |
+| `selectionBackground` | `studio.list.item.selected` | `7,92,129` | **1.00:1** |
+| `currentText` | `wasabi.list.text.current` | `37,122,159` | **1.53:1** |
+| `selectionText` | `wasabi.list.text.selected` | `223,115,29` | 2.31:1 |
+| `listText` | `wasabi.list.text` | `97,185,209` | 3.28:1 |
+
+The selection bar fills the plate onto the plate, so nothing is drawn; and B48's guard rejects the
+current colour and walks on — to `listText`, **the colour every ordinary row is drawn in**. The guard
+that made the row readable also made it anonymous, so after an advance the playing row had no marker
+of any kind. Skins whose bar differs from their plate never reach this, which is the "not on all
+skins" signature.
+
+Two additions in `WasabiRendererColour`, both `.wal`-only by construction — nothing outside
+`WasabiRenderer` calls them:
+
+- **`rowSelectionBackground`** is the bar a row is actually *filled* with. Below **1.15:1** against
+  the plate the skin's bar cannot be seen at all, and one derived from the skin's own two ends
+  (`blend(plate, toward: listText, by: 0.35)`, the way `WinampModernSurfaceStyle` derives every other
+  piece of chrome) takes its place. A skin whose bar already differs keeps it untouched. The
+  threshold is far below `minimumContrast` on purpose: it asks *is anything drawn at all*, not *can
+  text be read on it*. `legibleRowColor` now judges against this bar rather than the one the skin
+  named — B113's rule that **a guard must judge against the plate its own draw filled**.
+- **`legibleCurrentRowColor(on:plain:)`** drops the plain row colour from the candidate list, so the
+  readability walk can no longer end on it; the black/white extreme is then the last resort, and it
+  can never collide by construction. Called only when the skin *named* a current colour
+  (`currentText != listText`) — a skin that named none is marked by its bar, as Winamp marks it.
+
+**Where this stops, measured in the test.** Once every colour a skin owns is unreadable on the
+derived bar, the *selected* plain colour and the current colour both land on the same white extreme:
+there is no third colour left to invent from a palette that collapsed. A selected row is then marked
+by the bar and the playing row by neither — which is fine, because the selection follows playback
+(`playlistFollowCurrentTrack`), so the playing row is normally the only selected one and its
+neighbours are unselected rows in `listText`. The invariant worth asserting is *the playing row never
+looks like the rows around it*, not *the playing row differs from a selected one*.
+
+The same pairing drives `<ColorThemes:List>`, where the applied theme is the "current" row, so both
+guards are applied there too.
+
+#### Colour themes (`gammaset` / `gammagroup`)
+
+A theme is a set of per-channel adjustments keyed by `gammagroup` id, which bitmaps and `<color>`
+resources opt into with `gammagroup="…"`. Three rules:
+
+- The value triplet is a per-channel **amount** normalized to −1…1 (`v / 4096`); 0 means "leave this
+  channel alone" under either model below.
+- **`boost` picks the model, and the skin is the authority.** There is no single right answer here —
+  picking one globally always breaks the other half of the corpus:
+  - `boost="0"` or the attribute omitted → **multiply**, `channel × (1 + amount)`. Tints real artwork
+    without washing it out. Every group in **Anexa** is `boost="0"`, as are MMD3's `Backgrounds` /
+    `Display` / `Buttons` (which carry no `boost` at all) — forcing those additive pushes midtones
+    toward white and renders MMD3's amber display as washed-out pastel.
+  - `boost` non-zero → **add**, `channel + amount`. This is how a skin recolours a black template.
+    **Anaheim Player 01** marks 57 of its 65 groups `boost="1"`; its themed bitmaps
+    (`MiniControlWheel.png`, `MiniTickerBtns.png`, `MiniBodyBtn.png`) are pure black with only an
+    alpha mask, and every `<color>` in its `studio-colors.xml` is `value="0,0,0"`. Multiplied, 0 stays
+    0 — black text on black sub-windows and hover controls that never appear.
+
+  Stock `winampmodern566` draws the same line inside one skin: `boost="0"` on `Backgrounds`,
+  `boost="1"` on exactly the groups whose source colour is `0,0,0` (`wasabi.button.text`,
+  `wasabi.list.column.text`, `drawer.color.text.dark`) plus the hover-glow bitmaps.
+
+  `boost` is a mode, not a flag — MMD3 and Itemskin ship `boost="2"` alongside `boost="1"`, on the
+  same label groups. Its exact difference from `1` is **unknown**; it is treated as additive, which is
+  strictly closer than multiplying, and a spot-check of MMD3 (2026-08-23) turned up nothing visibly
+  wrong. Do not re-derive the probe if this comes up again:
+
+  - MMD3's heaviest `boost="2"` user is `MainLabel` → `label11.png`, the **"MMD3 / WINAMP-PLAYER"
+    wordmark** at the top of the main window (`player-normal.xml` `mslabel11`, x=156 y=4), in 51 of
+    83 themes. It proves nothing: the value there is `-4000,-4000,-4000` on a stencil that is already
+    black, so both models render it black.
+  - The **only clean A/B** is `CoverLabel` at value `3000,3000,3000`, identical `gray`, differing only
+    in boost: `silver1 | xblue` is `boost="1"`, the `xbox | orange`/`blue`/`pink`/`red`/`yellow`
+    family is `boost="2"`. It draws the drawer headings — `label7` "EQualizer MMD3" (EQ drawer),
+    `label9` "VISualization MMD3" (VIS drawer), `label10` "COLORThemes" (ColorThemes drawer), all
+    pure-black stencils. Open a drawer, switch between those two themes: we render both at the same
+    mid-grey, so a brightness difference in real Winamp is the tell.
+  - Secondary probe: `DisplayLabel` under `silver3 | slategray`/`slateblue`/`skyblue` or `xbox | blue`
+    — `displaylabels.png` (the STEREO/MONO and play/pause/stop glyphs in the main display) is the one
+    `boost="2"` target that is bright artwork (avg RGB 200), where the two models diverge most.
+- The **default** theme is the first gammaset in the document (skins name it freely — "clean | orange
+  (default)"), not the alphabetically first name.
+- **An empty first gammaset is a theme, not a gap** (B113, measured 2026-09-04). 6 of the 47 corpus
+  skins that ship gammasets lead with one that declares no groups — Bio-Nid, Firefox, Formamp,
+  Itemskin, Rika, T800 — and every one of them *names* it `default` / `(default)` / `.default`. An
+  empty set is an identity transform, which is the author saying "the artwork as drawn"; only 4 of
+  the 6 even have another set to pick instead. Do not add a rule that skips it. Itemskin looked
+  wrong for an unrelated reason (see *A list plate and a text-field plate are different surfaces*),
+  and "the theme is empty" is the plausible-mechanism answer that cost that report its first pass.
+
+`WasabiColorThemeCatalog` reads the gammasets straight from the document, so `gammagroup` is
+deliberately *not* registered as a resource: its id is scoped to its gammaset, and registering it made
+each of MMD3's 83 themes "replace" the previous one's groups (1404 bogus duplicate-id warnings).
+
+##### A theme is the measurement's frame of reference, not a detail (B129, 2026-09-05)
+
+**A colour reading taken on the default theme is void against a screen taken on another**, and this
+is a whole-afternoon trap rather than a nicety: cPro2 Dark Aluminum ships **61** gammasets, and its
+default one is identity — every group `0,0,0` — so the harness renders the skin's raw artwork while
+the reporter is looking at a set that recolours half of it. Four rounds of "the bar is muted / no it
+is not" came from comparing numbers across that gap. `WINAMP_MODERN_RENDER_THEME=<name>` renders a
+named theme and `RENDER_THEMES=1` lists them ([harness.md](../harness.md)); ask which theme is
+selected *before* quoting a colour at anyone.
+
+The same skin also shows why the grouping matters more than the values. Its themes carry **two**
+hover tints — `n.playback.button.hoverdown` (a `gray="2"` desaturate plus a heavy channel bias: the
+saturated glow the play controls light up with) and the muted `n.infoseek.seek.hover` /
+`n.playback.volume.active`, which most of the sixty sets leave as a plain darkening with no tint at
+all. Two controls can therefore be *correctly* themed and still look unrelated, and no amount of
+alpha or artwork work closes that gap: which group a bitmap declares is the whole answer. When a
+report says "this does not glow like that", check the two gammagroups against each other first.
+
+##### The picker: `<ColorThemes:List>` and the `colorthemes_*` actions (Phase 32)
+
+The catalog is only half the feature. The screen a user picks a theme from is
+`<ColorThemes:List>` — an **unregistered XUI tag**, because in real Winamp the widget lives inside
+Winamp and only the tag appears in the `.wal`. Until Phase 32 it expanded to a leaf object with no
+bitmap, which `isRenderable` and `isInteractive` both rejected, so every colour-theme screen in every
+skin was an empty box that could not be clicked.
+
+- The renderer draws the rows (`drawColorThemeList`), from `themeNames` in catalog order, through the
+  same `drawSurfaceText` path the embedded playlist uses — the skin's list font, the skin's list
+  colours, the skin's active gamma. The **selected** row (`selectionBackground`/`selectionText`) and
+  the **applied** one (`currentText`) are drawn differently, as Winamp draws them: "the row I am
+  pointing at" and "the theme the window is wearing" are different facts.
+- Per-object state (`WasabiColorThemeListState`, keyed by `WasabiObjectID`) holds the selection and
+  the scroll, so a skin with a list in its player *and* in a standalone window — mmd3 has both — keeps
+  them independent. The first draw **seeds the selection to the applied theme and scrolls it into
+  view**; with 82 themes a list that always opened at row 0 could not answer "which one am I on?".
+- A single click selects; a **double-click** applies. The skin's own `Switch` button is what a single
+  click is waiting for.
+- **No scrollbar.** The renderer has no scrollbar support at all, so a `<Wasabi:Scrollbar>` a skin
+  places beside its list is inert and the wheel is the only way down the list. Scrolling the applied
+  theme into view is the mitigation; growing scrollbar support is a separate piece of work.
+
+The three host actions live in `WinampModernMainView.performAction`:
+
+| Action | What it does |
+|---|---|
+| `colorthemes_switch` | applies the selection of the list its `action_target` names |
+| `colorthemes_next` / `_previous` | steps the **applied** theme, wrapping, and drags every list's selection along |
+
+`action_target="<id>"` is resolved with Wasabi's **wide** semantics, the ones `findObject` uses: the
+button's own container subtree first, then the whole graph. The wide half is load-bearing — mmd3's
+`ctsbig` window names `main.colorthemes.list`, which lives in another container. A button whose target
+resolves to nothing falls back to the only list in the scene, and failing that to a **popup menu** of
+the theme names. (multipass was the worked example of that fallback until Phase 33; it is not one. Its
+`player.colorthemes` lives in a groupdef that only `System.newGroupAsLayout` instantiates, and that
+method was refused — so the target was missing for a reason the skin had nothing to do with. It
+resolves now, and the buttons act on a real 58-row list.) `action="TOGGLE"` with Winamp's Color-Themes preferences GUID
+`{53DE6284-7E88-4c62-9F93-22ED68E6A024}` opens that same popup.
+
+Skins that define themes and ship **no** picker at all (measured: Anexa, micro, T800, ZDL, Itemskin,
+Overdrive_2) are covered by the host **Color Themes** submenu in the Winamp Modern menu, which is the
+preferences dialog we do not otherwise have. It is gated on more than one theme.
+
+
+#### `activealpha`/`inactivealpha`, and a `<gradient>` with no direction (B135/B137, 2026-09-05)
+
+Two defects that together made every window title in Nullsoft Winamp 2000 SP4 unreadable. Both are
+engine-wide; that skin is only the first in the corpus to lean on either.
+
+**`activealpha`/`inactivealpha` are the focus-dependent alpha pair.** Wasabi paints an object at the
+first while its window has the keyboard and at the second when it does not; plain `alpha` is the
+value for both. Skins use the pair to keep **two objects in the same slot** and show one at a time —
+`titlebar.xml` stacks `window.titlebar.title.active` (`activealpha="255" inactivealpha="0"`) directly
+on `…title.inactive` (the reverse), each in its own gammagrouped colour, and the song ticker,
+playlist and the whole standard frame's titlebar artwork do the same. Neither attribute was read
+anywhere, so both copies drew at full strength in two different colours, one glyph grid apart.
+
+`WasabiSceneRenderer.alphaFraction(of:active:)` resolves the pair, off `renderer.isWindowActive`,
+which `WinampModernMainView` writes from `isKeyWindow` before each paint. One view class backs the
+player, every auxiliary container and every hosted window, so each answers for its own window; the
+view also observes `didBecomeKey`/`didResignKey`, because nothing else asks AppKit to repaint for a
+focus change. The headless harness has no window and defaults to **active**, the state a skin is
+designed around.
+
+**A `<gradient>` that names no `gradient_x1/y1/x2/y2` runs left to right.** All four defaulted to 0,
+which put `start` on `end`; `.drawsAfterEndLocation` then paints the *last* stop over the whole rect —
+a flat fill. The Windows 2000 titlebar is built out of exactly this shape: an opaque
+`Active Title Bar Color 1` gradient (navy) with `Color 2` (light blue) laid over it at
+`points="0.0=…,0;1.0=…,255"`, a left-to-right alpha ramp. Flat-filled, the second covered the first
+and every titlebar came out one solid light blue — measured, every pixel of the equalizer's 469px
+title strip was `rgb(167,203,242)`. A skin that states *any* of the four still gets exactly what it
+states, so ClassicPro's `cdbox.fg.fademask` (all four, top to bottom) is untouched. Corpus sweep: 13
+layouts change, all in this one skin, plus Anexa's clock hand.
+
+Verified in the running app rather than the dump — `screencapture` and a pixel read: the active
+equalizer title ramps `rgb(32,60,126)` → `rgb(154,188,230)`, the unfocused player's ramps
+`rgb(128,128,128)` → `rgb(187,187,187)`, which is also the proof that the active/inactive pair is
+being chosen per window.
+
+#### A user override outranks the chain (B146, 2026-09-06)
+
+Reported as *"winampmodern566's Media Library is unreadable"* on one of its colour themes. **It is not
+a defect.** That skin ships **88** `<gammaset>`s, nearly all of them re-tint the list group
+(`ListText`, `ListBackground`, `ListSelBackground`, `ListTextSelected`, `ListColumnText`), and some of
+those tints simply pair badly. The engine resolved exactly what the author wrote, and the sections
+above say why nothing automatic will rescue it: B48 and B122 guard only *selected* and *current* rows,
+and B113 records the deliberate decision to leave a plain row on its own plate alone. That leaves a
+whole class of **bad-but-authored** pairing the engine will never fix and should not.
+
+So the fix is not another guard. It is letting the user say what they want, and then getting out of
+the way.
+
+**The choke point is `WasabiPalette.make(overrides:resolve:)`.** An override for a role wins *before*
+its id chain is walked; everything downstream — the derived roles, `WinampModernSurfaceStyle`'s chrome
+blends, `paletteResolutionReport` — follows from it with no further plumbing. The palette carries
+`overriddenRoles`, and it is part of `Equatable`, so a palette that gained an override is a different
+palette even when every channel matches and the caches keyed on it notice.
+
+**The cascade is deliberate.** `currentText`, `selectionText` and `treeText` still fall back to the
+*resolved* `listText`, so overriding list text alone recolours the roles the skin left derived —
+exactly as overriding it in the skin's own XML would. `isOverridden` answers only for roles the user
+actually set, which is what the guards and the panel's per-role Reset key on.
+
+**Storage is per skin *and per colour theme*.** `@nullplayer.colors`, key `role/theme`, value
+`#rrggbb`, in the skin's own `WinampModernConfiguration` (`WinampModernSkinState.paletteOverride`).
+Per-theme because 566's gammasets recolour the same roles differently: a colour that fixes one theme
+is a different wrong colour under the next. The theme is the catalog's canonical `activeTheme`
+display name, which is stable across launches because the catalog vends it from the skin's markup.
+`safeComponent` folds punctuation, so two themes differing only in punctuation would share a slot —
+accepted; no corpus skin does it, and the cost is one theme showing another's colour, not data loss.
+
+**Clearing had to mean *removing*.** Every other entry in `WinampModernSkinState` has a spare value to
+spell "never set" with (`-1`, the empty string). A colour has none — every `#rrggbb` is something a
+user could legitimately have picked, black included — so `WinampModernConfiguration` gained
+`removeValue(section:key:)` and `removeSection(_:)`. The section sweep is built from `storageKey`'s
+own components, so it can only reach keys that configuration could itself have written.
+
+**The reset is two-level**, and the second level is not optional. Per-role clears *this* theme;
+**Reset This Skin** clears every theme. Per-theme storage is otherwise a trap: a user who fixed one
+theme months ago has no way to find the other five they also touched.
+
+**The guards step aside for a colour the user chose.** `WinampModernSurfaceStyle.selectedText`,
+`legibleRowColor`, `legibleCurrentRowColor` and `rowSelectionBackground` all take an overridden role
+verbatim. This is the rule that makes the feature honest: those guards exist to rescue a pairing an
+author never meant to make, and a panel that previewed one colour while the app drew another would be
+lying about the only thing it does. A user gets 1.2:1 if they ask for it — flagged with a `⚠` beside
+the ratio, never blocked.
+
+**The contrast column is measured against the plate the role's own draw fills** — B113's rule applied
+to the readout, via `Role.contrastPlate`. Row text on `contentBackground`, selected-row text on
+`selectionBackground`, tree text on `treeSelection`. Weighing all four against one background is
+precisely the mistake B113 records.
+
+**Applying a change reuses the theme-switch fan-out** rather than growing a parallel one:
+`WinampModernMainView.themeDidChange()` is now `paletteDidChange()` (internal), and the controller
+calls it over `skinView` **and every `auxiliaryContainers` entry** — a separate-window skin keeps its
+Media Library in an auxiliary container, so touching only the player's renderer moves the swatch and
+nothing on screen. The renderer's own half is `paletteOverridesDidChange()`, which drops
+`paletteCache`/`surfaceStyleCache` and marks the graph `.appearance` dirty but **not** the themed
+bitmaps or the warp/prescale caches: an override cannot change a bitmap, and a colour well fires
+continuously while the user drags.
+
+`WINAMP_MODERN_RENDER_PALETTE=1` prints a leading `PALETTE <role> OVERRIDE #rrggbb (user, theme: …)`
+line for an overridden role — leading, because none of the chain lines below it decided anything, and
+reading them as the answer is exactly the misreading the probe exists to prevent.
+
+**Proof the feature is inert until touched:** corpus render sweep, clean profile, 2026-09-06 —
+invariants identical (2355 lines), **681 of 682 images byte-identical**, the one mover being
+`Anexa/main-shade`, which is nondeterministic by nature and moves between two passes of the same
+build.

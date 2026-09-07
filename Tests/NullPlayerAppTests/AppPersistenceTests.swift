@@ -99,10 +99,10 @@ final class AppPersistenceTests: XCTestCase {
         }
     }
 
-    func testFreshFullEditionDefaultsToWMPWithoutPersistingAMode() {
+    func testFreshFullEditionDefaultsToClassicWithoutPersistingAMode() {
         withDefaults { defaults in
             XCTAssertNil(defaults.object(forKey: PlayerUIMode.userDefaultsKey))
-            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .wmp)
+            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .classic)
             XCTAssertNil(defaults.object(forKey: PlayerUIMode.userDefaultsKey),
                          "Resolving the first-launch default must not overwrite a future user choice")
         }

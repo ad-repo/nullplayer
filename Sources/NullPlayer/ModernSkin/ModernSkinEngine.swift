@@ -327,7 +327,7 @@ class ModernSkinEngine {
         }
 
         // Apply base scale factor from skin config (sizeMultiplier is preserved independently)
-        ModernSkinElements.baseScaleFactor = skin.config.window.scale ?? 1.25
+        ModernSkinElements.applyBaseScaleFactor(skin.config.window.scale ?? 1.25)
 
         // Apply per-skin visualization defaults (mode + mode-specific presets/profiles).
         // window.spectrumTransparentBackground seeds the spectrum transparent state;

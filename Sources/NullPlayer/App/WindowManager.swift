@@ -11,6 +11,9 @@ extension Notification.Name {
     static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
     static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
     static let windowDragDidEnd = Notification.Name("windowDragDidEnd")
+    /// A `.wal` skin switched colour theme. The surfaces NullPlayer draws itself take their colours
+    /// from the skin's palette (Phase 16), and the fallback windows have no handle on the skin view.
+    static let winampModernThemeDidChange = Notification.Name("winampModernThemeDidChange")
 }
 
 #if DEBUG
@@ -83,7 +86,10 @@ enum UIScaleLevel: String, Codable, CaseIterable {
     case p125 = "125"
     case p135 = "135"
     case p150 = "150"
+    case p175 = "175"
     case p200 = "200"
+    case p250 = "250"
+    case p300 = "300"
 
     var percent: Int {
         Int(rawValue) ?? 100
@@ -96,6 +102,16 @@ enum UIScaleLevel: String, Codable, CaseIterable {
     /// Linear scale multiplier applied on top of Skin.scaleFactor.
     var scaleFactor: CGFloat {
         CGFloat(percent) / 100.0
+    }
+
+    /// The level closest to an arbitrary multiplier, for a caller that thinks in factors rather
+    /// than in menu entries — a `.wal` skin's `setScale`, whose configurator offers 100–300%. Ties
+    /// go to the larger level; there is no "off the end" case, because the ends clamp.
+    static func nearest(toScaleFactor factor: CGFloat) -> UIScaleLevel {
+        allCases.min(by: {
+            let (a, b) = (abs($0.scaleFactor - factor), abs($1.scaleFactor - factor))
+            return a == b ? $0.scaleFactor > $1.scaleFactor : a < b
+        }) ?? .p100
     }
 
     init?(storedRawValue: String) {
@@ -337,8 +353,13 @@ class WindowManager {
         }
     }
 
-    /// Whether the modern-family UI is enabled. Kept as a compatibility mirror for
-    /// call sites that only need to choose classic vs. modern-family controllers.
+    /// Whether the **NullPlayer modern** controller family is active (`.modern`/`.metal`).
+    ///
+    /// Narrowly scoped on purpose: this is `false` for both `.classic` and `.winampModern`.
+    /// The ~15 geometry / size-multiplier / modern-skin call sites that read this want
+    /// "NullPlayer-modern geometry?", and `.winampModern` deliberately uses classic geometry in
+    /// Phase 1. Controller-*factory* decisions that must distinguish all three families switch on
+    /// `uiMode.controllerFamily` instead (see `showMainWindow`).
     var isModernUIEnabled: Bool {
         get { uiMode.controllerFamily == .nullPlayerModern }
         set { uiMode = newValue ? .modern : .classic }
@@ -362,7 +383,8 @@ class WindowManager {
 
     private var auxiliaryControllerStyle: AuxiliaryControllerStyle {
         switch uiMode.controllerFamily {
-        case .classic: return .classic
+        // Phase 1 aux-window policy (§5): winampModern reuses the classic providers.
+        case .classic, .winampModern: return .classic
         case .nullPlayerModern: return .nullPlayerModern
         case .wmp: return .wmpUnavailable
         }
@@ -484,14 +506,9 @@ class WindowManager {
             // Find sub-windows stacked below the main window (below-only BFS, same pattern as
             // slideUpWindowsBelow). Library browser and ProjectM are side-docked and must NOT
             // be moved — only the main window's bottom changes, its top is anchored.
-            let subWindows = [equalizerWindowController?.window,
-                              playlistWindowController?.window,
-                              spectrumWindowController?.window,
-                              audioAnalysisWindowController?.window,
-                              peppyMeterWindowController?.window,
-                              networkMonitorWindowController?.window,
-                              cavaWindowController?.window,
-                              waveformWindowController?.window].compactMap { $0 }
+            let subWindows = managedWindowRecords.compactMap {
+                $0.centerStack && $0.window !== mainWindow ? $0.window : nil
+            }
             var windowsBelow: [NSWindow] = []
             var frontier: [NSRect] = [mainWindow.frame]
             while !frontier.isEmpty {
@@ -546,22 +563,10 @@ class WindowManager {
             isSnappingWindow = false
         }
 
-        // Refresh all managed window views
-        for controller in [mainWindowController as? NSWindowController,
-                           equalizerWindowController as? NSWindowController,
-                           playlistWindowController as? NSWindowController,
-                          spectrumWindowController as? NSWindowController,
-                          audioAnalysisWindowController as? NSWindowController,
-                          peppyMeterWindowController as? NSWindowController,
-                          networkMonitorWindowController as? NSWindowController,
-                          cavaWindowController as? NSWindowController,
-                          waveformWindowController as? NSWindowController,
-                           projectMWindowController as? NSWindowController,
-                           plexBrowserWindowController as? NSWindowController] {
-            if let view = controller?.window?.contentView {
-                view.needsDisplay = true
-                view.needsLayout = true
-            }
+        // Refresh the materialized graph. Unopened hosted descriptors stay unopened.
+        for record in managedWindowRecords {
+            record.window.contentView?.needsDisplay = true
+            record.window.contentView?.needsLayout = true
         }
     }
     
@@ -578,24 +583,16 @@ class WindowManager {
         guard isRunningModernUI else { return false }
 
         // Sub-windows always hide when docked (base behavior)
-        let isSubWindow = window === equalizerWindowController?.window ||
-                          window === playlistWindowController?.window ||
-                          window === spectrumWindowController?.window ||
-                          window === waveformWindowController?.window ||
-                          window === audioAnalysisWindowController?.window ||
-                          window === peppyMeterWindowController?.window ||
-                          window === networkMonitorWindowController?.window ||
-                          window === cavaWindowController?.window
+        let isSubWindow = managedWindowRecords.contains {
+            $0.window === window && $0.centerStack && window !== mainWindowController?.window
+        }
         if isSubWindow && isWindowDocked(window) {
             return true
         }
 
         // When HT is on, ALL app windows hide titlebars
         guard hideTitleBars else { return false }
-        let isAppWindow = window === mainWindowController?.window ||
-                          isSubWindow ||
-                          window === projectMWindowController?.window ||
-                          window === plexBrowserWindowController?.window
+        let isAppWindow = managedWindowRecords.contains { $0.window === window }
         return isAppWindow
     }
     
@@ -645,6 +642,67 @@ class WindowManager {
 
     /// Waveform window controller (classic or modern, accessed via protocol)
     private var waveformWindowController: WaveformWindowProviding?
+
+    /// One inventory for every AppKit operation that treats player windows as a graph. Entries are
+    /// materialized windows only; unopened hosted descriptors therefore have no docking, Compact
+    /// Mode, ordering, or teardown footprint.
+    private struct ManagedWindowRecord {
+        let window: NSWindow
+        let centerStack: Bool
+        let snapTarget: Bool
+        let modeDependent: Bool
+    }
+
+    private var managedWindowRecords: [ManagedWindowRecord] {
+        var records: [ManagedWindowRecord] = []
+        var indices: [ObjectIdentifier: Int] = [:]
+        func add(_ window: NSWindow?, centerStack: Bool = false, snapTarget: Bool = false,
+                 modeDependent: Bool = true) {
+            guard let window else { return }
+            let key = ObjectIdentifier(window)
+            if let index = indices[key] {
+                let old = records[index]
+                records[index] = ManagedWindowRecord(
+                    window: window,
+                    centerStack: old.centerStack || centerStack,
+                    snapTarget: old.snapTarget || snapTarget,
+                    modeDependent: old.modeDependent || modeDependent)
+                return
+            }
+            indices[key] = records.count
+            records.append(ManagedWindowRecord(window: window, centerStack: centerStack,
+                                               snapTarget: snapTarget, modeDependent: modeDependent))
+        }
+
+        add(mainWindowController?.window, centerStack: true, snapTarget: true)
+        add(playlistWindowController?.window, centerStack: true, snapTarget: true)
+        add(equalizerWindowController?.window, centerStack: true, snapTarget: true)
+        add(spectrumWindowController?.window, centerStack: true, snapTarget: true)
+        add(audioAnalysisWindowController?.window, centerStack: true, snapTarget: true)
+        add(peppyMeterWindowController?.window, centerStack: true, snapTarget: true)
+        add(networkMonitorWindowController?.window, centerStack: true, snapTarget: true)
+        add(cavaWindowController?.window, centerStack: true, snapTarget: true)
+        add(waveformWindowController?.window, centerStack: true, snapTarget: true)
+        add(plexBrowserWindowController?.window, snapTarget: true)
+        add(projectMWindowController?.window, snapTarget: true)
+        add(videoPlayerWindowController?.window, modeDependent: false)
+
+        if let controller = winampModernHostedController {
+            // `.wal`-only: this whole branch is gated on the Winamp Modern controller existing, so no
+            // other UI mode reaches it. A `newDynamicContainer` copy (B110) is still managed — levels,
+            // minimize — but is not a snap target: it is a frame glued to another window's rect.
+            let instances = Set(controller.dynamicInstanceAuxiliaryWindows.map(ObjectIdentifier.init))
+            for window in controller.materializedAuxiliaryWindows {
+                add(window, snapTarget: !instances.contains(ObjectIdentifier(window)))
+            }
+            for hosted in controller.materializedHostedWindows {
+                let stack = WinampModernHostedWindowRegistry.entry(id: hosted.id)?
+                    .stackPolicy.participatesInCenterStack == true
+                add(hosted.window, centerStack: stack, snapTarget: true)
+            }
+        }
+        return records
+    }
     
     /// Debug console window controller
     private var debugWindowController: DebugWindowController?
@@ -731,6 +789,8 @@ class WindowManager {
 
     /// Windows currently in miniaturize animation; suppress drag/group movement for these.
     private var miniaturizingWindowIds = Set<ObjectIdentifier>()
+    /// Coalesces the burst of `didChangeScreenParameters` a display reconfiguration produces.
+    private var isScreenParameterSweepScheduled = false
     
     // MARK: - Initialization
     
@@ -773,6 +833,30 @@ class WindowManager {
             name: NSWindow.didMiniaturizeNotification,
             object: nil
         )
+        // Nothing watched the display configuration for the player's windows — only Compact Mode and
+        // two GL views did — so unplugging a monitor or changing resolution left every window on it
+        // at coordinates that no longer exist.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleScreenParametersDidChange(_:)),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    /// macOS posts this repeatedly while a display reconfigures, and the frames are not settled until
+    /// it stops, so the sweep is coalesced onto the next runloop pass rather than run per notification.
+    @objc private func handleScreenParametersDidChange(_ notification: Notification) {
+        // Winamp Modern only. A display reconfiguration leaves Classic and Original exactly where
+        // they were before this branch, which is what the other families expect.
+        guard appliesWinampModernPlacement else { return }
+        guard !isScreenParameterSweepScheduled else { return }
+        isScreenParameterSweepScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isScreenParameterSweepScheduled = false
+            self.ensureAllWindowsOnScreen()
+        }
     }
     
     /// Register default preference values
@@ -824,6 +908,8 @@ class WindowManager {
     func showMainWindow(reveal: Bool = true) {
         let isNew = mainWindowController == nil
         if isNew {
+            // Explicit four-way controller factory — no binary fall-through. The auxiliary
+            // windows reuse the classic providers (see the playlist/EQ/library factories).
             mainWindowController = Self.makeMainWindowController(for: uiMode)
         }
         markModeDependentWindow(mainWindowController?.window)
@@ -842,6 +928,7 @@ class WindowManager {
         switch mode.controllerFamily {
         case .classic: return MainWindowController()
         case .nullPlayerModern: return ModernMainWindowController()
+        case .winampModern: return WinampModernMainWindowController()
         case .wmp: return WMPMainWindowController()
         }
     }
@@ -859,8 +946,497 @@ class WindowManager {
         mainWindowController?.windowVisibilityDidChange()
     }
     
+    // MARK: - Winamp Modern surface routing
+
+    /// The loaded `.wal` skin's surface router, or nil when this mode/skin has no opinion.
+    ///
+    /// A `.wal` skin is a whole UI suite: it may draw the playlist inside its own window, open a
+    /// window of its own for it, or offer nothing at all. Every public `show*`/`toggle*`/`is*Visible`
+    /// asks here first, so the View menu and the skin's own button can never resolve to different
+    /// windows. When the router does not handle a surface, the classic path below runs unchanged.
+    private var winampModernSurfaces: WinampModernSurfaceCoordinator? {
+        guard uiMode.controllerFamily == .winampModern else { return nil }
+        return (mainWindowController as? WinampModernMainWindowController)?.surfaceCoordinator
+    }
+
+    /// Whether the placement and ordering corrections this branch introduced for `.wal` window
+    /// management apply right now.
+    ///
+    /// They were written for one problem: a `.wal` skin's windows are sized by the skin, arranged by
+    /// a generated tiling, and could land off the display with no way back. Classic and Original
+    /// place their windows by rules that predate all of it and that people have laid their desktops
+    /// out around — including the habit of parking a window mostly past an edge, which every one of
+    /// these corrections reads as damage to repair.
+    ///
+    /// So they are gated rather than justified as no-ops, per `CLAUDE.md` and the
+    /// `winamp-modern-skin-guide` rule. B56 is the precedent: a screen clamp added for `.wal`
+    /// placement moved Classic's sub-windows too, and cost four confidently static-reasoned fixes,
+    /// two of them regressions, before anyone launched the app.
+    var appliesWinampModernPlacement: Bool { uiMode.controllerFamily == .winampModern }
+
+    private var winampModernHostedController: WinampModernMainWindowController? {
+        guard uiMode.controllerFamily == .winampModern else { return nil }
+        return mainWindowController as? WinampModernMainWindowController
+    }
+
+    private var isPerformingWinampModernHostedFallback = false
+
+    /// How the surfaces NullPlayer draws itself should look right now, or nil when they should use
+    /// their own classic drawing (Phase 16).
+    ///
+    /// Non-nil **only** in `winampModern` mode and only once a skin has actually loaded, so every
+    /// other mode — and this mode's own placeholder — runs the untouched classic path. The style is
+    /// derived on each read rather than cached: a colour-theme switch changes the palette underneath
+    /// us, and `.winampModernThemeDidChange` only tells a window to repaint.
+    var winampModernSurfaceStyle: WinampModernSurfaceStyle? {
+        guard uiMode.controllerFamily == .winampModern,
+              let palette = (mainWindowController as? WinampModernMainWindowController)?.currentPalette
+        else { return nil }
+        return WinampModernSurfaceStyle(palette: palette)
+    }
+
+    /// Whether the loaded `.wal` skin registered any settings of its own (Phase 27.3). Safe default
+    /// in every other mode, per the mode-guarding rule in CLAUDE.md — the menu asks this before it
+    /// offers an entry point, so a skin that registers nothing shows no menu item at all.
+    var hasWinampModernSkinSettings: Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return !((mainWindowController as? WinampModernMainWindowController)?
+            .registeredSkinSettings.isEmpty ?? true)
+    }
+
+    /// The `.wal` skin's own extra windows — the ones it declares, names, and binds no button to
+    /// (Defix's two speaker cabinets and its configurator). Safe default in every other mode.
+    var winampModernSkinWindows: [(id: String, name: String, isVisible: Bool)] {
+        guard uiMode.controllerFamily == .winampModern else { return [] }
+        return (mainWindowController as? WinampModernMainWindowController)?.skinWindows ?? []
+    }
+
+    /// Show or hide one of them. In Winamp these live in its own Windows menu; without this they
+    /// render and are unreachable.
+    func toggleWinampModernSkinWindow(id: String) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.toggleSkinWindow(id: id)
+    }
+
+    /// Whether the loaded `.wal` skin draws its own About page — the `skin.about.group` Winamp puts
+    /// on the "Skin" tab of its About box, which twenty of the measured seventy skins define. Gated
+    /// on the mode like every other reader here: Classic and Original have no such page and answer
+    /// false, so nothing they show changes.
+    var winampModernHasSkinAbout: Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.skinAboutContainerID != nil
+    }
+
+    /// Open it. The skin's own window, in the skin's own frame — the same one
+    /// `TOGGLE guid:{D6201408-…}` reaches from a skin's button.
+    @discardableResult
+    func showWinampModernSkinAbout() -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.showSkinAbout() == true
+    }
+
+    /// The loaded `.wal` skin's colour themes and the applied one (Phase 32). Safe default in every
+    /// other mode, per the mode-guarding rule in CLAUDE.md.
+    ///
+    /// Four skins with themes — Itemskin, micro, T800, Overdrive_2 — ship no picker of any kind, and
+    /// Anexa and ZDL none either: in real Winamp those are picked from Winamp's own preferences
+    /// dialog, which is host UI we do not have. The menu built from this is that dialog.
+    var winampModernColorThemes: (names: [String], active: String) {
+        guard uiMode.controllerFamily == .winampModern else { return ([], "") }
+        return (mainWindowController as? WinampModernMainWindowController)?.colorThemes ?? ([], "")
+    }
+
+    func selectWinampModernColorTheme(_ name: String) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.selectColorTheme(name)
+    }
+
+    /// The loaded `.wal` skin's Text Size — how large NullPlayer draws its own text on the surfaces it
+    /// fills the skin's holders with (the playlist rows and the Media Library, which move together),
+    /// plus what `.auto` currently resolves to for the menu entry that shows it. Safe default in every
+    /// other mode, per the mode-guarding rule in CLAUDE.md.
+    var winampModernTextScale: (scale: WinampModernTextScale, resolvedPercent: Int) {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return (.auto, 100) }
+        return (controller.textScale, controller.resolvedTextPercent)
+    }
+
+    func setWinampModernTextScale(_ scale: WinampModernTextScale) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.setTextScale(scale)
+    }
+
+    /// Whether the loaded skin reserves a box the host can fill with the waveform seeker, and
+    /// whether the user has it switched on (BB18). Safe defaults in every other mode, per CLAUDE.md's
+    /// rule that a mode-specific feature is guarded at all three layers.
+    var winampModernWaveformSeeker: (declared: Bool, enabled: Bool) {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return (false, false) }
+        return (controller.declaresWaveformSeeker, controller.waveformSeekerEnabled)
+    }
+
+    func setWinampModernWaveformSeekerEnabled(_ enabled: Bool) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?
+            .setWaveformSeekerEnabled(enabled)
+    }
+
+    /// What paints the loaded `.wal` skin's `<vis>` boxes — Winamp's own analyzer and oscilloscope,
+    /// or one of NullPlayer's (B53). Safe default in every other mode, per CLAUDE.md's rule that a
+    /// mode-specific feature is guarded at all three layers.
+    var winampModernSpectrumAnalyzer: WinampModernSpectrumAnalyzer {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return .skin }
+        return controller.spectrumAnalyzer
+    }
+
+    /// Whether the loaded skin draws a `<vis>` at all — Defix declares none, and an engine picker
+    /// over a skin with no box to paint would be a control for nothing.
+    var winampModernHasVisualizationBox: Bool {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return false }
+        return controller.hasVisualizationBox
+    }
+
+    /// The controls belonging to whatever is painting the skin's `<vis>` box — Cava's own menu,
+    /// vis_classic's profile catalogue — or nil for the skin's own analyzer, whose options are
+    /// `<vis>` attributes and live with the box.
+    func winampModernSpectrumAnalyzerMenus() -> [(suite: WinampModernSpectrumAnalyzer, menu: NSMenu)] {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return [] }
+        return controller.spectrumAnalyzerMenus()
+    }
+
+    /// Repaint the loaded skin's `<vis>` boxes now — for a setting that changes how they draw without
+    /// changing anything the visualization clock watches (Sensitivity, B53). A paused player has no
+    /// clock running at all, so without this the new gain would not show until the music restarted.
+    func repaintWinampModernVisualization() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.repaintVisualization()
+    }
+
+    func setWinampModernSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.setSpectrumAnalyzer(suite)
+    }
+
+    /// The engine and the mode for the loaded skin's unhosted `{0000000A}` panes, which carry a
+    /// selection of their own (BB9). Mode-guarded like everything else here.
+    func setWinampModernVisualizationHolderEngine(_ suite: WinampModernSpectrumAnalyzer) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?
+            .setVisualizationHolderEngine(suite)
+    }
+
+    func setWinampModernVisualizationHolderMode(_ mode: WasabiVisualizationMode) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?
+            .setVisualizationHolderMode(mode)
+    }
+
+    /// Whether there is a loaded `.wal` skin whose colours could be overridden (B146). Safe default in
+    /// every other mode, per the mode-guarding rule in CLAUDE.md — Classic and Original have no
+    /// `WasabiPalette` to override, and the menu asks this before it offers the entry point.
+    var canEditWinampModernSkinColors: Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.currentPalette != nil
+    }
+
+    /// The colours the user has set by hand for the loaded skin under the theme applied now, and the
+    /// name of that theme. Safe defaults in every other mode.
+    var winampModernPaletteOverrides: (overrides: [WasabiPalette.Role: NSColor], theme: String) {
+        guard uiMode.controllerFamily == .winampModern,
+              let controller = mainWindowController as? WinampModernMainWindowController
+        else { return ([:], "") }
+        return (controller.paletteOverrides, controller.activeThemeName)
+    }
+
+    func setWinampModernPaletteOverride(_ color: NSColor?, for role: WasabiPalette.Role) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.setPaletteOverride(color, for: role)
+    }
+
+    func resetWinampModernPaletteOverrides() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.resetAllPaletteOverrides()
+    }
+
+    /// Open the per-skin colour overrides panel.
+    func showWinampModernSkinColors() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.showSkinColors()
+    }
+
+    /// Open the list of settings the skin registered but bound no control to.
+    func showWinampModernSkinSettings() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.showSkinSettings()
+    }
+
+    @discardableResult
+    private func routeWinampModernSurface(_ kind: WinampModernComponentKind, toggle: Bool,
+                                          restoredFrame: NSRect? = nil) -> Bool {
+        guard let coordinator = winampModernSurfaces, coordinator.handles(kind) else { return false }
+        if toggle { coordinator.toggleSurface(kind) } else { coordinator.showSurface(kind) }
+        // A skin-owned *container* window keeps its saved geometry; an embedded surface has no window
+        // of its own and is never fed a frame.
+        if let restoredFrame, restoredFrame != .zero, let window = coordinator.nativeWindow(for: kind) {
+            window.setFrame(restoredFrame, display: true)
+        }
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+        return true
+    }
+
+    @discardableResult
+    private func routeWinampModernHostedWindow(_ id: WinampModernHostedWindowID, toggle: Bool,
+                                               restoredFrame: NSRect? = nil) -> Bool {
+        guard !isPerformingWinampModernHostedFallback,
+              let controller = winampModernHostedController,
+              controller.handlesHostedWindow(id) else { return false }
+
+        let wasVisible = controller.isHostedWindowVisible(id)
+        let wasMaterialized = controller.hostedWindow(ifMaterialized: id) != nil
+        if !toggle || !wasVisible {
+            if let window = controller.hostedWindow(materializing: id) {
+                markModeDependentWindow(window)
+                if let kind = centerStackKind(for: id) {
+                    applyCenterStackSizingConstraints(window, kind: kind)
+                    if let restoredFrame, restoredFrame != .zero {
+                        applyRestoredCenterStackFrame(restoredFrame, to: window, kind: kind)
+                    } else {
+                        if !wasMaterialized { applyHostedWindowDefaultWidth(window) }
+                        positionSubWindow(window)
+                    }
+                } else if let restoredFrame, restoredFrame != .zero {
+                    window.setFrame(restoredFrame, display: false)
+                }
+            }
+            _ = controller.showHostedWindow(id)
+            applyAlwaysOnTopToWindow(controller.hostedWindow(ifMaterialized: id))
+            if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+                NSLog("[place/hosted] \(id) afterShow=\(NSStringFromRect(controller.hostedWindow(ifMaterialized: id)?.frame ?? .zero)) main=\(NSStringFromRect(mainWindowController?.window?.frame ?? .zero))")
+            }
+        } else {
+            _ = controller.toggleHostedWindow(id)
+        }
+        return true
+    }
+
+    /// A hosted window opens as wide as the player it docks under — the rule the equalizer has
+    /// followed in every UI mode, now shared by the rest of the stack: Cava, the spectrum analyzer,
+    /// Flow, the analyzer, the waveform, PeppyMeter. It applies in both directions, so a wide `.wal`
+    /// player pulls them out and a narrow one (Anaheim and its kind) pulls them in, and the stack
+    /// reads as one column under the player rather than a ragged edge on either side.
+    ///
+    /// First materialization only, so a window the user has since resized is never snapped back.
+    private func applyHostedWindowDefaultWidth(_ window: NSWindow) {
+        guard let mainWindow = mainWindowController?.window else { return }
+        // The skin frame's own resize limits still win: a frame that cannot be drawn at the player's
+        // width keeps the nearest size it can draw, rather than being set and bounced back by the
+        // resize handler.
+        let frame = WindowManager.winampModernHostedOpeningFrame(
+            window.frame,
+            mainFrame: mainWindow.frame,
+            minimumWidth: window.contentMinSize.width,
+            maximumWidth: max(window.contentMaxSize.width, window.contentMinSize.width))
+        guard frame != window.frame else { return }
+        window.setFrame(frame, display: false)
+    }
+
+    /// The width rule above, as arithmetic: pure, so it can be exercised without a window server.
+    /// Returns `frame` unchanged whenever the rule does not apply.
+    static func winampModernHostedOpeningFrame(_ frame: NSRect,
+                                               mainFrame: NSRect,
+                                               minimumWidth: CGFloat,
+                                               maximumWidth: CGFloat) -> NSRect {
+        guard mainFrame.width > 0 else { return frame }
+        let width = max(min(mainFrame.width, maximumWidth), minimumWidth)
+        guard width > 0, width != frame.width else { return frame }
+        var matched = frame
+        matched.size.width = width
+        matched.origin.x = mainFrame.minX
+        return matched
+    }
+
+    func hostedWindowVisibilityDidChange(id: WinampModernHostedWindowID, visible: Bool,
+                                         transitionFrame: NSRect) {
+        if !visible { slideUpWindowsBelow(closingFrame: transitionFrame) }
+        notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
+    // MARK: - Re-homing NullPlayer's own windows across a `.wal` skin change
+
+    /// The standalone window a hosted id falls back to, whether or not it is on screen. Read
+    /// directly rather than through `isCavaVisible` and its siblings, which answer for the *hosted*
+    /// route first and would report the incoming skin's unopened window instead of this one.
+    private func classicHostedFallbackWindow(for id: WinampModernHostedWindowID) -> NSWindow? {
+        switch id {
+        case .spectrum: return spectrumWindowController?.window
+        case .equalizer: return equalizerWindowController?.window
+        case .cava: return cavaWindowController?.window
+        case .flow: return networkMonitorWindowController?.window
+        case .peppyMeter: return peppyMeterWindowController?.window
+        case .audioAnalysis: return audioAnalysisWindowController?.window
+        case .waveform: return waveformWindowController?.window
+        case .projectM: return projectMWindowController?.window
+        }
+    }
+
+    /// Which of NullPlayer's own feature windows are open right now, in either chrome. Captured by
+    /// the `.wal` controller immediately *before* it tears a skin down.
+    func openWinampModernHostedWindowIDs() -> Set<WinampModernHostedWindowID> {
+        guard uiMode.controllerFamily == .winampModern else { return [] }
+        return Set(WinampModernHostedWindowID.allCases.filter { id in
+            winampModernHostedController?.isHostedWindowVisible(id) == true
+                || classicHostedFallbackWindow(for: id)?.isVisible == true
+        })
+    }
+
+    /// Re-ask the route for each of those windows now that a different skin is up.
+    ///
+    /// A skin switch is not a fresh launch: the outgoing skin's hosted windows are torn down with it,
+    /// but a window that fell back to NullPlayer's own chrome is a plain `NSWindow` nothing touches,
+    /// so it simply stayed there — wearing the fallback under a skin that hosts it perfectly well
+    /// from a cold start. This closes it and opens the skin-framed one instead (and the reverse: a
+    /// hosted window whose new skin has no usable frame comes back as the fallback rather than
+    /// vanishing).
+    ///
+    /// Called only from the `.wal` controller, and gated on the mode besides: no other UI family
+    /// runs a line of it.
+    func rehomeWinampModernHostedWindows(_ ids: Set<WinampModernHostedWindowID>) {
+        guard uiMode.controllerFamily == .winampModern, !ids.isEmpty,
+              let controller = winampModernHostedController else { return }
+        for id in WinampModernHostedWindowID.allCases where ids.contains(id) {
+            let fallbackIsUp = classicHostedFallbackWindow(for: id)?.isVisible == true
+            guard controller.handlesHostedWindow(id) else {
+                // The new skin cannot host it. Whatever the old one did, the fallback is the answer.
+                if !fallbackIsUp { showClassicHostedWindowForWinampModern(id, showOnly: true) }
+                continue
+            }
+            // Close the standalone first — the two must never be up at once — through the classic
+            // toggle, which is what stops its rendering and slides the stack back up behind it.
+            if fallbackIsUp { showClassicHostedWindowForWinampModern(id, showOnly: false) }
+            routeWinampModernHostedWindow(id, toggle: false)
+        }
+    }
+
+    /// The materializer's deterministic fallback. The recursion guard makes the existing public
+    /// paths construct exactly their old standalone controllers without consulting the failed route.
+    func showClassicHostedWindowForWinampModern(_ id: WinampModernHostedWindowID, showOnly: Bool) {
+        guard !isPerformingWinampModernHostedFallback else { return }
+        isPerformingWinampModernHostedFallback = true
+        defer { isPerformingWinampModernHostedFallback = false }
+        switch id {
+        case .spectrum: showOnly ? showSpectrum() : toggleSpectrum()
+        case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
+        case .cava: showOnly ? showCava() : toggleCava()
+        case .flow: showOnly ? showNetworkMonitor() : toggleNetworkMonitor()
+        case .peppyMeter: showOnly ? showPeppyMeter() : togglePeppyMeter()
+        case .audioAnalysis: showOnly ? showAudioAnalysis() : toggleAudioAnalysis()
+        case .waveform: showOnly ? showWaveform() : toggleWaveform()
+        case .projectM: showOnly ? showProjectM(routeToSkin: false) : toggleLocalProjectMWindow()
+        }
+    }
+
+    /// Repaint every `.wal` surface — an EQ preset, a theme, or a queue change made anywhere.
+    func refreshWinampModernSurfaces() {
+        winampModernSurfaces?.surfaceContentDidChange()
+        equalizerWindowController?.window?.contentView?.needsDisplay = true
+        equalizerWindow?.contentView?.markSubtreeForDisplayAndLayout()
+    }
+
+    /// The classic fallback's only entry point, called *by* the coordinator when a skin offers no
+    /// surface of its own. It deliberately bypasses the public `show*`/`toggle*` above: those consult
+    /// the coordinator, which would route straight back here.
+    func showClassicSurfaceForWinampModern(_ kind: WinampModernComponentKind, showOnly: Bool) {
+        switch kind {
+        case .playlist: showOnly ? showPlaylist() : classicTogglePlaylist()
+        case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
+        case .library: showOnly ? showPlexBrowser() : classicTogglePlexBrowser()
+        case .video: showOrToggleLocalVideoWindow(showOnly: showOnly)
+        // Bypassing the routing on purpose: the coordinator only calls this when the skin has no
+        // visualization window of its own, and re-entering would route straight back here.
+        case .visualization: showOnly ? showProjectM(routeToSkin: false) : toggleLocalProjectMWindow()
+        default: break
+        }
+    }
+
+    // MARK: - Video in a `.wal` skin's own window (B20)
+
+    /// Hand the video output to the loaded skin's video window and open it. False for every other
+    /// mode, and for a `.wal` skin that declares no video window of its own — which is what leaves
+    /// `VideoPlayerWindowController`'s own window in charge exactly as before.
+    ///
+    /// Casting is not a caller: every `play*` entry point returns *before* reaching the video
+    /// controller when a cast device is active, so a cast never resurrects a local window, skin-owned
+    /// or not.
+    @discardableResult
+    func hostVideoOutputInWinampModernSkin() -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.hostVideoOutput() ?? false
+    }
+
+    /// Put the skin's video window away (`autoclose="1"`). False when there is none showing.
+    @discardableResult
+    func hideWinampModernVideoSurface() -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.hideVideoSurfaceWindow() ?? false
+    }
+
+    /// Unpark the video output from the skin's box — the picture is finished with, and the child
+    /// window must stop hanging off a skin window that may be torn down next.
+    func detachWinampModernVideoOutput() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.detachVideoOutput()
+    }
+
+    /// `VID_1X` / `VID_2X` — size the skin's video window from the stream's own dimensions.
+    @discardableResult
+    func sizeWinampModernVideoSurface(toNativeMultiple multiple: CGFloat) -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?
+            .sizeVideoSurface(toNativeMultiple: multiple) ?? false
+    }
+
+    /// The classic fallback for `.visualization`: NullPlayer's own visualization window, toggled
+    /// without consulting the coordinator that asked for it.
+    private func toggleLocalProjectMWindow() {
+        if let controller = projectMWindowController, controller.window?.isVisible == true {
+            rememberProjectMFrame()
+            controller.stopRenderingForHide()
+            controller.window?.orderOut(nil)
+        } else {
+            showProjectM(routeToSkin: false)
+        }
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
+    /// The classic fallback for `.video`: NullPlayer's own video window, and only when a video is
+    /// actually loaded. A skin button asking for a video window when nothing is playing must not open
+    /// a black rectangle — that is the same rule `VID_FS` has followed since Phase 39.
+    private func showOrToggleLocalVideoWindow(showOnly: Bool) {
+        guard let controller = videoPlayerWindowController, controller.currentTitle != nil else { return }
+        if !showOnly, controller.isVideoOutputVisible {
+            controller.window?.orderOut(nil)
+            return
+        }
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+    }
+
     func showPlaylist(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernSurface(.playlist, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
@@ -901,10 +1477,18 @@ class WindowManager {
     }
 
     var isPlaylistVisible: Bool {
-        playlistWindowController?.window?.isVisible == true
+        if let coordinator = winampModernSurfaces, coordinator.handles(.playlist) {
+            return coordinator.isSurfaceVisible(.playlist)
+        }
+        return playlistWindowController?.window?.isVisible == true
     }
-    
+
     func togglePlaylist() {
+        if routeWinampModernSurface(.playlist, toggle: true) { return }
+        classicTogglePlaylist()
+    }
+
+    private func classicTogglePlaylist() {
         if let controller = playlistWindowController,
            let window = controller.window,
            window.isVisible {
@@ -922,6 +1506,10 @@ class WindowManager {
     
     func showEqualizer(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernSurface(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
+        // The skin owns no equalizer, so NullPlayer's goes inside the skin's own frame when one
+        // qualifies (B55) and into the standalone window below when none does.
+        if routeWinampModernHostedWindow(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = equalizerWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
@@ -954,10 +1542,32 @@ class WindowManager {
     }
 
     var isEqualizerVisible: Bool {
-        equalizerWindowController?.window?.isVisible == true
+        if let coordinator = winampModernSurfaces, coordinator.handles(.equalizer) {
+            return coordinator.isSurfaceVisible(.equalizer)
+        }
+        if winampModernHostedController?.handlesHostedWindow(.equalizer) == true {
+            return winampModernHostedController?.isHostedWindowVisible(.equalizer) == true
+        }
+        return equalizerWindowController?.window?.isVisible == true
     }
-    
+
+    /// The equalizer's native window, whichever of the three routes owns it. An equalizer the *skin*
+    /// draws has no NullPlayer window at all, so this is nil for it — as it is for every other
+    /// skin-owned surface.
+    var equalizerWindow: NSWindow? {
+        if winampModernHostedController?.handlesHostedWindow(.equalizer) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .equalizer)
+        }
+        return equalizerWindowController?.window
+    }
+
     func toggleEqualizer() {
+        if routeWinampModernSurface(.equalizer, toggle: true) { return }
+        if routeWinampModernHostedWindow(.equalizer, toggle: true) { return }
+        classicToggleEqualizer()
+    }
+
+    private func classicToggleEqualizer() {
         if let controller = equalizerWindowController,
            let window = controller.window,
            window.isVisible {
@@ -973,6 +1583,142 @@ class WindowManager {
         updateDockedChildWindows()
     }
     
+    // MARK: - Winamp Modern window tiling (B56)
+
+    /// Where a `.wal` skin's windows go.
+    ///
+    /// Winamp Modern has no center stack — a skin's windows are whatever shape and size the author
+    /// chose — so their arrangement is a **tiling**, computed in one deterministic sweep rather than
+    /// negotiated per window as each one opens.
+    ///
+    /// That distinction is the whole fix. Deciding a window's spot when it opens cannot work here:
+    /// at launch the skin's containers are created and shown during skin load, before `WindowManager`
+    /// has revealed the player at its restored frame, and before the UI-size pass has settled the
+    /// sizes. Measured on Defix, every window was placed against a player at `{{0,695},{406,355}}`
+    /// that finished at `{{0,677},{426,373}}`, and against its own size 5% smaller than it ended up.
+    /// Nor can the skin's own `default_x`/`default_y` be the answer: Defix's put `pledit` at x 822–1228
+    /// and the media library at x 1120–1920, overlapping by 108px before anything else happens.
+    ///
+    /// So the layout is generated, not repaired. Columns run down from the player, each window flush
+    /// under the last; a window that will not fit starts the next column to the right. Fixed order,
+    /// no scoring, no iteration — the same inputs always give the same arrangement.
+    struct WinampModernTiler {
+        let region: NSRect
+        private var columnX: CGFloat
+        private var columnWidth: CGFloat
+        private var cursorY: CGFloat
+
+        /// The player is the anchor and never moves: it owns the top of the first column, and the
+        /// first slot is flush beneath it.
+        init(playerFrame: NSRect, region: NSRect) {
+            self.region = region
+            self.columnX = playerFrame.minX
+            self.columnWidth = playerFrame.width
+            self.cursorY = playerFrame.minY
+        }
+
+        /// The next slot for a window of `size`, advancing the cursor past it.
+        mutating func nextSlot(for size: NSSize) -> NSRect {
+            if cursorY - size.height < region.minY {
+                columnX += columnWidth
+                columnWidth = 0
+                cursorY = region.maxY
+            }
+            var slot = NSRect(x: columnX, y: cursorY - size.height,
+                              width: size.width, height: size.height)
+            // The ranking here used to be the other way round — non-overlap the invariant, staying on
+            // screen only the preference — on the reasoning that pulling a column back can only move
+            // it *left*, into the column already there. That is true, and it is the wrong trade. A
+            // window hanging off the right edge has no title bar to grab and no visible way back; a
+            // window on top of another is a nuisance the user fixes with one drag. With a skin wider
+            // than half the display (EPS, Big Bento, cPro-Bento) column 2 starts past `region.maxX`,
+            // so *every* window after the first column was placed entirely off screen and the app was
+            // unusable for anyone who did not know Snap To Default exists. So: overlapping windows are
+            // preferable to hidden ones, and the slot comes back onto the region on both axes.
+            if slot.maxX > region.maxX {
+                slot.origin.x = max(region.minX, region.maxX - size.width)
+            }
+            if slot.minY < region.minY {
+                slot.origin.y = region.minY
+            }
+            cursorY = slot.minY
+            columnWidth = max(columnWidth, size.width)
+            return slot
+        }
+    }
+
+    /// A tiler anchored on the player's current frame, over the screen it is on.
+    func winampModernTiler() -> WinampModernTiler? {
+        guard let player = mainWindowController?.window?.frame,
+              let region = (mainWindowController?.window?.screen ?? NSScreen.main)?.visibleFrame
+        else { return nil }
+        return WinampModernTiler(playerFrame: player, region: region)
+    }
+
+    /// Every player window currently on screen, for a caller that must not land on one.
+    func occupiedWindowFrames(excluding excluded: NSWindow? = nil) -> [NSRect] {
+        allWindows().compactMap { window in
+            guard window !== excluded else { return nil }
+            return window.frame.isEmpty ? nil : window.frame
+        }
+    }
+
+    /// Every screen's visible frame, in the coordinate space window frames are already in.
+    func visibleScreenFrames() -> [NSRect] {
+        NSScreen.screens.map(\.visibleFrame)
+    }
+
+    /// Where `window` has to move to be reachable, or `nil` if it already is.
+    ///
+    /// The fallback for every path that would otherwise leave a window at whatever origin it happens
+    /// to have — which, when that path is running at all, is usually an origin off the display.
+    func rescuedOrigin(for window: NSWindow) -> NSPoint? {
+        let screens = visibleScreenFrames()
+        guard !WindowPlacement.isReachable(window.frame, screens: screens) else { return nil }
+        guard let host = WindowPlacement.hostScreen(for: window.frame, screens: screens)
+                ?? (window.screen ?? NSScreen.main)?.visibleFrame
+        else { return nil }
+        return WindowPlacement.rescued(window.frame, into: host).origin
+    }
+
+    /// The first tiling slot that is clear of `occupied` — how a window opened *after* the initial
+    /// arrangement joins it without disturbing anything already placed. Walks the same slot sequence
+    /// `arrangeWinampModernWindows` uses, so a window opened later lands where the arrangement would
+    /// have put it.
+    ///
+    /// Never answers `nil` for want of a free slot. Both call sites treat `nil` as "leave the window
+    /// where it is", and where it is may be off screen — that is the state this whole path exists to
+    /// prevent. When the walk finds no clear slot the last one is rescued onto the region and
+    /// returned: an overlapping window the user can drag apart, rather than an invisible one.
+    func tiledOrigin(for size: NSSize, avoiding occupied: [NSRect]) -> NSPoint? {
+        guard var tiler = winampModernTiler() else { return nil }
+        var lastSlot: NSRect?
+        for _ in 0..<64 {
+            let slot = tiler.nextSlot(for: size)
+            lastSlot = slot
+            if !occupied.contains(where: { $0.intersects(slot) }) { return slot.origin }
+            if slot.minX + size.width >= tiler.region.maxX && slot.minY <= tiler.region.minY {
+                break
+            }
+        }
+        guard let lastSlot else { return nil }
+        return WindowPlacement.rescued(lastSlot, into: tiler.region).origin
+    }
+
+    /// The materialized hosted windows, for the arrangement sweep to lay out alongside the skin's own.
+    func winampModernHostedWindowsForArrangement() -> [NSWindow] {
+        winampModernHostedController?.materializedHostedWindows.map(\.window) ?? []
+    }
+
+    /// Lay out the loaded `.wal` skin's windows in one sweep. No-op in every other mode.
+    ///
+    /// Called once launch has settled — the first moment the player's final frame and every window's
+    /// final size are known, which is the moment the arrangement can be computed at all.
+    func arrangeWinampModernWindows() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        winampModernHostedController?.arrangeWindows()
+    }
+
     /// Position a sub-window (EQ, Playlist, Spectrum, or Waveform) in the vertical stack.
     /// Fills the first gap between visible stack windows if one exists,
     /// otherwise positions below the lowest visible window in the stack.
@@ -981,6 +1727,27 @@ class WindowManager {
         
         if let kind = centerStackWindowKind(for: window) {
             applyCenterStackSizingConstraints(window, kind: kind)
+        }
+
+        // Winamp Modern has no center stack for this to scan — the skin's windows belong to no
+        // column and are any size — so a hosted window joins the tiling instead. Everything below is
+        // the Classic/Original stack, untouched.
+        if uiMode.controllerFamily == .winampModern {
+            // `tiledOrigin` now only declines when there is no player window or screen to tile
+            // against at all; the reachability fallback covers that, so no path here can leave a
+            // window at an off-screen origin.
+            if let origin = tiledOrigin(for: window.frame.size,
+                                        avoiding: occupiedWindowFrames(excluding: window))
+                ?? rescuedOrigin(for: window) {
+                isSnappingWindow = true
+                window.setFrameOrigin(origin)
+                isSnappingWindow = false
+                if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+                    NSLog("[place/tile] hosted %@", NSStringFromRect(window.frame))
+                }
+                postLayoutChangeNotification()
+            }
+            return
         }
 
         let mainFrame = mainWindow.frame
@@ -1037,14 +1804,9 @@ class WindowManager {
     /// were docked below it (directly or transitively). Only windows within
     /// `dockThreshold` of the closing window's bottom edge are moved.
     private func slideUpWindowsBelow(closingFrame: NSRect) {
-        let subWindows = [equalizerWindowController?.window,
-                          playlistWindowController?.window,
-                          spectrumWindowController?.window,
-                          audioAnalysisWindowController?.window,
-                          peppyMeterWindowController?.window,
-                          networkMonitorWindowController?.window,
-                          cavaWindowController?.window,
-                          waveformWindowController?.window].compactMap { $0 }
+        let subWindows = managedWindowRecords.compactMap {
+            $0.centerStack && $0.window !== mainWindowController?.window ? $0.window : nil
+        }
 
         // BFS: find windows directly docked below closingFrame, then those below them
         var toMove: [NSWindow] = []
@@ -1109,6 +1871,7 @@ class WindowManager {
     
     func showPlexBrowser(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernSurface(.library, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = plexBrowserWindowController == nil
         if isNewWindow {
             createPlexBrowserWindowController()
@@ -1154,7 +1917,10 @@ class WindowManager {
     }
 
     var isPlexBrowserVisible: Bool {
-        plexBrowserWindowController?.window?.isVisible == true
+        if let coordinator = winampModernSurfaces, coordinator.handles(.library) {
+            return coordinator.isSurfaceVisible(.library)
+        }
+        return plexBrowserWindowController?.window?.isVisible == true
     }
     
     /// Get the Plex Browser window frame if visible (for positioning other windows)
@@ -1163,14 +1929,27 @@ class WindowManager {
         return window.frame
     }
     
-    /// Get/set the library browser browse mode raw value (for state save/restore)
+    /// Get/set the library browser browse mode raw value (for state save/restore).
+    ///
+    /// In Winamp Modern the library may live inside the skin, where there is no window controller to
+    /// ask — the embedded surface holds the mode instead, and must still save and restore with the
+    /// session.
     var plexBrowserBrowseMode: Int? {
-        get { plexBrowserWindowController?.browseModeRawValue }
+        get { winampModernLibrarySurface?.browseModeRawValue ?? plexBrowserWindowController?.browseModeRawValue }
         set {
-            if let value = newValue {
+            guard let value = newValue else { return }
+            if let surface = winampModernLibrarySurface {
+                surface.browseModeRawValue = value
+            } else {
                 plexBrowserWindowController?.browseModeRawValue = value
             }
         }
+    }
+
+    /// The skin's embedded library, when this mode/skin has one.
+    private var winampModernLibrarySurface: WinampModernLibrarySurface? {
+        guard let coordinator = winampModernSurfaces, coordinator.handles(.library) else { return nil }
+        return (mainWindowController as? WinampModernMainWindowController)?.embeddedLibrarySurface
     }
 
     var isLibraryHistoryVisible: Bool {
@@ -1180,6 +1959,9 @@ class WindowManager {
     
     /// Get the ProjectM window frame (for state saving)
     var projectMWindowFrame: NSRect? {
+        if let frame = winampModernHostedController?.hostedWindow(ifMaterialized: .projectM)?.frame {
+            return frame
+        }
         return projectMWindowController?.window?.frame
     }
 
@@ -1230,6 +2012,11 @@ class WindowManager {
     }
 
     func togglePlexBrowser() {
+        if routeWinampModernSurface(.library, toggle: true) { return }
+        classicTogglePlexBrowser()
+    }
+
+    private func classicTogglePlexBrowser() {
         if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
             rememberPlexBrowserFrame()
             controller.window?.orderOut(nil)
@@ -1490,22 +2277,28 @@ class WindowManager {
             )
         }
 
-        func snapWindow(_ window: NSWindow?) -> WindowSnapshot? {
+        func snapWindow(_ window: NSWindow?, trackDetachedState: Bool = false) -> WindowSnapshot? {
             guard let window else { return nil }
-            return WindowSnapshot(wasVisible: window.isVisible, frame: window.frame)
+            return WindowSnapshot(
+                wasVisible: window.isVisible,
+                frame: window.frame,
+                wasDetached: trackDetachedState && window.isVisible && isDetachedFromMainWindow(window))
         }
 
         return CompactWindowSnapshot(
             main: snap(mainWindowController),
-            equalizer: snap(equalizerWindowController, trackDetachedState: true),
+            equalizer: snap(equalizerWindowController, trackDetachedState: true)
+                ?? snapWindow(equalizerWindow, trackDetachedState: true),
             playlist: snap(playlistWindowController, trackDetachedState: true),
-            spectrum: snap(spectrumWindowController, trackDetachedState: true),
-            audioAnalysis: snap(audioAnalysisWindowController, trackDetachedState: true),
-            peppyMeter: snap(peppyMeterWindowController, trackDetachedState: true),
-            networkMonitor: snap(networkMonitorWindowController, trackDetachedState: true),
-            cava: snap(cavaWindowController, trackDetachedState: true),
-            waveform: snap(waveformWindowController, trackDetachedState: true),
-            projectM: snap(projectMWindowController, trackDetachedState: true),
+            spectrum: snapWindow(spectrumWindow, trackDetachedState: true),
+            audioAnalysis: snapWindow(audioAnalysisWindow, trackDetachedState: true),
+            peppyMeter: snapWindow(peppyMeterWindow, trackDetachedState: true),
+            networkMonitor: snapWindow(networkMonitorWindow, trackDetachedState: true),
+            cava: snapWindow(cavaWindow, trackDetachedState: true),
+            waveform: snapWindow(waveformWindow, trackDetachedState: true),
+            projectM: snap(projectMWindowController, trackDetachedState: true)
+                ?? snapWindow(winampModernHostedController?.hostedWindow(ifMaterialized: .projectM),
+                              trackDetachedState: true),
             // Library stores its position frame for restoration after Compact-mode rebuild.
             library: snap(plexBrowserWindowController,
                           normalFrame: plexBrowserWindowController?.frameForPositionMemory,
@@ -1526,19 +2319,15 @@ class WindowManager {
         // The video player and debug console are allowed to stay in Compact Mode. They are
         // deliberately excluded here and skipped by the orphan sweep below, so Compact Mode
         // never hides or restores them.
-        for window in [mainWindowController?.window,
-                       equalizerWindowController?.window,
-                       playlistWindowController?.window,
-                       spectrumWindowController?.window,
-                       audioAnalysisWindowController?.window,
-                       peppyMeterWindowController?.window,
-                       networkMonitorWindowController?.window,
-                       cavaWindowController?.window,
-                       waveformWindowController?.window,
-                       projectMWindowController?.window,
-                       plexBrowserWindowController?.window].compactMap({ $0 })
+        for window in managedWindowRecords.compactMap({ $0.modeDependent ? $0.window : nil })
         where !isInNativeFullScreen(window) {
-            window.orderOut(nil)
+            if let hosted = winampModernHostedController?.materializedHostedWindows.first(where: {
+                $0.window === window
+            }) {
+                winampModernHostedController?.hideHostedWindow(hosted.id)
+            } else {
+                window.orderOut(nil)
+            }
         }
 
         orderOutOrphanedAppWindows()
@@ -1557,18 +2346,7 @@ class WindowManager {
     /// Docking is recomputed on Compact Mode exit after all prior windows are visible again.
     private func detachManagedChildWindowsForCompactMode() {
         guard let mainWindow = mainWindowController?.window else { return }
-        let managedWindows = [
-            equalizerWindowController?.window,
-            playlistWindowController?.window,
-            spectrumWindowController?.window,
-            audioAnalysisWindowController?.window,
-            peppyMeterWindowController?.window,
-            networkMonitorWindowController?.window,
-            cavaWindowController?.window,
-            waveformWindowController?.window,
-            projectMWindowController?.window,
-            plexBrowserWindowController?.window
-        ].compactMap { $0 }
+        let managedWindows = managedWindowRecords.map(\.window).filter { $0 !== mainWindow }
 
         for child in mainWindow.childWindows ?? []
         where managedWindows.contains(where: { $0 === child }) {
@@ -1628,15 +2406,52 @@ class WindowManager {
             }
         }
 
+        func restoreRouted(_ snapshot: WindowSnapshot?, window: NSWindow?,
+                           show: (NSRect?) -> Void) {
+            guard let snapshot, let window else { return }
+            if isInNativeFullScreen(window) { return }
+            if snapshot.wasVisible {
+                show(snapshot.frame == .zero ? nil : snapshot.frame)
+            } else {
+                window.orderOut(nil)
+            }
+        }
+
+        /// Prefer the per-feature controller; fall back to the routed path only when there is none,
+        /// which is the hosted `.wal` case. Keeps Classic and Original on the path they had before
+        /// the hosted surfaces existed.
+        func restoreCentreStackWindow(_ snapshot: WindowSnapshot?, controller: ModeDependentWindow?,
+                                      window: NSWindow?, show: (NSRect?) -> Void) {
+            if controller != nil {
+                restore(snapshot, controller: controller)
+            } else {
+                restoreRouted(snapshot, window: window, show: show)
+            }
+        }
+
         restore(snapshot.main, controller: mainWindowController)
-        restore(snapshot.equalizer, controller: equalizerWindowController)
+        if equalizerWindowController != nil {
+            restore(snapshot.equalizer, controller: equalizerWindowController)
+        } else {
+            restoreRouted(snapshot.equalizer, window: equalizerWindow, show: showEqualizer)
+        }
         restore(snapshot.playlist, controller: playlistWindowController)
-        restore(snapshot.spectrum, controller: spectrumWindowController)
-        restore(snapshot.audioAnalysis, controller: audioAnalysisWindowController)
-        restore(snapshot.peppyMeter, controller: peppyMeterWindowController)
-        restore(snapshot.networkMonitor, controller: networkMonitorWindowController)
-        restore(snapshot.cava, controller: cavaWindowController)
-        restore(snapshot.waveform, controller: waveformWindowController)
+        // The routed path exists for the hosted surfaces, whose windows are owned by the skin's graph
+        // rather than by a per-feature controller. Where a controller exists — which is every one of
+        // these in Classic and Original — the original `restore` runs, so Compact Mode gives back the
+        // frame it took and nothing else. `showX(at:)` does considerably more than that.
+        restoreCentreStackWindow(snapshot.spectrum, controller: spectrumWindowController,
+                                 window: spectrumWindow, show: showSpectrum)
+        restoreCentreStackWindow(snapshot.audioAnalysis, controller: audioAnalysisWindowController,
+                                 window: audioAnalysisWindow, show: showAudioAnalysis)
+        restoreCentreStackWindow(snapshot.peppyMeter, controller: peppyMeterWindowController,
+                                 window: peppyMeterWindow, show: showPeppyMeter)
+        restoreCentreStackWindow(snapshot.networkMonitor, controller: networkMonitorWindowController,
+                                 window: networkMonitorWindow, show: showNetworkMonitor)
+        restoreCentreStackWindow(snapshot.cava, controller: cavaWindowController,
+                                 window: cavaWindow, show: showCava)
+        restoreCentreStackWindow(snapshot.waveform, controller: waveformWindowController,
+                                 window: waveformWindow, show: showWaveform)
         restore(snapshot.projectM, controller: projectMWindowController)
         restore(snapshot.library, controller: plexBrowserWindowController)
         // Restart the Library Cava backdrop we stopped on entry (orderOutRegularWindows). Restoring
@@ -1846,6 +2661,8 @@ class WindowManager {
     func reloadPlaylistViews() {
         playlistWindowController?.reloadPlaylist()
         compactWindowController?.reloadPlaylist()
+        // A `.wal` skin draws its own playlist; it has no controller to reload, only a repaint.
+        winampModernSurfaces?.surfaceContentDidChange()
     }
 
     // MARK: - Library History
@@ -2214,7 +3031,7 @@ class WindowManager {
     }
     
     var isVideoPlayerVisible: Bool {
-        videoPlayerWindowController?.window?.isVisible == true
+        videoPlayerWindowController?.isVideoOutputVisible == true
     }
     
     /// Whether video is currently playing
@@ -2239,10 +3056,18 @@ class WindowManager {
     }
     
     func toggleVideoPlayer() {
-        if let controller = videoPlayerWindowController, controller.window?.isVisible == true {
+        guard let controller = videoPlayerWindowController else { return }
+        // A hosted picture lives in the skin's own video window, so that is the window this shows and
+        // hides — ordering out this controller's own would do nothing visible at all (B20).
+        if controller.isVideoOutputHosted {
+            if controller.isVideoOutputVisible { hideWinampModernVideoSurface() }
+            else { hostVideoOutputInWinampModernSkin() }
+            return
+        }
+        if controller.window?.isVisible == true {
             controller.window?.orderOut(nil)
-        } else if videoPlayerWindowController != nil {
-            videoPlayerWindowController?.showWindow(nil)
+        } else {
+            controller.showWindow(nil)
         }
     }
     
@@ -2424,6 +3249,30 @@ class WindowManager {
         }
     }
 
+    /// A film has played to its own end.
+    ///
+    /// The session is already over as far as anything that *asks* is concerned —
+    /// `isVideoActivePlayback` and `videoPlaybackState` both answer from `didReachEndOfMedia`. But
+    /// Classic and Original only repaint what something pushes to them, so with nothing pushed the
+    /// transport keeps the dead film's position and title on screen indefinitely: the seek thumb
+    /// parked at the end of a film that is over. This is the push that resets them.
+    ///
+    /// The paused audio engine is stopped for the same reason `videoPlaybackDidStop` stops it — the
+    /// engine was paused *by* the film starting, and leaving it paused reads as a paused session
+    /// with a 0:00 clock. Not shared with that method: the compact window's floating level, which
+    /// belongs to the video window actually going away. The film stays loaded and on screen here.
+    func videoPlaybackDidReachEndOfMedia() {
+        videoCurrentTime = 0
+        videoDuration = 0
+        videoTitle = nil
+        if audioEngine.state == .paused {
+            audioEngine.stop()
+        }
+        mainWindowController?.clearVideoTrackInfo()
+        mainWindowController?.updateTime(current: 0, duration: 0)
+        mainWindowController?.updatePlaybackState()
+    }
+
     /// Called by video player to update time (for main window display)
     func videoDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
         videoCurrentTime = current
@@ -2443,21 +3292,30 @@ class WindowManager {
         // A video session is active if the video player is visible AND has a video loaded
         // (indicated by currentTitle being set). This is different from isVideoPlaying
         // which only returns true when actively playing (not paused).
-        guard let controller = videoPlayerWindowController,
-              let window = controller.window,
-              window.isVisible else {
+        // `isVideoOutputVisible` and not `window.isVisible`: with the picture lent to a `.wal`
+        // skin's video window this controller's own window is ordered out, and asking it would
+        // answer "no video session" while a film plays in plain sight (B20).
+        guard let controller = videoPlayerWindowController, controller.isVideoOutputVisible else {
             return false
         }
+        // A film that has played to its end is not a session. Without this the readout keeps the
+        // dead film's title and every transport keeps driving the corpse — the play button toggles
+        // a finished player, the seek bar scrubs it, and audio can never take the transport back.
+        // The content stays loaded (the picture is still up, and seeking back and pressing play
+        // revives it); what ends here is the session. `isVideoContentActive` is the other question
+        // — "is there a video window holding content" — and deliberately still answers yes.
+        if controller.didReachEndOfMedia { return false }
         return controller.currentTitle != nil
     }
 
     /// True if a video is actively loaded in the player window or CastManager is video casting.
-    /// Unlike isVideoActivePlayback, does NOT rely on VideoPlayerWindowController.isCastingVideo.
+    /// Unlike isVideoActivePlayback, does NOT rely on VideoPlayerWindowController.isCastingVideo,
+    /// and does NOT go false at end of media: a film that has run out still holds the window and
+    /// still has to be torn down before audio takes over. This is the "is there content" question;
+    /// `isVideoActivePlayback` is the "is video the transport" one.
     var isVideoContentActive: Bool {
         if case .video = CastManager.shared.currentCast { return true }
-        guard let controller = videoPlayerWindowController,
-              let window = controller.window,
-              window.isVisible else {
+        guard let controller = videoPlayerWindowController, controller.isVideoOutputVisible else {
             return false
         }
         return controller.currentTitle != nil
@@ -2469,13 +3327,31 @@ class WindowManager {
             return CastManager.shared.isVideoCastPlaying ? .playing : .paused
         }
         guard let controller = videoPlayerWindowController else { return .stopped }
+        // A finished film is stopped, not paused. Nothing else could ever answer `.stopped` while a
+        // controller exists, so without this a film that ran out reads `.paused` for good.
+        if controller.didReachEndOfMedia { return .stopped }
         return controller.isPlaying ? .playing : .paused
     }
     
     // MARK: - ProjectM Visualization Window
     
-    func showProjectM(at restoredFrame: NSRect? = nil, restoringPresetIndex presetIndex: Int? = nil) {
+    /// - Parameter routeToSkin: whether a loaded `.wal` skin's own AVS window may take this (B20a).
+    ///   False is the deliberate bypass for the two things only our own window does — custom
+    ///   fullscreen (`VIS_FS`) and the classic fallback the surface coordinator calls back into.
+    func showProjectM(at restoredFrame: NSRect? = nil, restoringPresetIndex presetIndex: Int? = nil,
+                      routeToSkin: Bool = true) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeToSkin,
+           routeWinampModernSurface(.visualization, toggle: false, restoredFrame: restoredFrame) { return }
+        if routeToSkin,
+           routeWinampModernHostedWindow(.projectM, toggle: false, restoredFrame: restoredFrame) {
+            if let presetIndex, presetIndex >= 0 {
+                hostedProjectMView?.visualizationGLView?.restorePresetSelection(index: presetIndex)
+            }
+            return
+        }
+        // Our own window is going up, so the skin's comes down: one visualization at a time.
+        hideWinampModernVisualizationWindow()
         let isNewWindow = projectMWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
@@ -2516,8 +3392,47 @@ class WindowManager {
         postLayoutChangeNotification()
     }
     
+    /// Whether **a** visualization window is up — ours or the skin's (B20a).
+    ///
+    /// Both are asked, never one or the other. Answering only for the skin's while ours was on screen
+    /// is what let the two exist at once: the menu believed nothing was open, so nothing ever closed
+    /// the window that was, and two engines rendered side by side against the same audio.
     var isProjectMVisible: Bool {
-        projectMWindowController?.window?.isVisible == true
+        if projectMWindowController?.window?.isVisible == true { return true }
+        if winampModernHostedController?.isHostedWindowVisible(.projectM) == true { return true }
+        return winampModernSurfaces?.isSurfaceVisible(.visualization) == true
+    }
+
+    /// Put NullPlayer's own visualization window away, without touching the skin's.
+    ///
+    /// The rule this serves: **one visualization window at a time.** Whichever of the two is being
+    /// shown puts the other away first, so a skin that owns the surface and a leftover window of ours
+    /// (a restored session, a `VIS_FS` before Phase 48's fullscreen, a skin switched mid-session)
+    /// cannot end up competing.
+    func hideLocalVisualizationWindow() {
+        if let controller = projectMWindowController, controller.window?.isVisible == true {
+            rememberProjectMFrame()
+            controller.stopRenderingForHide()
+            controller.window?.orderOut(nil)
+        }
+        winampModernHostedController?.hideHostedWindow(.projectM)
+    }
+
+    /// The other half of the rule: put the skin's AVS window away before ours goes up.
+    private func hideWinampModernVisualizationWindow() {
+        guard let coordinator = winampModernSurfaces, coordinator.handles(.visualization),
+              coordinator.isSurfaceVisible(.visualization) else { return }
+        coordinator.toggleSurface(.visualization)
+    }
+
+    /// A `.wal` skin that owns the visualization has just finished loading. If our own window was the
+    /// one showing it — a restored session, or the skin before this one had no AVS window — hand the
+    /// visualization over rather than leaving two of them.
+    func handOverVisualizationToSkinIfNeeded() {
+        guard projectMWindowController?.window?.isVisible == true,
+              winampModernSurfaces?.handles(.visualization) == true else { return }
+        hideLocalVisualizationWindow()
+        routeWinampModernSurface(.visualization, toggle: false)
     }
     
     /// Whether ProjectM is in fullscreen mode
@@ -2529,6 +3444,35 @@ class WindowManager {
     func toggleProjectMFullscreen() {
         projectMWindowController?.toggleFullscreen()
     }
+
+    /// Step the visualization window's preset. A `.wal` skin's `VIS_NEXT`/`VIS_PREV` buttons are
+    /// Winamp's "next/previous visualization"; with the visualization window up, its presets are
+    /// what those buttons are pointing at.
+    func stepProjectMPreset(by delta: Int) {
+        if let controller = projectMWindowController {
+            if delta >= 0 {
+                controller.nextPreset(hardCut: false)
+            } else {
+                controller.previousPreset(hardCut: false)
+            }
+        } else if let visView = hostedProjectMView?.visualizationGLView {
+            if delta >= 0 {
+                visView.nextPreset(hardCut: false)
+            } else {
+                visView.previousPreset(hardCut: false)
+            }
+        }
+    }
+
+    /// Show the visualization window and put it fullscreen — Winamp's `VIS_FS`, which starts the
+    /// visualization if it is not already running.
+    func showProjectMFullscreen() {
+        // Our own window, never the skin's: custom fullscreen is this controller's, and a borderless
+        // `.wal` container window has no fullscreen of its own to enter.
+        if projectMWindowController?.window?.isVisible != true { showProjectM(routeToSkin: false) }
+        guard !isProjectMFullscreen else { return }
+        toggleProjectMFullscreen()
+    }
     
     /// Whether the debug console window is visible
     var isDebugWindowVisible: Bool {
@@ -2536,6 +3480,23 @@ class WindowManager {
     }
     
     func toggleProjectM() {
+        // A window of ours that is actually on screen wins the toggle, whatever the skin declares:
+        // it is the one the user is looking at, and leaving it open while toggling the skin's is how
+        // two visualization windows used to appear at once.
+        if let controller = projectMWindowController, controller.window?.isVisible == true {
+            hideLocalVisualizationWindow()
+            postLayoutChangeNotification()
+            updateDockedChildWindows()
+            return
+        }
+        if winampModernHostedController?.isHostedWindowVisible(.projectM) == true {
+            winampModernHostedController?.hideHostedWindow(.projectM)
+            postLayoutChangeNotification()
+            updateDockedChildWindows()
+            return
+        }
+        if routeWinampModernSurface(.visualization, toggle: true) { return }
+        if routeWinampModernHostedWindow(.projectM, toggle: true) { return }
         if let controller = projectMWindowController, controller.window?.isVisible == true {
             rememberProjectMFrame()
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
@@ -2552,6 +3513,7 @@ class WindowManager {
     
     func showSpectrum(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernHostedWindow(.spectrum, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = spectrumWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
@@ -2588,20 +3550,30 @@ class WindowManager {
     }
     
     var isSpectrumVisible: Bool {
-        spectrumWindowController?.window?.isVisible == true
+        if winampModernHostedController?.handlesHostedWindow(.spectrum) == true {
+            return winampModernHostedController?.isHostedWindowVisible(.spectrum) == true
+        }
+        return spectrumWindowController?.window?.isVisible == true
     }
     
     /// Get the Spectrum window frame (for state saving)
     var spectrumWindowFrame: NSRect? {
+        if winampModernHostedController?.handlesHostedWindow(.spectrum) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .spectrum)?.frame
+        }
         return spectrumWindowController?.window?.frame
     }
 
     /// Access the spectrum window when visible/internal geometry repairs need direct frame updates.
     var spectrumWindow: NSWindow? {
-        spectrumWindowController?.window
+        if winampModernHostedController?.handlesHostedWindow(.spectrum) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .spectrum)
+        }
+        return spectrumWindowController?.window
     }
     
     func toggleSpectrum() {
+        if routeWinampModernHostedWindow(.spectrum, toggle: true) { return }
         if let controller = spectrumWindowController,
            let window = controller.window,
            window.isVisible {
@@ -2623,6 +3595,7 @@ class WindowManager {
 
     func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernHostedWindow(.audioAnalysis, toggle: false, restoredFrame: restoredFrame) { return }
         let runningModernMode = isRunningModernUI
         if audioAnalysisWindowController == nil {
             if runningModernMode {
@@ -2654,19 +3627,29 @@ class WindowManager {
     }
 
     var isAudioAnalysisVisible: Bool {
-        audioAnalysisWindowController?.window?.isVisible == true
+        if winampModernHostedController?.handlesHostedWindow(.audioAnalysis) == true {
+            return winampModernHostedController?.isHostedWindowVisible(.audioAnalysis) == true
+        }
+        return audioAnalysisWindowController?.window?.isVisible == true
     }
 
     /// Get the Audio Analysis window frame (for state saving)
     var audioAnalysisWindowFrame: NSRect? {
+        if winampModernHostedController?.handlesHostedWindow(.audioAnalysis) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .audioAnalysis)?.frame
+        }
         return audioAnalysisWindowController?.window?.frame
     }
 
     var audioAnalysisWindow: NSWindow? {
-        audioAnalysisWindowController?.window
+        if winampModernHostedController?.handlesHostedWindow(.audioAnalysis) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .audioAnalysis)
+        }
+        return audioAnalysisWindowController?.window
     }
 
     func toggleAudioAnalysis() {
+        if routeWinampModernHostedWindow(.audioAnalysis, toggle: true) { return }
         if let controller = audioAnalysisWindowController,
            let window = controller.window,
            window.isVisible {
@@ -2687,6 +3670,7 @@ class WindowManager {
 
     func showPeppyMeter(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernHostedWindow(.peppyMeter, toggle: false, restoredFrame: restoredFrame) { return }
         let runningModernMode = isRunningModernUI
         if peppyMeterWindowController == nil {
             if runningModernMode {
@@ -2718,22 +3702,39 @@ class WindowManager {
     }
 
     var isPeppyMeterVisible: Bool {
-        peppyMeterWindowController?.window?.isVisible == true
+        if winampModernHostedController?.handlesHostedWindow(.peppyMeter) == true {
+            return winampModernHostedController?.isHostedWindowVisible(.peppyMeter) == true
+        }
+        return peppyMeterWindowController?.window?.isVisible == true
     }
 
     var isPeppyMeterFullscreen: Bool {
-        peppyMeterWindowController?.isFullscreen ?? false
+        if let window = winampModernHostedController?.hostedWindow(ifMaterialized: .peppyMeter) {
+            return window.styleMask.contains(.fullScreen)
+        }
+        return peppyMeterWindowController?.isFullscreen ?? false
     }
 
     var peppyMeterWindowFrame: NSRect? {
-        peppyMeterWindowController?.window?.frame
+        if winampModernHostedController?.handlesHostedWindow(.peppyMeter) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .peppyMeter)?.frame
+        }
+        return peppyMeterWindowController?.window?.frame
     }
 
     var peppyMeterWindow: NSWindow? {
-        peppyMeterWindowController?.window
+        if winampModernHostedController?.handlesHostedWindow(.peppyMeter) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .peppyMeter)
+        }
+        return peppyMeterWindowController?.window
     }
 
     func togglePeppyMeterFullscreen() {
+        if winampModernHostedController?.handlesHostedWindow(.peppyMeter) == true {
+            if !isPeppyMeterVisible { showPeppyMeter() }
+            winampModernHostedController?.hostedWindow(ifMaterialized: .peppyMeter)?.toggleFullScreen(nil)
+            return
+        }
         if peppyMeterWindowController?.window?.isVisible == true {
             peppyMeterWindowController?.toggleFullscreen()
         } else {
@@ -2743,6 +3744,7 @@ class WindowManager {
     }
 
     func togglePeppyMeter() {
+        if routeWinampModernHostedWindow(.peppyMeter, toggle: true) { return }
         if let controller = peppyMeterWindowController,
            let window = controller.window,
            window.isVisible {
@@ -2766,6 +3768,7 @@ class WindowManager {
 
     func showNetworkMonitor(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernHostedWindow(.flow, toggle: false, restoredFrame: restoredFrame) { return }
         let runningModernMode = isRunningModernUI
         if networkMonitorWindowController == nil {
             if runningModernMode {
@@ -2797,18 +3800,28 @@ class WindowManager {
     }
 
     var isNetworkMonitorVisible: Bool {
-        networkMonitorWindowController?.window?.isVisible == true
+        if winampModernHostedController?.handlesHostedWindow(.flow) == true {
+            return winampModernHostedController?.isHostedWindowVisible(.flow) == true
+        }
+        return networkMonitorWindowController?.window?.isVisible == true
     }
 
     var networkMonitorWindowFrame: NSRect? {
-        networkMonitorWindowController?.window?.frame
+        if winampModernHostedController?.handlesHostedWindow(.flow) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .flow)?.frame
+        }
+        return networkMonitorWindowController?.window?.frame
     }
 
     var networkMonitorWindow: NSWindow? {
-        networkMonitorWindowController?.window
+        if winampModernHostedController?.handlesHostedWindow(.flow) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .flow)
+        }
+        return networkMonitorWindowController?.window
     }
 
     func toggleNetworkMonitor() {
+        if routeWinampModernHostedWindow(.flow, toggle: true) { return }
         if let controller = networkMonitorWindowController,
            let window = controller.window,
            window.isVisible {
@@ -2829,6 +3842,7 @@ class WindowManager {
 
     func showCava(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernHostedWindow(.cava, toggle: false, restoredFrame: restoredFrame) { return }
         let runningModernMode = isRunningModernUI
         if cavaWindowController == nil {
             if runningModernMode {
@@ -2860,18 +3874,28 @@ class WindowManager {
     }
 
     var isCavaVisible: Bool {
-        cavaWindowController?.window?.isVisible == true
+        if winampModernHostedController?.handlesHostedWindow(.cava) == true {
+            return winampModernHostedController?.isHostedWindowVisible(.cava) == true
+        }
+        return cavaWindowController?.window?.isVisible == true
     }
 
     var cavaWindowFrame: NSRect? {
-        cavaWindowController?.window?.frame
+        if winampModernHostedController?.handlesHostedWindow(.cava) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .cava)?.frame
+        }
+        return cavaWindowController?.window?.frame
     }
 
     var cavaWindow: NSWindow? {
-        cavaWindowController?.window
+        if winampModernHostedController?.handlesHostedWindow(.cava) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .cava)
+        }
+        return cavaWindowController?.window
     }
 
     func toggleCava() {
+        if routeWinampModernHostedWindow(.cava, toggle: true) { return }
         if let controller = cavaWindowController,
            let window = controller.window,
            window.isVisible {
@@ -2892,6 +3916,14 @@ class WindowManager {
 
     func showWaveform(at restoredFrame: NSRect? = nil) {
         guard auxiliaryControllerStyle != .wmpUnavailable else { return }
+        if routeWinampModernHostedWindow(.waveform, toggle: false, restoredFrame: restoredFrame) {
+            if let surface = winampModernHostedController?.hostedWindowSurface(.waveform)
+                as? WinampModernHostedWaveformSurface {
+                surface.updateTrack(audioEngine.currentTrack)
+                surface.updateTime(current: audioEngine.currentTime, duration: audioEngine.duration)
+            }
+            return
+        }
         let isNewWindow = waveformWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
@@ -2934,19 +3966,36 @@ class WindowManager {
     }
 
     var isWaveformVisible: Bool {
-        waveformWindowController?.window?.isVisible == true
+        if winampModernHostedController?.handlesHostedWindow(.waveform) == true {
+            return winampModernHostedController?.isHostedWindowVisible(.waveform) == true
+        }
+        return waveformWindowController?.window?.isVisible == true
     }
 
     var waveformWindowFrame: NSRect? {
-        waveformWindowController?.window?.frame
+        if winampModernHostedController?.handlesHostedWindow(.waveform) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .waveform)?.frame
+        }
+        return waveformWindowController?.window?.frame
     }
 
     /// Access the waveform window when visible/internal geometry repairs need direct frame updates.
     var waveformWindow: NSWindow? {
-        waveformWindowController?.window
+        if winampModernHostedController?.handlesHostedWindow(.waveform) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .waveform)
+        }
+        return waveformWindowController?.window
     }
 
     func toggleWaveform() {
+        if routeWinampModernHostedWindow(.waveform, toggle: true) {
+            if isWaveformVisible, let surface = winampModernHostedController?.hostedWindowSurface(.waveform)
+                as? WinampModernHostedWaveformSurface {
+                surface.updateTrack(audioEngine.currentTrack)
+                surface.updateTime(current: audioEngine.currentTime, duration: audioEngine.duration)
+            }
+            return
+        }
         if let controller = waveformWindowController,
            let window = controller.window,
            window.isVisible {
@@ -2964,24 +4013,32 @@ class WindowManager {
     }
 
     func updateWaveformTrack(_ track: Track?) {
+        (winampModernHostedController?.hostedWindowSurface(.waveform)
+            as? WinampModernHostedWaveformSurface)?.updateTrack(track)
         waveformWindowController?.updateTrack(track)
     }
 
     func updateWaveformTime(current: TimeInterval, duration: TimeInterval) {
+        (winampModernHostedController?.hostedWindowSurface(.waveform)
+            as? WinampModernHostedWaveformSurface)?.updateTime(current: current, duration: duration)
         waveformWindowController?.updateTime(current: current, duration: duration)
     }
 
     func reloadWaveform(force: Bool) {
+        (winampModernHostedController?.hostedWindowSurface(.waveform)
+            as? WinampModernHostedWaveformSurface)?.reloadWaveform(force: force)
         waveformWindowController?.reloadWaveform(force: force)
     }
 
     func clearCurrentWaveformCache() {
+        (winampModernHostedController?.hostedWindowSurface(.waveform)
+            as? WinampModernHostedSurface)?.suspend()
         waveformWindowController?.stopLoadingForHide()
         let track = audioEngine.currentTrack
         Task {
             await WaveformCacheService.shared.clearCache(for: track)
             await MainActor.run {
-                WindowManager.shared.waveformWindowController?.reloadWaveform(force: false)
+                WindowManager.shared.reloadWaveform(force: false)
             }
         }
     }
@@ -2989,6 +4046,8 @@ class WindowManager {
     func toggleWaveformCuePoints() {
         let current = UserDefaults.standard.bool(forKey: "waveformShowCuePoints")
         UserDefaults.standard.set(!current, forKey: "waveformShowCuePoints")
+        (winampModernHostedController?.hostedWindowSurface(.waveform)
+            as? WinampModernHostedWaveformSurface)?.updateTrack(audioEngine.currentTrack)
         waveformWindowController?.updateTrack(audioEngine.currentTrack)
     }
 
@@ -3006,6 +4065,8 @@ class WindowManager {
     func toggleWaveformTooltip() {
         let current = UserDefaults.standard.bool(forKey: "waveformHideTooltip")
         UserDefaults.standard.set(!current, forKey: "waveformHideTooltip")
+        (winampModernHostedController?.hostedWindowSurface(.waveform)
+            as? WinampModernHostedWaveformSurface)?.updateTrack(audioEngine.currentTrack)
         waveformWindowController?.updateTrack(audioEngine.currentTrack)
     }
     
@@ -3032,25 +4093,45 @@ class WindowManager {
     }
     
     // MARK: - Visualization Settings
-    
+
+    /// The hosted ProjectM view inside a `.wal` skin frame, if one has been materialized.
+    private var hostedProjectMView: ModernProjectMView? {
+        winampModernHostedController?.hostedWindowSurface(.projectM) as? ModernProjectMView
+    }
+
     /// Whether projectM visualization is available
     var isProjectMAvailable: Bool {
-        projectMWindowController?.isProjectMAvailable ?? false
+        projectMWindowController?.isProjectMAvailable
+            ?? hostedProjectMView?.visualizationGLView?.isProjectMAvailable
+            ?? false
     }
-    
+
     /// Total number of visualization presets
     var visualizationPresetCount: Int {
-        projectMWindowController?.presetCount ?? 0
+        projectMWindowController?.presetCount
+            ?? hostedProjectMView?.visualizationGLView?.presetCount
+            ?? 0
     }
-    
+
     /// Current visualization preset index
     var visualizationPresetIndex: Int? {
         projectMWindowController?.currentPresetIndex
+            ?? hostedProjectMView?.visualizationGLView?.currentPresetIndex
+    }
+
+    /// The visualization engine running inside the loaded `.wal` skin's own AVS window, if it has
+    /// one and a scene has made it (B20a). The Visualizations menu drives it alongside our own
+    /// window, so the two can never disagree about which engine is running.
+    var winampModernVisualizationSurface: WinampModernVisualizationSurface? {
+        guard uiMode.controllerFamily == .winampModern else { return nil }
+        return (mainWindowController as? WinampModernMainWindowController)?.embeddedVisualizationSurface
     }
 
     /// Current visualization engine type
     var visualizationEngineType: VisualizationType {
-        projectMWindowController?.currentEngineType ?? {
+        projectMWindowController?.currentEngineType
+            ?? hostedProjectMView?.visualizationGLView?.currentEngineType
+            ?? winampModernVisualizationSurface?.engineType ?? {
             if let raw = UserDefaults.standard.string(forKey: "visualizationEngineType"),
                let type = VisualizationType(rawValue: raw) {
                 return type
@@ -3063,17 +4144,22 @@ class WindowManager {
     func switchVisualizationEngine(to type: VisualizationType) {
         UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
         projectMWindowController?.switchEngine(to: type)
+        hostedProjectMView?.visualizationGLView?.switchEngine(to: type)
+        winampModernVisualizationSurface?.switchEngine(to: type)
     }
 
     /// Reset visualization-window preferences to defaults and force the live view to re-read them.
     func resetVisualizationWindowPreferences() {
         UserDefaults.standard.set(VisualizationType.projectM.rawValue, forKey: "visualizationEngineType")
         projectMWindowController?.resetVisualizationWindowPreferences()
+        hostedProjectMView?.resetVisualizationWindowPreferences()
     }
 
     /// Force the open standalone Cava window (if any) to re-read tuning and re-derive its
     /// skin-default colors after "Reset All Visualization Preferences" cleared its keys.
     func refreshCavaWindowAfterReset() {
+        (winampModernHostedController?.hostedWindowSurface(.cava)
+            as? WinampModernHostedCavaSurface)?.refreshAfterReset()
         cavaWindowController?.refreshAfterReset()
         compactWindowController?.refreshCompactBackdrop()
         plexBrowserWindowController?.refreshLibraryBackdrop()
@@ -3081,22 +4167,27 @@ class WindowManager {
     
     /// Get information about loaded presets (bundled count, custom count, custom path)
     var visualizationPresetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
-        projectMWindowController?.presetsInfo ?? (0, 0, nil)
+        projectMWindowController?.presetsInfo
+            ?? hostedProjectMView?.visualizationGLView?.presetsInfo
+            ?? (0, 0, nil)
     }
-    
+
     /// Reload all visualization presets from bundled and custom folders
     func reloadVisualizationPresets() {
         projectMWindowController?.reloadPresets()
+        hostedProjectMView?.visualizationGLView?.reloadPresets()
     }
 
     /// Build the visualization window's full controls menu when the window has been created.
     func buildVisualizationMenu() -> NSMenu? {
         projectMWindowController?.buildVisualizationMenu()
+            ?? hostedProjectMView?.buildVisualizationMenu()
     }
-    
+
     /// Select a visualization preset by index
     func selectVisualizationPreset(at index: Int) {
         projectMWindowController?.selectPreset(at: index, hardCut: false)
+        hostedProjectMView?.visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
 
     func notifyMainWindowVisibilityChanged() {
@@ -3431,6 +4522,17 @@ class WindowManager {
             appliedUIScaleLevel = targetLevel
             NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
         } while pendingUIScaleLevel != nil && uiScaleLevel != appliedUIScaleLevel
+
+        // Growing the UI is the most reliable way to push the bottom of a stack, or the right of a
+        // wide skin, past the edge of the display — every window is re-sized around the main window
+        // as an anchor and nothing was checking where they landed.
+        //
+        // Winamp Modern only: a `.wal` skin's windows are sized by the skin and can grow far past
+        // what Classic's fixed sprite geometry ever produces. Classic keeps the UI Size behaviour it
+        // had before this branch.
+        if appliesWinampModernPlacement {
+            ensureAllWindowsOnScreen()
+        }
     }
 
     /// Apply UI scaling to all windows.
@@ -3443,7 +4545,7 @@ class WindowManager {
         // sizes (window sizes, title bar heights, border widths, etc.) reflect the UI size.
         // This must happen BEFORE reading any ModernSkinElements sizes.
         if runningModernMode {
-            ModernSkinElements.sizeMultiplier = targetScale
+            ModernSkinElements.applySizeMultiplier(targetScale)
         }
         
         let scale = targetScale
@@ -3454,7 +4556,14 @@ class WindowManager {
         // For modern UI, sizes already include the multiplier via scaleFactor.
         // For classic UI, sizes are base sizes that need explicit * scale.
         let mainTargetSize: NSSize
-        if runningModernMode {
+        if uiMode == .winampModern,
+           let controller = mainWindowController as? WinampModernMainWindowController {
+            // A `.wal` skin's window size comes from its own layout, not `Skin.mainWindowSize` —
+            // UI Size multiplies the skin's pixel grid. The view is told the scale here too, so the
+            // window and its contents change together.
+            controller.applyUIScale(scale)
+            mainTargetSize = controller.mainWindowSize(atScale: scale) ?? mainWindow.frame.size
+        } else if runningModernMode {
             mainTargetSize = NSSize(width: ModernSkinElements.mainWindowSize.width,
                                     height: fullMainHeightForCurrentScale())
         } else {
@@ -3464,9 +4573,10 @@ class WindowManager {
         
         let mainAdjustedSize = mainTargetSize
         
-        // Update minSize
-        mainWindow.minSize = mainAdjustedSize
-        
+        // Update minSize. A `.wal` skin declares its own `minimum_w`/`minimum_h` and may be freely
+        // resizable, so pinning the minimum to the current size would take that away.
+        if uiMode != .winampModern { mainWindow.minSize = mainAdjustedSize }
+
         // Suppress windowDidMove → windowWillMove feedback during programmatic layout.
         // Animated setFrame fires windowDidMove on every display-link tick, which triggers
         // the docked-window movement loop and causes infinite recursion (stack overflow).
@@ -3778,20 +4888,7 @@ class WindowManager {
 
     private func applyAlwaysOnTop() {
         let level: NSWindow.Level = isAlwaysOnTop ? .floating : .normal
-        
-        // Apply to all app windows
-        mainWindowController?.window?.level = level
-        equalizerWindowController?.window?.level = level
-        playlistWindowController?.window?.level = level
-        plexBrowserWindowController?.window?.level = level
-        videoPlayerWindowController?.window?.level = level
-        projectMWindowController?.window?.level = level
-        spectrumWindowController?.window?.level = level
-        audioAnalysisWindowController?.window?.level = level
-        peppyMeterWindowController?.window?.level = level
-        networkMonitorWindowController?.window?.level = level
-        cavaWindowController?.window?.level = level
-        waveformWindowController?.window?.level = level
+        for record in managedWindowRecords { record.window.level = level }
         if compactWindowEnabled {
             compactWindowController?.window?.level = level
         }
@@ -3808,6 +4905,16 @@ class WindowManager {
     func bringAllWindowsToFront(keepingWindowOnTop preferredTopWindow: NSWindow? = nil) {
         // Order all visible windows to front without making them key.
         // Keep a predictable base order, then re-raise the active window at the end.
+        //
+        // This order **is** the z-order — the windows are ordered front in sequence, so whatever
+        // comes last sits on top. It is therefore written out explicitly rather than taken from
+        // `managedWindowRecords`, whose order exists to describe docking membership and is free to
+        // change for reasons that have nothing to do with stacking. Reading it from there silently
+        // raised the equalizer above the playlist, and the video window above the visualizer and the
+        // library, in Classic.
+        //
+        // A `.wal` skin's own windows are not in this list because they are not stacked by it: the
+        // hosted graph orders them itself.
         let windows: [NSWindow?] = [
             mainWindowController?.window,
             equalizerWindowController?.window,
@@ -3839,14 +4946,9 @@ class WindowManager {
     /// Find visible center-stack windows that are docked below the main window
     /// (directly or transitively), using the current dock threshold.
     private func dockedCenterStackWindowsBelowMain(mainFrame: NSRect) -> [NSWindow] {
-        let subWindows = [equalizerWindowController?.window,
-                          playlistWindowController?.window,
-                          spectrumWindowController?.window,
-                          audioAnalysisWindowController?.window,
-                          peppyMeterWindowController?.window,
-                          networkMonitorWindowController?.window,
-                          cavaWindowController?.window,
-                          waveformWindowController?.window].compactMap { $0 }
+        let subWindows = managedWindowRecords.compactMap {
+            $0.centerStack && $0.window !== mainWindowController?.window ? $0.window : nil
+        }
         var docked: [NSWindow] = []
         var frontier: [NSRect] = [mainFrame]
 
@@ -3907,6 +5009,19 @@ class WindowManager {
         case cava
     }
 
+    private func centerStackKind(for id: WinampModernHostedWindowID) -> CenterStackWindowKind? {
+        switch id {
+        case .spectrum: return .spectrum
+        case .equalizer: return .equalizer
+        case .cava: return .cava
+        case .flow: return .networkMonitor
+        case .peppyMeter: return .peppyMeter
+        case .audioAnalysis: return .audioAnalysis
+        case .waveform: return .waveform
+        case .projectM: return nil
+        }
+    }
+
     private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
         if window === equalizerWindowController?.window { return .equalizer }
         if window === playlistWindowController?.window { return .playlist }
@@ -3916,6 +5031,11 @@ class WindowManager {
         if window === peppyMeterWindowController?.window { return .peppyMeter }
         if window === networkMonitorWindowController?.window { return .networkMonitor }
         if window === cavaWindowController?.window { return .cava }
+        if let hosted = winampModernHostedController?.materializedHostedWindows.first(where: {
+            $0.window === window
+        }) {
+            return centerStackKind(for: hosted.id)
+        }
         return nil
     }
 
@@ -4196,9 +5316,41 @@ class WindowManager {
 
     /// Default side-window height when only the main window is visible.
     /// Uses the center-stack baseline height in modern UI.
+    ///
+    /// The `×4` is calibrated for a *thin strip* of a main window — classic's 116pt, giving the 464pt
+    /// column this app has always opened a side window at — so that it spans roughly the stack the
+    /// user is about to build under it. A `.wal` skin's main window is its own full-size canvas
+    /// instead, and multiplying *that* by four is nonsense: Lobe's is 300pt, so the product is
+    /// 1200pt, and 2400pt at 2× UI Size; cPro-Bento's is taller still. The `.winampModern` family
+    /// therefore measures from classic's strip rather than from the skin, so every skin opens the
+    /// same familiar column whatever size its own window happens to be (B28).
+    ///
+    /// The result is anchored at the main window's *top* edge and grows downward, so it is clamped
+    /// to the display afterwards — nothing else stopped it running off the bottom.
     private func defaultSideWindowHeight(mainFrame: NSRect) -> CGFloat {
-        guard isRunningModernUI else { return mainFrame.height * 4 }
-        return expectedMainHeightForCurrentHT(mainWindowController?.window) * 4
+        let baseline: CGFloat
+        if mainWindowController is WinampModernMainWindowController {
+            baseline = SkinElements.mainWindowSize.height * uiScaleLevel.scaleFactor
+        } else if isRunningModernUI {
+            baseline = expectedMainHeightForCurrentHT(mainWindowController?.window)
+        } else {
+            baseline = mainFrame.height
+        }
+        return clampToScreen(sideWindowHeight: baseline * 4, mainFrame: mainFrame)
+    }
+
+    /// Trim a default side-window height to what the main window's display can actually show below
+    /// the anchor. Never grows a height, and never returns less than the main window's own height —
+    /// a main window parked at the very bottom of the screen must not collapse the side window to
+    /// nothing.
+    private func clampToScreen(sideWindowHeight height: CGFloat, mainFrame: NSRect) -> CGFloat {
+        guard let screen = mainWindowController?.window?.screen ?? NSScreen.main else { return height }
+        let visible = screen.visibleFrame
+        // The frame is laid out downward from `mainFrame.maxY`, so the room available is the drop
+        // from that edge to the bottom of the visible frame — capped by the visible height for a main
+        // window whose top edge sits above it.
+        let available = min(visible.height, max(0, mainFrame.maxY - visible.minY))
+        return max(min(height, available), mainFrame.height)
     }
 
     /// Classic-only runtime self-heal for near-docked center-stack gaps/width drift.
@@ -4297,24 +5449,236 @@ class WindowManager {
         return true
     }
     
+    /// The saved per-window frames, dropped so windows open relative to the main window again.
+    /// Shared by both Snap To Default routines; the key set is unchanged from when it lived inline.
+    private func clearSavedWindowFramePositions() {
+        let defaults = UserDefaults.standard
+        // Clear any saved positions (windows will be positioned relative to main on open)
+        defaults.removeObject(forKey: AppPersistence.key("MainWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("EqualizerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PlaylistWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PlexBrowserWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("ProjectMWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("VideoPlayerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("ArtVisualizerWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("SpectrumWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("WaveformWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("PeppyMeterWindowFrame"))
+        defaults.removeObject(forKey: AppPersistence.key("NetworkMonitorWindowFrame"))
+    }
+
+    /// Where the player lands when Snap To Default re-centres it: centred on `region`, at its own
+    /// size, shrunk to fit when the skin is larger than the display. The clamp is what makes this a
+    /// recovery rather than a re-strand — a 900pt-tall player on an 800pt screen must still come
+    /// back with its top-left visible.
+    static func recenteredPlayerFrame(size: NSSize, in region: NSRect) -> NSRect {
+        let fitted = NSSize(width: min(size.width, region.width),
+                            height: min(size.height, region.height))
+        return NSRect(x: region.midX - fitted.width / 2,
+                      y: region.midY - fitted.height / 2,
+                      width: fitted.width,
+                      height: fitted.height)
+    }
+
+    /// Snap To Default for Winamp Modern (B81).
+    ///
+    /// The classic routine stacks visible windows read off the per-feature controllers, which in this
+    /// mode are almost all nil: a skin's own auxiliary containers and the lazily materialized hosted
+    /// windows are reached through `winampModernHostedController` and the managed-window graph. So
+    /// this re-runs the arrangement instead of building a stack — the same deterministic tiling
+    /// launch runs (`WinampModernTiler`), which is what "default positions" means here.
+    ///
+    /// Unlike the launch sweep, the player is *moved*: it is re-centred first. There the player's
+    /// frame is restored user state and the anchor; here the user has explicitly asked for a reset,
+    /// and a player dragged off the display is one of the states this has to recover — the same
+    /// re-centring Classic does with its own main window.
+    private func snapWinampModernToDefaultPositions() {
+        guard let playerWindow = mainWindowController?.window else { return }
+        guard let region = (playerWindow.screen ?? NSScreen.main)?.visibleFrame else { return }
+
+        clearSavedWindowFramePositions()
+
+        isSnappingWindow = true
+        defer { isSnappingWindow = false }
+
+        playerWindow.setFrame(Self.recenteredPlayerFrame(size: playerWindow.frame.size, in: region),
+                              display: true, animate: false)
+
+        // The generated arrangement: the skin's own containers, then the hosted windows.
+        winampModernHostedController?.arrangeWindows()
+
+        // Anything that sweep does not own — a classic-fallback playlist or library window, the
+        // standalone video window — joins the same tiling in the first free slot, exactly the way a
+        // window opened after the arrangement does.
+        var arranged = Set<ObjectIdentifier>([ObjectIdentifier(playerWindow)])
+        if let controller = winampModernHostedController {
+            for window in controller.materializedAuxiliaryWindows {
+                arranged.insert(ObjectIdentifier(window))
+            }
+        }
+        for window in winampModernHostedWindowsForArrangement() {
+            arranged.insert(ObjectIdentifier(window))
+        }
+
+        var leftovers = snapTargetWindows()
+        if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
+            leftovers.append(videoWindow)
+        }
+        for window in leftovers where !arranged.contains(ObjectIdentifier(window)) {
+            arranged.insert(ObjectIdentifier(window))
+            guard let origin = tiledOrigin(for: window.frame.size,
+                                           avoiding: occupiedWindowFrames(excluding: window))
+                    ?? rescuedOrigin(for: window)
+            else { continue }
+            window.setFrameOrigin(origin)
+        }
+
+        // The contract this command has to keep is that **one** press recovers everything. It used to
+        // take several — and sometimes never worked — because it re-ran the same unclamped tiler and
+        // so reproduced the same off-screen layout, appearing to improve only because more windows
+        // had materialized between presses and the occupancy set differed each time. The clamped
+        // tiler above fixes the cause; this pass makes the guarantee unconditional, and makes a
+        // second press a no-op.
+        let screens = visibleScreenFrames()
+        for window in allWindows() where !WindowPlacement.isReachable(window.frame, screens: screens) {
+            guard let origin = rescuedOrigin(for: window) else { continue }
+            window.setFrameOrigin(origin)
+        }
+
+        postLayoutChangeNotification()
+    }
+
+    /// The safety net: no window this app manages is left where the user cannot reach it.
+    ///
+    /// Every placement path is now supposed to keep its own output on screen, but placement is not
+    /// the only way a window ends up off it — a display can be unplugged, a resolution can change,
+    /// the Dock can be resized, and a saved session can be restored onto a desktop that is smaller
+    /// than the one it was saved on. This runs after the moments that produce those states rather
+    /// than trying to anticipate them.
+    ///
+    /// A stranded window is moved with its whole docked cluster, by one shared offset, so docking
+    /// survives the rescue; only what that offset cannot save is then moved on its own, accepting
+    /// overlap with its neighbours. Overlapping windows are preferable to hidden ones.
+    ///
+    /// Per `CLAUDE.md` this runs in all three modes **deliberately**: an unreachable window is
+    /// equally unusable in Classic, Original/Modern and Winamp Modern, and the rule it applies —
+    /// reachable means the top-left corner is on some screen — is mode-independent. It is verified
+    /// separately in each.
+    func ensureAllWindowsOnScreen() {
+        // Winamp Modern only, enforced here as well as at every call site. The call-site guards say
+        // *why* each moment needs the sweep; this one makes the restriction structural, so a caller
+        // added later cannot quietly reintroduce the sweep into Classic or Original — which is the
+        // exact way B56 reached them.
+        guard appliesWinampModernPlacement else { return }
+
+        let screens = visibleScreenFrames()
+        guard !screens.isEmpty else { return }
+        // A full-screen visualizer legitimately fills a display and must not be "corrected" off it.
+        guard !isProjectMFullscreen else { return }
+
+        var moved = false
+        var handled = Set<ObjectIdentifier>()
+
+        isSnappingWindow = true
+        defer {
+            isSnappingWindow = false
+            if moved { postLayoutChangeNotification() }
+        }
+
+        for window in allWindows() {
+            let id = ObjectIdentifier(window)
+            if handled.contains(id) { continue }
+            // A window on its way to the Dock has no meaningful frame to correct.
+            if miniaturizingWindowIds.contains(id) || window.isMiniaturized { continue }
+            if WindowPlacement.isReachable(window.frame, screens: screens) { continue }
+
+            // The cluster this window belongs to, moved as one.
+            var cluster = [window]
+            for docked in findDockedWindows(to: window)
+            where !miniaturizingWindowIds.contains(ObjectIdentifier(docked)) && !docked.isMiniaturized {
+                cluster.append(docked)
+            }
+
+            var union = cluster[0].frame
+            for member in cluster.dropFirst() { union = union.union(member.frame) }
+
+            if let host = WindowPlacement.hostScreen(for: union, screens: screens) {
+                let offset = WindowPlacement.groupOffset(union: union, into: host)
+                if offset != .zero {
+                    for member in cluster {
+                        member.setFrameOrigin(NSPoint(x: member.frame.minX + offset.x,
+                                                      y: member.frame.minY + offset.y))
+                    }
+                    moved = true
+                }
+            }
+
+            // A cluster larger than the display cannot be saved by one offset; its far members are
+            // still outside, and those are rescued individually.
+            for member in cluster {
+                handled.insert(ObjectIdentifier(member))
+                guard let origin = rescuedOrigin(for: member) else { continue }
+                member.setFrameOrigin(origin)
+                moved = true
+            }
+        }
+
+        if moved {
+            NSLog("WindowManager: rescued off-screen window(s) back onto the display")
+        }
+    }
+
+    /// The combined height of the visible windows Snap To Default stacks beneath the main window.
+    ///
+    /// Measured up front so the routine knows whether the stack it is about to build fits before it
+    /// decides where the top of it goes. The membership and order here must match the stack the
+    /// routine actually builds below.
+    private func visibleCenterStackHeightBelowMain() -> CGFloat {
+        var height: CGFloat = 0
+        if let window = equalizerWindowController?.window, window.isVisible { height += window.frame.height }
+        if let window = playlistWindowController?.window, window.isVisible { height += window.frame.height }
+        if let window = spectrumWindow, window.isVisible { height += window.frame.height }
+        if let window = waveformWindow, window.isVisible { height += window.frame.height }
+        if let window = audioAnalysisWindow, window.isVisible { height += window.frame.height }
+        if let window = peppyMeterWindow, window.isVisible { height += window.frame.height }
+        if let window = networkMonitorWindow, window.isVisible { height += window.frame.height }
+        if let window = cavaWindow, window.isVisible { height += window.frame.height }
+        return height
+    }
+
     /// Reset all windows to their default positions
     /// Only stacks currently visible windows with no gaps, preserving their current sizes
     func snapToDefaultPositions() {
-        let defaults = UserDefaults.standard
-        
+        // Winamp Modern has no center stack for the sweep below to build, and none of its windows
+        // hang off the per-feature controllers it walks — a skin's auxiliary containers and the
+        // hosted windows both live in the managed-window graph instead. Left to fall through, the
+        // command moved only the player and a `.wal` window stranded off-screen had no way back
+        // (B81). The modern arrangement is generated, not stacked, so it gets its own routine.
+        if uiMode.controllerFamily == .winampModern {
+            snapWinampModernToDefaultPositions()
+            return
+        }
+
         // Get screen for positioning - use the screen the main window is on, or fall back to main screen
         // Use full screen frame (not visibleFrame) so windows aren't constrained by menu bar/dock
+        //
+        // The `.wal` recovery this branch needed — `visibleFrame`, a measured stack that anchors to
+        // the top when it overruns, and clamped side windows — is in
+        // `snapWinampModernToDefaultPositions` above, reached by the early return at the top of this
+        // function. None of it belongs here: Classic and Original have laid their desktops out around
+        // these rules, and parking a window past an edge is a placement, not damage to repair.
         guard let screen = mainWindowController?.window?.screen ?? NSScreen.main else { return }
         let screenFrame = screen.frame
         
         // Use current main window size (preserves user scaling)
         let fallbackMainSize: NSSize
         switch uiMode.controllerFamily {
-        case .classic: fallbackMainSize = Skin.mainWindowSize
+        case .classic, .winampModern: fallbackMainSize = Skin.mainWindowSize
         case .nullPlayerModern: fallbackMainSize = ModernSkinElements.mainWindowSize
         case .wmp: fallbackMainSize = WMPMainWindowController.unskinnedSize
         }
         let mainSize = mainWindowController?.window?.frame.size ?? fallbackMainSize
+
         let mainFrame = NSRect(
             x: screenFrame.midX - mainSize.width / 2,
             y: screenFrame.midY - mainSize.height / 2,
@@ -4346,7 +5710,7 @@ class WindowManager {
             playlistFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
         }
         
-        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible {
+        if let spectrumWindow, spectrumWindow.isVisible {
             let h = spectrumWindow.frame.height
             let w = spectrumWindow.frame.width
             nextY -= h
@@ -4354,7 +5718,7 @@ class WindowManager {
         }
 
         var waveformFrame: NSRect?
-        if let waveformWindow = waveformWindowController?.window, waveformWindow.isVisible {
+        if let waveformWindow, waveformWindow.isVisible {
             let h = waveformWindow.frame.height
             let w = waveformWindow.frame.width
             nextY -= h
@@ -4362,7 +5726,7 @@ class WindowManager {
         }
 
         var audioAnalysisFrame: NSRect?
-        if let audioAnalysisWindow = audioAnalysisWindowController?.window, audioAnalysisWindow.isVisible {
+        if let audioAnalysisWindow, audioAnalysisWindow.isVisible {
             let h = audioAnalysisWindow.frame.height
             let w = audioAnalysisWindow.frame.width
             nextY -= h
@@ -4370,7 +5734,7 @@ class WindowManager {
         }
 
         var peppyMeterFrame: NSRect?
-        if let peppyMeterWindow = peppyMeterWindowController?.window, peppyMeterWindow.isVisible {
+        if let peppyMeterWindow, peppyMeterWindow.isVisible {
             let h = peppyMeterWindow.frame.height
             let w = peppyMeterWindow.frame.width
             nextY -= h
@@ -4378,7 +5742,7 @@ class WindowManager {
         }
 
         var networkMonitorFrame: NSRect?
-        if let networkMonitorWindow = networkMonitorWindowController?.window, networkMonitorWindow.isVisible {
+        if let networkMonitorWindow, networkMonitorWindow.isVisible {
             let h = networkMonitorWindow.frame.height
             let w = networkMonitorWindow.frame.width
             nextY -= h
@@ -4386,7 +5750,7 @@ class WindowManager {
         }
 
         var cavaFrame: NSRect?
-        if let cavaWindow = cavaWindowController?.window, cavaWindow.isVisible {
+        if let cavaWindow, cavaWindow.isVisible {
             let h = cavaWindow.frame.height
             let w = cavaWindow.frame.width
             nextY -= h
@@ -4411,18 +5775,7 @@ class WindowManager {
             projectMFrame = NSRect(x: mainFrame.minX - w, y: stackBottomY, width: w, height: stackHeight)
         }
         
-        // Clear any saved positions (windows will be positioned relative to main on open)
-        defaults.removeObject(forKey: AppPersistence.key("MainWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("EqualizerWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("PlaylistWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("PlexBrowserWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("ProjectMWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("VideoPlayerWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("ArtVisualizerWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("SpectrumWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("WaveformWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("PeppyMeterWindowFrame"))
-        defaults.removeObject(forKey: AppPersistence.key("NetworkMonitorWindowFrame"))
+        clearSavedWindowFramePositions()
         
         // Disable snapping during programmatic frame changes to prevent interference
         isSnappingWindow = true
@@ -4438,22 +5791,22 @@ class WindowManager {
         if let frame = playlistFrame, let window = playlistWindowController?.window {
             window.setFrame(frame, display: true, animate: false)
         }
-        if let frame = spectrumFrame, let window = spectrumWindowController?.window {
+        if let frame = spectrumFrame, let window = spectrumWindow {
             window.setFrame(frame, display: true, animate: false)
         }
-        if let frame = waveformFrame, let window = waveformWindowController?.window {
+        if let frame = waveformFrame, let window = waveformWindow {
             window.setFrame(frame, display: true, animate: false)
         }
-        if let frame = audioAnalysisFrame, let window = audioAnalysisWindowController?.window {
+        if let frame = audioAnalysisFrame, let window = audioAnalysisWindow {
             window.setFrame(frame, display: true, animate: false)
         }
-        if let frame = peppyMeterFrame, let window = peppyMeterWindowController?.window {
+        if let frame = peppyMeterFrame, let window = peppyMeterWindow {
             window.setFrame(frame, display: true, animate: false)
         }
-        if let frame = networkMonitorFrame, let window = networkMonitorWindowController?.window {
+        if let frame = networkMonitorFrame, let window = networkMonitorWindow {
             window.setFrame(frame, display: true, animate: false)
         }
-        if let frame = cavaFrame, let window = cavaWindowController?.window {
+        if let frame = cavaFrame, let window = cavaWindow {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
@@ -5404,44 +6757,18 @@ class WindowManager {
 
     /// Get all managed windows
     private func allWindows() -> [NSWindow] {
-        var windows: [NSWindow] = []
-        if let w = mainWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = peppyMeterWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = networkMonitorWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = cavaWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
-        return windows
+        managedWindowRecords.compactMap { $0.window.isVisible ? $0.window : nil }
     }
 
     /// Get windows that participate in docking/snapping together (classic skin windows)
     private func dockableWindows() -> [NSWindow] {
-        var windows: [NSWindow] = []
-        if let w = mainWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = audioAnalysisWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = peppyMeterWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = networkMonitorWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = cavaWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
-        return windows
+        managedWindowRecords.compactMap { $0.centerStack && $0.window.isVisible ? $0.window : nil }
     }
 
     /// Get windows that can be used as snapping targets.
     /// Includes Library browser and ProjectM for side-docking.
     private func snapTargetWindows() -> [NSWindow] {
-        var windows = dockableWindows()
-        if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
-        if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
-        return windows
+        managedWindowRecords.compactMap { $0.snapTarget && $0.window.isVisible ? $0.window : nil }
     }
 
     /// Get windows that can participate in connected group dragging.
@@ -5452,15 +6779,7 @@ class WindowManager {
     
     /// Check if a window participates in docking
     private func isDockableWindow(_ window: NSWindow) -> Bool {
-        return window === mainWindowController?.window ||
-               window === playlistWindowController?.window ||
-               window === equalizerWindowController?.window ||
-               window === spectrumWindowController?.window ||
-               window === audioAnalysisWindowController?.window ||
-               window === peppyMeterWindowController?.window ||
-               window === networkMonitorWindowController?.window ||
-               window === cavaWindowController?.window ||
-               window === waveformWindowController?.window
+        managedWindowRecords.contains { $0.window === window && $0.centerStack }
     }
     
     /// Get all visible windows
@@ -5613,30 +6932,59 @@ class WindowManager {
                 normalFrame: normalFrame
             )
         }
+        func snapWindow(_ window: NSWindow?) -> UIWindowSnapshot? {
+            guard let window else { return nil }
+            return UIWindowSnapshot(visible: window.isVisible, frame: window.frame)
+        }
         return ModeDependentLayoutSnapshot(
             main: snap(mainWindowController),
             playlist: snap(playlistWindowController),
             equalizer: snap(equalizerWindowController),
             // Library stores its position frame for restoration after the rebuild.
             library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
-            projectM: snap(projectMWindowController),
-            spectrum: snap(spectrumWindowController),
-            audioAnalysis: snap(audioAnalysisWindowController),
-            peppyMeter: snap(peppyMeterWindowController),
-            networkMonitor: snap(networkMonitorWindowController),
-            cava: snap(cavaWindowController),
-            waveform: snap(waveformWindowController),
+            projectM: snap(projectMWindowController)
+                ?? snapWindow(winampModernHostedController?.hostedWindow(ifMaterialized: .projectM)),
+            spectrum: snapWindow(spectrumWindow),
+            audioAnalysis: snapWindow(audioAnalysisWindow),
+            peppyMeter: snapWindow(peppyMeterWindow),
+            networkMonitor: snapWindow(networkMonitorWindow),
+            cava: snapWindow(cavaWindow),
+            waveform: snapWindow(waveformWindow),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
     }
 
     private func restorableProjectMPresetIndex() -> Int? {
-        guard let controller = projectMWindowController,
-              controller.isProjectMAvailable else { return nil }
-        let count = controller.presetCount
-        let index = controller.currentPresetIndex
-        guard count > 0, index >= 0, index < count else { return nil }
-        return index
+        if let controller = projectMWindowController, controller.isProjectMAvailable {
+            let count = controller.presetCount
+            let index = controller.currentPresetIndex
+            if count > 0, index >= 0, index < count { return index }
+        }
+        if let visView = hostedProjectMView?.visualizationGLView, visView.isProjectMAvailable {
+            let count = visView.presetCount
+            let index = visView.currentPresetIndex
+            if count > 0, index >= 0, index < count { return index }
+        }
+        return nil
+    }
+
+    /// Where the main window goes when a live UI-mode switch rebuilds it — the same rule
+    /// `AppStateManager.mainFrameForRestore` applies at launch, applied to the switch.
+    ///
+    /// Every family lays its main window out at its own base size: classic at
+    /// `Skin.mainWindowSize * scale`, modern off `ModernSkinElements`, a `.wal` skin at whatever its
+    /// own layout declares. Stamping the *outgoing* mode's whole frame onto the freshly created
+    /// target-mode window therefore drew the incoming UI into a foreign box — switching Ebonite
+    /// (197×297) → Classic left the 275×116 classic skin scaled down inside a 197×297 window. Only
+    /// the UI Size re-apply in `performReloadUI` would have corrected it, and that runs only when
+    /// the scale is not 100%, so at 100% nothing ever resized the window.
+    ///
+    /// Only the size is mode-specific. The **position** is the user's, so it survives: the snapshot's
+    /// origin is kept and the incoming window's own size substituted, anchored at the same top-left —
+    /// the corner `applyDoubleSize` anchors to.
+    static func mainFrameForModeSwitch(outgoing: NSRect, ownSize: NSSize) -> NSRect {
+        NSRect(x: outgoing.minX, y: outgoing.maxY - ownSize.height,
+               width: ownSize.width, height: ownSize.height)
     }
 
     /// Rebuild the mode-dependent windows from a snapshot: the main window always returns,
@@ -5646,10 +6994,14 @@ class WindowManager {
     private func recreateModeDependentLayout(_ snapshot: ModeDependentLayoutSnapshot,
                                              revealMainWindow: Bool = true) {
         showMainWindow(reveal: revealMainWindow)
-        if let main = snapshot.main {
-            if main.frame != .zero {
-                mainWindowController?.window?.setFrame(main.frame, display: true)
-            }
+        if let main = snapshot.main, main.frame != .zero,
+           let mainWindow = mainWindowController?.window {
+            // The freshly created controller has already sized this window to the incoming mode's
+            // own layout, so its current size is the one to keep.
+            mainWindow.setFrame(
+                Self.mainFrameForModeSwitch(outgoing: main.frame, ownSize: mainWindow.frame.size),
+                display: true
+            )
         }
 
         if let playlist = snapshot.playlist, playlist.visible {
@@ -5703,19 +7055,7 @@ class WindowManager {
         #if DEBUG
         // Log any visible orphaned windows that survived the rebuild
         var trackedWindows = Set<ObjectIdentifier>()
-        for window in [mainWindowController?.window,
-                       playlistWindowController?.window,
-                       equalizerWindowController?.window,
-                       plexBrowserWindowController?.window,
-                       projectMWindowController?.window,
-                       spectrumWindowController?.window,
-                       audioAnalysisWindowController?.window,
-                       peppyMeterWindowController?.window,
-                       networkMonitorWindowController?.window,
-                       cavaWindowController?.window,
-                       waveformWindowController?.window,
-                       videoPlayerWindowController?.window,
-                       debugWindowController?.window].compactMap({ $0 }) {
+        for window in managedWindowRecords.map(\.window) + [debugWindowController?.window].compactMap({ $0 }) {
             trackedWindows.insert(ObjectIdentifier(window))
         }
 
@@ -5951,16 +7291,17 @@ class WindowManager {
             )
         }
         return DetachedWindowFrames(
-            equalizer: detachedFrame(equalizerWindowController?.window),
+            equalizer: detachedFrame(equalizerWindow),
             playlist: detachedFrame(playlistWindowController?.window),
-            spectrum: detachedFrame(spectrumWindowController?.window),
-            waveform: detachedFrame(waveformWindowController?.window),
-            audioAnalysis: detachedFrame(audioAnalysisWindowController?.window),
-            peppyMeter: detachedFrame(peppyMeterWindowController?.window),
-            networkMonitor: detachedFrame(networkMonitorWindowController?.window),
-            cava: detachedFrame(cavaWindowController?.window),
+            spectrum: detachedFrame(spectrumWindow),
+            waveform: detachedFrame(waveformWindow),
+            audioAnalysis: detachedFrame(audioAnalysisWindow),
+            peppyMeter: detachedFrame(peppyMeterWindow),
+            networkMonitor: detachedFrame(networkMonitorWindow),
+            cava: detachedFrame(cavaWindow),
             library: detachedFrame(plexBrowserWindowController?.window),
-            projectM: detachedFrame(projectMWindowController?.window)
+            projectM: detachedFrame(projectMWindowController?.window
+                ?? winampModernHostedController?.hostedWindow(ifMaterialized: .projectM))
         )
     }
 
@@ -6006,14 +7347,14 @@ class WindowManager {
 
     private func restoreDetachedWindowFrames(_ frames: DetachedWindowFrames) {
         let restorations: [(NSRect?, NSWindow?)] = [
-            (frames.equalizer, equalizerWindowController?.window),
+            (frames.equalizer, equalizerWindow),
             (frames.playlist, playlistWindowController?.window),
-            (frames.spectrum, spectrumWindowController?.window),
-            (frames.waveform, waveformWindowController?.window),
-            (frames.audioAnalysis, audioAnalysisWindowController?.window),
-            (frames.peppyMeter, peppyMeterWindowController?.window),
-            (frames.networkMonitor, networkMonitorWindowController?.window),
-            (frames.cava, cavaWindowController?.window),
+            (frames.spectrum, spectrumWindow),
+            (frames.waveform, waveformWindow),
+            (frames.audioAnalysis, audioAnalysisWindow),
+            (frames.peppyMeter, peppyMeterWindow),
+            (frames.networkMonitor, networkMonitorWindow),
+            (frames.cava, cavaWindow),
             (frames.library, plexBrowserWindowController?.window),
             (frames.projectM, projectMWindowController?.window),
         ]
@@ -6142,7 +7483,7 @@ class WindowManager {
             // stale value left over from a previous modern session would create the windows
             // at the wrong scale. reloadUI collapses uiScaleLevel to 1x before switching, so
             // this is normally 1.0 here; UI Size is re-applied via applyDoubleSize afterward.
-            ModernSkinElements.sizeMultiplier = uiScaleLevel.scaleFactor
+            ModernSkinElements.applySizeMultiplier(uiScaleLevel.scaleFactor)
             // A live UI-family switch is a skin change: apply the incoming skin's own
             // visualization defaults instead of preserving the outgoing family's shared,
             // window-scoped vis_classic profile keys (which would leak e.g. classic's
@@ -6268,7 +7609,7 @@ class WindowManager {
         if let frame = playlistWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("PlaylistWindowFrame"))
         }
-        if let frame = equalizerWindowController?.window?.frame {
+        if let frame = equalizerWindow?.frame {
             defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("EqualizerWindowFrame"))
         }
         if let frame = plexBrowserWindowController?.window?.frame {
@@ -6280,48 +7621,57 @@ class WindowManager {
         if let frame = projectMWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("ProjectMWindowFrame"))
         }
-        if let frame = spectrumWindowController?.window?.frame {
+        if let frame = spectrumWindowFrame {
             defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("SpectrumWindowFrame"))
         }
     }
     
+    /// Re-apply the frames saved in `UserDefaults`.
+    ///
+    /// Every rect goes through `onScreen` on the way in. These are raw saved coordinates and nothing
+    /// else validates them: a session saved on a display that is no longer attached came back at
+    /// coordinates that do not exist any more, which is one of the ways a window ended up
+    /// unreachable at launch.
     func restoreWindowPositions() {
         let defaults = UserDefaults.standard
+        // Winamp Modern only: outside it, a saved frame is re-applied exactly as it was saved.
+        let rescuesOffScreenFrames = appliesWinampModernPlacement
+        let screens = visibleScreenFrames()
+        func onScreen(_ frame: NSRect) -> NSRect {
+            guard rescuesOffScreenFrames,
+                  !WindowPlacement.isReachable(frame, screens: screens),
+                  let host = WindowPlacement.hostScreen(for: frame, screens: screens)
+            else { return frame }
+            return WindowPlacement.rescued(frame, into: host)
+        }
         
         if let frameString = defaults.string(forKey: AppPersistence.key("MainWindowFrame")),
            let window = mainWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("PlaylistWindowFrame")),
            let window = playlistWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("EqualizerWindowFrame")),
            let window = equalizerWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("PlexBrowserWindowFrame")),
            let window = plexBrowserWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("VideoPlayerWindowFrame")),
            let window = videoPlayerWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("ProjectMWindowFrame")),
            let window = projectMWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
         if let frameString = defaults.string(forKey: AppPersistence.key("SpectrumWindowFrame")),
-           let window = spectrumWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
+           let window = spectrumWindow {
+            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
         }
     }
 }

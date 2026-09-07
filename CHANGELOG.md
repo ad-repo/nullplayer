@@ -1,28 +1,79 @@
 # Changelog
 
-## Unreleased
+## 0.30.0
 
 ### New Features
 
-- **Windows Media Player `.wmz` skins are now public** — fresh installs open in a WMP-owned unskinned player with normal transport controls and an in-app Import button. The UI menu can import, select, remove, and switch views in user-supplied `.wmz` skins, save compatibility reports, or return to the unskinned player. Existing Classic, Original, Original-Metal, and WMP mode choices are preserved on upgrade. Skin archives and scripts run behind bounded resource checks and a killable helper process; ActiveX, registry, shell, DLL, plug-in, filesystem, and network access remain unavailable.
+- **Winamp 5.x "Modern" skins now run in NullPlayer** — a fourth skin family, alongside Classic,
+  Original and Original-Metal. NullPlayer now loads and runs real Winamp 5.x modern skins — the
+  `.wal` files people have been making since the mid-2000s — natively on macOS, with no Winamp
+  install, plugin, or original application asset involved. Choose one from **Skins → Modern**, or
+  add your own with **Skins → Modern → Import .wal Skin…**.
+
+  A `.wal` skin is much more than artwork: it ships its own window layouts, its own scripted
+  behaviour, and its own idea of where everything belongs. NullPlayer runs that, rather than an
+  approximation of it. You get the skin's own frames, buttons, sliders, animations and colour
+  themes; its playlist, equalizer, library and video surfaces drawn where the skin puts them,
+  embedded in the player instead of in separate NullPlayer windows; its tabs, drawers, config
+  screens and right-click menus, driven by the skin's own scripts; its About page; and its
+  visualization box, which can show an oscilloscope, the spectrum analyzer, Cava or vis_classic.
+  Skins resize and dock like any other NullPlayer window, and per-skin settings — text size, colour
+  theme, waveform seeker — are remembered separately for each skin.
+
+  Skins built on the **ClassicPro** engine work too: point NullPlayer at the ClassicPro plugin
+  installer once, with **Skins → Modern → Import ClassicPro Engine…**, and it unpacks what it needs
+  internally.
+
+  Some skins reach for features that do not exist on macOS, or that NullPlayer does not implement
+  yet. A skin that does degrades to a sensible fallback rather than refusing to load.
+
+- **Windows Media Player `.wmz` skins** — a Windows Media Player mode that opens in a WMP-owned unskinned player with normal transport controls and an in-app Import button. The UI menu can import, select, remove, and switch views in user-supplied `.wmz` skins, save compatibility reports, or return to the unskinned player. Existing Classic, Original, Original-Metal, and WMP mode choices are preserved on upgrade. Skin archives and scripts run behind bounded resource checks and a killable helper process; ActiveX, registry, shell, DLL, plug-in, filesystem, and network access remain unavailable.
 - **Cover Flow in the Library browser** — a new **FLOW** toggle in the source bar turns the current library list into a 3D, horizontally-scrolling wall of artwork, available in all three skin families (Original, Original-Metal, Classic) and across music, Movies, and TV Shows. It's a visual lens over whatever you're browsing: scroll or use the arrow keys to flip through covers, the centered item's name stays directly beneath the carousel, and a wider window fans out more covers. Clicking a **container** enters it and shows its contents, with a **‹ Back** cover to step out — folder/subfolder, artist→album, and show→season→episode navigation all work to any depth. Clicking an **album** plays the whole album; clicking a **track**, **movie**, or **episode** plays it. In Original/Original-Metal the covers float above the Library window's Cava/art backdrop, honoring whatever backdrop mode you've set.
 - **Compact window can now show the playlist** — a Library | Playlist toggle at the bottom of the Compact window switches its content between the library browser and the current playlist, so you can view and edit what's playing without opening the full Playlist window. Double-click a track to play it; selection, scrolling, and live now-playing highlight all work in place. The choice is remembered across launches and is available in all three skin families (Original, Original-Metal, Classic). In Original/Original-Metal the playlist is translucent so the Cava/art backdrop shows through it just like the library list.
 
 ### Bug Fixes
 
+- **A film watched to the end is now marked watched on Plex, Jellyfin and Emby** — and a queued
+  video playlist moves on to the next film by itself. The video engine reports a film running out as
+  a pause rather than as an ending, and NullPlayer was taking it at its word: the server was told the
+  film had been *paused* at 100% and never that it had been finished, so it stayed unwatched, nothing
+  was recorded, and a queued film simply sat there instead of starting the next one. This affected
+  every video, local or streamed.
+
+- **The transport resets when a film finishes** — in every skin mode. A film that had played to its
+  end went on counting as the thing the player was playing: the readout kept its title, the position
+  bar stayed parked at the end, and the play, stop and seek controls went on driving a film that was
+  over, so the player could not be handed back to your music without closing the video window. The
+  picture stays where it is, on its last frame, and can be played again from the start.
+
+- **Switching skin family no longer leaves the player at the old skin's size** — going from a Winamp
+  5.x modern skin to a Classic one left the classic player squeezed into the outgoing skin's window,
+  drawing its artwork shrunk inside a box the wrong shape ("the main window is tiny in classic mode").
+  Every skin family sizes the player from its own layout, so the rebuilt window now takes the incoming
+  skin's own size instead of inheriting the outgoing one's, in every direction between every pair of
+  modes. The window stays where you left it — its top-left corner does not move.
+
 - **Compact Mode no longer leaves the Library Cava backdrop running against a hidden window** — entering Compact Mode orders the Library browser window out, but that doesn't reliably post an occlusion change, so the Library backdrop's 60 Hz Cava analyzer kept running as a second, wasted DSP queue alongside the visible Compact backdrop. The presenter is now reconciled to the window's hidden state on entry and restarted on exit.
+
 - **Fixed a large memory leak while casting audio (grew unbounded over a long session)** — the cast status poll calls `AudioEngine.updateCastPosition` roughly once per second and reassigned the playback `state` every time, even when it hadn't changed. Because `state`'s observer posts a change notification on every assignment, this fired a Now Playing update storm — the system Now Playing info was re-pushed tens of thousands of times, and remote (Plex) artwork was re-fetched over a fresh network connection on each update, piling up network/dispatch objects into the gigabytes and never reclaiming them after the cast ended. `updateCastPosition` now only reassigns `state` on a real transition, and `NowPlayingManager` no longer re-fetches artwork that already failed for the current track.
+
 - **Fixed a large memory leak that grew unbounded while a visualization window stayed open** — the Spectrum Analyzer (Metal) and OpenGL visualization views render from a `CVDisplayLink` callback, which runs on a dedicated thread with no run loop and therefore no autorelease pool draining between frames. Every frame's autoreleased objects — the Metal `nextDrawable()`, command buffers, and encoders, along with their backing textures — accumulated forever, so a window left open would climb into multiple gigabytes over hours/days of use. Each display-link frame now runs inside its own `autoreleasepool`, so per-frame objects are freed immediately.
+
 - **Sonos volume no longer jumps around during a fast slider drag** — each volume change fired its own SOAP command, and on a rapid drag those requests could reach the speaker out of order, leaving it stuck on a stale value. Volume commands are now coalesced into a single in-flight request with latest-value-wins, so the speaker tracks the slider monotonically and settles exactly where you release it (GH #414).
+
 - **Sonos playlists now advance to the next track** — when a track finished on Sonos the app saw the speaker report STOPPED and paused, halting the playlist after one song. A track that stops at or near its end is now recognized as a natural finish and auto-advances, while an external pause from the Sonos app, an explicit Stop near the end of a track, and genuinely short tracks all still behave correctly (GH #415).
+
 - **Added diagnostics for a Sonos cast clock that occasionally starts stuck at zero** — when a Sonos position poll fails (often from SOAP contention while the volume slider is moving at cast start), the app previously applied a position of 0 and re-anchored the clock silently, freezing the elapsed time. It now logs the failed `GetPositionInfo`, the resulting clock reset, and the surrounding volume-command timeline so the intermittent case can be captured. No behavior change yet — instrumentation only.
+
 - **Restored local videos play again instead of erroring** — a video file left in the playlist from a previous session was rebuilt on launch as an audio track (the saved state doesn't record media type), so playing it routed to the audio engine and failed to decode the video container. Restored local files now re-derive their media type from the file extension, so videos correctly open in the video player.
+
 - **Exiting Compact Mode restores the menu bar** — leaving Compact Mode (including when the app launches straight into it and you exit for the first time) could leave the system menu bar owned by whatever app was frontmost before, with none of NullPlayer's menus. Because NullPlayer stays the active app across the whole transition, macOS never rebuilt the menu bar for it. NullPlayer now forces that rebuild on exit, so the full menu bar (and the correct Dock icon) return every time.
+
 - **Quitting from Compact Mode no longer loses your settings** — Compact Mode has no menu bar or Dock icon, and the status-item menu had no Quit, so the only way to quit was force-quitting from Activity Monitor — which skipped the normal save-on-quit and discarded that session's changes (for example, the skin reverted on the next launch). The compact status-item menu now has a **Quit nullPlayer** item that quits cleanly and saves state.
 
 ### Changes
 
-- **Modern and Metal skins are now named Original and Original-Metal** — the new names appear throughout the skin menus and documentation, while existing preferences, skin folders, and custom `.nsz` bundles remain compatible.
+- **Modern and Metal skins are now named Original and Original-Metal** — the new names appear throughout the skin menus and documentation, while existing preferences, skin folders, and custom `.nsz` bundles remain compatible. The **Modern** name now belongs to the new Winamp 5.x `.wal` skin family.
 - **Removed the Met Museum Art visualization** — the rotating public-domain artwork engine has been retired and no longer appears in the visualization engine picker. Any saved preference for it falls back to the default engine.
 
 ## 0.29.8

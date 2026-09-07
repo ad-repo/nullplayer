@@ -1,0 +1,334 @@
+---
+name: original-skin-guide
+description: Original skin engine, skin.json schema, element catalog, and custom skin creation. Use when creating or modifying Original skins, working on ModernSkin components, or adding UI elements to the Original system.
+---
+
+# Original Skin Creation Guide
+
+This guide covers creating custom skins for NullPlayer's Original UI mode. The implementation retains the `modern` name internally for compatibility.
+
+## Overview
+
+Original skins are built on the **ModernSkin Engine** (its internal compatibility name), a theme-agnostic system that renders UI elements from:
+
+1. **JSON configuration** (`skin.json`) -- colors, fonts, layout, animations
+2. **PNG image assets** -- optional per-element images
+3. **Programmatic fallback** -- elements without images are drawn using palette colors
+
+You can create a skin with just a `skin.json` (pure programmatic) or provide custom images for every element.
+
+## Skin Directory Structure
+
+```
+MySkin/
+├── skin.json              # Required: skin configuration
+├── images/                # Optional: PNG assets
+│   ├── btn_play_normal.png
+│   ├── btn_play_pressed.png
+│   ├── btn_play_normal@2x.png    # Optional Retina
+│   └── background.png
+└── fonts/                 # Optional: custom fonts
+    └── MyFont.ttf
+```
+
+## skin.json Schema
+
+```json
+{
+    "meta": {
+        "name": "My Skin",
+        "author": "Your Name",
+        "version": "1.0",
+        "description": "A custom Original skin"
+    },
+    "palette": {
+        "primary": "#00ffcc",
+        "secondary": "#00aaff",
+        "accent": "#ff00aa",
+        "highlight": "#00ffee",
+        "background": "#0a0a12",
+        "surface": "#0d1117",
+        "text": "#00ffcc",
+        "textDim": "#006655",
+        "positive": "#00ff88",
+        "negative": "#ff3366",
+        "warning": "#ffaa00",
+        "border": "#00ffcc",
+        "timeColor": "#d9d900",
+        "marqueeColor": "#d9d900",
+        "dataColor": "#d9d900",
+        "eqLow": "#00d900",
+        "eqMid": "#d9d900",
+        "eqHigh": "#d92600"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 8,
+        "bodySize": 9,
+        "smallSize": 7,
+        "timeSize": 20,
+        "infoSize": 6.5,
+        "eqLabelSize": 7,
+        "eqValueSize": 6,
+        "marqueeSize": 12.7,
+        "playlistSize": 8
+    },
+    // NOTE: "primaryName": "DepartureMono-Regular" (the lo-fi default) now resolves to the
+    // macOS system font — the Original/Metal UI no longer uses the retro bitmap font. Only a
+    // real custom font name is rendered verbatim. See advanced-features.md → Font Configuration.
+    "background": {
+        "image": "background.png",
+        "grid": {
+            "color": "#0a2a2a",
+            "spacing": 20,
+            "angle": 75,
+            "opacity": 0.15,
+            "perspective": true
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 8,
+        "intensity": 0.6,
+        "threshold": 0.7,
+        "color": "#00ffcc",
+        "elementBlur": 1.0
+    },
+    "window": {
+        "borderWidth": 1,
+        "borderColor": "#00ffcc",
+        "cornerRadius": 8,
+        "scale": 1.25,
+        "opacity": 0.9,
+        "textOpacity": 1.0,
+        "mainSpectrumOpacity": 1.0,
+        "spectrumTransparentBackground": false,
+        "waveformWindowOpacity": 0.85,
+        "seamlessDocking": 1.0
+    },
+    "marquee": {
+        "scrollSpeed": 30,
+        "scrollGap": 50
+    },
+    "titleText": {
+        "mode": "image",
+        "charSpacing": 1,
+        "charHeight": 10,
+        "alignment": "center",
+        "tintColor": "#d4cfc0"
+    },
+    "elements": {
+        "play_controls":       { "color": "#00ffcc" },
+        "seek_fill":           { "color": "#00ffcc" },
+        "volume_fill":         { "color": "#00ffcc" },
+        "minicontrol_buttons": { "color": "#00ffcc" },
+        "playlist_text":       { "color": "#009977" },
+        "tab_outline":         { "color": "#00ffcc" },
+        "tab_text":            { "color": "#00ffcc" },
+        "btn_play": {
+            "color": "#00ff00",
+            "x": 33, "y": 8, "width": 23, "height": 20
+        }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 3.0,
+            "minValue": 0.4,
+            "maxValue": 1.0
+        }
+    }
+}
+```
+
+## Color Palette
+
+17 named colors used throughout the UI:
+
+| Key | Required | Purpose |
+|-----|----------|---------|
+| `primary` | Yes | Main accent (buttons, text, indicators) |
+| `secondary` | Yes | Secondary accent |
+| `accent` | Yes | Highlight accent (spectrum, volume gradient) |
+| `highlight` | No | Bright highlight (falls back to `primary`) |
+| `background` | Yes | Window fill |
+| `surface` | Yes | Panel/recessed areas |
+| `text` | Yes | Primary text |
+| `textDim` | Yes | Dimmed/inactive text |
+| `positive` | No | Positive state indicator (default green) |
+| `negative` | No | Negative state indicator (default red) |
+| `warning` | No | Warning indicator (default amber) |
+| `border` | No | Window border (falls back to `primary`) |
+| `timeColor` | No | Time display digits (default `#d9d900`) |
+| `marqueeColor` | No | Scrolling title text (default `#d9d900`) |
+| `dataColor` | No | Track numbers, info fields (default `#d9d900`) |
+| `eqLow` | No | EQ color at -12dB (default `#00d900`) |
+| `eqMid` | No | EQ color at 0dB (default `#d9d900`) |
+| `eqHigh` | No | EQ color at +12dB (default `#d92600`) |
+
+### Element-Level Color Overrides
+
+Some UI sections have dedicated `elements` color keys that override the palette:
+
+| Element key | Controls | Fallback chain |
+|-------------|----------|----------------|
+| `play_controls` | All transport button icon colors | `palette.primary` |
+| `btn_prev` … `btn_next` | Individual transport button (overrides `play_controls`) | `play_controls` → `palette.primary` |
+| `seek_fill` | Seek bar fill + thumb | `palette.primary` |
+| `volume_fill` | Volume bar fill + thumb | `seek_fill.color` → `palette.primary` |
+| `playlist_text` | Normal (non-current, non-selected) track text in playlist | `palette.textDim` |
+| `tab_outline` | Active tab border + glow color in library browser tab bar | `palette.accent` |
+| `tab_text` | Active tab label text color in library browser tab bar | `palette.accent` |
+| `minicontrol_buttons` | ON state color for main window toggle buttons (EQ, PL, SP, etc.) | `palette.accent` |
+
+## Image Naming Convention
+
+Images go in the `images/` subdirectory:
+
+```
+{element_id}_{state}.png       # State-specific
+{element_id}.png               # All states
+{element_id}_{state}@2x.png   # Retina (optional)
+```
+
+**Examples:**
+- `btn_play_normal.png` -- Play button, normal state
+- `btn_play_pressed.png` -- Play button, pressed state
+- `time_digit_5.png` -- Digit "5" for time display
+
+### Time Display Rendering
+
+The Original main-window timer supports two rendering paths:
+
+- Sprite-based rendering for the default 7-segment set: `time_digit_0` through `time_digit_9`, `time_colon`, and `time_minus`
+- Font-based fallback rendering for alternate timer number systems when matching sprites are not present
+
+The timer keeps the full minutes-and-seconds value for long tracks. Its normal digit metrics are
+unchanged while the readout fits; longer strings such as `-158:43` scale all digit, colon, gap,
+and height metrics uniformly into a content width inset by 3 points on each side of the LCD.
+Do not clamp to the panel's full width, because that makes the outer glyph touch the border.
+Font-fallback glyphs must also reduce their configured time font when the measured character is
+wider than its assigned cell.
+
+This means skins can keep the existing LED-style decimal timer sprites, while alternate numeral systems and radix modes still render using the configured time font.
+
+The engine automatically checks for `@2x` variants on Retina displays.
+
+## Creating a Minimal Skin
+
+The simplest skin is just a `skin.json` with palette colors:
+
+```json
+{
+    "meta": { "name": "Minimal", "author": "Me", "version": "1.0" },
+    "palette": {
+        "primary": "#ff6600",
+        "accent": "#ff0066",
+        "background": "#1a1a2e",
+        "surface": "#16213e",
+        "text": "#ff6600",
+        "textDim": "#664400"
+    },
+    "fonts": { "primaryName": "DepartureMono-Regular", "fallbackName": "Menlo" },
+    "background": { "grid": { "color": "#332200", "spacing": 15, "angle": 80, "opacity": 0.1 } },
+    "glow": { "enabled": true, "radius": 6, "intensity": 0.5, "threshold": 0.6 },
+    "window": {
+        "borderWidth": 1,
+        "cornerRadius": 6,
+        "opacity": 0.9,
+        "textOpacity": 1.0,
+        "mainSpectrumOpacity": 1.0,
+        "seamlessDocking": 1.0
+    }
+}
+```
+
+All elements render programmatically using the palette colors.
+
+Original-Metal mode uses the same Original skin engine but a separate family namespace (`.metal` render style, `metalSkinName` key, user skins under `MetalSkins`). Its appearance is **code-driven, not palette-driven**: every metal skin draws the same surfaces, with per-finish colors supplied by a `MetalMaterial` preset (`ModernSkin/MetalMaterial.swift`).
+
+Seven built-in metal finishes ship in code (`ModernSkinLoader.createBuiltInMetalSkin(named:)`, listed by `builtInMetalSkinNames`): **Brushed Steel** (default), **Aluminum**, **Gunmetal**, **Anodized Black**, **Brass**, **Bronze**, **Copper**. They appear automatically in the Skins → Original-Metal menu and load by name (path-nil `SkinInfo`).
+
+Display vs. chrome contrast: the main-window time/track panels and EQ curve graph render on a backlit-green LCD (`material.displayFill`); text on the LCD uses `material.lcdInk` (dark in every finish), while on-chrome text uses the skin palette `text`/`textDim`/`dataColor` (light on dark finishes, dark on light). `timeColor`/`marqueeColor` stay dark for all finishes since they sit on the green LCD. EQ faders use a brightness value ramp (`material.faderLow`/`faderMid`/`faderHigh`), not a hue scale.
+
+Dockable sub-windows (EQ, Playlist, Spectrum, Audio Analysis, Flow, PeppyMeter, Waveform, Visualizations, Library) use `ModernSkinElements.auxiliaryWindowBorderWidth` for their chrome/content inset. In standard Original skins this preserves the established thicker inset; in Metal skins it collapses to the renderer's thin window-border width so every dockable sub-window presents the same smallest border width. Metal-only content padding is avoided for Flow and PeppyMeter so their interiors do not read as extra border thickness; their content rects also expand through adjacent joined chrome strips via `expandingThroughJoinedEdges(...)` in every render style (not just Metal), matching the shared-edge border suppression so no seam shows on a docked edge (issue #364). The helper only bridges small edge-adjacent gaps and must not expand body content across a visible title bar.
+
+Library browser (metal): the window renders as one continuous brushed-metal surface — the top-chrome band fills and the alphabet-index inset are cleared, and the renderer's metal accent strip is suppressed for this window via `drawWindowBackground(..., drawMetalAccentStrip:)` (other metal windows keep the strip). Compact player bar (`CompactPlayerBarView`, metal): the upper display row (track-title marquee + inline, vertically-centered time) gets the green LCD fill via `drawInsetPanel(displayFill: true)`, with the seek bar and volume in a separate control row below so they sit off the LCD. The classic compact bar (`ClassicCompactPlayerBarView`) mirrors the same display-row / control-row layout without the green fill.
+
+## Bundled Skins
+
+The following skins ship in `Sources/NullPlayer/Resources/Skins/`:
+
+| Skin | Notes |
+|------|-------|
+| **NeonWave** (default) | Cyan/magenta, sprite-based pixel-art title text, perspective grid, seamless docking |
+| **Skulls** | Cream/amber, skull decorations, amber 7-segment digits, lo-fi receiver aesthetic |
+| **ArcticMinimal** | Clean minimal arctic color scheme |
+| **BananaParty** | Bright banana/yellow theme |
+| **BloodGlass** | Dark glass with blood-red accents |
+| **Bubblegum Retro** | Pastel retro bubblegum palette |
+| **EmeraldForge** | Green/forge industrial look |
+| **ForgedTitanium** | Dark metallic titanium aesthetic |
+| **HyperPopPrism** | Hyper-saturated prismatic colors |
+| **IndustrialSignal** | Industrial signal/utility aesthetic |
+| **Sakura Minimal** | Soft pink sakura minimal theme |
+| **SeaGlass** | Teal sea-glass translucent look |
+| **SmoothGlass** | Smooth glass translucent aesthetic |
+
+## Packaging for Distribution
+
+ZIP your skin directory and rename to `.nsz`:
+
+```bash
+cd MySkin/
+zip -r ../MySkin.nsz .
+```
+
+Users place `.nsz` files or folders in:
+```
+~/Library/Application Support/NullPlayer/ModernSkins/
+```
+
+## Installation
+
+### Selecting a Skin
+
+Right-click the player → **Skins** → **Original** → choose from the list (or use **Load Skin...** to import a `.nsz` bundle).
+
+Skin changes take effect immediately. Switching between the Classic, Original, and Original-Metal displays happens live in-process. Their internal mode identifiers remain `classic`, `modern`, and `metal` for compatibility.
+
+## Multi-Window Support
+
+The Original skin system renders multiple windows:
+
+- **Main Window** -- transport controls, time, marquee, mini spectrum
+- **Playlist Window** -- track list with selection, scrolling
+- **EQ Window** -- 21-band graphic equalizer with integrated `PRE` control and curve graph
+- **Spectrum Analyzer Window** -- standalone visualization
+- **ProjectM Window** -- MilkDrop visualization with presets
+- **Library Browser Window** -- multi-source browser with columns and an embedded Play History tab
+
+All windows share palette colors, glow, grid, and font settings. Customize individual windows by prefixing element IDs (e.g., `spectrum_titlebar` vs `titlebar`).
+
+## Key Source Files
+
+| File | Purpose |
+|------|---------|
+| `ModernSkin/ModernSkinEngine.swift` | Singleton manager, skin loading |
+| `ModernSkin/ModernSkinConfig.swift` | JSON schema, Codable structs |
+| `ModernSkin/ModernSkinLoader.swift` | Load skin.json and images |
+| `ModernSkin/ModernSkinRenderer.swift` | Drawing code for all elements |
+| `ModernSkin/ModernSkinElements.swift` | Layout constants, element IDs |
+| `Windows/ModernMainWindow/` | Main window implementation |
+| `Windows/ModernSpectrum/` | Spectrum window (simplest sub-window) |
+| `Windows/ModernPlaylist/` | Playlist window |
+| `Windows/ModernEQ/` | EQ window |
+| `Windows/ModernProjectM/` | ProjectM window |
+| `Windows/ModernLibraryBrowser/` | Library browser window |
+
+## Additional Documentation
+
+For detailed information, see:
+- [element-reference.md](element-reference.md) - Complete element catalog with all IDs, positions, states
+- [advanced-features.md](advanced-features.md) - Title text system, animations, UI Size mode, sub-window creation checklist

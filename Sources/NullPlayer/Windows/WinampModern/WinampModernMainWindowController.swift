@@ -1,0 +1,2762 @@
+import AppKit
+
+/// A `.wal` skin's window. Borderless, and therefore refused the keyboard by AppKit's default
+/// `canBecomeKey` — which is why a skin's `System.onKeyDown` handler could never be reached at all
+/// until Phase 43: the key press went to no window and `NSView.keyDown` was never called, however
+/// willingly the view took first responder. The same override the modern-skin windows already carry
+/// (`BorderlessWindow`), kept local because these windows own none of that class's edge-resize model.
+final class WinampModernSkinWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+final class WinampModernMainWindowController: NSWindowController, MainWindowProviding, NSWindowDelegate {
+
+    /// Repaints every `.wal` window when a track's cover finishes loading.
+    private var artworkObserver: NSObjectProtocol?
+    /// Tells the skin when shuffle, repeat or crossfade moved from outside it.
+    private var playbackOptionsObserver: NSObjectProtocol?
+    private var loadedSkin: WinampModernLoadedSkin?
+    private var skinView: WinampModernMainView?
+    private var host: WinampModernAudioEngineHost?
+    private var componentBridge: WinampModernComponentBridge?
+    private var hostedWindowMaterializer: WinampModernHostedWindowMaterializer?
+    private var auxiliaryContainers: [AuxiliaryContainer] = []
+    /// Containers whose window has been given a position. Placement happens once, on first show, so
+    /// re-opening a window the user has moved never yanks it back.
+    private var placedAuxiliaryWindows: Set<String> = []
+    private var isApplyingSkinSize = false
+    private var boundTextTimer: Timer?
+
+    /// A separate visible container (the "separate windows" arrangement) rendered in its own native
+    /// window with the shared script runtime + component host. cPro-Bento is a single-window SUI so
+    /// this stays empty for it; skins that declare multiple visible containers populate it.
+    private struct AuxiliaryContainer {
+        let window: NSWindow
+        let view: WinampModernMainView
+        let kind: WinampModernComponentKind?
+        let containerID: String
+        /// The skin's own `name=` for this container, and whether it belongs in the host's window
+        /// menu (Phase 27.7). A skin declares windows it binds no button to — Defix's two speaker
+        /// cabinets and its configurator — and in Winamp those are opened from *Winamp's* Windows
+        /// menu. Without the equivalent here they exist, render, and cannot be reached at all.
+        let displayName: String
+        let isListedInWindowMenu: Bool
+        /// The container's `autoclose="1"`: a transient popup that closes when it loses the keyboard.
+        let autoCloses: Bool
+        /// `default_visible="1"`: this window opens with the skin unless the user has since closed
+        /// it (Phase 40, B6). Already net of the notifier/tooltip suppression, whose reason is
+        /// recorded in the skin's diagnostics.
+        let opensByDefault: Bool
+        /// Where the skin's own arrangement puts this window, **relative to the player's** own
+        /// `default_x`/`default_y`, in skin pixels with y downward. `nil` when the skin says nothing,
+        /// which is when the window is stacked under whatever is already on screen instead.
+        let defaultOffset: CGPoint?
+        /// A track-change toast popup (`<container id="notifier">`). Shown by the host on track
+        /// change; the skin's MAKI scripts handle fade animation and auto-dismiss.
+        let isNotifier: Bool
+        /// `noactivation="1"`: the window must not steal focus when shown.
+        let noActivation: Bool
+        /// A second live copy of a `dynamic="1"` container, built because a script asked
+        /// `newDynamicContainer` for one (B110). It is not part of the skin's arrangement: the script
+        /// that made it is the only thing that knows where it goes — Ebonite's frame is parked on its
+        /// client's exact rect — so it is never tiled, never a snap target, and never persisted.
+        let isDynamicInstance: Bool
+    }
+
+    /// Every container this controller hosts, main included, addressed the way a script addresses it.
+    /// One skin has one script runtime and several windows, so a `switchToLayout`/`resize` has to be
+    /// delivered to the window that owns the container the script called it on — not to whichever
+    /// view happened to install the callback last (Phase 13.3, R6).
+    private var viewsByContainer: [WasabiObjectID: WinampModernMainView] = [:]
+    private(set) var loadFailure: Error?
+
+    convenience init() {
+        let defaultSize = NSSize(width: 275, height: 116)
+        let window = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: defaultSize),
+                                            styleMask: [.borderless], backing: .buffered, defer: false)
+        self.init(window: window)
+        setupWindow()
+        // A transparent layer-backed window can lose its cached backing store while the display is
+        // asleep. AppKit normally reports the window becoming unoccluded afterwards, but a display
+        // sleep/wake can leave the window continuously "visible" and post no such transition. Keep
+        // the workspace wake as a backstop so the next targeted animation repaint cannot reveal only
+        // a handful of controls over a transparent background (B55, first seen on Big Bento Modern).
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDidWake(_:)),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        // Cover art arrives asynchronously and often *after* the scene has settled — with playback
+        // paused nothing else would repaint, so an `<AlbumArt>` would sit on its "no cover art"
+        // placeholder until something unrelated invalidated the window.
+        artworkObserver = NotificationCenter.default.addObserver(
+            forName: NowPlayingManager.artworkDidLoadNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                self?.skinView?.needsDisplay = true
+                self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+            }
+        // Shuffle, repeat and crossfade are the host's, and the skin only draws them — so a change
+        // made in NullPlayer's own Playback menu has to reach the skin the way a click on its own
+        // button does. A `.wal` indicator is written once from `onActivate`, never polled, so
+        // without this mmd3's lamp kept showing the state before the menu was used.
+        playbackOptionsObserver = NotificationCenter.default.addObserver(
+            forName: .audioPlaybackOptionsChanged, object: nil, queue: .main) { [weak self] _ in
+                self?.skinView?.scripts.refreshBridgedConfigState()
+                self?.skinView?.needsDisplay = true
+                self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+            }
+        #if DEBUG
+        if let localPath = UserDefaults.standard.string(forKey: "winampModernSkinPath"),
+           !localPath.isEmpty {
+            loadSkin(at: URL(fileURLWithPath: localPath))
+            return
+        }
+        #endif
+        if let selected = WinampModernSkinImporter.shared.selectedSkin() {
+            loadSkin(at: selected.archiveURL)
+        } else {
+            showPlaceholder("Import a .wal skin from the Winamp Modern menu")
+        }
+    }
+
+    private func setupWindow() {
+        guard let window else { return }
+        window.title = "NullPlayer — Winamp Modern"
+        window.isReleasedWhenClosed = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.isMovableByWindowBackground = false
+        window.styleMask.insert(.resizable)
+        // `.miniaturizable` on a window with no chrome to draw it: nothing appears, but AppKit will
+        // only miniaturize a window whose mask allows it, and a skin's own Minimize button is the
+        // only way into the Dock for a `.borderless` window.
+        window.styleMask.insert(.miniaturizable)
+        window.delegate = self
+        window.center()
+        window.setAccessibilityIdentifier("WinampModernMainWindow")
+        window.setAccessibilityLabel("Winamp Modern Main Window")
+    }
+
+    /// One-time warning when a skin reads the ClassicPro engine mount and the installed engine is
+    /// not the build we test against. Suppressed per engine `contentHash`, so it fires again if the
+    /// user swaps in a different engine but never nags about one they have already accepted.
+    private static let untestedEngineWarnedKey = "winampModernUntestedClassicProEngineWarned"
+
+    private func warnIfEngineUntested(loaded: WinampModernLoadedSkin) {
+        guard loaded.vfs.didRead(fromMountRoot: ClassicProEngineStore.logicalMountRoot),
+              let info = ClassicProEngineStore.shared.info(),
+              info.provenanceVerdict != .knownGood,
+              UserDefaults.standard.string(forKey: Self.untestedEngineWarnedKey) != info.contentHash
+        else { return }
+        UserDefaults.standard.set(info.contentHash, forKey: Self.untestedEngineWarnedKey)
+
+        let alert = NSAlert()
+        alert.messageText = "This Skin Uses an Untested ClassicPro Engine"
+        alert.informativeText = """
+            NullPlayer has only been tested against ClassicPro 2.01. This skin reads from the \
+            installed engine, so parts of it may render incorrectly.
+
+            Reimporting the ClassicPro 2.01 installer replaces the engine.
+            """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Reimport\u{2026}")
+        if alert.runModal() == .alertSecondButtonReturn {
+            MenuActions.shared.importClassicProEngineFromFile()
+        }
+    }
+
+    func loadSkin(at url: URL) {
+        // Before the teardown, because the teardown is what makes them unreadable: which of
+        // NullPlayer's own feature windows the user has open, in whichever chrome the outgoing skin
+        // gave them. The incoming skin gets asked about each of them again once it is up.
+        let reopenHostedWindows = WindowManager.shared.openWinampModernHostedWindowIDs()
+        tearDownSkin()
+        // A `setScale` that arrives while the skin is loading cannot be acted on: `loadSkin` runs
+        // from this controller's own initializer, so `WindowManager.mainWindowController` is not
+        // assigned yet and `applyDoubleSize` would return having changed nothing while the level it
+        // was given stuck — a permanent desync. Defix calls it from five `onScriptLoaded` handlers,
+        // so this is the *normal* case, not an edge one. It is applied one runloop turn after the
+        // skin is up instead — which is also before `AppStateManager` restores a saved UI Size, so
+        // an explicit saved level still has the last word over the skin's stored one.
+        isLoadingSkin = true
+        defer {
+            isLoadingSkin = false
+            if let pending = pendingUIScaleRequest {
+                pendingUIScaleRequest = nil
+                DispatchQueue.main.async { [weak self] in self?.applyUIScaleRequest(pending) }
+            }
+        }
+        do {
+            let loaded = try WinampModernSkinLoader().load(from: url)
+            let host = WinampModernAudioEngineHost(engine: WindowManager.shared.audioEngine)
+            let componentBridge = WinampModernComponentBridge(engine: WindowManager.shared.audioEngine,
+                                                               browserVFS: loaded.vfs)
+            let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
+            renderer.componentHost = componentBridge
+            renderer.textScale = WinampModernSkinState.textScale(in: loaded.configuration)
+            let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+            // A server track's rating arrives after the track does, so the star row is told rather
+            // than polled — the same shape as the EQ's `onEqBandChanged`.
+            host.currentTrackRatingChanged = { [weak scripts] stars in
+                _ = try? scripts?.dispatchSystem(event: "oncurrenttrackrated",
+                                                 arguments: [.integer(Int32(clamping: stars))])
+            }
+            // Every renderer asks the one runtime for a `cfgattrib` control's state, so a switch in
+            // the settings window and the control it mirrors in another window always agree.
+            renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
+            renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
+            renderer.settingStateProvider = { [weak scripts] section, key in
+                scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
+            }
+            renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
+            let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
+                                            componentHost: componentBridge)
+
+            loadedSkin = loaded
+            self.host = host
+            // The audio going quiet is the only thing that can ask a `<vis>` box to repaint once the
+            // taps stop posting — see `WinampModernMainView.beginVisualizationSilenceDecay`. Every
+            // container's boxes get it, not just the player's.
+            host.visualizationSilenceHandler = { [weak self] in
+                guard let self else { return }
+                for view in viewsByContainer.values { view.beginVisualizationSilenceDecay() }
+            }
+            self.componentBridge = componentBridge
+            // Only the fallback before the view layer's first push; the resolved number is UI Size
+            // times Text Size, which the view resolves against its own canvas.
+            componentBridge.libraryContentScaleFallback = { [weak self] in self?.skinScale ?? 1 }
+            componentBridge.linkSheetPresenter = { [weak self] in
+                self?.presentEmbeddedLibraryLinkSheet()
+            }
+            skinView = view
+            view.willReconcileSurfaces = { [weak self] in self?.enforceEmbeddedPageExclusivity() }
+            view.didClickInWindow = { [weak self] id in self?.dismissTransientContainers(except: id) }
+            view.canvasSizeDidChange = { [weak self] size in
+                // A layout switch swaps the active layout, and with it the limits this window obeys.
+                self?.resizeWindow(to: size, reason: "canvasSizeDidChange")
+                self?.applyLayoutConstraints()
+            }
+            viewsByContainer[view.containerID] = view
+            loadFailure = nil
+            view.skinScale = skinScale
+            window?.contentView = view
+            resizeWindow(to: view.scaledCanvasSize, reason: "loadSkin")
+            setupAuxiliaryContainers(loaded: loaded, host: host, scripts: scripts,
+                                     componentBridge: componentBridge)
+            view.componentWindowToggleRequested = { [weak self] kind in
+                self?.toggleAuxiliaryWindow(for: kind) ?? false
+            }
+            installWindowCommands()
+            applyLayoutConstraints()
+            // Container-scoped callbacks must exist *before* the scripts run: a skin that resizes or
+            // switches a layout from `onScriptLoaded` does it during `start()`.
+            // `PE_Info` is filled from the playlist component, and both the renderer and a script's
+            // `getAutoWidth()` read it from here so they agree on the string.
+            WasabiTextMetrics.componentTextProvider = { [weak componentBridge] in
+                componentBridge?.playlistSnapshot()
+            }
+            // And the thinger's caption, from the strip state this skin's runtime owns (B34). One
+            // provider serves every window: a bucket in a drawer and the caption beside it are the
+            // same thinger whichever container each of them lives in.
+            let bucket = loaded.runtime.componentBucket
+            WasabiTextMetrics.componentBucketTextProvider = { bucket.focusedTitle }
+            wireContainerCallbacks(scripts: scripts, loaded: loaded, host: host,
+                                   componentBridge: componentBridge)
+            try scripts.start()
+            // After `start()`, so the skin's own `switchToLayout` at load has already had its say and
+            // this is the last word: a window the user left shaded comes back shaded (B44a). Before
+            // `scriptsDidStart()`, so the seeding resize dispatch describes the layout that is
+            // actually up rather than the one it replaced.
+            restoreRememberedLayouts()
+            // Immediately after `start()` — so after `onScriptLoaded` and XUI param delivery, and
+            // before the first `updatePlaybackState()` can send `onPlay`: every scene tells its scripts
+            // their geometry once. A script whose state is only assigned in `onResize` has none of it
+            // until then (see `scriptsDidStart`).
+            view.scriptsDidStart()
+            auxiliaryContainers.forEach { $0.view.scriptsDidStart() }
+            // Again, now that the scripts have built each window's content: a layout the skin never
+            // sized only gets its real minimum once there is content to measure (`contentFittedFloor`),
+            // and the first call above ran before any of it existed.
+            applyLayoutConstraints()
+            // The player's window is on screen from here; the auxiliary ones were ordered out at
+            // creation and say so when they open. A skin that starts its animation from
+            // `onSetVisible` (Defix's cassette reels) needs to be told.
+            view.setSceneVisible(true)
+            auxiliaryContainers.forEach { $0.view.setSceneVisible($0.window.isVisible) }
+            announceClaimedComponents(scripts: scripts)
+            // …and then the windows the skin says open *with* it. After `scriptsDidStart`, so a
+            // window that opens at launch is told `onSetVisible` with its geometry already dispatched.
+            applyDefaultContainerVisibility()
+            // After `start()`: the catalog is reconciled against the containers that actually opened,
+            // and against the holders the skin's own scripts built while starting.
+            makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
+            setupHostedWindowMaterializer(loaded: loaded, host: host, scripts: scripts,
+                                          componentBridge: componentBridge)
+            revealEmbeddedLibraryAtStartup()
+            // The host-bound readouts get their opening value here — the queue is usually already
+            // populated by now — and a slow poll keeps them honest through playlist edits.
+            refreshBoundText()
+            startBoundTextPolling()
+            scheduleFramePositionReassert()
+            // After the materializer exists, so `handlesHostedWindow` answers for *this* skin.
+            WindowManager.shared.rehomeWinampModernHostedWindows(reopenHostedWindows)
+            #if DEBUG
+            // `WINAMP_MODERN_DEBUG_CLICK=x,y[;x,y…]` drives clicks at skin points a few seconds after
+            // launch — the only way to reproduce a click-path defect that lives in the *window* layer,
+            // which the render harness does not have. See `WinampModernMainView.debugClick`.
+            if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] {
+                // `<container>@x,y` aims at one of the skin's *other* windows. Without it this hook
+                // could only ever reach the main player, and a skin's configurator — the window whose
+                // switches change every other window — is an auxiliary container (Phase 45).
+                let points = spec.split(separator: ";").compactMap { entry -> (String?, CGPoint)? in
+                    let halves = entry.split(separator: "@", maxSplits: 1)
+                    let container = halves.count == 2 ? String(halves[0]) : nil
+                    let parts = (halves.last ?? "").split(separator: ",").compactMap { Double($0) }
+                    guard parts.count == 2 else { return nil }
+                    return (container, CGPoint(x: parts[0], y: parts[1]))
+                }
+                for (index, point) in points.enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3 + Double(index) * 2) { [weak self] in
+                        guard let self else { return }
+                        NSLog("WinampModern debug click %d at %@ in %@", index + 1, "\(point.1)",
+                              point.0 ?? "main")
+                        guard let container = point.0 else {
+                            self.skinView?.debugClick(atSkinPoint: point.1)
+                            return
+                        }
+                        guard let target = self.auxiliaryContainers.first(where: {
+                            $0.containerID.caseInsensitiveCompare(container) == .orderedSame
+                        }) else {
+                            NSLog("WinampModern debug click: no container '%@'", container)
+                            return
+                        }
+                        target.view.debugClick(atSkinPoint: point.1)
+                    }
+                }
+            }
+            #endif
+            #if DEBUG
+            // `WINAMP_MODERN_DEBUG_KEY=alt+g[;ctrl+w…]` presses accelerators at the skin a few seconds
+            // after launch — the keyboard counterpart of `DEBUG_CLICK`, and the only way to see a key
+            // handler act on a *window* (winampmodern566's `ctrl+w` shades its playlist; the harness
+            // owns no windows and cannot show that at all).
+            if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_KEY"] {
+                let keys = spec.split(separator: ";").map {
+                    $0.trimmingCharacters(in: .whitespaces).lowercased()
+                }.filter { !$0.isEmpty }
+                for (index, key) in keys.enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3 + Double(index) * 2) { [weak self] in
+                        let consumed = self?.skinView?.scripts.dispatchKeyDown(key) ?? false
+                        NSLog("WinampModern debug key %@ consumed=%@", key, consumed ? "1" : "0")
+                        self?.skinView?.needsDisplay = true
+                        self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+                    }
+                }
+            }
+            #endif
+            #if DEBUG
+            // `WINAMP_MODERN_DEBUG_PLAY=/path/film.mp4` starts a local video a few seconds after
+            // launch — the only way to drive the video path from a cold launch, since the app takes
+            // no file argument and `openFiles` accepts audio extensions only. Ordered *after*
+            // `DEBUG_CLICK` on purpose: the tab a click opens is the surface the film should land in,
+            // so the two together are the whole B23 case in one command.
+            //
+            // An **audio** path is loaded into the engine and played instead (B52): every
+            // performance defect in this window is a defect of the *playing* window — the vis
+            // clock, the playback tick, the readouts a script rewrites per track — and none of
+            // them can be reached from a cold launch otherwise.
+            if let path = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_PLAY"] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                    let track = Track(url: URL(fileURLWithPath: path))
+                    NSLog("WinampModern debug play %@ mediaType=%@", path, "\(track.mediaType)")
+                    guard track.mediaType != .video else {
+                        WindowManager.shared.playVideoTrack(track)
+                        return
+                    }
+                    let engine = WindowManager.shared.audioEngine
+                    engine.loadTracks([track])
+                    engine.play()
+                }
+            }
+            #endif
+            #if DEBUG
+            // `WINAMP_MODERN_SHOW_WINDOWS=SPEAKER1,SPEAKER2` opens skin windows at launch, the way
+            // the user does from the Skin Windows menu. The counterpart of the harness's
+            // `WINAMP_MODERN_RENDER_SHOW`: a defect confined to a window that ships
+            // `default_visible="0"` cannot be reproduced from a cold launch without it.
+            if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_SHOW_WINDOWS"] {
+                for name in spec.split(separator: ",") {
+                    let id = name.trimmingCharacters(in: .whitespaces)
+                    guard !id.isEmpty else { continue }
+                    NSLog("WinampModern: opening skin window %@ (debug hook)", id)
+                    _ = toggleSkinWindow(id: id)
+                }
+            }
+            #endif
+            #if DEBUG
+            NSLog("WinampModern surfaces [%@]: %@", url.lastPathComponent,
+                  surfaceCoordinator?.summary ?? "-")
+            #endif
+            #if DEBUG
+            // Surface the per-skin compatibility report (Phase 7.2). After `start()`, the report also
+            // reflects any unsupported MAKI methods the skin's `onscriptloaded` reached for.
+            let report = loaded.compatibilityReport(withRuntime: scripts)
+            if report.level != .full {
+                NSLog("WinampModern compatibility [%@]:\n%@", url.lastPathComponent, report.summary)
+            }
+            #endif
+            // Not DEBUG-gated: this one is for the user. The engine mounts for every skin, so the
+            // only reliable signal that a skin *depends* on it is that the skin actually read bytes
+            // from the mount.
+            warnIfEngineUntested(loaded: loaded)
+            view.updatePlaybackState()
+            view.updateTime(current: host.currentTime, duration: host.duration)
+            view.needsDisplay = true
+        } catch {
+            loadFailure = error
+            NSLog("WinampModern: Failed to load '%@': %@", url.lastPathComponent, error.localizedDescription)
+            tearDownSkin()
+            showPlaceholder(error.localizedDescription)
+        }
+        // A new skin is a new palette, and NullPlayer's *own* windows — the Media Library, the
+        // playlist, the equalizer, the visualization windows — are still open in front of it wearing
+        // the outgoing skin's chrome. They have no handle on this controller, so they learn about a
+        // palette change exactly the way a colour-theme switch tells them (`themeDidChange`): the
+        // style is re-derived on the next draw, so a repaint is the whole job. Without this the only
+        // thing that reskinned them was closing and reopening, which rebuilt the view.
+        //
+        // Posted on the failure path too: the placeholder has no palette, so those windows must fall
+        // back to their classic drawing rather than keep painting a skin that is gone.
+        NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
+        // A film that was running when this skin loaded has to be re-offered to it — see
+        // `rehostVideoOutputIfPlaying()`. Also on the failure path: the placeholder declares no video,
+        // so the answer there is "NullPlayer's own window keeps it", which is what that call arrives at.
+        rehostVideoOutputIfPlaying()
+    }
+
+    /// Re-offer a still-loaded film's picture to the skin that has just been put up.
+    ///
+    /// The only two routes that park a picture are a **play** call and a video holder *reappearing*
+    /// (`WinampModernMainView.reconcileHostedSurfaces`, which is the tab-switch case). A skin switch
+    /// is neither, so without this a film that is already running finds no one to ask for the
+    /// picture: it stays in NullPlayer's own free-floating window while the new skin's video window
+    /// sits empty beside it. The embedded case happened to work only because a cPro tab strip
+    /// re-creates its holder; a `declaredContainer` skin has no holder until its window opens.
+    ///
+    /// The film is re-*parented*, never re-opened — `VideoPlayerWindowController` and its VLC
+    /// pipeline survive the switch untouched, so playback and position carry straight on. Guarded on
+    /// `currentTitle`, deliberately not on "is playing": a **paused** film re-hosts on the same terms.
+    /// `hostVideoOutput()` already forks `.embedded` / `.declaredContainer` / neither, so a skin that
+    /// declares no video surface answers false and NullPlayer's window keeps the picture — the
+    /// correct outcome, not a fallback for a failure.
+    func rehostVideoOutputIfPlaying() {
+        guard WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
+        // One runloop turn after the load, so the skin's own `onScriptLoaded` resizes and layout
+        // cascade have settled — the same reason `hostVideoOutputInPlayer` re-places asynchronously.
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
+            let hosted = self.hostVideoOutput()
+            #if DEBUG
+            NSLog("WinampModern: re-hosting film after skin load hosted=%@", hosted ? "1" : "0")
+            #endif
+        }
+    }
+
+    /// Create one native window per visible non-main container. The main window owns the scripted
+    /// scene; auxiliary containers render + take input against the shared runtime but do not drive
+    /// the single-owner script callbacks (`drivesScripts: false`). Full per-container MAKI layout
+    /// switching in auxiliary windows is deferred to Phase 7.
+    private func setupAuxiliaryContainers(loaded: WinampModernLoadedSkin,
+                                          host: WinampModernAudioEngineHost,
+                                          scripts: WinampModernScriptRuntime,
+                                          componentBridge: WinampModernComponentBridge) {
+        let all = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
+        // The player's own declared spot is the origin the rest of the arrangement is measured from:
+        // a skin puts its playlist at `default_x="354"` *beside a player at 0*, and our player is
+        // wherever the user (or a restored session) left it.
+        let playerOrigin = all.first(where: \.isMainPlayer)?.defaultOrigin ?? .zero
+        let containers = all.filter { !$0.isMainPlayer }
+        for info in containers {
+            makeAuxiliaryContainer(info: info, playerOrigin: playerOrigin, loaded: loaded, host: host,
+                                   scripts: scripts, componentBridge: componentBridge)
+        }
+    }
+
+    /// One native window for one container, and the only place that recipe lives. Called for every
+    /// declared container at load, and again for each extra copy of a `dynamic="1"` container a
+    /// script asks `newDynamicContainer` for (B110) — a copy is a real window with a real scene, so
+    /// it must be built exactly as its declared original was, not approximated.
+    @discardableResult
+    private func makeAuxiliaryContainer(info: WinampModernContainerInfo, playerOrigin: CGPoint,
+                                        loaded: WinampModernLoadedSkin,
+                                        host: WinampModernAudioEngineHost,
+                                        scripts: WinampModernScriptRuntime,
+                                        componentBridge: WinampModernComponentBridge) -> Bool {
+        let renderer: WasabiSceneRenderer
+        do {
+            renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, containerID: info.id)
+        } catch {
+            // A dropped container is a whole window the user can never reach — Lobe's Colour
+            // Themes screen was lost this way — so it goes in the compatibility report instead of
+            // vanishing into a bare `continue`.
+            loaded.runtime.record(WalDiagnostic(
+                .malformedXML,
+                "container '\(info.id)' has no window and is unreachable: "
+                    + "\(error.localizedDescription)",
+                severity: .warning))
+            return false
+        }
+        renderer.componentHost = componentBridge
+        renderer.textScale = WinampModernSkinState.textScale(in: loaded.configuration)
+        renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
+        renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
+        renderer.settingStateProvider = { [weak scripts] section, key in
+            scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
+        }
+        renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
+                                        componentHost: componentBridge, drivesScripts: false)
+        view.skinScale = skinScale
+        let auxWindow = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
+                                 styleMask: [.borderless, .resizable, .miniaturizable],
+                                 backing: .buffered, defer: false)
+        auxWindow.isReleasedWhenClosed = false
+        auxWindow.isOpaque = false
+        auxWindow.backgroundColor = .clear
+        auxWindow.hasShadow = false
+        auxWindow.contentView = view
+        auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
+        auxWindow.setAccessibilityLabel(info.object.attributes["name"] ?? info.id)
+        auxWindow.delegate = self
+        auxWindow.orderOut(nil)
+        // A script resizing *this* container resizes this window, not the player's.
+        view.didClickInWindow = { [weak self] id in self?.dismissTransientContainers(except: id) }
+        view.canvasSizeDidChange = { [weak self, weak auxWindow] size in
+            guard let auxWindow else { return }
+            self?.resize(window: auxWindow, to: size)
+            self?.applyLayoutConstraints()
+        }
+        // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
+        // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
+        // `default_visible="1"` on a window we cannot fill is recorded, once, rather than acted
+        // on — so a compatibility report says why Rika's HOME window did not open with the skin.
+        let suppression = WinampModernContainerTopology.defaultVisibilitySuppression(of: info)
+        if let suppression {
+            loaded.runtime.record(WalDiagnostic(
+                .unsupportedElement,
+                "container '\(info.id)' declares default_visible=\"1\" and is not opened with "
+                    + "the skin: \(suppression.reason).",
+                severity: .warning))
+        }
+        let lowID = info.id.lowercased()
+        let isNotifier = lowID == "notifier" || lowID.hasPrefix("notifier.")
+        let noActivation = info.object.attributes["noactivation"] == "1" || isNotifier
+        let isDynamicInstance = info.object.attributes[WasabiSkinRuntime.dynamicInstanceAttribute] != nil
+        if isNotifier {
+            auxWindow.level = .floating
+            auxWindow.hidesOnDeactivate = false
+        }
+        auxiliaryContainers.append(AuxiliaryContainer(
+            window: auxWindow, view: view, kind: info.kind, containerID: info.id,
+            displayName: WinampModernContainerTopology.displayName(of: info),
+            isListedInWindowMenu: WinampModernContainerTopology.isListedInWindowMenu(info) && !isDynamicInstance,
+            autoCloses: info.object.attributes["autoclose"] == "1",
+            opensByDefault: info.opensByDefault && suppression == nil,
+            defaultOffset: info.defaultOrigin.map {
+                CGPoint(x: $0.x - playerOrigin.x, y: $0.y - playerOrigin.y)
+            },
+            isNotifier: isNotifier,
+            noActivation: noActivation,
+            isDynamicInstance: isDynamicInstance))
+        viewsByContainer[view.containerID] = view
+        return true
+    }
+
+    /// Surface routing for this skin: menus, skin buttons, and restoration all resolve through it.
+    private(set) var surfaceCoordinator: WinampModernSurfaceCoordinator?
+
+    /// The two visibility queries a `TOGGLE` button's lamp reads (BB36), kept so a hosted window
+    /// that materializes *after* `makeSurfaceCoordinator` — which is every one of them — gets the
+    /// same pair its `surfaceToggleRequested` already gets.
+    private var toggleLampQueries: (surface: (WinampModernComponentKind) -> Bool?,
+                                    container: (String) -> Bool?)?
+
+    // MARK: - Skin settings (Phase 27.3)
+
+    private var skinSettingsController: WinampModernSkinSettingsWindowController?
+
+    /// What the loaded skin registered with `newAttribute` and a person can actually set. Empty when
+    /// no skin is loaded or the skin registered nothing — which is what keeps the menu entry out of a
+    /// skin that has no settings.
+    var registeredSkinSettings: [WinampModernScriptRuntime.RegisteredSetting] {
+        skinView?.scripts.presentableSettings ?? []
+    }
+
+    func showSkinSettings() {
+        guard let scripts = skinView?.scripts, !scripts.presentableSettings.isEmpty else { return }
+        if skinSettingsController == nil {
+            skinSettingsController = WinampModernSkinSettingsWindowController(runtime: scripts)
+        }
+        skinSettingsController?.refreshValues()
+        skinSettingsController?.showWindow(nil)
+        skinSettingsController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - Colour themes (Phase 32)
+
+    /// The colour themes the loaded skin defines, in Winamp's own order, with the applied one.
+    ///
+    /// Empty for a skin that declares no `<gammaset>` — the catalog still reports an active theme of
+    /// "Default" in that case, so the *names* are what the menu has to gate on, not the active one.
+    var colorThemes: (names: [String], active: String) {
+        guard let renderer = skinView?.renderer else { return ([], "") }
+        return (renderer.colorThemeNames, renderer.themes.activeTheme)
+    }
+
+    /// Apply one. Goes through the view so the skin's own lists follow the pick and every surface
+    /// repaints, exactly as a click on the skin's own picker does.
+    func selectColorTheme(_ name: String) {
+        skinView?.applyColorTheme(name)
+    }
+
+    /// The loaded skin's live palette, for the surfaces NullPlayer draws in windows of its own
+    /// (Phase 16). Nil before a skin loads and while the placeholder is showing, which is exactly
+    /// when a fallback window should keep its own defaults rather than guess at a theme.
+    var currentPalette: WasabiPalette? { skinView?.renderer.palette }
+
+    // MARK: - Text Size (B50)
+
+    /// How large NullPlayer draws its own text inside this skin — the embedded playlist's rows and the
+    /// embedded Media Library, which move together.
+    var textScale: WinampModernTextScale { skinView?.renderer.textScale ?? .auto }
+
+    /// What `.auto` currently amounts to, as a percent, for the menu entry that shows it. Read off the
+    /// **player's** canvas: a separate-window skin resolves `auto` per window, but the menu can only
+    /// name one number and the player is the window the user is looking at.
+    var resolvedTextPercent: Int {
+        guard let renderer = skinView?.renderer else { return 100 }
+        return WinampModernTextScale.resolvedPercent(canvasHeight: renderer.canvasSize.height)
+    }
+
+    /// Apply a Text Size and remember it for this skin.
+    ///
+    /// Fans out exactly as `applyUIScale` does: a separate-window skin keeps its playlist in an
+    /// auxiliary container, so setting only the player's renderer would move the menu's checkmark and
+    /// nothing on screen.
+    func setTextScale(_ scale: WinampModernTextScale) {
+        if let configuration = loadedSkin?.configuration {
+            WinampModernSkinState.setTextScale(scale, in: configuration)
+        }
+        skinView?.renderer.textScale = scale
+        skinView?.pushLibraryContentScale()
+        skinView?.needsDisplay = true
+        for container in auxiliaryContainers {
+            container.view.renderer.textScale = scale
+            container.view.pushLibraryContentScale()
+            container.view.needsDisplay = true
+        }
+    }
+
+    // MARK: - Colours the user set by hand (B146)
+
+    private var skinColorsController: WinampModernSkinColorsWindowController?
+
+    /// The name of the theme any override the user sets right now will be filed under, for the panel's
+    /// header. Overrides are stored per theme because a skin's `<gammaset>`s recolour the same roles
+    /// differently, and per-theme storage is invisible unless the panel says so.
+    var activeThemeName: String { skinView?.renderer.themes.activeTheme ?? "Default" }
+
+    /// What the user has set for this skin under the theme that is applied now. Empty before a skin
+    /// loads, which is when there is no configuration to have written into.
+    var paletteOverrides: [WasabiPalette.Role: NSColor] {
+        guard let configuration = loadedSkin?.configuration else { return [:] }
+        return WinampModernSkinState.paletteOverrides(theme: activeThemeName, in: configuration)
+    }
+
+    /// Set one role's colour, or clear it with `nil`, then repaint everything drawn from the palette.
+    func setPaletteOverride(_ color: NSColor?, for role: WasabiPalette.Role) {
+        guard let configuration = loadedSkin?.configuration else { return }
+        WinampModernSkinState.setPaletteOverride(color, role: role, theme: activeThemeName,
+                                                 in: configuration)
+        applyPaletteOverrides()
+    }
+
+    /// Drop every override for this skin, under **every** theme — the one reset that can find the
+    /// ones the user set under a theme they are not looking at.
+    func resetAllPaletteOverrides() {
+        guard let configuration = loadedSkin?.configuration else { return }
+        WinampModernSkinState.clearPaletteOverrides(in: configuration)
+        applyPaletteOverrides()
+    }
+
+    /// Re-read the palette everywhere it is held.
+    ///
+    /// Fans out exactly as `setTextScale` does, and for the same reason: a separate-window skin keeps
+    /// its Media Library in an auxiliary container, so touching only the player's renderer would move
+    /// the panel's swatch and nothing on screen.
+    private func applyPaletteOverrides() {
+        for view in ([skinView].compactMap { $0 } + auxiliaryContainers.map(\.view)) {
+            view.renderer.paletteOverridesDidChange()
+            view.paletteDidChange()
+        }
+        skinColorsController?.refreshValues()
+    }
+
+    func showSkinColors() {
+        guard loadedSkin != nil else { return }
+        if skinColorsController == nil {
+            skinColorsController = WinampModernSkinColorsWindowController(controller: self)
+        }
+        skinColorsController?.refreshValues()
+        skinColorsController?.showWindow(nil)
+        skinColorsController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - What paints the skin's `<vis>` box (B53)
+
+    /// Winamp's own analyzer and oscilloscope, or one of NullPlayer's. Skin-wide, so the player's
+    /// renderer answers for every container.
+    var spectrumAnalyzer: WinampModernSpectrumAnalyzer { skinView?.renderer.spectrumAnalyzer ?? .skin }
+
+    /// Whether this skin declares a `<vis>` anywhere. Defix declares none — its VIS buttons are a
+    /// toolbar over the host's own visualization window — and an engine picker there would name a
+    /// choice that changes nothing on screen.
+    var hasVisualizationBox: Bool { !(skinView?.renderer.visualizationObjects().isEmpty ?? true) }
+
+    /// The running engine's own controls, for the menu-bar route.
+    ///
+    /// It has to exist there as well as on the box: a skin is free to trap the right button over its
+    /// visualization — Big Bento Modern does, with the invisible `main.vis.trigger` layer carrying
+    /// its own settings page — and then the box menu that would have held these never opens.
+    /// Repaint every container's `<vis>`, for a setting the visualization clock cannot notice —
+    /// Sensitivity changes how the box draws without changing the audio it draws from.
+    func repaintVisualization() {
+        skinView?.needsDisplay = true
+        for container in auxiliaryContainers { container.view.needsDisplay = true }
+    }
+
+    func spectrumAnalyzerMenus() -> [(suite: WinampModernSpectrumAnalyzer, menu: NSMenu)] {
+        skinView?.renderer.spectrumAnalyzerMenus() ?? []
+    }
+
+    /// Switch the `<vis>` boxes' engine and remember it for this skin.
+    func setSpectrumAnalyzer(_ suite: WinampModernSpectrumAnalyzer) {
+        applyVisualizationChange { $0.setSpectrumAnalyzer(suite) }
+    }
+
+    /// The engine an unhosted `{0000000A}` pane draws with — its own selection, separate from the
+    /// `<vis>` boxes' above (BB9). Fans out the same way: Big Bento draws three of these panes.
+    func setVisualizationHolderEngine(_ suite: WinampModernSpectrumAnalyzer) {
+        applyVisualizationChange { $0.setSpectrumAnalyzer(suite, for: .componentHolder) }
+    }
+
+    /// Analyzer, oscilloscope or nothing in those panes.
+    func setVisualizationHolderMode(_ mode: WasabiVisualizationMode) {
+        applyVisualizationChange { $0.setVisualizationHolderMode(mode) }
+    }
+
+    /// Apply one visualization selection and repaint every container that draws this skin.
+    ///
+    /// The *selection* is skin-wide (it lives on the skin's runtime), but each container has to be
+    /// told to repaint — a separate-window skin can draw a `<vis>` in an auxiliary container, and
+    /// one of Big Bento's six sits in the player while others do not. Same fan-out as `setTextScale`.
+    private func applyVisualizationChange(_ change: (WasabiSceneRenderer) -> Bool) {
+        guard let skinView, change(skinView.renderer) else { return }
+        skinView.needsDisplay = true
+        for container in auxiliaryContainers {
+            // The renderers share one selection through the runtime, so this only re-derives the
+            // waveform demand each of them caches and asks for a repaint.
+            container.view.renderer.invalidateWaveformDemand()
+            container.view.needsDisplay = true
+        }
+    }
+
+    // MARK: - NullPlayer-hosted windows
+
+    private func setupHostedWindowMaterializer(loaded: WinampModernLoadedSkin,
+                                               host: WinampModernHost,
+                                               scripts: WinampModernScriptRuntime,
+                                               componentBridge: WinampModernComponentBridge) {
+        componentBridge.hostedWindowSurfaceContextProvider = { [weak self] id in
+            WinampModernHostedSurfaceContext(
+                audioEngine: WindowManager.shared.audioEngine,
+                nativeWindow: { [weak self] in self?.hostedWindow(ifMaterialized: id) },
+                requestClose: { [weak self] in self?.hideHostedWindow(id) },
+                requestFullscreen: { [weak self] in
+                    self?.hostedWindow(ifMaterialized: id)?.toggleFullScreen(nil)
+                }
+            )
+        }
+        hostedWindowMaterializer = WinampModernHostedWindowMaterializer(
+            loadedSkin: loaded,
+            host: host,
+            scripts: scripts,
+            componentHost: componentBridge,
+            skinScale: { [weak self] in self?.skinScale ?? 1 },
+            classicFallback: { id, showOnly in
+                WindowManager.shared.showClassicHostedWindowForWinampModern(id, showOnly: showOnly)
+            },
+            instanceDidMaterialize: { [weak self] instance in
+                guard let self else { return }
+                viewsByContainer[instance.view.containerID] = instance.view
+                instance.view.surfaceToggleRequested = { [weak self] kind in
+                    guard let coordinator = self?.surfaceCoordinator, coordinator.handles(kind) else {
+                        return false
+                    }
+                    coordinator.toggleSurface(kind)
+                    return true
+                }
+                instance.view.webNavigationRequested = { [weak self] target, address in
+                    self?.routeWebNavigation(target, address: address)
+                }
+                instance.view.surfaceVisibilityQuery = { [weak self] in
+                    self?.toggleLampQueries?.surface($0) ?? nil
+                }
+                instance.view.containerWindowVisibilityQuery = { [weak self] in
+                    self?.toggleLampQueries?.container($0) ?? nil
+                }
+            },
+            instanceWillTeardown: { [weak self] instance in
+                self?.viewsByContainer.removeValue(forKey: instance.view.containerID)
+            },
+            visibilityDidChange: { [weak self] id, visible, frame in
+                WindowManager.shared.hostedWindowVisibilityDidChange(
+                    id: id, visible: visible, transitionFrame: frame)
+                self?.refreshToggleLamps()
+            },
+            // A hosted window is a *client* — NullPlayer's own content in the skin's chrome — so it
+            // is told where it is on exactly the terms `scheduleFramePositionReassert` sets out for
+            // the skin's own windows, and never told it is a frame. The skin's script answers by
+            // moving whatever it draws around this window onto it; every skin that draws its chrome
+            // inline hears nothing and does nothing.
+            windowDidSettle: { [weak self] instance in
+                instance.view.dispatchWindowMoved()
+                self?.restackGluedWindows()
+            }
+        )
+    }
+
+    func handlesHostedWindow(_ id: WinampModernHostedWindowID) -> Bool {
+        hostedWindowMaterializer?.handles(id) == true
+    }
+
+    @discardableResult
+    func showHostedWindow(_ id: WinampModernHostedWindowID, frame: NSRect? = nil) -> Bool {
+        hostedWindowMaterializer?.show(id, frame: frame) == true
+    }
+
+    @discardableResult
+    func toggleHostedWindow(_ id: WinampModernHostedWindowID) -> Bool {
+        hostedWindowMaterializer?.toggle(id) == true
+    }
+
+    func hideHostedWindow(_ id: WinampModernHostedWindowID) {
+        hostedWindowMaterializer?.hide(id)
+    }
+
+    func isHostedWindowVisible(_ id: WinampModernHostedWindowID) -> Bool {
+        hostedWindowMaterializer?.isVisible(id) == true
+    }
+
+    func hostedWindow(ifMaterialized id: WinampModernHostedWindowID) -> NSWindow? {
+        hostedWindowMaterializer?.nativeWindow(ifMaterialized: id)
+    }
+
+    func hostedWindow(materializing id: WinampModernHostedWindowID) -> NSWindow? {
+        hostedWindowMaterializer?.nativeWindow(materializing: id)
+    }
+
+    func hostedWindowSurface(_ id: WinampModernHostedWindowID) -> WinampModernHostedSurface? {
+        componentBridge?.currentHostedWindowSurface(id: id)
+    }
+
+    var materializedHostedWindows: [WinampModernHostedWindowMaterializer.MaterializedWindow] {
+        hostedWindowMaterializer?.materializedWindows ?? []
+    }
+
+    /// Already-created skin-owned windows only. Reading this never materializes a hosted window.
+    var materializedAuxiliaryWindows: [NSWindow] {
+        auxiliaryContainers.map(\.window)
+    }
+
+    /// A window Winamp would only create **on demand** — one a script took as a `newDynamicContainer`,
+    /// whether it got the declared container (the first caller does) or a copy.
+    ///
+    /// Asked of the runtime rather than read off `dynamic="1"`, and the difference is not academic:
+    /// several corpus skins declare their real `Pledit` / `MLibrary` / `AVS` windows `dynamic="1"`, and
+    /// excluding those from the arrangement and from the window menu would lose windows people open.
+    /// Claiming is what separates them. It also fixes the frame this rule was first written too
+    /// narrowly for: Ebonite's playlist program is the *first* to ask, so its frame is the declared
+    /// container and a copies-only test left that one window — and only that one — with no chrome.
+    private func isDynamicWindow(_ container: AuxiliaryContainer) -> Bool {
+        container.isDynamicInstance
+            || container.view.scripts.isDynamicallyClaimed(container.view.containerID)
+    }
+
+    /// The subset of those that must never be snapped or docked to: a `newDynamicContainer` copy is
+    /// a frame parked on another window's exact rect (B110), which is the last thing a drag should
+    /// stick to. They stay in `materializedAuxiliaryWindows` so level management still reaches them.
+    var dynamicInstanceAuxiliaryWindows: [NSWindow] {
+        auxiliaryContainers.filter(isDynamicWindow).map(\.window)
+    }
+
+    private func makeSurfaceCoordinator(loaded: WinampModernLoadedSkin,
+                                        scripts: WinampModernScriptRuntime) {
+        let hosted = Set(auxiliaryContainers.map(\.containerID))
+        let catalog = WinampModernSurfaceCoordinator.makeCatalog(
+            loadedSkin: loaded,
+            hostedContainerIDs: hosted,
+            embeddedContainerID: skinView?.containerID)
+        surfaceCoordinator = WinampModernSurfaceCoordinator(
+            catalog: catalog,
+            environment: .init(
+                revealEmbedded: { [weak self, weak scripts] kind, _, allowAutoOpenFallback in
+                    guard let self, let scripts else { return false }
+                    window?.makeKeyAndOrderFront(nil)
+                    let revealed = self.revealEmbeddedSurface(
+                        kind, scripts: scripts, allowAutoOpenFallback: allowAutoOpenFallback)
+                    skinView?.needsDisplay = true
+                    return revealed
+                },
+                isMainWindowVisible: { [weak self] in self?.window?.isVisible == true },
+                window: { [weak self] id in
+                    self?.auxiliaryContainers.first { $0.containerID == id }?.window
+                },
+                setVisible: { [weak self] id, visible in
+                    // A menu item or a skin button asked: an explicit decision, remembered.
+                    self?.setAuxiliaryWindow(id: id, visible: visible, record: true)
+                },
+                classicFallback: { kind, showOnly in
+                    WindowManager.shared.showClassicSurfaceForWinampModern(kind, showOnly: showOnly)
+                },
+                redraw: { [weak self] in
+                    // A replaced or shortened queue must not leave a surface scrolled past its end.
+                    self?.skinView?.clampPlaylistScroll()
+                    self?.skinView?.needsDisplay = true
+                    self?.auxiliaryContainers.forEach {
+                        $0.view.clampPlaylistScroll()
+                        $0.view.needsDisplay = true
+                    }
+                }))
+        // A skin that owns the visualization takes it over from our own window, if that is where it
+        // was (a restored session, or the previous skin had no AVS window of its own).
+        DispatchQueue.main.async { WindowManager.shared.handOverVisualizationToSkinIfNeeded() }
+        // Every view's own `TOGGLE guid:…` now resolves through the same catalog the menu uses.
+        let toggle: (WinampModernComponentKind) -> Bool = { [weak self] kind in
+            guard let coordinator = self?.surfaceCoordinator, coordinator.handles(kind) else { return false }
+            coordinator.toggleSurface(kind)
+            return true
+        }
+        skinView?.surfaceToggleRequested = toggle
+        auxiliaryContainers.forEach { $0.view.surfaceToggleRequested = toggle }
+        // `TOGGLE <container-id>`: the skin's own windows, addressed by name. Case-insensitive
+        // because a skin writes the id as it likes and its own container declaration is the match.
+        let toggleContainer: (String) -> Bool = { [weak self] id in
+            guard let self else { return false }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
+                _ = hostedWindowMaterializer?.toggle(hostedID)
+                return true
+            }
+            guard let matchedID = Self.matchingContainerID(id,
+                                                           in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+            else { return false }
+            setAuxiliaryWindow(id: container.containerID, visible: !container.window.isVisible,
+                               record: true)
+            return true
+        }
+        skinView?.containerWindowToggleRequested = toggleContainer
+        auxiliaryContainers.forEach { $0.view.containerWindowToggleRequested = toggleContainer }
+        // `TOGGLE guid:{D6201408-…}` — About Winamp. It resolves to the skin's own About page where
+        // the skin draws one, through the same container route as any other of its windows, so the
+        // AppKit panel is left for the skins that draw none. Nil unless the container actually became
+        // a window: a container whose renderer failed is dropped from `auxiliaryContainers`, and a
+        // dead id here would open nothing at all.
+        let aboutContainerID = loaded.surfaceSynthesis.aboutContainer.flatMap { id in
+            Self.matchingContainerID(id, in: auxiliaryContainers.map(\.containerID))
+        }
+        skinAboutContainerID = aboutContainerID
+        skinView?.skinAboutContainerID = aboutContainerID
+        auxiliaryContainers.forEach { $0.view.skinAboutContainerID = aboutContainerID }
+        // And the read side of both, for the lamp on the button that does the toggling (BB36). Each
+        // is the exact question its `toggle*` counterpart above acts on, so the two cannot drift.
+        let surfaceVisible: (WinampModernComponentKind) -> Bool? = { [weak self] kind in
+            guard let self else { return nil }
+            // The same three roads `routeComponentToggle` walks, in its order.
+            if let coordinator = surfaceCoordinator, coordinator.handles(kind) {
+                // An embedded surface has no window of its own: it is as visible as the player,
+                // which would pin the lamp on. Not an answer — the button keeps its `activated`.
+                guard !coordinator.isEmbedded(kind) else { return nil }
+                return coordinator.isSurfaceVisible(kind)
+            }
+            if let container = auxiliaryContainers.first(where: { $0.kind == kind }) {
+                return container.window.isVisible
+            }
+            // NullPlayer's own window, for a skin that declares none — the last leg of
+            // `toggleClassicWindow(for:)`. These accessors consult the coordinator first, which has
+            // already declined above, so each answers for the classic window it falls back to.
+            switch kind {
+            case .playlist: return WindowManager.shared.isPlaylistVisible
+            case .equalizer: return WindowManager.shared.isEqualizerVisible
+            case .library: return WindowManager.shared.isPlexBrowserVisible
+            case .visualization: return WindowManager.shared.isProjectMVisible
+            // `toggleClassicWindow` does nothing for these, so there is nothing to report.
+            case .video, .waveformSeeker, .other: return nil
+            }
+        }
+        let containerVisible: (String) -> Bool? = { [weak self] id in
+            guard let self else { return nil }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
+                return hostedWindowMaterializer?.isVisible(hostedID)
+            }
+            guard let matchedID = Self.matchingContainerID(id,
+                                                           in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+            else { return nil }
+            return container.window.isVisible
+        }
+        for view in [skinView].compactMap({ $0 }) + auxiliaryContainers.map(\.view) {
+            view.surfaceVisibilityQuery = surfaceVisible
+            view.containerWindowVisibilityQuery = containerVisible
+        }
+        toggleLampQueries = (surfaceVisible, containerVisible)
+        // `getContainer("SUI").show()` — a skin opening one of its own windows from script rather
+        // than from markup. Defix's four round buttons reach their targets only this way, and the
+        // request is idempotent on purpose: the skin also calls `show()` from timers, and acting on
+        // one that asks for the state the window is already in would re-front it 30 times a second.
+        scripts.containerVisibilityRequested = { [weak self] id, visible in
+            guard let self else { return }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
+                if visible {
+                    _ = hostedWindowMaterializer?.show(hostedID)
+                } else {
+                    hostedWindowMaterializer?.hide(hostedID)
+                }
+                return
+            }
+            guard let matchedID = Self.matchingContainerID(
+                id, in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID }),
+                  container.window.isVisible != visible
+            else { return }
+            setAuxiliaryWindow(id: matchedID, visible: visible)
+        }
+        // And the read side: `getContainer(id).toggle()` / `.isVisible()` must be answered by the
+        // window, not by the graph attribute — `setAuxiliaryWindow` and the close button both move a
+        // window without writing it.
+        scripts.containerVisibilityQuery = { [weak self] id in
+            guard let self else { return nil }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
+                return hostedWindowMaterializer?.isVisible(hostedID)
+            }
+            guard let matchedID = Self.matchingContainerID(
+                id, in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+            else { return nil }
+            return container.window.isVisible
+        }
+        // `isActive()` — which of this skin's windows has the keyboard. A System event reaches every
+        // program whatever window is focused, so a skin that hangs an accelerator off one window
+        // (winampmodern566's `ctrl+w` shades its *playlist*) gates the handler on this rather than on
+        // the host routing by focus. The main container is included: it is not an auxiliary and would
+        // otherwise read inactive from its own window.
+        scripts.containerActiveQuery = { [weak self] id in
+            guard let self else { return nil }
+            if let view = skinView, let mainID = view.renderer.container.xmlID,
+               mainID.caseInsensitiveCompare(id) == .orderedSame {
+                return view.window?.isKeyWindow ?? false
+            }
+            if let hostedID = Self.matchingHostedWindowID(id),
+               let window = hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) {
+                return window.isKeyWindow
+            }
+            guard let matchedID = Self.matchingContainerID(id,
+                                                           in: auxiliaryContainers.map(\.containerID)),
+                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+            else { return nil }
+            return container.window.isKeyWindow
+        }
+        // `getLeft()` / `getTop()` on a container or layout — where that window is on the desktop.
+        // The graph attribute is the last position a script wrote, and every other route that moves
+        // a window (the user dragging it, `place`, the tiler, state restoration) leaves it stale, so
+        // the window itself has to answer. Big Bento's side playlist reopens with
+        // `resize(getLeft(), getTop(), w, h)`; reading a stale 0 threw the player into the corner of
+        // the monitor (B61).
+        scripts.containerOriginQuery = { [weak self] id in
+            self?.containerWindow(forID: id).map(Self.winampScreenOrigin(of:))
+        }
+        // The other half of `getCurAppWidth`/`getCurAppHeight`. The origin above needs a coordinate
+        // flip and the size does not, which is why the two are separate queries rather than one frame.
+        scripts.playerWindowSizeRequested = { [weak self] in self?.skinView?.window?.frame.size }
+    }
+
+    /// The window backing a container id, resolved the way `containerActiveQuery` resolves it: the
+    /// main container is the player's own window, a hosted id is answered only once its window has
+    /// actually been materialized, and everything else is one of the skin's auxiliary windows.
+    private func containerWindow(forID id: String) -> NSWindow? {
+        if let view = skinView, let mainID = view.renderer.container.xmlID,
+           mainID.caseInsensitiveCompare(id) == .orderedSame {
+            return view.window
+        }
+        if let hostedID = Self.matchingHostedWindowID(id),
+           let window = hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) {
+            return window
+        }
+        guard let matchedID = Self.matchingContainerID(id,
+                                                       in: auxiliaryContainers.map(\.containerID)),
+              let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+        else { return nil }
+        return container.window
+    }
+
+    /// A window's origin in Winamp's screen space — top-left origin, relative to the display it is
+    /// on — which is the exact inverse of the transform `moveContainerWindow` applies to the point a
+    /// script hands back. The round trip has to be lossless, or a script re-placing itself at the
+    /// position it just read would walk the window down the screen.
+    private static func winampScreenOrigin(of window: NSWindow) -> CGPoint {
+        guard let screen = window.screen ?? NSScreen.main else { return .zero }
+        return CGPoint(x: window.frame.minX - screen.frame.minX,
+                       y: screen.frame.maxY - window.frame.maxY)
+    }
+
+    static func matchingContainerID(_ requestedID: String, in containerIDs: [String]) -> String? {
+        containerIDs.first { $0.caseInsensitiveCompare(requestedID) == .orderedSame }
+    }
+
+    private static func matchingHostedWindowID(_ requestedID: String)
+        -> WinampModernHostedWindowID? {
+        WinampModernHostedWindowID.allCases.first {
+            $0.containerIdentifier.caseInsensitiveCompare(requestedID) == .orderedSame
+        }
+    }
+
+    /// Show the library in the skin's own window at launch, instead of waiting for the user to pick
+    /// Windows → Library Browser.
+    ///
+    /// cPro-Bento opens on its Media Library tab, but the holder that tab displays is only built when
+    /// the component is *revealed* — so the default view was an empty pane until you opened the
+    /// library from the menu. Revealing it once here is the same route the menu takes, so there is no
+    /// second code path to keep in step. Only for a skin that actually embeds the library: one that
+    /// declares its own library window, or falls back to the classic one, is left alone so nothing
+    /// pops open a window at launch.
+    // MARK: - Splitter persistence (B44)
+
+    /// How long after `start()` the restored divider positions are asserted a second time.
+    ///
+    /// Every view restores its own splitters inside `scriptsDidStart`, which is enough when the skin
+    /// calls `setPosition` from `onScriptLoaded` — the common case, and Big Bento's. It is *not*
+    /// enough when the call comes from a timer instead: Bento's own `mcvcore` starts a 700 ms one-shot
+    /// from its second `onScriptLoaded` body, and the same ordering trap took out B38.2's reveals. One
+    /// late re-assert settles it, comfortably past that timer.
+    private static let framePositionReassertDelay: TimeInterval = 1.0
+
+    private func scheduleFramePositionReassert() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.framePositionReassertDelay) { [weak self] in
+            guard let self else { return }
+            reassertPersistedFramePositions()
+            // Tell every window's script where its window ended up, once the load has settled (B110).
+            //
+            // A skin that draws one window's chrome in a second window only ever moves the frame from
+            // `onMove` — Ebonite's `syncFrame()` is called from nothing else at rest. On a **cold
+            // launch** that arrives for free, because placing each window fires `windowDidMove`. On a
+            // **skin switch** it does not: the windows come up at their remembered positions with no
+            // move to report, so the frames were built, shown, and left at the origin they were
+            // created at — empty shells stacked in the corner of the display while their clients sat
+            // elsewhere. Re-announcing the position every window already has is what a real move
+            // would have said, and it is a no-op for every skin that does not listen.
+            //
+            // **Clients only.** The announcement has to go one way. A frame's own `onMove` runs
+            // `syncContent()` — the reverse write, which drags the *client* onto the frame — so
+            // telling a frame where it is moved the playlist onto the frame's unset origin instead of
+            // the other way round, and both windows ended up in the corner together.
+            skinView?.dispatchWindowMoved()
+            for container in auxiliaryContainers where !isDynamicWindow(container) {
+                container.view.dispatchWindowMoved()
+            }
+            // After the moves, so the pairs the announcements just established are ordered.
+            restackGluedWindows()
+        }
+    }
+
+    /// Put each container back on the layout the user last switched it to (B44a).
+    ///
+    /// Only when the skin still declares that layout and is not already on it, so a renamed layout in
+    /// an updated skin is ignored rather than throwing. Unlike a divider this is **not** re-asserted a
+    /// second later: switching layout resizes the window and rebuilds the scene, and doing that a
+    /// second after launch would read as the player flinching. A skin that switches its own layout
+    /// from a timer keeps the last word here, which is the safer way round.
+    private func restoreRememberedLayouts() {
+        for view in ([skinView].compactMap { $0 } + auxiliaryContainers.map(\.view)) {
+            guard let remembered = view.renderer.rememberedLayoutID else { continue }
+            view.activateLayout(id: remembered)
+        }
+    }
+
+    /// Re-apply the stored positions once the scripts have settled. Deliberately re-reads the store
+    /// rather than replaying what was restored at start, so a divider the user drags inside that first
+    /// second is not pulled back to where it was when the window opened. A no-op when nothing moved
+    /// it, which is what happens on every skin whose splitters the user has never touched.
+    private func reassertPersistedFramePositions() {
+        for view in ([skinView].compactMap { $0 } + auxiliaryContainers.map(\.view)) {
+            guard view.restorePersistedFramePositions() else { continue }
+            view.dispatchResizeIfChanged()
+            view.needsLayout = true
+            view.needsDisplay = true
+            view.window?.invalidateCursorRects(for: view)
+        }
+    }
+
+    private func revealEmbeddedLibraryAtStartup() {
+        guard let coordinator = surfaceCoordinator, coordinator.isEmbedded(.library) else { return }
+        // Startup is advisory: let the skin reconcile its own selected tab from
+        // onGetCancelComponent, but do not force hidden ancestors visible behind its bookkeeping.
+        // Explicit user/script reveals still retain the Wasabi `autoopen` fallback below.
+        coordinator.showSurface(.library, allowEmbeddedAutoOpenFallback: false)
+        skinView?.needsLayout = true
+        skinView?.needsDisplay = true
+    }
+
+    // MARK: - Host components the user can decline
+
+    /// Whether this skin declares a seeker holder at all — what gates the menu entry. Two skins in
+    /// the corpus do; an item that changes nothing on the other 34 is worse than no item.
+    var declaresWaveformSeeker: Bool {
+        guard let graph = loadedSkin?.runtime.graph else { return false }
+        return WinampModernAvailableComponents.declaresClaimableHolder(.waveformSeeker, in: graph)
+    }
+
+    var waveformSeekerEnabled: Bool {
+        guard let configuration = loadedSkin?.configuration else { return true }
+        return WinampModernSkinState.waveformSeekerEnabled(in: configuration)
+    }
+
+    /// Turn the seeker on or off for this skin, live.
+    ///
+    /// **No reload.** The skin's own gate is re-read from a timer, so stamping or clearing `hold` is
+    /// enough: the skin then rebuilds its layout around the answer, hiding or showing its backing
+    /// layer and moving its transport row, which is the half we must not attempt ourselves. Turning
+    /// it *on* also re-announces, because the announcement is what arms that timer in the first place.
+    func setWaveformSeekerEnabled(_ enabled: Bool) {
+        guard let loaded = loadedSkin, let scripts = skinView?.scripts else { return }
+        WinampModernSkinState.setWaveformSeekerEnabled(enabled, in: loaded.configuration)
+        if enabled {
+            WinampModernAvailableComponents.claim(in: loaded.runtime.graph) { $0 == .waveformSeeker }
+            announceClaimedComponents(scripts: scripts)
+        } else {
+            WinampModernAvailableComponents.release(.waveformSeeker, in: loaded.runtime.graph)
+        }
+        scripts.invalidateClaimedComponents()
+        skinView?.needsDisplay = true
+        for container in auxiliaryContainers { container.view.needsDisplay = true }
+    }
+
+    /// Tell the skin about every holder the host claimed (BB18).
+    ///
+    /// The claim itself is a `hold` write on the graph (`WinampModernAvailableComponents`), which is
+    /// what a skin's *condition* reads — but nothing re-evaluates that condition on its own. Wasabi's
+    /// announcement is `System.onLookForComponent(guid)`, and a skin hangs the re-evaluation off it:
+    /// Big Bento's layout script starts a timer there, and it is that timer's handler that compares
+    /// `hold` against the GUID and shifts its transport row down for the strip. Stamping the holder
+    /// and never announcing it therefore left the claim invisible — the box was ours and the skin
+    /// never found out.
+    ///
+    /// After `setSceneVisible(true)`: the handler a skin arms here does its work from a timer that
+    /// asks whether the layout is up.
+    private func announceClaimedComponents(scripts: WinampModernScriptRuntime) {
+        for kind in WinampModernAvailableComponents.offered.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard scripts.hasClaimedComponent(kind),
+                  let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else { continue }
+            let handled = (try? scripts.dispatchSystem(event: "onlookforcomponent",
+                                                       arguments: [.string(guid)])) ?? 0
+            #if DEBUG
+            NSLog("WinampModern claimed %@ guid=%@ handlers=%d", kind.rawValue, guid, handled)
+            #endif
+        }
+    }
+
+    /// Ask the skin to bring an embedded surface to the front, the way Winamp does.
+    ///
+    /// Wasabi has one contract for this: when a component is about to become visible the host calls
+    /// `System.onGetCancelComponent(guid, true)`, and an SUI skin uses it to switch to the tab, mini
+    /// area, or drawer that holds that component — ClassicPro's `CentroSUI2.m` compares the GUID
+    /// against `PL_GUID`/`ML_GUID`/`VIDEO_GUID`/`VIS_GUID` and calls `openTabNo`. Sending the same
+    /// event is what actually opens cPro's Media Library tab; finding the holder and returning (the
+    /// old behaviour) left the click doing nothing at all.
+    ///
+    /// The script gets first refusal, and the `autoopen` fallback runs **only if the scene still has
+    /// no visible holder of that kind** (B23). A skin can carry the same component in several places
+    /// — cPro-Bento holds video in its tab, in the mini view *and* in the drawer, three holders all
+    /// declaring `autoopen="1"` — so forcing every one of them open after the skin had already
+    /// switched to the right tab put two more copies of the surface on screen beside it.
+    private func revealEmbeddedSurface(_ kind: WinampModernComponentKind,
+                                       scripts: WinampModernScriptRuntime,
+                                       allowAutoOpenFallback: Bool) -> Bool {
+        guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else {
+            // The equalizer has no component GUID; a skin-drawn EQ is already on screen wherever the
+            // skin drew it, so revealing the player window is the whole job.
+            return true
+        }
+        let handled = (try? scripts.dispatchSystem(event: "ongetcancelcomponent",
+                                                   arguments: [.string(guid), .boolean(true)])) ?? 0
+        if hasVisibleHolder(kind) {
+            #if DEBUG
+            NSLog("WinampModern reveal %@ guid=%@ handlers=%d (skin opened it)", kind.rawValue, guid, handled)
+            #endif
+            return true
+        }
+        guard allowAutoOpenFallback else {
+            #if DEBUG
+            NSLog("WinampModern reveal %@ guid=%@ handlers=%d (startup; autoopen skipped)",
+                  kind.rawValue, guid, handled)
+            #endif
+            return handled > 0
+        }
+        let opened = openHolders(for: kind, in: scripts.loadedSkin.runtime.graph)
+        closeDisplacedPages(revealing: kind)
+        #if DEBUG
+        NSLog("WinampModern reveal %@ guid=%@ handlers=%d opened=%d", kind.rawValue, guid, handled, opened)
+        skinView?.logHolders(tag: "reveal \(kind.rawValue)")
+        #endif
+        return handled > 0 || opened > 0
+    }
+
+    /// Showing one embedded page closes the page it displaces.
+    ///
+    /// In a `singleWindowSUI` skin the component pages are **siblings**: Big Bento Modern's
+    /// `sui.components` holds seven `<group … visible="0"/>`, one per tab, and exactly one is on
+    /// screen at a time. Nothing in `revealEmbeddedSurface` knew that, so a session restoring both a
+    /// playlist and a library window revealed both and drew the two lists on top of each other
+    /// (reported live 2026-08-23; `HOLDERS after reveal library` listed `library#wdh.ml2` **and**
+    /// `playlist#wdh.playlist` at once).
+    ///
+    /// This runs after **both** opening routes — the skin's own `onGetCancelComponent` handler and
+    /// our `autoopen` fallback — because the two alternate: the first round of reveals went through
+    /// the fallback and the second through the script, so a fix that lived inside `openHolders`
+    /// corrected the first round and was bypassed by the second.
+    ///
+    /// Two holders count as competing pages only when their paths diverge at **siblings that each
+    /// carry an explicit `visible` attribute**. That is what a tab page looks like and what ordinary
+    /// structure does not: Big Bento's `wdh.pl` and `wdh.ml` are siblings under `sui.components` and
+    /// both declare `visible="0"`, while the top bar's own visualization holder diverges from them at
+    /// `player.mainframe.big`, which declares no `visible` at all — so the meter in the header is
+    /// left alone while the tab is switched.
+    private func closeDisplacedPages(revealing kind: WinampModernComponentKind) {
+        guard let renderer = skinView?.renderer else { return }
+        let holders = renderer.componentHolders()
+        guard let incoming = holders.first(where: { $0.kind == kind }) else { return }
+        let incomingChain = Self.ancestorChain(of: incoming.object)
+        var closed = false
+        for holder in holders where holder.kind != kind {
+            guard let page = Self.displacedPage(showing: incomingChain,
+                                                hiding: Self.ancestorChain(of: holder.object))
+            else { continue }
+            closed = page.setAttribute("visible", value: "0") || closed
+        }
+        if closed { skinView?.needsDisplay = true }
+    }
+
+    /// The object and every ancestor above it, nearest first.
+    private static func ancestorChain(of object: WasabiObject) -> [WasabiObject] {
+        var chain: [WasabiObject] = []
+        var node: WasabiObject? = object
+        var depth = 0
+        while let current = node, depth < 64 {
+            chain.append(current)
+            node = current.parent
+            depth += 1
+        }
+        return chain
+    }
+
+    /// The page to hide, when two holders' paths diverge at explicitly-toggled siblings. `nil` when
+    /// one chain contains the other (the same page, not two) or the divergence is ordinary structure.
+    private static func displacedPage(showing incoming: [WasabiObject],
+                                      hiding outgoing: [WasabiObject]) -> WasabiObject? {
+        let incomingIDs = Set(incoming.map(\.stableID))
+        // Deepest node on the outgoing path that is not shared with the incoming one, and its
+        // counterpart on the incoming path — the two must be children of the same parent.
+        guard let branchIndex = outgoing.lastIndex(where: { !incomingIDs.contains($0.stableID) })
+        else { return nil }
+        let outgoingBranch = outgoing[branchIndex]
+        guard let parent = outgoingBranch.parent,
+              let incomingBranch = incoming.first(where: { $0.parent === parent }),
+              incomingBranch !== outgoingBranch,
+              outgoingBranch.attributes["visible"] != nil,
+              incomingBranch.attributes["visible"] != nil
+        else { return nil }
+        return outgoingBranch
+    }
+
+    /// Whether the player's current scene already shows a holder for this surface.
+    private func hasVisibleHolder(_ kind: WinampModernComponentKind) -> Bool {
+        skinView?.renderer.componentHolders().contains { $0.kind == kind } ?? false
+    }
+
+    /// Wasabi's `windowholder autoopen="1"`: when the component a holder holds becomes visible, the
+    /// holder brings its own surroundings on screen with it.
+    ///
+    /// This is the fallback half of an explicit reveal. If the skin leaves no holder visible after
+    /// `onGetCancelComponent`, reveal the hidden ancestors between an `autoopen` holder of this kind
+    /// and its layout, and nothing else. Startup deliberately does not enter this path (B25): after
+    /// the MAKI `NULL` coercion fix, ClassicPro selects its own library tab and must keep the last
+    /// word over its tab bookkeeping.
+    ///
+    /// **Opening one page must close the page we opened before it.** In a `singleWindowSUI` skin the
+    /// component pages are siblings that all ship `visible="0"` — Big Bento Modern's `sui.components`
+    /// holds seven, one per tab — and the skin's own script shows exactly one. This fallback forces a
+    /// chain visible without knowing about the other six, so a session that restored both a playlist
+    /// and a library window revealed both and drew the two on top of each other (reported live,
+    /// 2026-08-23; the launch log reads `reveal library … opened=1` / `reveal playlist … opened=4` /
+    /// `reveal library … opened=1`).
+    ///
+    /// The fix is deliberately narrow: we revert **only what we ourselves forced**, and only the
+    /// parts of it that are not on the chain we are about to open. Anything the skin's script made
+    /// visible is untouched — that case returns early at `hasVisibleHolder` and never reaches here —
+    /// and a shared ancestor of both chains stays open because it is in the new chain's set.
+    ///
+    /// Returns how many holders were opened.
+    @discardableResult
+    private func openHolders(for kind: WinampModernComponentKind,
+                             in graph: WasabiObjectGraph) -> Int {
+        var opened = 0
+        var forced: [WasabiObject] = []
+        func isAutoOpen(_ object: WasabiObject) -> Bool {
+            switch object.attributes["autoopen"]?.lowercased() {
+            case "1", "true", "yes": return true
+            default: return false
+            }
+        }
+        // A page the skin's script closed is a decision, not an oversight: reopening it puts two
+        // pages on screen at once. Big Bento Modern switches its Multi Content View to the stretched
+        // visualization by closing the whole file-info page, and this fallback pulled one of those
+        // groups back open on the next reveal — the visualization drawn over the details and cover.
+        // An object that merely *starts* `visible="0"` and was never touched is still fair game;
+        // that is what the fallback is for.
+        let scriptClosed = skinView?.scripts.scriptClosedObjects ?? []
+        func visit(_ object: WasabiObject) {
+            if WinampModernComponentRegistry.isHolderElement(object.typeName),
+               WasabiSceneRenderer.componentKind(of: object) == kind, isAutoOpen(object) {
+                var chain: [WasabiObject] = []
+                var node: WasabiObject? = object
+                var depth = 0
+                var blocked = false
+                while let current = node, depth < 64 {
+                    if current.typeName.caseInsensitiveCompare("layout") == .orderedSame { break }
+                    if scriptClosed.contains(current.stableID) { blocked = true; break }
+                    chain.append(current)
+                    node = current.parent
+                    depth += 1
+                }
+                if !blocked {
+                    for current in chain {
+                        switch current.attributes["visible"]?.lowercased() {
+                        case "0", "false", "no":
+                            _ = current.setAttribute("visible", value: "1")
+                            forced.append(current)
+                        default: break
+                        }
+                    }
+                    opened += 1
+                }
+            }
+            for child in object.children { visit(child) }
+        }
+        for root in graph.roots { visit(root) }
+        guard opened > 0 else { return 0 }
+        let nowOpen = Set(forced.map(\.stableID))
+        var reverted: [String] = []
+        for previous in forcedVisibleHolderChain where !nowOpen.contains(previous.stableID) {
+            _ = previous.setAttribute("visible", value: "0")
+            reverted.append(previous.xmlID ?? "-")
+        }
+        #if DEBUG
+        NSLog("WinampModern openHolders %@: forced=[%@] reverted=[%@]", kind.rawValue,
+              forced.map { $0.xmlID ?? "-" }.joined(separator: ","),
+              reverted.joined(separator: ","))
+        #endif
+        forcedVisibleHolderChain = forced
+        return opened
+    }
+
+    /// The objects `openHolders` last forced from `visible="0"` to `"1"`, so the next call can put
+    /// back the ones it is displacing. Only ever holds objects this controller set itself.
+    private var forcedVisibleHolderChain: [WasabiObject] = []
+
+    /// **The skin's script gets the last word on which tab is showing.**
+    ///
+    /// `revealEmbeddedSurface` gives the script first refusal and falls back to `autoopen` when the
+    /// scene still has no holder of that kind — but that test is synchronous, and a script can open
+    /// its tab on its own timer. Big Bento Modern does: at launch its four reveal calls all fall
+    /// through to the fallback (the tab is genuinely not open *yet*), we force the library page
+    /// visible, and ~0.6s later `suicore.maki` opens the playlist tab it had decided on all along.
+    /// The script has no idea we opened a second page, so both stayed on screen and the two lists
+    /// drew on top of each other.
+    ///
+    /// So the rule is re-checked on every layout pass, and it always resolves the same way: **the
+    /// page we forced yields to the page the skin opened.** Only pages this controller forced are
+    /// ever closed, and only when a competing sibling page — same parent, both carrying an explicit
+    /// `visible` attribute, the shape of a tab page — is open beside it.
+    func enforceEmbeddedPageExclusivity() {
+        guard !forcedVisibleHolderChain.isEmpty, let renderer = skinView?.renderer else { return }
+        let ours = Set(forcedVisibleHolderChain.map(\.stableID))
+        var closed = false
+        for holder in renderer.componentHolders() {
+            let chain = Self.ancestorChain(of: holder.object)
+            // A holder standing on a page we forced is ours; it cannot displace itself.
+            guard !chain.contains(where: { ours.contains($0.stableID) }) else { continue }
+            for page in forcedVisibleHolderChain
+            where page.attributes["visible"] == "1" && page.parent != nil {
+                let rival = chain.first { $0.parent === page.parent && $0 !== page
+                                          && $0.attributes["visible"] != nil }
+                guard rival != nil else { continue }
+                closed = page.setAttribute("visible", value: "0") || closed
+            }
+        }
+        if closed {
+            forcedVisibleHolderChain.removeAll { $0.attributes["visible"] != "1" }
+            skinView?.needsDisplay = true
+        }
+    }
+
+    /// The skin's embedded library surface, for browse-mode save/restore. Nil until a holder for it
+    /// has actually appeared in a scene.
+    var embeddedLibrarySurface: WinampModernLibrarySurface? { componentBridge?.currentLibrarySurface }
+
+    /// The skin's embedded visualization engine, if a scene has made one (B20a). The Visualizations
+    /// menu and the `VIS_*` host actions reach the running engine through it.
+    var embeddedVisualizationSurface: WinampModernVisualizationSurface? {
+        componentBridge?.currentVisualizationSurface
+    }
+
+    // MARK: - Video (B20)
+
+    /// The skin's own video window, its holder filled with the app's video output.
+    ///
+    /// Five corpus skins declare a full `<container id="video">` — chrome, a `ledstatusbar` and the
+    /// `VID_*` buttons — around a component holder that was decoration over an empty box. Returns
+    /// false for a skin that declares none, which is what leaves NullPlayer's own video window in
+    /// charge exactly as before.
+    @discardableResult
+    func hostVideoOutput() -> Bool {
+        guard let coordinator = surfaceCoordinator else { return false }
+        if case .embedded = coordinator.catalog.video { return hostVideoOutputInPlayer() }
+        guard case .declaredContainer(let id) = coordinator.catalog.video,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+        else { return false }
+        // The holder's surface is made by the view's own layout pass, and a window that has never
+        // been on screen has not run one — the first video of a session would otherwise find no
+        // surface to fill and fall back to our window while the skin's opened empty beside it.
+        container.view.needsLayout = true
+        container.view.layoutSubtreeIfNeeded()
+        guard container.view.hostedVideoSurface != nil else { return false }
+        // Not recorded: a film starting is not the user deciding this window should be open, and
+        // writing it as one left an empty video window opening with the skin at every later launch
+        // (B97). The same rule the runtime's `show()`/`hide()` already follow — this run, not the
+        // next one.
+        setAuxiliaryWindow(id: id, visible: true)
+        return true
+    }
+
+    /// The other shape of a skin's video surface: a **tab of the player window** (B23).
+    ///
+    /// cPro-Bento hosts the video component in its SUI's Video tab and collapses its standalone
+    /// `Video` container to a 1×1 stub, so there is no window to open — the tab has to be revealed
+    /// instead, through the same `onGetCancelComponent` + `autoopen` route the Skin Windows menu and
+    /// a script's `TOGGLE guid:{F0816D7B-…}` take. Answers **false** when revealing the tab produces
+    /// no live holder, which is what leaves NullPlayer's own video window in charge rather than
+    /// swallowing the picture into a surface that does not exist.
+    private func hostVideoOutputInPlayer() -> Bool {
+        guard let view = skinView, let coordinator = surfaceCoordinator else { return false }
+        coordinator.showSurface(.video)
+        // The surface is made by the view's own layout pass, and revealing the tab has only changed
+        // the graph so far: without this the first film of a session finds no box to fill.
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        guard let surface = view.hostedVideoSurface else { return false }
+        surface.attachVideoOutput()
+        surface.updateOutputPlacement()
+        // …and again once the reveal has settled. Switching the tab sets off the skin's own
+        // `onResize` cascade, which is what gives the box its final width — it runs after this turn,
+        // and a film started while the tab was closed otherwise parked the picture over the box's
+        // opening geometry and left it there, a white slab down one side of the tab.
+        DispatchQueue.main.async { [weak self] in
+            guard let view = self?.skinView else { return }
+            view.needsLayout = true
+            view.layoutSubtreeIfNeeded()
+            view.hostedVideoSurface?.updateOutputPlacement()
+        }
+        return true
+    }
+
+    /// Put the skin's video window away — the `autoclose="1"` every measured holder declares. The
+    /// picture stays lent, so the next play reopens rather than re-attaching.
+    ///
+    /// For an embedded surface there is no window to put away — hiding the player window is not what
+    /// "close the video" means — so the picture is simply unparked and the tab left as it is, for the
+    /// user or the skin to switch away from.
+    @discardableResult
+    func hideVideoSurfaceWindow() -> Bool {
+        guard let coordinator = surfaceCoordinator else { return false }
+        if case .embedded = coordinator.catalog.video {
+            guard let surface = skinView?.hostedVideoSurface,
+                  WindowManager.shared.currentVideoPlayerController?.isVideoOutputHosted == true
+            else { return false }
+            surface.hideVideoOutput()
+            return true
+        }
+        guard case .declaredContainer(let id) = coordinator.catalog.video,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+              container.window.isVisible
+        else { return false }
+        // The `autoclose` counterpart of `hostVideoOutput`, and unrecorded for the same reason.
+        setAuxiliaryWindow(id: id, visible: false)
+        return true
+    }
+
+    /// Unpark the picture from the skin's box, leaving the window it came from alone.
+    func detachVideoOutput() {
+        guard let catalog = surfaceCoordinator?.catalog else { return }
+        if case .embedded = catalog.video {
+            skinView?.hostedVideoSurface?.detachVideoOutput()
+            return
+        }
+        guard case .declaredContainer(let id) = catalog.video,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+        else { return }
+        container.view.hostedVideoSurface?.detachVideoOutput()
+    }
+
+    /// Whether this container is the one the catalog routes video to. Matched through the catalog
+    /// rather than through `AuxiliaryContainer.kind`, because a skin can declare the window without a
+    /// `component=` GUID (Love is War Miku's is a bare `<container id="video">`) and the catalog is
+    /// the one place that reconciles both routes.
+    private func isVideoSurfaceContainer(_ id: String) -> Bool {
+        guard case .declaredContainer(let videoID) = surfaceCoordinator?.catalog.video else { return false }
+        return videoID == id
+    }
+
+    /// `VID_1X` / `VID_2X`: size the skin's video window so its **box** is the stream's own pixel
+    /// size times `multiple`.
+    ///
+    /// Winamp sizes its video window from the stream, not from an invented pixel count, and a `.wal`
+    /// video layout is chrome around a `relatw="1"` holder — so the window grows by exactly the
+    /// difference between the box the skin is drawing and the box the stream wants, and the skin's
+    /// own frame, buttons and status bar stay where they are. Answers false when nothing is playing
+    /// or the decoder has not published a size yet, which is where these buttons stay inert rather
+    /// than resizing to a guess.
+    ///
+    /// **Inert for an embedded surface** (B23): there the box is a tab inside the player, and sizing
+    /// it to the stream would resize the whole player window around a tab — Winamp sizes a *video
+    /// window* from the stream, and cPro-Bento's video is not one. The buttons answer false and
+    /// nothing moves, which is what they did before the tab hosted anything at all.
+    @discardableResult
+    func sizeVideoSurface(toNativeMultiple multiple: CGFloat) -> Bool {
+        guard let coordinator = surfaceCoordinator,
+              case .declaredContainer(let id) = coordinator.catalog.video,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+              let holder = container.view.videoHolderFrame,
+              let surface = container.view.hostedVideoSurface
+        else { return false }
+        let renderer = container.view.renderer
+        guard let proposed = WinampModernVideoHolder.canvasSize(canvas: renderer.canvasSize,
+                                                                holder: holder,
+                                                                native: surface.presentationSize,
+                                                                multiple: multiple)
+        else { return false }
+        // Clamped to the screen as well as to the layout's own range. A 1x on a 1080p film is a
+        // ~1940px window and a 2x is nearly 3900 — Winamp's own 1x/2x are exactly that literal, but a
+        // window wider than the display is one the user cannot get hold of again.
+        let visible = (container.window.screen ?? NSScreen.main)?.visibleFrame.size
+            ?? CGSize(width: 1_440, height: 900)
+        let limits = renderer.userResizeLimits
+        let ceilingW = min(limits.maximum.width, visible.width / skinScale)
+        let ceilingH = min(limits.maximum.height, visible.height / skinScale)
+        renderer.resize(to: CGSize(
+            width: min(max(proposed.width, limits.minimum.width), ceilingW),
+            height: min(max(proposed.height, limits.minimum.height), ceilingH)))
+        let size = container.view.scaledCanvasSize
+        resize(window: container.window, to: size)
+        container.view.setFrameSize(size)
+        container.view.needsLayout = true
+        container.view.needsDisplay = true
+        return true
+    }
+
+    /// The embedded browser's "link a server" flow. It has no classic controller to present from, so
+    /// the sheet is attached to whichever `.wal` window is hosting it.
+    private func presentEmbeddedLibraryLinkSheet() {
+        guard let window else { return }
+        let sheet = PlexLinkSheet()
+        sheet.showAsSheet(from: window) { [weak self] success in
+            guard success else { return }
+            self?.componentBridge?.currentLibrarySurface?.reloadData()
+        }
+    }
+
+    private func setAuxiliaryWindow(id: String, visible: Bool, record: Bool = false,
+                                    activate: Bool = true) {
+        guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return }
+        // A window that only fakes a Windows desktop effect never opens, whoever asked — a script's
+        // `show()`, `default_visible`, or the menu. cPro2's drop shadow and Aero-snap preview each
+        // draw a bare rectangle of lines and nothing else, and both showed up beside the player once
+        // B110 gave dynamic containers real windows.
+        if visible, WinampModernContainerTopology.isHostProvidedDesktopEffect(id: id) { return }
+        if visible {
+            container.view.needsDisplay = true
+            // Lay the scene out *before* choosing a slot. The window is created at the view's canvas
+            // size and the skin's standard frame then grows it on the first layout pass — measured on
+            // Defix, 406→426 wide and 285→299 for the speaker cabinets. Placing first picks a correct
+            // slot for a size the window is about to stop having, which is how two windows opened
+            // from the menu ended up overlapping by 153×174 with a tiling that cannot overlap.
+            container.view.needsLayout = true
+            container.view.layoutSubtreeIfNeeded()
+            place(container)
+            if activate {
+                container.window.makeKeyAndOrderFront(nil)
+            } else if container.noActivation {
+                container.window.orderFrontRegardless()
+            } else {
+                container.window.orderFront(nil)
+            }
+            // Opening the skin's video window is what asks for the picture, whoever opened it — a
+            // `TOGGLE guid:{F0816D7B-…}` on the player, the Skin Windows menu, or a play call. After
+            // the window is on screen, because the picture is parked on it as a child window and a
+            // child of a window nobody has ordered in has nowhere to appear; and after a layout pass,
+            // because that is what makes the box and gives it its frame.
+            // One visualization window at a time: the skin's is going up, so ours comes down —
+            // whoever opened this one (the menu, a `TOGGLE guid:vis`, a script's `show()`).
+            if routedSurfaceKind(ofContainer: id) == .visualization {
+                WindowManager.shared.hideLocalVisualizationWindow()
+                // After the window is on screen, and after a layout pass has made the surface: the
+                // engine's display link will not start against a window that is not visible yet.
+                container.view.needsLayout = true
+                container.view.layoutSubtreeIfNeeded()
+                container.view.hostedVisualizationSurface?.resumeRendering()
+            }
+            if isVideoSurfaceContainer(id) {
+                container.view.needsLayout = true
+                container.view.layoutSubtreeIfNeeded()
+                container.view.hostedVideoSurface?.attachVideoOutput()
+                container.view.hostedVideoSurface?.updateOutputPlacement()
+            }
+        } else {
+            container.window.orderOut(nil)
+        }
+        container.view.setSceneVisible(visible)
+        // A window that just opened is above (or below) whatever it is glued to; put the pair back in
+        // order. See `restackGluedWindows`.
+        restackGluedWindows()
+        if record { rememberContainerVisibility(id: id, visible: visible) }
+        refreshToggleLamps()
+    }
+
+    /// A window went up or down, so every `TOGGLE` lamp that names it is now drawing a stale answer
+    /// (BB36). The lamps live in other windows than the one that moved — a player button opens the
+    /// playlist — so this repaints every container's scene rather than only the one that changed.
+    private func refreshToggleLamps() {
+        for view in viewsByContainer.values { view.needsDisplay = true }
+    }
+
+    // MARK: - `default_visible` (Phase 40, B6)
+
+    /// Open the windows the skin declares as `default_visible="1"`.
+    ///
+    /// Winamp opens these *with* the skin: Defix's configurator is on screen the moment its skin
+    /// loads, and here it was only ever reachable. The declaration is a **default**, not a command —
+    /// a window the user has since closed from the menu, from the skin's own button, or from its
+    /// close box stays closed on the next launch, which is the whole reason a settings window opening
+    /// at every launch was worse than not honouring the attribute at all.
+    ///
+    /// Non-activating: the player window is what the user should be looking at after a load, not the
+    /// configurator that happened to open behind it.
+    private func applyDefaultContainerVisibility() {
+        var opened = false
+        for container in auxiliaryContainers where !container.window.isVisible {
+            guard Self.opensAtLoad(opensByDefault: container.opensByDefault,
+                                   remembered: rememberedContainerVisibility(id: container.containerID),
+                                   hostsVideo: routedSurfaceKind(ofContainer: container.containerID) == .video)
+            else { continue }
+            setAuxiliaryWindow(id: container.containerID, visible: true, activate: false)
+            opened = true
+        }
+        // Everything that just opened was ordered in front; the player belongs on top of its own
+        // auxiliary windows. Only if it is already on screen — at launch this runs *before*
+        // `WindowManager` has placed and shown it, and fronting it here would flash it at the frame
+        // a restored session is about to replace.
+        if opened, window?.isVisible == true { window?.orderFront(nil) }
+    }
+
+    /// The precedence, in one testable place: what the user last decided about this window wins over
+    /// what the skin declares, and the skin's declaration wins over "closed". A user who has never
+    /// touched the window has `remembered == nil`, which is not the same as having closed it.
+    ///
+    /// **The video window is never restored** (B97). Nothing is playing at load, so it can only come
+    /// up as the empty black panel Itemskin was reported with — the skin's own `FS`/`1X`/`2X`/
+    /// `OPTIONS` chrome around a box with no picture in it, which is exactly the state its
+    /// `default_visible="0"` asks to avoid. It is not the user's window to leave open the way a
+    /// playlist or a configurator is: playback opens it (`hostVideoOutput`) and `autoclose` puts it
+    /// away, so *when* it belongs on screen is a fact about the film, not about the last session.
+    static func opensAtLoad(opensByDefault: Bool, remembered: Bool?, hostsVideo: Bool = false) -> Bool {
+        guard !hostsVideo else { return false }
+        return remembered ?? opensByDefault
+    }
+
+    /// What the user last did with this window, or `nil` when they have never said. Stored in the
+    /// *skin's own* namespaced configuration alongside the rest of the host-owned skin state
+    /// (`WinampModernSkinState`), so two skins that both declare a `Config` window do not share one
+    /// answer and nothing here reaches arbitrary preferences.
+    private func rememberedContainerVisibility(id: String) -> Bool? {
+        guard let configuration = loadedSkin?.configuration else { return nil }
+        return WinampModernSkinState.windowIsVisible(container: id, in: configuration)
+    }
+
+    /// Record an explicit user decision — a menu item, a skin button, a close box. Script-driven
+    /// `show()`/`hide()` and the startup default deliberately do **not** write here: a skin that
+    /// opens one of its own windows from a timer is describing this run, not the next one.
+    private func rememberContainerVisibility(id: String, visible: Bool) {
+        // A dynamic instance has nothing to persist: it exists only while the script that asked for
+        // it is holding one, and its geometry is derived from the window it is glued to.
+        guard !auxiliaryContainers.contains(where: {
+            $0.containerID == id && isDynamicWindow($0)
+        }) else { return }
+        guard let configuration = loadedSkin?.configuration else { return }
+        WinampModernSkinState.setWindowIsVisible(visible, container: id, in: configuration)
+    }
+
+    /// Close / Minimize as Winamp means them, wired to every window this skin owns.
+    ///
+    /// Not left to the view: `performClose(_:)` simulates a click on a close *button*, which a
+    /// `.borderless` window does not have — it beeps and returns, which is why no skin's close button
+    /// worked. And the commands are about the player, not one window: closing the player quits (the
+    /// classic skin's close button does the same), closing an auxiliary window hides just it, and
+    /// minimize takes the whole set down together instead of leaving the rest of the skin on screen.
+    private func installWindowCommands() {
+        skinView?.closeRequested = { NSApplication.shared.terminate(nil) }
+        skinView?.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
+        for container in auxiliaryContainers {
+            // Through `setAuxiliaryWindow`, not `orderOut` directly: closing a window is a scene
+            // becoming invisible, and the skin is listening. Ujola Cat's console buttons light up
+            // from their window's layout `onSetVisible`, so a close that bypassed the scene left the
+            // button lit with nothing on screen.
+            container.view.closeRequested = { [weak self, id = container.containerID] in
+                self?.setAuxiliaryWindow(id: id, visible: false, record: true)
+            }
+            container.view.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
+        }
+    }
+
+    private func minimizeAllWindows() {
+        window?.miniaturize(nil)
+        for container in auxiliaryContainers where container.window.isVisible {
+            container.window.miniaturize(nil)
+        }
+    }
+
+    /// Lay every one of this skin's windows out in one sweep, in declaration order.
+    ///
+    /// This is the arrangement; `place` below is only what holds a window until this runs. It is
+    /// called once launch has settled, which is the first moment the inputs exist — during skin load
+    /// the player is not yet at its restored frame and no window is yet at its final size, so nothing
+    /// decided then can be right. See `WindowManager.WinampModernTiler`.
+    ///
+    /// Only the skin's own windows and the hosted windows are laid out. The player is the anchor and
+    /// never moves: its frame is restored user state.
+    func arrangeWindows() {
+        let manager = WindowManager.shared
+        guard var tiler = manager.winampModernTiler() else { return }
+        let trace = ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1"
+        for container in auxiliaryContainers where container.window.isVisible {
+            // A notifier is a corner toast, host-driven and transient. It is not part of the
+            // arrangement and keeps the corner it was given.
+            guard !container.isNotifier, !isDynamicWindow(container) else { continue }
+            let slot = tiler.nextSlot(for: container.window.frame.size)
+            if trace {
+                NSLog("[place/tile] %@ %@ -> %@", container.containerID,
+                      NSStringFromRect(container.window.frame), NSStringFromRect(slot))
+            }
+            container.window.setFrameOrigin(slot.origin)
+            placedAuxiliaryWindows.insert(container.containerID)
+        }
+        for window in manager.winampModernHostedWindowsForArrangement() where window.isVisible {
+            let slot = tiler.nextSlot(for: window.frame.size)
+            if trace {
+                NSLog("[place/tile] hosted %@ -> %@",
+                      NSStringFromRect(window.frame), NSStringFromRect(slot))
+            }
+            window.setFrameOrigin(slot.origin)
+        }
+    }
+
+    /// Where a window goes when it opens on its own, after the initial arrangement has run.
+    ///
+    /// The first free slot in the same tiling sequence `arrangeWindows` uses, so a window opened from
+    /// the menu lands where the arrangement would have put it, without disturbing anything already on
+    /// screen. Placement happens once per window, so one the user has moved is never yanked back.
+    ///
+    /// The skin's own `default_x`/`default_y` are deliberately not consulted. They are Winamp's
+    /// desktop arrangement for a player at the origin, and they do not survive contact with this:
+    /// Defix's put `pledit` at x 822–1228 and the media library at x 1120–1920, overlapping by 108px
+    /// before any of NullPlayer's own windows are counted.
+    private func place(_ container: AuxiliaryContainer) {
+        // Same reason the tiler skips it: a dynamic instance's geometry is written by the script that
+        // asked for it, and a tiled origin would be overwritten a frame later — or, worse, would win.
+        guard !isDynamicWindow(container) else { return }
+        guard !placedAuxiliaryWindows.contains(container.containerID) else { return }
+        placedAuxiliaryWindows.insert(container.containerID)
+        let size = container.window.frame.size
+
+        // A notifier is a corner toast: host-driven, transient, and the corner is the point of it.
+        if container.isNotifier, let screen = (window?.screen ?? NSScreen.main)?.visibleFrame {
+            var origin = NSPoint(x: screen.maxX - size.width - 12, y: screen.minY + 12)
+            origin.x = min(max(origin.x, screen.minX), max(screen.minX, screen.maxX - size.width))
+            origin.y = min(max(origin.y, screen.minY), max(screen.minY, screen.maxY - size.height))
+            container.window.setFrameOrigin(origin)
+            return
+        }
+
+        let manager = WindowManager.shared
+        let occupied = manager.occupiedWindowFrames(excluding: container.window)
+        // No `nil` path may leave the window where it is: where it is has not been placed yet, and a
+        // skin whose window defaults sit past the display would strand it with no way back.
+        guard let origin = manager.tiledOrigin(for: size, avoiding: occupied)
+                ?? manager.rescuedOrigin(for: container.window)
+        else { return }
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+            NSLog("[place] %@ size=%@ -> %@ avoiding=%d", container.containerID,
+                  NSStringFromSize(size), NSStringFromPoint(origin), occupied.count)
+        }
+        container.window.setFrameOrigin(origin)
+    }
+
+    /// A script parking its own window on the desktop (`container.resize(x, y, w, h)`, or the
+    /// `setTargetX/Y` animation that follows it).
+    ///
+    /// The point is in Winamp's screen space — top-left origin, the same space `getViewportWidth` and
+    /// `getViewportHeight` answer in, which is where the skin's arithmetic comes from — so the y flips
+    /// into AppKit's. It is in *screen* points rather than skin pixels for the same reason: the script
+    /// derived it from the viewport, not from the scene, so UI Size does not enter into it. Clamped to
+    /// the visible frame, as `place` clamps its own guess: Winamp's viewport excludes the taskbar and
+    /// ours does not, so a toast that puts itself two pixels above the bottom edge of the screen would
+    /// otherwise land under the Dock.
+    private func moveContainerWindow(_ container: WasabiObjectID, to point: CGPoint,
+                                     pinned: Bool = false) {
+        let target: NSWindow?
+        if let auxiliary = auxiliaryContainers.first(where: { $0.view.containerID == container }) {
+            target = auxiliary.window
+        } else if skinView?.containerID == container {
+            target = window
+        } else if let hosted = hostedWindowMaterializer?.materializedWindows
+            .first(where: { $0.view.containerID == container }) {
+            // **A hosted window is a window a script can move, and only this branch says so** (B110).
+            // Its container is synthesized into the same graph the skin's own containers live in, so
+            // a script addresses it exactly like one — but it is owned by the materializer and is in
+            // neither `auxiliaryContainers` nor `skinView`, so every `resize()` aimed at one fell off
+            // the end of this chain and did nothing at all.
+            //
+            // Dragging Ebonite's frame is the case. `frame_layout.onMove` answers with
+            // `syncContent()` — `comp_layout.resize(frame.getLeft(), frame.getTop(), …)`, the write
+            // that pulls the client along — and for Flow, Cava, PeppyMeter and the rest that write
+            // landed nowhere: the frame came away in the user's hand and left its contents behind.
+            // The other direction already worked, because a frame *is* an auxiliary container.
+            target = hosted.window
+        } else {
+            target = nil
+        }
+        guard let target, let screen = target.screen ?? NSScreen.main else { return }
+        let size = target.frame.size
+        var origin = NSPoint(x: screen.frame.minX + point.x,
+                             y: screen.frame.maxY - point.y - size.height)
+        // A *placement* is kept on screen; a **pin** is not. Itemskin draws each component window's
+        // frame as a second window laid exactly over it, and the clamp is what pulled the two apart:
+        // the tiler had already put the library window's right edge past the visible frame, so the
+        // frame window — the only one of the pair moved by a script — stopped 82px short of it (B69).
+        if !pinned {
+            let visible = screen.visibleFrame
+            origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
+            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        }
+        guard origin != target.frame.origin else { return }
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+            // A script parking its own window overrides whatever `place` decided, and legitimately
+            // so. Traced next to `[place]` because the two are indistinguishable from the outside:
+            // an overlap after a good `[place]` line is the skin's arithmetic, not the host's.
+            NSLog("[place/script] \(container) -> \(NSStringFromPoint(origin)) "
+                  + "(was \(NSStringFromPoint(target.frame.origin)))")
+        }
+        target.setFrameOrigin(origin)
+    }
+
+    /// Where the skin's own arrangement puts a window, in AppKit coordinates: `offset` skin pixels
+    /// right of and *below* the player's top-left, scaled to the current UI Size.
+    static func arrangedOrigin(playerFrame: NSRect, size: NSSize, offset: CGPoint,
+                               scale: CGFloat) -> NSPoint {
+        NSPoint(x: playerFrame.minX + offset.x * scale,
+                y: playerFrame.maxY - offset.y * scale - size.height)
+    }
+
+    /// One installation of the two container-addressed callbacks, owned by the controller rather than
+    /// by whichever view was created last.
+    private func wireContainerCallbacks(scripts: WinampModernScriptRuntime,
+                                        loaded: WinampModernLoadedSkin,
+                                        host: WinampModernAudioEngineHost,
+                                        componentBridge: WinampModernComponentBridge) {
+        // A script asking `newDynamicContainer` for a second copy of a `dynamic="1"` container gets a
+        // real root in the graph, and a real root needs a real window before the script shows it
+        // (B110). Wired **here** rather than beside the other container callbacks in
+        // `makeSurfaceCoordinator`: Ebonite asks for all five of its copies from `onScriptLoaded`,
+        // which runs inside `scripts.start()`, and the coordinator is not built until after that —
+        // every instance came up windowless.
+        scripts.containerInstanceCreated = { [weak self, weak scripts] root in
+            guard let self, let scripts else { return }
+            guard let info = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+                .first(where: { $0.object === root }) else { return }
+            _ = makeAuxiliaryContainer(info: info, playerOrigin: .zero, loaded: loaded, host: host,
+                                       scripts: scripts, componentBridge: componentBridge)
+        }
+        // The **instances-only** half of `containerVisibilityRequested`, live from here so it covers
+        // `scripts.start()`. The full hook is installed with the surface coordinator, which is built
+        // after `start()` returns — fine for a declared container, which has
+        // `applyDefaultContainerVisibility` to settle its opening state, and useless for a copy
+        // created and shown inside `onScriptLoaded`: Ebonite shows its library frame there and it
+        // stayed off screen for the rest of the session. Restricted to instances so a skin calling
+        // `show()` from `onScriptLoaded` on one of its *own* windows is still ignored at load, exactly
+        // as it is today.
+        scripts.containerVisibilityRequested = { [weak self] id, visible in
+            guard let self,
+                  let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+                  isDynamicWindow(container), container.window.isVisible != visible else { return }
+            setAuxiliaryWindow(id: id, visible: visible, activate: false)
+        }
+        // `PlEdit` is a host singleton, not part of the skin's graph, so the runtime needs the same
+        // bridge the renderer draws the playlist from — otherwise the two disagree about the queue.
+        scripts.componentHost = componentBridge
+        // `showTrack` reaches whichever container actually embeds the playlist: a skin that puts it
+        // in its own `pledit` window is the common case, and the main view holds no holder for it.
+        scripts.playlistRevealRowRequested = { [weak self] row in
+            self?.viewsByContainer.values.forEach { $0.revealPlaylistRow(row) }
+        }
+        scripts.layoutSwitchRequested = { [weak self] container, layoutID in
+            guard let view = self?.viewsByContainer[container] else { return false }
+            let switched = view.activateLayout(id: layoutID)
+            // A different layout is a different set of component holders.
+            if switched { view.needsLayout = true }
+            return switched
+        }
+        scripts.layoutResizeRequested = { [weak self] container, size in
+            self?.viewsByContainer[container]?.applyCanvasResize(size)
+        }
+        scripts.containerMoveRequested = { [weak self] container, point, pinned in
+            self?.moveContainerWindow(container, to: point, pinned: pinned)
+        }
+        scripts.browserNavigationRequested = { [weak self] objectID, address in
+            guard let self else { return }
+            for view in viewsByContainer.values where view.navigateBrowser(objectID: objectID,
+                                                                            address: address) {
+                return
+            }
+        }
+        // The two *global* navigations, which name no object: `System.navigateUrl` (the user's
+        // browser) and `System.navigateUrlBrowser` (the skin's own). The same route answers the
+        // `browser_search` / `browser_navigate` actions a skin's reader is driven with, so the
+        // internal and external halves of a skin's web feature set cannot resolve differently.
+        scripts.globalNavigationRequested = { [weak self] target, address in
+            self?.routeWebNavigation(target, address: address)
+        }
+        let webNavigation: (WinampModernWebNavigationTarget, String) -> Void = { [weak self] target, address in
+            self?.routeWebNavigation(target, address: address)
+        }
+        viewsByContainer.values.forEach { $0.webNavigationRequested = webNavigation }
+        // `layout.setScale(f)` — the skin asking for every window at a different size. It is
+        // answered by the one UI Size system rather than by a scale of the skin's own: the view
+        // already applies UI Size at its drawing and input boundaries, and a second scale on top of
+        // that would be a rival for the same pixels. Defix's seven configurator buttons store a
+        // percentage and then call this on each window's layout with the same factor, so the request
+        // arrives repeatedly with one value — setting the level it is already at is a no-op.
+        scripts.uiScaleRequested = { [weak self] factor in
+            self?.applyUIScaleRequest(factor)
+        }
+        // `System.getMonitorWidth/Height()` describe the display the skin is actually occupying,
+        // including during startup before its borderless window becomes the application's main
+        // window. `NSScreen.frame` is already in logical screen points; never multiply it by the
+        // Retina backing scale or MAKI would mix physical pixels with its desktop coordinates.
+        scripts.monitorSizeRequested = { [weak self] in
+            (self?.window?.screen ?? NSScreen.main)?.frame.size
+        }
+        // A script moved something. Every container diffs its own scene and notifies what moved; a
+        // container nothing happened in dispatches nothing.
+        scripts.geometryDidSettle = { [weak self] in
+            self?.viewsByContainer.values.forEach { $0.dispatchResizeIfChanged() }
+        }
+        // Only a scene knows where an object landed, and an object belongs to exactly one container —
+        // so ask each container's renderer in turn and take the first that can place it.
+        scripts.resolvedGeometryRequested = { [weak self] object in
+            guard let self else { return nil }
+            for view in viewsByContainer.values where !view.isTornDown {
+                if let geometry = view.renderer.resolvedGeometry(of: object) { return geometry }
+            }
+            return nil
+        }
+        scripts.containerAlphaChanged = { [weak self] id, alpha in
+            guard let self else { return }
+            if id.caseInsensitiveCompare("main") == .orderedSame {
+                self.window?.alphaValue = alpha
+            } else if let aux = self.auxiliaryContainers.first(where: { $0.containerID == id }) {
+                aux.window.alphaValue = alpha
+            }
+        }
+        // Same ownership question, answered for the cursor: the window that can place the object is
+        // the window whose pixel space its rect is in, so that is the one asked where the mouse is.
+        scripts.mousePositionInObjectSpaceRequested = { [weak self] object in
+            guard let self else { return nil }
+            for view in viewsByContainer.values where !view.isTornDown {
+                guard view.renderer.resolvedGeometry(of: object) != nil else { continue }
+                return view.currentMousePositionInSkinPixels()
+            }
+            return nil
+        }
+    }
+
+    // MARK: - Web navigation (B40)
+
+    /// One question at a time. The address is skin-authored and a script may call `navigateUrl` from
+    /// a timer, so without this a skin could stack alerts over the player faster than they can be
+    /// dismissed. A request that arrives while the sheet is up is dropped, not queued.
+    private var isAskingAboutDefaultBrowser = false
+
+    /// Where a skin's global navigation actually goes, once its address has passed the policy.
+    ///
+    /// The skin decides the *destination* — Big Bento's Web Content page offers "Use Default Browser
+    /// to open links" against its internal Web Reader, and its scripts call `navigateUrl` for the one
+    /// and `sendAction("browser_search", …)` for the other — so honouring that setting is answering
+    /// both routes rather than reading the attribute.
+    private func routeWebNavigation(_ target: WinampModernWebNavigationTarget, address: String) {
+        // A search is terms, not an address, so it never goes near the address policy: the URL is
+        // built here from an engine we choose, which is safe by construction.
+        if target == .internalBrowserSearch {
+            let engine = WinampModernWebNavigationPolicy.preferredSearchEngine(
+                settings: (skinView?.scripts).map { scripts in
+                    scripts.registeredSettings.map { ($0.name, scripts.configAttributeValue($0)) }
+                } ?? [])
+            guard let url = WinampModernWebNavigationPolicy.searchURL(terms: address, engine: engine)
+            else { return }
+            if !navigateInternalBrowser(to: url) { openInDefaultBrowser(url) }
+            return
+        }
+        switch WinampModernWebNavigationPolicy.resolve(address: address) {
+        case .blocked(let reason):
+            #if DEBUG
+            NSLog("WinampModern: refused skin navigation to '%@' — %@", address, reason)
+            #endif
+        case .allow(let url):
+            switch target {
+            case .internalBrowser:
+                // A skin that asks for its own reader and ships no `<browser>` at all would otherwise
+                // have a dead button. The external route is the honest second choice — and it asks.
+                if !navigateInternalBrowser(to: url) { openInDefaultBrowser(url) }
+            case .defaultBrowser:
+                openInDefaultBrowser(url)
+            case .internalBrowserSearch:
+                break // Answered above, before the address policy this branch belongs to.
+            }
+        }
+    }
+
+    /// Put the address in the skin's own browser. A browser the user can see wins over one in a tab
+    /// that is still closed; with only the latter, the request waits in that surface until its tab
+    /// opens rather than being lost.
+    private func navigateInternalBrowser(to url: URL) -> Bool {
+        var hidden: (view: WinampModernMainView, object: WasabiObject)?
+        for view in viewsByContainer.values {
+            guard let target = view.globalBrowserTarget() else { continue }
+            if target.isVisible {
+                return view.navigateBrowser(objectID: target.object.stableID,
+                                            address: url.absoluteString)
+            }
+            if hidden == nil { hidden = (view, target.object) }
+        }
+        guard let hidden else { return false }
+        return hidden.view.navigateBrowser(objectID: hidden.object.stableID,
+                                           address: url.absoluteString)
+    }
+
+    /// The external route, and the only place a `.wal` skin can reach `NSWorkspace`.
+    ///
+    /// Gated by a **first-use confirmation**: the URL is chosen by untrusted markup, so the first
+    /// time a skin asks, the user sees the address and decides. "Always Allow" is remembered in that
+    /// skin's own namespaced configuration and speaks for no other skin. Presented as a sheet, never
+    /// `runModal()` — a modal loop a skin can enter at will is a hang the user cannot escape (the
+    /// same rule `showTrackInfo` follows), so with no window the request is simply inert.
+    private func openInDefaultBrowser(_ url: URL) {
+        guard let configuration = loadedSkin?.configuration else { return }
+        if WinampModernWebNavigationPolicy.allowsDefaultBrowser(in: configuration) {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        guard let window, !isAskingAboutDefaultBrowser else { return }
+        isAskingAboutDefaultBrowser = true
+        let alert = NSAlert()
+        alert.messageText = "Open this link in your default browser?"
+        alert.informativeText = "The skin “\(configuration.namespace)” wants to open:\n\(url.absoluteString)"
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Always Allow")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            self?.isAskingAboutDefaultBrowser = false
+            switch response {
+            case .alertFirstButtonReturn:
+                NSWorkspace.shared.open(url)
+            case .alertSecondButtonReturn:
+                WinampModernWebNavigationPolicy.setAllowsDefaultBrowser(true, in: configuration)
+                NSWorkspace.shared.open(url)
+            default:
+                break
+            }
+        }
+    }
+
+    @discardableResult
+    private func toggleAuxiliaryWindow(for kind: WinampModernComponentKind) -> Bool {
+        guard let container = auxiliaryContainers.first(where: { $0.kind == kind }) else { return false }
+        if container.window.isVisible {
+            container.window.orderOut(nil)
+        } else {
+            container.view.needsDisplay = true
+            place(container)
+            container.window.orderFront(nil)
+        }
+        container.view.setSceneVisible(container.window.isVisible)
+        rememberContainerVisibility(id: container.containerID, visible: container.window.isVisible)
+        refreshToggleLamps()
+        return true
+    }
+
+    /// Which routed surface a container *is*. Matched through the catalog rather than the
+    /// container's own GUID, because a skin can declare the window without one (Love is War Miku's
+    /// bare `<container id="video">`). This remains useful to non-menu callers that address an
+    /// auxiliary window directly; routed containers are excluded from the skin-owned menu section.
+    private func routedSurfaceKind(ofContainer id: String) -> WinampModernComponentKind? {
+        guard let catalog = surfaceCoordinator?.catalog else { return nil }
+        for kind in WinampModernSurfaceInventory.windowMenuRoutedKinds {
+            if case .declaredContainer(let routedID) = catalog[kind], routedID == id { return kind }
+        }
+        return nil
+    }
+
+    /// The windows this skin declares that only the host can open: named, not `nomenu`, and not one
+    /// of the NullPlayer surfaces the catalog already routes. Empty for a single-window SUI.
+    /// The container that draws this skin's own About page, when it has one. Set with the rest of
+    /// the routing in `makeSurfaceCoordinator`, and nil for a skin that draws none — where the Help
+    /// menu offers no entry and `TOGGLE guid:{D6201408-…}` falls back to NullPlayer's own panel.
+    private(set) var skinAboutContainerID: String?
+
+    /// Open the skin's About page and bring it forward. A menu item that says "About" must not close
+    /// the window when it is already open, which is the one thing `toggleSkinWindow` would do.
+    @discardableResult
+    func showSkinAbout() -> Bool {
+        guard let id = skinAboutContainerID,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+        else { return false }
+        if !container.window.isVisible { return toggleSkinWindow(id: id) }
+        container.window.orderFront(nil)
+        return true
+    }
+
+    var skinWindows: [(id: String, name: String, isVisible: Bool)] {
+        // The catalog's own containers are excluded here rather than in the markup rule: whether a
+        // container is *routed* is a runtime fact (Defix's `pledit` carries no component GUID and is
+        // recognized from the declarative inventory), and the catalog is the only thing that knows it.
+        let routed = surfaceCoordinator?.catalog.routedContainerIDs ?? []
+        let listed = auxiliaryContainers
+            .filter { $0.isListedInWindowMenu && !routed.contains($0.containerID.lowercased()) }
+        let labels = WinampModernContainerTopology.menuLabels(
+            forWindowNames: listed.map { (id: $0.containerID, name: $0.displayName) })
+        return zip(listed, labels).map { ($0.containerID, $1, $0.window.isVisible) }
+    }
+
+    /// Show or hide one of them. Deliberately *not* routed through `WinampModernSurfaceCoordinator`:
+    /// that catalog resolves a playback surface (playlist/EQ/library/video) across embedded, declared
+    /// and classic-fallback homes, and these containers are none of those — they are skin windows with
+    /// no NullPlayer surface behind them.
+    @discardableResult
+    func toggleSkinWindow(id: String) -> Bool {
+        guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return false }
+        // Routed surfaces go through the coordinator for non-menu callers too, preserving the same
+        // visibility bookkeeping and ensuring the video window still gets its picture parked on it.
+        if let kind = routedSurfaceKind(ofContainer: container.containerID) {
+            surfaceCoordinator?.toggleSurface(kind)
+            return true
+        }
+        if container.window.isVisible {
+            container.window.orderOut(nil)
+        } else {
+            container.view.needsDisplay = true
+            place(container)
+            container.window.orderFront(nil)
+        }
+        container.view.setSceneVisible(container.window.isVisible)
+        rememberContainerVisibility(id: container.containerID, visible: container.window.isVisible)
+        refreshToggleLamps()
+        return true
+    }
+
+    /// Number of separate-container windows the current skin declares (0 for a single-window SUI).
+    var auxiliaryContainerCount: Int { auxiliaryContainers.count }
+
+    /// UI Size for this mode. The skin's own pixel grid never changes; the view scales at the drawing
+    /// and input boundaries and every window is sized to `canvas × scale`.
+    private(set) var skinScale: CGFloat = 1
+
+    /// True between the start and the end of `loadSkin`, so a script's `setScale` is deferred rather
+    /// than pushed at a window layer that does not exist yet.
+    private var isLoadingSkin = false
+    /// The scale a script asked for while the skin was loading; applied once it is up.
+    private var pendingUIScaleRequest: CGFloat?
+
+    /// A skin's `setScale`, snapped onto the host's own UI Size ladder — the seven percentages
+    /// Defix's configurator offers (100, 125, 150, 175, 200, 250, 300) are all levels, so each of
+    /// its buttons lands on its own. There is no skin-local scale to keep in step: this *is* the
+    /// scale, and `WindowManager` resizes every window in every mode from it.
+    private func applyUIScaleRequest(_ factor: CGFloat) {
+        guard !isLoadingSkin else {
+            pendingUIScaleRequest = factor
+            return
+        }
+        let level = UIScaleLevel.nearest(toScaleFactor: factor)
+        guard WindowManager.shared.uiScaleLevel != level else { return }
+        WindowManager.shared.uiScaleLevel = level
+    }
+
+    /// The size the main window wants at `scale`, used by `WindowManager.applyDoubleSize` to place
+    /// this mode's window instead of the classic main-window constant.
+    func mainWindowSize(atScale scale: CGFloat) -> NSSize? {
+        guard let view = skinView else { return nil }
+        return NSSize(width: (view.renderer.canvasSize.width * scale).rounded(),
+                      height: (view.renderer.canvasSize.height * scale).rounded())
+    }
+
+    /// The main layout's own resize limits at the current UI Size. Each `.wal` container has its own
+    /// pair — an auxiliary playlist window is not bounded by the player's minimum — so these are read
+    /// per renderer rather than shared.
+    var mainLayoutMinimumSize: NSSize? { scaled(skinView?.renderer.userResizeLimits.minimum) }
+    var mainLayoutMaximumSize: NSSize? { scaled(skinView?.renderer.userResizeLimits.maximum) }
+
+    private func scaled(_ size: CGSize?) -> NSSize? {
+        guard let size else { return nil }
+        return NSSize(width: (size.width * skinScale).rounded(), height: (size.height * skinScale).rounded())
+    }
+
+    /// A frame from saved state is honoured for its position but never for a size the active layout
+    /// rejects: `AppStateManager` restores frames verbatim, which is how a 500×500 cPro-Bento window
+    /// came back as 376×182 (R1). The saved top-left is preserved so a clamped window does not jump.
+    func clampRestoredFrame(_ frame: NSRect) -> NSRect {
+        guard let minimum = mainLayoutMinimumSize, let maximum = mainLayoutMaximumSize else { return frame }
+        return Self.clamp(frame: frame, minimum: minimum, maximum: maximum)
+    }
+
+    /// Pure form of the restore clamp, so the rule can be tested without a live skin or window.
+    static func clamp(frame: NSRect, minimum: NSSize, maximum: NSSize) -> NSRect {
+        let size = NSSize(width: min(max(frame.width, minimum.width), maximum.width),
+                          height: min(max(frame.height, minimum.height), maximum.height))
+        guard size != frame.size else { return frame }
+        return NSRect(x: frame.minX, y: frame.maxY - size.height, width: size.width, height: size.height)
+    }
+
+    /// Give every `.wal` window the limits of the layout it is actually showing.
+    private func applyLayoutConstraints() {
+        if let window, let minimum = mainLayoutMinimumSize, let maximum = mainLayoutMaximumSize {
+            window.contentMinSize = minimum
+            window.contentMaxSize = maximum
+        }
+        for container in auxiliaryContainers {
+            let limits = container.view.renderer.userResizeLimits
+            guard let minimum = scaled(limits.minimum), let maximum = scaled(limits.maximum) else { continue }
+            container.window.contentMinSize = minimum
+            container.window.contentMaxSize = maximum
+            // AppKit applies `contentMinSize` to the *next* user resize, never retroactively, so a
+            // window already smaller than its limits stays that way. That is the whole of "the
+            // Widgets Manager keeps coming up the wrong size": a frame restored from before the
+            // content fit existed is 100x400, arrives before the scripts run, and nothing afterwards
+            // brings it back up to the 313x400 its content needs. Growing it here is upward-only and
+            // bounded by the same limits a drag obeys.
+            let current = container.window.contentRect(forFrameRect: container.window.frame).size
+            let clamped = NSSize(width: min(max(current.width, minimum.width), maximum.width),
+                                 height: min(max(current.height, minimum.height), maximum.height))
+            if clamped != current { container.window.setContentSize(clamped) }
+        }
+    }
+
+    func applyUIScale(_ scale: CGFloat) {
+        skinScale = max(0.1, scale)
+        skinView?.skinScale = skinScale
+        if let size = skinView?.scaledCanvasSize { resizeWindow(to: size, reason: "uiScale=\(skinScale)") }
+        for container in auxiliaryContainers {
+            container.view.skinScale = skinScale
+            let size = container.view.scaledCanvasSize
+            container.window.setContentSize(size)
+            container.view.setFrameSize(size)
+            container.view.needsDisplay = true
+        }
+        hostedWindowMaterializer?.applySkinScale(skinScale)
+        applyLayoutConstraints()
+        skinView?.needsDisplay = true
+    }
+
+    private func resizeWindow(to size: NSSize, reason: String = "skin") {
+        guard let window else { return }
+        #if DEBUG
+        NSLog("WinampModern R1: resizeWindow(%@) reason=%@ from=%@",
+              NSStringFromSize(size), reason, NSStringFromRect(window.frame))
+        #endif
+        resize(window: window, to: size)
+    }
+
+    /// Resize any `.wal` window around its top-left, which is the corner Winamp anchors to.
+    private func resize(window: NSWindow, to size: NSSize) {
+        guard !isApplyingSkinSize else { return }
+        isApplyingSkinSize = true
+        defer { isApplyingSkinSize = false }
+        let oldTopLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        let frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        window.setFrame(NSRect(x: oldTopLeft.x, y: oldTopLeft.y - frame.height,
+                               width: frame.width, height: frame.height), display: true)
+    }
+
+    private func showPlaceholder(_ message: String) {
+        let size = NSSize(width: 275, height: 116)
+        let content = NSView(frame: NSRect(origin: .zero, size: size))
+        content.wantsLayer = true
+        content.layer?.backgroundColor = NSColor(white: 0.08, alpha: 1).cgColor
+        let label = NSTextField(wrappingLabelWithString: "Winamp Modern (.wal)\n\(message)")
+        label.font = .systemFont(ofSize: 10)
+        label.textColor = NSColor(white: 0.7, alpha: 1)
+        label.alignment = .center
+        label.frame = NSRect(x: 12, y: 28, width: size.width - 24, height: 60)
+        content.addSubview(label)
+        window?.contentView = content
+        resizeWindow(to: size, reason: "placeholder")
+    }
+
+    func updateTrackInfo(_ track: Track?) {
+        skinView?.updateTrackInfo()
+        followCurrentTrackInPlaylist()
+        refreshBoundText()
+        if let track { showNotifier(for: track) }
+    }
+
+    /// The drawn playlist's selection bar follows playback across a track change, and scrolls the new
+    /// row into view — the same thing the classic and modern playlist views do from
+    /// `.audioTrackDidChange`. The bar lives in whichever container embeds the playlist holder, which
+    /// is usually an auxiliary `pledit` window rather than the player, so this goes to every view.
+    private func followCurrentTrackInPlaylist() {
+        guard let row = componentBridge?.playlistFollowCurrentTrack() else { return }
+        for view in viewsByContainer.values where !view.isTornDown {
+            view.revealPlaylistRow(row)
+        }
+    }
+
+    private var notifierDismissTimer: Timer?
+
+    private func showNotifier(for track: Track) {
+        guard let container = auxiliaryContainers.first(where: { $0.isNotifier }),
+              let scripts = skinView?.scripts else { return }
+        _ = try? scripts.dispatchSystem(event: "onshownotification")
+        scripts.setNotifierText(title: track.title,
+                                artist: track.artist ?? "",
+                                album: track.album ?? "")
+        container.window.alphaValue = 1
+        setAuxiliaryWindow(id: container.containerID, visible: true, activate: false)
+        container.view.needsDisplay = true
+        notifierDismissTimer?.invalidate()
+        notifierDismissTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) {
+            [weak self] _ in
+            guard let self else { return }
+            self.setAuxiliaryWindow(id: container.containerID, visible: false, activate: false)
+        }
+    }
+    func updateVideoTrackInfo(title: String, artworkTrack: Track?) { skinView?.updateTrackInfo() }
+    func clearVideoTrackInfo() { skinView?.updateTrackInfo() }
+    func updateTime(current: TimeInterval, duration: TimeInterval) {
+        skinView?.updateTime(current: current, duration: duration)
+        // The queue's own length and duration can change while the clock is the only thing ticking
+        // (the user edits the playlist mid-track), and this is the cheapest regular beat that sees it.
+        refreshBoundText()
+    }
+    func updatePlaybackState() {
+        skinView?.updatePlaybackState()
+        refreshBoundText()
+    }
+
+    /// Poll the host-bound text objects and raise `onTextChanged` on the ones that moved.
+    ///
+    /// Driven from the host-state hooks rather than from a timer of its own, because that is exactly
+    /// when a bound readout can change: the queue was edited, the track changed, the clock ticked.
+    /// Defix's playlist box updates its `Items:`/`Time:` readouts from a subroutine whose only caller
+    /// is `onTextChanged`, so without this the box never leaves its XML placeholders.
+    private func refreshBoundText() { skinView?.scripts.refreshBoundText() }
+
+    /// Poll the equalizer and raise `onEqBandChanged`/`onEqPreampChanged` for whatever moved.
+    ///
+    /// On the same beat as the bound text and for the same reason: nothing calls back when a preset
+    /// is applied, when the classic EQ window's slider moves, or when a saved session is restored, and
+    /// a skin's EQ readout is written from those events and nowhere else. Eleven integer compares.
+    private func refreshEqualizerState() { skinView?.scripts.refreshEqualizerState() }
+
+    /// A slow safety poll for the host-bound readouts.
+    ///
+    /// The event hooks above cover playback, but the playlist's own length and duration change on
+    /// edits we get no callback for — and the queue is usually populated *before* the first poll, so
+    /// without a beat of its own a skin can miss its opening value entirely. A handful of text objects
+    /// and a string compare each, once a second; the dispatch only happens when something actually
+    /// moved.
+    private func startBoundTextPolling() {
+        boundTextTimer?.invalidate()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            self?.refreshBoundText()
+            self?.refreshEqualizerState()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        boundTextTimer = timer
+    }
+    func updateSpectrum(_ levels: [Float]) { skinView?.updateSpectrum(levels) }
+    func skinDidChange() { skinView?.needsDisplay = true }
+    func windowVisibilityDidChange() { repaintVisibleSkinWindows() }
+
+    /// Mark the entire view tree dirty after WindowServer may have discarded its cached pixels.
+    ///
+    /// A `WinampModernMainView` normally invalidates only the small rectangles occupied by clocks,
+    /// tickers and visualizations. That is correct while the layer's static contents still exist,
+    /// but after occlusion, minimization or display sleep those rectangles can become the only
+    /// pixels AppKit restores. The hosted AppKit surfaces are descendants, so repaint the subtree,
+    /// not only the custom-drawn root.
+    static func markForFullBackingStoreRepaint(_ contentView: NSView) {
+        contentView.markSubtreeForDisplayAndLayout()
+    }
+
+    private func repaint(_ window: NSWindow) {
+        guard let contentView = window.contentView else { return }
+        Self.markForFullBackingStoreRepaint(contentView)
+        if window.isVisible { window.displayIfNeeded() }
+    }
+
+    private func repaintVisibleSkinWindows() {
+        var repainted: Set<ObjectIdentifier> = []
+        for view in viewsByContainer.values {
+            guard let window = view.window,
+                  repainted.insert(ObjectIdentifier(window)).inserted else { continue }
+            repaint(window)
+        }
+    }
+
+    @objc private func systemDidWake(_ notification: Notification) {
+        // Let AppKit finish reconnecting windows to WindowServer before drawing into the replacement
+        // backing stores. An immediate draw can itself be discarded as the wake transition settles.
+        DispatchQueue.main.async { [weak self] in
+            self?.repaintVisibleSkinWindows()
+        }
+    }
+
+    /// `autoclose="1"` on a container: a transient popup the next click elsewhere dismisses.
+    ///
+    /// Winamp's transient windows say this — Big Bento's playlist **search results** are a
+    /// `noparent ontop nodock autoclose` container — and they carry no titlebar, no close button and
+    /// no menu entry, because being dismissed *is* how they close. Unimplemented, the results panel
+    /// had no way to go away at all (BB31).
+    ///
+    /// Driven by the click rather than by `windowDidResignKey`: an `ontop noactivation` window's key
+    /// state flickers as it is ordered in, so closing on resign shut the popup in the same turn that
+    /// opened it and the search read as dead again.
+    func dismissTransientContainers(except container: WasabiObjectID) {
+        for candidate in auxiliaryContainers
+        where candidate.autoCloses && candidate.window.isVisible
+            && candidate.view.containerID != container {
+            // Through the same route a script's `hide()` takes, so the graph and the window agree.
+            setAuxiliaryWindow(id: candidate.containerID, visible: false)
+        }
+    }
+
+    /// Wasabi's `onMove()`. A `.wal` window moves by the user's drag, by `place`, by the tiler and
+    /// by state restoration, and a skin that draws one window's chrome in another window has to hear
+    /// about every one of them — Itemskin's frame windows follow their content window from here
+    /// (B69).
+    func windowDidMove(_ notification: Notification) {
+        guard let moved = notification.object as? NSWindow,
+              let view = moved.contentView as? WinampModernMainView else { return }
+        if Self.tracesGlue {
+            NSLog("GLUE-TRACE moved %@ -> %@", moved.accessibilityIdentifier() ?? "-",
+                  NSStringFromRect(moved.frame))
+        }
+        view.dispatchWindowMoved()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard !isApplyingSkinSize,
+              let resized = notification.object as? NSWindow,
+              let view = resized.contentView as? WinampModernMainView else { return }
+        // The skin resizes on its own pixel grid, so the dragged size comes back out of UI Size first
+        // and the accepted size goes back in. Every `.wal` window works this way, each against the
+        // limits of its own container's active layout.
+        let content = resized.contentLayoutRect.size
+        // A layout the skin gave no resize range is fixed, and a frame can still arrive at one
+        // without a drag — `AppStateManager` restores saved frames, and a stale one is how T800 came
+        // back stretched. Clamp here as well as in `contentMinSize`/`contentMaxSize`.
+        let limits = view.renderer.userResizeLimits
+        let proposed = CGSize(width: content.width / skinScale, height: content.height / skinScale)
+        _ = view.renderer.resize(to: CGSize(
+            width: min(max(proposed.width, limits.minimum.width), limits.maximum.width),
+            height: min(max(proposed.height, limits.minimum.height), limits.maximum.height)))
+        let size = view.scaledCanvasSize
+        if size != content { resize(window: resized, to: size) }
+        if size != view.frame.size { view.setFrameSize(size) }
+        view.needsDisplay = true
+        // `onUserResize`, and only for a resize the user is actually dragging — `inLiveResize` is what
+        // separates that from the tiler, a restored frame and a script's own `resize()`, all of which
+        // come through here too. A standard frame answers it by writing the *client's* new box, so
+        // firing it on a programmatic resize would have the two windows resizing each other (B110).
+        if resized.inLiveResize {
+            view.dispatchWindowUserResized()
+        }
+    }
+
+    /// A window a skin has glued a frame over must not be able to bury it (B110).
+    ///
+    /// Ebonite draws each framed window's border, title and resizer grips in a **second** window
+    /// parked on the first one's exact rect. Clicking the client raises the client — which is right,
+    /// and which put the frame behind it: the border survived only where the client's own group does
+    /// not reach, and the title strip went black. The pairing is the skin's, not ours, so it comes
+    /// from the runtime, which learns it from the `frame.resize(client.getLeft(), …)` idiom itself.
+    func windowDidBecomeKey(_ notification: Notification) {
+        restackGluedWindows()
+    }
+
+    /// Put every script-glued frame back on top of the window it is drawn on.
+    ///
+    /// Idempotent and cheap — a skin has a handful of these — so it is run from every moment that can
+    /// disturb the order rather than from a guessed subset: a window opening, a window taking the
+    /// keyboard, and once after launch has settled. Keying it to `windowDidBecomeKey` alone was not
+    /// enough and produced the exact half-and-half window the reporter saw: at launch the frame is
+    /// created and shown first and the client is shown *after* it, so the client sat on top with only
+    /// the frame's right edge and bottom-right grip showing past the client's own box — one half of
+    /// the window in the skin's grey chrome, the other a bare black client.
+    ///
+    /// One runloop turn late on purpose: a `windowDidBecomeKey` notification is delivered *during* the
+    /// ordering that raised the window, and an `order(.above:)` issued inside it is undone by the rest
+    /// of that pass.
+    private func restackGluedWindows() {
+        guard let scripts = skinView?.scripts, !scripts.windowsGluedOver.isEmpty else {
+            if Self.tracesGlue { NSLog("GLUE-TRACE restack: no pairs recorded") }
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for (leaderID, followerID) in scripts.windowsGluedOver {
+                if Self.tracesGlue {
+                    let leaderWindow = viewsByContainer[leaderID]?.window
+                    let followerWindow = viewsByContainer[followerID]?.window
+                    let leaderName: String = leaderWindow?.accessibilityIdentifier() ?? "none"
+                    let followerName: String = followerWindow?.accessibilityIdentifier() ?? "none"
+                    NSLog("GLUE-TRACE pair leader=%@(%@) follower=%@(%@)",
+                          leaderName, leaderWindow?.isVisible == true ? "visible" : "hidden",
+                          followerName, followerWindow?.isVisible == true ? "visible" : "hidden")
+                }
+                guard let leader = viewsByContainer[leaderID]?.window,
+                      let follower = viewsByContainer[followerID]?.window,
+                      leader !== follower, leader.isVisible, follower.isVisible else { continue }
+                // Whichever of the pair the user is in stays where it is and the other joins it, so
+                // clicking the frame's title bar does not leave its client stranded behind something.
+                if follower.isKeyWindow {
+                    leader.order(.below, relativeTo: follower.windowNumber)
+                } else {
+                    follower.order(.above, relativeTo: leader.windowNumber)
+                }
+                if Self.tracesGlue {
+                    let followerName: String = follower.accessibilityIdentifier() ?? "-"
+                    let leaderName: String = leader.accessibilityIdentifier() ?? "-"
+                    NSLog("GLUE-TRACE restacked %@ over %@ (levels %ld/%ld)",
+                          followerName, leaderName, follower.level.rawValue, leader.level.rawValue)
+                }
+            }
+        }
+    }
+
+    /// `WINAMP_MODERN_GLUE_TRACE=1` — the script-glued window pairs and every restack, live. See
+    /// `restackGluedWindows`.
+    static let tracesGlue = ProcessInfo.processInfo.environment["WINAMP_MODERN_GLUE_TRACE"] != nil
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        guard let restored = notification.object as? NSWindow else { return }
+        repaint(restored)
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard let restored = notification.object as? NSWindow,
+              restored.occlusionState.contains(.visible) else { return }
+        repaint(restored)
+    }
+
+    func prepareForUITeardown() { tearDownSkin() }
+
+    private func tearDownSkin() {
+        // A scale the outgoing skin asked for is not owed to the incoming one.
+        pendingUIScaleRequest = nil
+        hostedWindowMaterializer?.teardown()
+        hostedWindowMaterializer = nil
+        // Auxiliary views share the main view's script runtime + host, so tear them down first
+        // (they only release their own renderer); the main view then tears down the shared runtime.
+        for container in auxiliaryContainers {
+            container.view.teardown()
+            container.window.orderOut(nil)
+            container.window.contentView = nil
+        }
+        // The settings list belongs to the runtime that is about to go away; a window left open
+        // would be listing a skin that no longer exists.
+        skinSettingsController?.close()
+        skinSettingsController = nil
+        // Same reason: the panel edits one skin's stored colours, and the skin is going away.
+        skinColorsController?.close()
+        skinColorsController = nil
+        boundTextTimer?.invalidate()
+        boundTextTimer = nil
+        auxiliaryContainers.removeAll()
+        placedAuxiliaryWindows.removeAll()
+        viewsByContainer.removeAll()
+        surfaceCoordinator = nil
+        WasabiTextMetrics.componentTextProvider = nil
+        WasabiTextMetrics.componentBucketTextProvider = nil
+        // Views tear their own surfaces down; this releases the bridge's reference behind them.
+        componentBridge?.releaseLibrarySurface()
+        // The picture goes home before the windows holding it do — the video view is the app's, not
+        // the skin's, and a still-running film survives a skin or mode switch in its own window.
+        componentBridge?.releaseVideoSurface()
+        // The visualization engine stops with the skin that asked for it: an OpenGL context and a
+        // display link left running behind a torn-down window is a frame a second nobody sees (B20a).
+        componentBridge?.releaseVisualizationSurface()
+        componentBridge?.releaseHostedWindowSurfaces()
+        skinView?.teardown()
+        skinView = nil
+        // Whatever was painting the skin's `<vis>` box stops with the skin (B53), beside the
+        // engine surface above and for the same reason: Cava holds a full-stereo consumer open and
+        // vis_classic a C++ core, and neither has anything left to draw into.
+        loadedSkin?.runtime.spectrumAnalyzer.discardAll()
+        host?.endVisualizationConsumption()
+        host = nil
+        componentBridge = nil
+        loadedSkin?.teardown()
+        loadedSkin = nil
+    }
+
+    deinit {
+        if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
+        if let playbackOptionsObserver { NotificationCenter.default.removeObserver(playbackOptionsObserver) }
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        tearDownSkin()
+    }
+}

@@ -465,17 +465,22 @@ class EmbyManager {
                 NSLog("EmbyManager: Show preload failed: %@", error.localizedDescription)
             }
 
+            // Snapshot before the actor hop: `MainActor.run`'s closure is @Sendable, and these two
+            // are `var`s because the fetches above are individually failable.
+            let preloadedMovies = movies
+            let preloadedShows = shows
             await MainActor.run {
                 self.cachedArtists = artists
                 self.cachedAlbums = albums
                 self.cachedPlaylists = playlists
-                self.cachedMovies = movies
-                self.cachedShows = shows
+                self.cachedMovies = preloadedMovies
+                self.cachedShows = preloadedShows
                 self.isContentPreloaded = true
                 self.isPreloading = false
 
                 NSLog("EmbyManager: Preloaded %d artists, %d albums, %d playlists, %d movies, %d shows",
-                      artists.count, albums.count, playlists.count, movies.count, shows.count)
+                      artists.count, albums.count, playlists.count,
+                      preloadedMovies.count, preloadedShows.count)
 
                 NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
             }
