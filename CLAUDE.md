@@ -16,6 +16,7 @@ See `docs/development-workflow.md` for build details, log monitoring, and versio
 Technical documentation lives in `skills/`. Read the owning skill before changing a subsystem.
 
 - `ui-guide`: UI geometry/rendering; `audio-system`: playback/EQ; `app-state`: restoration and persistence; `user-guide`: features and menus
+- `skin-subsystem-blueprint`: adding/extending a skin family — shared seams, isolation, harness, docs layout
 - `original-skin-guide`: Original skins; `winamp-modern-skin-guide`: `.wal` support, a slim router over `reference/`; `wal-skin-report`: `/wal-skin-report <skin.wal>`
 - `wmp-skin-guide`: Windows Media Player `.wmz`/`.wms` loading, rendering, scripting, menus, state, and WMP-owned windows
 - `plex-integration`, `jellyfin-integration`, `subsonic-integration`, `emby-integration`: media servers
@@ -25,6 +26,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `peppymeter`: analog VU; `cava`: bar spectrum; `flow`: network meter; `gpu-vis-modes`: shaders; `album-art-visualizer`: ART effects
 - `projectm-milkdrop`: MilkDrop; `metal-gotchas`: Metal rules
 - `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
+- `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs
 
@@ -74,3 +76,7 @@ Run `swift test`. For UI or playback work, manually exercise local and server pl
 - Skin sprites use a top-left origin; macOS uses bottom-left. See `ui-guide`.
 - Slicing `Data` preserves original indices; always use `data.startIndex`.
 - Read the owning skill before changing a subsystem. Put new subsystem details in that skill, never here.
+- For a defect that only reproduces on screen, read `live-ui-testing` before diagnosing, and
+  `winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* — the reference
+  implementation of that workflow. Every subsystem skill must carry a *Debugging a live defect*
+  section routing there; a new subsystem adds one on day one. See `skin-subsystem-blueprint`.

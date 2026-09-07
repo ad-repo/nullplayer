@@ -314,7 +314,9 @@ Both moved out of this router; each is one read away.
   *Where new findings land*. An ad-hoc dump nobody wrote down gets re-derived, and two phases have
   already been lost that way.
 
-**Debugging rules — always paid.** Each is one line here; the worked example that earned it is the
+**Debugging rules — always paid.** These are generalised for every subsystem in
+`skills/live-ui-testing`, which treats this subsystem's harness as its reference implementation;
+read that when the defect is in another engine. Each is one line here; the worked example that earned it is the
 named section of [reference/harness.md](reference/harness.md).
 
 - **Instrument before you reason.** Deducing a mechanism from bytecode plus engine source produced

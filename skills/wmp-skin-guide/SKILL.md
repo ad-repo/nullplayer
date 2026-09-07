@@ -123,6 +123,24 @@ queue, with the object model as the security boundary — see Amendment 2 in
   has a WMP host, hide or disable it; missing skin chrome uses only an app-authored WMP-neutral
   fallback.
 
+## Debugging a live defect
+
+Read **`skills/live-ui-testing`** before diagnosing anything that only reproduces on screen, and the
+process section it points at — `winamp-modern-skin-guide/reference/harness.md`
+§ *Debugging a live defect* — which is the reference implementation of that workflow. The 2026-09-07
+session that produced the fixes below spent hours rediscovering five rules already written there.
+
+The three that cost the most, in WMP terms:
+
+- **A green corpus sweep says nothing about AppKit.** The harness builds scenes and rasterizes them;
+  it never calls an `NSView.draw`. It was completely right — correct scene, hit tests, dispatch, and
+  a dumped PNG with proper transparency — while the app on screen was a black rectangle.
+- **Compare `WMPRenderer`'s own image against a screen capture of the same window rect.** Agreement
+  means the defect is in the scene; disagreement means it is in the overlays or compositing. That one
+  comparison ended the hunt.
+- **Confirm the skin *and the view* before diagnosing.** `wmpSkinViewID` is persisted on every
+  present, and Corona's compact view renders almost identically to its player.
+
 ## Presenting a skin in a window
 
 Learned by driving the real app on 2026-09-07, after a headless sweep said everything was fine. Each
@@ -150,6 +168,19 @@ of these was invisible to the harness and visible in the first minute of live QA
   `WMPEffectsSurfaceView` both paint an opaque background. A skin can dump a perfect frame and look
   wrong on screen. `WMP_RENDER_PROBE`'s `WIDGET` line is the only instrument that sees them; the
   overlays currently ignore `WMPWidget.clipRect`, which is open as W43.
+- **An overlay fills `bounds`, never `dirtyRect`.** AppKit is free to hand a view a dirty rect
+  larger than itself, and it does: the 320x240 `WMPEffectsSurfaceView` was called with
+  `{{-269, -26}, {596, 468}}` — the whole window in its own coordinates — and a layer-backed view
+  does not clip that (`masksToBounds` is false). `dirtyRect.fill()` therefore painted the spectrum
+  pane's translucent wash over the entire skin, reported as "a giant black box over the player".
+  Both `WMPEffectsSurfaceView` and `WMPPlaylistSurfaceView` had it. It only appears once the overlay
+  exists, and the overlay only exists after a skin reload with a track playing, which is why it read
+  as "switching skins causes it".
+- **The selected view is persisted on every present, and Corona's route into its compact view is an
+  unnamed button inside the equaliser drawer.** Land in `viewTiny` and it is restored on every
+  launch; it also renders almost identically to `vPlayer`, so there is no visual signal that it
+  happened. Confirm skin *and* view before diagnosing anything in this engine.
+
 - **`.wmz` mode must offer a route to a track.** The auxiliary NullPlayer windows stay hidden here
   until they have WMP-owned chrome, so the skin's own Open button — `theme.openDialog('FILE_OPEN')` —
   is the only one. Before it was implemented the only way to start playback was to leave WMP mode and
