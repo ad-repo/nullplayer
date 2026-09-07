@@ -32,196 +32,6 @@
 
 ### Bug Fixes
 
-- **The cPro2 Styler Modern skins draw their time and bitrate readouts properly.** The elapsed time
-  ran into the `/` before the track length, the stereo icon sat on top of the bitrate line, and the
-  elapsed digits were chopped off along the bottom. Two separate causes, both in how NullPlayer sizes
-  and places text: a skin that measures a string to lay out what goes beside it was told the string
-  was four pixels narrower than Winamp reports, and a line taller than the box it was declared in was
-  pushed to the bottom of that box instead of being centred in it. Both are fixed against the skin
-  author's own reference screenshots.
-
-- **A Modern skin whose playlist window came up as an empty frame now shows the playlist.** Some
-  `.wal` skins draw their own window frames but leave the code that fills them to Winamp itself, so
-  under NullPlayer the window opened as the skin's own border, title bar and status strip around a
-  blank white hole — reported on TRON Legacy, and the same in Sony Walkman and canum. NullPlayer now
-  fills such a frame itself, fitting the contents to the hole the skin's own artwork leaves.
-
-- **cPro Venus draws its playback buttons in the middle of the window again, and its song title in
-  its display.** The skin holds its transport cluster — the buttons, their backing plate and the
-  venus wordmark — in one group that fills the window, and centres it with a script of its own on
-  every resize; NullPlayer was ignoring where that group asked to sit, so the whole cluster stayed
-  jammed against the left edge at any window size. The same fix keeps a skin's scrolling song title
-  in the display it belongs to instead of dropping it over the buttons underneath. Other skins pick
-  up smaller corrections from it: dreliction's About page now sits inside its window frame rather
-  than spilling out of the corner, Shield_Amp's stick-mode readout gets its LCD panel back, and
-  Ebonite's equalizer sliders are inset the way the skin draws them.
-- **cPro skins get their playlist search bar back.** The ClassicPro installer ships one of its
-  PlaylistPro definitions twice — a stub, then the real thing — and a real Winamp install keeps the
-  second. NullPlayer kept the first, so every cPro skin in the `one` family (cPro-Bento among them)
-  drew a playlist with no search box and no Search button at all. Reimport the ClassicPro engine to
-  pick up the fix; an engine already imported keeps the stub until you do.
-- **NullPlayer now says whether your ClassicPro engine is the build it was tested against.** The
-  engine is third-party and user-supplied, and a different build can make cPro skins render wrong
-  with no explanation. Importing one NullPlayer does not recognize now asks before replacing what you
-  have, the Skins menu shows what is installed, and a skin that actually uses an untested engine says
-  so once. **Skins > Modern > Download ClassicPro Engine...** opens the download page.
-
-- **ClassicPro skins keep their playlist pane and their size through windowshade.** Shading a cPro
-  player and unshading it came back with a dead grey column where the playlist had been, and the
-  window itself shrank to the size the skin's markup declares rather than the size you had it at —
-  which also left the tab strip on its abbreviated labels (`LIB`, `PLE`, `VID` instead of
-  `Media Library`, `Playlist`, `Video`). Switching layouts told every object of the layout being left
-  that it had collapsed to nothing, and ClassicPro's side-area script responds to a zero width by
-  hiding the pane, with nothing to bring it back. A layout switch no longer reports the outgoing
-  layout's objects that way, and each layout now returns to the size it was actually on, with two
-  linked layouts sharing a width the way Winamp does.
-
-- **Nullsoft Winamp 2000 SP4: window titles are readable again, and its visualizer opens at a usable
-  size.** Every title bar in the skin drew two copies of its own text on top of each other, in two
-  different colours, and the Windows 2000 blue gradient behind them came out as one flat light blue —
-  between them the titles were unreadable. The skin's built-in visualization window also opened as a
-  30-pixel black sliver you had to drag open by hand, and its playlist and Media Library opened at
-  half the width their author asked for. Modern skins now honour focus-dependent artwork (a window
-  that loses the keyboard dims the way its author drew it), gradients that state no direction, and
-  window sizes declared on a container rather than a layout.
-
-- **Anaheim Player 01: the mini player now follows the body colour you pick.** The skin ships ten
-  bodies — white, grey, green, blue, pink, gold, red, black, x-ray, neon — chosen from the gear on
-  the Colors page of its Skin Options window, and both the player and the mini player are meant to
-  wear the one you pick. Only the player was changing; the mini player stayed on its white body
-  whatever you chose. The skin sets the two from a single script, and the half aimed at the mini
-  window was being dropped whenever that window had not been opened yet.
-
-- **Modern skins: NullPlayer's own windows sit properly inside the skin's frame** — on HeadAMP, and on
-  any skin whose window frame states how much room it keeps for itself, Cava, Flow, PeppyMeter, the
-  spectrum analyzer, the waveform, Audio Analysis, projectM and the fallback equalizer opened as a
-  thick border around a squashed interior, with the contents pushed to one side of it rather than
-  centred. Those windows now open big enough to hold their contents *and* the frame drawn around them,
-  they take the skin's lightest frame rather than the one that reserves space for a status bar
-  NullPlayer has nothing to put in, and their contents sit centred inside the border. The skins
-  themselves are untouched, and a skin whose frame states nothing is unchanged.
-
-- **Modern skins: the playlist, library and tab text no longer draw in a console font.** Every list
-  NullPlayer draws inside a `.wal` skin — playlist rows, the embedded Media Library, tab labels,
-  status lines — was falling back to a fixed-pitch system font, in every Modern skin, because none of
-  them declares a font for those surfaces and an absent choice was being treated as a failed one.
-  They now draw in Arial, which is what Winamp uses there and what the skins ask for in their own
-  text beside these lists. Rows are also a size larger: the text size was being run through a Windows
-  compatibility conversion meant for a skin's own labels, which shrank it by a further quarter. The
-  Text Size setting keeps working exactly as before, and row heights are unchanged, so no skin
-  reflows.
-
-- **Modern skins: text in a font your Mac doesn't have now looks like text, not like a terminal.**
-  Many skins name Windows fonts they don't ship — Calibri, Segoe UI, Century Gothic — and some ship a
-  font file that was left out of the archive; a third of the skins tested hit one case or the other.
-  Those strings were drawn in a fixed-width system font, which is not what Winamp does and made
-  otherwise fine skins look broken. They now fall back to Arial, and the substitution is recorded in
-  the skin's compatibility report instead of being announced in the artwork. A skin that genuinely
-  asks for a monospaced font still gets one.
-
-- **Modern skins: a skin that names a font by its Windows *filename* gets the right typeface back.**
-  Skin authors write the name of the font file they have on disk — `ariblk`, `micross`, `trebuc`,
-  `tahoma.ttf` — where a typeface name belongs, and none of those mean anything to a Mac, so those
-  skins drew in the fallback face. NullPlayer now recognises the standard Windows font filenames and
-  uses the typeface each one holds, which gives Enkera, TomK, both Nullsoft SP4 Lites and EPS their
-  intended Arial Black, Trebuchet MS, MS Sans Serif and Tahoma. Filenames for fonts that genuinely
-  aren't installed still fall back to Arial and are still noted in the compatibility report.
-
-- **Modern skins: the seek bar and volume slider light up under the pointer, like every other
-  control.** On cPro2 and its ClassicPro siblings both bars sat inert: the volume bar never even
-  filled, the elapsed portion of the seek bar never brightened, and a seek left the stretch you
-  seeked into in a different colour from the rest of the bar. Four separate faults — a slider's
-  scripted position not reading the player's own volume or playback clock, an unread `hoverthumb`, a
-  drag-finished event that was never sent, and a hover glow themed through the wrong colour group, so
-  it stayed grey while the buttons beside it followed the skin's colour theme. Both bars now rest in
-  their muted artwork and glow in the same colour as the play controls under the mouse, in every one
-  of a skin's colour themes.
-
-- **Modern skins: cPro2's Web Reader tab opens the reader again** — the tab came up empty. The
-  ClassicPro reader loads its list of twenty search providers before it will show anything, and it
-  looks for that file beside the player's own program folder. NullPlayer was answering with the
-  folder its application bundle sits in on your Mac, which is not where a skin's files live, so the
-  reader found nothing and hid itself. It now answers with the location a skin means by that
-  question, and the reader loads its providers, fills the drop-down, and opens a page for the
-  playing track.
-
-- **Modern skins: the small player is small again** — dragged down to its shortest size, cPro2 Dark
-  Aluminum now shows just the title bar, the song display and the transport row, the way the skin's
-  author drew it; before, the window refused to shrink past its tab strip and library and stopped
-  three times too tall. NullPlayer works out a safe floor for a skin's window, because a Modern skin
-  is written for a renderer that crops overflowing artwork more aggressively than ours — but a skin
-  whose own script *computes* its minimum size has already answered that question better, so
-  NullPlayer now takes the skin at its word.
-
-- **Modern skins: cPro2's song title, seek bar and transport row sit in their own band again** — on
-  cPro2 Dark Aluminum the whole display band was drawn on top of the title bar, with an empty strip
-  left beneath it. Behind it was a comparison bug in the skin scripting engine: a skin object was
-  treated as equal to "nothing", so a script asking "does this window have a shade mode open yet?"
-  got the wrong answer and skipped the routine that positions the band. The same bug meant scripts
-  could never take an "if this exists" branch at all, so some skins skipped work they should have
-  done — Big Bento Modern's Windows 10 edition, for one, showed the restore icon on a window that was
-  not maximized.
-
-- **Modern skins: the play button works on skins that declare the same button twice** — some skins
-  leave an unused copy of a button in the markup, pointing at artwork the skin no longer ships. The
-  skin's own play/pause script could end up controlling that leftover instead of the button you can
-  see, which left the visible play button doing nothing but pause. NullPlayer now hands the script the
-  button that actually exists. Fixes the play button on the jaw in the T800 skin.
-
-- **Modern skins: a window frame built on another one is no longer drawn twice** — a skin can define
-  its frame by extending one of Winamp's, changing only the parts it cares about. NullPlayer kept
-  both versions of every part it changed, so skins like WMP11-BlueVU, Sony Walkman and canum built
-  their border, titlebar and caption buttons twice and redrew the spare copy on every frame. The
-  skin's own version now replaces the one it is based on, and the parts it leaves alone still draw.
-
-- **Modern skins: NullPlayer's own windows now wear the skin's frame on skins that draw one their own
-  way** — Cava, Flow, PeppyMeter, the spectrum analyzer, the waveform, Audio Analysis, projectM and
-  the fallback equalizer opened in NullPlayer's plain chrome on Itemskin, K-jr, MoonLight and Pure
-  Inspired, even though those skins have perfectly good window frames. They build a window differently
-  from the rest: the frame draws the border and the contents sit beside it rather than inside it, so
-  NullPlayer now builds its own windows the way each of those skins builds its own. They also pick the
-  skin's *thinnest* frame, and leave behind any buttons that belonged to the window it was borrowed
-  from.
-
-- **Modern skins: no hairline of desktop down the edge of a window** — a skin can place its contents a
-  pixel inside the border drawn around them, which left a transparent line the desktop showed through.
-  It is covered on every window that shows a picture, a visualization or the library.
-
-- **Modern skins: Itemskin's playlist window opens properly** — it came up as an empty box with no
-  frame around it and no way to make it paint. A skin's script can close its own window in response to
-  being told the window is hidden, and NullPlayer never undid that when the window was opened again,
-  so the playlist stayed shut behind an open window. Reopening a window now brings it back whole, and
-  a window that has never been shown is no longer announced to the skin as one that just closed.
-
-- **Modern skins: a window no longer comes apart from its frame while you drag it** — on a skin that
-  draws a window's border in a second window, dragging by the contents made the border race away and
-  snap back when the drag ended.
-
-- **Modern skins: the media library window wears the skin's lighter frame** — where a skin has one, so
-  the border stops eating rows of the list.
-
-- **Modern skins: switching skins re-asks where each window belongs** — a feature window left open in
-  NullPlayer's own chrome stayed that way under the next skin, even one that frames it perfectly well
-  from a fresh launch. It now changes chrome with the skin, in both directions.
-
-- **Modern skins: no more flickering patch of noise at a window's corner** — a skin can declare a web
-  panel it never shows, and an empty one was being left switched on at the top of the window, where
-  it painted a band of random pixels that shifted as the window was dragged. It only ever showed
-  through on a skin whose artwork does not cover its whole window.
-
-- **Modern skins: a panel no longer shows everything it was meant to hide** — a skin can size a panel
-  by naming the artwork behind it instead of stating its width and height, and several use that panel
-  as a peephole with content sliding through it. NullPlayer treated such a panel as having no size at
-  all, so nothing was hidden. In BLAKK's boombox that put a second, wrong progress bar permanently on
-  top of the seek bar and sent the spectrum climbing over the song title on mouse-over; Styx's pop-up
-  notifier drew empty, and Anexa left stray fragments outside the player's body. Artwork a skin names
-  only to state a size, and asks not to be drawn, is no longer painted.
-
-- **Modern skins: the elapsed time no longer has a gap after its colon** — skins that draw the clock
-  with their own pixel-art digits, including every ClassicPro-based skin, showed the time as
-  `1:03: 16`. The colon was being given a full digit's worth of room even though the skin says how
-  wide it should be, and the seconds were pushed away from it.
-
 - **A film watched to the end is now marked watched on Plex, Jellyfin and Emby** — and a queued
   video playlist moves on to the next film by itself. The video engine reports a film running out as
   a pause rather than as an ending, and NullPlayer was taking it at its word: the server was told the
@@ -235,30 +45,6 @@
   over, so the player could not be handed back to your music without closing the video window. The
   picture stays where it is, on its last frame, and can be played again from the start.
 
-- **Modern skins: a finished film no longer leaves a second marker on the seek bar** — some skins
-  build their seek bar from more than one control stacked in the same place, and when playback ended
-  they stopped agreeing with each other: one marker dropped back to the start while the other stayed
-  behind at the end.
-
-- **Modern skins: Big Bento Modern's volume control works again** — the player had no way to change
-  the volume at all. Clicking the volume icon, which is meant to slide a volume panel out of the
-  player, did nothing, and neither did the mute buttons. The skin resolves those controls with two
-  alternative blocks — one for the normal window, one for shade mode — and NullPlayer was running
-  both, so every one of them ended up wired to the shaded window's copy of the control instead of the
-  one on screen. The same fault had quietly taken the play/pause animation and part of the album-art
-  panel with it. Layouts a skin has not opened yet are no longer visible to scripts running inside
-  another one, which is what Winamp itself does.
-
-- **Modern skins: the big visualization pane can now be an oscilloscope, Cava or vis_classic** — a
-  Winamp 5.x skin draws its visualization in two different kinds of box, and only one of them had a
-  choice. The skin's own `<vis>` boxes (Big Bento Modern's butterfly beside the transport) could
-  already be switched between Winamp's analyzer, Winamp's oscilloscope, Cava and vis_classic; the
-  larger plugin pane — Big Bento's top-right Multi Content View pane, its mini pane and its
-  Visualization tab — always drew the same spectrum analyzer with no way to change it. Right-clicking
-  one now opens the same picker, with the engine's own settings and the Visualizations menu under it.
-  The pane keeps its **own** choice, so putting Cava in it leaves the skin's butterfly drawing the
-  artwork its author cut, and the choice is remembered per skin.
-
 - **Switching skin family no longer leaves the player at the old skin's size** — going from a Winamp
   5.x modern skin to a Classic one left the classic player squeezed into the outgoing skin's window,
   drawing its artwork shrunk inside a box the wrong shape ("the main window is tiny in classic mode").
@@ -267,13 +53,21 @@
   modes. The window stays where you left it — its top-left corner does not move.
 
 - **Compact Mode no longer leaves the Library Cava backdrop running against a hidden window** — entering Compact Mode orders the Library browser window out, but that doesn't reliably post an occlusion change, so the Library backdrop's 60 Hz Cava analyzer kept running as a second, wasted DSP queue alongside the visible Compact backdrop. The presenter is now reconciled to the window's hidden state on entry and restarted on exit.
+
 - **Fixed a large memory leak while casting audio (grew unbounded over a long session)** — the cast status poll calls `AudioEngine.updateCastPosition` roughly once per second and reassigned the playback `state` every time, even when it hadn't changed. Because `state`'s observer posts a change notification on every assignment, this fired a Now Playing update storm — the system Now Playing info was re-pushed tens of thousands of times, and remote (Plex) artwork was re-fetched over a fresh network connection on each update, piling up network/dispatch objects into the gigabytes and never reclaiming them after the cast ended. `updateCastPosition` now only reassigns `state` on a real transition, and `NowPlayingManager` no longer re-fetches artwork that already failed for the current track.
+
 - **Fixed a large memory leak that grew unbounded while a visualization window stayed open** — the Spectrum Analyzer (Metal) and OpenGL visualization views render from a `CVDisplayLink` callback, which runs on a dedicated thread with no run loop and therefore no autorelease pool draining between frames. Every frame's autoreleased objects — the Metal `nextDrawable()`, command buffers, and encoders, along with their backing textures — accumulated forever, so a window left open would climb into multiple gigabytes over hours/days of use. Each display-link frame now runs inside its own `autoreleasepool`, so per-frame objects are freed immediately.
+
 - **Sonos volume no longer jumps around during a fast slider drag** — each volume change fired its own SOAP command, and on a rapid drag those requests could reach the speaker out of order, leaving it stuck on a stale value. Volume commands are now coalesced into a single in-flight request with latest-value-wins, so the speaker tracks the slider monotonically and settles exactly where you release it (GH #414).
+
 - **Sonos playlists now advance to the next track** — when a track finished on Sonos the app saw the speaker report STOPPED and paused, halting the playlist after one song. A track that stops at or near its end is now recognized as a natural finish and auto-advances, while an external pause from the Sonos app, an explicit Stop near the end of a track, and genuinely short tracks all still behave correctly (GH #415).
+
 - **Added diagnostics for a Sonos cast clock that occasionally starts stuck at zero** — when a Sonos position poll fails (often from SOAP contention while the volume slider is moving at cast start), the app previously applied a position of 0 and re-anchored the clock silently, freezing the elapsed time. It now logs the failed `GetPositionInfo`, the resulting clock reset, and the surrounding volume-command timeline so the intermittent case can be captured. No behavior change yet — instrumentation only.
+
 - **Restored local videos play again instead of erroring** — a video file left in the playlist from a previous session was rebuilt on launch as an audio track (the saved state doesn't record media type), so playing it routed to the audio engine and failed to decode the video container. Restored local files now re-derive their media type from the file extension, so videos correctly open in the video player.
+
 - **Exiting Compact Mode restores the menu bar** — leaving Compact Mode (including when the app launches straight into it and you exit for the first time) could leave the system menu bar owned by whatever app was frontmost before, with none of NullPlayer's menus. Because NullPlayer stays the active app across the whole transition, macOS never rebuilt the menu bar for it. NullPlayer now forces that rebuild on exit, so the full menu bar (and the correct Dock icon) return every time.
+
 - **Quitting from Compact Mode no longer loses your settings** — Compact Mode has no menu bar or Dock icon, and the status-item menu had no Quit, so the only way to quit was force-quitting from Activity Monitor — which skipped the normal save-on-quit and discarded that session's changes (for example, the skin reverted on the next launch). The compact status-item menu now has a **Quit nullPlayer** item that quits cleanly and saves state.
 
 ### Changes
