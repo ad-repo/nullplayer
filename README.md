@@ -49,7 +49,7 @@ No Winamp skins are distributed with the project
 
 ### Visualization Support
 
-NullPlayer's visualizations span its windows, from the in-skin main-window display to full-screen engines:
+NullPlayer's visualizations span its windows, from the in-skin main-window display to full-screen engines. All visualization choices persist across launches.:
 
 - **Main Window** — 12 inline modes on the player's own display: Off, Classic 19-band, Cava bar, Enhanced, Ultra, Fire, JWST (deep-space), Lightning, Matrix, Snow, EKG, and the vis_classic analyzer port; cycle with a double-click or pick from **Visuals > Main Window > Mode**
 - **Spectrum Window** — dedicated 84-bar analyzer with 9 modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow) and skin-matched styles
@@ -63,8 +63,6 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
 - **PeppyMeter** — skinnable analog VU meter (needle/bar) with 25 templates and a random auto-switch mode
 - **Flow** — live network throughput graph with selectable interface
 
-All visualization choices persist across launches.
-
 ### General Features
 
 - 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
@@ -75,6 +73,19 @@ All visualization choices persist across launches.
 - Sonos content filtering for unsupported lossless formats and improved playlist support
 - Drag-and-drop, macOS Now Playing integration, and [Discord Music Presence](https://github.com/ungive/discord-music-presence)
 - Headless CLI for querying libraries, playback, and routing to local outputs or cast devices, full color terminal cover art rendering
+
+### Agentic Development Support
+
+  NullPlayer is built to be worked on by coding agents as well as people. The repo ships the
+  context an agent needs instead of making it rediscover the codebase every session.
+
+ - **36 subsystem skills** in [`skills/`](skills/) — ~9,000 lines of maintained technical documentation, one owner per subsystem: audio and EQ, each skin engine, every media-server integration, casting, each visualizer, the local library, CLI, and testing. [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md) route an agent to the owning skill before it touches code, and new subsystem detail goes in that skill — never in a general file.
+ - **Invocable skills, not just docs** — `/wal-skin-report <skin.wal>` produces a full compatibility report for a Winamp 5 skin; `skin-screenshots` drives the live app to capture one main-window frame per skin across all four skin systems and assembles a slideshow GIF.
+ - **Automation-first surfaces** — a headless `--cli` mode for querying libraries, resolving sources, starting playback, and routing to Sonos / Chromecast / DLNA, plus a `--ui-testing`launch mode and accessibility identifiers so the UI can be driven programmatically.
+ - **Scripted workflows** — one-command bootstrap, build-and-run, DMG/MAS packaging, third-partynotice generation and validation, `.wal` corpus render sweeps and census, and backlog validation, so an agent verifies its work the same way a maintainer does.
+ - **184 test files** under [`Tests/`](Tests/), with a documented testing philosophy (`skills/testing`) that explicitly forbids weakening tests changing app code just to make them pass.
+ - **Explicit architectural guardrails** encoded where an agent will read them: skin engines must not cross-import, Winamp Modern (`.wal`) work must never alter Classic or Original behavior, and the sprite-origin and `Data`-slicing gotchas are stated up front.
+
 
 ## Installation
 
