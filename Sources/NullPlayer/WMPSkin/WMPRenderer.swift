@@ -100,7 +100,7 @@ struct WMPRenderer: @unchecked Sendable {
                 let sourceImage = crop(specification.sourceRect, from: decoded.image)
                 if let mappingMask = specification.mappingMask,
                    let mask = mappingMask.mapping.maskImage(for: Set(mappingMask.nodeIDs)) {
-                    context.clip(to: command.frame.cgRect, mask: mask)
+                    clip(to: command.frame, mask: mask, context: context)
                 }
                 if specification.tiled {
                     context.clip(to: command.frame.cgRect)
@@ -148,6 +148,22 @@ struct WMPRenderer: @unchecked Sendable {
     /// Quartz images use the opposite vertical basis from our already top-left-flipped scene CTM.
     /// Reflect around the destination's own horizontal center so its geometry stays put and pixels
     /// remain upright.
+    /// `clip(to:mask:)` maps the mask through the current CTM, which in scene space is y-flipped,
+    /// so a mapping mask whose row zero is the authored top row landed mirrored: pressing the top
+    /// button of a BUTTONGROUP lit the bottom one. Apply the counter-flip `drawImage` uses. The clip
+    /// is resolved at the call, so undoing the transform afterwards leaves the region correct —
+    /// which is why this cannot use save/restore, as restoring would drop the clip with it.
+    private func clip(to frame: WMPRect, mask: CGImage, context: CGContext) {
+        let centerY = frame.y + frame.height / 2
+        context.translateBy(x: 0, y: centerY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -centerY)
+        context.clip(to: frame.cgRect, mask: mask)
+        context.translateBy(x: 0, y: centerY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -centerY)
+    }
+
     private func drawImage(_ image: CGImage, in frame: WMPRect, context: CGContext) {
         let centerY = frame.y + frame.height / 2
         context.saveGState()

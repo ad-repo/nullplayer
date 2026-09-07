@@ -138,6 +138,45 @@ final class WMPPhase4Tests: XCTestCase {
         XCTAssertEqual(hovered.dirtyBounds, group.frame)
     }
 
+    /// The mapping mask is authored top-left, and the render context is y-flipped, so clipping the
+    /// state artwork through it without the counter-flip `drawImage` applies painted the highlight
+    /// mirrored — reported live as "clicking the top left icon makes the bottom left icon
+    /// highlight". The mapped test above splits its map left/right, where a vertical flip is
+    /// invisible; this one splits it top/bottom.
+    func testMappedStateArtworkIsNotMirroredVertically() async throws {
+        let normal = try WMPSkinTestSupport.encodedImage(width: 1, height: 2,
+            rgba: [10, 10, 10, 255, 10, 10, 10, 255])
+        let hover = try WMPSkinTestSupport.encodedImage(width: 1, height: 2,
+            rgba: [20, 20, 20, 255, 20, 20, 20, 255])
+        let mapping = try WMPSkinTestSupport.encodedImage(width: 1, height: 2,
+            rgba: [255, 0, 0, 255, 0, 255, 0, 255])
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="20" height="10"><BUTTONGROUP id="transport"
+            left="0" top="0" width="20" height="10" image="normal.png" hoverImage="hover.png"
+            mappingImage="map.png"><PLAYELEMENT id="upper" mappingColor="#FF0000"/>
+            <NEXTELEMENT id="lower" mappingColor="#00FF00"/></BUTTONGROUP></VIEW></THEME>
+            """.utf8)), WMPTestArchiveEntry("normal.png", data: normal),
+            WMPTestArchiveEntry("hover.png", data: hover), WMPTestArchiveEntry("map.png", data: mapping)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let initial = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let group = try XCTUnwrap(initial.hits.first)
+        let upper = try XCTUnwrap(group.mappingTargets.first)
+        XCTAssertEqual(WMPHitTester(hits: initial.hits).hitTest(WMPPoint(x: 10, y: 2))?.stableID,
+                       upper.stableID)
+
+        var state = WMPInteractionState()
+        _ = state.move(over: upper)
+        let hovered = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main",
+            interactionState: state, dirtyNodeIDs: [upper.stableID])
+        let rendered = try await WMPRenderer(imageStore: WMPImageStore(provider: skin.archive))
+            .render(scene: hovered)
+        // The half the pointer is over is the half that lights up.
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 10, yFromTop: 2), [20, 20, 20, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 10, yFromTop: 7), [10, 10, 10, 255])
+    }
+
     func testOptInNineSeriesTransportMapIsPixelClickable() async throws {
         guard let path = ProcessInfo.processInfo.environment["WMP_TEST_WMZ"], !path.isEmpty else {
             throw XCTSkip("Set WMP_TEST_WMZ to a user-supplied transport skin.")

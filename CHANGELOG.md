@@ -56,6 +56,15 @@
   that opened the file dialog, toggled both drawers and switched the player into its compact view —
   which is persisted, and looks almost identical to the full player, so it read as the playlist and
   equalizer drawers no longer opening.
+- **Five more Windows Media Player skins now draw instead of coming up empty.** Some legacy `.wmz`
+  artwork is written in a way macOS's own image reader refuses even though Windows reads it happily,
+  and one unreadable bitmap could cost a whole window its contents. NullPlayer now reads those
+  bitmaps itself, so bluegrid, cerulean, Radio, YIL!OMA2K and circle draw their real skins — and
+  circle's buttons, whose click regions live in two of the affected files, land where they should.
+- **Pressing a button in a Windows Media Player skin lights up the button you pressed.** In a skin
+  whose buttons share one image and one colour map — most of them — the pressed and hover artwork was
+  drawn mirrored top to bottom, so clicking the top icon in a column highlighted the bottom one. The
+  click always did the right thing; only the highlight was in the wrong place.
 
 - **A film watched to the end is now marked watched on Plex, Jellyfin and Emby** — and a queued
   video playlist moves on to the next film by itself. The video engine reports a film running out as

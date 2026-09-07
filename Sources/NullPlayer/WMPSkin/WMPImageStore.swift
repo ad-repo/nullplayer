@@ -149,33 +149,67 @@ final class WMPImageStore: @unchecked Sendable {
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "Image '\(path)' is not BMP, GIF, JPEG, or PNG."))
         }
-        let data = try provider.data(for: path) as CFData
+        let bytes = try provider.data(for: path)
+        let data = bytes as CFData
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data, sourceOptions),
               CGImageSourceGetCount(source) > 0,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, sourceOptions) as? [CFString: Any],
               let width = integer(properties[kCGImagePropertyPixelWidth]),
               let height = integer(properties[kCGImagePropertyPixelHeight]) else {
+            if ext == "bmp" {
+                return try decodeBitmapOurselves(bytes, path: path, colorKey: colorKey,
+                    imageIOReason: "could not read metadata")
+            }
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO could not read metadata for '\(path)'."))
         }
         let (pixels, overflow) = width.multipliedReportingOverflow(by: height)
-        let (bytes, byteOverflow) = pixels.multipliedReportingOverflow(by: 4)
+        let (decodedByteCount, byteOverflow) = pixels.multipliedReportingOverflow(by: 4)
         guard width > 0, height > 0, width <= limits.maximumDimension,
               height <= limits.maximumDimension, !overflow, pixels <= limits.maximumPixels,
-              !byteOverflow, bytes <= limits.maximumDecodedBytes else {
+              !byteOverflow, decodedByteCount <= limits.maximumDecodedBytes else {
             throw WMPFailure(WMPDiagnostic(.oversizedImage,
                 "Image '\(path)' declares \(width)x\(height), beyond the decoded image limit."))
         }
         let decodeOptions = [kCGImageSourceShouldCacheImmediately: true,
                              kCGImageSourceShouldCache: true] as CFDictionary
         guard var image = CGImageSourceCreateImageAtIndex(source, 0, decodeOptions) else {
+            if ext == "bmp" {
+                return try decodeBitmapOurselves(bytes, path: path, colorKey: colorKey,
+                    imageIOReason: "could not decode")
+            }
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO could not decode '\(path)'."))
         }
         if let colorKey { image = try WMPColorKey.applying(colorKey, to: image) }
         return WMPDecodedImage(image: image,
-            size: WMPSize(width: CGFloat(width), height: CGFloat(height)), decodedBytes: bytes)
+            size: WMPSize(width: CGFloat(width), height: CGFloat(height)),
+            decodedBytes: decodedByteCount)
+    }
+
+    /// ImageIO refuses legacy WMP bitmaps over details Windows treats as advisory — `biClrImportant`
+    /// set while `biClrUsed` is zero, and some well-formed RLE8 streams. Those files are not corrupt
+    /// and every Windows player draws them, so fall back to the bounded in-house reader.
+    private func decodeBitmapOurselves(_ data: Data, path: String, colorKey: WMPColor?,
+                                       imageIOReason: String) throws -> WMPDecodedImage {
+        let bounds = WMPBitmapDecoder.Limits(maximumDimension: limits.maximumDimension,
+            maximumPixels: limits.maximumPixels, maximumDecodedBytes: limits.maximumDecodedBytes)
+        do {
+            let decoded = try WMPBitmapDecoder.decode(data, limits: bounds)
+            var image = decoded.image
+            if let colorKey { image = try WMPColorKey.applying(colorKey, to: image) }
+            return WMPDecodedImage(image: image,
+                size: WMPSize(width: CGFloat(decoded.width), height: CGFloat(decoded.height)),
+                decodedBytes: decoded.decodedBytes)
+        } catch WMPBitmapDecoder.Failure.oversized(let size) {
+            throw WMPFailure(WMPDiagnostic(.oversizedImage,
+                "Image '\(path)' declares \(size), beyond the decoded image limit."))
+        } catch let failure as WMPBitmapDecoder.Failure {
+            guard case .unsupported(let reason) = failure else { throw failure }
+            throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
+                "ImageIO \(imageIOReason) '\(path)', and the BMP reader could not either: \(reason)."))
+        }
     }
 
     private func integer(_ value: Any?) -> Int? {

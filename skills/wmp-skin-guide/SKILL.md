@@ -115,6 +115,18 @@ queue, with the object model as the security boundary — see Amendment 2 in
 - The immutable scene owns no `CGImage` or cache state. `WMPImageStore` performs bounded ImageIO
   metadata/decode off-main, supports BMP/GIF/JPEG/PNG, and uses a byte-bounded LRU keyed by canonical
   resource path plus color key.
+- **ImageIO is stricter about BMP than Windows is, so a `.bmp` it refuses falls back to
+  `WMPBitmapDecoder`** — never to a failure the user sees as a blank skin. Nine of the corpus's
+  3,687 bitmaps are rejected by ImageIO alone: eight set `biClrImportant` while `biClrUsed` is zero
+  (Windows reads the palette size from `biClrUsed` and treats the other as advisory), and one is a
+  BI_RLE8 stream that walks clean and is refused anyway. The fallback runs *only* after ImageIO has
+  failed, under the same dimension/pixel/byte bounds, applied before it allocates — an oversized
+  bitmap still fails `WMP0034`. Do not "fix" such a file by patching its header, and do not relax a
+  limit to admit one.
+- **A mapping mask is authored top-left, and the render CTM is y-flipped, so clipping through one
+  needs the same counter-flip `drawImage` applies.** `WMPRenderer.clip(to:mask:context:)` owns that;
+  it undoes the CTM by hand rather than with `restoreGState`, which would discard the clip too. A
+  mask fixture split left/right cannot see this class of bug — split it top/bottom.
 - Color keys compare exact un-premultiplied RGB and clear only matching pixels. Preserve the source
   alpha of every non-matching pixel.
 - The opt-in render dump writes one untracked PNG per view plus a JSON report. Corpus paths and
@@ -147,7 +159,7 @@ process section it points at — `winamp-modern-skin-guide/reference/harness.md`
 § *Debugging a live defect* — which is the reference implementation of that workflow. The 2026-09-07
 session that produced the fixes below spent hours rediscovering five rules already written there.
 
-The three that cost the most, in WMP terms:
+The ones that cost the most, in WMP terms:
 
 - **A green corpus sweep says nothing about AppKit.** The harness builds scenes and rasterizes them;
   it never calls an `NSView.draw`. It was completely right — correct scene, hit tests, dispatch, and
@@ -157,6 +169,11 @@ The three that cost the most, in WMP terms:
   comparison ended the hunt.
 - **Confirm the skin *and the view* before diagnosing.** `wmpSkinViewID` is persisted on every
   present, and Corona's compact view renders almost identically to its player.
+- **"The wrong button responds" is two questions, and the harness answers one of them for free.**
+  Scan the control with `WMP_RENDER_CLICK` and decode its mapping image independently: if every hit
+  *and* every miss lands where the map's colour bands are, hit testing is exonerated and the defect
+  is in what gets painted (W47 was a mirrored mask clip). Doing that first turned a vague live report
+  into a one-line fix.
 
 ## Presenting a skin in a window
 
