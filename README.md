@@ -10,14 +10,16 @@ NullPlayer is 100% open source and built as a clean-room effort; no Winamp or WA
 
 Nullplayer is the **first and only open-source engine capable of rendering Winamp 5 (`.wal`) skins**, letting you run original Winamp 5 skins on macOS
 
-NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP or anyone else. No Winamp skins are distributed with the project
+NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP, Emby, Jellyfin, Google or anyone else. 
+
+No Winamp skins are distributed with the project
 
 ### Backend Support
 
 - Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, YouTube and local files
-- Server integration for Plex, Jellyfin, Emby, and Navidrome/Subsonic with scrobbling
+- Server integration for Plex, Jellyfin, Emby, YouTube and Navidrome/Subsonic with scrobbling
 - Local media library with metadata parsing, editing, and management
-- Mixed playlists — combine tracks or video from any sources (local, Plex, Jellyfin, Emby, Subsonic/Navidrome, radio, movies, Youtube) into a single playlist
+- Mixed playlists — combine tracks or video from any sources (local, Plex, Jellyfin, Emby, Subsonic/Navidrome, radio, movies, YouTube) into a single playlist
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
 - YouTube as a library source — subscribe to channels, browse uploads, download audio/video ad-free (requires `yt-dlp` + `ffmpeg`)
 
@@ -28,7 +30,6 @@ NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft
 - Original mode: JSON-based skin system with color theming, custom assets, procedural backgrounds, and bloom effects and full skinning documentation for authors
 - Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
 - Live skin switching. Cycle through Classic, Modern, Original, and Original-Metal skins with no restart or interuption in playback
-- 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 
 ### Media Support
 
@@ -65,6 +66,7 @@ All visualization choices persist across launches.
 
 ### General Features
 
+- 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
 - Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
 - Intelligent radio mix generation for all sources
