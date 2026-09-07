@@ -55,7 +55,11 @@ enum WMPDiagnosticCode: String, Codable {
     case unresolvedGeometry = "WMP0031"
     case invalidGeometry = "WMP0032"
     case imageDecodeFailed = "WMP0033"
+    case duplicateAttribute = "WMP0034"
     case renderFailed = "WMP0035"
+    /// A tag left open at end of file. A warning, never a rejection: the node already holds every
+    /// child and sibling that followed it, so the tree is complete and only the markup is wrong.
+    case unclosedTag = "WMP0036"
 }
 
 struct WMPDiagnostic: Hashable, Codable, CustomStringConvertible {

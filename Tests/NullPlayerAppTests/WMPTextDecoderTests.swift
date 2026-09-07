@@ -23,6 +23,28 @@ final class WMPTextDecoderTests: XCTestCase {
         XCTAssertEqual(code(Data([0x41, 0, 0x42])), .embeddedNUL)
     }
 
+    /// A BOM-less UTF-16 file has no *failure* to fall through to: Windows-1252 accepts every byte
+    /// sequence, so it decodes "successfully" into null-interleaved mojibake, and the only thing that
+    /// then notices is the embedded-NUL check — which rejects the skin rather than reading it. The
+    /// `.wal` engine paid for the identical trap with `isoLatin1` (B93).
+    func testSniffsUTF16WithoutAByteOrderMarkInsteadOfRejectingIt() throws {
+        let source = "<THEME name=\"Café\"/>"
+        for littleEndian in [true, false] {
+            let data = WMPSkinTestSupport.utf16(source, littleEndian: littleEndian, bom: false)
+            XCTAssertEqual(try WMPTextDecoder.decode(data, path: "nobom.wms"),
+                           WMPDecodedText(string: source,
+                                          encoding: littleEndian ? .utf16LittleEndian : .utf16BigEndian))
+        }
+    }
+
+    /// The sniff must not claim a single-byte file. It requires a `<` as the first non-whitespace
+    /// unit and NULs on one side only, so ordinary text carrying a stray NUL stays a `WMP0026`
+    /// rejection rather than being silently reinterpreted as the wrong encoding.
+    func testSniffDoesNotClaimSingleByteTextThatMerelyContainsNULs() {
+        XCTAssertEqual(code(Data([0x41, 0x00, 0x42, 0x00, 0x00, 0x43])), .embeddedNUL)
+        XCTAssertEqual(code(Data("hi\u{0}there".utf8)), .embeddedNUL)
+    }
+
     private func code(_ data: Data) -> WMPDiagnosticCode? {
         WMPSkinTestSupport.failureCode { try WMPTextDecoder.decode(data, path: "fixture.wms") }
     }
