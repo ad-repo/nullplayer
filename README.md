@@ -30,7 +30,7 @@ No Winamp skins are distributed with the project
 - Original mode: JSON-based skin system with color theming, custom assets, procedural backgrounds, and bloom effects and full skinning documentation for authors
 - Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
 - Live skin switching. Cycle through Classic, Modern, Original, and Original-Metal skins with no restart or interuption in playback
-- Full development harness for debugging and reverse engineering Winamp 5 skins
+- Full development harness for debugging and reverse engineering Winamp 5 and ClassicPro skins
 
 ### Media Support
 
