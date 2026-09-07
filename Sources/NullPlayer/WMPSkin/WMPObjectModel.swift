@@ -353,7 +353,7 @@ final class WMPObjectModel {
     private func readTheme(_ name: String) -> WMPMemberValue {
         switch name {
         case "currentviewid": return .value(.string(currentViewID))
-        case "loadpreference", "savepreference", "loadstring": return .function
+        case "loadpreference", "savepreference", "loadstring", "opendialog": return .function
         default: return .unrecognised("theme member")
         }
     }
@@ -476,6 +476,15 @@ final class WMPObjectModel {
 
     private func writeElement(_ element: WMPScriptElement, _ name: String,
                               _ value: WMPJSONValue) -> WMPMemberValue {
+        // The view's own timer, which is a host timer and not a scene property. A skin drives its
+        // animation from it — Corona's compact view collapses its video panel by registering a
+        // `TimerEvent` and then writing the interval it wants — so a write that only stored a
+        // number would leave the skin frozen in whatever state it was authored in.
+        if element.kind == .view, name == "timerinterval" {
+            element.properties[name] = value
+            hostCommand("setViewTimerInterval", .number(max(0, value.number ?? 0)))
+            return .value(value)
+        }
         let rendered = element.authored.contains(name) || Self.standardElementProperties.contains(name)
             || element.properties[name] != nil
         // Same contract as the read side: the property surface is open, and one nothing draws is
@@ -579,6 +588,17 @@ final class WMPObjectModel {
         case ("theme", "savepreference"):
             savePreference(arguments)
             return .value(.null)
+        case ("theme", "opendialog"):
+            // WMP answers a path synchronously; the panel here is main-actor work and the script
+            // runs off it, so the host opens the picker and plays what it gets. The skin's own
+            // `player.URL = newFile` line then does nothing, which is why this is counted inert
+            // rather than live even though the button works.
+            guard (arguments.first?.string ?? "").uppercased().contains("FILE_OPEN") else {
+                return .unrecognised("only FILE_OPEN is implemented")
+            }
+            hostCommand("openFileDialog", nil)
+            inert()
+            return .value(.string(""))
         case ("theme", "loadstring"):
             // Every corpus use of this names a string inside `wmploc.dll`, which does not exist on
             // macOS and never will. The empty string is the whole of what can be answered; it is

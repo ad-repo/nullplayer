@@ -120,6 +120,12 @@ struct WMPScene: Hashable, Codable {
         self.wasBuiltOnMainThread = wasBuiltOnMainThread
     }
 
+    /// The layout the skin is drawn at, in the coordinates its script reads: parent-relative
+    /// origin and resolved size, keyed by stable id. Handed to the script runtime so
+    /// `element.height` answers the height the element actually has — including one that came from
+    /// its background artwork or from an alignment stretch — rather than only what markup authored.
+    var scriptGeometry: [Int: WMPRect] { geometries.mapValues(\.localFrame) }
+
     var deterministicDump: String {
         var lines = ["view=\(viewID) size=\(WMPNumber.format(canvasSize.width))x\(WMPNumber.format(canvasSize.height)) resolved=\(metrics.resolvedNodeCount) unresolved=\(metrics.unresolvedNodeCount)"]
         lines += commands.map { command in

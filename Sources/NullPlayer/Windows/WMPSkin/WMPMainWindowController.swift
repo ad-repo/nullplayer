@@ -1,4 +1,6 @@
 import AppKit
+import NullPlayerCore
+import UniformTypeIdentifiers
 
 final class WMPMainWindowController: NSWindowController, MainWindowProviding, NSWindowDelegate {
     static let unskinnedSize = NSSize(width: 440, height: 170)
@@ -8,6 +10,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var loadTask: Task<Void, Never>?
     private var scriptTask: Task<Void, Never>?
     private var scriptTimerTasks: [Int: Task<Void, Never>] = [:]
+    /// The active view's own `timerInterval`, which is a host timer rather than a scene property.
+    private var viewTimerTask: Task<Void, Never>?
     private var loadedSkin: WMPLoadedSkin?
     private var imageStore: WMPImageStore?
     private var activeViewID: String?
@@ -96,7 +100,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     handlers: Self.handlers(in: skin, event: "load", targetID: nil,
                                             viewID: registration.id))
                 let output = await runtime.transact(skin: skin, viewID: registration.id,
-                    size: scene.canvasSize, snapshot: host.snapshot, event: loadEvent)
+                    size: scene.canvasSize, snapshot: host.snapshot, event: loadEvent,
+                    geometry: scene.scriptGeometry)
                 let resolved = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: scene.canvasSize,
                            overrides: output.overrides)
@@ -224,7 +229,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         lastScriptSnapshot = host.snapshot
         sceneOverrides = overrides
         lastLoadDiagnostic = nil
+        // A `.wmz` window is genuinely shaped — Corona is transparent across the 250 px its
+        // playlist slides into and the 124 px its equaliser drops into — and macOS derives a
+        // borderless window's shadow from whatever content it last cached. On a shape that changes
+        // with every drawer and every repaint that gets stale, and a stale shadow over a
+        // transparent region reads as a dark box the size of the window. There is no drop shadow
+        // in Windows Media Player to lose.
+        window?.hasShadow = false
+        window?.invalidateShadow()
         importer.defaults.set(scene.viewID, forKey: WMPSkinImporter.selectedViewIDKey)
+        setViewTimer(milliseconds: Self.authoredTimerInterval(in: skin, viewID: scene.viewID))
 
         let view = mainView ?? WMPMainView(frame: .zero)
         mainView = view
@@ -258,6 +272,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             isApplyingSceneSize = true
             window?.setFrame(frame, display: true)
             isApplyingSceneSize = false
+            window?.invalidateShadow()
             pendingRestoredFrame = nil
             pendingRestoredViewID = nil
         } else {
@@ -282,6 +297,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         mainView?.prepareForUITeardown()
         mainView = nil
 
+        // The app-authored player is an ordinary opaque rectangle and keeps its shadow.
+        window?.hasShadow = true
+        window?.invalidateShadow()
         let view = unskinnedView ?? WMPUnskinnedMainView(frame: NSRect(origin: .zero, size: Self.unskinnedSize))
         unskinnedView = view
         view.onImport = { [weak self] in self?.importSkinFromPanel() }
@@ -302,6 +320,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         isApplyingSceneSize = true
         window.setFrame(frame, display: true)
         isApplyingSceneSize = false
+        // A borderless, non-opaque window keeps the shadow it had at its previous frame. Corona
+        // resizes the view when a drawer opens, so without this the old outline is left behind
+        // beside the window as a ghost of the shape it used to be.
+        window.invalidateShadow()
     }
 
     private func renderCurrentSize() {
@@ -317,7 +339,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 var scriptOutput: WMPScriptOutput?
                 if let scriptRuntime, let self {
                     let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
-                        size: requested, snapshot: self.host.snapshot, event: nil)
+                        size: requested, snapshot: self.host.snapshot, event: nil,
+                        geometry: self.activeScene?.scriptGeometry ?? [:])
                     resolvedOverrides = output.overrides
                     scriptOutput = output
                 }
@@ -382,7 +405,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let base = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: savedSize)
                 let output = await scriptRuntime.transact(skin: skin, viewID: registration.id,
-                    size: base.canvasSize, snapshot: host.snapshot, event: nil)
+                    size: base.canvasSize, snapshot: host.snapshot, event: nil,
+                    geometry: base.scriptGeometry)
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: base.canvasSize,
                            overrides: output.overrides)
@@ -509,19 +533,26 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         scriptTask = Task { [weak self] in
             guard let self else { return }
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
-                size: activeScene.canvasSize, snapshot: host.snapshot, event: event)
+                size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
+                geometry: activeScene.scriptGeometry)
             guard !Task.isCancelled else { return }
             do {
+                // No `dirtyNodeIDs`: a script transaction repaints in full.
+                //
+                // The dirty region a script produces cannot be derived from what it *wrote*. A
+                // handler writes `svEqualizer.top` and the whole pane and every control inside it
+                // moves, none of which the script mentioned — and a subview carries no hit metadata,
+                // so the narrowed bounds came out as the one button that was clicked. Partial
+                // repaints belong to hover and slider drags, where only artwork state changes.
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize,
-                           dirtyNodeIDs: output.repaintNodeIDs.isEmpty ? nil : output.repaintNodeIDs,
                            overrides: output.overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderBackingScale)
                 guard !Task.isCancelled else { return }
                 sceneOverrides = output.overrides
                 self.activeScene = scene
-                mainView?.present(result.image, scene: scene, dirtyBounds: scene.dirtyBounds)
+                mainView?.present(result.image, scene: scene)
                 let switchedView = applyHostCommands(output.hostCommands)
                 if !switchedView { scheduleTimers(output.timerRequests) }
                 recordScriptDiagnostics(output.diagnostics)
@@ -535,6 +566,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// scan ran the *other* view's `onLoad` as well: Corona's tiny view then executed the player
     /// view's setup against elements that do not exist there, and the census read the resulting
     /// `ReferenceError` as a defect in the runtime rather than in the caller.
+    /// The `timerInterval` the view declares in markup, which starts the view timer before any
+    /// script has had a chance to change it.
+    static func authoredTimerInterval(in skin: WMPLoadedSkin, viewID: String) -> Int {
+        guard let view = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node, let attribute = view.attributes.first(where: {
+            $0.name.caseInsensitiveCompare("timerInterval") == .orderedSame
+        }), case let .literal(raw) = attribute.value,
+              let milliseconds = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return 0 }
+        return max(0, milliseconds)
+    }
+
     static func handlers(in skin: WMPLoadedSkin, event: String, targetID: String?,
                          viewID: String? = nil) -> [String] {
         let wanted = event.lowercased().replacingOccurrences(of: "_", with: "")
@@ -589,6 +632,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 if let index = Int(action.dropFirst("setEQBand:".count)) {
                     host.perform(.setEQBand(index), value: command.value.map { .number($0.number ?? 0) })
                 }
+            case "setViewTimerInterval": setViewTimer(milliseconds: Int(number ?? 0))
+            case "openFileDialog": presentOpenMediaPanel()
             case "closeView": window?.orderOut(nil)
             case "minimizeWindow": window?.miniaturize(nil)
             case let action where action.hasPrefix("playPlaylistItem:"):
@@ -629,7 +674,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             guard let self else { return }
             let event = WMPJScriptEvent(name: "timer", targetID: nil, handlers: [request.source])
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
-                size: activeScene.canvasSize, snapshot: host.snapshot, event: event)
+                size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
+                geometry: activeScene.scriptGeometry)
             guard !Task.isCancelled else { return }
             do {
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
@@ -637,7 +683,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let rendered = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderBackingScale)
                 self.sceneOverrides = output.overrides; self.activeScene = scene
-                self.mainView?.present(rendered.image, scene: scene, dirtyBounds: scene.dirtyBounds)
+                self.mainView?.present(rendered.image, scene: scene)
                 self.applyHostCommands(output.hostCommands); self.recordScriptDiagnostics(output.diagnostics)
             } catch { self.recordScriptDiagnostics([.init(code: "timer-transaction", message: error.localizedDescription)]) }
         }
@@ -646,6 +692,56 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private func cancelScriptTimers() {
         scriptTimerTasks.values.forEach { $0.cancel() }
         scriptTimerTasks.removeAll()
+        setViewTimer(milliseconds: 0)
+    }
+
+    /// The `VIEW`'s own `timerInterval`, in milliseconds: zero stops it, anything else restarts it
+    /// at that period and dispatches the view's authored `onTimer` handlers.
+    ///
+    /// This is how a skin animates. Corona's compact view registers a timed event and then writes
+    /// `view.timerInterval`, and its player view declares `timerInterval="4000"` in markup to drive
+    /// its own transport readouts — so without this a `.wmz` sits frozen in whatever state it was
+    /// authored in, with no diagnostic anywhere to say why.
+    /// `theme.openDialog('FILE_OPEN', …)`, which is how a `.wmz` skin's own Open button starts
+    /// playback. Without it WMP mode has no route to a track at all: the auxiliary NullPlayer
+    /// windows stay hidden in this mode until they have WMP-owned chrome.
+    private func presentOpenMediaPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.message = "Open media"
+        panel.allowedContentTypes = ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac", "cue"]
+            .compactMap { UTType(filenameExtension: $0) }
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        var tracks: [Track] = []
+        var seenCueSources = Set<String>()
+        for url in panel.urls {
+            if let expanded = AudioEngine.tracksForCueOrSibling(url: url), !expanded.isEmpty {
+                if let source = expanded.first?.cueSourceURL?.standardizedFileURL.path,
+                   !seenCueSources.insert(source).inserted { continue }
+                tracks.append(contentsOf: expanded)
+            } else {
+                tracks.append(Track(url: url))
+            }
+        }
+        guard !tracks.isEmpty else { return }
+        WindowManager.shared.audioEngine.loadTracks(tracks)
+        WindowManager.shared.audioEngine.play()
+        refreshHostState()
+    }
+
+    private func setViewTimer(milliseconds: Int) {
+        viewTimerTask?.cancel()
+        viewTimerTask = nil
+        guard milliseconds > 0 else { return }
+        let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, milliseconds)
+        viewTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
+                guard !Task.isCancelled else { return }
+                self?.dispatchScriptEvent(name: "timer", targetID: nil)
+            }
+        }
     }
 
     private func recordScriptDiagnostics(_ diagnostics: [WMPJScriptDiagnostic]) {

@@ -447,23 +447,61 @@ enum WMPHarness {
             // sets up its panes, and a harness that skipped it measured a skin nobody sees.
             output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
                                             snapshot: WMPHostSnapshot(),
-                                            event: eventFor(name: "onLoad", skin: skin, viewID: viewID))
+                                            event: eventFor(name: "onLoad", skin: skin, viewID: viewID),
+                                            geometry: scene.scriptGeometry)
             if probe.requestedSize != nil {
                 // A resize is a second layout pass, not a re-scale: the expressions must run again
                 // against the new `view.width`/`view.height` before anything is measured.
                 output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
                                                 snapshot: WMPHostSnapshot(),
-                                                event: eventFor(name: "onResize", skin: skin, viewID: viewID))
+                                                event: eventFor(name: "onResize", skin: skin, viewID: viewID),
+                                                geometry: scene.scriptGeometry)
             }
-            if probe.settleSeconds > 0 {
-                // Timer-driven state — Corona drives its transport readouts from `onTimer` — has not
-                // happened yet when the load pass returns. Pump the run loop so anything the host
-                // scheduled can fire, then drive the skin's own onTimer handlers, which is what
-                // actually moves state under today's runtime.
-                RunLoop.current.run(until: Date().addingTimeInterval(probe.settleSeconds))
-                if let timer = eventFor(name: "onTimer", skin: skin, viewID: viewID) {
+            if probe.settleSeconds > 0, let timer = eventFor(name: "onTimer", skin: skin, viewID: viewID) {
+                // The view's own timer, run for real rather than fired once.
+                //
+                // A `.wmz` animates through `view.timerInterval`: Corona's compact view registers a
+                // timed event and writes the interval it wants, and its player view declares
+                // `timerInterval="4000"` in markup to drive its transport readouts. A single
+                // `onTimer` call cannot reach the end of an animation that takes twenty of them, so
+                // this drives the loop the app drives, at the period the skin asks for, honouring
+                // every `setViewTimerInterval` the handlers post back.
+                // Seeded from the markup, then from whatever the load pass already asked for:
+                // Corona's compact view declares `timerInterval="0"` and its `OnTinyLoad` turns the
+                // timer on, so reading only the attribute measures a skin that never animates.
+                var interval = WMPMainWindowController.authoredTimerInterval(in: skin, viewID: viewID)
+                for command in output?.hostCommands ?? [] where command.action == "setViewTimerInterval" {
+                    interval = Int(command.value?.number ?? 0)
+                }
+                let deadline = Date().addingTimeInterval(probe.settleSeconds)
+                while Date() < deadline {
+                    let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, interval)
+                    guard interval > 0 else { break }
+                    // `RunLoop.run(until:)` returns immediately with no input sources attached,
+                    // which turned this into a busy loop that tripped the runtime's own 120/s rate
+                    // limit and measured nothing.
+                    try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
                     output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
-                                                    snapshot: WMPHostSnapshot(), event: timer)
+                                                    snapshot: WMPHostSnapshot(), event: timer,
+                                                    geometry: scene.scriptGeometry)
+                    // Rebuild between ticks: an animation reads the geometry it is drawn at, and a
+                    // loop that fed it the same starting frame every time would freeze on the first
+                    // step while still looking like it was running.
+                    if let overrides = output?.overrides, overrides != .empty,
+                       let rebuilt = try? await builder.build(viewID: viewID,
+                                                              requestedSize: probe.requestedSize,
+                                                              overrides: overrides) {
+                        scene = rebuilt
+                    }
+                    for command in output?.hostCommands ?? []
+                    where command.action == "setViewTimerInterval" {
+                        interval = Int(command.value?.number ?? 0)
+                    }
+                }
+                if interval == 0, output == nil {
+                    output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                                                    snapshot: WMPHostSnapshot(), event: timer,
+                                                    geometry: scene.scriptGeometry)
                 }
             }
             if let output, output.overrides != .empty {
@@ -546,6 +584,16 @@ enum WMPHarness {
     /// actually placed. A node existing says nothing about where it is drawn; this is the line that
     /// says where.
     static func probeLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
+        var lines = scene.widgets.map { widget in
+            "WIDGET \(scene.viewID)/\(widget.stableID) \(widget.kind) id=\(widget.nodeID ?? "-") "
+                + "frame=\(widget.frame) clip=\(widget.clipRect.map(String.init(describing:)) ?? "-") "
+                + "visible=\(widget.clipRect.flatMap { widget.frame.intersection($0) }.map(String.init(describing:)) ?? "none")"
+        }
+        lines += Self.paintProbeLines(scene: scene, skin: skin)
+        return lines
+    }
+
+    private static func paintProbeLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
         let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
         return scene.commands.map { command in
             let node = nodesByID[command.stableID]
@@ -770,7 +818,8 @@ enum WMPHarness {
             guard let session = pass.session, !handlers.isEmpty else { continue }
             let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
                 snapshot: WMPHostSnapshot(),
-                event: WMPJScriptEvent(name: "onClick", targetID: target.nodeID, handlers: handlers))
+                event: WMPJScriptEvent(name: "onClick", targetID: target.nodeID, handlers: handlers),
+                geometry: scene.scriptGeometry)
             // Every attribute changed anywhere in the graph, not only on the object that was hit:
             // a skin's click handler routinely moves a sibling pane, and a probe that reported only
             // the target would call that click inert.

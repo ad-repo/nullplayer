@@ -50,6 +50,21 @@ Still the largest single class, and indistinguishable from a rejection to anyone
 | W8 | A view draws its transparency key instead of keying it out | **23 views across 21 skins** | Re-measured at rev `1d7e63bd` by counting opaque `#FF00FF` in every dumped PNG, not by reading a census column — a structural probe cannot see this. Worst: `Plus! Mecha/mediaSwitcherView` 44.6%, `Main_Street/mini` 40.5%, `Plus! Professional/mediaSwitcherView` 33.1%, `polygon/view-2` 33.0%, `deepbluesomething/MainPlayer` 31.8%, `Ducky/view-2` 28.3%; threshold 5% of view area. `Alpine7618_v09/view-2` was the first case found and is below that threshold. Class B, and much larger than the single skin it was filed as. |
 | W9 | `Official_Xbox_XP` paints an opaque black `VIDEO` placeholder over its own art | 1 skin measured | `census/png/Official_Xbox_XP/mainBox@1x.png`. Fixed by Phase 5's hosted video surface. |
 
+## Tier 1c — live-reported, 2026-09-07, not yet reproduced headlessly
+
+Found by the reporter driving the real app on `corona.wmz` during Phase 3 live QA, after the drawers
+and the file-open button were confirmed working. **None of these is visible to the harness**: the
+headless render of `vPlayer` and `viewTiny` is correct in every state tested, including with the view
+timer running and with the equaliser drawer open. That is the whole point of the entries — the
+sweep's blind spots are AppKit hosting, hit testing under the pointer, and anything driven by live
+playback. Reproduce by driving the app; a census row will not show any of them.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W43 | **The player goes black while a track plays** | corona, live | The skin draws correctly until playback starts. Suspects, in order: `WMPEffectsSurfaceView` fills its whole bounds with `calibratedWhite: 0.04, alpha: 0.9` before drawing bars, so a wrong or oversized effects frame paints a near-opaque box; `WMPVideoPlaceholderView` is opaque black and is created for any `VIDEO`/`WMPVIDEO` widget whose frame resolves, which is [W9] in another skin; and the widget overlays ignore `WMPWidget.clipRect` entirely, so a pane clipped out of the scene still shows its AppKit view. Start by dumping the widget frames — `WMP_RENDER_PROBE` now emits a `WIDGET` line per widget with `frame`, `clip` and the resolved `visible` rect — and compare them against what is on screen. A script's `visible` now outranks the markup in the builder, which was one cause and is fixed; this is what is left. |
+| W44 | **Four different buttons in the top cluster all open the file dialog** | corona, live | `bOpenFile`, `bPlaylist`, `bVis` and `bEq` are `BUTTONELEMENT`s inside one `BUTTONGROUP`, separated only by their `mappingColor` in `player_top_controls_left_map.bmp`. A coordinate scan along `y=12` resolves them correctly and distinctly (`WMP_RENDER_CLICK="vPlayer@366,12;400,12;420,12;444,12"` gives `bOpenFile`, `bPlaylist`, `bVis`, `bEq`), so the mapping table is right at that row — check other rows before assuming the sampler is wrong. The other candidate is dispatch rather than hit testing: `dispatchScriptEvent(name:targetID:)` filters handlers by `xmlID`, and a `nil` `targetID` runs **every** `onClick` in the view, one of which is `OpenMedia()`. Confirm which by clicking each button once with `WMP_RENDER_CLICK` and reading the `handlers=` count. |
+| W45 | **No way to reach the compact view from the skin** | corona, live | `ToggleSuperCompact()` sets `theme.currentViewID = "viewTiny"`, which the object model maps to a `setCurrentView` host command, and `switchView(to:)` implements it. It is reached from a button that is probably one of W44's, so W44 may be the whole of this. The menu route — **Skins → Windows Media Player → Views → viewTiny** — does work and is the fallback while this is open. |
+
 ## Tier 2 — the script runtime, after Phase 3
 
 The runtime is one persistent `JSContext` per skin session with a native Swift object model

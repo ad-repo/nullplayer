@@ -280,8 +280,15 @@ actor WMPScriptRuntime {
         self.executionSeconds = executionSeconds
     }
 
+    /// `geometry` is the layout the skin is currently *drawn* at, keyed by stable id — the local
+    /// frame of every node the last scene resolved. WMP's `element.height` answers the element's
+    /// real current height, including one that came from its background artwork rather than from
+    /// markup, and a script tests exactly that: Corona's compact view animates `svVideo` down to 0
+    /// and gives up immediately if it reads 0 to begin with, which is what an authored-attributes-
+    /// only model reports for an element sized by its bitmap.
     func transact(skin: WMPLoadedSkin, viewID: String, size: WMPSize,
-                  snapshot: WMPHostSnapshot, event: WMPJScriptEvent?) async -> WMPScriptOutput {
+                  snapshot: WMPHostSnapshot, event: WMPJScriptEvent?,
+                  geometry: [Int: WMPRect] = [:]) async -> WMPScriptOutput {
         guard !torndown else { return WMPScriptOutput(overrides: committedOverrides) }
         let now = Date()
         recentTransactionTimes.removeAll { now.timeIntervalSince($0) >= 1 }
@@ -314,7 +321,8 @@ actor WMPScriptRuntime {
         }
 
         let result = await context.run(plan: plan, size: size, snapshot: snapshot,
-                                       preferences: preferences.values(), event: event)
+                                       preferences: preferences.values(), event: event,
+                                       geometry: geometry)
 
         var diagnostics = startupDiagnostics + result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))

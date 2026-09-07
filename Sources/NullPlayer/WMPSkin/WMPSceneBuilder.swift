@@ -107,7 +107,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
         func walk(_ node: WMPNode, parentFrame: WMPRect, parentAuthoredSize: WMPSize,
                   inheritedClip: WMPRect?, isRoot: Bool = false) throws {
-            if literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame { return }
+            // A script override outranks the markup. Corona's `SetPane` switches its video and
+            // visualization panes purely by writing `vid.visible` / `vis.visible`, so a builder
+            // that reads only the authored attribute draws whichever the author happened to leave
+            // on — which is how an opaque video pane ended up over the artwork as soon as playback
+            // started.
+            if let override = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
+                                                                          property: "visible")] {
+                if !override.truth { return }
+            } else if literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame {
+                return
+            }
             if isNonLayout(node.kind) {
                 for child in node.children.sorted(by: nodeOrder) {
                     try walk(child, parentFrame: parentFrame, parentAuthoredSize: parentAuthoredSize,
@@ -131,8 +141,14 @@ struct WMPSceneBuilder: @unchecked Sendable {
                    node.attribute(named: "width") == nil || node.attribute(named: "height") == nil,
                    let (_, path) = try resource(node, names: intrinsicSizeResourceNames(for: node.kind)) {
                     let intrinsic = try imageStore.image(for: path).size
-                    if node.attribute(named: "width") == nil { width = intrinsic.width }
-                    if node.attribute(named: "height") == nil { height = intrinsic.height }
+                    // `width`/`height` are already non-nil here only when a script override
+                    // supplied them, since the markup authored no such attribute. The artwork's
+                    // natural size is the fallback for an *unstated* dimension, never an answer
+                    // that outranks one the skin computed: Corona's compact view collapses
+                    // `svVideo` to height 0 through its own timer, and the background bitmap kept
+                    // stamping 241 back over it, leaving a black panel across the whole window.
+                    if node.attribute(named: "width") == nil, width == nil { width = intrinsic.width }
+                    if node.attribute(named: "height") == nil, height == nil { height = intrinsic.height }
                 }
                 guard let left, let top else {
                     if !unresolvedNodes.contains(node.stableID) {

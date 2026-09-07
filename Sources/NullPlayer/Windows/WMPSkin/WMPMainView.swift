@@ -22,16 +22,35 @@ final class WMPMainView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func present(_ cgImage: CGImage, scene: WMPScene, dirtyBounds: WMPRect? = nil) {
+        let previous = self.scene
         image = NSImage(cgImage: cgImage, size: bounds.size)
         self.scene = scene
         hitTester = WMPHitTester(hits: scene.hits)
         synchronizeWidgetViews(scene.widgets)
+        // The AppKit overlays — playlist, equalizer, popup, effects, video — are positioned in
+        // `layout()`, which AppKit will not run on its own just because a new scene arrived. Without
+        // this an equalizer that the skin slid away stays on screen at its old frame.
+        needsLayout = true
         removeAllToolTips(); _ = addToolTip(bounds, owner: self, userData: nil)
         if let dirtyBounds {
+            // The union with everything the *previous* scene drew at a different frame. A dirty
+            // rect derived from the new scene alone covers where a pane has arrived and never where
+            // it left, so closing a drawer repainted the destination and abandoned the drawer's own
+            // pixels on screen — reported during live QA as a leftover equaliser and a second copy
+            // of the transport bar.
+            var dirty = dirtyBounds
+            let before = previous?.geometries ?? [:]
+            for stableID in Set(before.keys).union(scene.geometries.keys) {
+                let old = before[stableID]?.absoluteFrame
+                let new = scene.geometries[stableID]?.absoluteFrame
+                guard old != new else { continue }
+                if let old { dirty = dirty.union(old) }
+                if let new { dirty = dirty.union(new) }
+            }
             let xScale = bounds.width / scene.canvasSize.width
             let yScale = bounds.height / scene.canvasSize.height
-            setNeedsDisplay(NSRect(x: dirtyBounds.x * xScale, y: dirtyBounds.y * yScale,
-                                   width: dirtyBounds.width * xScale, height: dirtyBounds.height * yScale))
+            setNeedsDisplay(NSRect(x: dirty.x * xScale, y: dirty.y * yScale,
+                                   width: dirty.width * xScale, height: dirty.height * yScale))
         } else {
             needsDisplay = true
             // A `.wmz` window is shaped by its own artwork: Corona's player block occupies the

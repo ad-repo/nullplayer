@@ -189,19 +189,34 @@ final class WMPScriptContext: @unchecked Sendable {
     // MARK: Running a transaction
 
     func run(plan: WMPScriptViewPlan, size: WMPSize, snapshot: WMPHostSnapshot,
-             preferences: [String: String], event: WMPJScriptEvent?) async -> WMPScriptRunResult {
+             preferences: [String: String], event: WMPJScriptEvent?,
+             geometry: [Int: WMPRect]) async -> WMPScriptRunResult {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(returning: perform(plan: plan, size: size, snapshot: snapshot,
-                                                       preferences: preferences, event: event))
+                                                       preferences: preferences, event: event,
+                                                       geometry: geometry))
             }
         }
     }
 
     private func perform(plan: WMPScriptViewPlan, size: WMPSize, snapshot: WMPHostSnapshot,
-                         preferences: [String: String], event: WMPJScriptEvent?) -> WMPScriptRunResult {
+                         preferences: [String: String], event: WMPJScriptEvent?,
+                         geometry: [Int: WMPRect]) -> WMPScriptRunResult {
         model.beginTransaction(snapshot: snapshot, preferences: preferences, viewID: plan.viewID)
         pendingTimers.removeAll()
+        // Sync the element state to the layout the skin is drawn at. The scene was built with the
+        // previous transaction's overrides, so this is the skin's own values where it set them and
+        // the resolved truth — artwork size, alignment stretch — everywhere else.
+        if !geometry.isEmpty {
+            for element in model.elements.values {
+                guard let frame = geometry[element.stableID] else { continue }
+                element.properties["left"] = .number(Double(frame.x))
+                element.properties["top"] = .number(Double(frame.y))
+                element.properties["width"] = .number(Double(frame.width))
+                element.properties["height"] = .number(Double(frame.height))
+            }
+        }
         if let view = model.element("view") {
             view.properties["width"] = .number(Double(size.width))
             view.properties["height"] = .number(Double(size.height))
