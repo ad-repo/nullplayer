@@ -8,6 +8,10 @@ struct WMPHitTarget: Hashable, Codable {
     let action: WMPTransportAction?
     let sticky: Bool
     let enabled: Bool
+    /// What the pointer resting here should say. A mapping child carries its own, which is why this
+    /// is on the target and not only on `WMPHitMetadata`: `alx_dl.wms` gives one of four
+    /// `<BUTTONELEMENT>`s inside a single mapping image the tip "Open Media File".
+    var toolTip: String?
 }
 
 struct WMPHitTester {

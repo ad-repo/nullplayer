@@ -619,6 +619,48 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertTrue(events.contains("click:scriptOnly"))
     }
 
+    @MainActor
+    func testHoverRaisesExitOnTheNodeLeftBeforeEntryOnTheNodeReached() throws {
+        let size = WMPSize(width: 40, height: 20)
+        func hit(_ stableID: Int, _ nodeID: String, x: Double) -> WMPHitMetadata {
+            WMPHitMetadata(stableID: stableID, nodeID: nodeID, kind: "button",
+                frame: .init(x: x, y: 0, width: 20, height: 20), clipRect: nil,
+                zIndex: 0, documentOrder: stableID, action: nil, sticky: false, enabled: true,
+                mappingImage: nil, mappingTargets: [])
+        }
+        let hits = [hit(2, "left", x: 0), hit(3, "right", x: 20)]
+        let scene = WMPScene(viewID: "main", canvasSize: size,
+            resizeLimits: .init(minimum: size, maximum: size), commands: [], hits: hits,
+            geometries: [:], unresolved: [], diagnostics: [], dirtyBounds: hits[0].frame,
+            metrics: .init(resolvedNodeCount: 2, unresolvedNodeCount: 0, visibleBounds: hits[0].frame),
+            wasBuiltOnMainThread: false)
+        let context = try XCTUnwrap(CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8,
+            bytesPerRow: 160, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let image = try XCTUnwrap(context.makeImage())
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 20),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        let view = WMPMainView(frame: window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 40, height: 20))
+        window.contentView = view; view.present(image, scene: scene)
+        var events: [String] = []
+        view.onScriptEvent = { name, target, _ in events.append("\(name):\(target ?? "-")") }
+        func move(to x: CGFloat) throws {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: NSPoint(x: x, y: 10),
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 1, clickCount: 0, pressure: 0))
+            view.mouseMoved(with: event)
+        }
+        try move(to: 5)
+        try move(to: 10)   // still inside the same control: no second entry
+        try move(to: 30)
+        // `mouseExited` reads nothing off the event, and AppKit refuses to synthesise an
+        // `.mouseExited` through `NSEvent.mouseEvent`, so the pointer's last position stands in.
+        view.mouseExited(with: try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved,
+            location: NSPoint(x: 60, y: 10), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 0, pressure: 0)))
+        XCTAssertEqual(events, ["mouseover:left", "mouseout:left", "mouseover:right", "mouseout:right"])
+    }
+
     func testOptInNineSeriesScriptsAndGeometryAtThreeSizes() async throws {
         guard let path = ProcessInfo.processInfo.environment["WMP_TEST_WMZ"], !path.isEmpty else {
             throw XCTSkip("Set WMP_TEST_WMZ to a user-supplied WMP skin.")

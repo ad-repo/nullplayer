@@ -338,6 +338,15 @@ of these was invisible to the harness and visible in the first minute of live QA
 - Dispatch authored handlers in document order. Host changes use open, play, status, mode,
   buffering, then reception order; input uses mouse-down, mouse-up, click/change semantics from the
   Phase 4 capture model.
+- **Hover is two events and a gate.** Crossing from one control to another raises `onMouseOut` on
+  the node left *before* `onMouseOver` on the node reached — a skin that fades a readout in on entry
+  never fades it back out otherwise — and nothing is raised while the pointer stays inside the same
+  node. Unlike every other dispatch site, a hover edge runs a transaction **only where the markup
+  authored a handler for it** (`WMPMainWindowController.hoverEvents`): the pointer crosses a whole
+  row of buttons on the way to the one it wants, and a transaction rebuilds and re-renders the
+  entire scene. Hover *artwork* is unaffected by any of this — it never went through script.
+  Measure it with `WMP_RENDER_HOVER`; `onmousemove`, `ondblclick`, `onfocus` and `onblur` are the
+  same shape and still unraised.
 
 ## Drawing the skin's own controls
 

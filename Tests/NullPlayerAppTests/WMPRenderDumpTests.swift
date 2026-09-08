@@ -27,6 +27,8 @@ import XCTest
 //   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
 //   WMP_RENDER_CLICK=<view>@x,y[;x,y…]   drive clicks in order and report what each one moved
 //                                        an entry written x,y>x,y>x,y is a drag along that path
+//   WMP_RENDER_HOVER=<view>@x,y[;x,y…]   walk the pointer through the points and raise the
+//                                        onMouseOut/onMouseOver edges each move crosses
 //   WMP_RENDER_SETTLE=<seconds>    pump the run loop and drive onTimer before measuring
 //   WMP_RENDER_CLOCK=<s>[;<s>…]    seconds into an animation to draw; one PNG per value
 //   WMP_RENDER_SIZE=<W>x<H>        resize before measuring, then re-drive onResize
@@ -147,6 +149,23 @@ struct WMPProbe {
             entry.split(separator: ">").compactMap(point)
         }.filter { !$0.isEmpty }
         return gestures.isEmpty ? nil : (halves[0], gestures)
+    }
+
+    /// `<view>@x,y[;x,y…]` — the path the pointer walks, one hover edge per crossing.
+    ///
+    /// Deliberately not folded into `WMP_RENDER_CLICK`'s `>` drag form: a drag holds a capture and
+    /// asks what the *value* did, and a hover holds nothing and asks which handlers the crossing
+    /// raised. Sharing a flag would make one of the two lie about what it measured.
+    var hoverPath: (viewID: String, points: [WMPPoint])? {
+        guard let spec = env["WMP_RENDER_HOVER"] else { return nil }
+        let halves = spec.split(separator: "@", maxSplits: 1).map(String.init)
+        guard halves.count == 2 else { return nil }
+        let points = halves[1].split(whereSeparator: { $0 == ";" || $0 == ">" }).compactMap { entry -> WMPPoint? in
+            let pair = entry.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard pair.count == 2 else { return nil }
+            return WMPPoint(x: CGFloat(pair[0]), y: CGFloat(pair[1]))
+        }
+        return points.isEmpty ? nil : (halves[0], points)
     }
 
     func probes(_ viewID: String) -> Bool {
@@ -703,6 +722,10 @@ enum WMPHarness {
             scene = await drive(gestures: driven.gestures, on: scene, viewID: viewID, skin: skin,
                                 builder: builder, pass: pass, probe: probe)
         }
+        if let hover = probe.hoverPath, hover.viewID.caseInsensitiveCompare(viewID) == .orderedSame {
+            scene = await drive(hover: hover.points, on: scene, viewID: viewID, skin: skin,
+                                builder: builder, pass: pass, probe: probe)
+        }
         if probe.wantsAppKit {
             for line in await appKitLines(scene: scene, viewID: viewID, imageStore: imageStore) {
                 WMPHarnessOutput.emit(line)
@@ -1054,6 +1077,72 @@ enum WMPHarness {
         return scene
     }
 
+
+    // MARK: Hover (W54)
+
+    /// Walk the pointer through `points` and raise the edges each move crosses.
+    ///
+    /// A hover is two events, not one: the pointer leaving `volumeText` and entering `seekText` is
+    /// an `onMouseOut` on the first and an `onMouseOver` on the second, in that order, and a skin
+    /// that fades a readout in on entry leaves it on screen forever if only the entry is raised.
+    /// Nothing is raised while the pointer stays inside the same node, which is why the line
+    /// reports the crossing rather than the point.
+    ///
+    /// Handler selection goes through `WMPMainWindowController.handlers(in:event:…)` — the same
+    /// call the app dispatches through — so this probe cannot pass while the app misses.
+    @MainActor
+    private static func drive(hover points: [WMPPoint], on scene: WMPScene, viewID: String,
+                              skin: WMPLoadedSkin, builder: WMPSceneBuilder,
+                              pass: WMPScriptPass, probe: WMPProbe) async -> WMPScene {
+        var scene = scene
+        let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        var previous = WMPSceneOverrides.empty
+        var hovered: WMPHitTarget?
+        for point in points {
+            let where_ = "\(viewID)@\(WMPNumber.format(point.x)),\(WMPNumber.format(point.y))"
+            let target = WMPHitTester(hits: scene.hits).hitTest(point)
+            guard hovered?.stableID != target?.stableID else {
+                WMPHarnessOutput.emit("HOVER \(where_) inside=\(hovered?.nodeID ?? "-")"
+                    + "#\(hovered.map { String($0.stableID) } ?? "-") — no edge")
+                continue
+            }
+            let left = hovered
+            hovered = target
+            var edges: [(event: String, target: WMPHitTarget)] = []
+            if let left { edges.append(("onMouseOut", left)) }
+            if let target { edges.append(("onMouseOver", target)) }
+            for (event, edge) in edges {
+                let handlers = WMPMainWindowController.handlers(in: skin, event: event,
+                    targetID: edge.nodeID, targetStableID: edge.stableID, viewID: viewID)
+                WMPHarnessOutput.emit("HOVER \(where_) \(event) \(edge.nodeID ?? "-")#\(edge.stableID) "
+                    + "kind=\(edge.kind) handlers=\(handlers.count)")
+                guard let session = pass.session, !handlers.isEmpty else { continue }
+                let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                    snapshot: WMPHostSnapshot(),
+                    event: WMPJScriptEvent(name: event, targetID: edge.nodeID, handlers: handlers),
+                    geometry: scene.scriptGeometry)
+                for line in changeLines(from: previous, to: output.overrides, nodes: nodesByID) {
+                    WMPHarnessOutput.emit("HOVER \(where_) \(event) \(line)")
+                }
+                previous = output.overrides
+                for diagnostic in output.diagnostics {
+                    WMPHarnessOutput.emit("HOVER \(where_) \(event) [\(diagnostic.code)] \(diagnostic.message)")
+                }
+                if probe.wantsCallTrace {
+                    let unrecognised = Set(output.calls.filter { !$0.recognised }.map(\.path)).sorted()
+                    WMPHarnessOutput.emit("HOVER \(where_) \(event) unrecognised=[\(unrecognised.joined(separator: ","))]")
+                }
+                if let rebuilt = try? await builder.build(viewID: viewID,
+                        requestedSize: probe.requestedSize, overrides: output.overrides) {
+                    scene = rebuilt
+                    WMPHarnessOutput.emit("HOVER \(where_) \(event) after: \(rebuilt.commands.count) commands, "
+                        + "\(rebuilt.metrics.unresolvedNodeCount) unresolved")
+                }
+            }
+            if edges.isEmpty { WMPHarnessOutput.emit("HOVER \(where_) MISS") }
+        }
+        return scene
+    }
 
     // MARK: The AppKit half (W71)
 

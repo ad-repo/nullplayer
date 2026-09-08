@@ -81,6 +81,40 @@
   and one unreadable bitmap could cost a whole window its contents. NullPlayer now reads those
   bitmaps itself, so bluegrid, cerulean, Radio, YIL!OMA2K and circle draw their real skins — and
   circle's buttons, whose click regions live in two of the affected files, land where they should.
+- **Windows Media Player skins react to the pointer.** Buttons in a `.wmz` skin now light up under
+  the pointer the way the skin drew them to, and a skin's own hover scripts run: readouts fade in
+  and out, panels highlight, and Melvin's penguin follows your mouse with its eyes. None of this
+  ever happened before — the skinned window could not receive a mouse-moved event at all, so every
+  piece of hover artwork in every WMP skin sat dark, and the same gap kept the keyboard out of the
+  window. A skin's tooltips arrive with it: the tip a skin wrote for each control is shown, and it
+  changes with the control the way the skin asks — a mute button that reads "Mute" reads "Sound"
+  once it is muted. The tooltip used to be an internal debugging string, shown over every pixel of
+  every skin.
+
+- **Windows Media Player skins with a scripted playlist, list or label respond to clicks and
+  hovers.** A skin that builds its own rows out of text — rather than out of buttons — was
+  untouchable: the click or hover went to whatever was drawn behind the text. Five hundred and
+  thirty-seven of these across 143 skins in a 180-skin library.
+
+- **Animations in Windows Media Player skins play the number of times the skin asked for.** An
+  animation meant to run once — a shutter opening over a player's face, a logo flaring — was
+  restarted forever, so it slammed back to its first frame and replayed every few seconds. Skins
+  that ask to loop still loop. As part of the same fix, a skin that has finished animating stops
+  being redrawn, instead of repainting a still picture at the animation's frame rate for as long as
+  the window is open.
+
+- **Windows Media Player skins that run on a timer now run.** A `.wmz` view can ask to be woken on
+  an interval — that is how skins drive their intros, clocks, seek readouts and idle animations —
+  and NullPlayer started that timer and then cancelled it a moment later, every time. No skin's
+  timer had ever fired. Halo 2's opening sequence, which slides its shutter back to reveal the
+  player, is the visible one: the skin used to sit closed forever.
+
+- **The Halo 2 skin opens on its player instead of an empty window.** The skin starts on the small
+  preview picture used by the skin chooser, blanks it in its own startup script, and asks to be sent
+  on to the real player. NullPlayer showed the blanked preview — an empty window — and remembered
+  its size, so it came back empty on every launch afterwards. Skins that hand off this way, and
+  there are several, now land on the view they meant to open.
+
 - **Pressing a button in a Windows Media Player skin lights up the button you pressed.** In a skin
   whose buttons share one image and one colour map — most of them — the pressed and hover artwork was
   drawn mirrored top to bottom, so clicking the top icon in a column highlighted the bottom one. The

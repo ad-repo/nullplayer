@@ -98,6 +98,7 @@ sleep 5; taskpolicy -B -p "$(pgrep -f 'debug/NullPlayer' | head -1)"
 |---|---|
 | Window rect | `./winhelper windows` → `layer x y w h alpha title` |
 | A real click | `./winhelper click <screenX> <screenY>` — **`CGEvent`, never System Events** |
+| A hover, or a path of them | `./winhelper move <x> <y> [<x> <y> …]` — `mouseMoved` through the points, 250 ms apart. Hover artwork and a skin's `onMouseOver`/`onMouseOut` fire on the *edges* between controls, so the path is the test, and **the app must be frontmost**: a borderless window gets no `mouseMoved` at all unless it is key |
 | Switch skin system | `osascript menu.applescript mode "<submenu>"` |
 | Select a skin | `osascript menu.applescript skin "<submenu>" "<item>"` |
 | Close aux windows | `osascript menu.applescript closeaux` |

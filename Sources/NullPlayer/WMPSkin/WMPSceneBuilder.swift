@@ -475,7 +475,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // says: the element is drawn and the pointer goes through it to whatever is beneath.
             // A decorative overlay registered as a hit target swallows the controls it covers.
             let passthrough = literalString(node, "passthrough")?.caseInsensitiveCompare("true") == .orderedSame
-            if isInteractive(node.kind), visible != nil, !passthrough {
+            if isInteractive(node.kind) || authorsInputHandler(node), visible != nil, !passthrough {
                 let enabled = literalString(node, "enabled")?.caseInsensitiveCompare("false") != .orderedSame
                     && !interactionState.disabledNodesForScene.contains(node.stableID)
                 let sticky = literalString(node, "sticky")?.caseInsensitiveCompare("true") == .orderedSame
@@ -501,7 +501,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                 kind: child.kind.description, frame: frame,
                                 action: WMPTransportAction.authoredAction(for: child),
                                 sticky: literalString(child, "sticky")?.caseInsensitiveCompare("true") == .orderedSame,
-                                enabled: childEnabled)
+                                enabled: childEnabled,
+                                toolTip: toolTip(child, state: interactionState.visualState(for: child.stableID),
+                                                  literal: literalString))
                         }
                     }
                 }
@@ -517,7 +519,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     sticky: sticky, enabled: enabled, mappingImage: mappingImage,
                     mappingTargets: mappingTargets, cursor: cursor,
                     tabStop: literalString(node, "tabStop")?.caseInsensitiveCompare("false") != .orderedSame,
-                    positionMap: positionMap))
+                    positionMap: positionMap,
+                    toolTip: toolTip(node, state: visualState, literal: literalString)))
             }
 
             let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
@@ -683,6 +686,44 @@ struct WMPSceneBuilder: @unchecked Sendable {
         guard let attribute = node.attribute(named: "value"),
               case let .binding(kind, path) = attribute.value, kind == .property else { return nil }
         return path.lowercased()
+    }
+
+    /// A node the markup gave a mouse handler is a hit target whatever its kind.
+    ///
+    /// WMP dispatches mouse events to *any* element, and skins rely on it: `Sports` builds its
+    /// playlist out of ten `<TEXT>` rows that highlight under the pointer through `hilightMe()`,
+    /// and hovering one hit the equaliser slider behind it instead — reported on 2026-09-08 as
+    /// "Sports has no hover actions". Measured over the 179-archive corpus, **537 nodes across 143
+    /// skins** carry a mouse handler on a kind `isInteractive` does not list: 326 `<TEXT>` across
+    /// 69 skins, 90 `<EFFECTS>` across 81, 21 `<VIDEO>` across 21, and a tail of transport spellings
+    /// this engine parses as unknown kinds. Reproduce with `python3 scripts/wmp_input_kinds.py`;
+    /// see `reference/harness.md` § *Input and tooltips the markup authors*.
+    ///
+    /// `passthrough="true"` still wins — it is the attribute that says "drawn, not touchable" — so
+    /// a decorative overlay does not start swallowing the controls under it.
+    private func authorsInputHandler(_ node: WMPNode) -> Bool {
+        node.attributes.contains { attribute in
+            guard case .handler = attribute.value else { return false }
+            let name = attribute.name.lowercased()
+            return ["onclick", "onmouseover", "onmouseout", "onmousedown", "onmouseup"].contains(name)
+        }
+    }
+
+    /// The tip for one control in the state it is currently drawn in.
+    ///
+    /// WMP swaps the text with the button: `upToolTip` while it is up, `downToolTip` while it is
+    /// down, and `toolTip` when the skin authored only one — a mute button reads "Mute" and then
+    /// "Sound". The corpus authors 4,789 `upToolTip`, 3,797 `toolTip` and 541 `downToolTip` across
+    /// 176, 175 and 105 of the 179 archives; reproduce those with the scan in
+    /// `reference/harness.md` § *Input and tooltips the markup authors*.
+    ///
+    /// `literal` is the caller's resolver rather than this type's, so a script assignment —
+    /// `alx_dl.wms` writes `toolTip='Volume'` from its slider's `onMouseUp` — is read through the
+    /// scene overrides instead of being shadowed by the authored attribute.
+    private func toolTip(_ node: WMPNode, state: WMPVisualInteractionState,
+                         literal: (WMPNode, String) -> String?) -> String? {
+        let stateTip = state == .down ? literal(node, "downToolTip") : literal(node, "upToolTip")
+        return stateTip ?? literal(node, "toolTip")
     }
 
     private func isInteractive(_ kind: WMPElementKind) -> Bool {

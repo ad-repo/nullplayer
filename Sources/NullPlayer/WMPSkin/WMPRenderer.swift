@@ -48,11 +48,17 @@ struct WMPRenderer: @unchecked Sendable {
         /// Only the animated commands. Repainting the whole window at 10 fps for one blinking LED
         /// is the difference between a skin that animates and a skin that burns a core doing it.
         let bounds: WMPRect
+        /// When every animation in the scene has played the number of times it asked for, or `nil`
+        /// while any of them loops forever. A one-shot scene must stop repainting when its last
+        /// frame lands, or the loop re-renders a still picture at the GIF's frame rate for as long
+        /// as the view is open — `Halo 2`'s shutter is 34 frames of a 327x294 window.
+        let endsAt: TimeInterval?
     }
 
     func animationCadence(for scene: WMPScene) -> WMPAnimationCadence? {
         var shortest: TimeInterval?
         var bounds: WMPRect?
+        var endsAt: TimeInterval? = 0
         for command in scene.commands {
             guard case let .image(specification) = command.paint,
                   let animation = try? imageStore.animation(for: specification.resourcePath),
@@ -60,9 +66,16 @@ struct WMPRenderer: @unchecked Sendable {
             shortest = min(shortest ?? delay, delay)
             let visible = command.clipRect.flatMap { command.frame.intersection($0) } ?? command.frame
             bounds = bounds.map { $0.union(visible) } ?? visible
+            // One endless animation makes the whole scene endless; otherwise the scene stops when
+            // its longest-running one does.
+            if let end = animation.endOfPlayback, let running = endsAt {
+                endsAt = max(running, end)
+            } else {
+                endsAt = nil
+            }
         }
         guard let shortest, let bounds else { return nil }
-        return WMPAnimationCadence(shortestDelay: shortest, bounds: bounds)
+        return WMPAnimationCadence(shortestDelay: shortest, bounds: bounds, endsAt: endsAt)
     }
 
     func dump(scene: WMPScene, to directory: URL, backingScale: CGFloat = 1,

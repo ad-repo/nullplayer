@@ -175,16 +175,23 @@ struct WMPHitMetadata: Hashable, Codable {
     /// A `CUSTOMSLIDER`'s greyscale position map, when it has one. It answers both halves of the
     /// control — the value under the pointer, and which filmstrip frame to draw.
     let positionMap: WMPPositionMap?
+    /// The tip the pointer resting on this control should show, already resolved for its state:
+    /// `downToolTip` while it is down, `upToolTip` otherwise, and plain `toolTip` behind both.
+    /// Authored by nearly the whole corpus — `upToolTip` alone is 4,789 uses across 176 of 179
+    /// archives — and shown by nothing until 2026-09-08.
+    let toolTip: String?
 
     init(stableID: Int, nodeID: String?, kind: String, frame: WMPRect, clipRect: WMPRect?,
          zIndex: Int, documentOrder: Int, action: WMPTransportAction?, sticky: Bool, enabled: Bool,
          mappingImage: WMPMappingImage?, mappingTargets: [WMPHitTarget],
-         cursor: WMPCursor? = nil, tabStop: Bool = true, positionMap: WMPPositionMap? = nil) {
+         cursor: WMPCursor? = nil, tabStop: Bool = true, positionMap: WMPPositionMap? = nil,
+         toolTip: String? = nil) {
         self.stableID = stableID; self.nodeID = nodeID; self.kind = kind; self.frame = frame
         self.clipRect = clipRect; self.zIndex = zIndex; self.documentOrder = documentOrder
         self.action = action; self.sticky = sticky; self.enabled = enabled
         self.mappingImage = mappingImage; self.mappingTargets = mappingTargets
         self.cursor = cursor; self.tabStop = tabStop; self.positionMap = positionMap
+        self.toolTip = toolTip
     }
 }
 

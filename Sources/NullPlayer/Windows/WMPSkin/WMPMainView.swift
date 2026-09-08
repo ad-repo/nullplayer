@@ -11,7 +11,11 @@ struct WMPWindowEdges: OptionSet {
     static let bottom = WMPWindowEdges(rawValue: 1 << 3)
 }
 
-final class WMPMainView: NSView {
+/// `NSViewToolTipOwner` is not decoration. Without the conformance declared, AppKit finds no
+/// `view(_:stringForToolTip:point:userData:)` on the owner and falls back to its `description`: the
+/// tooltip over every pixel of every skin read `<NullPlayer.WMPMainView: 0x…>`, reported on
+/// 2026-09-08. The method below was written and correct all along — nothing was calling it.
+final class WMPMainView: NSView, NSViewToolTipOwner {
     var onInteractionChanged: ((WMPInteractionState, Set<Int>) -> Void)?
     var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
     /// `(event, authored id, stable graph id)`. The stable id is what scopes the dispatch: a
@@ -28,6 +32,10 @@ final class WMPMainView: NSView {
     private var hitTester: WMPHitTester?
     private var interaction = WMPInteractionState()
     private var capturedTarget: WMPHitTarget?
+    /// The node the pointer is over, kept alongside `WMPInteractionState.hoveredNode` because the
+    /// *exit* edge has to name the node the pointer just left — and by then the interaction state
+    /// has already moved on. The authored id travels with it for the same reason.
+    private var hoveredTarget: WMPHitTarget?
     private var tracking: NSTrackingArea?
     private var isDraggingWindow = false
     private var dragStart = NSPoint.zero
@@ -138,7 +146,8 @@ final class WMPMainView: NSView {
         cancelInputCapture()
         onSpectrumDemandChanged?(false)
         widgetViews.values.forEach { $0.removeFromSuperview() }; widgetViews.removeAll(); widgetValues.removeAll()
-        image = nil; scene = nil; hitTester = nil; capturedTarget = nil; isDraggingWindow = false
+        image = nil; scene = nil; hitTester = nil; capturedTarget = nil; hoveredTarget = nil
+        isDraggingWindow = false
         onInteractionChanged = nil; onAction = nil; onScriptEvent = nil
         onElementValueChanged = nil; onElementTextChanged = nil; onSpectrumDemandChanged = nil
     }
@@ -156,11 +165,22 @@ final class WMPMainView: NSView {
         super.updateTrackingAreas()
     }
 
+    /// The tip for whatever is under the pointer: the control the hit tester lands on first, then
+    /// the widget beneath it. Only widgets answered before 2026-09-08, so nearly every tip in the
+    /// corpus was unreachable — a skin's controls are `<BUTTON>`s, and `upToolTip` is authored 4,789
+    /// times across 176 of the 179 archives.
     func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag,
               point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
         guard let scene else { return "" }
         let skinPoint = WMPPoint(x: bounds.width > 0 ? point.x * scene.canvasSize.width / bounds.width : 0,
                                  y: bounds.height > 0 ? point.y * scene.canvasSize.height / bounds.height : 0)
+        // The hit tester, not a frame scan: a mapping image gives four controls one frame and only
+        // the pixel under the pointer says which of them the tip belongs to.
+        if let target = hitTester?.hitTest(skinPoint) {
+            if let tip = target.toolTip, !tip.isEmpty { return tip }
+            if let tip = scene.hits.first(where: { $0.stableID == target.stableID })?.toolTip,
+               !tip.isEmpty { return tip }
+        }
         return scene.widgets.reversed().first { $0.frame.contains(skinPoint) }?.toolTip ?? ""
     }
 
@@ -187,7 +207,7 @@ final class WMPMainView: NSView {
         updateHover(event)
     }
     override func mouseEntered(with event: NSEvent) { updateHover(event) }
-    override func mouseExited(with event: NSEvent) { notify(interaction.move(over: nil)) }
+    override func mouseExited(with event: NSEvent) { setHover(nil) }
 
     override func mouseDown(with event: NSEvent) {
         guard let scene else { return }
@@ -331,7 +351,25 @@ final class WMPMainView: NSView {
 
     private func updateHover(_ event: NSEvent) {
         guard let scene else { return }
-        notify(interaction.move(over: interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))))
+        setHover(interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize)))
+    }
+
+    /// Move the hover to `target`, repaint the artwork, and raise the two authored edges.
+    ///
+    /// `onmouseover`/`onmouseout` are edges, not states: a skin fades a readout in on entry and
+    /// back out on exit (`alx_dl.wms` does exactly that with `volumeText` and `seekText`), so a
+    /// pointer crossing from one control straight to another must raise the exit on the node it
+    /// left *before* the entry on the node it reached. Nothing is raised while the pointer stays
+    /// inside the same node — every mouse-moved event would otherwise be a script transaction.
+    private func setHover(_ target: WMPHitTarget?) {
+        guard hoveredTarget?.stableID != target?.stableID else { return }
+        let previous = hoveredTarget
+        hoveredTarget = target
+        notify(interaction.move(over: target))
+        WMPMainWindowController.traceInput("hover \(previous?.nodeID ?? "-")#\(previous.map { String($0.stableID) } ?? "-")"
+            + " -> \(target?.nodeID ?? "-")#\(target.map { String($0.stableID) } ?? "-")")
+        if let previous { onScriptEvent?("mouseout", previous.nodeID, previous.stableID) }
+        if let target { onScriptEvent?("mouseover", target.nodeID, target.stableID) }
     }
 
     private func interactiveTarget(at point: WMPPoint) -> WMPHitTarget? {

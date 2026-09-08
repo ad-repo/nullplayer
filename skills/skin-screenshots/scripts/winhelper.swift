@@ -31,6 +31,19 @@ func click(_ x: Double, _ y: Double) {
     up?.post(tap: .cghidEventTap)
 }
 
+/// Hover: post `mouseMoved` through a path, pausing between points.
+///
+/// A hover is not a click with the buttons left out — the app only learns the pointer moved from
+/// these events, and a skin's `onMouseOver`/`onMouseOut` fire on the *edges* between controls, so
+/// the path matters. Points are screen coordinates, pairwise.
+func move(_ points: [CGPoint]) {
+    for p in points {
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?
+            .post(tap: .cghidEventTap)
+        usleep(250_000)
+    }
+}
+
 switch args.count > 1 ? args[1] : "" {
 case "windows": windows()
 case "click":
@@ -38,6 +51,12 @@ case "click":
         FileHandle.standardError.write("usage: winhelper click <x> <y>\n".data(using: .utf8)!); exit(1)
     }
     click(x, y)
+case "move":
+    let numbers = args.dropFirst(2).compactMap(Double.init)
+    guard numbers.count >= 2, numbers.count % 2 == 0 else {
+        FileHandle.standardError.write("usage: winhelper move <x> <y> [<x> <y> …]\n".data(using: .utf8)!); exit(1)
+    }
+    move(stride(from: 0, to: numbers.count, by: 2).map { CGPoint(x: numbers[$0], y: numbers[$0 + 1]) })
 default:
-    FileHandle.standardError.write("usage: winhelper windows|click\n".data(using: .utf8)!); exit(1)
+    FileHandle.standardError.write("usage: winhelper windows|click|move\n".data(using: .utf8)!); exit(1)
 }

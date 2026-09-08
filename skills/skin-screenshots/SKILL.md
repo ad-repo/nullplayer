@@ -50,7 +50,7 @@ that skin decided.
 | `capture.sh` | The sweep: mode switch, skin select, settle, capture, reframe, manifest |
 | `reframe.sh` | Centres the visible artwork on the white frame; owns the two framing rules |
 | `makegif.sh` | Assembles the GIF at an exact cycle length |
-| `winhelper` | Window enumeration via `CGWindowListCopyWindowInfo`, and real `CGEvent` clicks |
+| `winhelper` | Window enumeration via `CGWindowListCopyWindowInfo`, and real `CGEvent` clicks and hovers (`move <x> <y> …`) |
 | `menu.applescript` | The `mode` / `skin` / `list` / `closeaux` menu verbs |
 
 `capture.sh` writes `manifest_<stamp>.tsv` next to the images recording, per skin: status, window

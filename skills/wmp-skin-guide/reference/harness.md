@@ -53,10 +53,42 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
 | `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]`, any entry may be a `>`-joined path | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after. **An entry written `x,y>x,y>x,y` is a drag**: press at the first point, move through the rest, release at the last, with the pointer captured on the object the press landed on. `DRAG` reports the control's direction, range and border, the value and drawn thumb frame at every step, and then the two claims the flag exists to settle — `follows-pointer=yes\|no\|flat` and `thumb-travel=<px>`. `flat` is the one to read for: a value that never moves is trivially monotonic, and a `yes/no` answer alone would call it a pass |
+| `WMP_RENDER_HOVER` | `<view>@x,y[;x,y…]` | `HOVER` — walk the pointer through the points in order and raise the edges each move crosses: an `onMouseOut` on the node left, then an `onMouseOver` on the node entered, through `WMPMainWindowController.handlers(in:event:…)`, the same call the app dispatches through. A move that stays inside the same node prints `inside=… — no edge` and raises nothing, which is the claim worth falsifying: a hover fired per mouse-moved event would be a script transaction per pixel. Separate from `WMP_RENDER_CLICK`'s `>` drag form on purpose — a drag holds a capture and asks what the *value* did, a hover holds nothing and asks which handlers the crossing raised (W54) |
 | `WMP_RENDER_APPKIT` | `1` | `APPKIT` — host the scene in the **real `NSView` stack** and report what the AppKit layer adds over the artwork. `outside=` is the number that ranks: an overlay drawing inside its own widget frame is the hosting working, and one drawing anywhere else is the W43 class. `blit=`/`blit-max-delta=` is a second, separate comparison of the renderer's own image against the view's blit of it. Set `WMP_RENDER_APPKIT_DUMP=<dir>` alongside it to write both bitmaps as `<view>-scene.png` and `<view>-hosted.png` when isolating one view |
 | `WMP_RENDER_SETTLE` | seconds | run the **view's own timer loop** for that long before measuring — at the period the skin asks for, honouring every `setViewTimerInterval` its handlers post back, rebuilding the scene between ticks |
 | `WMP_RENDER_CLOCK` | `<s>[;<s>…]` | seconds into an animation to draw, one PNG per value (suffixed `@t<s>`; a zero clock keeps the original filename). **A render dump is a still, so this flag is the only way an animation is falsifiable** — frame zero is indistinguishable from an engine that never animates. Two pinned values, diffed, are the proof. `ANIMATION <view>: shortestDelay=… bounds=…` reports what the scene actually animates |
 | `WMP_RENDER_SIZE` | `<W>x<H>` | `RESIZE` — lay the view out at its **own** size first, run `onLoad` there, then resize to this and re-drive `onResize`, which is the order a user produces. An expression-driven layout is a *different* layout, not the same one scaled. The transaction runs whether or not the view declares an `onResize`, because an expression re-reads `view.width` either way; `handlers=` is how many the changed-object set actually raised, and `handlers=0` with a skin you know authors one means nothing moved |
+
+### The one probe that is not in the test binary
+
+`WMP_TRACE_INPUT=1` is read by **the app**, not by the harness (`WMPMainWindowController.tracesInput`,
+`#if DEBUG`). It writes one line per input the window turns into a script transaction and one per
+transaction that reaches the screen, straight to stderr — so launch the debug build redirected to a
+file and read it there:
+
+```bash
+WMP_TRACE_INPUT=1 nohup ./.build/arm64-apple-macosx/debug/NullPlayer > /tmp/app.log 2>&1 &
+```
+
+```
+INPUT candidate <view> canvas=<size> requested=<size|->      which views the loader walked, and why
+INPUT present-view <view> canvas=<size> commands=<n>         the view that actually became a window
+INPUT view-timer <n>ms                                       the view's own timerInterval, 0 = stopped
+INPUT hover <id>#<sid> -> <id>#<sid>                         a pointer crossing, before dispatch
+INPUT dispatch <event> target=<id>#<sid> handlers=<n> gated=<bool>
+INPUT present <event> geometry=<n> properties=<n> commands=<n> diagnostics=<n>
+INPUT command <action> value=<v>                             a host command the transaction posted
+```
+
+`view-timer` is the line that found the dead `onTimer` class: `1000ms` from `apply`, then `0ms` one
+line later because `scheduleTimers` cancelled it.
+
+It is the instrument that found every one of the 2026-09-08 live defects, and each was invisible to
+every headless probe here: the window was never key (no `hover` lines at all while `dispatch click`
+worked), a script present erased the hover artwork, `<TEXT>` rows were not hit targets, `Halo 2`
+presented a thumbnail view its own `onLoad` had blanked, and no view timer in the corpus had ever
+fired (`view-timer 1000ms` immediately followed by `view-timer 0ms`). Read once at process start like every other
+probe — exporting it at a running app reports nothing.
 
 `WMP_TEST_WMZ` and `WMP_RENDER_DUMP_DIR` are accepted aliases for `WMP_SKIN` and `WMP_RENDER_DUMP`
 so the Phase 0–8 handoff docs' invocations still run. Use the names in the table.
@@ -115,6 +147,10 @@ DRAG <view>@x,y>x,y hit=<id>#<sid> kind=<k> slider=<b> direction=<d> min=<m> max
 DRAG <view>@x,y>x,y step=<i> at=<x>,<y> value=<v> drawn=<v> thumb=<rect>
 DRAG <view>@x,y>x,y value <v> -> <v> follows-pointer=<yes|no|flat> thumb-travel=<px>
 DRAG <view>@x,y>x,y MISS | not-a-slider — no value tracking to measure
+HOVER <view>@x,y <onMouseOut|onMouseOver> <id>#<stableID> kind=<k> handlers=<n>
+HOVER <view>@x,y <event> changed=[…] | [<code>] <message> | unrecognised=[…] | after: <…>
+HOVER <view>@x,y inside=<id>#<stableID> — no edge
+HOVER <view>@x,y MISS
 APPKIT <view>: <W>x<H>@<n>x differing=<n>/<n> (<pct>) hosted=<n>/<n> outside=<n> (<pct>) max-delta=<n> blit=<n> (<pct>) blit-max-delta=<n> [worst=<rect>]
 APPKIT <view>/<stableID> <kind> id=<id> frame=<rect> differing=<n> (<pct>)
 APPKIT <view>: SKIPPED <why>
@@ -172,6 +208,41 @@ directions. See § *After the cascade* below for what the corrected sweep says, 
 `testExpressionProbeReportsOnlyTheDumpedViewsOwnExpressions` for the check that holds it.
 
 ---
+
+## Input and tooltips the markup authors
+
+Two counts the census does not produce, both measured 2026-09-08, both with a command next to them.
+
+**Nodes that author input on a kind the builder does not treat as a control** — `537` across `143`
+of the 179 archives, which is what `WMPSceneBuilder.authorsInputHandler` exists for: `326` `<TEXT>`
+across 69 skins, `90` `<EFFECTS>` across 81, `21` `<VIDEO>` across 21, then `stopbutton`,
+`progressbar`, `prevbutton`, `playbutton` and `nextbutton` at 12-13 each — transport spellings this
+engine still parses as *unknown* kinds, so they are hit targets now and carry no transport action.
+`Sports` is the reason it was written: ten `<TEXT>` playlist rows whose `onmouseover` could never
+fire because nothing registered them as targets.
+
+```bash
+python3 scripts/wmp_input_kinds.py
+```
+
+**Tooltips.** Measured with the markup census, whose denominator is 177 — the two repaired-header
+archives `unzip` cannot open are outside it:
+
+```bash
+scripts/wmp_markup_census.sh /tmp/wmp/markup toolTip upToolTip downToolTip
+```
+
+| Attribute | Uses | Skins |
+|---|---|---|
+| `upToolTip` | 4,712 | 175 of 177 |
+| `toolTip` | 3,749 | 174 of 177 |
+| `downToolTip` | 517 | 104 of 177 |
+
+None of them reached the screen before 2026-09-08: only widgets answered `stringForToolTip`, and a
+skin's controls are `<BUTTON>`s. The tip is resolved per drawn state in `WMPSceneBuilder.toolTip` —
+`downToolTip` while the control is down, `upToolTip` otherwise, plain `toolTip` behind both — and
+read through the scene overrides, so a script assignment (`alx_dl.wms` writes `toolTip='Volume'`
+from its slider's `onMouseUp`) wins over the authored attribute.
 
 ## The two committed scripts
 

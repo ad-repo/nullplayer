@@ -34,14 +34,33 @@ struct WMPDecodedImage {
 struct WMPImageAnimation: Hashable, Codable {
     /// Per-frame delays in seconds, in authored order.
     let delays: [TimeInterval]
+    /// How many times the GIF asked to be played: `0` is forever, `n > 0` plays `n` times and then
+    /// **holds the last frame**.
+    ///
+    /// A GIF says this in the NETSCAPE2.0 application extension, and a one-shot animation is one
+    /// that omits it — which ImageIO reports as `LoopCount = 1`. Looping regardless is what made
+    /// `Halo 2` unusable: its 34-frame `m_shutter_open.gif` opens the shutter over the player's
+    /// face, holds it open in WMP, and here slammed shut and re-opened every 3.4 seconds forever —
+    /// reported on 2026-09-08 as "the shutter closes after it opens". The corpus authors both
+    /// kinds: `m_shutter_open.gif` and `m_logo_hov.gif` are `1`, `seek_text_hov.gif` and ALXMorph's
+    /// 61-frame `m_anim_coolant.gif` are `0`.
+    let loopCount: Int
 
     var frameCount: Int { delays.count }
     var duration: TimeInterval { delays.reduce(0, +) }
+    /// When the animation stops moving, or `nil` while it never does.
+    var endOfPlayback: TimeInterval? { loopCount > 0 ? duration * TimeInterval(loopCount) : nil }
 
-    /// The frame showing at `clock` seconds into a loop. A zero-duration animation — every delay
-    /// unreadable — holds on frame zero rather than dividing by it.
+    init(delays: [TimeInterval], loopCount: Int = 0) {
+        self.delays = delays
+        self.loopCount = max(0, loopCount)
+    }
+
+    /// The frame showing at `clock` seconds in. A zero-duration animation — every delay unreadable
+    /// — holds on frame zero rather than dividing by it, and a finished one holds its last frame.
     func frameIndex(at clock: TimeInterval) -> Int {
         guard frameCount > 1, duration > 0, clock.isFinite else { return 0 }
+        if let end = endOfPlayback, clock >= end { return frameCount - 1 }
         var remaining = clock.truncatingRemainder(dividingBy: duration)
         if remaining < 0 { remaining += duration }
         for (index, delay) in delays.enumerated() {
@@ -220,7 +239,12 @@ final class WMPImageStore: @unchecked Sendable {
                 ?? (gif?[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
             delays.append(unclamped <= 0.011 ? 0.1 : unclamped)
         }
-        let animation = WMPImageAnimation(delays: delays)
+        let properties = CGImageSourceCopyProperties(source, options) as? [CFString: Any]
+        let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+        // Absent means "play once" in the GIF grammar — only the NETSCAPE2.0 extension asks for a
+        // loop — and that is what ImageIO's `1` means here as well.
+        let loopCount = (gifProperties?[kCGImagePropertyGIFLoopCount] as? Int) ?? 1
+        let animation = WMPImageAnimation(delays: delays, loopCount: loopCount)
         lock.lock(); animationEntries[canonical] = .some(animation); lock.unlock()
         return animation
     }

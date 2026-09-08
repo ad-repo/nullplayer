@@ -294,13 +294,16 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
     ]
 
     /// An event belongs here only when the engine **dispatches** it. Being parsed as a handler is
-    /// not enough: `onmouseover`/`onmouseout` are classified by `WMPAttributeParser` and no call
-    /// site ever raises them, so they stay unknown here and keep ranking as measured demand. That
-    /// is the whole point of the list — a name added for tidiness makes the tally lie.
+    /// not enough — a name added for tidiness makes the tally lie, which is what `onmouseover` and
+    /// `onmouseout` demonstrated: classified by `WMPAttributeParser`, never raised, and correctly
+    /// unknown here until `WMPMainView.setHover` raised both edges (W54). They are dispatched now.
+    /// `onmousemove`, `ondblclick`, `onfocus` and `onblur` are the same shape and are still open,
+    /// so they stay off this list and keep ranking as measured demand.
     /// Internal rather than private: the probe harness prints the unknown remainder and must not
     /// restate this list, or the tally and the report can disagree about what is implemented.
     static let supportedEvents: Set<String> = [
         "onload", "onclose", "ontimer", "onmousedown", "onmouseup", "onclick", "onchange",
+        "onmouseover", "onmouseout",
         "onresize", "openstatechange", "playstatechange", "status_onchange", "modechange",
         "buffering_onchange", "reception_onchange", "viewchange",
         // Aliases of three of the above, accepted by the one matcher that finds handlers, so a
