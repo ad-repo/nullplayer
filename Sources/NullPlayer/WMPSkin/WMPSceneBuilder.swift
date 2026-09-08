@@ -38,10 +38,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
         // window *is* the bitmap — and rejecting those was the single largest cause of a skin that
         // loads and then draws nothing.
         func viewDimension(_ name: String) throws -> CGFloat? {
-            if let value = literal(view, name), value > 0 { return value }
+            // A literal zero is authored on purpose: `pharaoh` declares `vGhost` and
+            // `vGhostAutoDetect` as `width="0" height="0"` views whose only job is to run an
+            // `onLoad` that redirects to another view. Zero is an answer; only a negative one is not.
+            if let value = literal(view, name), value >= 0 { return value }
             if let value = overrides.geometry[WMPScenePropertyAddress(stableID: view.stableID,
                                                                       property: name.lowercased())],
-               value.isFinite, value > 0 { return value }
+               value.isFinite, value >= 0 { return value }
             return nil
         }
         var authoredWidth = try viewDimension("width")
@@ -65,19 +68,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if authoredWidth == nil, union.width > 0 { authoredWidth = union.width }
             if authoredHeight == nil, union.height > 0 { authoredHeight = union.height }
         }
-        guard let authoredWidth, let authoredHeight else {
-            throw WMPFailure(WMPDiagnostic(.invalidGeometry,
-                "View '\(viewID)' requires positive literal width and height for static layout.",
-                location: view.location))
-        }
-        let minimum = WMPSize(width: literal(view, "minWidth") ?? authoredWidth,
-                              height: literal(view, "minHeight") ?? authoredHeight)
+        // Nothing sized it and it can place nothing: the view has no drawable content at all.
+        // That is a legal WMP construct, not a defect — 25 corpus skins author a `controlView`
+        // holding only `<player>` and a hidden `<video>` so that a script can run with host
+        // bindings and no window, and `pharaoh` writes the same idea as an explicit 0x0 view.
+        // The builder still invents no geometry; the honest size of empty content is empty.
+        let width = authoredWidth ?? 0
+        let height = authoredHeight ?? 0
+        let minimum = WMPSize(width: literal(view, "minWidth") ?? width,
+                              height: literal(view, "minHeight") ?? height)
         let maxWidth = literal(view, "maxWidth"), maxHeight = literal(view, "maxHeight")
         let maximum: WMPSize? = maxWidth == nil && maxHeight == nil ? nil
             : WMPSize(width: maxWidth ?? .greatestFiniteMagnitude,
                       height: maxHeight ?? .greatestFiniteMagnitude)
         let resizeLimits = WMPResizeLimits(minimum: minimum, maximum: maximum)
-        let canvas = resizeLimits.clamp(requestedSize ?? WMPSize(width: authoredWidth, height: authoredHeight))
+        let canvas = resizeLimits.clamp(requestedSize ?? WMPSize(width: width, height: height))
         let canvasRect = WMPRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
 
         var commands: [WMPPaintCommand] = []
@@ -344,7 +349,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
             let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
             let authoredSize = isRoot
-                ? WMPSize(width: authoredWidth, height: authoredHeight)
+                ? WMPSize(width: width, height: height)
                 : WMPSize(width: parseDimension(node, "width") ?? frame.width,
                           height: parseDimension(node, "height") ?? frame.height)
             for child in node.children.sorted(by: nodeOrder) {
@@ -354,7 +359,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
         }
 
         try walk(view, parentFrame: canvasRect,
-                 parentAuthoredSize: WMPSize(width: authoredWidth, height: authoredHeight),
+                 parentAuthoredSize: WMPSize(width: width, height: height),
                  inheritedClip: canvasRect, isRoot: true)
         hits.sort { ($0.zIndex, $0.stableID) < ($1.zIndex, $1.stableID) }
         let allDirty = commands.compactMap { command in

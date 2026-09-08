@@ -296,19 +296,63 @@ final class WMPGeometryTests: XCTestCase {
         XCTAssertEqual(scripted.canvasSize, WMPSize(width: 100, height: 60))
     }
 
-    /// A view with neither an authored size nor background artwork still has no size to invent, and
-    /// the builder never guesses one.
-    func testViewWithNoSizeAndNoArtworkIsStillRejected() async throws {
+    /// A view with no authored size, no artwork of its own and nothing it can place is a legal WMP
+    /// construct, not a rejection: 25 corpus skins author a `controlView` holding only `<player>`
+    /// and a hidden `<video>` so that an `onLoad` can run with host bindings and no window. The
+    /// builder still invents no geometry — the honest size of empty content is empty, and the
+    /// presenter is what refuses to make a window out of it.
+    func testViewWithNoSizeAndNoContentIsEmptyRatherThanRejected() async throws {
         let archive = try WMPSkinTestSupport.makeArchive([
             WMPTestArchiveEntry("skin.wms", data: Data("""
             <THEME><VIEW id="main" backgroundColor="#000000"/></THEME>
             """.utf8))
         ])
         let skin = try await WMPSkinLoader().load(from: archive)
-        let code = await WMPSkinTestSupport.failureCode {
-            try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
-        }
-        XCTAssertEqual(code, .invalidGeometry)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        XCTAssertEqual(scene.canvasSize, WMPSize(width: 0, height: 0))
+        XCTAssertTrue(scene.commands.isEmpty)
+    }
+
+    /// `pharaoh` writes the same idea as an explicit `width="0" height="0"` view whose `onLoad`
+    /// redirects. A literal zero is an authored answer, so it must survive the artwork fallback;
+    /// only a negative literal is no answer at all.
+    func testViewAuthoringAnExplicitZeroSizeKeepsIt() async throws {
+        let art = try WMPSkinTestSupport.encodedImage(width: 40, height: 30,
+            rgba: [UInt8](repeating: 255, count: 40 * 30 * 4))
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="ghost" width="0" height="0" backgroundImage="art.png"/></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("art.png", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "ghost")
+        XCTAssertEqual(scene.canvasSize, WMPSize(width: 0, height: 0))
+    }
+
+    /// A script that zeroes the view is obeyed. Every WMP skin with a store-thumbnail `previewView`
+    /// collapses it this way in `onLoad` and redirects to its real player; discarding a zero
+    /// override left 34 corpus skins showing a static splash bitmap instead.
+    func testScriptOverrideOfZeroCollapsesAViewThatHasArtwork() async throws {
+        let art = try WMPSkinTestSupport.encodedImage(width: 40, height: 30,
+            rgba: [UInt8](repeating: 255, count: 40 * 30 * 4))
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="preview" backgroundImage="art.png"/></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("art.png", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let unscripted = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "preview")
+        XCTAssertEqual(unscripted.canvasSize, WMPSize(width: 40, height: 30))
+
+        let view = try XCTUnwrap(skin.graph.nodes(id: "preview").first)
+        var overrides = WMPSceneOverrides.empty
+        overrides.geometry[.init(stableID: view.stableID, property: "width")] = 0
+        overrides.geometry[.init(stableID: view.stableID, property: "height")] = 0
+        let scripted = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "preview", overrides: overrides)
+        XCTAssertEqual(scripted.canvasSize, WMPSize(width: 0, height: 0))
     }
 
 }

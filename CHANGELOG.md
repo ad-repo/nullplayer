@@ -40,6 +40,18 @@
   was 80% solid red, v2 Underworld's player 79%. Both colours are now removed, so the skin keeps its
   own silhouette. Pharaoh, Tomb Raider 2, polygon, gadget and Plus! Mecha are fixed by the same
   change.
+- **Windows Media Player skins now open on their player instead of a still picture of it.** Many
+  `.wmz` skins — WALL-E, Halo, Alienware, Crimson Skies, Need for Speed Underground and around
+  thirty more — start on a small "preview" window meant for the Windows skin chooser, then run a
+  line of their own script that shrinks it away and opens the real player. NullPlayer was ignoring
+  that instruction and leaving the preview picture on screen, so those skins looked like a static
+  image with no controls. It now follows the skin, and they come up on their actual player.
+- **Windows Media Player skins that keep an invisible control window no longer fail to load parts of
+  themselves.** A `.wmz` often declares a window with no size and nothing to draw, whose only job is
+  to run the skin's startup script and hand over to the window you actually see. NullPlayer treated
+  that as a broken window and refused it; it now runs such a window and simply never shows one,
+  which is what Windows Media Player does. Every window in a 180-skin library now lays out — there
+  are no rejected views left.
 - **A Windows Media Player skin built around one big picture now opens.** Some `.wms` files give
   their window no size and no artwork of its own, and hang the entire player off a single panel
   inside it. NullPlayer rejected those and fell back to the unskinned player; it now measures such a

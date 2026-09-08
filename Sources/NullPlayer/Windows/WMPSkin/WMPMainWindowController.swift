@@ -74,45 +74,77 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
                 let skin = try await importer.loader.load(from: url)
                 try Task.checkCancellation()
-                let preferred = importer.selectedViewID
-                let registration = preferred.flatMap { wanted in
-                    skin.views.first { $0.id.caseInsensitiveCompare(wanted) == .orderedSame }
-                } ?? skin.views.first { $0.id.caseInsensitiveCompare("vPlayer") == .orderedSame }
-                    ?? skin.views.first
-                guard let registration else {
-                    throw WMPFailure(WMPDiagnostic(.invalidGeometry, "The skin contains no renderable WMP view."))
-                }
+                // A `.wmz` names views that are never windows. 25 corpus skins author a
+                // `controlView` holding only `<player>` and a hidden `<video>`, and `pharaoh`
+                // writes two explicit 0x0 `vGhost` views: each exists so that an `onLoad` can run
+                // with host bindings and then hand off to the view the user actually sees. Such a
+                // view builds and scripts like any other and is simply never presented, so the
+                // candidate list is walked until one of them has a canvas to draw.
                 let store = WMPImageStore(provider: skin.archive)
-                let restoredViewMatches = pendingRestoredViewID?.caseInsensitiveCompare(registration.id) == .orderedSame
-                let requested = restoredViewMatches ? pendingRestoredFrame.map {
-                    WMPSize(width: $0.width, height: $0.height)
-                } : nil
-                if pendingRestoredFrame != nil, !restoredViewMatches {
-                    pendingRestoredFrame = nil
-                    pendingRestoredViewID = nil
-                }
-                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: registration.id, requestedSize: requested)
                 let skinData = try await Task.detached { try Data(contentsOf: skin.archive.sourceURL) }.value
                 let runtime = WMPScriptRuntime(
                     preferences: WMPPreferenceStore(skinData: skinData, defaults: importer.defaults))
-                let loadEvent = WMPJScriptEvent(name: "load", targetID: registration.id,
-                    handlers: Self.handlers(in: skin, event: "load", targetID: nil,
-                                            viewID: registration.id))
-                let output = await runtime.transact(skin: skin, viewID: registration.id,
-                    size: scene.canvasSize, snapshot: host.snapshot, event: loadEvent,
-                    geometry: scene.scriptGeometry)
-                let resolved = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: registration.id, requestedSize: scene.canvasSize,
-                           overrides: output.overrides)
-                let rendered = try await WMPRenderer(imageStore: store).render(
-                    scene: resolved, backingScale: renderBackingScale)
-                try Task.checkCancellation()
-                apply(skin: skin, store: store, scene: resolved, image: rendered.image,
-                      runtime: runtime, overrides: output.overrides)
-                let switchedView = applyHostCommands(output.hostCommands)
-                if !switchedView { scheduleTimers(output.timerRequests) }
-                recordScriptDiagnostics(output.diagnostics)
+                var candidates: [String] = []
+                if let preferred = importer.selectedViewID { candidates.append(preferred) }
+                candidates.append("vPlayer")
+                candidates.append(contentsOf: skin.views.map(\.id))
+                var visited = Set<String>()
+                var index = 0
+                var presented = false
+                while index < candidates.count {
+                    let candidate = candidates[index]
+                    index += 1
+                    guard visited.insert(WMPPath.fold(candidate)).inserted,
+                          let registration = skin.views.first(where: {
+                              $0.id.caseInsensitiveCompare(candidate) == .orderedSame
+                          }) else { continue }
+                    let restoredViewMatches =
+                        pendingRestoredViewID?.caseInsensitiveCompare(registration.id) == .orderedSame
+                    let requested = restoredViewMatches ? pendingRestoredFrame.map {
+                        WMPSize(width: $0.width, height: $0.height)
+                    } : nil
+                    let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                        .build(viewID: registration.id, requestedSize: requested)
+                    await runtime.prepareForViewSwitch()
+                    let loadEvent = WMPJScriptEvent(name: "load", targetID: registration.id,
+                        handlers: Self.handlers(in: skin, event: "load", targetID: nil,
+                                                viewID: registration.id))
+                    let output = await runtime.transact(skin: skin, viewID: registration.id,
+                        size: scene.canvasSize, snapshot: host.snapshot, event: loadEvent,
+                        geometry: scene.scriptGeometry)
+                    try Task.checkCancellation()
+                    guard scene.canvasSize.width > 0, scene.canvasSize.height > 0 else {
+                        recordScriptDiagnostics(output.diagnostics)
+                        // The only host command a view with no window can honour is where to go
+                        // next; the rest need the presented controller state this view never gets.
+                        if let next = output.hostCommands.last(where: { $0.action == "setCurrentView" })?
+                            .value?.string {
+                            candidates.insert(next, at: index)
+                        }
+                        continue
+                    }
+                    if pendingRestoredFrame != nil, !restoredViewMatches {
+                        pendingRestoredFrame = nil
+                        pendingRestoredViewID = nil
+                    }
+                    let resolved = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                        .build(viewID: registration.id, requestedSize: scene.canvasSize,
+                               overrides: output.overrides)
+                    let rendered = try await WMPRenderer(imageStore: store).render(
+                        scene: resolved, backingScale: renderBackingScale)
+                    try Task.checkCancellation()
+                    apply(skin: skin, store: store, scene: resolved, image: rendered.image,
+                          runtime: runtime, overrides: output.overrides)
+                    let switchedView = applyHostCommands(output.hostCommands)
+                    if !switchedView { scheduleTimers(output.timerRequests) }
+                    recordScriptDiagnostics(output.diagnostics)
+                    presented = true
+                    break
+                }
+                guard presented else {
+                    throw WMPFailure(WMPDiagnostic(.invalidGeometry,
+                        "The skin contains no renderable WMP view."))
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -407,6 +439,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let output = await scriptRuntime.transact(skin: skin, viewID: registration.id,
                     size: base.canvasSize, snapshot: host.snapshot, event: nil,
                     geometry: base.scriptGeometry)
+                // A windowless view — `controlView`, `pharaoh`'s `vGhost` — runs its script and
+                // hands off; it must never become the presented window. Whatever it asks for next
+                // is honoured, and if it asks for nothing the current view simply stays.
+                guard base.canvasSize.width > 0, base.canvasSize.height > 0 else {
+                    recordScriptDiagnostics(output.diagnostics)
+                    _ = applyHostCommands(output.hostCommands)
+                    return
+                }
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: base.canvasSize,
                            overrides: output.overrides)

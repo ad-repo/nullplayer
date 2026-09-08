@@ -16,10 +16,10 @@ reproducible by a command recorded next to it.
 
 **Reach numbers below are `scripts/wmp_skin_census.sh` output, measured 2026-09-07 at rev
 `1d7e63bd` over the 180 archives in `WMPSkins/`.** Reproduce with
-`scripts/wmp_skin_census.sh /tmp/wmp/census`. **179 of 179 load, and 579 of 595 views lay out**,
-re-measured 2026-09-07 after W34's BMP fallback; a row below that still cites 574, 567, 515, 508,
-506 or 482 views was not re-measured then. **`WMP0033` is now zero corpus-wide** — every remaining
-`RENDER-DUMP … FAILED` is a `WMP0032`.
+`scripts/wmp_skin_census.sh /tmp/wmp/census`. **Re-measured 2026-09-07 after W6 closed: 608 views
+dumped and not one `RENDER-DUMP … FAILED`.** A row below that still cites 579, 574, 567, 515, 508,
+506 or 482 views was not re-measured then. **`WMP0032` and `WMP0033` are both zero corpus-wide**, so
+neither a layout rejection nor a decode failure can rank anything any more.
 
 **The measured corpus is 179, not 180.** `scripts/wmp_corpus_exclusions.txt` is the blacklist both
 scripts read, and it holds `Darkling.wmz`: a Party Mode skin, authored against a WMP host this
@@ -51,11 +51,12 @@ archive. Nothing goes back in this tier unless a *new* archive is rejected.
 ### 1b. Views that load and then draw nothing
 
 Indistinguishable from a rejection to anyone using the app. W8, the largest entry this tier ever
-held, closed on 2026-09-07; what survived it is W48, which is a smaller and differently-caused set.
+held, closed on 2026-09-07, and W6 — the last entry that could reject a view outright — closed the
+same day. **No view in the corpus now fails to lay out.** What is left is W48, a smaller and
+differently-caused set: views that lay out and then paint the wrong pixels.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W6 | A view whose size is computed in script must still lay out | **28 views across 27 skins** (`WMP0032`), re-measured 2026-09-07 over the 179-archive corpus | Was **89 views across 48 skins** with 12 skins drawing nothing, then 36 across 33. **A view is now sized like every other node — authored literal, then script override, then the natural size of its own `backgroundImage`, then the union of the subtree it can place from literals and artwork alone.** The last of those closed the sub-case filed here as (a): `iconic` hangs its whole player off one `<SUBVIEW backgroundImage="base.gif">` and now comes up at 288x255, confirmed in the running app. `Darkling` was the other, and is not a defect — it is a Party Mode skin and is now excluded from the corpus (see above). Corpus effect: **567 views laid out → 574**, `WMP0032` **36 → 28**, and **no skin draws nothing from this cause** — the 4 blackouts that remained (`bluegrid`, `cerulean`, `Radio`, `YIL!OMA2K`) were W34 image-decode, now closed, and all four draw. **What is left is one sub-case, and it is no longer Tier 1:** a genuinely script-computed size, `width="jscript:theme.loadPreference('WD')"` (`cyberchannel/playview`), which needs the live runtime to publish the root's geometry as a scene override — the override path is in place and tested, nothing posts to it yet. Every remaining `WMP0032` is a secondary view in a skin whose other views lay out. Reproduce with `scripts/wmp_skin_census.sh /tmp/wmp/census`. |
 | W48 | A view paints a flat colour its markup never declares as a key | **28 views across 26 skins** at or above 5% of view area, measured 2026-09-07 over the 580 dumped PNGs of the 180-archive corpus | What is left after W8 closed, and it is **two different defects**, neither of them a missing key attribute — every node that declares one is now keyed. Score it the way `reference/harness.md` says: against the colours each skin's own `.wms` declares, never a hard-coded palette. (a) **A `BUTTONGROUP` blits its whole sheet.** It draws `image=` across the group's frame, so the filler colour between the mapped regions is painted wherever no element covers it; in WMP the mapping image is what says which parts of that sheet are drawn at all. `The_Doobie_Brothers/view-2` (50.4%) is the clearest case — its group additionally misspells the attribute as `tranparencyColor`, and `Alpine7618_v09`'s two groups write `transparencyColor="FF00FF"` with no `#`, which the color parser rejects; **fix the blit before deciding either of those is worth accepting**, because if the sheet is drawn through its mapping the key never matters. (b) **Artwork whose flat colour is keyed nowhere in the markup.** `Main_Street` (mini 40.5%, slim 20.2%, normal 14.6%) authors exactly one `transparencyColor` in the whole file and none on the three subviews that show magenta, so WMP is removing it for some reason not written in the `.wms` — find out what that is before implementing anything. Reproduce by dumping the corpus (`WMP_SKIN=<skins dir> WMP_RENDER_DUMP=<dir>`) and scoring each PNG against its skin's declared keys. |
 | W9 | `Official_Xbox_XP` paints an opaque black `VIDEO` placeholder over its own art | 1 skin measured | `census/png/Official_Xbox_XP/mainBox@1x.png`. Fixed by Phase 5's hosted video surface. |
 
@@ -95,6 +96,7 @@ none blank** (`scripts/wmp_render_sweep.sh compare`).
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
+| W49 | `theme.openView` is not implemented | **83 of 180 skins**, measured 2026-09-07 over the 180-archive corpus | `Error: WMP: unimplemented theme.openview (theme member)`. **Invisible until W6 closed**: it is how a windowless `controlView` does its only job — 25 skins hold one whose `onLoad` opens the real player as a separate window, and it could not run at all while the view was rejected for having no size. Now the largest single cause left, ahead of W37. Unlike `setCurrentView`, which replaces the presented view, `openView` asks for an *additional* window, and this app has one WMP window; decide what that honestly means here — a second `WMPMainWindowController`, or a redirect that treats it as `setCurrentView` — before implementing, because a stubbed answer would vanish from the tally. Reproduce by sweeping the corpus and ranking `SCRIPT-DIAG [handler-error]` lines. |
 | W37 | `mediacenter` is not a host object | **102 of 171 loading skins** | `ReferenceError: Can't find variable: mediacenter`. By far the largest single cause left, and it is one object: the corpus reads `mediacenter.effectType`/`.effectPreset` (73 each) and calls into it from `onLoad`. Decide what it can honestly answer before implementing — a recognised-but-stubbed object here would be invisible in the tally, which is the trap `INERT` exists for. |
 | W38 | `alphaBlendTo` on an element | **~18 skins** (`vidBack` 14, `timeColon` 4, `mainBack2` 2, …) | The third of WMP's element animation methods beside `moveTo`/`resizeTo`, which are implemented as immediate endpoints; the same treatment applies — set the alpha now, track the tween as rendering work. It is already in `elementMethodVocabulary`, so it reports as `UNRECOGNISED` demand rather than dying as a bare `TypeError`. Same for `setColumnWidth` (2 skins). |
 | W39 | `eq.speakerSize` | 18 skins | Plus `eq.enableSplineTension` and `eq.enhancedAudio` at 1 each. WMP's speaker/spatial settings; the engine has no equivalent, so this is an honest `inert()` candidate rather than a feature. |

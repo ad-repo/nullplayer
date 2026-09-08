@@ -99,8 +99,23 @@ queue, with the object model as the security boundary — see Amendment 2 in
   artwork alone** — `iconic` hangs its whole player off one `<SUBVIEW backgroundImage="base.gif">`.
   That union descends into a container whose own size is unknown and ignores `visible`, because a
   skin authors every wrapper hidden and turns one on in `onLoad`. Anything needing script
-  contributes nothing, and a view with an empty union is still rejected: the builder never invents
-  geometry.
+  contributes nothing, and the builder never invents geometry.
+- **A view with nothing to draw is `0x0`, not a rejection, and a literal or scripted zero is an
+  authored answer.** A `.wmz` names views that are never windows: 25 corpus skins author a
+  `controlView` holding only `<player>` and a hidden `<video>` so an `onLoad` can run with host
+  bindings and no window, and `pharaoh` writes the same idea as `<view id="vGhost" width="0"
+  height="0">` whose handler redirects. Rejecting them was the last of `WMP0032`. The builder still
+  invents nothing — the honest size of empty content is empty — and **`WMPMainWindowController` is
+  what refuses to make a window out of it**: initial load walks its candidate list (persisted view,
+  then `vPlayer`, then document order) running each view's script and following its `setCurrentView`
+  until a view has a canvas, and `switchView` runs a windowless view's script, honours its host
+  commands, and stays where it is. `WMPRenderer` still refuses a non-positive canvas; a zero-area
+  scene must never reach it.
+- **A zero geometry override is a value, not an absence.** Every skin with a store-thumbnail
+  `previewView` collapses it in `onLoad` — `view.width = 0; view.height = 0; view.backgroundImage =
+  ""; theme.currentViewID = "controlView"` — and Microsoft's own `auto.js` in `Official_Xbox_XP`
+  does it with a comment saying so. Discarding a `0` override as "not positive" left 34 corpus
+  skins showing a static splash bitmap where the skin had asked for its player.
 - `WMPSceneBuilder` resolves literal geometry plus the bounded static initial-layout grammar in
   `WMPInitialLayoutExpression`: finite numbers, parentheses, arithmetic, and geometry reads from
   deterministic IDs. `wmpprop:` is accepted only as an alias for that same geometry grammar.
