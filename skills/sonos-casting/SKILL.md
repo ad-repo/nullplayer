@@ -1,6 +1,6 @@
 ---
 name: sonos-casting
-description: Sonos UPnP discovery, multi-room casting, coordinator transfer, custom checkbox UI, and protocol quirks. Use when working on Sonos casting, UPnP control, multi-room audio, or group management.
+description: Sonos UPnP discovery, multi-room casting, coordinator transfer, dockable room mixer, individual room volume, custom checkbox UI, and protocol quirks. Use when working on Sonos casting, room controls, UPnP control, multi-room audio, or group management.
 ---
 
 # Sonos Integration
@@ -15,6 +15,10 @@ This guide covers Sonos speaker discovery, casting, and multi-room grouping in N
 2. Check the rooms you want to cast to (checkboxes stay open for multi-select)
 3. Click **🟢 Start Casting** to begin playback
 4. Click **🔴 Stop Casting** from the Sonos menu to fully end the cast session
+
+For a persistent room list and individual volume controls, open **Windows → Sonos Rooms** or
+**Output → Sonos → Rooms & Volume…**. Resize the window or scroll to reach additional rooms;
+**Refresh** remains in the footer even when no rooms are discovered.
 
 ## Discovery Methods
 
@@ -568,6 +572,10 @@ SSDP requires multicast. Some routers/switches block this:
 |------|---------|
 | `Casting/CastManager.swift` | Central coordinator, `selectedSonosRooms` state, polling timer, sleep/wake handling |
 | `Casting/UPnPManager.swift` | SSDP/mDNS discovery, SOAP control, group topology, `pollSonosPlaybackState()` |
+| `Casting/SonosRoomMixer.swift` | Shared room actions, independent volume writes, bounded polling and stale-read protection |
+| `Windows/Sonos/` | Room mixer controls, window lifecycle, Classic and fallback chrome |
+| `Windows/ModernSonos/ModernSonosChrome.swift` | Original and Metal auxiliary chrome |
+| `WinampModern/WinampModernHostedWindows.swift` | `.sonos` skin-hosted window registration |
 | `App/ContextMenuBuilder.swift` | Menu UI, `SonosRoomCheckboxView`, casting actions |
 | `Casting/LocalMediaServer.swift` | Embedded HTTP server, HEAD handlers, health checks, network monitoring |
 
