@@ -78,10 +78,24 @@ INPUT hover <id>#<sid> -> <id>#<sid>                         a pointer crossing,
 INPUT dispatch <event> target=<id>#<sid> handlers=<n> gated=<bool>
 INPUT present <event> geometry=<n> properties=<n> commands=<n> diagnostics=<n>
 INPUT command <action> value=<v>                             a host command the transaction posted
+INPUT animation <view> delay=<s> endsAt=<s|endless> clock=<s>  every startAnimation, and the clock it runs on
 ```
 
 `view-timer` is the line that found the dead `onTimer` class: `1000ms` from `apply`, then `0ms` one
 line later because `scheduleTimers` cancelled it.
+
+**`animation`'s `clock=` is the line that found the restarting-animation class (2026-09-08), and it
+is only readable because it prints the clock rather than the frame.** Reported live as "the
+animations keep opening and closing constantly… when you try to interact they are just opening and
+closing all the time". `startAnimation` rewound `animationEpoch` on every call, and it is called by
+every scene rebuild — a hover repaint, a script transaction, an `onTimer` tick. The trace showed
+`epoch-was=0.008s-old` on a view whose script had set `timerInterval="100"`: a 2.16s one-shot intro
+restarted ten times a second and never reached its second frame. The second half was invisible until
+the epoch was fixed — every rebuild also rendered at the default `clock: 0`, so a transaction painted
+frame zero even with the epoch preserved. The clock now belongs to the **view**
+(`animationEpochViewID`), and every render of a view that is already animating passes
+`animationClock(for:)`. Confirmed live: the clock advances 176.4 → 179.5s across a hover sweep and
+two clicks, and four window captures during continuous hover activity are byte-identical.
 
 It is the instrument that found every one of the 2026-09-08 live defects, and each was invisible to
 every headless probe here: the window was never key (no `hover` lines at all while `dispatch click`
@@ -311,22 +325,46 @@ this player has no equivalent of; its own `OnLoad` catches the missing host and 
 Party Mode" panel, exactly as real WMP does outside Party Mode. Record the reason in the file next to
 the entry, and treat removing a line as a decision.
 
-### `python3 scripts/wmp_implicit_key.py [--corpus <dir>] [--color RRGGBB] [--tsv <file>]`
+### `python3 scripts/wmp_implicit_key.py [--corpus <dir>] [--color RRGGBB] [--tsv <file>] [--alpha only|none|any]`
 
-*How much artwork relies on WMP's implicit transparency colour?* Counts drawn sprites that (a) carry
-no alpha channel, (b) hold `#FF00FF` pixels and (c) hang off a node declaring neither
-`transparencyColor` nor `clippingColor` — the W78 class, and the measurement that had to exist
-before anything defaulted a key engine-wide. It reads `.wms` and artwork straight out of the
-archives, so it measures authored demand, never a render result.
+*How much artwork relies on WMP's implicit transparency colour?* Counts drawn sprites that hold
+opaque `#FF00FF` pixels and hang off a node declaring neither `transparencyColor` nor
+`clippingColor` — the W78 class, and the measurement that had to exist before anything defaulted a
+key engine-wide. It reads `.wms` and artwork straight out of the archives, so it measures authored
+demand, never a render result.
 
-Measured 2026-09-08 over the 179-archive corpus: **527 node/attribute references across 66 skins and
-437 distinct sprites**, of 22,649 drawn artwork references of which 8,833 declare a key themselves.
+Measured 2026-09-08 over the 179-archive corpus: **603 node/attribute references across 80 skins and
+499 distinct sprites**, of 22,649 drawn artwork references of which 8,833 declare a key themselves.
 `--tsv` writes every row, sorted by how many key pixels the sprite holds, which is the order to open
-them in. Two things it does *not* count, both deliberate: a mapping/clipping/position image (read for
-its colours, never blitted — an implicit key there would delete a mapping colour from its own map)
-and a sprite that authored an alpha channel (a P-mode GIF/PNG with `info['transparency']` counts as
-having one). The residual after the default landed is exactly that second set — 7,253 magenta pixels
-across 15 views, topped by `WoW/mainView` at 3.5%, whose `volume_2.png` is RGBA *and* magenta-filled.
+them in. What it does *not* count is a mapping/clipping/position image — read for its colours, never
+blitted, and an implicit key there would delete a mapping colour from its own map.
+
+**`--alpha only|none|any` splits the class by whether the sprite authored an alpha channel, and that
+split is W78a.** W78 shipped keying only `none` (527 refs / 66 skins / 437 sprites), on the reasoning
+that a sprite carrying alpha has already said what is see-through. `--alpha only` measures what that
+left behind — **76 references across 21 skins and 62 sprites** — and the falsifying check is not the
+count but the pairing: **11 of those nodes hold two states of the same button, one exported without
+an alpha channel and one with, with identical magenta counts** (`Half-Life_2`
+`m_pause_no.png`/`m_pause_hov.gif`, both 1,394). Under the veto the normal state keyed and the hover
+state did not, so the button turned magenta under the pointer. The engine now keys `any`, which is
+this script's default so that what it counts is what the engine does. A `key_pixels` count is of
+**opaque** key pixels: a partially transparent one is composited paint, and the corpus holds none.
+
+`WoW/mainView`, the residual's headline at 3.5%, was the same thing seen through a `CUSTOMSLIDER`:
+`volume_1.png` is a 31-frame filmstrip against an 86x84 `volume_map.png`, and every frame carries the
+same flat magenta wedge beside a genuinely antialiased knob. The crop was already correct; only the
+wedge was paint that should not have been.
+
+**After the veto came off, the corpus residual is 878 opaque magenta pixels across 2 of 545 views,
+and neither is an implicit-key case.** `portals/mode1` (829 px, 0.38%) is a `BUTTONGROUP` declaring
+`transparencyColor="#000000"` whose sheet's magenta filler is blitted whole instead of drawn through
+its mapping — that is W48(a). `Plus! Pulsar/mainView` (49 px, 0.04%) is a `<button
+id="shutterButton">` declaring `transparencyColor="#ffffff"`, so the implicit key correctly stands
+aside and real WMP draws the same corner.
+
+**One corpus view is nondeterministic and a PNG-diff sweep will flag it forever.**
+`Scooby-Doo_2/infoView` picks its character at random in `scooby.js`: three runs of one binary give
+two hashes. Do not read it as collateral from a change.
 
 The companion number, from the markup census's own attribute counts: **4,979 of the 6,076
 `transparencyColor` declarations in the corpus (82%, 142 skins) are `#ff00ff`.** That is why the

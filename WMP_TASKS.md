@@ -10,10 +10,13 @@ same change that closes them, so this file stays a list of work that is still op
 
 ## Ranking
 
-**Tier 0 held one row and it closed.** W78, the implicit magenta transparency key, was measured,
-fixed, swept and confirmed on screen on 2026-09-08: corpus-wide opaque magenta fell from 322,410
-pixels across 100 views to 7,253 across 15. The 15 that are left are W78a, a different rule, and
-they are ranked below Tier 1 despite sitting in the same section.
+**Tier 0 is empty and the magenta class is closed.** W78 landed on 2026-09-08 and **W78a closed the
+same day**, taking the corpus residual from 7,253 opaque magenta pixels across 15 views to **878
+across 2 of 545** — and neither of those two is an implicit-key case. `portals/mode1` (829 px, 0.38%)
+is the `BUTTONGROUP` blit already ranked as W48(a); `Plus! Pulsar/mainView` (49 px, 0.04%) is a
+button that declares `transparencyColor="#ffffff"`, where standing aside is correct. **Do not open a
+third magenta row without a screen to point at.** Both are in
+[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 8*.
 
 Reach is corpus demand across the 14-skin corpus installed in
 `~/Library/Application Support/NullPlayer/WMPSkins/`, not severity. Every Reach number must be
@@ -72,18 +75,6 @@ deleted; five *name*-similar pairs (`Ginger Man`/`Ginger_man`, `QuickSilver`/`(2
 `Project Gotham Racing 2`/`(1)`, `The Unit`/`TheUnit`) are different releases of the same skin with
 differing `.wms` and `.js`, and are kept deliberately as separate test cases.
 
-## Tier 0 — closed, and what it left behind
-
-**Empty of what put it here.** W78, the implicit magenta transparency key, was measured, fixed,
-swept and **confirmed on screen by the reporter on 2026-09-08** ("the magenta is gone"); its row is
-in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 8*. What
-is left below is its measured residual, kept here so the next session reads it before re-opening the
-same rule — it is **not** the same defect and it is not ranked above Tier 1.
-
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W78a | The magenta the implicit key does **not** remove: a sprite that authored an alpha channel and paints `#FF00FF` anyway | **7,253 opaque magenta pixels across 15 of 545 views**, measured 2026-09-08 after W78 landed; `WoW/mainView` 3.5%, `MSN/view-2` 2.1%, `portals/mode1` 0.4%, then twelve views at or under 0.1%. Reproduce with the scan in `reference/harness.md` § *`wmp_implicit_key.py`* | What is left of the class after W78, and it is deliberately left: the implicit key applies only to a sprite whose *file* carries no alpha, because a PNG or GIF that authored transparency has already said what is see-through. `WoW`'s `volume_2.png` (2666x84, RGBA, 55,410 magenta pixels) is a `CUSTOMSLIDER` strip on a node declaring no key, and it is the whole 3.5%. **Do not widen W78's rule to answer this** — that would delete magenta from every alpha-carrying sprite in the corpus, which is the risk W78 was written to avoid. Establish what WMP does with an alpha PNG that also holds the key colour first, and rank it on a screen: 3.5% of one view is below every threshold on this page. |
-
 ## Tier 1 — views that load and then draw nothing (all 180 archives load)
 
 Tier 1a held the loading rejections and is **empty**: W33 closed the last of them and moved to the
@@ -110,6 +101,14 @@ hover artwork, `<TEXT>` rows that were not hit targets, a tooltip showing the vi
 view timer that had never once fired. All six are in
 [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 7*, and the
 instrument that found all of them is `WMP_TRACE_INPUT=1`. **The list below still predates them.**
+
+**A seventh closed on 2026-09-08, and it was made visible by the sixth.** Once the view timers ran,
+every animation restarted from frame zero on every scene rebuild — reported as "the animations keep
+opening and closing constantly… when you try to interact they are just opening and closing all the
+time". `startAnimation` rewound its epoch on every call and is called by every rebuild, so a view
+declaring `timerInterval="100"` restarted a 2.16s one-shot intro ten times a second, and a hover
+crossing did it again. Archived as **W85** in § *Phase 8*; the mechanism and the `INPUT animation` trace line
+that found it are in `reference/harness.md` § *The one probe that is not in the test binary*.
 
 **Live QA of Phase 5 on 2026-09-08 found multiple defects that are not yet written down.** The
 reporter drove the app and reported "tons of issues"; the list was not captured before the session

@@ -120,10 +120,10 @@ final class WMPImageStore: @unchecked Sendable {
         try image(for: path, colorKeys: colorKey.map { [$0] } ?? [])
     }
 
-    /// `implicitKey` is the colour WMP keys out **only when the sprite carries no alpha channel of
-    /// its own** — the node declared nothing, so the artwork's own format decides. Passing it is the
-    /// caller saying "this is drawn artwork": a mapping image, position map or clipping mask must
-    /// never receive one, or a `#FF00FF` mapping colour would vanish from its own map.
+    /// `implicitKey` is the colour WMP keys out of a sprite whose node declares none of its own,
+    /// whatever alpha the file carries (W78a). Passing it is the caller saying "this is drawn
+    /// artwork": a mapping image, position map or clipping mask must never receive one, or a
+    /// `#FF00FF` mapping colour would vanish from its own map.
     func image(for path: String, colorKeys: [WMPColor] = [],
                implicitKey: WMPColor? = nil) throws -> WMPDecodedImage {
         try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey, frameSuffix: 0)
@@ -432,10 +432,7 @@ final class WMPImageStore: @unchecked Sendable {
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO could not decode '\(path)'."))
         }
-        image = try WMPColorKey.applying(
-            keys(colorKeys, implicitKey: implicitKey,
-                 sourceHasAlpha: Self.hasAlphaChannel(properties: properties, image: image)),
-            to: image)
+        image = try WMPColorKey.applying(keys(colorKeys, implicitKey: implicitKey), to: image)
         return WMPDecodedImage(image: image,
             size: WMPSize(width: CGFloat(width), height: CGFloat(height)),
             decodedBytes: decodedByteCount)
@@ -452,10 +449,7 @@ final class WMPImageStore: @unchecked Sendable {
         do {
             let decoded = try WMPBitmapDecoder.decode(data, limits: bounds)
             var image = decoded.image
-            image = try WMPColorKey.applying(
-                keys(colorKeys, implicitKey: implicitKey,
-                     sourceHasAlpha: decoded.authorsAlphaChannel),
-                to: image)
+            image = try WMPColorKey.applying(keys(colorKeys, implicitKey: implicitKey), to: image)
             return WMPDecodedImage(image: image,
                 size: WMPSize(width: CGFloat(decoded.width), height: CGFloat(decoded.height)),
                 decodedBytes: decoded.decodedBytes)
@@ -469,24 +463,12 @@ final class WMPImageStore: @unchecked Sendable {
         }
     }
 
-    /// The declared keys, or the implicit one when there are none and the sprite authored no alpha.
-    /// A sprite that carries an alpha channel has already said what is see-through.
-    private func keys(_ colorKeys: [WMPColor], implicitKey: WMPColor?,
-                      sourceHasAlpha: Bool) -> [WMPColor] {
-        guard colorKeys.isEmpty, let implicitKey, !sourceHasAlpha else { return colorKeys }
+    /// The declared keys, or the implicit one when the node declared none. The sprite's own alpha
+    /// channel does **not** veto it: see `WMPColorKey.implicitTransparency` for what the corpus
+    /// says about an alpha-carrying sprite that also holds the key colour (W78a).
+    private func keys(_ colorKeys: [WMPColor], implicitKey: WMPColor?) -> [WMPColor] {
+        guard colorKeys.isEmpty, let implicitKey else { return colorKeys }
         return [implicitKey]
-    }
-
-    /// Did the *file* author an alpha channel? `kCGImagePropertyHasAlpha` answers for the source,
-    /// which is the question — the decoded `CGImage` is commonly widened to 32 bits with an opaque
-    /// alpha for a 24-bit BMP, so reading `alphaInfo` alone would say every sprite has one. It is
-    /// only the fallback for a format that does not report the property.
-    private static func hasAlphaChannel(properties: [CFString: Any], image: CGImage) -> Bool {
-        if let declared = properties[kCGImagePropertyHasAlpha] as? Bool { return declared }
-        switch image.alphaInfo {
-        case .none, .noneSkipFirst, .noneSkipLast: return false
-        default: return true
-        }
     }
 
     private func integer(_ value: Any?) -> Int? {

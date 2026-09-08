@@ -12,8 +12,16 @@ enum WMPColorKey {
     /// `scripts/wmp_implicit_key.py` before widening this rule: **527 references across 66 skins
     /// and 437 sprites** is what it covers today.
     ///
-    /// It applies **only** to a sprite with no alpha channel at all. A PNG or GIF that authored
-    /// transparency has already said what is see-through, and a magenta pixel in it is paint.
+    /// **The sprite's own alpha channel does not veto it (W78a).** W78 shipped with that veto, on
+    /// the reasoning that a PNG or GIF which authored transparency has already said what is
+    /// see-through. The corpus says otherwise: `scripts/wmp_implicit_key.py --alpha` measures the
+    /// complement W78 left behind — 76 references across 21 skins and 62 sprites — and **11 of
+    /// those nodes carry two states of the same button, one exported without an alpha channel and
+    /// one with, holding pixel-for-pixel identical magenta** (`Half-Life_2`'s `m_pause_no.png` /
+    /// `m_pause_hov.gif`, both 1,394; `Harry_Potter…`'s `bottomgroup_no.png` / `bottomgroup_hover.gif`,
+    /// both 5,866). Under the veto the normal state keyed and the hover state did not, so the button
+    /// turned magenta under the pointer — which no author wrote. The alpha channel is an export
+    /// format, not a statement about the key.
     static let implicitTransparency = WMPColor(red: 255, green: 0, blue: 255)
 
     /// Replaces only pixels whose un-premultiplied RGB exactly matches the key. Non-matching pixels

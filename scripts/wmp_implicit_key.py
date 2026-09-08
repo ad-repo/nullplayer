@@ -1,7 +1,8 @@
-# scripts/wmp_implicit_key.py — the W78 class: drawn artwork that carries no alpha channel of its
-# own, holds `#FF00FF` pixels, and hangs off a node declaring no colour key at all.
+# scripts/wmp_implicit_key.py — the W78 class: drawn artwork that holds `#FF00FF` pixels and hangs
+# off a node declaring no colour key at all, which is what the implicit transparency colour keys.
 #
 #   python3 scripts/wmp_implicit_key.py [--corpus <dir>] [--color RRGGBB] [--tsv <file>]
+#                                       [--alpha only|none|any]
 #
 # WMP appears to treat magenta as the implicit transparency colour for such a bitmap; a skin author
 # who keys three siblings by hand and leaves the fourth to the default is relying on it. This
@@ -17,8 +18,14 @@
 #     decoded whole file, never per line;
 #   * "no alpha channel" is not "no transparent pixel": a P-mode GIF/PNG carries its transparency in
 #     `info['transparency']`, and an RGBA sprite that happens to be fully opaque still authored one.
-#     Both count as *having* alpha and are excluded — only a sprite with no alpha channel at all is
-#     a candidate for an implicit key.
+#     Both count as *having* alpha, which is what `--alpha` splits on.
+#
+# `--alpha` splits the class by whether the sprite authored an alpha channel. W78 shipped keying
+# only `none`; W78a measured `only` — the complement — and found 11 nodes holding two states of the
+# same button, one exported with an alpha channel and one without, with identical magenta counts.
+# The engine now keys `any`, which is this script's default so that what it counts is what the
+# engine does. A `key_pixels` count is of **opaque** key pixels: a partially transparent one is
+# composited paint, and the corpus holds none.
 #
 # See skills/wmp-skin-guide/reference/harness.md; this script documents no probe flags.
 import argparse, collections, io, os, posixpath, re, sys, zipfile
@@ -62,18 +69,16 @@ def resolve(names_lower, definition, authored):
 
 
 def sprite_facts(data, key):
-    """(has_alpha, key_pixels) for one sprite, or None when it will not decode."""
+    """(has_alpha, opaque_key_pixels) for one sprite, or None when it will not decode."""
     try:
         image = Image.open(io.BytesIO(data))
         image.load()
     except Exception:
         return None
     has_alpha = 'A' in image.getbands() or 'transparency' in image.info
-    if has_alpha:
-        return (True, 0)
-    rgb = image.convert('RGB')
-    count = sum(n for n, colour in rgb.getcolors(maxcolors=1 << 24) or [] if colour == key)
-    return (False, count)
+    count = sum(n for n, colour in image.convert('RGBA').getcolors(maxcolors=1 << 24) or []
+                if colour[3] == 255 and colour[:3] == key)
+    return (has_alpha, count)
 
 
 def main():
@@ -82,6 +87,9 @@ def main():
         '~/Library/Application Support/NullPlayer/WMPSkins'))
     parser.add_argument('--color', default='FF00FF')
     parser.add_argument('--tsv')
+    parser.add_argument('--alpha', choices=['any', 'only', 'none'], default='any',
+                        help="restrict to sprites that authored an alpha channel ('only'), "
+                             "that authored none ('none', the W78 rule), or both (default)")
     args = parser.parse_args()
     key = tuple(int(args.color[i:i + 2], 16) for i in (0, 2, 4))
 
@@ -139,9 +147,14 @@ def main():
                         except Exception:
                             cache[entry] = None
                     facts = cache[entry]
-                    if facts is None or facts[0] or facts[1] == 0:
+                    if facts is None or facts[1] == 0:
                         continue
-                    rows.append((name, view, tag, attribute, entry, facts[1]))
+                    if args.alpha == 'only' and not facts[0]:
+                        continue
+                    if args.alpha == 'none' and facts[0]:
+                        continue
+                    rows.append((name, view, tag, attribute, entry,
+                                 facts[1], 'alpha' if facts[0] else 'no-alpha'))
                     skins.add(name)
                     sprites.add((name, entry))
 
@@ -155,7 +168,7 @@ def main():
         print(f'  {skin:44} {count:4} refs / {len(views)} views: {", ".join(views[:4])}')
     if args.tsv:
         with open(args.tsv, 'w') as handle:
-            handle.write('skin\tview\ttag\tattribute\tsprite\tkey_pixels\n')
+            handle.write('skin\tview\ttag\tattribute\tsprite\tkey_pixels\talpha\n')
             for row in sorted(rows, key=lambda r: (-r[5], r[0])):
                 handle.write('\t'.join(str(field) for field in row) + '\n')
         print(f'  wrote {args.tsv}')

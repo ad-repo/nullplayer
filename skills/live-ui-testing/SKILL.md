@@ -70,6 +70,24 @@ Where live QA genuinely needs a human (judging "does it look right"), treat it a
 session, not blocked work — harness.md §*The measurement loop that works: mark, window, control*
 defines the division of labour: **the agent owns the process and the log; the reporter owns the mouse.**
 
+### A silent trace after a synthetic click usually means you missed the control
+
+Posting `CGEvent`s from the agent shell works — the cursor really moves, and `CGEvent(source: nil)`
+read back after a post proves it. What does not work is guessing where to click. A pointer sweep and
+four clicks across a `.wmz` skin produced **zero** trace lines, which reads exactly like dead input
+handling; the skin was circular and every point had landed on transparent pixels outside its shell.
+
+So before filing "input does not reach the app": **take the target's frame from the subsystem's own
+probe and click its centre**, never a coordinate estimated from a screenshot. `WMP_RENDER_PROBE`
+prints `frame=40,189 20x20` per node; screen point = window origin (from
+`CGWindowListCopyWindowInfo`, top-left origin, same space as the event) + the frame's centre. Done
+that way the same app answered on the first try, with `INPUT hover -#- -> mute#33`.
+
+Two cheap checks that separate the three failure modes, in order: is the cursor actually moving
+(post, then read the location back); is the build under test frontmost (by unix id, never by name);
+and is the point inside a node rather than inside the window. Only after all three should the app's
+input path be suspect.
+
 ### Launching
 
 `./scripts/kill_build_run.sh --debug` builds, ad-hoc signs the vendored frameworks, and launches.

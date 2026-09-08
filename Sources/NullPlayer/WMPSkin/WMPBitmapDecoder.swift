@@ -28,10 +28,6 @@ enum WMPBitmapDecoder {
         let height: Int
         /// Straight RGBA bytes, four per pixel.
         let decodedBytes: Int
-        /// Did the *file* carry alpha? Only 32bpp BI_BITFIELDS with a non-zero alpha mask does; the
-        /// produced `CGImage` is always 32-bit premultiplied, so it cannot be asked. The implicit
-        /// transparency key (W78) applies to a bitmap that authored none.
-        let authorsAlphaChannel: Bool
     }
 
     static func decode(_ data: Data, limits: Limits) throws -> Decoded {
@@ -139,8 +135,7 @@ enum WMPBitmapDecoder {
                                   intent: .defaultIntent) else {
             throw Failure.unsupported("could not build a CGImage")
         }
-        return Decoded(image: image, width: width, height: pixelHeight, decodedBytes: byteCount,
-                       authorsAlphaChannel: bitsPerPixel == 32 && (masks?.alpha ?? 0) != 0)
+        return Decoded(image: image, width: width, height: pixelHeight, decodedBytes: byteCount)
     }
 
     // MARK: - Pixel readers

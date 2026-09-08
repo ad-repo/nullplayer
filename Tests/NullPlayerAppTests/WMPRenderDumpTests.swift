@@ -270,15 +270,18 @@ final class WMPRenderDumpTests: XCTestCase {
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 0, yFromTop: 1), [0, 0, 255, 255])
     }
 
-    /// **The implicit key, in all four directions (W78).** A node declaring nothing keys magenta out
-    /// of a sprite that authored no alpha; the same node leaves it painted on a sprite that authored
-    /// one; a node declaring another colour keeps its magenta; and a mapping image is never keyed at
+    /// **The implicit key, in all four directions (W78, W78a).** A node declaring nothing keys
+    /// magenta out of a sprite whatever alpha it authored — the BMP arm and the RGBA-PNG arm are
+    /// the same answer, which is W78a: the corpus holds eleven buttons whose normal state exported
+    /// without an alpha channel and whose hover state exported with one, magenta identical in both,
+    /// and under W78's original alpha veto such a button turned magenta under the pointer. What
+    /// still stops the key is a node declaring another colour, and a mapping image is never keyed at
     /// all, or a `#FF00FF` mapping colour would vanish from its own map and stop answering the
-    /// pointer. Without the second and fourth arms, "the default works" and "the default eats
+    /// pointer. Without the third and fourth arms, "the default works" and "the default eats
     /// artwork" print the same pass.
-    func testImplicitMagentaKeyAppliesOnlyToArtworkThatAuthoredNoAlpha() async throws {
+    func testImplicitMagentaKeyAppliesToArtworkWhateverAlphaItAuthored() async throws {
         // A real 24-bit BMP, not an ImageIO one: see `trueColor24Bitmap`. The PNG beside it is RGBA
-        // and is the arm that must keep its magenta.
+        // and is the arm W78a inverted.
         let bmp = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 2,
             rows: [[(255, 0, 0), (0, 255, 0)], [(0, 0, 255), (255, 0, 255)]])
         let png = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .png)
@@ -310,9 +313,11 @@ final class WMPRenderDumpTests: XCTestCase {
         XCTAssertEqual(specification("keyed")?.colorKeys, [WMPColor(red: 0, green: 255, blue: 0)])
 
         let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
-        // The magenta pixel is the bottom-right of the 2x2 source in every one of the three.
+        // The magenta pixel is the bottom-right of the 2x2 source in every one of the three. The
+        // alpha-carrying sprite clears exactly like the bare one; only the node that declared a
+        // different key keeps its magenta.
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 1, yFromTop: 1), [0, 0, 0, 0])
-        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 3, yFromTop: 1), [255, 0, 255, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 3, yFromTop: 1), [0, 0, 0, 0])
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 1), [255, 0, 255, 255])
         // …and the colour the third node did key is gone, so the arm is not passing by accident.
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 0), [0, 0, 0, 0])

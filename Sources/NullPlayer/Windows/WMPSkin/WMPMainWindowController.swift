@@ -48,6 +48,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// animation must not do either — it re-renders the scene that already exists.
     private var animationTask: Task<Void, Never>?
     private var animationEpoch = Date()
+    /// **The view the animation clock belongs to.** An animation clock is a property of the view on
+    /// screen, not of the scene object — and a scene object is rebuilt by every hover repaint,
+    /// every script transaction and every `onTimer` tick. `startAnimation` used to rewind the epoch
+    /// on each of those, so every GIF in the view restarted from frame zero at the rate the view
+    /// was rebuilt. Once the view timers started running (Phase 7) that became continuous: a view
+    /// declaring `timerInterval="100"` rewound a 2.16s one-shot intro ten times a second, and it
+    /// never reached its second frame. Reported live as "the animations keep opening and closing
+    /// constantly", and worse under the pointer because a hover adds transactions of its own.
+    private var animationEpochViewID: String?
     private var loadedSkin: WMPLoadedSkin?
     private var imageStore: WMPImageStore?
     private var activeViewID: String?
@@ -474,7 +483,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         .build(viewID: viewID, requestedSize: requested, overrides: resolvedOverrides)
                 }
                 let result = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: self?.renderBackingScale ?? 1)
+                    scene: scene, backingScale: self?.renderBackingScale ?? 1,
+                    clock: self?.animationClock(for: scene.viewID) ?? 0)
                 try Task.checkCancellation()
                 self?.sceneOverrides = resolvedOverrides
                 self?.activeScene = scene
@@ -640,7 +650,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                            interactionState: state, dirtyNodeIDs: changed,
                            overrides: overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: self?.renderBackingScale ?? 1)
+                    scene: scene, backingScale: self?.renderBackingScale ?? 1,
+                    clock: self?.animationClock(for: scene.viewID) ?? 0)
                 try Task.checkCancellation()
                 self?.activeScene = scene
                 self?.startAnimation(for: scene)
@@ -706,7 +717,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize,
                            interactionState: interactionState, overrides: output.overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: renderBackingScale)
+                    scene: scene, backingScale: renderBackingScale,
+                    clock: animationClock(for: scene.viewID))
                 guard !Task.isCancelled else { return }
                 sceneOverrides = output.overrides
                 self.activeScene = scene
@@ -924,7 +936,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize, overrides: output.overrides)
                 let rendered = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: renderBackingScale)
+                    scene: scene, backingScale: renderBackingScale,
+                    clock: self.animationClock(for: scene.viewID))
                 self.sceneOverrides = output.overrides; self.activeScene = scene
                 self.startAnimation(for: scene)
                 self.mainView?.updateListItems(output.listItems)
@@ -958,6 +971,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         setViewTimer(milliseconds: 0)
         animationTask?.cancel()
         animationTask = nil
+        animationEpochViewID = nil
+    }
+
+    /// Seconds of animation elapsed for `viewID`, or zero when the clock belongs to another view.
+    ///
+    /// **Every render of a view that is already animating has to pass this.** Preserving the epoch
+    /// alone does not stop the flicker: a rebuilt scene is rendered at `clock: 0` by default, so a
+    /// transaction still paints frame zero and the animation loop only catches up a frame later.
+    /// At a 100ms `timerInterval` that is ten frame-zero repaints a second on top of a running GIF.
+    private func animationClock(for viewID: String?) -> TimeInterval {
+        guard let viewID, animationEpochViewID == viewID else { return 0 }
+        return Date().timeIntervalSince(animationEpoch)
     }
 
     /// The `VIEW`'s own `timerInterval`, in milliseconds: zero stops it, anything else restarts it
@@ -1005,7 +1030,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         animationTask = nil
         guard let store = imageStore,
               let cadence = WMPRenderer(imageStore: store).animationCadence(for: scene) else { return }
-        animationEpoch = Date()
+        if animationEpochViewID != scene.viewID {
+            animationEpoch = Date()
+            animationEpochViewID = scene.viewID
+        }
+        Self.traceInput("animation \(scene.viewID ?? "-") delay=\(cadence.shortestDelay)s "
+            + "endsAt=\(cadence.endsAt.map { "\($0)s" } ?? "endless") "
+            + "clock=\(Date().timeIntervalSince(animationEpoch))s")
+        // A one-shot that has already played out needs no loop: the caller rendered this scene at
+        // the same clock, so its final frame is already on screen. Without this every rebuild after
+        // the animation ended would still start a task to draw that one still frame again.
+        if let endsAt = cadence.endsAt, Date().timeIntervalSince(animationEpoch) >= endsAt { return }
         let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds,
                          Int(cadence.shortestDelay * 1_000))
         let dirty = cadence.bounds

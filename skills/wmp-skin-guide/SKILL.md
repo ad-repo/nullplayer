@@ -158,18 +158,25 @@ queue, with the object model as the security boundary — see Amendment 2 in
   therefore a list, in authored order, and the image-store cache key contains all of it. Color keys
   compare exact un-premultiplied RGB and clear only matching pixels. Preserve the source alpha of
   every non-matching pixel.
-- **A node that declares no key at all still gets one: magenta, and only if the sprite carries no
-  alpha channel.** WMP's implicit transparency colour (W78). The corpus is authored against it —
-  4,979 of its 6,076 `transparencyColor` declarations (82%, 142 skins) are `#ff00ff`, `Halo 2` keys
-  three siblings by hand and leaves `m_trans_no.png` to the default, and `Main_Street` authors one
-  key in the whole file. The scene builder decides (`WMPSceneImage.implicitColorKey`, set only when
-  the node declares nothing) and the image store applies it only to a sprite whose *file* authored
-  no alpha — `kCGImagePropertyHasAlpha`, not the decoded `CGImage`'s `alphaInfo`, which is 32-bit
-  for a 24-bit BMP. A sprite that authored alpha has already said what is see-through, so its
-  magenta is paint. **Never pass the implicit key on a mapping image, position map or clipping
-  mask**: they are read for their colours, and keying one deletes a `#FF00FF` mapping colour from
-  its own map. Measure the class with `scripts/wmp_implicit_key.py` before widening the rule; the
-  default removed 315,157 magenta pixels across 87 corpus views and changed nothing else.
+- **A node that declares no key at all still gets one: magenta, whatever alpha the sprite carries.**
+  WMP's implicit transparency colour (W78, W78a). The corpus is authored against it — 4,979 of its
+  6,076 `transparencyColor` declarations (82%, 142 skins) are `#ff00ff`, `Halo 2` keys three
+  siblings by hand and leaves `m_trans_no.png` to the default, and `Main_Street` authors one key in
+  the whole file. The scene builder decides (`WMPSceneImage.implicitColorKey`, set only when the
+  node declares nothing) and the image store applies it. **The sprite's own alpha channel does not
+  veto it, and W78 shipped believing it did.** The reasoning was that a PNG or GIF which authored
+  transparency has already said what is see-through; the corpus says the alpha channel is an export
+  format instead. `scripts/wmp_implicit_key.py --alpha only` measures the complement — 76 references
+  across 21 skins and 62 sprites — and **11 of those nodes carry two states of the same button, one
+  exported without an alpha channel and one with, holding pixel-for-pixel identical magenta**
+  (`Half-Life_2` `m_pause_no.png`/`m_pause_hov.gif`, both 1,394; `Harry_Potter…`
+  `bottomgroup_no.png`/`bottomgroup_hover.gif`, both 5,866). Under the veto the normal state keyed
+  and the hover state did not, so the button turned magenta under the pointer. **Never pass the
+  implicit key on a mapping image, position map or clipping mask**: they are read for their colours,
+  and keying one deletes a `#FF00FF` mapping colour from its own map. Measure the class with
+  `scripts/wmp_implicit_key.py` before touching the rule; the default removed 315,157 magenta pixels
+  across 87 corpus views, and dropping the alpha veto took the corpus residual from 7,253 px across
+  15 views to 878 across 2, changing 13 PNGs and nothing else.
 - The opt-in render dump writes one untracked PNG per view plus a JSON report. Corpus paths and
   output directories are local inputs/artifacts and must never be staged.
 
