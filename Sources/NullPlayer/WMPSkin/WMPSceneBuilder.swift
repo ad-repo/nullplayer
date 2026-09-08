@@ -47,10 +47,15 @@ struct WMPSceneBuilder: @unchecked Sendable {
                value.isFinite, value >= 0 { return value }
             return nil
         }
+        // Declared here rather than with the other scene accumulators below: resolving the view's
+        // own background is the first thing that can warn.
+        var diagnostics = loadedSkin.diagnostics
         var authoredWidth = try viewDimension("width")
         var authoredHeight = try viewDimension("height")
         if authoredWidth == nil || authoredHeight == nil,
-           let (_, path) = try resolveResource(view, names: ["backgroundImage", "background"]) {
+           let (_, path) = try resolveResource(view, names: ["backgroundImage", "background"],
+                                               overrides: overrides,
+                                               warn: { diagnostics.append($0) }) {
             let intrinsic = try imageStore.image(for: path).size
             if authoredWidth == nil, intrinsic.width > 0 { authoredWidth = intrinsic.width }
             if authoredHeight == nil, intrinsic.height > 0 { authoredHeight = intrinsic.height }
@@ -64,7 +69,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // counts, and visibility is deliberately ignored: Darkling authors every one of its
             // wrappers `visible="false"` and turns one on in `onLoad`, so a union of the visible
             // children alone is empty.
-            let union = try contentUnionSize(of: view)
+            let union = try contentUnionSize(of: view, overrides: overrides,
+                                             warn: { diagnostics.append($0) })
             if authoredWidth == nil, union.width > 0 { authoredWidth = union.width }
             if authoredHeight == nil, union.height > 0 { authoredHeight = union.height }
         }
@@ -90,7 +96,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
         var widgets: [WMPWidget] = []
         var geometries: [Int: WMPResolvedGeometry] = [:]
         var unresolved: [WMPUnresolvedGeometry] = []
-        var diagnostics = loadedSkin.diagnostics
         var unresolvedNodes = Set<Int>()
         var unresolvedAttributes = Set<String>()
         var resolvedNodes = Set<Int>()
@@ -149,7 +154,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
         }
 
         func resource(_ node: WMPNode, names: [String]) throws -> (String, String)? {
-            try resolveResource(node, names: names)
+            try resolveResource(node, names: names, overrides: overrides,
+                                warn: { diagnostics.append($0) })
         }
 
         /// A slider's numbers, from the same three places every other property comes from: a live
@@ -584,10 +590,39 @@ struct WMPSceneBuilder: @unchecked Sendable {
             alpha: alpha)
     }
 
-    /// Resolve the first authored resource attribute among `names` to a path inside the archive.
+    /// Resolve the first resource attribute among `names` to a path inside the archive.
     /// Shared by the view root, which must resolve its background before any nested helper exists.
-    private func resolveResource(_ node: WMPNode, names: [String]) throws -> (String, String)? {
+    ///
+    /// **Artwork is a scripted property like any other.** `mainBack.backgroundImage =
+    /// "png24/intro_anim_f568.png"` is how a whole family of skins swaps what a node draws —
+    /// `Alienware Invader` hides its entire player behind 568 such writes — so a script override is
+    /// consulted before the authored attribute. The string it carries is an authored path and
+    /// resolves under the same provider rules as markup; one that resolves to nothing warns and
+    /// leaves the authored artwork in place rather than blanking the node.
+    private func resolveResource(_ node: WMPNode, names: [String],
+                                 overrides: WMPSceneOverrides = .empty,
+                                 warn: (WMPDiagnostic) -> Void = { _ in }) throws -> (String, String)? {
         for name in names {
+            if let override = overrides.properties[WMPScenePropertyAddress(
+                stableID: node.stableID, property: name.lowercased())]?.string {
+                let authored = override.trimmingCharacters(in: .whitespacesAndNewlines)
+                // `view.backgroundImage = ""` is how every store-thumbnail `previewView` clears its
+                // splash bitmap: an empty override is an authored absence, not a missing file.
+                if authored.isEmpty { continue }
+                // `try?`, not `try`: an override is a runtime value and `resolve` *throws* for a
+                // path outside the provider. A skin that assigns a `res://wmploc/RT_IMAGE/#2024`
+                // it read back off its own markup must warn like any other unresolvable path. When
+                // the throw escaped it took **five views across three skins** with it — `corona`
+                // and `9SeriesDefault` both lost `vPlayer` and `viewTiny` outright — which is a
+                // whole player rejected over one attribute.
+                if let path = try? loadedSkin.archive.resolve(authored,
+                                                              relativeTo: loadedSkin.definitionPath) {
+                    return (name, path)
+                }
+                warn(WMPDiagnostic(.resourceMissing,
+                    "Script set \(node.authoredTagName).\(name) to '\(authored)', which the skin does not contain.",
+                    severity: .warning, location: node.location))
+            }
             guard let attribute = node.attribute(named: name) else { continue }
             guard case let .resource(authored) = attribute.value else { continue }
             if let path = try loadedSkin.archive.resolve(authored, relativeTo: loadedSkin.definitionPath) {
@@ -666,11 +701,12 @@ struct WMPSceneBuilder: @unchecked Sendable {
     /// the builder never invents geometry — but a container whose own size is unknown is still
     /// descended into at its known origin, which is how `Darkling`'s unsized `viewWrapper` reports
     /// the walls beneath it.
-    private func contentUnionSize(of node: WMPNode) throws -> WMPSize {
+    private func contentUnionSize(of node: WMPNode, overrides: WMPSceneOverrides,
+                                  warn: (WMPDiagnostic) -> Void) throws -> WMPSize {
         var extent = WMPSize(width: 0, height: 0)
         for child in node.children {
             if isNonLayout(child.kind) {
-                let nested = try contentUnionSize(of: child)
+                let nested = try contentUnionSize(of: child, overrides: overrides, warn: warn)
                 extent = WMPSize(width: max(extent.width, nested.width),
                                  height: max(extent.height, nested.height))
                 continue
@@ -680,13 +716,14 @@ struct WMPSceneBuilder: @unchecked Sendable {
             var width = literal(child, "width")
             var height = literal(child, "height")
             if width == nil || height == nil,
-               let (_, path) = try resolveResource(child, names: intrinsicSizeResourceNames(for: child.kind)) {
+               let (_, path) = try resolveResource(child, names: intrinsicSizeResourceNames(for: child.kind),
+                                                   overrides: overrides, warn: warn) {
                 let intrinsic = try imageStore.image(for: path).size
                 if width == nil, intrinsic.width > 0 { width = intrinsic.width }
                 if height == nil, intrinsic.height > 0 { height = intrinsic.height }
             }
             if width == nil || height == nil {
-                let nested = try contentUnionSize(of: child)
+                let nested = try contentUnionSize(of: child, overrides: overrides, warn: warn)
                 if width == nil, nested.width > 0 { width = nested.width }
                 if height == nil, nested.height > 0 { height = nested.height }
             }

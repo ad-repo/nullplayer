@@ -339,6 +339,44 @@ final class WMPRenderDumpTests: XCTestCase {
         XCTAssertTrue(width.contains("-> 80"), width)
     }
 
+    /// The same probe, pointed at its own blind spot: a two-view skin must report each view's
+    /// expressions **under that view and nowhere else**.
+    ///
+    /// This is the check that was missing. Both evaluators are scoped to one `VIEW` — the live plan
+    /// collects the view's own subtree, and the static resolver rejects a reference that leaves it —
+    /// so a probe iterating the whole graph printed every sibling view's expressions under this
+    /// view's name, permanently unresolved and permanently unordered, purely because they were asked
+    /// of the wrong evaluator. Corpus-wide that manufactured 34,300 rows reading `#-` / `live=-`
+    /// against 7,700 real ones, and it was read as an engine defect starving 82% of the corpus. A
+    /// probe that answers for the wrong view is a probe reporting a defect it created.
+    func testExpressionProbeReportsOnlyTheDumpedViewsOwnExpressions() async throws {
+        let xml = """
+        <THEME>
+          <VIEW id="main" width="100" height="40">
+            <SUBVIEW id="pane" left="0" top="0" width="jscript:view.width - 20" height="10"/>
+          </VIEW>
+          <VIEW id="other" width="60" height="30">
+            <SUBVIEW id="sidebar" left="0" top="0" width="jscript:view.width - 5" height="10"/>
+          </VIEW>
+        </THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let builder = WMPSceneBuilder(loadedSkin: skin)
+
+        let main = WMPHarness.expressionLines(scene: try await builder.build(viewID: "main"),
+                                              skin: skin, viewID: "main", output: nil)
+        XCTAssertEqual(main.count, 1, main.joined(separator: "\n"))
+        XCTAssertTrue(main[0].contains("pane.width"), main[0])
+        XCTAssertTrue(main[0].contains("-> 80"), main[0])
+
+        let other = WMPHarness.expressionLines(scene: try await builder.build(viewID: "other"),
+                                               skin: skin, viewID: "other", output: nil)
+        XCTAssertEqual(other.count, 1, other.joined(separator: "\n"))
+        XCTAssertTrue(other[0].contains("sidebar.width"), other[0])
+        XCTAssertTrue(other[0].contains("-> 55"), other[0])
+    }
+
     /// The emitter itself, because a lost line is the one defect this harness cannot report on.
     ///
     /// The AppKit probe (W71) proves itself in both directions before anything trusts it about a
@@ -798,17 +836,29 @@ enum WMPHarness {
     /// witness. Both evaluators are reported: the static grammar in `WMPInitialLayoutExpression`
     /// that the scene builder uses today, and — when the script runtime ran — the value the real
     /// context produced, with the dependency order it was evaluated in.
+    ///
+    /// **Only the dumped view's own subtree.** WMP ids are scoped to a `VIEW`, and both evaluators
+    /// are too: `WMPScriptViewPlan` collects expressions from the view and its descendants, and
+    /// `WMPInitialLayoutResolver` refuses a reference that leaves the view it was built for. A probe
+    /// walking `graph.allNodes` therefore printed every *other* view's expressions under this view's
+    /// name, where by construction neither evaluator can answer — one row per expression per view in
+    /// the skin. That read as an engine defect and was the probe: 34,300 of the 34,314 rows that
+    /// reported `#-` / `live=-` across the 179-archive corpus were a sibling view's expression,
+    /// already ordered and evaluated under its own view. Scope this the way the engine is scoped.
     static func expressionLines(scene: WMPScene, skin: WMPLoadedSkin, viewID: String,
                                 output: WMPScriptOutput?) -> [String] {
         guard let view = skin.views.first(where: { $0.id.caseInsensitiveCompare(viewID) == .orderedSame })?.node
         else { return [] }
+        var included = Set<Int>()
+        func include(_ node: WMPNode) { included.insert(node.stableID); node.children.forEach(include) }
+        include(view)
         var resolver = WMPInitialLayoutResolver(graph: skin.graph, view: view, canvas: scene.canvasSize)
         let order = Dictionary(uniqueKeysWithValues: output?.expressionOrder.enumerated()
             .map { ($0.element.lowercased(), $0.offset) } ?? [])
         let results = Dictionary(output?.expressions.map { ($0.key.lowercased(), $0) } ?? []) { first, _ in first }
 
         var lines: [String] = []
-        for node in skin.graph.allNodes {
+        for node in skin.graph.allNodes where included.contains(node.stableID) {
             for attribute in node.attributes {
                 let name = attribute.name.lowercased()
                 guard ["left", "top", "width", "height"].contains(name) else { continue }

@@ -431,6 +431,7 @@ final class WMPScriptContext: @unchecked Sendable {
         bind(global: "eq", to: "eq")
         bind(global: "theme", to: "theme")
         bind(global: "network", to: "player.network")
+        bind(global: "mediacenter", to: "mediacenter")
     }
 
     private func bind(global name: String, to path: String) {

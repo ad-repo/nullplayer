@@ -157,9 +157,19 @@ bug this engine can carry; `reference/object-model.md` is the contract.
 
 `EXPR` reports **both** evaluators: `->` is the static grammar in `WMPInitialLayoutExpression` that
 the scene builder uses, and `live=` is the value the real script context produced. `live=-` with
-`#-` means the live pass produced nothing for that key — usually because the topological sort failed
-and no expression was evaluated at all. A skin whose static column resolves and whose live column is
-empty is not a working skin.
+`#-` means the live pass produced nothing for that key. A skin whose static column resolves and whose
+live column is empty is not a working skin.
+
+**`EXPR` is scoped to the dumped view, and reading it any other way is how this line lied.** WMP ids
+belong to a `VIEW` and so do both evaluators — `WMPScriptViewPlan` collects the view's own subtree,
+and `WMPInitialLayoutResolver` refuses a reference that leaves the view it was built for. The probe
+used to walk `graph.allNodes`, so every *other* view's expressions were printed under this view's
+name, asked of an evaluator that by construction cannot answer them, once per view in the skin.
+Corpus-wide that manufactured **34,300 rows** reading `#-` / `live=-` against 7,700 real ones — 82%,
+read for a day as an engine defect starving half the corpus — and the same collision by *name* also
+credited a sibling's order number to 131 rows that were not evaluated at all, so it lied in both
+directions. See § *After the cascade* below for what the corrected sweep says, and
+`testExpressionProbeReportsOnlyTheDumpedViewsOwnExpressions` for the check that holds it.
 
 ---
 
@@ -310,6 +320,7 @@ spots each made a real defect look absent. Four checks run on every plain `swift
 | `testRenderBitmapsProbeReportsAMissingAsset` | `BITMAPS` names a deliberately renamed asset — the Class C detector actually notices an absence |
 | `testRenderProbeReportsResolvedFramesForEveryDrawnNode` | `PROBE` reports the frame a node was *drawn at*, not the one it was authored with |
 | `testExpressionProbeReportsSourceAndResolvedValue` | `EXPR` reports both the source text and the value it resolved to |
+| `testExpressionProbeReportsOnlyTheDumpedViewsOwnExpressions` | `EXPR` answers for the dumped view **and no other** — a two-view skin reports one row per view. Without it the probe asked one view's evaluator about another view's nodes and printed the refusal as a defect, 34,300 times |
 | `testUprightCropColorKeyNestedClipZOrderAndBackingScale` | the renderer's own pixels, at 1× and 2× — the check that nothing else in this table substitutes for |
 | `testEmitsEveryLineWholeUnderConcurrentWriters` | eight concurrent writers and 9 KB lines all arrive whole and exactly once — the emitter cannot splice or drop a measurement |
 | `testAppKitProbeSeesAnOverlayAndReportsNothingWithoutOne` | `APPKIT` in both directions: a scene with nothing hosted over it diffs to **exactly zero**, and a scene carrying a `PLAYLIST` diffs inside that widget's frame and nowhere else. Without the first half, "no defect" and "blind instrument" print the same line |
@@ -442,7 +453,8 @@ from a **blank page** to the whole skin; `WoW/videoView` gained the logo its `on
 pane and a stray close box when nothing is playing, which is what WMP does.
 
 The remaining 228 handler errors are ranked in `WMP_TASKS.md`, and 102 of them are one missing host
-object (`mediacenter`).
+object (`mediacenter`). *(W37 closed that object in Phase 6; see* § After W37 *below for the
+re-measurement, and note the count here is a Phase 3 number kept as written.)*
 
 ---
 
@@ -486,3 +498,154 @@ the *uses* figure is the one to quote.
 
 **What Phase 6 did not touch.** Everything the ranked lists now point at. Draining A/C/D
 automatically was the job; the lists are the output, not the fixes.
+
+---
+
+## After the cascade (179-archive corpus, rev `df4a8c75` + the probe fix, 2026-09-08)
+
+The Phase 6 sweep above left one open question — *why do 82% of the corpus's geometry expressions
+never reach the live evaluator* — and the answer is that they do. **The 82% was this file's own
+instrument.**
+
+Re-run the capture the claim came from:
+
+```bash
+WMP_SKIN="$HOME/Library/Application Support/NullPlayer/WMPSkins" WMP_RENDER_EXPR=1 \
+  swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus > /tmp/wmp/expr-all.txt 2>&1
+```
+
+| | before | after |
+|---|---|---|
+| `EXPR` rows, 179 archives | 42,015 | **7,569** |
+| reached the live evaluator (an order number and a `live=` value) | 7,700 (18%) | **7,569 (100%)** |
+| `#-` with `live=-` | 34,314 (82%) | **0** |
+| static evaluator `unknown geometry object 'X'` | 10,188 uses / 85 skins | **0** |
+
+**What the old rows were.** Both evaluators are scoped to one `VIEW`; the probe was not. Of the
+34,314 rows that reported nothing, **34,300 were another view's expression printed under this view's
+name** — every one of them already ordered and evaluated under its own view — and the remaining 14
+are one skin whose view node is keyed `view.*` in its own dump and by its authored id everywhere
+else. The dominant "failure reason", `unknown geometry object`, was `WMPInitialLayoutResolver`
+correctly refusing a reference that leaves the view it was built for: the object was never missing,
+the question was addressed to the wrong evaluator. The collision ran the other way too — a duplicate
+id across two views credited a sibling's order number to 131 rows that were never evaluated, so the
+7,700 was wrong as well as the 34,314.
+
+The handoff's worked case is the whole defect in one line. `Alienware Invader` was reported as
+`EXPR mainView/plLeftStretch.top #-: plLeftCenter.top -> UNRESOLVED(unknown geometry object …)`, and
+`plLeftStretch` and `plLeftCenter` are both in **`plView`**, where the same expression reads
+`EXPR plView/plLeftStretch.top #17: plLeftCenter.top -> 0 live=7`. A node "that exists in the markup
+and appears in no `PROBE` output" was a node in a view nobody was probing.
+
+**What the corrected sweep leaves.** Two rows in one skin, and one error:
+
+* `digitaldj.wmz` `DigitalDJ` `view.width` / `view.height` evaluate to the **empty string**:
+  `(theme.loadPreference('WD') == '--') ? 640 : theme.loadPreference('WD')`. `loadPreference` returns
+  `''` for a key that was never written, so the `'--'` sentinel never matches and the ternary yields
+  the empty value rather than the authored default (W76). The view still draws at 640x458 because
+  the static grammar answered.
+* `Compact.wmz` `myeffect.top` is `ReferenceError: Can't find variable: mediacenter` — W37, since
+  closed; that expression now evaluates.
+
+**What it does not touch: the starvation class.** `starved.tsv` is unchanged at **41 starved views
+across 36 skins**, and re-measuring it after the fix was the point: expressions are not what starves
+a view. The three skins the handoff named were opened and looked at, and none of them is an
+expression defect —
+
+| Skin / view | expressions | what the dump shows |
+|---|---|---|
+| `Cablemusic` / `mainview` | **zero** | 63 unresolved nodes, no geometry expressions at all, no missing bitmaps — and it draws a nearly complete player |
+| `ALXMorph` / `mainView` | 4, all live-resolved | draws its whole shell; "does nothing" is interaction and animation, not layout |
+| `Alienware Invader` / `mainView` | 6, all live-resolved | genuinely blank, and for its own reason: `toggleShutter()` plays a **568-frame** intro off a 50 ms timer and only at frame 568 sets `mainBack.backgroundImage = "main_back.png"` and `mainBackGroup1.visible = true`. Frame 0 of an intro is what the default-state sweep measures |
+
+That last one turned up W75 — a script assignment to `backgroundImage` never reaches the scene —
+**and W75 is now closed.** `WMPSceneBuilder.resolveResource` read the authored attribute only and
+consulted `overrides.properties` for nothing, so `mainBack` resolved its 406x380 frame, was handed a
+real existing PNG on every tick of a `WMP_RENDER_SETTLE=32` run, and still emitted **zero paint
+commands**. Artwork was the one property class the override path skipped.
+
+### What closing it measured
+
+**Reach, from the call trace** (`WMP_SKIN=<skins dir> WMP_CALL_TRACE=1`, tallying
+`CALL … <member> write` lines whose member ends in `image`, by skin, over the 179-archive corpus):
+**45 skins** write an artwork property from script in the default state — 55 writes, of which
+`backgroundImage` is 49, `image` 4 and `downImage` 2. **36 of the 45 write `""`**: that is the
+store-thumbnail collapse (`view.width = 0; view.height = 0; view.backgroundImage = "";
+theme.currentViewID = …`), not artwork being swapped. **Nine write a real path** — `Alienware
+Invader`, `Alienware_Darkstar_WMP11`, `Crimson_Skies`, `Frostbite`, `Scooby-Doo_2`, `STALKER`,
+`T3-Skynet_Media_Player`, `The_Last_Samurai`, `tubeframe` — and that is the class the row was
+about. A settled run reaches more of them; the default state is what this number is.
+
+**Result, `scripts/wmp_render_sweep.sh compare` over 179 archives / 545 hosted PNGs.** 533
+identical, **12 changed, none of them a loss**:
+
+* 10 `mediaSwitcherView`s (`Combat_Flight_Simulator_3`, both `Plus!` skins, both `QuickSilver`
+  releases, both `TripleX`, both `WWN`, `xXx_night_vision_redx`) go `1 command` → `0` and draw
+  nothing, which is the view obeying its own `backgroundImage = ""` before it redirects. This is why
+  the corpus's "draws nothing" tally moves **65 → 75 views / 37 → 45 skins**: a collapse that now
+  works reads as a blank view, and the ranking cannot tell the two apart. It is the one number this
+  fix makes worse and the reason it is written down here.
+* `Scooby-Doo_2/infoView` draws the character its `onLoad` picks instead of the authored one.
+* `tubeframe/TubeFrameView` gains a scripted button image (34 → 35 commands).
+
+`Alienware Invader/mainView` itself is unchanged in the default sweep — frame 0 of a 568-frame intro
+is still frame 0 — and under `WMP_RENDER_SETTLE=32` it goes from **0 commands and an empty PNG** to
+its full 406x380 player artwork.
+
+**The sweep caught a regression that no unit test would have.** The first version resolved the
+override with `try`, and `WMPArchive.resolve` *throws* for a path outside the provider rather than
+returning `nil`. A skin assigning a `res://wmploc/RT_IMAGE/#2024` it had read back off its own markup
+therefore took its whole view down with `WMP0024`: **5 views across 3 skins** — `corona` and
+`9SeriesDefault` each lost `vPlayer` *and* `viewTiny`, plus `Compact/compact`. `try?` and the same
+warning path as a missing file. An override is runtime data; nothing it carries may reject a view.
+
+---
+
+## After W37 (179-archive corpus, 2026-09-08)
+
+One host object, `mediacenter`, and the reason it is worth its own section is what closing the
+biggest row on the page does to the rest of the page.
+
+**Method, and the part that was most of the work.** The tree already carried unrelated uncommitted
+changes, so a baseline against `HEAD` would have measured those too. The baseline is a
+`git worktree` holding **the same working tree with only this change reverted** — the four files
+that were clean before restored from `HEAD`, and the one hunk in a file that was already dirty
+removed by hand. A fresh worktree also needs `Frameworks/` and the framework bundles staged into
+`.build/<triple>/debug/` before `swift test` can even load the test bundle; without them the capture
+writes an empty `raw.txt` that diffs as "every skin regressed".
+
+| | baseline | with `mediacenter` |
+|---|---|---|
+| `Can't find variable: mediacenter` | **159**, across **110 skins** | **0** |
+| runtime member errors, all causes | 252 | **127** |
+| skins carrying a dead handler | 119 | **70** |
+| distinct causes | 41 | **55** |
+| views dumped / failed | 669 / 62 | 669 / 62 (unchanged) |
+| images | — | **490 identical, 55 differing, 0 lost, 0 new** |
+
+**Distinct causes went up, and that is the instrument working.** Rule 2 in
+`reference/object-model.md` — "unimplemented is a queue, not a set" — is visible here as a number for
+the first time: handlers that used to die on their first `mediacenter` line now run to their
+*second* missing member. `alphaBlendTo` went 18 → 26 skins and is now the largest row in the backlog;
+`player.dvd`, `eq.bypass` and three cross-view element names are new. **Never read a fall in one row
+as progress without re-measuring the rest of the table in the same capture.**
+
+**The 55 differing images were looked at, not counted**, and they split three ways:
+
+* **Gained.** `WALL-E/mainView` went from a blank frame to its **entire artwork**; a dozen
+  `videoView`s gained content their `OnLoad` sets.
+* **Lost, and correct.** `Gorillaz/noodle` ends its `OnLoad` with
+  `screen.visible = video.visible = effects.visible = false`, and the Rave-MP and
+  Back-to-the-Future drawers close because nothing is playing. A script that finally runs is a
+  script that finally hides things, which is what WMP does. This is the same finding as Phase 3's
+  `Grinch/view-2`, and it means **net ink is not a quality signal**: this change is −15,152 px
+  overall and every one of those losses is right.
+* **Lost, and a different row's fault.** `Plus! Professional/videoView` lost its right drawer tab,
+  and the cause is W76: `loadVidPrefs` tests `theme.loadPreference('vidRightDrawer') != '--'`, an
+  unset key answers `''`, and the inverted sentinel closes the drawer. W37 closing is what turned
+  W76 from two expressions in one skin into drawn pixels. **When a sweep loses pixels, find the
+  statement that hid them before filing the change that ran it.**
+
+A useful cheap instrument for the third case: count non-transparent pixels per differing PNG and
+sort. It separates "gained a background" from "hid a pane" in one pass and points at the handful
+worth opening.

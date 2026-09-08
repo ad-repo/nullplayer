@@ -14,7 +14,7 @@ One persistent `JSContext` per **skin session**, on one WMP-owned serial queue
 - the skin's own `.js` programs, evaluated **once** at session start, in declaration order;
 - every element id of the current view as a global, backed by live element state;
 - `player`, `player.controls`, `player.settings`, `player.currentMedia`, `player.currentPlaylist`,
-  `player.network`, `eq`, `theme`, `view`;
+  `player.network`, `eq`, `theme`, `view`, `mediacenter`;
 - WMP's own enumeration constants (`osMediaOpen`, `psPlaying`, …) as globals;
 - `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval`, host-executed and bounded;
 - nothing else. `ActiveXObject`, `WScript`, `Enumerator`, `VBArray` and `GetObject` are explicitly
@@ -80,6 +80,26 @@ Three rules, each of which was a live defect first:
 3. **A script value outranks the artwork's natural size.** The intrinsic size of a background bitmap
    fills in an *unstated* dimension; it never overwrites one the skin computed. It did, and every
    rebuild stamped 241 px back over the height the script had just set.
+4. **Artwork is a scripted property like any other, and the view root is not an exception.**
+   `WMPSceneBuilder.resolveResource` used to read the authored attribute alone, so images were the
+   single property class the override path skipped while geometry, colours, slider metrics and text
+   all went through it (W75). `Alienware Invader` hides its whole player behind a 568-frame intro
+   whose every tick is `mainBack.backgroundImage = "png24/intro_anim_f<N>.png"`, and its `mainView`
+   drew **nothing at all** until the override was consulted. Three rules the fix is made of, and each
+   is a way of getting it wrong:
+   - The override carries an **authored path string**, so it resolves through
+     `archive.resolve(_:relativeTo:)` under the same provider rules as markup. It is not a file path
+     and it is not trusted.
+   - A path the skin does not contain **warns (`WMP0023`) and leaves the authored artwork in place**.
+     A mistyped frame name must never blank a node that has something to draw.
+   - `""` is an **authored absence**, not a missing file: it clears that name the way an absent
+     attribute does, which is how every store-thumbnail `previewView` drops its splash bitmap
+     alongside the zero-size collapse. `view.backgroundImage` is on the `view` compatibility list for
+     that reason — the view root resolves it like any other node, so the tally must not call it
+     unknown.
+
+   The image store keys its cache on the canonical resource path, so a scripted swap is a different
+   key and a different decode; the scene owns no image state of its own.
 
 ## Elements
 
@@ -128,6 +148,56 @@ Two things it is deliberately **not**:
 Initial load treats `openView` and `setCurrentView` identically in one place only: the windowless-view
 redirect. A view that never becomes a window can honour neither as a window operation, and both are
 a request for which view to show next.
+
+## `mediacenter`
+
+WMP's Media Center host object: the video surface, the visualization ("effects") selection, and the
+shell's own localised strings. It was the largest single thing stopping a handler in this corpus —
+**159 `ReferenceError: Can't find variable: mediacenter` across 110 of the 179 measured archives**,
+each one killing an `OnLoad` on whichever line first touched it (W37).
+
+**Every member of it is `inert()`, and that is the finding rather than a shortcut.** There is no
+video surface to zoom (`imageSourceWidth`/`Height` already answer 0 for the same reason), the
+engine draws exactly one effect with no type and no presets (`WMPEffectsSurfaceView`), and there is
+no high-contrast mode. Nothing here has a host behind it to be live about.
+
+What it is **not** is a stub that answers a constant. Skins round-trip these — `Plus! Professional`
+writes `mediacenter.effectPreset = visEffects.currentPreset` in one view and reads it back into a
+control in another — so a write stores **session state** and the next read answers it, exactly as
+`player.settings.autoStart` does. A constant would break the read-back while looking identical from
+every instrument.
+
+The corpus asks for exactly these nine names and **never uses `mediacenter` as a bare identifier**,
+so the table below is the whole object. A tenth name stays `unrecognised` and ranks itself.
+
+| Member | Default | Why that default |
+|---|---|---|
+| `videoZoom` | `100` | WMP's own 100%. Nothing is scaled; the number is what a skin's zoom readout prints |
+| `videoStretchToFit` | `false` | nothing is fitted to anything |
+| `videoShrinkToFit` | `false` | as above. Corpus use is write-only |
+| `effectType` | `""` | one effect, and it has no type |
+| `effectPreset` | `0` | one effect, and it has no presets |
+| `showTitles` | `false` | no titles are drawn over a video that does not exist |
+| `showEffects` | `true` | the effects surface *is* always drawn, so `myeffect.visible = mediacenter.showEffects` is right |
+| `contrastMode` | `""` | no high-contrast mode. The corpus tests it `== "BW"` / `== "WB"` and falls through to its normal path |
+| `getNamedString(name)` | `""` | the same `wmploc.dll` string table `theme.loadString` names, reached by a second route (`BuyMusicButton`, `BuyMusicURL`, `PLCID` — the WMP store's own resources) |
+
+`contrastMode` is the host's accessibility setting and is **read-only in WMP too**, so a write to it
+stays `unrecognised` rather than being quietly accepted.
+
+Two things this deliberately does not do:
+
+- **It does not answer the paren form.** Nine skins author
+  `currentEffectType="jscript:mediacenter.effectType();"` on a `<WMPEFFECTS>`, which WMP accepts
+  because IDispatch allows a property get with parentheses and JavaScriptCore does not. The
+  expression fails, costs itself alone, and is tallied as an `expression-error` — visible, on an
+  attribute this engine's one effects surface does not read anyway.
+- **It is not a route to the visualization subsystem.** `effectType`/`effectPreset` naming a real
+  NullPlayer visualization would be a capability, not a member: it needs a `<WMPEFFECTS>` that can
+  host one and a host snapshot field to answer from. Neither exists, and inventing a mapping here
+  would make the demand disappear while nothing changed on screen.
+
+---
 
 ## `theme.openDialog`
 

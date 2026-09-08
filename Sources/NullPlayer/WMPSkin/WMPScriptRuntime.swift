@@ -160,7 +160,14 @@ enum WMPJScriptCompatibility {
                "gainLevel1", "gainLevel2", "gainLevel3", "gainLevel4", "gainLevel5",
                "gainLevel6", "gainLevel7", "gainLevel8", "gainLevel9", "gainLevel10"],
         "theme": ["currentViewID", "loadPreference", "savePreference", "loadString", "openView"],
-        "view": ["left", "top", "width", "height", "close", "minimize", "visible"],
+        // `backgroundImage` is on this list because the view root resolves it the way every other
+        // node does — a script override before the authored attribute (W75). Every skin with a
+        // store-thumbnail `previewView` writes it, and the tally must not call it unknown.
+        "view": ["left", "top", "width", "height", "close", "minimize", "visible",
+                 "backgroundImage"],
+        // Derived from the object model's own table rather than restated, so the static tally and
+        // the runtime cannot disagree about what `mediacenter` answers. Every one of them is inert.
+        "mediacenter": Set(WMPObjectModel.mediaCenterDefaults.keys).union(["getNamedString"]),
         "popup": ["appendItem", "removeAllItems", "getItem", "itemCount"],
         "element": Set(WMPObjectModel.standardElementProperties).union(["id"])
     ]

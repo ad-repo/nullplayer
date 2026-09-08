@@ -63,7 +63,7 @@ struct WMPCompatibilityReport: Equatable, Codable {
     }
 
     private static func collectMembers(in source: String, into counts: inout [String: Int]) {
-        let pattern = #"\b(?:player|theme|view|eq|vis|ipl|ddpl|metadata)(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+"#
+        let pattern = #"\b(?:player|theme|view|eq|vis|ipl|ddpl|metadata|mediacenter)(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return }
         let range = NSRange(source.startIndex..<source.endIndex, in: source)
         for match in regex.matches(in: source, range: range) {

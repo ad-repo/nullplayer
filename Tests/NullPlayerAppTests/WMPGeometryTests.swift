@@ -355,4 +355,139 @@ final class WMPGeometryTests: XCTestCase {
         XCTAssertEqual(scripted.canvasSize, WMPSize(width: 0, height: 0))
     }
 
+
+    /// **A script assignment to artwork is the artwork.** `WMPSceneBuilder.resolveResource` used to
+    /// read the authored attribute and nothing else, so images were the one property class the
+    /// script-override path skipped — geometry, colours, slider metrics and text all went through
+    /// it. `Alienware Invader` hides its entire player behind a 568-frame intro whose every tick is
+    /// `mainBack.backgroundImage = "png24/intro_anim_f<N>.png"`, and its `mainView` drew nothing at
+    /// all (W75). The node draws the scripted path, and it is sized by it too.
+    func testAScriptAssignedBackgroundImageIsWhatTheNodeDraws() async throws {
+        let authored = try WMPSkinTestSupport.encodedImage(width: 4, height: 4,
+            rgba: [UInt8](repeating: 255, count: 4 * 4 * 4))
+        let scripted = try WMPSkinTestSupport.encodedImage(width: 12, height: 6,
+            rgba: [UInt8](repeating: 128, count: 12 * 6 * 4))
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="40" height="20">
+              <SUBVIEW id="back" left="0" top="0" backgroundImage="first.png"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("first.png", data: authored),
+            WMPTestArchiveEntry("second.png", data: scripted)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let store = WMPImageStore(provider: skin.archive)
+        let back = try XCTUnwrap(skin.graph.nodes(id: "back").first)
+
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[.init(stableID: back.stableID, property: "backgroundimage")] =
+            .string("second.png")
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+            .build(viewID: "main", overrides: overrides)
+        let command = try XCTUnwrap(scene.commands.first { $0.stableID == back.stableID })
+        guard case let .image(image) = command.paint else {
+            return XCTFail("a scripted backgroundImage was not painted as an image")
+        }
+        XCTAssertEqual(image.resourcePath, "second.png",
+                       "the node kept painting the artwork its markup declared")
+        // The intrinsic size follows the scripted artwork, so the image store answered for the new
+        // path rather than serving the old one out of its cache.
+        XCTAssertEqual(scene.geometries[back.stableID]?.localFrame.width, 12)
+        XCTAssertEqual(scene.geometries[back.stableID]?.localFrame.height, 6)
+    }
+
+    /// An override carries an authored path string and resolves under the same provider rules as
+    /// markup. One the skin does not contain warns and leaves the authored artwork in place —
+    /// a mistyped frame name must never blank a node that has something to draw.
+    func testAScriptAssignedBackgroundImageThatIsMissingWarnsAndKeepsTheAuthoredArtwork() async throws {
+        let authored = try WMPSkinTestSupport.encodedImage(width: 4, height: 4,
+            rgba: [UInt8](repeating: 255, count: 4 * 4 * 4))
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="40" height="20">
+              <SUBVIEW id="back" left="0" top="0" backgroundImage="first.png"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("first.png", data: authored)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let back = try XCTUnwrap(skin.graph.nodes(id: "back").first)
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[.init(stableID: back.stableID, property: "backgroundimage")] =
+            .string("nowhere/frame_999.png")
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+        let command = try XCTUnwrap(scene.commands.first { $0.stableID == back.stableID })
+        guard case let .image(image) = command.paint else {
+            return XCTFail("a node with authored artwork painted nothing")
+        }
+        XCTAssertEqual(image.resourcePath, "first.png")
+        XCTAssertTrue(scene.diagnostics.contains {
+            $0.code == .resourceMissing && $0.severity == .warning
+                && $0.message.contains("nowhere/frame_999.png")
+        }, "a scripted path the skin does not contain must warn")
+    }
+
+    /// **Nothing an override carries may reject a view.** `WMPArchive.resolve` *throws* for a path
+    /// outside the provider rather than returning nil, and a skin that assigns a
+    /// `res://wmploc/RT_IMAGE/#2024` it read back off its own markup let that throw escape the
+    /// builder: 5 views across 3 skins failed outright with `WMP0024` — `corona` and
+    /// `9SeriesDefault` each lost `vPlayer` and `viewTiny`. It warns like any other unresolvable
+    /// path, and the view still builds.
+    func testAScriptAssignedResourcePathOutsideTheArchiveWarnsRatherThanRejectingTheView() async throws {
+        let art = try WMPSkinTestSupport.encodedImage(width: 4, height: 4,
+            rgba: [UInt8](repeating: 255, count: 4 * 4 * 4))
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="40" height="20">
+              <SUBVIEW id="back" left="0" top="0" backgroundImage="art.png"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("art.png", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let back = try XCTUnwrap(skin.graph.nodes(id: "back").first)
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[.init(stableID: back.stableID, property: "backgroundimage")] =
+            .string("res://wmploc/RT_IMAGE/#2024")
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+        XCTAssertEqual(scene.canvasSize, WMPSize(width: 40, height: 20))
+        let command = try XCTUnwrap(scene.commands.first { $0.stableID == back.stableID })
+        guard case let .image(image) = command.paint else {
+            return XCTFail("the view survived but the node lost its artwork")
+        }
+        XCTAssertEqual(image.resourcePath, "art.png")
+        XCTAssertTrue(scene.diagnostics.contains {
+            $0.code == .resourceMissing && $0.severity == .warning
+        })
+    }
+
+    /// `view.backgroundImage = ""` is how every store-thumbnail `previewView` clears its splash
+    /// bitmap, alongside the zero size W-fix above. An empty override is an authored absence, so
+    /// the node draws nothing rather than resolving `""` as a path.
+    func testAScriptClearingBackgroundImageDrawsNothing() async throws {
+        let art = try WMPSkinTestSupport.encodedImage(width: 4, height: 4,
+            rgba: [UInt8](repeating: 255, count: 4 * 4 * 4))
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="40" height="20">
+              <SUBVIEW id="back" left="0" top="0" width="10" height="10" backgroundImage="art.png"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("art.png", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let back = try XCTUnwrap(skin.graph.nodes(id: "back").first)
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[.init(stableID: back.stableID, property: "backgroundimage")] = .string("")
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+        XCTAssertFalse(scene.commands.contains { $0.stableID == back.stableID },
+                       "a script cleared this node's artwork and it was still painted")
+        XCTAssertFalse(scene.diagnostics.contains { $0.code == .resourceMissing },
+                       "clearing artwork is an authored answer, not a missing file")
+    }
+
 }

@@ -108,6 +108,11 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertTrue(WMPJScriptCompatibility.supports(object: "theme", member: "currentViewID"))
         XCTAssertFalse(WMPJScriptCompatibility.supports(object: "player", member: "shellExecute"))
         XCTAssertFalse(WMPJScriptCompatibility.supports(object: "registry", member: "read"))
+        // The static tally is measured against this table, so a member the runtime answers and the
+        // table does not know reads as unimplemented demand for something that already works.
+        XCTAssertTrue(WMPJScriptCompatibility.supports(object: "mediacenter", member: "videoZoom"))
+        XCTAssertTrue(WMPJScriptCompatibility.supports(object: "mediacenter", member: "getnamedstring"))
+        XCTAssertFalse(WMPJScriptCompatibility.supports(object: "mediacenter", member: "dvdChapter"))
     }
 
     /// The defect the whole phase exists for. `g_paneCurrent` is set by one click handler and read
@@ -213,6 +218,84 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertTrue(inert.recognised, "an inert member must not abort the handler that touched it")
         XCTAssertTrue(output.calls.contains { $0.path == "player.controls.play" && $0.resolution == .live })
         XCTAssertTrue(output.hostCommands.contains { $0.action == "play" })
+        await session.teardown()
+    }
+
+    /// W37: `mediacenter` was the largest single thing stopping a handler in the corpus — 159
+    /// `ReferenceError: Can't find variable: mediacenter` across the 179 measured archives, killing
+    /// `OnLoad` on whichever line first touched it. The object exists now and **every member of it
+    /// is inert**, which is the finding and not a shortcut: there is no video surface to zoom, one
+    /// effect with no type and no presets, and no high-contrast mode.
+    ///
+    /// The test pins the part a constant-returning stub would fail: a skin writes the effect
+    /// selection and reads it back out of a second view, so the session must remember the write —
+    /// while still posting no host command and still resolving `inert`, so the census keeps ranking
+    /// the demand instead of losing it.
+    func testMediaCenterRoundTripsSessionStateAndStaysInert() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <SUBVIEW id="pane" left="0" top="0" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let write = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "pane",
+                         handlers: ["mediacenter.effectPreset = 4; mediacenter.videoZoom = 150;"]))
+        XCTAssertTrue(write.calls.allSatisfy { $0.path.hasPrefix("mediacenter.") ? $0.resolution == .inert : true })
+        XCTAssertTrue(write.hostCommands.isEmpty, "nothing is behind mediacenter to command")
+        XCTAssertFalse(write.diagnostics.contains { $0.code == "handler-error" })
+
+        // The read-back is a second transaction, the way `Plus! Professional` reads in one view
+        // what its other view wrote.
+        let read = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "pane",
+                         handlers: ["pane.left = mediacenter.effectPreset; pane.top = mediacenter.videoZoom;"]))
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        XCTAssertEqual(read.overrides.geometry[.init(stableID: pane.stableID, property: "left")], 4)
+        XCTAssertEqual(read.overrides.geometry[.init(stableID: pane.stableID, property: "top")], 150)
+        let preset = try XCTUnwrap(read.calls.first { $0.path == "mediacenter.effectpreset" })
+        XCTAssertEqual(preset.resolution, .inert, "a member with no host behind it must stay counted apart")
+        await session.teardown()
+    }
+
+    /// The other half of W37, and the half that keeps the tally honest. An unwritten member answers
+    /// the documented default rather than `undefined`; `contrastMode` is the host's accessibility
+    /// setting and is read-only in WMP too, so a *write* to it stays unrecognised; and a name the
+    /// object does not carry still aborts its handler, so the tenth member ranks itself the way the
+    /// first nine did.
+    func testMediaCenterDefaultsAnswerAndItsSurfaceStaysClosed() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <SUBVIEW id="pane" left="0" top="0" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let defaults = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "pane",
+                         handlers: ["pane.left = mediacenter.videoZoom;"
+                                    + "pane.top = (mediacenter.contrastMode == '' && !mediacenter.showTitles"
+                                    + " && mediacenter.showEffects && mediacenter.getNamedString('PLCID') == '') ? 7 : 0;"]))
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        XCTAssertEqual(defaults.overrides.geometry[.init(stableID: pane.stableID, property: "left")], 100,
+                       "an unwritten videoZoom answers WMP's 100%, not undefined")
+        XCTAssertEqual(defaults.overrides.geometry[.init(stableID: pane.stableID, property: "top")], 7)
+
+        let closed = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "pane",
+                         handlers: ["mediacenter.contrastMode = 'BW'; pane.width = 33;",
+                                    "mediacenter.dvdChapter; pane.height = 44;"]))
+        // Element state lives for the whole session, so the properties the aborted statements would
+        // have set are ones no earlier transaction touched: no override reaches the scene for them.
+        XCTAssertNil(closed.overrides.geometry[.init(stableID: pane.stableID, property: "width")],
+                     "a write to the read-only contrastMode must abort its handler")
+        XCTAssertNil(closed.overrides.geometry[.init(stableID: pane.stableID, property: "height")],
+                     "a member mediacenter does not carry must abort its handler")
+        XCTAssertTrue(closed.calls.contains { $0.path == "mediacenter.contrastmode" && !$0.recognised })
+        XCTAssertTrue(closed.calls.contains { $0.path == "mediacenter.dvdchapter" && !$0.recognised })
         await session.teardown()
     }
 

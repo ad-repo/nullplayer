@@ -246,6 +246,7 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         case "theme": object = "theme"; member = parts[1]
         case "view": object = "view"; member = parts[1]
         case "eq": object = "eq"; member = parts[1]
+        case "mediacenter": object = "mediacenter"; member = parts[1]
         case "vis": object = "vis"; member = parts[1]
         case "ipl", "ddpl": object = "playlist"; member = parts[1]
         default:

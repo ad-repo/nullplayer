@@ -117,6 +117,13 @@ queue, with the object model as the security boundary — see Amendment 2 in
   ""; theme.currentViewID = "controlView"` — and Microsoft's own `auto.js` in `Official_Xbox_XP`
   does it with a comment saying so. Discarding a `0` override as "not positive" left 34 corpus
   skins showing a static splash bitmap where the skin had asked for its player.
+- **A node draws the artwork a script last gave it, not the one its markup declares.** Images were
+  the one property class the script-override path skipped, and `Alienware Invader` — whose whole
+  player is behind a 568-frame intro of `mainBack.backgroundImage = "png24/intro_anim_f<N>.png"` —
+  drew nothing at all because of it (W75). An override is an authored path string and resolves under
+  the same provider rules as markup; one the skin does not contain warns and leaves the authored
+  artwork in place; `""` clears the property the way an absent attribute does. The rules and the
+  traps are in `reference/object-model.md` § *What a property read answers, and who wins*.
 - `WMPSceneBuilder` resolves literal geometry plus the bounded static initial-layout grammar in
   `WMPInitialLayoutExpression`: finite numbers, parentheses, arithmetic, and geometry reads from
   deterministic IDs. `wmpprop:` is accepted only as an alias for that same geometry grammar.
@@ -195,6 +202,18 @@ The ones that cost the most, in WMP terms:
   corpus-wide. **Do not do it by hand against a raw screen capture unless you have to**: the two
   images go through different colour spaces, and reading that difference as a defect is what
   reported 6.8% of the *control* skin as broken.
+- **A probe scoped differently from the engine reports the difference as a defect.** Both geometry
+  evaluators are scoped to one `VIEW`; the `EXPR` probe walked the whole graph, so every other view's
+  expressions were printed under this view's name and refused by an evaluator that could not answer
+  them. That read as *82% of the corpus's expressions never reach the live evaluator* — 34,314 rows
+  — and cost a whole handoff, whose worked case turned out to be a `plView` node quoted under
+  `mainView`. Scoped the way the engine is, the corpus reads **7,569 / 7,569**. Before believing a
+  probe about a population, check it is asking the same question the engine answers;
+  `reference/harness.md` § *After the cascade* has the numbers and the check that holds it.
+- **Expressions are not what starves a view.** `starved.tsv` did not move by one row when the above
+  was corrected, and `Cablemusic/mainview` — 63 unresolved nodes — declares no geometry expressions
+  at all. A high `unresolved` ratio also does not mean a blank window: two of the three worst-ranked
+  views render substantially. See W68 and W75.
 - **A ratio, not a count, ranks a starved view.** `unresolved > 0` is true of most views in the
   corpus, including corona's. `starved.tsv` from the census is the ranking; a raw count ranked
   nothing and hid ALXMorph for three phases.
@@ -292,6 +311,19 @@ of these was invisible to the harness and visible in the first minute of live QA
 - Fail closed per handler, never per session: an unrecognised member aborts that one handler and is
   tallied as measured demand. There is no session-wide script kill switch — a skin puts its whole
   startup in one handler, and a kill switch makes that invisible rather than visible.
+- **An inert member that answers a constant is still a phantom.** `mediacenter` was the largest
+  cause of a dead handler in the corpus — 159 `ReferenceError`s across 110 of 179 archives (W37) —
+  and every one of its nine members is honestly `inert()`: there is no video surface, one effect
+  with no type and no presets, no high-contrast mode. But skins *round-trip* these, writing
+  `mediacenter.effectPreset` in one view and reading it back in another, so an inert member stores
+  session state and answers what was written. A constant looks identical from every instrument and
+  is wrong. See `reference/object-model.md` § `mediacenter`.
+- **Closing the biggest row raises the ones behind it, and the capture must show both.** W37 took
+  the runtime error class 252 → 127 while distinct causes went *up*, 41 → 55: handlers that died on
+  their first missing member now reach their second. Never read one row falling as progress without
+  re-measuring the whole table in the same capture, and never read lost pixels as a regression
+  before finding the statement that hid them — a script that finally runs is a script that finally
+  hides panes. `reference/harness.md` § *After W37*.
 - Authored handlers are selected **per view**. A `.wmz` declares every view in one file, so an
   unscoped scan runs another view's `onLoad` against elements that do not exist in this one.
 - Expression reads form a per-view dependency graph. Resolve in stable topological order and commit

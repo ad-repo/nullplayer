@@ -250,6 +250,7 @@ final class WMPObjectModel {
         case "player.network": return readNetwork(name)
         case "eq": return readEqualizer(name)
         case "theme": return readTheme(name)
+        case "mediacenter": return readMediaCenter(name)
         default: return .unrecognised("unknown host object")
         }
     }
@@ -359,6 +360,52 @@ final class WMPObjectModel {
         }
     }
 
+    /// WMP's Media Center host object: the video surface, the visualization ("effects") selection,
+    /// and the shell's own localised strings. **Every member is `inert()`**, and that is the whole
+    /// finding rather than a shortcut — this engine has no video surface at all
+    /// (`imageSourceWidth`/`Height` already answer 0 for the same reason), draws exactly one
+    /// effect with no type and no presets, and has no high-contrast mode. There is nothing behind
+    /// any of it to be live about.
+    ///
+    /// What it is *not* is a stub that answers a constant. Skins round-trip these — `Plus! Perfect`
+    /// writes `mediacenter.effectPreset = visEffects.currentPreset` and reads it back into a second
+    /// view's control — so a write stores session state and the next read answers it, exactly as
+    /// `player.settings.autoStart` does. A constant would break the read-back and be invisible while
+    /// doing it.
+    ///
+    /// The defaults are chosen to describe what this player actually does, not to echo WMP's:
+    /// nothing is fitted to anything, so both fit flags are false; no titles are drawn over a video
+    /// that does not exist, so `showTitles` is false; the effects surface is always drawn, so
+    /// `showEffects` is true; there is no high-contrast mode, so `contrastMode` is the empty string
+    /// the corpus tests `!= "BW"` and `!= "WB"` against.
+    private func readMediaCenter(_ name: String) -> WMPMemberValue {
+        if name == "getnamedstring" { return .function }
+        guard let fallback = Self.mediaCenterDefaults[name] else {
+            return .unrecognised("mediacenter member")
+        }
+        inert()
+        return .value(mediaCenterState[name] ?? fallback)
+    }
+
+    /// The member surface, with the value each one answers before a skin has written it. The corpus
+    /// asks for exactly these nine names and never uses `mediacenter` as a bare identifier, so this
+    /// table is the whole object; a tenth name stays `unrecognised` and ranks itself.
+    static let mediaCenterDefaults: [String: WMPJSONValue] = [
+        "videozoom": .number(100),
+        "videostretchtofit": .bool(false),
+        "videoshrinktofit": .bool(false),
+        "effecttype": .string(""),
+        "effectpreset": .number(0),
+        "showtitles": .bool(false),
+        "showeffects": .bool(true),
+        "contrastmode": .string("")
+    ]
+
+    /// The members a skin may write. `contrastMode` is the host's accessibility setting and is
+    /// read-only in WMP too, so a write stays unrecognised rather than being quietly accepted.
+    static let mediaCenterWritableMembers: Set<String> = Set(mediaCenterDefaults.keys)
+        .subtracting(["contrastmode"])
+
     private func readElement(_ element: WMPScriptElement, _ name: String) -> WMPMemberValue {
         if let method = elementMethod(element, name) { _ = method; return .function }
         switch name {
@@ -429,6 +476,9 @@ final class WMPObjectModel {
     // MARK: - Writes
 
     private var sessionSettings: [String: WMPJSONValue] = [:]
+    /// Written by the skin, read back by the skin, and behind none of it is a host. See
+    /// `readMediaCenter`.
+    private var mediaCenterState: [String: WMPJSONValue] = [:]
 
     private func write(path: String, member: String, value: WMPJSONValue) -> WMPMemberValue {
         let name = member.lowercased()
@@ -466,6 +516,15 @@ final class WMPObjectModel {
             hostCommand("setCurrentView", .string(value.string ?? ""))
             return .value(value)
         default: break
+        }
+        if path == "mediacenter" {
+            guard Self.mediaCenterWritableMembers.contains(name) else {
+                return .unrecognised(Self.mediaCenterDefaults[name] == nil
+                    ? "mediacenter member" : "mediacenter member is read-only")
+            }
+            mediaCenterState[name] = value
+            inert()
+            return .value(value)
         }
         if path == "eq", name.hasPrefix("gainlevel"), let band = Int(name.dropFirst("gainlevel".count)),
            (1...10).contains(band) {
@@ -609,6 +668,12 @@ final class WMPObjectModel {
                 return .unrecognised("only FILE_OPEN is implemented")
             }
             hostCommand("openFileDialog", nil)
+            inert()
+            return .value(.string(""))
+        case ("mediacenter", "getnamedstring"):
+            // The same `wmploc.dll` string table `theme.loadString` names, reached by a second
+            // route: the corpus asks for `BuyMusicButton`, `BuyMusicURL` and `PLCID`, which are the
+            // WMP store's own resources. There is no such library on macOS.
             inert()
             return .value(.string(""))
         case ("theme", "loadstring"):
