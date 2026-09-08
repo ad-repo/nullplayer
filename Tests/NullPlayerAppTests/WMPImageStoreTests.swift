@@ -50,6 +50,21 @@ final class WMPImageStoreTests: XCTestCase {
         assertComponent(retained[2], equals: 150, accuracy: 1)
     }
 
+    func testEachKeySetIsDecodedAndCachedSeparately() throws {
+        let rgba: [UInt8] = [255, 0, 255, 255, 255, 0, 0, 255]
+        let data = try WMPSkinTestSupport.encodedImage(width: 2, height: 1, rgba: rgba)
+        let store = WMPImageStore(provider: WMPMemoryResourceProvider(["key.png": data]))
+        let magenta = WMPColor(red: 255, green: 0, blue: 255)
+        let red = WMPColor(red: 255, green: 0, blue: 0)
+        let one = try store.image(for: "key.png", colorKeys: [magenta]).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(one, x: 0, yFromTop: 0), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(one, x: 1, yFromTop: 0), [255, 0, 0, 255])
+        let both = try store.image(for: "key.png", colorKeys: [magenta, red]).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(both, x: 0, yFromTop: 0), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(both, x: 1, yFromTop: 0), [0, 0, 0, 0])
+        XCTAssertEqual(store.metrics.decodedImageCount, 2)
+    }
+
     private func assertComponent(_ lhs: UInt8, equals rhs: UInt8, accuracy: UInt8,
                                  file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertLessThanOrEqual(abs(Int(lhs) - Int(rhs)), Int(accuracy), file: file, line: line)

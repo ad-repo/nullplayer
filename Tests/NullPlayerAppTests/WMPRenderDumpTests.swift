@@ -188,6 +188,36 @@ final class WMPRenderDumpTests: XCTestCase {
         XCTAssertEqual(WMPSkinTestSupport.rgba(two.image, x: 4, yFromTop: 4), [255, 0, 0, 255])
     }
 
+    /// A subview commonly declares `clippingColor` — the colour cut out of its own artwork to shape
+    /// the window — *and* `transparencyColor`, as two different colours. Keying only one of them
+    /// leaves the other painted as a flat slab (W8).
+    func testClippingAndTransparencyColorsAreBothKeyedOut() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .bmp)
+        let xml = """
+        <THEME><VIEW id="main" width="2" height="2">
+          <IMAGE id="both" left="0" top="0" width="2" height="2" image="pixel.bmp"
+                 transparencyColor="#FF00FF" clippingColor="#FF0000"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("pixel.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        guard case let .image(specification)? = scene.commands.first(where: { $0.nodeID == "both" })?.paint else {
+            return XCTFail("The keyed image command is missing from the scene.")
+        }
+        XCTAssertEqual(specification.colorKeys, [WMPColor(red: 255, green: 0, blue: 255),
+                                                 WMPColor(red: 255, green: 0, blue: 0)])
+        let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 0, yFromTop: 0), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 1, yFromTop: 1), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 1, yFromTop: 0), [0, 255, 0, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 0, yFromTop: 1), [0, 0, 255, 255])
+    }
+
     func testTextCounterTransformKeepsGlyphsUprightInTopFrame() async throws {
         let xml = """
         <THEME><VIEW id="main" width="80" height="40">
@@ -602,7 +632,7 @@ enum WMPHarness {
             case let .fill(color): paint = "fill:\(color)"
             case let .image(image):
                 let crop = image.sourceRect.map { " crop=\($0)" } ?? ""
-                let key = image.colorKey.map { " colorKey=\($0)" } ?? ""
+                let key = image.colorKeys.map { " colorKey=\($0)" }.joined()
                 paint = "image:\(image.resourcePath)\(crop)\(key)\(image.tiled ? " tiled" : "")"
             case let .text(text): paint = "text:\(text.value)"
             }
@@ -625,7 +655,7 @@ enum WMPHarness {
         var resolved = Set<String>(), missing = Set<String>()
         for command in scene.commands {
             guard case let .image(image) = command.paint else { continue }
-            if (try? imageStore.image(for: image.resourcePath, colorKey: image.colorKey)) != nil {
+            if (try? imageStore.image(for: image.resourcePath, colorKeys: image.colorKeys)) != nil {
                 resolved.insert(image.resourcePath)
             } else {
                 missing.insert(image.resourcePath)

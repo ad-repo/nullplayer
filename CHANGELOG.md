@@ -33,6 +33,13 @@
 
 ### Bug Fixes
 
+- **Windows Media Player skins shaped like something other than a rectangle now come out that
+  shape.** A `.wms` says which colour to cut out of its artwork — many skins name two, one for the
+  window's outline and one for the drawing inside it — and NullPlayer was removing only one of them.
+  The other was painted as a flat block of red or magenta covering most of the window: Alpine 7618
+  was 80% solid red, v2 Underworld's player 79%. Both colours are now removed, so the skin keeps its
+  own silhouette. Pharaoh, Tomb Raider 2, polygon, gadget and Plus! Mecha are fixed by the same
+  change.
 - **A Windows Media Player skin built around one big picture now opens.** Some `.wms` files give
   their window no size and no artwork of its own, and hang the entire player off a single panel
   inside it. NullPlayer rejected those and fell back to the unskinned player; it now measures such a

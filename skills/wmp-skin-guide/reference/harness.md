@@ -229,17 +229,16 @@ spots each made a real defect look absent. Four checks run on every plain `swift
 `compare` was checked the same way on 2026-09-07: a one-pixel **colour-only** change (alpha
 untouched) to one dumped PNG and a one-character change to one invariant line, each reported.
 
-**Measuring a transparency key: look for more than one colour.** W8 is counted by scanning every
-dumped PNG for *opaque* pixels holding the key colour and reporting any view over 5% of its area — a
-census column cannot see it, because a view that draws its key is structurally perfect. The trap is
-assuming the key is magenta. Re-measuring at rev `9939e871` over all 515 dumped views by counting
-`#FF00FF` **and** `#FF0000` separately gives **37 views across 34 skins**, and **11 of those views
-are pure red with essentially no magenta at all** (`v2_underworld/start` 74.7% red, `Cubist/view-2`
-54.2%, `pharaoh/view-2` 51.0%, `gadget`, `Tomb Raider 2`, `rad`, `Goo`, `Ursula`, `Headspace`,
-`robbie`). The earlier figure of 23 views across 21 skins was a magenta-only scan and was short by
-the whole red half. Two skins draw both. Do not assume this pair is the whole set either: the key is
-whatever the markup declares, so read it per skin rather than hard-coding a palette into the next
-measurement.
+**Measuring a transparency key: read the keys out of the markup.** The class W8 counted is scored by
+scanning every dumped PNG for *opaque* pixels holding a key colour and reporting any view over 5% of
+its area — a census column cannot see it, because a view that draws its key is structurally perfect.
+The trap is assuming which colour that is. A magenta-only scan gave 23 views across 21 skins; adding
+`#FF0000` gave 37 across 34, with 11 views pure red and no magenta at all. Neither is the rule.
+**Score against the set of colours each skin's own `.wms` declares** — `clippingColor` and
+`transparencyColor`, both of which a single node commonly carries with *different* values — and
+never against a hard-coded palette. Closing W8 under that rule leaves **28 views across 26 skins at
+or above 5%**, and every one of them is now a different defect (see W48): artwork whose flat colour
+is keyed nowhere in the markup, or a `BUTTONGROUP` blitting its whole sheet.
 
 **Three things a clean sweep does not prove.** It measures the default state and nothing else — not a
 tab, a setting, a drag, a hover, or anything driven by live playback. A structural probe is not a

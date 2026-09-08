@@ -37,8 +37,8 @@ enum WMPAttributeParser {
         "positionimage", "resizebackgroundimage"
     ]
     private static let colorNames: Set<String> = [
-        "mappingcolor", "transparencycolor", "backgroundcolor", "foregroundcolor",
-        "color", "bordercolor"
+        "mappingcolor", "transparencycolor", "clippingcolor", "backgroundcolor",
+        "foregroundcolor", "color", "bordercolor"
     ]
     private static let handlerNames: Set<String> = [
         "onclick", "onchange", "onload", "onclose", "ontimer",

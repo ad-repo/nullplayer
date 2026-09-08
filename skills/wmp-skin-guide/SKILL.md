@@ -127,8 +127,14 @@ queue, with the object model as the security boundary — see Amendment 2 in
   needs the same counter-flip `drawImage` applies.** `WMPRenderer.clip(to:mask:context:)` owns that;
   it undoes the CTM by hand rather than with `restoreGState`, which would discard the clip too. A
   mask fixture split left/right cannot see this class of bug — split it top/bottom.
-- Color keys compare exact un-premultiplied RGB and clear only matching pixels. Preserve the source
-  alpha of every non-matching pixel.
+- **A node keys out every colour it declares, not one.** `transparencyColor` and `clippingColor` are
+  both keys — the second is the colour WMP cuts out of a subview's own artwork to shape it — and a
+  subview routinely carries both with *different* values (`Alpine7618_v09` keys `#FF00FF` and
+  `#FF0033`). 103 of the 180 archives author clipping attributes, so an engine honouring one key per
+  image paints the other as a flat slab over most of the window. `WMPSceneImage.colorKeys` is
+  therefore a list, in authored order, and the image-store cache key contains all of it. Color keys
+  compare exact un-premultiplied RGB and clear only matching pixels. Preserve the source alpha of
+  every non-matching pixel.
 - The opt-in render dump writes one untracked PNG per view plus a JSON report. Corpus paths and
   output directories are local inputs/artifacts and must never be staged.
 

@@ -391,7 +391,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                       width: sourceWidth ?? frame.width, height: sourceHeight ?? frame.height)
         let tiledName = background ? "backgroundTiled" : "tiled"
         let image = WMPSceneImage(resourcePath: path, sourceRect: source,
-            colorKey: color(node, names: ["transparencyColor"]),
+            colorKeys: colors(node, names: ["transparencyColor", "clippingColor"]),
             tiled: literalString(node, tiledName)?.caseInsensitiveCompare("true") == .orderedSame,
             interpolation: .low, mappingMask: mappingMask)
         return WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID, frame: frame,
@@ -418,6 +418,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
     private func literalString(_ node: WMPNode, _ name: String) -> String? {
         guard let attribute = node.attribute(named: name), case let .literal(value) = attribute.value else { return nil }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Every key `names` resolves on this node, in order and deduplicated. `color` stops at the
+    /// first hit because it answers "what colour is this"; a keyed image needs all of them.
+    private func colors(_ node: WMPNode, names: [String]) -> [WMPColor] {
+        var resolved: [WMPColor] = []
+        for name in names {
+            guard let value = color(node, names: [name]), !resolved.contains(value) else { continue }
+            resolved.append(value)
+        }
+        return resolved
     }
 
     private func color(_ node: WMPNode, names: [String]) -> WMPColor? {

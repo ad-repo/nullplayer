@@ -12,7 +12,9 @@ enum WMPTextAlignment: String, Codable {
 struct WMPSceneImage: Hashable, Codable {
     let resourcePath: String
     let sourceRect: WMPRect?
-    let colorKey: WMPColor?
+    /// Every colour this node keys out of its artwork, in authored order: `transparencyColor`
+    /// then `clippingColor`. A subview commonly declares both, with different colours.
+    let colorKeys: [WMPColor]
     let tiled: Bool
     let interpolation: WMPImageInterpolation
     let mappingMask: WMPSceneMappingMask?

@@ -58,9 +58,13 @@ final class WMPImageStore: @unchecked Sendable {
         self.limits = limits
     }
 
-    func image(for path: String, colorKey: WMPColor? = nil) throws -> WMPDecodedImage {
+    func image(for path: String, colorKey: WMPColor?) throws -> WMPDecodedImage {
+        try image(for: path, colorKeys: colorKey.map { [$0] } ?? [])
+    }
+
+    func image(for path: String, colorKeys: [WMPColor] = []) throws -> WMPDecodedImage {
         let canonical = provider.canonicalPath(for: path) ?? path
-        let cacheKey = canonical + (colorKey.map { "|key=\($0)" } ?? "")
+        let cacheKey = canonical + colorKeys.map { "|key=\($0)" }.joined()
         lock.lock()
         if var entry = entries[cacheKey] {
             clock &+= 1
@@ -71,7 +75,7 @@ final class WMPImageStore: @unchecked Sendable {
         }
         lock.unlock()
 
-        let decoded = try decode(path: canonical, colorKey: colorKey)
+        let decoded = try decode(path: canonical, colorKeys: colorKeys)
         lock.lock()
         defer { lock.unlock() }
         if let existing = entries[cacheKey] { return existing.image }
@@ -143,7 +147,7 @@ final class WMPImageStore: @unchecked Sendable {
             decodedMappingImageCount: mappingDecodeCount)
     }
 
-    private func decode(path: String, colorKey: WMPColor?) throws -> WMPDecodedImage {
+    private func decode(path: String, colorKeys: [WMPColor]) throws -> WMPDecodedImage {
         let ext = (path as NSString).pathExtension.lowercased()
         guard ["bmp", "gif", "jpg", "jpeg", "png"].contains(ext) else {
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
@@ -158,7 +162,7 @@ final class WMPImageStore: @unchecked Sendable {
               let width = integer(properties[kCGImagePropertyPixelWidth]),
               let height = integer(properties[kCGImagePropertyPixelHeight]) else {
             if ext == "bmp" {
-                return try decodeBitmapOurselves(bytes, path: path, colorKey: colorKey,
+                return try decodeBitmapOurselves(bytes, path: path, colorKeys: colorKeys,
                     imageIOReason: "could not read metadata")
             }
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
@@ -176,13 +180,13 @@ final class WMPImageStore: @unchecked Sendable {
                              kCGImageSourceShouldCache: true] as CFDictionary
         guard var image = CGImageSourceCreateImageAtIndex(source, 0, decodeOptions) else {
             if ext == "bmp" {
-                return try decodeBitmapOurselves(bytes, path: path, colorKey: colorKey,
+                return try decodeBitmapOurselves(bytes, path: path, colorKeys: colorKeys,
                     imageIOReason: "could not decode")
             }
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO could not decode '\(path)'."))
         }
-        if let colorKey { image = try WMPColorKey.applying(colorKey, to: image) }
+        image = try WMPColorKey.applying(colorKeys, to: image)
         return WMPDecodedImage(image: image,
             size: WMPSize(width: CGFloat(width), height: CGFloat(height)),
             decodedBytes: decodedByteCount)
@@ -191,14 +195,14 @@ final class WMPImageStore: @unchecked Sendable {
     /// ImageIO refuses legacy WMP bitmaps over details Windows treats as advisory — `biClrImportant`
     /// set while `biClrUsed` is zero, and some well-formed RLE8 streams. Those files are not corrupt
     /// and every Windows player draws them, so fall back to the bounded in-house reader.
-    private func decodeBitmapOurselves(_ data: Data, path: String, colorKey: WMPColor?,
+    private func decodeBitmapOurselves(_ data: Data, path: String, colorKeys: [WMPColor],
                                        imageIOReason: String) throws -> WMPDecodedImage {
         let bounds = WMPBitmapDecoder.Limits(maximumDimension: limits.maximumDimension,
             maximumPixels: limits.maximumPixels, maximumDecodedBytes: limits.maximumDecodedBytes)
         do {
             let decoded = try WMPBitmapDecoder.decode(data, limits: bounds)
             var image = decoded.image
-            if let colorKey { image = try WMPColorKey.applying(colorKey, to: image) }
+            image = try WMPColorKey.applying(colorKeys, to: image)
             return WMPDecodedImage(image: image,
                 size: WMPSize(width: CGFloat(decoded.width), height: CGFloat(decoded.height)),
                 decodedBytes: decoded.decodedBytes)

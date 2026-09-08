@@ -96,7 +96,7 @@ struct WMPRenderer: @unchecked Sendable {
                 context.fill(command.frame.cgRect)
             case let .image(specification):
                 let decoded = try imageStore.image(for: specification.resourcePath,
-                                                   colorKey: specification.colorKey)
+                                                   colorKeys: specification.colorKeys)
                 let sourceImage = crop(specification.sourceRect, from: decoded.image)
                 if let mappingMask = specification.mappingMask,
                    let mask = mappingMask.mapping.maskImage(for: Set(mappingMask.nodeIDs)) {
