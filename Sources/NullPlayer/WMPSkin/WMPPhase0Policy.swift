@@ -41,6 +41,11 @@ enum WMPPhase0Limits {
     /// costing three skins their whole load and a fourth its only view while protecting nothing.
     static let imageDimension = 32_768
     static let imagePixels: UInt64 = 32_000_000
+    /// A bound on how many frames of one animated image are addressable. WMP skins animate small
+    /// looping details — the corpus's 2,166 multi-frame GIFs are mostly three to six frames, and
+    /// the largest is well under this — so it is a sanity ceiling on a hostile file, not a limit
+    /// any real skin approaches. Never raise it to make a skin animate.
+    static let animationFrames = 512
     static let scriptBytes: UInt64 = 4 * 1_024 * 1_024
     static let expressionDependencyDepth = 128
     static let expressionPasses = 256

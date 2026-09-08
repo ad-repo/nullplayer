@@ -26,6 +26,7 @@ import XCTest
 //   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
 //   WMP_RENDER_CLICK=<view>@x,y[;x,y…]   drive clicks in order and report what each one moved
 //   WMP_RENDER_SETTLE=<seconds>    pump the run loop and drive onTimer before measuring
+//   WMP_RENDER_CLOCK=<s>[;<s>…]    seconds into an animation to draw; one PNG per value
 //   WMP_RENDER_SIZE=<W>x<H>        resize before measuring, then re-drive onResize
 //
 // A skin that fails to load prints `SKIN <file> FAILED <error>` and the sweep carries on: one
@@ -100,6 +101,18 @@ struct WMPProbe {
 
     var settleSeconds: TimeInterval {
         max(0, min(30, Double(env["WMP_RENDER_SETTLE"] ?? "") ?? 0))
+    }
+
+    /// Seconds into an animation to draw. **A render dump is a still, so without this an animation
+    /// is unfalsifiable** — frame zero looks exactly like an engine that never animates. Two pinned
+    /// values of this flag, diffed, are the whole proof that a skin's artwork moves.
+    ///
+    /// Accepts a list: `WMP_RENDER_CLOCK=0;0.5;1` dumps one PNG per value, suffixed with it.
+    var animationClocks: [TimeInterval] {
+        guard let spec = env["WMP_RENDER_CLOCK"] else { return [0] }
+        let values = spec.split(whereSeparator: { $0 == ";" || $0 == "," })
+            .compactMap { Double($0) }.filter { $0.isFinite && $0 >= 0 && $0 <= 3_600 }
+        return values.isEmpty ? [0] : values
     }
 
     /// `<view>@x,y[;x,y…]`. Several points in one run is how a second click is checked to undo the
@@ -586,8 +599,15 @@ enum WMPHarness {
         }
         if let dump {
             try FileManager.default.createDirectory(at: dump, withIntermediateDirectories: true)
-            let record = try await WMPRenderer(imageStore: imageStore).dump(scene: scene, to: dump)
-            WMPHarnessOutput.emit("PNG \(viewID): \(record.pngFilename)")
+            let renderer = WMPRenderer(imageStore: imageStore)
+            if let cadence = renderer.animationCadence(for: scene) {
+                WMPHarnessOutput.emit("ANIMATION \(viewID): shortestDelay="
+                    + "\(WMPNumber.format(CGFloat(cadence.shortestDelay))) bounds=\(cadence.bounds)")
+            }
+            for clock in probe.animationClocks {
+                let record = try await renderer.dump(scene: scene, to: dump, clock: clock)
+                WMPHarnessOutput.emit("PNG \(viewID): \(record.pngFilename)")
+            }
         }
     }
 

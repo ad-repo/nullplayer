@@ -152,8 +152,58 @@ struct WMPSceneBuilder: @unchecked Sendable {
             try resolveResource(node, names: names)
         }
 
+        /// A slider's numbers, from the same three places every other property comes from: a live
+        /// script/`wmpprop:` override first, then an authored literal, then WMP's own default.
+        func sliderMetrics(_ node: WMPNode) -> WMPSliderMetrics {
+            func number(_ names: [String]) -> Double? {
+                for name in names {
+                    if let override = overrides.properties[WMPScenePropertyAddress(
+                        stableID: node.stableID, property: name.lowercased())]?.number,
+                       override.isFinite { return override }
+                    if let value = literal(node, name) { return Double(value) }
+                }
+                return nil
+            }
+            let minimum = number(["min", "minValue"]) ?? 0
+            let maximum = number(["max", "maxValue"]) ?? 100
+            return WMPSliderMetrics(direction: WMPSliderDirection(authored: literalString(node, "direction")),
+                minimum: minimum, maximum: maximum,
+                value: number(["value"]) ?? minimum,
+                borderSize: literal(node, "borderSize") ?? 0)
+        }
+
+        /// The metrics the `foregroundImage` fill is measured with — the slider's own value
+        /// unless the skin redirected it to `foregroundProgress`, which WMP scales 0-100.
+        func progressSource(_ node: WMPNode, _ slider: WMPSliderMetrics) -> WMPSliderMetrics {
+            guard literalString(node, "useForegroundProgress")?.caseInsensitiveCompare("true") == .orderedSame,
+                  let progress = overrides.properties[WMPScenePropertyAddress(
+                    stableID: node.stableID, property: "foregroundprogress")]?.number
+                    ?? literal(node, "foregroundProgress").map(Double.init),
+                  progress.isFinite else { return slider }
+            return WMPSliderMetrics(direction: slider.direction, minimum: 0, maximum: 100,
+                                    value: progress, borderSize: slider.borderSize)
+        }
+
+        func thumbSize(_ node: WMPNode) throws -> WMPSize? {
+            guard let (_, path) = try resource(node, names: ["thumbImage", "thumbDownImage",
+                                                             "thumbHoverImage", "thumbDisabledImage"]) else {
+                return nil
+            }
+            return try imageStore.image(for: path).size
+        }
+
+        /// `alphaBlend` is 0-255 and inherits: a container the skin fades takes its whole subtree
+        /// with it, which is how a `.wmz` hides a pane it has not opened yet.
+        func inheritedAlpha(_ node: WMPNode, _ parent: CGFloat) -> CGFloat {
+            guard let authored = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
+                                                                              property: "alphablend")]?.number
+                    ?? literal(node, "alphaBlend").map(Double.init) else { return parent }
+            guard authored.isFinite else { return parent }
+            return parent * max(0, min(1, CGFloat(authored) / 255))
+        }
+
         func walk(_ node: WMPNode, parentFrame: WMPRect, parentAuthoredSize: WMPSize,
-                  inheritedClip: WMPRect?, isRoot: Bool = false) throws {
+                  inheritedClip: WMPRect?, parentAlpha: CGFloat = 1, isRoot: Bool = false) throws {
             // A script override outranks the markup. Corona's `SetPane` switches its video and
             // visualization panes purely by writing `vid.visible` / `vis.visible`, so a builder
             // that reads only the authored attribute draws whichever the author happened to leave
@@ -168,7 +218,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if isNonLayout(node.kind) {
                 for child in node.children.sorted(by: nodeOrder) {
                     try walk(child, parentFrame: parentFrame, parentAuthoredSize: parentAuthoredSize,
-                             inheritedClip: inheritedClip)
+                             inheritedClip: inheritedClip, parentAlpha: parentAlpha)
                 }
                 return
             }
@@ -223,7 +273,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     let partialAuthored = WMPSize(width: width ?? 0, height: height ?? 0)
                     for child in node.children.sorted(by: nodeOrder) {
                         try walk(child, parentFrame: partial, parentAuthoredSize: partialAuthored,
-                                 inheritedClip: inheritedClip)
+                                 inheritedClip: inheritedClip, parentAlpha: parentAlpha)
                     }
                     return
                 }
@@ -265,6 +315,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 absoluteFrame: frame, visibleFrame: visible, clipRect: inheritedClip)
             resolvedNodes.insert(node.stableID)
             let z = Int(literal(node, "zIndex") ?? 0)
+            let alpha = inheritedAlpha(node, parentAlpha)
+            let slider = isSlider(node.kind) ? sliderMetrics(node) : nil
+            let positionMap = try node.kind == .customSlider
+                ? resource(node, names: ["positionImage"]).map { try imageStore.positionMap(for: $0.1) }
+                : nil
 
             if let kind = widgetKind(node.kind), visible != nil {
                 let label = literalString(node, "accessibleName")
@@ -273,18 +328,27 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 widgets.append(WMPWidget(stableID: node.stableID, nodeID: node.xmlID, kind: kind,
                     frame: frame, clipRect: inheritedClip, label: label,
                     toolTip: literalString(node, "toolTip") ?? literalString(node, "tooltip"),
-                    minimumValue: (literal(node, "min") ?? literal(node, "minValue")).map(Double.init),
-                    maximumValue: (literal(node, "max") ?? literal(node, "maxValue")).map(Double.init)))
+                    minimumValue: slider?.minimum ?? (literal(node, "min") ?? literal(node, "minValue")).map(Double.init),
+                    maximumValue: slider?.maximum ?? (literal(node, "max") ?? literal(node, "maxValue")).map(Double.init),
+                    value: slider?.value, direction: slider?.direction,
+                    borderSize: slider?.borderSize ?? 0,
+                    thumbSize: try slider == nil ? nil : thumbSize(node),
+                    valueBindingPath: valueBindingPath(node)))
             }
 
+            // `clippingImage` shapes an element by a bitmap the way `clippingColor` shapes it by a
+            // colour — 25 corpus skins author a non-empty one, and every one of them declares a
+            // `clippingColor` beside it, which is what the mask keys out.
+            let clippingPath = try resource(node, names: ["clippingImage"])?.1
             if let background = color(node, names: ["backgroundColor"]), !frame.isEmpty {
                 commands.append(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
-                    documentOrder: node.stableID, paint: .fill(background)))
+                    documentOrder: node.stableID, paint: .fill(background), alpha: alpha))
             }
             if let (_, path) = try resource(node, names: ["backgroundImage", "background"]), !frame.isEmpty {
                 commands.append(imageCommand(node: node, path: path, frame: frame,
-                    clip: inheritedClip, z: z, background: true))
+                    clip: inheritedClip, z: z, background: true, alpha: alpha,
+                    clippingPath: clippingPath))
             }
             let childStates = node.kind == .buttonGroup
                 ? node.children.map { ($0.stableID, interactionState.visualState(for: $0.stableID)) } : []
@@ -314,17 +378,65 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     if !colors.isEmpty, !activeIDs.isEmpty {
                         let mapping = try imageStore.mappingImage(for: mappingPath, nodeByColor: colors)
                         commands.append(imageCommand(node: node, path: normalPath, frame: frame,
-                            clip: inheritedClip, z: z, background: false))
+                            clip: inheritedClip, z: z, background: false, alpha: alpha,
+                            clippingPath: clippingPath))
                         commands.append(imageCommand(node: node, path: statePath, frame: frame,
-                            clip: inheritedClip, z: z, background: false,
-                            mappingMask: WMPSceneMappingMask(mapping: mapping, nodeIDs: activeIDs)))
+                            clip: inheritedClip, z: z, background: false, alpha: alpha,
+                            mappingMask: WMPSceneMappingMask(mapping: mapping, nodeIDs: activeIDs),
+                            clippingPath: clippingPath))
                     } else {
                         commands.append(imageCommand(node: node, path: statePath, frame: frame,
-                            clip: inheritedClip, z: z, background: false))
+                            clip: inheritedClip, z: z, background: false, alpha: alpha,
+                            clippingPath: clippingPath))
                     }
                 } else if let (_, path) = try resource(node, names: foregroundNames) {
+                    // A `CUSTOMSLIDER`'s artwork is a strip of every position it can be in, and the
+                    // value picks the frame. `frame(for:in:)` returns nil for art that is not a
+                    // whole multiple of the map, and then this is an ordinary image again.
+                    let artwork = try imageStore.image(for: path).size
+                    let strip = slider.flatMap { positionMap?.frame(for: $0.fraction, in: artwork) }
                     commands.append(imageCommand(node: node, path: path, frame: frame,
-                        clip: inheritedClip, z: z, background: false))
+                        clip: inheritedClip, z: z, background: false, alpha: alpha,
+                        sourceOverride: strip, clippingPath: clippingPath))
+                }
+            }
+
+            // **A slider is its track plus a thumb the scene has to place.** 163 of 178 corpus
+            // skins author one and 164 give it a `thumbImage`; before this the engine drew the
+            // track and nothing else, so every seek bar, volume control and equaliser band in the
+            // corpus rendered as an empty groove that could still be dragged invisibly.
+            if let slider, !frame.isEmpty, visible != nil {
+                // `foregroundImage` is the filled part of the track, revealed up to the value.
+                // Cropping the source rather than scaling it keeps the artwork's own pixels: a
+                // progress bar squeezed into the filled width reads as a different bitmap.
+                if let (_, path) = try resource(node, names: ["foregroundImage"]) {
+                    // `useForegroundProgress="true"` (46 skins) says the fill is *not* the value:
+                    // it is `foregroundProgress`, which the corpus binds to the network's download
+                    // progress. A seek bar authored that way shows how much is buffered behind a
+                    // thumb showing where playback is, and the two are different numbers.
+                    let filled = progressSource(node, slider).progressRect(in: frame)
+                    if !filled.isEmpty {
+                        let source = WMPRect(x: filled.x - frame.x, y: filled.y - frame.y,
+                                             width: filled.width, height: filled.height)
+                        commands.append(imageCommand(node: node, path: path, frame: filled,
+                            clip: inheritedClip, z: z, background: false, alpha: alpha,
+                            sourceOverride: source))
+                    }
+                }
+                let thumbNames: [String]
+                switch visualState {
+                case .disabled: thumbNames = ["thumbDisabledImage", "thumbImage"]
+                case .down: thumbNames = ["thumbDownImage", "thumbImage"]
+                case .hover: thumbNames = ["thumbHoverImage", "thumbImage"]
+                case .normal: thumbNames = ["thumbImage"]
+                }
+                if let (_, path) = try resource(node, names: thumbNames) {
+                    let size = try imageStore.image(for: path).size
+                    let thumb = slider.thumbFrame(in: frame, thumbSize: size)
+                    if !thumb.isEmpty {
+                        commands.append(imageCommand(node: node, path: path, frame: thumb,
+                            clip: inheritedClip, z: z, background: false, alpha: alpha))
+                    }
                 }
             }
             if node.kind == .text, !frame.isEmpty,
@@ -335,17 +447,29 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 case "right": alignment = .right
                 default: alignment = .left
                 }
+                // **`fontFace` is the attribute the corpus authors, not `fontType`**: 110 skins
+                // against 21. Reading only `fontType` rendered every one of those in Arial, which
+                // is why so many readouts sat in the wrong face at the right size.
+                let style = (literalString(node, "fontStyle") ?? "").lowercased()
+                let disabled = visualState == .disabled
                 let text = WMPSceneText(value: value,
-                    fontName: literalString(node, "fontType") ?? "Arial",
+                    fontName: literalString(node, "fontFace") ?? literalString(node, "fontType") ?? "Arial",
                     fontSize: max(1, literal(node, "fontSize") ?? 12),
-                    bold: literalString(node, "fontStyle")?.lowercased().contains("bold") == true,
-                    color: color(node, names: ["foregroundColor", "color"])
+                    bold: style.contains("bold"), italic: style.contains("italic"),
+                    underline: style.contains("underline"),
+                    smoothed: literalString(node, "fontSmoothing")?.caseInsensitiveCompare("false") != .orderedSame,
+                    color: (disabled ? color(node, names: ["disabledForegroundColor"]) : nil)
+                        ?? color(node, names: ["foregroundColor", "color"])
                         ?? WMPColor(red: 255, green: 255, blue: 255), alignment: alignment)
                 commands.append(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
-                    documentOrder: node.stableID, paint: .text(text)))
+                    documentOrder: node.stableID, paint: .text(text), alpha: alpha))
             }
-            if isInteractive(node.kind), visible != nil {
+            // `passthrough="true"` is authored by 83 corpus skins, and it means exactly what it
+            // says: the element is drawn and the pointer goes through it to whatever is beneath.
+            // A decorative overlay registered as a hit target swallows the controls it covers.
+            let passthrough = literalString(node, "passthrough")?.caseInsensitiveCompare("true") == .orderedSame
+            if isInteractive(node.kind), visible != nil, !passthrough {
                 let enabled = literalString(node, "enabled")?.caseInsensitiveCompare("false") != .orderedSame
                     && !interactionState.disabledNodesForScene.contains(node.stableID)
                 let sticky = literalString(node, "sticky")?.caseInsensitiveCompare("true") == .orderedSame
@@ -375,23 +499,36 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         }
                     }
                 }
+                // `cursor` is a *named* shape in 2,246 of its 2,319 non-empty corpus uses. The
+                // remainder name a `.cur`/`.ani` file, which is a Windows cursor format nothing
+                // here decodes; those resolve to no cursor rather than to a missing bitmap, which
+                // is also what stops `BITMAPS … missing=hand sizenwse` reporting cursor names as
+                // absent artwork.
+                let cursor = literalString(node, "cursor").flatMap(WMPCursor.init(authored:))
                 hits.append(WMPHitMetadata(stableID: node.stableID, nodeID: node.xmlID,
                     kind: node.kind.description, frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, action: WMPTransportAction.authoredAction(for: node),
                     sticky: sticky, enabled: enabled, mappingImage: mappingImage,
-                    mappingTargets: mappingTargets))
+                    mappingTargets: mappingTargets, cursor: cursor,
+                    tabStop: literalString(node, "tabStop")?.caseInsensitiveCompare("false") != .orderedSame,
+                    positionMap: positionMap))
             }
 
             let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
             for child in node.children.sorted(by: nodeOrder) {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
-                         inheritedClip: childClip)
+                         inheritedClip: childClip, parentAlpha: alpha)
             }
         }
 
         try walk(view, parentFrame: canvasRect,
                  parentAuthoredSize: WMPSize(width: width, height: height),
-                 inheritedClip: canvasRect, isRoot: true)
+                 inheritedClip: canvasRect, parentAlpha: 1, isRoot: true)
+        // A fully transparent node still lays out — its geometry is readable, and a script fades it
+        // in by writing `alphaBlend` — but it draws nothing, so it must not reach the command list
+        // at all. Leaving it there put invisible artwork inside `visibleBounds` and every dirty
+        // rect derived from it.
+        commands.removeAll { $0.alpha <= 0 }
         hits.sort { ($0.zIndex, $0.stableID) < ($1.zIndex, $1.stableID) }
         let allDirty = commands.compactMap { command in
             command.clipRect.flatMap { command.frame.intersection($0) } ?? command.frame
@@ -421,23 +558,30 @@ struct WMPSceneBuilder: @unchecked Sendable {
     }
 
     private func imageCommand(node: WMPNode, path: String, frame: WMPRect,
-                              clip: WMPRect?, z: Int, background: Bool,
-                              mappingMask: WMPSceneMappingMask? = nil) -> WMPPaintCommand {
+                              clip: WMPRect?, z: Int, background: Bool, alpha: CGFloat = 1,
+                              mappingMask: WMPSceneMappingMask? = nil,
+                              sourceOverride: WMPRect? = nil,
+                              clippingPath: String? = nil) -> WMPPaintCommand {
         let prefix = background ? "background" : ""
         let sourceX = literal(node, prefix + "CropLeft") ?? literal(node, "cropLeft")
         let sourceY = literal(node, prefix + "CropTop") ?? literal(node, "cropTop")
         let sourceWidth = literal(node, prefix + "CropWidth") ?? literal(node, "cropWidth")
         let sourceHeight = literal(node, prefix + "CropHeight") ?? literal(node, "cropHeight")
-        let source = sourceX == nil && sourceY == nil && sourceWidth == nil && sourceHeight == nil ? nil
-            : WMPRect(x: sourceX ?? 0, y: sourceY ?? 0,
-                      width: sourceWidth ?? frame.width, height: sourceHeight ?? frame.height)
+        let source = sourceOverride
+            ?? (sourceX == nil && sourceY == nil && sourceWidth == nil && sourceHeight == nil ? nil
+                : WMPRect(x: sourceX ?? 0, y: sourceY ?? 0,
+                          width: sourceWidth ?? frame.width, height: sourceHeight ?? frame.height))
         let tiledName = background ? "backgroundTiled" : "tiled"
         let image = WMPSceneImage(resourcePath: path, sourceRect: source,
             colorKeys: colors(node, names: ["transparencyColor", "clippingColor"]),
             tiled: literalString(node, tiledName)?.caseInsensitiveCompare("true") == .orderedSame,
-            interpolation: .low, mappingMask: mappingMask)
+            interpolation: .low, mappingMask: mappingMask,
+            clippingMaskPath: clippingPath,
+            clippingMaskKeys: clippingPath == nil ? []
+                : colors(node, names: ["clippingColor", "transparencyColor"]))
         return WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID, frame: frame,
-            clipRect: clip, zIndex: z, documentOrder: node.stableID, paint: .image(image))
+            clipRect: clip, zIndex: z, documentOrder: node.stableID, paint: .image(image),
+            alpha: alpha)
     }
 
     /// Resolve the first authored resource attribute among `names` to a path inside the archive.
@@ -490,12 +634,29 @@ struct WMPSceneBuilder: @unchecked Sendable {
         return nil
     }
 
+    private func isSlider(_ kind: WMPElementKind) -> Bool {
+        switch kind {
+        case .slider, .volumeSlider, .seekSlider, .balanceSlider, .customSlider, .progressBar:
+            return true
+        default: return false
+        }
+    }
+
+    /// The `wmpprop:` path a control's `value` is bound to, lower-cased, or nil when the skin
+    /// authored a literal or an expression instead.
+    private func valueBindingPath(_ node: WMPNode) -> String? {
+        guard let attribute = node.attribute(named: "value"),
+              case let .binding(kind, path) = attribute.value, kind == .property else { return nil }
+        return path.lowercased()
+    }
+
     private func isInteractive(_ kind: WMPElementKind) -> Bool {
         switch kind {
         case .button, .buttonGroup, .slider, .volumeSlider, .seekSlider,
-             .balanceSlider, .playElement, .pauseButton, .stopElement, .prevElement,
+             .balanceSlider, .customSlider, .playElement, .pauseButton, .stopElement, .prevElement,
              .nextElement, .rewButton, .rewElement, .ffwdButton, .ffwdElement,
-             .returnButton, .shuffleButton, .playlist, .dropdownPlaylist, .popup: return true
+             .returnButton, .shuffleButton, .playlist, .dropdownPlaylist, .popup,
+             .editBox, .listBox: return true
         default: return false
         }
     }
@@ -538,7 +699,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
     private func intrinsicSizeResourceNames(for kind: WMPElementKind) -> [String] {
         switch kind {
-        case .slider, .volumeSlider, .seekSlider, .balanceSlider:
+        case .customSlider:
+            // **A `CUSTOMSLIDER` is the size of its `positionImage`, not of its `image`.** The
+            // image is a filmstrip of every position the control can be in — `ALXMorph/volume.png`
+            // is 2232x38 against a 72x38 map, 31 frames — so sizing from it makes the control
+            // thirty times too wide. The map comes first for that reason alone.
+            return ["positionImage", "image", "backgroundImage", "background", "foregroundImage"]
+        case .slider, .volumeSlider, .seekSlider, .balanceSlider, .progressBar:
             // WMP slider controls conventionally omit width/height and take their track size from
             // foregroundImage. thumbImage is a last-resort size for unusual authored controls.
             return ["image", "backgroundImage", "background", "foregroundImage", "thumbImage"]
@@ -550,11 +717,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
     private func widgetKind(_ kind: WMPElementKind) -> WMPWidgetKind? {
         switch kind {
         case .text: return .text
-        case .slider, .volumeSlider, .seekSlider, .balanceSlider: return .slider
+        case .slider, .volumeSlider, .seekSlider, .balanceSlider, .customSlider, .progressBar:
+            return .slider
         case .playlist: return .playlist
         case .dropdownPlaylist: return .dropdownPlaylist
-        case .equalizerSettings: return .equalizer
         case .popup: return .popup
+        case .editBox: return .editBox
+        case .listBox: return .listBox
         case .wmpEffects: return .effects
         case .video, .wmpVideo: return .video
         default: return nil
@@ -563,7 +732,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
     private func isNonLayout(_ kind: WMPElementKind) -> Bool {
         switch kind {
-        case .theme, .player, .network, .script, .buttonElement: return true
+        // `<EQUALIZERSETTINGS id="eq" enabled="true"/>` is the object a skin's own equaliser
+        // sliders bind to through `wmpprop:eq.gainLevelN`, not a control: 164 of 178 corpus skins
+        // author it and not one gives it geometry. Treating it as a widget hung an AppKit panel of
+        // NSSliders on it, over the artwork the skin draws its own bands with.
+        case .theme, .player, .network, .script, .buttonElement, .equalizerSettings: return true
         default: return false
         }
     }

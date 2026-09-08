@@ -18,6 +18,10 @@ final class WMPMainView: NSView {
 /// `.wmz` is free to leave a control unnamed, and an authored id is therefore optional.
     var onScriptEvent: ((String, String?, Int?) -> Void)?
     var onElementValueChanged: ((Int, String?, Double) -> Void)?
+    /// An `<EDITBOX>`'s text, which is a string rather than a number and so cannot go through
+    /// `onElementValueChanged`. Nine of the corpus's ten edit boxes are a playlist search field
+    /// whose script reads this back as `plSearchEdit.value`.
+    var onElementTextChanged: ((Int, String?, String) -> Void)?
     var onSpectrumDemandChanged: ((Bool) -> Void)?
     private var image: NSImage?
     private var scene: WMPScene?
@@ -56,6 +60,7 @@ final class WMPMainView: NSView {
         // this an equalizer that the skin slid away stays on screen at its old frame.
         needsLayout = true
         removeAllToolTips(); _ = addToolTip(bounds, owner: self, userData: nil)
+        window?.invalidateCursorRects(for: self)
         if let dirtyBounds {
             // The union with everything the *previous* scene drew at a different frame. A dirty
             // rect derived from the new scene alone covers where a pane has arrived and never where
@@ -110,7 +115,14 @@ final class WMPMainView: NSView {
         for view in widgetViews.values {
             (view as? WMPPlaylistSurfaceView)?.update(snapshot)
             (view as? WMPDropdownPlaylistSurfaceView)?.update(snapshot)
-            (view as? WMPEqualizerSurfaceView)?.update(snapshot)
+        }
+    }
+
+    /// The items a `POPUP` or `LISTBOX` holds, from the last script transaction.
+    func updateListItems(_ items: [Int: [String]]) {
+        for (stableID, view) in widgetViews {
+            (view as? WMPPopupSurfaceView)?.update(items: items[stableID] ?? [])
+            (view as? WMPListBoxSurfaceView)?.update(items: items[stableID] ?? [])
         }
     }
 
@@ -128,7 +140,7 @@ final class WMPMainView: NSView {
         widgetViews.values.forEach { $0.removeFromSuperview() }; widgetViews.removeAll(); widgetValues.removeAll()
         image = nil; scene = nil; hitTester = nil; capturedTarget = nil; isDraggingWindow = false
         onInteractionChanged = nil; onAction = nil; onScriptEvent = nil
-        onElementValueChanged = nil; onSpectrumDemandChanged = nil
+        onElementValueChanged = nil; onElementTextChanged = nil; onSpectrumDemandChanged = nil
     }
 
     func skinPoint(from event: NSEvent, sceneSize: WMPSize) -> WMPPoint {
@@ -227,7 +239,10 @@ final class WMPMainView: NSView {
 
     override func keyDown(with event: NSEvent) {
         guard let scene else { return super.keyDown(with: event) }
-        let targets = scene.hits.flatMap { hit in hit.mappingTargets.isEmpty
+        // `tabStop="false"` is authored 544 times against `"true"`'s 170: a skin marks most of its
+        // controls out of the keyboard ring and leaves a handful in, and a ring built from every
+        // enabled control tabs through all of them instead.
+        let targets = scene.hits.filter(\.tabStop).flatMap { hit in hit.mappingTargets.isEmpty
             ? [WMPHitTarget(stableID: hit.stableID, nodeID: hit.nodeID, kind: hit.kind,
                 frame: hit.frame, action: hit.action, sticky: hit.sticky, enabled: hit.enabled)]
             : hit.mappingTargets }.filter(\.enabled)
@@ -284,6 +299,36 @@ final class WMPMainView: NSView {
         }
     }
 
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard let scene, scene.canvasSize.width > 0, scene.canvasSize.height > 0 else { return }
+        let xScale = bounds.width / scene.canvasSize.width
+        let yScale = bounds.height / scene.canvasSize.height
+        // Back to front, so a control on top wins the overlap — the same order hit testing walks,
+        // read the other way. AppKit resolves the last rect added for a point.
+        for hit in scene.hits {
+            guard hit.enabled, let cursor = hit.cursor else { continue }
+            let visible = hit.clipRect.flatMap { hit.frame.intersection($0) } ?? hit.frame
+            guard !visible.isEmpty else { continue }
+            addCursorRect(NSRect(x: visible.x * xScale, y: visible.y * yScale,
+                                 width: visible.width * xScale, height: visible.height * yScale),
+                          cursor: Self.cursor(for: cursor))
+        }
+    }
+
+    private static func cursor(for cursor: WMPCursor) -> NSCursor {
+        switch cursor {
+        case .system: return .arrow
+        case .hand: return .pointingHand
+        case .sizeAll: return .openHand
+        case .sizeWE: return .resizeLeftRight
+        case .sizeNS: return .resizeUpDown
+        // macOS ships no public diagonal resize cursor, so the nearest honest answer is the axis
+        // the drag mostly runs along rather than an invented bitmap.
+        case .sizeNWSE, .sizeNESW: return .crosshair
+        }
+    }
+
     private func updateHover(_ event: NSEvent) {
         guard let scene else { return }
         notify(interaction.move(over: interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))))
@@ -298,13 +343,36 @@ final class WMPMainView: NSView {
     private func performSlider(_ target: WMPHitTarget, event: NSEvent) {
         guard let scene else { return }
         let point = skinPoint(from: event, sceneSize: scene.canvasSize)
-        let fraction = target.frame.width > 0 ? max(0, min(1, (point.x - target.frame.x) / target.frame.width)) : 0
-        if let action = target.action {
-            onAction?(action, .number(action == .balance ? Double(fraction * 2 - 1) : Double(fraction)))
-        } else if target.kind.caseInsensitiveCompare("slider") == .orderedSame {
-            let widget = scene.widgets.first { $0.stableID == target.stableID }
-            let minimum = widget?.minimumValue ?? 0, maximum = widget?.maximumValue ?? 100
-            let value = minimum + Double(fraction) * (maximum - minimum)
+        let widget = scene.widgets.first { $0.stableID == target.stableID }
+        let minimum = widget?.minimumValue ?? 0, maximum = widget?.maximumValue ?? 100
+        // **The drag runs along the axis the skin authored.** `direction="vertical"` outnumbers
+        // horizontal 1,312 to 664 in the corpus — every equaliser band is one — and measuring those
+        // along `frame.width` gave a 9 px-wide bar's full range in nine pixels of sideways travel.
+        // The same `WMPSliderMetrics` the scene placed the thumb with reads the pointer back, so
+        // the thumb lands under the cursor instead of beside it.
+        let metrics = WMPSliderMetrics(direction: widget?.direction ?? .horizontal,
+            minimum: minimum, maximum: maximum, value: widget?.value ?? minimum,
+            borderSize: widget?.borderSize ?? 0)
+        // A `CUSTOMSLIDER` reads its value out of its own `positionImage` — the pixel under the
+        // pointer *is* the fraction — which is the whole point of the element: its track need not
+        // be a straight line. Everything else uses the linear metrics that placed its thumb.
+        let map = scene.hits.first { $0.stableID == target.stableID }?.positionMap
+        let mapped = map?.fraction(at: point, in: target.frame)
+        let value = mapped.map { minimum + $0 * (maximum - minimum) }
+            ?? metrics.value(at: point, in: target.frame, thumbSize: widget?.thumbSize ?? .zero)
+        let span = maximum - minimum
+        let fraction = span == 0 ? 0 : (value - minimum) / span
+        // A skin that binds its slider's `value` to a host property has said where that control
+        // writes; honour the binding it declared rather than requiring a semantic tag. 163 corpus
+        // skins drive volume, seek and the ten equaliser bands entirely this way.
+        if let action = target.action ?? widget?.valueBindingPath.flatMap(WMPTransportAction.boundAction) {
+            switch action {
+            case .balance: onAction?(action, .number(fraction * 2 - 1))
+            case .seek, .volume: onAction?(action, .number(fraction))
+            default: onAction?(action, .number(value))
+            }
+        }
+        if target.kind.lowercased().contains("slider") {
             widgetValues[target.stableID] = value
             onElementValueChanged?(target.stableID, target.nodeID, value)
         }
@@ -312,7 +380,14 @@ final class WMPMainView: NSView {
     }
 
     private func synchronizeWidgetViews(_ widgets: [WMPWidget]) {
-        let native = widgets.filter { [.playlist, .dropdownPlaylist, .equalizer, .popup, .effects, .video].contains($0.kind) }
+        // **The skin draws its own controls; an overlay is for what the scene genuinely cannot
+        // paint.** `.video` left this list because `WMPVideoPlaceholderView` filled its frame with
+        // opaque black over the artwork of every skin that authors a `<VIDEO>` — 167 of 178 — and
+        // an audio player has no video to put there instead (W9). `.equalizer` left it because
+        // `EQUALIZERSETTINGS` is no longer a widget at all: the skin's own bound sliders are the
+        // equaliser.
+        let native = widgets.filter { [WMPWidgetKind.playlist, .dropdownPlaylist, .popup,
+                                       .editBox, .listBox, .effects].contains($0.kind) }
         let wanted = Set(native.map(\.stableID))
         let widgetIDs = Set(widgets.map(\.stableID))
         widgetValues = widgetValues.filter { widgetIDs.contains($0.key) }
@@ -322,10 +397,14 @@ final class WMPMainView: NSView {
             switch widget.kind {
             case .playlist: view = WMPPlaylistSurfaceView()
             case .dropdownPlaylist: view = WMPDropdownPlaylistSurfaceView(frame: .zero, pullsDown: false)
-            case .equalizer: view = WMPEqualizerSurfaceView()
             case .popup: view = WMPPopupSurfaceView(frame: .zero)
+            case .editBox: view = WMPEditBoxSurfaceView()
+            // A `<LISTBOX>` is a playlist chooser the skin fills from script. The control is real;
+            // what it can hold is whatever `listItems` carries, which is empty until the object
+            // model can answer `player.mediaCollection` — recorded as W66 rather than faked with
+            // rows this player invented.
+            case .listBox: view = WMPListBoxSurfaceView()
             case .effects: view = WMPEffectsSurfaceView()
-            case .video: view = WMPVideoPlaceholderView()
             default: continue
             }
             view.toolTip = widget.toolTip
@@ -333,8 +412,31 @@ final class WMPMainView: NSView {
             view.setAccessibilityLabel(widget.label)
             if let actionable = view as? WMPPlaylistSurfaceView { actionable.onAction = onAction }
             if let actionable = view as? WMPDropdownPlaylistSurfaceView { actionable.onAction = onAction }
-            if let actionable = view as? WMPEqualizerSurfaceView { actionable.onAction = onAction }
-            if let actionable = view as? WMPPopupSurfaceView { actionable.onAction = onAction }
+            if let popup = view as? WMPPopupSurfaceView {
+                let stableID = widget.stableID, nodeID = widget.nodeID
+                popup.onSelect = { [weak self] index, title in
+                    // The skin's handler reads `selectedItem`, so the element has to hold it before
+                    // the event is raised — and the preset is applied through the host either way,
+                    // because `selectedItem_onchange` is not yet a dispatched event (W51).
+                    self?.onElementValueChanged?(stableID, nodeID, Double(index))
+                    self?.onAction?(.setEQPreset(index), .string(title))
+                    self?.onScriptEvent?("change", nodeID, stableID)
+                }
+            }
+            if let edit = view as? WMPEditBoxSurfaceView {
+                let stableID = widget.stableID, nodeID = widget.nodeID
+                edit.onEdit = { [weak self] text in
+                    self?.onElementTextChanged?(stableID, nodeID, text)
+                    self?.onScriptEvent?("keyup", nodeID, stableID)
+                }
+            }
+            if let list = view as? WMPListBoxSurfaceView {
+                let stableID = widget.stableID, nodeID = widget.nodeID
+                list.onSelect = { [weak self] index in
+                    self?.onElementValueChanged?(stableID, nodeID, Double(index))
+                    self?.onScriptEvent?("change", nodeID, stableID)
+                }
+            }
             widgetViews[widget.stableID] = view; addSubview(view)
         }
         onSpectrumDemandChanged?(native.contains { $0.kind == .effects })
@@ -458,6 +560,7 @@ final class WMPMainView: NSView {
         case .movePlaylistItem: return "Move playlist item"
         case .setEQEnabled: return "Enable equalizer"
         case .setEQBand: return "Equalizer band"
+        case .setEQPreset: return "Equalizer preset"
         case .setPreamp: return "Equalizer preamp"
         }
     }

@@ -54,6 +54,7 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
 | `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]` | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after |
 | `WMP_RENDER_SETTLE` | seconds | run the **view's own timer loop** for that long before measuring — at the period the skin asks for, honouring every `setViewTimerInterval` its handlers post back, rebuilding the scene between ticks |
+| `WMP_RENDER_CLOCK` | `<s>[;<s>…]` | seconds into an animation to draw, one PNG per value (suffixed `@t<s>`; a zero clock keeps the original filename). **A render dump is a still, so this flag is the only way an animation is falsifiable** — frame zero is indistinguishable from an engine that never animates. Two pinned values, diffed, are the proof. `ANIMATION <view>: shortestDelay=… bounds=…` reports what the scene actually animates |
 | `WMP_RENDER_SIZE` | `<W>x<H>` | `RESIZE` — lay the view out at its **own** size first, run `onLoad` there, then resize to this and re-drive `onResize`, which is the order a user produces. An expression-driven layout is a *different* layout, not the same one scaled. The transaction runs whether or not the view declares an `onResize`, because an expression re-reads `view.width` either way; `handlers=` is how many the changed-object set actually raised, and `handlers=0` with a skin you know authors one means nothing moved |
 
 `WMP_TEST_WMZ` and `WMP_RENDER_DUMP_DIR` are accepted aliases for `WMP_SKIN` and `WMP_RENDER_DUMP`
@@ -100,6 +101,7 @@ SCRIPT-DIAG <view> [<code>] <message>
 RESIZE <view>: <W>x<H> -> <W>x<H>, handlers=<n>
 RENDER-DUMP <view>: <W>x<H>, <n> nodes, <c> commands, <h> hits, <w> widgets, <u> unresolved
 RENDER-DUMP <view> FAILED <error>
+ANIMATION <view>: shortestDelay=<s> bounds=<rect>
 WIDGET <view>/<stableID> <kind> id=<id> frame=<f> clip=<c> visible=<f|none>
 PROBE <view>/<stableID> <kind> id=<id> frame=<f> clip=<c> z=<n> paint=<…> attrs=[…]
 BITMAPS <view>: resolved=<n> missing=<space-separated paths>
@@ -142,6 +144,32 @@ git rev it was measured at. This is the only honest source for the reach numbers
 
 `--parse-only` re-derives the TSV from a previous run's logs without paying the sweep again — it is
 how a parsing change is checked against a capture that is already known-good.
+
+### `scripts/wmp_markup_census.sh <outdir> [--corpus <dir>] [name ...]`
+
+*How many skins would this element or attribute reach?* One row per name: uses, skins, and the
+denominator it measured. It reads the `.wms` files straight out of the archives rather than through
+the engine, so it measures **authored demand** and nothing about the result.
+
+It exists because nothing else can see the Class A case that matters most here: **an attribute the
+graph parses and the engine then ignores.** That is not an unknown tag, not an unknown member and
+not a diagnostic — it is markup that loads cleanly, reports clean, and changes nothing on screen.
+Ranking Phase 5's drawing work needed exactly this number, and `fontFace` is the example that pays
+for the script: 109 skins author it, 21 author `fontType`, and the builder read only `fontType`.
+
+Two traps it enforces, both of which produced a confident wrong answer first:
+
+- **`grep` goes silent on these files.** A `.wms` is usually UTF-16 and carries bytes `grep` calls
+  binary, and a binary file matched with `-o` prints **nothing at all**. The first run of this census
+  returned a full table of zeros that read exactly like "the corpus never uses this". Every file is
+  stripped to ASCII before it is counted, and `-a` is passed anyway. This generalizes: any ad-hoc
+  scan of `.wms` text needs both.
+- **A tag spans many lines.** Corpus markup routinely opens `<SLIDER` and closes `>` six lines
+  later, so a per-line scan finds neither the attributes nor the tag. Newlines fold to spaces first.
+
+Its denominator is smaller than the sweep's: `unzip` cannot open the two archives whose local header
+signature is overwritten (`WMPArchiveHeaderRepair` handles those and `unzip` does not), so a count
+here is short by at most two skins and never long. It prints which ones it dropped.
 
 ### `scripts/wmp_corpus_exclusions.txt`
 
@@ -211,6 +239,19 @@ scripts/wmp_render_sweep.sh compare  /tmp/wmp-sweep/base /tmp/wmp-sweep/curr
   `wmp_render_sweep.sh` is load-bearing, not tidiness.
 - **A `maxdelta` of 1** is an LSB rounding difference, not a regression. The script reports the
   number; a human reads it.
+- **The alpha trap has a second door: `ImageChops.difference` on RGBA.** `wmp_render_sweep.sh`
+  passes `alpha_only=False` and is safe, but an ad-hoc Pillow comparison written beside it is not:
+  `getbbox()` on the *difference image* looks at alpha alone for the same reason, so a colour-only
+  change reports "identical". During the Phase 5 sweep that scan found 3 changed images where the
+  script found 198. Split the bands: `any(band.getbbox() for band in diff.split())`.
+- **`SCRIPT inline:` is emitted in dictionary order and is not stable between runs** — the same
+  archive reports the same handler tally in a different order each time. It inflates the invariants
+  diff with churn that is not a change; open as W64. Until it is fixed, read a large invariants diff
+  by what the `RENDER-DUMP`, `BITMAPS` and `LOAD` lines say, not by the line count.
+- **A large image diff is read by looking, and by which way it went.** 198 of 545 changed in the
+  Phase 5 sweep. Counting the *drawn* (alpha > 8) pixels in each pair and sorting sorts the whole
+  set into "changed colour within the same silhouette" and "lost or gained content", and the second
+  list was one skin long — which is the list worth opening.
 
 ---
 
@@ -241,6 +282,12 @@ The trap is assuming which colour that is. A magenta-only scan gave 23 views acr
 never against a hard-coded palette. Closing W8 under that rule leaves **28 views across 26 skins at
 or above 5%**, and every one of them is now a different defect (see W48): artwork whose flat colour
 is keyed nowhere in the markup, or a `BUTTONGROUP` blitting its whole sheet.
+
+**Proving `WMP_RENDER_CLOCK` itself.** It was checked the way the table above demands, before any
+claim was made from it: `Xbox Live Skin` (whose `intro_anim.gif` is 145 frames) dumped at 0, 1.5 and
+3 seconds gives three different images — 4,475 pixels change between the first two and 3,917 between
+the second two — and the logo visibly moves. A flag that reported the same PNG three times would
+have looked exactly like a working one on the `ANIMATION` line alone.
 
 **Three things a clean sweep does not prove.** It measures the default state and nothing else — not a
 tab, a setting, a drag, a hover, or anything driven by live playback. A structural probe is not a

@@ -9,6 +9,9 @@ enum WMPTransportAction: Hashable, Codable {
     case toggleMute, toggleShuffle, toggleRepeat
     case playPlaylistItem(Int), removePlaylistItem(Int), movePlaylistItem(Int, Int)
     case setEQEnabled, setEQBand(Int), setPreamp
+    /// An index into `EQPreset.allPresets`. Every `<POPUP>` in the corpus is a preset menu, and
+    /// `eq.currentPreset` is what its handler writes.
+    case setEQPreset(Int)
 }
 
 enum WMPHostValue: Hashable, Codable {
@@ -76,7 +79,7 @@ struct WMPHostSnapshot: Hashable, Codable {
         case let .movePlaylistItem(source, destination):
             return playlistItems.indices.contains(source) && playlistItems.indices.contains(destination)
         case .endScan, .volume, .balance, .toggleMute, .toggleShuffle, .toggleRepeat,
-             .setEQEnabled, .setEQBand, .setPreamp: return true
+             .setEQEnabled, .setEQBand, .setPreamp, .setEQPreset: return true
         }
     }
 
@@ -95,6 +98,33 @@ protocol WMPHost: AnyObject {
 }
 
 extension WMPTransportAction {
+    /// The action a control's `value="wmpprop:…"` binding writes to.
+    ///
+    /// A `.wmz` almost never uses the semantic `<VOLUMESLIDER>`/`<SEEKSLIDER>` tags: it authors a
+    /// plain `<SLIDER>` and binds its value, which is a statement about where the control writes
+    /// just as much as the tag would have been. 163 of 178 corpus skins drive volume, seek and
+    /// their ten equaliser bands entirely through these paths.
+    static func boundAction(for path: String) -> WMPTransportAction? {
+        switch path.lowercased() {
+        case "player.settings.volume": return .volume
+        case "player.settings.balance": return .balance
+        case "player.controls.currentposition": return .seek
+        case "eq.enabled", "eq.enable": return .setEQEnabled
+        default: break
+        }
+        guard let band = eqBand(in: path) else { return nil }
+        return .setEQBand(band)
+    }
+
+    /// `eq.gainLevel1`…`eq.gainLevel10`, WMP's one-based band names, as a zero-based index.
+    static func eqBand(in path: String) -> Int? {
+        let lower = path.lowercased()
+        guard lower.hasPrefix("eq.gainlevel"),
+              let ordinal = Int(lower.dropFirst("eq.gainlevel".count)),
+              (1...10).contains(ordinal) else { return nil }
+        return ordinal - 1
+    }
+
     static func authoredAction(for node: WMPNode) -> WMPTransportAction? {
         switch node.kind {
         case .playElement: return .play

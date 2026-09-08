@@ -170,11 +170,33 @@ final class WMPScriptContext: @unchecked Sendable {
         }
     }
 
+    /// The items every list-like element currently holds, by stable id. A skin fills a `POPUP`
+    /// from script — all four corpus popups are equaliser preset menus built in an `onLoad` — so
+    /// this is the only source the AppKit menu has.
+    func listItems() -> [Int: [String]] {
+        var items: [Int: [String]] = [:]
+        for element in model.elements.values where !element.items.isEmpty {
+            items[element.stableID] = element.items
+        }
+        return items
+    }
+
     func setElementValue(stableID: Int, value: Double) {
         queue.sync {
             guard let element = model.elements.values.first(where: { $0.stableID == stableID })
             else { return }
             element.properties["value"] = .number(value)
+        }
+    }
+
+    /// An `<EDITBOX>`'s text. `value` on an edit box is a string, not a number, and the skin's
+    /// `onKeyUp` handler reads it straight back — `plSearchEdit.value` is what nine of the ten
+    /// corpus edit boxes search on.
+    func setElementText(stableID: Int, text: String) {
+        queue.sync {
+            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            else { return }
+            element.properties["value"] = .string(text)
         }
     }
 

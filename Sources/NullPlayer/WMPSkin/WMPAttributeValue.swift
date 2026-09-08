@@ -34,7 +34,7 @@ enum WMPAttributeParser {
         "image", "hoverimage", "downimage", "disabledimage", "mappingimage",
         "background", "backgroundimage", "foregroundimage", "cursor", "thumbnail",
         "thumbimage", "thumbhoverimage", "thumbdownimage", "thumbdisabledimage",
-        "positionimage", "resizebackgroundimage"
+        "positionimage", "resizebackgroundimage", "clippingimage"
     ]
     private static let colorNames: Set<String> = [
         "mappingcolor", "transparencycolor", "clippingcolor", "backgroundcolor",
@@ -68,6 +68,12 @@ enum WMPAttributeParser {
             return .binding(kind: .enabled, path: payload.trimmingCharacters(in: .whitespaces))
         }
         if colorNames.contains(lowerName), let color = color(from: trimmed) { return .color(color) }
+        // **`cursor` names a shape far more often than a file.** 2,246 of the corpus's 2,319
+        // non-empty values are `hand`, `sizenwse`, `system` and their peers; only ~70 name a
+        // `.cur`/`.ani`. Classifying them all as resources made every named cursor a *missing
+        // bitmap* — `BITMAPS … missing=hand sizenwse` in the probe — and hid the name from the
+        // builder, which reads literals. A cursor is a resource only when it looks like a file.
+        if lowerName == "cursor", !trimmed.contains(".") { return .literal(raw) }
         if resourceNames.contains(lowerName) {
             return isUnsupportedResource(trimmed) ? .unsupported(trimmed) : .resource(trimmed)
         }
@@ -75,8 +81,16 @@ enum WMPAttributeParser {
         return .literal(raw)
     }
 
-    static func isResourceAttribute(_ name: String) -> Bool {
-        resourceNames.contains(name.lowercased())
+    /// Whether an attribute names artwork the loader should resolve and report as missing.
+    ///
+    /// The value matters, not only the name: `cursor="hand"` names a shape and `cursor="over.ani"`
+    /// names a file, and treating both as artwork reported every named cursor in the corpus as a
+    /// **missing bitmap** — `BITMAPS … missing=hand sizenwse` on 145 skins, a Class C detector
+    /// crying wolf about 2,246 things that were never files.
+    static func isResourceAttribute(_ name: String, value: String? = nil) -> Bool {
+        guard resourceNames.contains(name.lowercased()) else { return false }
+        guard name.lowercased() == "cursor", let value else { return true }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines).contains(".")
     }
 
     private static func stripPrefix(_ prefix: String, from value: String) -> String? {

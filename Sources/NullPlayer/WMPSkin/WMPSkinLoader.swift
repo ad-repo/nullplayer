@@ -141,7 +141,8 @@ struct WMPSkinLoader {
                         }
                     }
                 }
-                guard WMPAttributeParser.isResourceAttribute(attribute.name) else { continue }
+                guard WMPAttributeParser.isResourceAttribute(attribute.name,
+                                                             value: attribute.rawValue) else { continue }
                 let authored = attribute.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if authored.isEmpty {
                     resources.append(WMPResourceRegistration(attributeName: attribute.name,

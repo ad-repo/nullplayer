@@ -58,10 +58,31 @@ differently-caused set: views that lay out and then paint the wrong pixels.
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | W48 | A view paints a flat colour its markup never declares as a key | **28 views across 26 skins** at or above 5% of view area, measured 2026-09-07 over the 580 dumped PNGs of the 180-archive corpus | What is left after W8 closed, and it is **two different defects**, neither of them a missing key attribute — every node that declares one is now keyed. Score it the way `reference/harness.md` says: against the colours each skin's own `.wms` declares, never a hard-coded palette. (a) **A `BUTTONGROUP` blits its whole sheet.** It draws `image=` across the group's frame, so the filler colour between the mapped regions is painted wherever no element covers it; in WMP the mapping image is what says which parts of that sheet are drawn at all. `The_Doobie_Brothers/view-2` (50.4%) is the clearest case — its group additionally misspells the attribute as `tranparencyColor`, and `Alpine7618_v09`'s two groups write `transparencyColor="FF00FF"` with no `#`, which the color parser rejects; **fix the blit before deciding either of those is worth accepting**, because if the sheet is drawn through its mapping the key never matters. (b) **Artwork whose flat colour is keyed nowhere in the markup.** `Main_Street` (mini 40.5%, slim 20.2%, normal 14.6%) authors exactly one `transparencyColor` in the whole file and none on the three subviews that show magenta, so WMP is removing it for some reason not written in the `.wms` — find out what that is before implementing anything. Reproduce by dumping the corpus (`WMP_SKIN=<skins dir> WMP_RENDER_DUMP=<dir>`) and scoring each PNG against its skin's declared keys. |
-| W9 | `Official_Xbox_XP` paints an opaque black `VIDEO` placeholder over its own art | 1 skin measured | `census/png/Official_Xbox_XP/mainBox@1x.png`. Fixed by Phase 5's hosted video surface. |
 | W57 | A playlist frame's own black backing shows through once the view is made taller | WoW `plView`, found by dragging the real window; not yet counted corpus-wide | `plFrame` is `<SUBVIEW backgroundColor="#000000" height="JScript:view.height-74">` and the playlist drawn over it does not cover all of it: at the authored 453x264 there is no gap, at 653x364 a ~265x105 black band opens inside it. **Reproduces headlessly** — `WMP_SKIN=…/WoW.wmz WMP_RENDER_SIZE=653x364 WMP_RENDER_DUMP=<dir>` — so it is a scene defect, not the AppKit overlay: the dumped PNG and a screen capture of the same window rect agree. Not a resize-plumbing defect (the frames all resolve correctly; `PROBE` shows `plFrame` at `40,44 466x290` as authored) and not the alignment double-count W-fix above. Establish what WMP draws over that backing — `playlist1.height` is `plFrame.height` and `playlist2.height` is `plFrame.height-20`, so the band is likely the difference between the two playlist elements rather than a missing fill. Count the corpus reach before ranking it: every skin with a `backgroundColor` subview under a playlist is a candidate. |
 
-## Tier 1c — live-reported, 2026-09-07, not yet reproduced headlessly
+## Tier 1c — live-reported, not yet reproduced headlessly
+
+**Live QA of Phase 5 on 2026-09-08 found multiple defects that are not yet written down.** The
+reporter drove the app and reported "tons of issues"; the list was not captured before the session
+ended, so **nothing below enumerates them and they are not in any count on this page.** Until they
+are, read every Phase 5 closure in `docs/wmp-skin/wmp-backlog-archive.md` as *harness-verified only*
+— a full corpus sweep with 272 of 545 images changed, none lost, none new, and 2,068 green tests,
+which is exactly the evidence the harness notes say does not extend to AppKit, the window's shape
+and shadow, a timer, a drag, or a pointer. That is the same gap that produced W43-W46. Capture the
+reporter's list into this tier before ranking any further Phase 5 work.
+
+**What the reporter did report, 2026-09-08.** Three skins, three different classes. `corona` is the
+control: it "works well, has all its sliders and buttons for the most part", which is the reference
+result and the reason the other two are legible as defects rather than as the engine being broken.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W68 | The Alienware/ALX family draws a shell and nothing in it reacts | 6 skins named below, inside a corpus-wide class of **42 views across 37 skins** where `unresolved >= nodes`, measured 2026-09-08 over the 607 views of the 179-archive sweep | Reported as "ALXMorph does nothing — no animation and nothing reacts". **This is not an AppKit defect and it did not need a live session to find: the sweep has been printing it all along.** `RENDER-DUMP mainView` for `ALXMorph` is `339x329, 15 nodes, 8 commands, 5 hits, 0 widgets, **15 unresolved**` — as many nodes failed to resolve geometry as laid out, and five hit targets is a whole player's worth of buttons missing. `AlienMorph` and `AlienwareTeleport` are identical at `368x426`; `Alienware Invader` is worse still at `2 nodes, 0 commands, 0 hits, 18 unresolved` — it draws nothing whatsoever. The absent animation is the same cause, not a separate one: the family's big `m_anim_*` GIFs hang off subviews that are either unresolved or authored `alphaBlend="0"` and faded in by script (`mainAnimCoolantChamber` is the one confirmed by hand), so W38 `alphaBlendTo` is likely load-bearing here. **It is one view, not the skin.** `ALXMorph`'s other seven views are healthy — `eqView` is `45 nodes, 44 commands, 26 hits, 8 unresolved` and `videoView` `35/33/12/6` — so only `mainView`, the view it opens on, is starved. That is why the skin reads as dead while its equaliser and playlist would work if you could reach them. **Diagnose from `WMP_RENDER_EXPR` before touching the builder** — 15 unresolved nodes means 15 geometry attributes the static grammar and the live context both declined, and the `EXPR` line says which and why. Do not assume it is one cause. The worst of the wider class are `digitaldj/DigitalDJ` (**91** unresolved against 101 nodes), `Cablemusic/mainview` (63 against 35), `WALL-E/mainView` (35 against 37) and `NVIDIA/mainView` (32 against 43); `Disney_Mix_Central`, `Batman Begins` and `Alienware Invader` all draw a `mainView` of 2 nodes and 0 hits. |
+| W69 | `Xbox Live Skin` animates and flickers | 1 skin confirmed live; the flicker class covers **90 of 180 archives** that carry a multi-frame GIF | Reported as "xbox live skin animated/flickers", so the clock and the repaint loop both work and the compositing does not. Its `mainView` is also in W68's class — `19 nodes, 15 commands, 11 hits, 15 unresolved` — so some of what looks like flicker may be a starved layout rather than the repaint loop; separate the two before diagnosing either. It reports `ANIMATION shortestDelay=0.030 bounds=23,9 248x195` — a **33 fps full-scene re-render** with a sub-rect invalidation, which is the most demanding case in the corpus and therefore the right one to fix against. Candidates, none of them confirmed and all of them cheap to distinguish: (a) `present()` replaces the whole `NSImage` while `setNeedsDisplay` invalidates only the animated bounds, so the untouched region keeps older pixels against a newer image; (b) the animated `bounds` union is computed once at `startAnimation` from the scene's commands and never revisited, so a node that moves leaves its old frame un-erased; (c) 145 frames of `intro_anim.gif` decoded and cached separately may be thrashing the image store's 64 MiB LRU, forcing re-decodes mid-loop. **Instrument before reasoning**: the loop is the only thing in this engine that repaints without a script transaction, so log what it presents and what it invalidates before changing either. |
+| W70 | Nothing ranks a view by how much of it failed to resolve | **42 views / 37 skins** at `unresolved >= nodes`; **79 views / 49 skins** with `hits == 0`; **65 views / 37 skins** with `commands == 0`. Measured 2026-09-08 over 607 views | W68 is the indictment: `unresolved=15` against `nodes=15` sat in every capture since the sweep existed and no rule looked at it, so a skin that draws a shell and reacts to nothing was invisible until a human opened it. **The rule must be a ratio, not a count, and the reporter's own control proves why:** `corona` — the skin reported as working well, with all its sliders and buttons — carries **8 unresolved on `vPlayer` and 9 on `viewTiny`**, and `unresolved > 0` is true of **385 of 607 views across 168 of 179 skins**, so a raw count ranks nothing at all. Against 66 nodes, corona's 8 is noise; against 15 nodes, ALXMorph's 15 is the whole view. Add `unresolved/nodes`, `hits == 0` and `commands == 0` to `scripts/wmp_skin_census.sh` as ranked columns and promote the worst automatically. A defect the instrument already measured and nobody ranked is worse than one it cannot see. |
+
+
+
 
 Found by the reporter driving the real app on `corona.wmz` during Phase 3 live QA, after the drawers
 and the file-open button were confirmed working. **None of these is visible to the harness**: the
@@ -76,6 +97,19 @@ playback. Reproduce by driving the app; a census row will not show any of them.
 | W44 | **Four different buttons in the top cluster all open the file dialog** | corona, live | `bOpenFile`, `bPlaylist`, `bVis` and `bEq` are `BUTTONELEMENT`s inside one `BUTTONGROUP`, separated only by their `mappingColor` in `player_top_controls_left_map.bmp`. A coordinate scan along `y=12` resolves them correctly and distinctly (`WMP_RENDER_CLICK="vPlayer@366,12;400,12;420,12;444,12"` gives `bOpenFile`, `bPlaylist`, `bVis`, `bEq`), so the mapping table is right at that row — check other rows before assuming the sampler is wrong. The other candidate is dispatch rather than hit testing: `dispatchScriptEvent(name:targetID:)` filters handlers by `xmlID`, and a `nil` `targetID` runs **every** `onClick` in the view, one of which is `OpenMedia()`. Confirm which by clicking each button once with `WMP_RENDER_CLICK` and reading the `handlers=` count. |
 | W45 | **No way to reach the compact view from the skin** | corona, live | `ToggleSuperCompact()` sets `theme.currentViewID = "viewTiny"`, which the object model maps to a `setCurrentView` host command, and `switchView(to:)` implements it. It is reached from a button that is probably one of W44's, so W44 may be the whole of this. The menu route — **Skins → Windows Media Player → Views → viewTiny** — does work and is the fallback while this is open. |
 | W46 | **`viewTiny` is indistinguishable from `vPlayer`, and the switch is a trap** | corona, live | Corona's compact-view button is an unnamed `<BUTTON>` inside the equaliser drawer drawn with `minimize_button.bmp` (tooltip "Mini Player"), the selected view is persisted on every present, and the two views render almost identically — so a user lands in the compact view, cannot tell, and finds the playlist/equaliser drawers gone with no way back except **Skins → Windows Media Player → Views**. Reported as "the playlist and eq drawers no longer open". The dispatch half is fixed (an unnamed node no longer runs every `onClick` in the view); the indistinguishable render and the absent affordance are open. |
+
+## Tier 1d — the instrument Phase 6 opens with
+
+**Manual testing does not scale to this corpus and must stop being the plan.** 179 skins times
+sliders, drawers, drags and animation is not a human-scale job, and Phase 5 shipped its AppKit half
+unmeasured because of it. Build these before fixing W68 or W69 — it is the same rule Phase 1 of the
+recovery plan already paid for once, and skipping it is how Phase 5 got here.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W71 | The harness cannot see AppKit, and it can | every skin | The sweep builds scenes and rasterizes them; it never calls an `NSView.draw`, so overlays painted over artwork, `dirtyRect` bugs, stale overlay frames and a missing layout pass are all invisible to it — the class that produced W43-W46 and, on this evidence, most of what the reporter saw. The mechanism is **`NSView.cacheDisplay(in:to:)`**, which runs the real `draw(_:)` of the view and every overlay hosted over it into a bitmap, with no visible window and no screen-recording permission. Then diff it against `WMPRenderer`'s own image for the same scene: **agreement means the defect is in the scene, disagreement means it is in the overlays or compositing.** `reference/harness.md` records that exact comparison ending a hunt in one launch when done by hand, once. Doing it for 179 skins turns the whole AppKit blind spot into a ranked list. Window shape and shadow stay outside it — those live in the window server — and remain a short, genuinely manual list. |
+| W72 | Nothing exercises a drag | **163 slider skins** | `WMP_RENDER_CLICK` presses and releases; no instrument moves the pointer while captured, which is exactly where the rewritten slider math lives. A scripted drag — press, N moves along the control's own axis, release — asserting the value follows the pointer monotonically and the thumb frame moves with it, covers every slider in the corpus without a human. Extend the existing click flag rather than adding a second one. |
+| W73 | A clean sweep still proves only the default state | every skin | Recorded so it is not rediscovered: no sweep here says anything about a tab, a setting, a hover, a drawer, or live playback. W71 and W72 narrow that gap; they do not close it. |
 
 ## Tier 2 — the script runtime, after Phase 3
 
@@ -143,7 +177,30 @@ each). Full column: `inert_calls` in `census.tsv`.
 
 ## Tier 3 — drawing the skin's own controls (Phase 5)
 
-Tracked in the recovery plan until the corpus loads and the census can rank these by measured reach.
+**Reach here is `scripts/wmp_markup_census.sh` output, measured 2026-09-07 over the 177 archives it
+could read** — the 180 in `WMPSkins/` less `Darkling.wmz` (excluded) and the two whose local header
+signature is overwritten, which `unzip` cannot open and the engine can (`Need_for_Speed_Underground`,
+`SplinterCellWMPSkin`). So every number below is short by at most two skins, never long. Reproduce
+with `scripts/wmp_markup_census.sh /tmp/wmp/markup`.
+
+This is authored demand, not result: the census says a skin asks for an attribute, never that the
+engine draws it right. Only a dumped PNG says that.
+
+**What Phase 5 closed** is in the archive. It closed the whole of the phase *as the harness measures
+it*, and live QA on 2026-09-08 found defects that are not yet enumerated — see Tier 1c before
+treating any of this as done: the slider family
+draws its own thumbs and progress (163 skins), `CUSTOMSLIDER` reads its `positionImage` (93),
+animated GIFs run (90 of 180 archives), `cursor` (145), `tabStop` (119), `alphaBlend` (38),
+`passthrough` (82), `clippingImage` (28), `TEXT`'s `fontFace`/`fontStyle`/`fontSmoothing`
+(109/139/95), real `POPUP` and `EDITBOX` controls, `EQUALIZERSETTINGS` stopped being a widget (163),
+and the opaque `VIDEO` placeholder is gone (W9, 166). Two rows below are what it could **not**
+close, and both are blocked on something other than drawing.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W66 | A `LISTBOX` has a control and nothing to put in it | **8 skins**, 16 uses, measured 2026-09-07 over 177 archives | Every one is `plListBox1`/`plListBox2`, a playlist chooser the skin fills from script by walking WMP's media collection (`getSelPlaylist()`). The control now exists, draws, and reports its selection; what it cannot do is have rows, because the object model answers nothing for `player.mediaCollection` — so a skin's `onLoad` appends nothing and the box is empty. That is a host-surface decision (what a `.wmz` may see of this player's library), not drawing work, and it is deliberately **not** faked with rows this player invented. Rank it with whatever answers the media-collection question. |
+| W67 | `.cur` and `.ani` cursors | **~70 uses**, a handful of skins (`resize.cur` 26, `over.ani` 23, `sizetopright.cur` 12, `size2_m.cur` 6) | The remainder after the named cursors landed: Windows cursor formats, which no macOS decoder reads. They resolve to no cursor rather than to a wrong one. Worth doing only with a `.cur`/`.ani` decoder, and worth almost nothing without one. |
+
 
 ## Closed
 

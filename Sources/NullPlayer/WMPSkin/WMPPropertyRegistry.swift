@@ -59,7 +59,14 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
             }
             return .bool(enabled)
         }
+        // The equaliser a `.wmz` shows is its own ten bound sliders, so these paths are what put a
+        // thumb where the engine's gain actually is. 164 corpus skins author them.
+        if let band = WMPTransportAction.eqBand(in: path) {
+            return .number(snapshot.equalizer.gains.indices.contains(band) ? snapshot.equalizer.gains[band] : 0)
+        }
         switch path {
+        case "eq.enabled", "eq.enable": return .bool(snapshot.equalizer.enabled)
+        case "eq.preamp": return .number(snapshot.equalizer.preamp)
         case "player.controls.currentposition": return .number(snapshot.currentTime)
         case "player.controls.currentpositionstring": return .string(snapshot.elapsedText)
         case "player.currentmedia.duration": return .number(snapshot.duration)
@@ -70,6 +77,10 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         case "player.settings.mute": return .bool(snapshot.muted)
         case "player.currentplaylist.count": return .number(Double(snapshot.playlistCount))
         case "player.playstate": return .string(snapshot.state.rawValue)
+        // 41 skins bind a seek bar's `foregroundProgress` to one of these, which is how a `.wmz`
+        // draws its buffer bar. Both names appear; WMP scales them 0-100.
+        case "player.network.downloadprogress", "player.network.bufferingprogress":
+            return .number(snapshot.bufferingProgress)
         default: return .string("")
         }
     }

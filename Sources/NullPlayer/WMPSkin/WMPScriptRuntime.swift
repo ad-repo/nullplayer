@@ -187,11 +187,17 @@ struct WMPScriptOutput: Sendable {
     /// Carried for `WMP_RENDER_EXPR`; no production path reads either.
     let expressions: [WMPJScriptExpressionResult]
     let expressionOrder: [String]
+    /// The items a `POPUP` or `LISTBOX` holds, by stable id. A skin fills these from script —
+    /// `popupPreset.appendItem(...)` in an `onLoad` — so they are transaction output, not markup,
+    /// and the AppKit menu has no other source for them.
+    let listItems: [Int: [String]]
 
     init(overrides: WMPSceneOverrides, hostCommands: [WMPJScriptHostCommand] = [],
          diagnostics: [WMPJScriptDiagnostic] = [], repaintNodeIDs: Set<Int> = [],
          timerRequests: [WMPJScriptTimerRequest] = [], calls: [WMPJScriptCall] = [],
-         expressions: [WMPJScriptExpressionResult] = [], expressionOrder: [String] = []) {
+         expressions: [WMPJScriptExpressionResult] = [], expressionOrder: [String] = [],
+         listItems: [Int: [String]] = [:]) {
+        self.listItems = listItems
         self.overrides = overrides
         self.hostCommands = hostCommands
         self.diagnostics = diagnostics
@@ -362,7 +368,8 @@ actor WMPScriptRuntime {
         return WMPScriptOutput(overrides: overrides, hostCommands: result.hostCommands,
                                diagnostics: diagnostics, repaintNodeIDs: repaint,
                                timerRequests: result.timers, calls: result.calls,
-                               expressions: result.expressions, expressionOrder: result.expressionOrder)
+                               expressions: result.expressions, expressionOrder: result.expressionOrder,
+                               listItems: context.listItems())
     }
 
     func resetPreferences() { preferences.reset() }
@@ -371,6 +378,11 @@ actor WMPScriptRuntime {
         guard value.isFinite else { return }
         committedOverrides.properties[.init(stableID: stableID, property: "value")] = .number(value)
         context?.setElementValue(stableID: stableID, value: value)
+    }
+
+    func setWidgetText(stableID: Int, text: String) {
+        committedOverrides.properties[.init(stableID: stableID, property: "value")] = .string(text)
+        context?.setElementText(stableID: stableID, text: text)
     }
 
     /// A view switch drops this view's overrides and its element registrations, but **not** the

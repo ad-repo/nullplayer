@@ -22,8 +22,11 @@ final class WMPPhase6Tests: XCTestCase {
         ])
         let skin = try await WMPSkinLoader().load(from: archive)
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "full")
+        // `EQUALIZERSETTINGS` is deliberately absent: it is the settings object a skin's own
+        // bound sliders write through, not a control, and it carries no geometry in any of the 164
+        // corpus skins that author it.
         XCTAssertEqual(Set(scene.widgets.map(\.kind)),
-            Set([.text, .slider, .playlist, .dropdownPlaylist, .equalizer, .popup, .effects, .video]))
+            Set([.text, .slider, .playlist, .dropdownPlaylist, .popup, .effects, .video]))
         let slider = try XCTUnwrap(scene.widgets.first { $0.nodeID == "rate" })
         XCTAssertEqual(slider.minimumValue, 1); XCTAssertEqual(slider.maximumValue, 5)
         XCTAssertEqual(slider.toolTip, "Rate")

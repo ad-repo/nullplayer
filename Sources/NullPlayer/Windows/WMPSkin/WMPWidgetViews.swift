@@ -94,54 +94,6 @@ final class WMPDropdownPlaylistSurfaceView: NSPopUpButton {
 }
 
 @MainActor
-final class WMPEqualizerSurfaceView: NSView {
-    var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
-    private let enabledButton = NSButton(checkboxWithTitle: "EQ", target: nil, action: nil)
-    private var sliders: [NSSlider] = []
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true; layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 0.82).cgColor
-        enabledButton.target = self; enabledButton.action = #selector(toggleEnabled(_:)); addSubview(enabledButton)
-        for index in 0...10 {
-            let slider = NSSlider(value: 0, minValue: -12, maxValue: 12, target: self,
-                                  action: #selector(changed(_:)))
-            slider.isVertical = true
-            slider.setAccessibilityLabel(index == 0 ? "Preamp" : "Equalizer band \(index)")
-            sliders.append(slider); addSubview(slider)
-        }
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    override func layout() {
-        super.layout()
-        enabledButton.frame = NSRect(x: 4, y: 2, width: 42, height: 18)
-        let top: CGFloat = 22, width = max(1, bounds.width / CGFloat(sliders.count))
-        for (index, slider) in sliders.enumerated() {
-            slider.frame = NSRect(x: CGFloat(index) * width, y: top, width: width,
-                                  height: max(16, bounds.height - top - 2))
-        }
-    }
-
-    func update(_ snapshot: WMPHostSnapshot) {
-        enabledButton.state = snapshot.equalizer.enabled ? .on : .off
-        sliders.first?.doubleValue = snapshot.equalizer.preamp
-        for (slider, gain) in zip(sliders.dropFirst(), snapshot.equalizer.gains) { slider.doubleValue = gain }
-    }
-
-    @objc private func toggleEnabled(_ sender: NSButton) {
-        onAction?(.setEQEnabled, .bool(sender.state == .on))
-    }
-
-    @objc private func changed(_ sender: NSSlider) {
-        guard let index = sliders.firstIndex(where: { $0 === sender }) else { return }
-        if index == 0 { onAction?(.setPreamp, .number(sender.doubleValue)) }
-        else { onAction?(.setEQBand(index - 1), .number(sender.doubleValue)) }
-    }
-}
-
-@MainActor
 final class WMPEffectsSurfaceView: NSView {
     private var levels: [Float] = []
     override var isFlipped: Bool { true }
@@ -165,35 +117,118 @@ final class WMPEffectsSurfaceView: NSView {
     }
 }
 
-@MainActor
-final class WMPVideoPlaceholderView: NSView {
-    private let label = NSTextField(labelWithString: "Video surface unavailable in WMP skins")
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true; layer?.backgroundColor = NSColor.black.cgColor
-        label.textColor = .secondaryLabelColor; label.alignment = .center
-        label.setAccessibilityLabel("Video placeholder"); addSubview(label)
-    }
-    required init?(coder: NSCoder) { nil }
-    override func layout() { super.layout(); label.frame = bounds.insetBy(dx: 8, dy: 8) }
-}
-
+/// A `<POPUP>`, which in this corpus means one thing: an equaliser preset menu.
+///
+/// All four archives that author one do the same thing — `popupPreset.appendItem(...)` in an
+/// `onLoad` fills it, and `selectedItem_onchange="eq.currentPreset = popupPreset.selectedItem"`
+/// applies the choice. So the items come from the skin's own script, and the fallback when a skin
+/// has not filled it yet is the engine's real preset list rather than an invented menu: the four
+/// hardcoded entries that used to be here ("Presets", "Flat EQ", "Enable EQ", "Disable EQ") are in
+/// no skin's markup and in no skin's script.
 @MainActor
 final class WMPPopupSurfaceView: NSPopUpButton {
-    var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
+    var onSelect: ((Int, String) -> Void)?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect, pullsDown: false)
-        addItems(withTitles: ["Presets", "Flat EQ", "Enable EQ", "Disable EQ"])
         target = self; action = #selector(chosen(_:))
+        update(items: [])
     }
+
     required init?(coder: NSCoder) { nil }
+
+    func update(items: [String]) {
+        let titles = items.isEmpty ? EQPreset.allPresets.map(\.name) : items
+        guard titles != itemTitles else { return }
+        removeAllItems()
+        addItems(withTitles: titles)
+    }
+
     @objc private func chosen(_ sender: Any?) {
-        switch indexOfSelectedItem {
-        case 1: for band in 0..<10 { onAction?(.setEQBand(band), .number(0)) }; onAction?(.setPreamp, .number(0))
-        case 2: onAction?(.setEQEnabled, .bool(true))
-        case 3: onAction?(.setEQEnabled, .bool(false))
-        default: break
+        guard indexOfSelectedItem >= 0, let title = titleOfSelectedItem else { return }
+        onSelect?(indexOfSelectedItem, title)
+    }
+}
+
+/// An `<EDITBOX>`. Nine of the corpus's ten are `plSearchEdit` — the playlist search field whose
+/// `onKeyUp` runs the skin's own `searchMediaLb()` — so what it owes the skin is a real text field
+/// with the skin's own colours and face, and a `value` its script can read back.
+@MainActor
+final class WMPEditBoxSurfaceView: NSTextField {
+    var onEdit: ((String) -> Void)?
+
+    init() {
+        super.init(frame: .zero)
+        isBordered = false
+        isBezeled = false
+        drawsBackground = true
+        focusRingType = .none
+        target = self
+        action = #selector(committed(_:))
+        delegate = self
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func apply(background: NSColor?, foreground: NSColor?, font: NSFont?) {
+        if let background { backgroundColor = background }
+        if let foreground { textColor = foreground }
+        if let font { self.font = font }
+    }
+
+    @objc private func committed(_ sender: Any?) { onEdit?(stringValue) }
+}
+
+extension WMPEditBoxSurfaceView: NSTextFieldDelegate {
+    // `onKeyUp` is what the corpus binds, so the skin expects a callback per keystroke rather than
+    // only on Return.
+    func controlTextDidChange(_ notification: Notification) { onEdit?(stringValue) }
+}
+
+/// A `<LISTBOX>`. Sixteen uses across eight skins, and every one is a playlist chooser
+/// (`plListBox1`/`plListBox2`) that the skin's own script fills by walking WMP's media collection.
+/// The control is real and its selection reaches the skin; the rows are whatever the script has
+/// appended, which stays empty until `player.mediaCollection` can answer — W66, and deliberately
+/// not faked with rows this player invented.
+@MainActor
+final class WMPListBoxSurfaceView: NSView {
+    var onSelect: ((Int) -> Void)?
+    private var items: [String] = []
+    private var selected = -1
+    private let rowHeight: CGFloat = 14
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    var backgroundFill = NSColor(calibratedWhite: 1, alpha: 1)
+    var textColor = NSColor.black
+
+    func update(items: [String]) {
+        guard items != self.items else { return }
+        self.items = items
+        selected = min(selected, items.count - 1)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // `bounds`, never `dirtyRect` — see WMPPlaylistSurfaceView.
+        backgroundFill.setFill(); bounds.fill()
+        for (index, item) in items.enumerated() {
+            let rect = NSRect(x: 0, y: CGFloat(index) * rowHeight, width: bounds.width, height: rowHeight)
+            guard rect.minY < bounds.height else { break }
+            if index == selected { NSColor.selectedContentBackgroundColor.setFill(); rect.fill() }
+            item.draw(in: rect.insetBy(dx: 3, dy: 0), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 10),
+                .foregroundColor: index == selected ? NSColor.white : textColor])
         }
-        selectItem(at: 0)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = Int(point.y / rowHeight)
+        guard items.indices.contains(index) else { return }
+        selected = index; needsDisplay = true
+        window?.makeFirstResponder(self)
+        onSelect?(index)
     }
 }

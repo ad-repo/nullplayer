@@ -2,11 +2,11 @@ import Foundation
 
 enum WMPElementKind: Hashable, CustomStringConvertible {
     case theme, view, subview, text, image, button, buttonGroup, buttonElement
-    case slider, volumeSlider, seekSlider, balanceSlider
+    case slider, volumeSlider, seekSlider, balanceSlider, customSlider, progressBar
     case playElement, pauseButton, stopElement, prevElement, nextElement
     case rewButton, rewElement, ffwdButton, ffwdElement, returnButton, shuffleButton
     case playlist, dropdownPlaylist, video, wmpVideo, wmpEffects
-    case equalizerSettings, popup, player, network, script
+    case equalizerSettings, popup, editBox, listBox, player, network, script
     case unknown(String)
 
     init(tagName: String) {
@@ -23,6 +23,8 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case "volumeslider": self = .volumeSlider
         case "seekslider": self = .seekSlider
         case "balanceslider": self = .balanceSlider
+        case "customslider": self = .customSlider
+        case "progressbar": self = .progressBar
         case "playelement": self = .playElement
         case "pausebutton": self = .pauseButton
         case "stopelement": self = .stopElement
@@ -41,6 +43,8 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case "wmpeffects": self = .wmpEffects
         case "equalizersettings": self = .equalizerSettings
         case "popup": self = .popup
+        case "editbox": self = .editBox
+        case "listbox": self = .listBox
         case "player": self = .player
         case "network": self = .network
         case "script": self = .script
@@ -62,6 +66,8 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case .volumeSlider: return "volumeSlider"
         case .seekSlider: return "seekSlider"
         case .balanceSlider: return "balanceSlider"
+        case .customSlider: return "customSlider"
+        case .progressBar: return "progressBar"
         case .playElement: return "playElement"
         case .pauseButton: return "pauseButton"
         case .stopElement: return "stopElement"
@@ -80,6 +86,8 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case .wmpEffects: return "wmpEffects"
         case .equalizerSettings: return "equalizerSettings"
         case .popup: return "popup"
+        case .editBox: return "editBox"
+        case .listBox: return "listBox"
         case .player: return "player"
         case .network: return "network"
         case .script: return "script"

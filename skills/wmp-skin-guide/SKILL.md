@@ -21,8 +21,8 @@ panel without one, exactly as real WMP does. An excluded archive never ranks wor
 `reference/harness.md`.
 
 **Measure before you reason.** `reference/harness.md` is the canonical probe and corpus reference —
-every env-var flag, the line grammar, `scripts/wmp_skin_census.sh` and `scripts/wmp_render_sweep.sh`,
-and the traps those scripts enforce. No other file restates a command; add a flag there in the same
+every env-var flag, the line grammar, `scripts/wmp_skin_census.sh`, `scripts/wmp_render_sweep.sh`,
+`scripts/wmp_markup_census.sh`, and the traps those scripts enforce. No other file restates a command; add a flag there in the same
 change that adds it. The ranked backlog it feeds is `WMP_TASKS.md` at the repo root, and a closed
 entry moves to `docs/wmp-skin/wmp-backlog-archive.md` in the same change that closes it.
 
@@ -293,6 +293,77 @@ of these was invisible to the harness and visible in the first minute of live QA
   buffering, then reception order; input uses mouse-down, mouse-up, click/change semantics from the
   Phase 4 capture model.
 
+## Drawing the skin's own controls
+
+- **The skin draws its controls; an AppKit overlay is only for what the scene genuinely cannot
+  paint.** What is left hosted is `PLAYLIST`, `DROPDOWNPLAYLIST`, `EFFECTS` and `POPUP`. `VIDEO`
+  is not: its placeholder filled every `<VIDEO>` frame with opaque black over the artwork of 166 of
+  177 archives, and an audio player has nothing to put there instead. Adding an overlay back needs
+  the same argument — name what the renderer cannot draw.
+- **A slider is a track plus a thumb the scene places**, and `WMPSliderMetrics` owns that geometry
+  alone so each of its rules is testable: `borderSize` is dead track at *both* ends (171 skins),
+  a **vertical** slider's maximum is at the **top** (1,312 of 1,968 `direction` attributes are
+  vertical — every equaliser band is one), and the same metrics read the pointer back so a drag runs
+  along the axis the skin authored. `foregroundImage` is the filled part of the track, cropped
+  rather than scaled, and `useForegroundProgress="true"` (46 skins) redirects that fill to
+  `foregroundProgress` — a buffer bar behind a thumb showing position, which are different numbers.
+- **A `.wmz` says where a slider writes by binding its value, not by choosing a tag.** 163 skins
+  author a plain `<SLIDER value="wmpprop:player.settings.volume">` rather than `<VOLUMESLIDER>`, so
+  `WMPTransportAction.boundAction` maps the declared `wmpprop:` path to the action. Adding a bindable
+  host property means adding it to `WMPObservablePropertyRegistry` *and* deciding whether writing it
+  back is an action — one without the other is a control that moves and does nothing.
+- **`EQUALIZERSETTINGS` is a settings object, not a control.** 163 skins author it and none give it
+  geometry; the skin's own ten bound sliders *are* the equaliser. It is `isNonLayout`, like
+  `<player>` and `<network>`.
+- **`alphaBlend` is 0-255, inherits down the subtree, and 717 of its 778 corpus uses are `"0"`** —
+  an element the skin hides and fades in later. A zero-alpha node still lays out, so its geometry
+  stays readable, but it must not reach the command list at all: leaving it there put invisible
+  artwork inside `visibleBounds` and every dirty rect derived from it. Honouring it changed what
+  several skins draw, because the engine had been painting the topmost of eight stacked shells
+  rather than the one authored visible — and it makes `alphaBlendTo` (W38) load-bearing, since a
+  skin that fades its own panels in now shows less until that lands.
+- **`passthrough="true"` (82 skins) is drawn and never hit.** A decorative overlay registered as a
+  hit target swallows the controls beneath it.
+- **`TEXT` reads `fontFace`, not `fontType`** — 109 skins against 21 — and `fontStyle` is a *set*
+  (`"UNDERLINE, bold"` is authored), not one word. `fontSmoothing="false"` (95 skins) is a readout
+  drawn as pixels; antialiasing it turns a 6 px digit into grey mush.
+- **A `CUSTOMSLIDER` is the size of its `positionImage`, and its `image` is a filmstrip.** This was
+  read out of the art rather than assumed, and `WMPPositionMap` carries the evidence:
+  `ALXMorph/seek_map.png` is 86x10 whose columns step 0, 2, 5 … 252 — a **greyscale ramp whose
+  luminance is the fraction** — against a `seek.png` of 86x600, sixty frames stacked vertically;
+  its `volume_map.png` is a 72x38 arc against a 2232x38 strip of thirty-one frames laid out
+  horizontally. So the strip's axis comes from whichever one is a whole multiple of the map, the
+  value picks the frame, and a drag reads its value out of the map — which is the whole point of the
+  element: its track need not be a straight line. Sizing one from `image` makes it 2,232 px wide.
+- **`clippingImage` shapes an element, and it is what makes a shaped window shaped.** 25 skins
+  author a non-empty one and every one of them declares a `clippingColor` beside it, which is what
+  the mask keys out. Before it, `TDK`, `elvis`, `Secura`, `portals` and the six `US *` service skins
+  all drew a black or grey rectangle behind their round artwork.
+- **A mask buffer's row zero is the authored top row.** A `CGImage` drawn into a bitmap context
+  arrives that way round — `WMPMappingImage` says so in as many words — so "correcting for
+  CoreGraphics" by reversing the rows mirrors the mask and clips the half it should keep. That is
+  W47 arriving by a second route, and only a **top/bottom** fixture can see it: a left/right one is
+  identical under a vertical flip, and so is a horizontal position ramp.
+- **`cursor` names a shape, not a file, in 2,246 of its 2,319 non-empty uses.** Classifying them all
+  as artwork made every named cursor a *missing bitmap* (`BITMAPS … missing=hand sizenwse` across
+  145 skins) and hid the name from the builder, which reads literals. `WMPAttributeParser` decides
+  from the value; the ~70 `.cur`/`.ani` files stay resources and resolve to no cursor (W67).
+- **Animation lives in the renderer, not the scene.** `WMPRenderer.render(clock:)` picks the frame,
+  so a 10 fps GIF costs a re-render rather than a rebuild — a rebuild runs the skin's script
+  transaction, which must not happen ten times a second. 90 of the 180 archives carry a multi-frame
+  GIF (2,166 files). `animationCadence(for:)` gives the repaint loop its period *and* the union of
+  only the animated frames, because repainting a whole window for one blinking LED is the difference
+  between a skin that animates and one that burns a core. **A render dump is a still, so without
+  `WMP_RENDER_CLOCK` an animation is unfalsifiable** — frame zero looks exactly like an engine that
+  never animates.
+- **A `<POPUP>` is an equaliser preset menu and its items come from the skin's own script.** All four
+  corpus popups call `appendItem` in an `onLoad` and apply the choice through
+  `eq.currentPreset`; `WMPScriptOutput.listItems` carries them out of the transaction, because the
+  markup names none of them. The four hardcoded entries that used to be shown were in no skin.
+- **An `<EDITBOX>`'s `value` is a string.** Nine of the corpus's ten are `plSearchEdit`, a playlist
+  search field whose `onKeyUp` reads it straight back, so it needs its own text path
+  (`setWidgetText`) rather than the numeric `setWidgetValue`.
+
 ## Phase 6 widget and view contracts
 
 - `WMPScene.widgets` is immutable semantic metadata for accessibility and native surfaces. AppKit
@@ -303,8 +374,8 @@ of these was invisible to the harness and visible in the first minute of live QA
   engine is in its 21-band layout; every write remains clamped to ±12 dB.
 - `WMPEFFECTS` hosts the safe WMP bars surface. Its single ref-counted spectrum consumer must be
   registered only while an effects surface exists in the active view and removed on switch/teardown.
-- `VIDEO`/`WMPVIDEO` remain an app-authored placeholder. WMP plug-ins, ActiveX, DLLs, and arbitrary
-  media surfaces remain denied.
+- `VIDEO`/`WMPVIDEO` draw nothing — the placeholder that painted them opaque black over the skin's
+  own artwork is gone (W9). WMP plug-ins, ActiveX, DLLs, and arbitrary media surfaces remain denied.
 - A view switch cancels capture and outgoing timers, stops continuous commands, clears view-local
   overrides, resolves off-main, preserves safe top-left, applies per-skin/view size, atomically swaps
   scene/native/accessibility state, then dispatches the view event.

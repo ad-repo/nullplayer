@@ -78,6 +78,17 @@ final class WMPAudioEngineHost: WMPHost {
         case .setPreamp:
             guard let gain = value?.finiteNumber else { return }
             engine.setPreamp(Float(max(-12, min(12, gain))))
+        case let .setEQPreset(index):
+            // WMP tracks a "current preset" and the engine does not, so a selection is applied as
+            // the ten band gains and the preamp it stands for — the same thing the object model
+            // already does for a script writing `eq.currentPreset`.
+            guard EQPreset.allPresets.indices.contains(index) else { return }
+            let preset = EQPreset.allPresets[index]
+            engine.setPreamp(Float(max(-12, min(12, preset.preamp))))
+            let clamped = preset.bands.map { Float(max(-12, min(12, $0))) }
+            let remapped = EQBandRemapper.remap(gains: clamped, from: .classic10,
+                                                to: engine.eqConfiguration)
+            for (band, gain) in remapped.enumerated() { engine.setEQBand(band, gain: gain) }
         }
     }
 

@@ -12,6 +12,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var scriptTimerTasks: [Int: Task<Void, Never>] = [:]
     /// The active view's own `timerInterval`, which is a host timer rather than a scene property.
     private var viewTimerTask: Task<Void, Never>?
+    /// The animation repaint loop and the instant its clock is measured from. Separate from
+    /// `viewTimerTask`: that one dispatches the skin's own `onTimer` and rebuilds the scene, and an
+    /// animation must not do either — it re-renders the scene that already exists.
+    private var animationTask: Task<Void, Never>?
+    private var animationEpoch = Date()
     private var loadedSkin: WMPLoadedSkin?
     private var imageStore: WMPImageStore?
     private var activeViewID: String?
@@ -291,6 +296,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         view.onScriptEvent = { [weak self] name, targetID, targetStableID in
             self?.dispatchScriptEvent(name: name, targetID: targetID, targetStableID: targetStableID)
         }
+        view.onElementTextChanged = { [weak self] stableID, targetID, text in
+            guard let self, let scriptRuntime = self.scriptRuntime else { return }
+            Task {
+                await scriptRuntime.setWidgetText(stableID: stableID, text: text)
+                self.dispatchScriptEvent(name: "keyup", targetID: targetID, targetStableID: stableID)
+            }
+        }
         view.onElementValueChanged = { [weak self] stableID, targetID, value in
             guard let self, let scriptRuntime = self.scriptRuntime else { return }
             Task {
@@ -321,6 +333,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         view.present(image, scene: scene)
         view.refreshHostState(host.snapshot)
+        startAnimation(for: scene)
     }
 
     private func presentUnskinned(message: String?) {
@@ -408,6 +421,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 try Task.checkCancellation()
                 self?.sceneOverrides = resolvedOverrides
                 self?.activeScene = scene
+                self?.startAnimation(for: scene)
+                if let scriptOutput { self?.mainView?.updateListItems(scriptOutput.listItems) }
                 self?.mainView?.present(result.image, scene: scene)
                 self?.mainView?.refreshHostState(self?.host.snapshot ?? WMPHostSnapshot())
                 if let scriptOutput {
@@ -570,6 +585,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     scene: scene, backingScale: self?.renderBackingScale ?? 1)
                 try Task.checkCancellation()
                 self?.activeScene = scene
+                self?.startAnimation(for: scene)
                 self?.mainView?.present(result.image, scene: scene, dirtyBounds: scene.dirtyBounds)
             } catch is CancellationError {} catch { self?.lastLoadDiagnostic = error.localizedDescription }
         }
@@ -624,6 +640,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 guard !Task.isCancelled else { return }
                 sceneOverrides = output.overrides
                 self.activeScene = scene
+                self.startAnimation(for: scene)
+                self.mainView?.updateListItems(output.listItems)
                 mainView?.present(result.image, scene: scene)
                 let switchedView = applyHostCommands(output.hostCommands)
                 if !switchedView { scheduleTimers(output.timerRequests) }
@@ -814,6 +832,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let rendered = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderBackingScale)
                 self.sceneOverrides = output.overrides; self.activeScene = scene
+                self.startAnimation(for: scene)
+                self.mainView?.updateListItems(output.listItems)
                 self.mainView?.present(rendered.image, scene: scene)
                 self.applyHostCommands(output.hostCommands); self.recordScriptDiagnostics(output.diagnostics)
             } catch { self.recordScriptDiagnostics([.init(code: "timer-transaction", message: error.localizedDescription)]) }
@@ -824,6 +844,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         scriptTimerTasks.values.forEach { $0.cancel() }
         scriptTimerTasks.removeAll()
         setViewTimer(milliseconds: 0)
+        // The animation loop retains the scene it is drawing, so it has to stop with the rest of
+        // them: teardown is synchronous and idempotent, and a repaint arriving after it would be
+        // presenting a scene into a view that is being discarded.
+        animationTask?.cancel()
+        animationTask = nil
     }
 
     /// The `VIEW`'s own `timerInterval`, in milliseconds: zero stops it, anything else restarts it
@@ -861,10 +886,45 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         refreshHostState()
     }
 
+    /// Drive the scene's animated artwork, if it has any.
+    ///
+    /// 90 of the 180 corpus archives carry a multi-frame GIF. The loop re-renders at the shortest
+    /// frame delay the scene actually uses — no fixed frame rate — and does not exist at all for a
+    /// scene with no animation, which is the other half of the corpus and every static view.
+    private func startAnimation(for scene: WMPScene) {
+        animationTask?.cancel()
+        animationTask = nil
+        guard let store = imageStore,
+              let cadence = WMPRenderer(imageStore: store).animationCadence(for: scene) else { return }
+        animationEpoch = Date()
+        let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds,
+                         Int(cadence.shortestDelay * 1_000))
+        let dirty = cadence.bounds
+        animationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
+                guard !Task.isCancelled, let self else { return }
+                await self.renderAnimationFrame(scene: scene, store: store, dirty: dirty)
+            }
+        }
+    }
+
+    private func renderAnimationFrame(scene: WMPScene, store: WMPImageStore, dirty: WMPRect) async {
+        // Only while this is still the scene on screen: a view switch or a script transaction
+        // replaces it, and repainting the old one would undo what just landed.
+        guard activeScene == scene, let view = mainView else { return }
+        let clock = Date().timeIntervalSince(animationEpoch)
+        guard let rendered = try? await WMPRenderer(imageStore: store)
+            .render(scene: scene, backingScale: renderBackingScale, clock: clock) else { return }
+        guard activeScene == scene else { return }
+        view.present(rendered.image, scene: scene, dirtyBounds: dirty)
+    }
+
     private func setViewTimer(milliseconds: Int) {
         viewTimerTask?.cancel()
         viewTimerTask = nil
         guard milliseconds > 0 else { return }
+
         let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, milliseconds)
         viewTimerTask = Task { [weak self] in
             while !Task.isCancelled {
