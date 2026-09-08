@@ -83,6 +83,42 @@ enum WMPSkinTestSupport {
         return output as Data
     }
 
+    /// A real 24-bit BMP — no alpha channel, the way the corpus authors its sheets.
+    ///
+    /// `encodedImage(type: .bmp)` cannot stand in for one: it encodes an RGBA `CGImage`, so ImageIO
+    /// writes 32bpp with an alpha mask and `kCGImagePropertyHasAlpha` answers true. That is the
+    /// exact input the implicit transparency key (W78) must *skip*, so a fixture built that way
+    /// tests the opposite of what it looks like it tests.
+    ///
+    /// `rows` are authored top-down here and written bottom-up, as BMP stores them.
+    static func trueColor24Bitmap(width: Int, height: Int, rows: [[(UInt8, UInt8, UInt8)]]) -> Data {
+        func le32(_ value: UInt32) -> Data {
+            Data([UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF),
+                  UInt8((value >> 16) & 0xFF), UInt8((value >> 24) & 0xFF)])
+        }
+        let stride = ((width * 24 + 31) / 32) * 4
+        var pixels = Data()
+        for row in rows.reversed() {
+            for pixel in row { pixels.append(contentsOf: [pixel.2, pixel.1, pixel.0]) }
+            pixels.append(Data(repeating: 0, count: stride - row.count * 3))
+        }
+        let pixelOffset = 14 + 40
+        var data = Data([0x42, 0x4D])
+        data.append(le32(UInt32(pixelOffset + pixels.count)))
+        data.append(le32(0))
+        data.append(le32(UInt32(pixelOffset)))
+        data.append(le32(40))
+        data.append(le32(UInt32(bitPattern: Int32(width))))
+        data.append(le32(UInt32(bitPattern: Int32(height))))
+        data.append(contentsOf: [1, 0, 24, 0])
+        data.append(le32(0))
+        data.append(le32(UInt32(pixels.count)))
+        data.append(le32(2835)); data.append(le32(2835))
+        data.append(le32(0)); data.append(le32(0))
+        data.append(pixels)
+        return data
+    }
+
     static func rgba(_ image: CGImage, x: Int, yFromTop: Int) -> [UInt8] {
         let width = image.width, height = image.height
         var bytes = [UInt8](repeating: 0, count: width * height * 4)

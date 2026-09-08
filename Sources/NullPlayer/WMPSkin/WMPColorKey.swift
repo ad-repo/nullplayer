@@ -2,6 +2,20 @@ import CoreGraphics
 import Foundation
 
 enum WMPColorKey {
+    /// The colour WMP keys out of a bitmap that carries no alpha channel and whose node declares no
+    /// key of its own. It is not written in any markup — it is the default the corpus is authored
+    /// against, and the authors say so by hand: **4,979 of the 6,076 `transparencyColor`
+    /// declarations in the 179-archive corpus (82%, 142 skins) are exactly this colour**, and the
+    /// skins in the W78 class key some siblings and leave the rest to it (`Halo 2` keys `mainBack`,
+    /// `shutterSub` and `shutterStatic` `#ff00ff` and leaves `m_trans_no.png` bare; `Main_Street`
+    /// authors one `transparencyColor` in the whole file). Measure the class with
+    /// `scripts/wmp_implicit_key.py` before widening this rule: **527 references across 66 skins
+    /// and 437 sprites** is what it covers today.
+    ///
+    /// It applies **only** to a sprite with no alpha channel at all. A PNG or GIF that authored
+    /// transparency has already said what is see-through, and a magenta pixel in it is paint.
+    static let implicitTransparency = WMPColor(red: 255, green: 0, blue: 255)
+
     /// Replaces only pixels whose un-premultiplied RGB exactly matches the key. Non-matching pixels
     /// keep their original alpha, including partial alpha from PNG/GIF sources.
     static func applying(_ key: WMPColor, to image: CGImage) throws -> CGImage {

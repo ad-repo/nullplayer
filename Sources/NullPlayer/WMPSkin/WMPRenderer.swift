@@ -151,7 +151,9 @@ struct WMPRenderer: @unchecked Sendable {
                 let frame = (try? imageStore.animation(for: specification.resourcePath))
                     .flatMap { $0?.frameIndex(at: clock) } ?? 0
                 let decoded = try imageStore.image(for: specification.resourcePath,
-                                                   colorKeys: specification.colorKeys, frame: frame)
+                                                   colorKeys: specification.colorKeys,
+                                                   implicitKey: specification.implicitColorKey,
+                                                   frame: frame)
                 let sourceImage = crop(specification.sourceRect, from: decoded.image)
                 if let mappingMask = specification.mappingMask,
                    let mask = mappingMask.mapping.maskImage(for: Set(mappingMask.nodeIDs)) {

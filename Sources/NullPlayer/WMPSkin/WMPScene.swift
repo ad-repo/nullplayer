@@ -15,6 +15,9 @@ struct WMPSceneImage: Hashable, Codable {
     /// Every colour this node keys out of its artwork, in authored order: `transparencyColor`
     /// then `clippingColor`. A subview commonly declares both, with different colours.
     let colorKeys: [WMPColor]
+    /// The key to use **only if the decoded sprite carries no alpha channel of its own**, set when
+    /// the node declares no key at all. WMP's implicit transparency colour; see `WMPColorKey`.
+    let implicitColorKey: WMPColor?
     let tiled: Bool
     let interpolation: WMPImageInterpolation
     let mappingMask: WMPSceneMappingMask?
@@ -25,10 +28,12 @@ struct WMPSceneImage: Hashable, Codable {
 
     init(resourcePath: String, sourceRect: WMPRect?, colorKeys: [WMPColor], tiled: Bool,
          interpolation: WMPImageInterpolation, mappingMask: WMPSceneMappingMask?,
-         clippingMaskPath: String? = nil, clippingMaskKeys: [WMPColor] = []) {
+         clippingMaskPath: String? = nil, clippingMaskKeys: [WMPColor] = [],
+         implicitColorKey: WMPColor? = nil) {
         self.resourcePath = resourcePath
         self.sourceRect = sourceRect
         self.colorKeys = colorKeys
+        self.implicitColorKey = implicitColorKey
         self.tiled = tiled
         self.interpolation = interpolation
         self.mappingMask = mappingMask

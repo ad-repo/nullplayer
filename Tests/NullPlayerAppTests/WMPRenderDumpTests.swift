@@ -270,6 +270,85 @@ final class WMPRenderDumpTests: XCTestCase {
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 0, yFromTop: 1), [0, 0, 255, 255])
     }
 
+    /// **The implicit key, in all four directions (W78).** A node declaring nothing keys magenta out
+    /// of a sprite that authored no alpha; the same node leaves it painted on a sprite that authored
+    /// one; a node declaring another colour keeps its magenta; and a mapping image is never keyed at
+    /// all, or a `#FF00FF` mapping colour would vanish from its own map and stop answering the
+    /// pointer. Without the second and fourth arms, "the default works" and "the default eats
+    /// artwork" print the same pass.
+    func testImplicitMagentaKeyAppliesOnlyToArtworkThatAuthoredNoAlpha() async throws {
+        // A real 24-bit BMP, not an ImageIO one: see `trueColor24Bitmap`. The PNG beside it is RGBA
+        // and is the arm that must keep its magenta.
+        let bmp = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 2,
+            rows: [[(255, 0, 0), (0, 255, 0)], [(0, 0, 255), (255, 0, 255)]])
+        let png = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .png)
+        let xml = """
+        <THEME><VIEW id="main" width="6" height="2">
+          <IMAGE id="bare" left="0" top="0" width="2" height="2" image="pixel.bmp"/>
+          <IMAGE id="alpha" left="2" top="0" width="2" height="2" image="pixel.png"/>
+          <IMAGE id="keyed" left="4" top="0" width="2" height="2" image="pixel.bmp" transparencyColor="#00FF00"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("pixel.bmp", data: bmp),
+            WMPTestArchiveEntry("pixel.png", data: png)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        func specification(_ nodeID: String) -> WMPSceneImage? {
+            guard case let .image(image)? = scene.commands.first(where: { $0.nodeID == nodeID })?.paint
+            else { return nil }
+            return image
+        }
+        // The builder decides on the markup alone: both undeclared nodes carry the implicit key and
+        // the declared one does not. Which of the two *uses* it is the store's answer, below.
+        XCTAssertEqual(specification("bare")?.implicitColorKey, WMPColorKey.implicitTransparency)
+        XCTAssertEqual(specification("alpha")?.implicitColorKey, WMPColorKey.implicitTransparency)
+        XCTAssertNil(specification("keyed")?.implicitColorKey)
+        XCTAssertEqual(specification("keyed")?.colorKeys, [WMPColor(red: 0, green: 255, blue: 0)])
+
+        let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+        // The magenta pixel is the bottom-right of the 2x2 source in every one of the three.
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 1, yFromTop: 1), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 3, yFromTop: 1), [255, 0, 255, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 1), [255, 0, 255, 255])
+        // …and the colour the third node did key is gone, so the arm is not passing by accident.
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 0), [0, 0, 0, 0])
+        // Nothing else moved: the red pixel is untouched in all three.
+        for x in [0, 2, 4] {
+            XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: x, yFromTop: 0), [255, 0, 0, 255])
+        }
+    }
+
+    /// The half of the rule that has no pixels: a mapping image is read for its colours, so keying
+    /// magenta out of one would delete a `#FF00FF` region from its own map and the button under the
+    /// pointer would stop answering.
+    func testAMagentaMappingColorStillAnswersThePointer() async throws {
+        let map = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 2,
+            rows: [[(255, 0, 0), (0, 255, 0)], [(0, 0, 255), (255, 0, 255)]])
+        let art = map
+        let xml = """
+        <THEME><VIEW id="main" width="2" height="2">
+          <BUTTONGROUP id="group" left="0" top="0" image="art.bmp" mappingImage="map.bmp">
+            <BUTTONELEMENT id="magentaButton" mappingColor="#FF00FF"/>
+          </BUTTONGROUP>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art),
+            WMPTestArchiveEntry("map.bmp", data: map)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        // The magenta pixel of the map is its bottom-right, which is (1,1) from the top.
+        let hit = WMPHitTester(hits: scene.hits).hitTest(WMPPoint(x: 1.5, y: 1.5))
+        XCTAssertEqual(hit?.nodeID, "magentaButton")
+    }
+
     func testTextCounterTransformKeepsGlyphsUprightInTopFrame() async throws {
         let xml = """
         <THEME><VIEW id="main" width="80" height="40">

@@ -120,14 +120,20 @@ final class WMPImageStore: @unchecked Sendable {
         try image(for: path, colorKeys: colorKey.map { [$0] } ?? [])
     }
 
-    func image(for path: String, colorKeys: [WMPColor] = []) throws -> WMPDecodedImage {
-        try image(for: path, colorKeys: colorKeys, frameSuffix: 0)
+    /// `implicitKey` is the colour WMP keys out **only when the sprite carries no alpha channel of
+    /// its own** — the node declared nothing, so the artwork's own format decides. Passing it is the
+    /// caller saying "this is drawn artwork": a mapping image, position map or clipping mask must
+    /// never receive one, or a `#FF00FF` mapping colour would vanish from its own map.
+    func image(for path: String, colorKeys: [WMPColor] = [],
+               implicitKey: WMPColor? = nil) throws -> WMPDecodedImage {
+        try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey, frameSuffix: 0)
     }
 
-    private func image(for path: String, colorKeys: [WMPColor],
+    private func image(for path: String, colorKeys: [WMPColor], implicitKey: WMPColor? = nil,
                        frameSuffix frame: Int) throws -> WMPDecodedImage {
         let canonical = provider.canonicalPath(for: path) ?? path
         let cacheKey = canonical + colorKeys.map { "|key=\($0)" }.joined()
+            + (implicitKey.map { "|implicit=\($0)" } ?? "")
             + (frame > 0 ? "|frame=\(frame)" : "")
         lock.lock()
         if var entry = entries[cacheKey] {
@@ -139,7 +145,8 @@ final class WMPImageStore: @unchecked Sendable {
         }
         lock.unlock()
 
-        let decoded = try decode(path: canonical, colorKeys: colorKeys, frame: frame)
+        let decoded = try decode(path: canonical, colorKeys: colorKeys,
+                                 implicitKey: implicitKey, frame: frame)
         lock.lock()
         defer { lock.unlock() }
         if let existing = entries[cacheKey] { return existing.image }
@@ -250,9 +257,10 @@ final class WMPImageStore: @unchecked Sendable {
     }
 
     /// One frame of an animated image, color-keyed and cached exactly like a still.
-    func image(for path: String, colorKeys: [WMPColor] = [], frame: Int) throws -> WMPDecodedImage {
-        guard frame > 0 else { return try image(for: path, colorKeys: colorKeys) }
-        return try image(for: path, colorKeys: colorKeys, frameSuffix: frame)
+    func image(for path: String, colorKeys: [WMPColor] = [], implicitKey: WMPColor? = nil,
+               frame: Int) throws -> WMPDecodedImage {
+        guard frame > 0 else { return try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey) }
+        return try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey, frameSuffix: frame)
     }
 
     /// A `CUSTOMSLIDER`'s greyscale position map, cached under the same byte bound as every other
@@ -381,7 +389,8 @@ final class WMPImageStore: @unchecked Sendable {
             decodedMappingImageCount: mappingDecodeCount)
     }
 
-    private func decode(path: String, colorKeys: [WMPColor], frame: Int = 0) throws -> WMPDecodedImage {
+    private func decode(path: String, colorKeys: [WMPColor], implicitKey: WMPColor? = nil,
+                        frame: Int = 0) throws -> WMPDecodedImage {
         let ext = (path as NSString).pathExtension.lowercased()
         guard ["bmp", "gif", "jpg", "jpeg", "png"].contains(ext) else {
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
@@ -397,7 +406,7 @@ final class WMPImageStore: @unchecked Sendable {
               let height = integer(properties[kCGImagePropertyPixelHeight]) else {
             if ext == "bmp" {
                 return try decodeBitmapOurselves(bytes, path: path, colorKeys: colorKeys,
-                    imageIOReason: "could not read metadata")
+                    implicitKey: implicitKey, imageIOReason: "could not read metadata")
             }
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO could not read metadata for '\(path)'."))
@@ -418,12 +427,15 @@ final class WMPImageStore: @unchecked Sendable {
         guard var image = CGImageSourceCreateImageAtIndex(source, frameIndex, decodeOptions) else {
             if ext == "bmp" {
                 return try decodeBitmapOurselves(bytes, path: path, colorKeys: colorKeys,
-                    imageIOReason: "could not decode")
+                    implicitKey: implicitKey, imageIOReason: "could not decode")
             }
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO could not decode '\(path)'."))
         }
-        image = try WMPColorKey.applying(colorKeys, to: image)
+        image = try WMPColorKey.applying(
+            keys(colorKeys, implicitKey: implicitKey,
+                 sourceHasAlpha: Self.hasAlphaChannel(properties: properties, image: image)),
+            to: image)
         return WMPDecodedImage(image: image,
             size: WMPSize(width: CGFloat(width), height: CGFloat(height)),
             decodedBytes: decodedByteCount)
@@ -433,13 +445,17 @@ final class WMPImageStore: @unchecked Sendable {
     /// set while `biClrUsed` is zero, and some well-formed RLE8 streams. Those files are not corrupt
     /// and every Windows player draws them, so fall back to the bounded in-house reader.
     private func decodeBitmapOurselves(_ data: Data, path: String, colorKeys: [WMPColor],
+                                       implicitKey: WMPColor? = nil,
                                        imageIOReason: String) throws -> WMPDecodedImage {
         let bounds = WMPBitmapDecoder.Limits(maximumDimension: limits.maximumDimension,
             maximumPixels: limits.maximumPixels, maximumDecodedBytes: limits.maximumDecodedBytes)
         do {
             let decoded = try WMPBitmapDecoder.decode(data, limits: bounds)
             var image = decoded.image
-            image = try WMPColorKey.applying(colorKeys, to: image)
+            image = try WMPColorKey.applying(
+                keys(colorKeys, implicitKey: implicitKey,
+                     sourceHasAlpha: decoded.authorsAlphaChannel),
+                to: image)
             return WMPDecodedImage(image: image,
                 size: WMPSize(width: CGFloat(decoded.width), height: CGFloat(decoded.height)),
                 decodedBytes: decoded.decodedBytes)
@@ -450,6 +466,26 @@ final class WMPImageStore: @unchecked Sendable {
             guard case .unsupported(let reason) = failure else { throw failure }
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO \(imageIOReason) '\(path)', and the BMP reader could not either: \(reason)."))
+        }
+    }
+
+    /// The declared keys, or the implicit one when there are none and the sprite authored no alpha.
+    /// A sprite that carries an alpha channel has already said what is see-through.
+    private func keys(_ colorKeys: [WMPColor], implicitKey: WMPColor?,
+                      sourceHasAlpha: Bool) -> [WMPColor] {
+        guard colorKeys.isEmpty, let implicitKey, !sourceHasAlpha else { return colorKeys }
+        return [implicitKey]
+    }
+
+    /// Did the *file* author an alpha channel? `kCGImagePropertyHasAlpha` answers for the source,
+    /// which is the question — the decoded `CGImage` is commonly widened to 32 bits with an opaque
+    /// alpha for a 24-bit BMP, so reading `alphaInfo` alone would say every sprite has one. It is
+    /// only the fallback for a format that does not report the property.
+    private static func hasAlphaChannel(properties: [CFString: Any], image: CGImage) -> Bool {
+        if let declared = properties[kCGImagePropertyHasAlpha] as? Bool { return declared }
+        switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: return false
+        default: return true
         }
     }
 

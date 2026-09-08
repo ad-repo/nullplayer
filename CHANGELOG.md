@@ -81,6 +81,14 @@
   and one unreadable bitmap could cost a whole window its contents. NullPlayer now reads those
   bitmaps itself, so bluegrid, cerulean, Radio, YIL!OMA2K and circle draw their real skins — and
   circle's buttons, whose click regions live in two of the affected files, land where they should.
+- **Magenta slabs are gone from Windows Media Player skins.** Dozens of `.wmz` skins drew a flat
+  magenta block where their artwork should have been — over the transport row, behind the buttons,
+  and in `Main_Street`, `Plus! Bionic Dot`, `Ice` and `The Doobie Brothers` over most of the window.
+  Windows Media Player treats magenta as see-through for artwork that carries no transparency of its
+  own, and skin authors relied on it: four in five of the transparency colours written in these
+  skins are that same magenta, and many sheets simply leave it unwritten. NullPlayer now does the
+  same, for artwork that has no transparency of its own and no colour named in the skin — 322,410
+  magenta pixels across 100 skin views became 7,253, and nothing else in the artwork moved.
 - **Windows Media Player skins react to the pointer.** Buttons in a `.wmz` skin now light up under
   the pointer the way the skin drew them to, and a skin's own hover scripts run: readouts fade in
   and out, panels highlight, and Melvin's penguin follows your mouse with its eyes. None of this

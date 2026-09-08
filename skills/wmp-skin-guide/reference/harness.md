@@ -244,7 +244,7 @@ skin's controls are `<BUTTON>`s. The tip is resolved per drawn state in `WMPScen
 read through the scene overrides, so a script assignment (`alx_dl.wms` writes `toolTip='Volume'`
 from its slider's `onMouseUp`) wins over the authored attribute.
 
-## The two committed scripts
+## The committed scripts
 
 ### `scripts/wmp_skin_census.sh <outdir> [--corpus <dir>] [--allow-dirty] [--parse-only]`
 
@@ -311,6 +311,27 @@ this player has no equivalent of; its own `OnLoad` catches the missing host and 
 Party Mode" panel, exactly as real WMP does outside Party Mode. Record the reason in the file next to
 the entry, and treat removing a line as a decision.
 
+### `python3 scripts/wmp_implicit_key.py [--corpus <dir>] [--color RRGGBB] [--tsv <file>]`
+
+*How much artwork relies on WMP's implicit transparency colour?* Counts drawn sprites that (a) carry
+no alpha channel, (b) hold `#FF00FF` pixels and (c) hang off a node declaring neither
+`transparencyColor` nor `clippingColor` — the W78 class, and the measurement that had to exist
+before anything defaulted a key engine-wide. It reads `.wms` and artwork straight out of the
+archives, so it measures authored demand, never a render result.
+
+Measured 2026-09-08 over the 179-archive corpus: **527 node/attribute references across 66 skins and
+437 distinct sprites**, of 22,649 drawn artwork references of which 8,833 declare a key themselves.
+`--tsv` writes every row, sorted by how many key pixels the sprite holds, which is the order to open
+them in. Two things it does *not* count, both deliberate: a mapping/clipping/position image (read for
+its colours, never blitted — an implicit key there would delete a mapping colour from its own map)
+and a sprite that authored an alpha channel (a P-mode GIF/PNG with `info['transparency']` counts as
+having one). The residual after the default landed is exactly that second set — 7,253 magenta pixels
+across 15 views, topped by `WoW/mainView` at 3.5%, whose `volume_2.png` is RGBA *and* magenta-filled.
+
+The companion number, from the markup census's own attribute counts: **4,979 of the 6,076
+`transparencyColor` declarations in the corpus (82%, 142 skins) are `#ff00ff`.** That is why the
+default is that colour and not another.
+
 ### `scripts/wmp_render_sweep.sh capture|compare`
 
 *Did my change move anything?* `capture` writes the invariant lines **and** every PNG; `compare`
@@ -325,6 +346,19 @@ scripts/wmp_render_sweep.sh compare  /tmp/wmp-sweep/base /tmp/wmp-sweep/curr
 ```
 
 **Never capture the baseline with `git stash`** — it relinks `.build` under the user's running app.
+
+**A fresh worktree cannot build: `Frameworks/` is not in git.** `swift build` fails with `no such
+module 'VLCKit'`, and even once it links, the test bundle refuses to load without the frameworks
+`swift build` copies next to it. Link both from the working repo, then capture with `--allow-dirty`
+(the links are what makes the worktree dirty; check `git status -- Sources Tests scripts` is clean
+before believing the baseline is HEAD):
+
+```bash
+ln -s "$PWD/Frameworks" ../nullplayer-base/Frameworks
+for f in VLCKit.framework ogg.framework vorbis.framework libprojectM-4.dylib libprojectM-4.4.dylib; do
+  ln -sfn "$PWD/.build/arm64-apple-macosx/debug/$f" ../nullplayer-base/.build/arm64-apple-macosx/debug/$f
+done
+```
 
 ---
 

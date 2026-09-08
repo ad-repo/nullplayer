@@ -158,6 +158,18 @@ queue, with the object model as the security boundary — see Amendment 2 in
   therefore a list, in authored order, and the image-store cache key contains all of it. Color keys
   compare exact un-premultiplied RGB and clear only matching pixels. Preserve the source alpha of
   every non-matching pixel.
+- **A node that declares no key at all still gets one: magenta, and only if the sprite carries no
+  alpha channel.** WMP's implicit transparency colour (W78). The corpus is authored against it —
+  4,979 of its 6,076 `transparencyColor` declarations (82%, 142 skins) are `#ff00ff`, `Halo 2` keys
+  three siblings by hand and leaves `m_trans_no.png` to the default, and `Main_Street` authors one
+  key in the whole file. The scene builder decides (`WMPSceneImage.implicitColorKey`, set only when
+  the node declares nothing) and the image store applies it only to a sprite whose *file* authored
+  no alpha — `kCGImagePropertyHasAlpha`, not the decoded `CGImage`'s `alphaInfo`, which is 32-bit
+  for a 24-bit BMP. A sprite that authored alpha has already said what is see-through, so its
+  magenta is paint. **Never pass the implicit key on a mapping image, position map or clipping
+  mask**: they are read for their colours, and keying one deletes a `#FF00FF` mapping colour from
+  its own map. Measure the class with `scripts/wmp_implicit_key.py` before widening the rule; the
+  default removed 315,157 magenta pixels across 87 corpus views and changed nothing else.
 - The opt-in render dump writes one untracked PNG per view plus a JSON report. Corpus paths and
   output directories are local inputs/artifacts and must never be staged.
 

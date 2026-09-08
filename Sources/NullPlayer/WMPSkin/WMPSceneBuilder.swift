@@ -581,13 +581,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 : WMPRect(x: sourceX ?? 0, y: sourceY ?? 0,
                           width: sourceWidth ?? frame.width, height: sourceHeight ?? frame.height))
         let tiledName = background ? "backgroundTiled" : "tiled"
+        // **A node that declares no key at all still gets one, if its artwork has no alpha.** That
+        // is WMP's implicit magenta transparency colour (W78) — the store applies it only to a
+        // sprite with no alpha channel, because only such a sprite can have meant it. A node that
+        // keys anything has said what it wants and is left alone, including one whose only key is
+        // a colour the parser rejected: `Alpine7618_v09` writes `transparencyColor="FF00FF"` with
+        // no `#`, which resolves to nothing here and therefore falls to the same default.
+        let declared = colors(node, names: ["transparencyColor", "clippingColor"])
         let image = WMPSceneImage(resourcePath: path, sourceRect: source,
-            colorKeys: colors(node, names: ["transparencyColor", "clippingColor"]),
+            colorKeys: declared,
             tiled: literalString(node, tiledName)?.caseInsensitiveCompare("true") == .orderedSame,
             interpolation: .low, mappingMask: mappingMask,
             clippingMaskPath: clippingPath,
             clippingMaskKeys: clippingPath == nil ? []
-                : colors(node, names: ["clippingColor", "transparencyColor"]))
+                : colors(node, names: ["clippingColor", "transparencyColor"]),
+            implicitColorKey: declared.isEmpty ? WMPColorKey.implicitTransparency : nil)
         return WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID, frame: frame,
             clipRect: clip, zIndex: z, documentOrder: node.stableID, paint: .image(image),
             alpha: alpha)
