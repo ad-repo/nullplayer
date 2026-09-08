@@ -57,7 +57,16 @@ enum WMPAttributeParser {
         // one dispatch, and the corpus writes these far more than the ones above — 175 archives
         // author `value_onchange`, 144 `OpenState_onchange`, 139 `PlayState_onchange`, against 11
         // and 7 for the `…change` forms.
-        "openstate_onchange", "playstate_onchange", "value_onchange"
+        "openstate_onchange", "playstate_onchange", "value_onchange",
+        // **A geometry `_onchange` is how a `.wmz` keeps a dependent pane glued to a moving one,**
+        // and it has a dispatch site: `WMPScriptContext` raises it inside the same transaction as
+        // the write, so the dependent moves in the frame that moved its dependency rather than the
+        // frame after. It is authored 16 times across 6 skins and both compact-mode skins are among
+        // them — `9SeriesDefault` and `corona` each hang
+        // `height_onchange="svTransports.top=svVideo.top+svVideo.height"` off the video panel their
+        // mini player collapses. Without it the transport bar chased the panel one frame behind all
+        // the way down and the window visibly tore into two pieces (W87).
+        "height_onchange", "width_onchange", "left_onchange", "top_onchange"
     ]
 
     static func parse(name: String, value raw: String) -> WMPAttributeValue {

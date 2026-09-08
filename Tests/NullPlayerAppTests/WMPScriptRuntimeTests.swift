@@ -25,6 +25,58 @@ final class WMPScriptRuntimeTests: XCTestCase {
         return try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive(entries))
     }
 
+    /// **A geometry `_onchange` must fire in the transaction that wrote the geometry, not the next
+    /// one.** Both compact-mode skins glue their transport bar to the video panel they collapse
+    /// with `height_onchange="svTransports.top=svVideo.top+svVideo.height"`. Firing it a frame late
+    /// left the bar trailing the panel the whole way down, and — because the last frame of an
+    /// animation is followed by nothing until the skin's idle timer — the window sat visibly split
+    /// into two pieces for four seconds (W87).
+    func testAGeometryChangeHandlerFiresInTheSameTransactionAsTheWrite() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="panel" left="0" top="10" width="100" height="100"
+                     height_onchange="bar.top = panel.top + panel.height;"/>
+            <SUBVIEW id="bar" left="0" top="110" width="100" height="20"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10" onClick="panel.height = 40;"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        func stableID(_ id: String) throws -> Int {
+            try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == id }?.stableID)
+        }
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go",
+                                   handlers: ["panel.height = 40;"]))
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: try stableID("panel"),
+                                                       property: "height")], 40)
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: try stableID("bar"),
+                                                       property: "top")], 50,
+                       "the dependent must land at panel.top + the height just written, in this "
+                       + "same transaction — 50, never the 110 it was drawn at")
+    }
+
+    /// The cascade is bounded and each handler fires once, so two panes that position off one
+    /// another cannot spin the transaction.
+    func testGeometryChangeHandlersCannotLoop() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="a" left="0" top="0" width="10" height="10" height_onchange="b.height = a.height + 1;"/>
+            <SUBVIEW id="b" left="0" top="20" width="10" height="10" height_onchange="a.height = b.height + 1;"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10" onClick="a.height = 5;"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go", handlers: ["a.height = 5;"]))
+        XCTAssertFalse(output.overrides.geometry.isEmpty, "the transaction must still commit")
+    }
+
     /// A `.wmz` is free to leave a control unnamed, and Corona does: the button that switches it to
     /// its compact view is a bare `<BUTTON onClick="ToggleSuperCompact();">`. Dispatch filtered on
     /// the authored `id` and read a missing one as "no filter", so one click on that button ran

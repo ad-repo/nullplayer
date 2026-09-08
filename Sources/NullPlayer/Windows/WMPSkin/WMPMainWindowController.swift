@@ -543,13 +543,38 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             do {
                 let base = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: savedSize)
+                // **A view arrived at by a switch loads exactly as one arrived at by launch.**
+                // Initial load raises `load` here, honours the host commands the handler posts and
+                // schedules the timers it asks for; this path did none of the three, and a
+                // `.wmz` compact mode is built out of all three. Corona's `viewTiny` is authored
+                // `timerInterval="0"` and animates itself into the mini player entirely from
+                // `OnTinyLoad` — which registers a timer event and writes `view.timerInterval`,
+                // a `setViewTimerInterval` host command. With the load event dropped, the handler
+                // never ran; with the host commands dropped, the interval never arrived. So the
+                // view switched and then sat at frame zero, which for Corona is drawn from the
+                // same artwork at the same size as `vPlayer`: **the compact view was visually
+                // indistinguishable from the player**, and the only symptom was that the playlist
+                // and equaliser buttons — markup `viewTiny` does not have — stopped answering.
+                // `RestorePlayer()` is driven by the same timer, so there was also no way back.
+                let loadEvent = WMPJScriptEvent(name: "load", targetID: registration.id,
+                    handlers: Self.handlers(in: skin, event: "load", targetID: nil,
+                                            viewID: registration.id))
                 let output = await scriptRuntime.transact(skin: skin, viewID: registration.id,
-                    size: base.canvasSize, snapshot: host.snapshot, event: nil,
+                    size: base.canvasSize, snapshot: host.snapshot, event: loadEvent,
                     geometry: base.scriptGeometry)
                 // A windowless view — `controlView`, `pharaoh`'s `vGhost` — runs its script and
                 // hands off; it must never become the presented window. Whatever it asks for next
                 // is honoured, and if it asks for nothing the current view simply stays.
-                guard base.canvasSize.width > 0, base.canvasSize.height > 0 else {
+                //
+                // A view can also declare itself windowless *in* that `onLoad` by writing zero, so
+                // the same `collapsed` test initial load applies belongs here now that the handler
+                // runs: `Halo 2`'s `previewView` blanks itself and redirects, and presenting it
+                // would leave an empty window the size of its thumbnail.
+                let collapsed = ["width", "height"].contains { property in
+                    output.overrides.geometry[.init(stableID: registration.node.stableID,
+                                                    property: property)] == 0
+                }
+                guard base.canvasSize.width > 0, base.canvasSize.height > 0, !collapsed else {
                     recordScriptDiagnostics(output.diagnostics)
                     _ = applyHostCommands(output.hostCommands)
                     return
@@ -565,7 +590,23 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 if let oldTopLeft, let window {
                     window.setFrameOrigin(NSPoint(x: oldTopLeft.x, y: oldTopLeft.y - window.frame.height))
                 }
-                dispatchScriptEvent(name: "viewchange", targetID: registration.id)
+                // `apply` has just set the view timer from the markup, which is the default the
+                // script's `setViewTimerInterval` overrides — so the commands run after it, in
+                // that order. A command that switches again owns the timers of the view it moved
+                // to, exactly as on initial load, and there is no `viewchange` to raise for a view
+                // this controller is no longer on.
+                let switchedAgain = applyHostCommands(output.hostCommands)
+                recordScriptDiagnostics(output.diagnostics)
+                guard !switchedAgain else { return }
+                scheduleTimers(output.timerRequests)
+                // Gated on an authored handler, like hover, and for the timers rather than the
+                // cost: a transaction's `timerRequests` are what *that* transaction registered, so
+                // an unconditional binding-only `viewchange` immediately posted an empty set and
+                // cancelled every script timer the `load` above had just scheduled. The bindings
+                // themselves have nothing left to settle — the load transaction built the scene
+                // that is on screen.
+                dispatchScriptEvent(name: "viewchange", targetID: registration.id,
+                                    onlyWhenAuthored: true)
             } catch is CancellationError {} catch { lastLoadDiagnostic = error.localizedDescription }
         }
     }
@@ -1086,6 +1127,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private func recordScriptDiagnostics(_ diagnostics: [WMPJScriptDiagnostic]) {
         guard !diagnostics.isEmpty else { return }
+        // A live script error is the one thing the input trace could not see. The headless probes
+        // print `SCRIPT-DIAG`; without the same line here, a handler that throws in the running app
+        // is indistinguishable from one that ran and did nothing.
+        for diagnostic in diagnostics { Self.traceInput("script-diag [\(diagnostic.code)] \(diagnostic.message)") }
         lastLoadDiagnostic = diagnostics.map { "[\($0.code)] \($0.message)" }.joined(separator: "\n")
     }
 

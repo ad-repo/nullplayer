@@ -79,7 +79,14 @@ INPUT dispatch <event> target=<id>#<sid> handlers=<n> gated=<bool>
 INPUT present <event> geometry=<n> properties=<n> commands=<n> diagnostics=<n>
 INPUT command <action> value=<v>                             a host command the transaction posted
 INPUT animation <view> delay=<s> endsAt=<s|endless> clock=<s>  every startAnimation, and the clock it runs on
+INPUT script-diag [<code>] <message>                         a script diagnostic from a live transaction
 ```
+
+`script-diag` is the headless `SCRIPT-DIAG` line, in the app. Without it a handler that throws in
+the running app is indistinguishable from one that ran and did nothing — which is the first fork to
+close whenever a live defect looks like "the script did not fire". It is also how W86 was separated
+from W46: `9SeriesDefault`'s compact-mode handler raises **no** diagnostic, so the handler is fine
+and the loss is downstream of it.
 
 `view-timer` is the line that found the dead `onTimer` class: `1000ms` from `apply`, then `0ms` one
 line later because `scheduleTimers` cancelled it.
@@ -125,6 +132,95 @@ A skin that fails to load prints `SKIN <file> FAILED <error>` and the sweep carr
 archive must not abandon the rest.
 
 ---
+
+## Driving the app: the loop that found the compact-mode class
+
+Three of the four defects in the compact-mode report were invisible to every flag above, because a
+**view switch is an app path** — the sweep renders each view independently and never performs one.
+The loop below is what reproduced them, and it is cheap enough to be the default response to a
+screen-only report rather than a last resort. Nothing in it is committed; rebuild it as needed.
+
+1. **Select the skin and launch the debug build with the trace on.** A bare binary launch does not
+   use the bundle's defaults domain — it uses `NullPlayer`, not `com.nullplayer.NullPlayer`, and
+   writing the wrong one silently loads a different skin:
+
+   ```bash
+   defaults write NullPlayer wmpSkinName -string "9SeriesDefault"
+   defaults delete NullPlayer wmpSkinViewID
+   WMP_TRACE_INPUT=1 nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+   ```
+
+   `-uiMode wmp` is `PlayerUIMode.argumentOverride`, and it works in release builds too. **Restore
+   whatever you changed afterwards** — it is the user's skin selection, not yours.
+
+2. **Ask the probe where the control is, then click that frame.** `WMP_RENDER_PROBE` prints every
+   drawn node's resolved frame in scene coordinates, which are the window's own top-left
+   coordinates — so a `frame=540,304 20x19` is clicked at `(550, 313)` with a `CGEvent` posted at
+   the window's origin plus that offset, found through `CGWindowListCopyWindowInfo` filtered on
+   owner `NullPlayer`. Guessing from a screenshot wastes a launch per miss; a `BUTTONELEMENT` inside
+   a `BUTTONGROUP` has no frame of its own at all and is resolved instead by decoding its
+   `mappingColor` out of the group's mapping bitmap and adding the group's origin.
+
+3. **Read `/tmp/app.log`, then capture the window.** `screencapture -o -x -l <windowid>` takes the
+   window alone, transparency included. It is far too slow to film a 250 ms animation — capture the
+   *settled* state and use `WMP_RENDER_SETTLE` for the frames in between.
+
+**What the trace settles that a screenshot cannot.** The compact-mode report read as one defect and
+was three, and the `INPUT` lines separated them in one launch each: `dispatch load` missing said the
+switch never loaded the view (W46); `setViewTimerInterval value=50` immediately followed by
+`value=4000` said a chained timer had registered and then been dropped (W86); and `script-diag`
+staying silent through all of it said no handler ever threw, which is what moved the search out of
+the script and into the engine's own semantics.
+
+### Reducing a skin's script to a standalone repro
+
+W86 was a JScript-versus-JavaScriptCore difference inside 200 lines of the skin's own code, and
+reading it was not going to settle anything. Extracting it was:
+
+```bash
+unzip -p <skin>.wmz corona_tiny.js | iconv -f UTF-16LE -t UTF-8 > tiny.js
+```
+
+then evaluating `tiny.js` in a bare `JSContext` under a ~20-line stub of the host objects it
+touches (`view`, `theme`, the two subviews) plus a **controllable clock** — override
+`Date.prototype.getTime` so the driver, not the wall, decides when a timer event fires — and a loop
+that calls the skin's own `TimerDispatch()` at the interval it asks for. That reproduced the defect
+exactly (`svVideo.height` stuck at 241, `currentViewID` never set), and changing one `for-in` to an
+index loop produced the correct result. **Both halves matter**: a repro that only fails proves you
+have *a* bug, not *the* bug. Afterwards the same rig runs the engine's real rewrite output, which is
+how the fix was confirmed before the app was ever rebuilt.
+
+### The sweep is the arbiter, including against your own fix
+
+W87 had an obvious general fix — re-resolve the view's `JScript:` geometry expressions after the
+handlers run — which closed the reported defect completely and **moved 175 of 545 corpus images**,
+shattering two skins that had nothing to do with it. Those attributes are an initial layout, not a
+live binding, and several read the property they write. The narrow fix that shipped raises only the
+`_onchange` handlers the skin itself declared, and sweeps to 544 of 545 identical.
+
+**A fix that resolves the report and moves things outside it is telling you it is the wrong fix.**
+Sweep before believing a fix, not only before believing a refactor — and read the `RENDER-DUMP`
+counts in the invariants diff, not just the image count: `33 commands / 15 hits → 28 / 8` named the
+regressed view before any PNG was opened.
+
+### A baseline worktree needs the vendored frameworks linked in
+
+`capture` refuses a dirty tree and tells you to use a worktree, which is right — but `Frameworks/`
+is only partly tracked, so a fresh worktree has no `VLCKit.framework` and the build fails with
+`no such module 'VLCKit'`, or links and then dies in `dlopen`. Symlink the real ones in before
+capturing, into both the source directory and the build's own framework directory:
+
+```bash
+git worktree add /tmp/base HEAD
+for f in VLCKit.framework libprojectM-4.dylib libprojectM-4.4.dylib libaubio.dylib; do
+  ln -sfn "$PWD/Frameworks/$f" "/tmp/base/Frameworks/$f"
+done
+mkdir -p /tmp/base/.build/arm64-apple-macosx/{Frameworks,debug}
+# …and link VLCKit.framework into both of those too; the test bundle's rpath looks beside itself.
+```
+
+The `--allow-dirty` this then needs is safe **for the baseline worktree only** — the untracked thing
+making it dirty is a symlink to a framework. Never pass it to hide real edits.
 
 ## The line grammar
 

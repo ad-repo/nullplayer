@@ -25,6 +25,11 @@ struct WMPScriptViewPlan: Sendable {
     let expressionAddresses: [String: WMPScenePropertyAddress]
     /// Folded element id to stable graph id.
     let idToStableID: [String: Int]
+    /// `stableID -> geometry property -> handler source`, from the `<property>_onchange` attributes
+    /// a skin uses to keep a dependent pane glued to one it moves. Kept as its own map rather than
+    /// looked up through the element because these are `.handler` attributes, so they are not in
+    /// the element's property bag at all.
+    let geometryChangeHandlers: [Int: [String: String]]
 
     init(skin: WMPLoadedSkin, viewID: String) {
         self.viewID = viewID
@@ -32,6 +37,7 @@ struct WMPScriptViewPlan: Sendable {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
         })?.node else {
             elements = []; expressions = []; expressionAddresses = [:]; idToStableID = [:]
+            geometryChangeHandlers = [:]
             return
         }
         var included = Set<Int>()
@@ -42,6 +48,7 @@ struct WMPScriptViewPlan: Sendable {
         var expressions: [WMPScriptExpression] = []
         var addresses: [String: WMPScenePropertyAddress] = [:]
         var ids: [String: Int] = [:]
+        var changeHandlers: [Int: [String: String]] = [:]
         for node in skin.graph.allNodes where included.contains(node.stableID) {
             let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
             ids[WMPPath.fold(id)] = node.stableID
@@ -63,6 +70,11 @@ struct WMPScriptViewPlan: Sendable {
                     let key = "\(id).\(name)"
                     expressions.append(.init(key: key, source: source))
                     addresses[key.lowercased()] = .init(stableID: node.stableID, property: name)
+                case let .handler(event, source) where event.lowercased().hasSuffix("_onchange")
+                    && WMPScriptExpression.geometryProperties.contains(
+                        String(event.lowercased().dropLast("_onchange".count))):
+                    changeHandlers[node.stableID, default: [:]][
+                        String(event.lowercased().dropLast("_onchange".count))] = source
                 default: break
                 }
             }
@@ -74,6 +86,7 @@ struct WMPScriptViewPlan: Sendable {
         self.expressions = expressions
         expressionAddresses = addresses
         idToStableID = ids
+        geometryChangeHandlers = changeHandlers
     }
 
     private static func scalar(_ raw: String) -> WMPJSONValue {
@@ -262,6 +275,8 @@ final class WMPScriptContext: @unchecked Sendable {
             }
         }
 
+        raiseGeometryChangeHandlers(plan: plan, into: &result)
+
         result.calls = model.calls
         result.mutations = model.mutations
         result.hostCommands = model.hostCommands
@@ -270,6 +285,52 @@ final class WMPScriptContext: @unchecked Sendable {
         result.diagnostics += model.diagnostics
         result.timers = pendingTimers
         return result
+    }
+
+    /// **A `<property>_onchange` fires in the same transaction as the write that triggered it.**
+    ///
+    /// The alternative — letting the dependent catch up on the next transaction — is what tore the
+    /// compact view in half (W87). A `.wmz` animates by writing geometry once per timer tick, and a
+    /// pane positioned off the moving one then trails it by a whole frame the entire way down; the
+    /// *last* frame is the one that lasts, because the animation ends and nothing else runs until
+    /// the skin's idle timer comes round. On `9SeriesDefault` that is four seconds of a window
+    /// visibly split into two pieces, reported as exactly that.
+    ///
+    /// This raises only what the skin itself declared, which is the narrow half of the problem and
+    /// the half WMP actually specifies: 16 attributes across 6 archives, of which both compact-mode
+    /// skins author `height_onchange` on the panel they collapse. **It deliberately does not
+    /// re-run the view's `JScript:` geometry expressions** — those are an initial layout, not a live
+    /// binding, and re-resolving them after a handler was measured against the corpus and moved 175
+    /// of 545 images, turning `Back to the Future Trilogy`'s `videoView` and `ALXMorph`'s frame into
+    /// scattered fragments. The skin's own wiring is the mechanism; the expression set is not.
+    ///
+    /// Cascades are bounded and each handler fires at most once per transaction, so a pair of panes
+    /// that position off one another cannot loop.
+    private func raiseGeometryChangeHandlers(plan: WMPScriptViewPlan,
+                                             into result: inout WMPScriptRunResult) {
+        guard !plan.geometryChangeHandlers.isEmpty else { return }
+        var consumed = 0
+        var fired = Set<String>()
+        for _ in 0..<WMPPhase0Limits.expressionPasses {
+            let fresh = model.mutations[consumed...]
+            consumed = model.mutations.count
+            guard !fresh.isEmpty else { return }
+            var raised = false
+            for mutation in fresh {
+                let property = mutation.property.lowercased()
+                guard WMPScriptExpression.geometryProperties.contains(property),
+                      let stableID = plan.idToStableID[WMPPath.fold(mutation.targetID)],
+                      let source = plan.geometryChangeHandlers[stableID]?[property] else { continue }
+                let token = "\(stableID).\(property)"
+                guard fired.insert(token).inserted else { continue }
+                raised = true
+                if let error = invokeHandler(source, label: "\(property)_onchange") {
+                    result.diagnostics.append(.init(code: "handler-error",
+                                                    message: "\(property)_onchange: \(error)"))
+                }
+            }
+            if !raised { return }
+        }
     }
 
     /// Two passes. The first measures what each expression reads, because the dependency order is a
@@ -369,7 +430,12 @@ final class WMPScriptContext: @unchecked Sendable {
     @discardableResult
     private func evaluate(_ source: String, label: String) -> String? {
         lastException = nil
-        context.evaluateScript(source, withSourceURL: URL(string: "wmp:///\(label)"))
+        // Every program and every markup handler goes through here, and every one of them is
+        // JScript rather than JavaScript. `WMPJScriptDialect.liveForIn` is the reconciliation; see
+        // that file for why a `for-in` is the difference that decides whether a whole skin family
+        // can reach its compact view (W86). A program with no `for-in` comes back unchanged.
+        context.evaluateScript(WMPJScriptDialect.liveForIn(source),
+                               withSourceURL: URL(string: "wmp:///\(label)"))
         return lastException
     }
 
@@ -418,6 +484,10 @@ final class WMPScriptContext: @unchecked Sendable {
         context.setObject(timer, forKeyedSubscript: "__wmpTimer" as NSString)
         context.setObject(clearTimer, forKeyedSubscript: "__wmpClearTimer" as NSString)
         context.evaluateScript(Self.bootstrap)
+        // The live enumerator the JScript `for-in` rewrite targets. Evaluated raw, never rewritten:
+        // its own `for-in` is the native snapshotting one, and re-running it per `next()` is what
+        // makes the rewritten loop live.
+        context.evaluateScript(WMPJScriptDialect.prelude)
         // Bound here as well as after every view's elements, because a skin's programs run
         // top-level code — `metadata.js` line 15 is `theme.loadString(…)` — before any handler.
         bindHostGlobals()
