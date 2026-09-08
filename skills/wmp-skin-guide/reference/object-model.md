@@ -117,9 +117,34 @@ defines as element methods; one of those that this engine does not implement sta
 rather than falling into the open property surface. Without that, `svPlaylist.moveTo(…)` reads as an
 empty string, dies with a bare `TypeError`, and never appears in the tally that ranks the work.
 
-Implemented today: `moveTo`, `resizeTo` (endpoint applied immediately — the tween is *not* drawn
-yet), `appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` on the playlist
-kinds including the unmodelled `ITEMSPLAYLIST`, and `close`/`minimize` on the view.
+Implemented today: `moveTo`, `resizeTo`, `alphaBlendTo` (endpoint applied immediately — the tween is
+*not* drawn yet, and its `onEndMove`/`onEndAlphaBlend` completion is W55),
+`appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` and `setColumnWidth` on the
+playlist kinds including the unmodelled `ITEMSPLAYLIST`, and `close`/`minimize` on the view.
+
+`WMPObjectModel.implementedElementMethods` is the flat set of those names, and
+`WMPJScriptCompatibility.members["element"]` is derived from it rather than restating it. That
+matters as much as the implementation: the corpus census classifies a member against that table, so
+one the runtime answers and the table does not know is measured as demand for something that already
+works. `moveTo` and `resizeTo` were counted that way from Phase 3 until W38 closed, which is part of
+why `alphaBlendTo` read as the largest row on the backlog.
+
+`alphaBlendTo(target, ms)` writes `alphaBlend`, which is the same property the scene builder inherits
+down a subtree, so a faded-in container brings its children back with it. Two details are
+load-bearing:
+
+* `alphaBlend` is in `standardElementProperties` — a write commits as a mutation even on an element
+  whose markup never authored it — but deliberately **not** in `standardNumericProperties`, because
+  an unset numeric property answers 0 and an unset `alphaBlend` is 255. `readElement` holds that
+  default. A skin stepping its own alpha (`x.alphaBlendTo(x.alphaBlend - 64, 200)`) would otherwise
+  start from invisible and never come back.
+* The endpoint is clamped to 0-255. The builder normalises by dividing by 255, so an unclamped
+  endpoint would multiply a subtree's inherited alpha past opaque.
+
+`setColumnWidth` is recognised so it stops aborting the handler that calls it, and counted
+**`inert()`**: nothing draws playlist columns. `setColumnResizeMode` predates the `inert` convention
+and is still counted live; that is a known inconsistency, not a statement that a resize mode does
+anything.
 
 ## `theme.openView`
 

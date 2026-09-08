@@ -152,7 +152,7 @@ enum WMPJScriptCompatibility {
         "media": ["name", "duration", "durationString", "getItemInfo", "getItemInfoByAtom",
                   "isReadOnly", "imageSourceWidth", "imageSourceHeight", "attributeCount"],
         "playlist": ["count", "name", "item", "attributeCount", "getAttributeName",
-                     "setColumnResizeMode"],
+                     "setColumnResizeMode", "setColumnWidth"],
         "network": ["bufferingProgress", "receptionQuality", "bandWidth", "framesSkipped",
                     "lostPackets", "receivedPackets"],
         "eq": ["enabled", "bands", "presetCount", "presetTitle", "currentPreset",
@@ -169,7 +169,10 @@ enum WMPJScriptCompatibility {
         // the runtime cannot disagree about what `mediacenter` answers. Every one of them is inert.
         "mediacenter": Set(WMPObjectModel.mediaCenterDefaults.keys).union(["getNamedString"]),
         "popup": ["appendItem", "removeAllItems", "getItem", "itemCount"],
-        "element": Set(WMPObjectModel.standardElementProperties).union(["id"])
+        // Properties *and* methods: a call the runtime answers must not be counted as demand for
+        // something unimplemented. Both halves are derived from the object model, never restated.
+        "element": Set(WMPObjectModel.standardElementProperties)
+            .union(WMPObjectModel.implementedElementMethods).union(["id"])
     ]
 
     static func supports(object: String, member: String) -> Bool {

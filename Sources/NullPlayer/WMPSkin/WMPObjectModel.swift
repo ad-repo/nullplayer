@@ -40,6 +40,9 @@ final class WMPScriptElement {
     var items: [String] = []
     /// Playlist column resize modes, by column index.
     var columnResizeModes: [Int: String] = [:]
+    /// Playlist column widths set by script, by column index. Nothing draws playlist columns yet,
+    /// so this is session state the skin can read back through its own bookkeeping and no more.
+    var columnWidths: [Int: Double] = [:]
 
     init(id: String, stableID: Int, kind: WMPElementKind,
          properties: [String: WMPJSONValue], authored: Set<String>) {
@@ -415,6 +418,10 @@ final class WMPObjectModel {
         default: break
         }
         if let value = element.properties[name] { return .value(value) }
+        // WMP's `alphaBlend` is 0-255 and an element that never authored it is fully opaque. The
+        // unset-numeric default of 0 would tell a skin reading its own element that it is invisible,
+        // and a fade written as `x.alphaBlendTo(x.alphaBlend + 32, 200)` would never leave zero.
+        if name == "alphablend" { return .value(.number(255)) }
         // The view is also a host object: `view.close()` and `view.width` reach the same receiver.
         if element.kind == .view, let host = readViewHost(name) { return host }
         if element.authored.contains(name) || Self.standardElementProperties.contains(name) {
@@ -444,12 +451,23 @@ final class WMPObjectModel {
     private func elementMethod(_ element: WMPScriptElement, _ name: String) -> String? {
         switch (element.kind, name) {
         case (.popup, "appenditem"), (.popup, "removeallitems"), (.popup, "getitem"): return name
-        case (_, "moveto"), (_, "resizeto"): return name
+        case (_, "moveto"), (_, "resizeto"), (_, "alphablendto"): return name
         case (.view, "close"), (.view, "minimize"): return name
         default:
-            return Self.isPlaylist(element.kind) && name == "setcolumnresizemode" ? name : nil
+            return Self.isPlaylist(element.kind)
+                && ["setcolumnresizemode", "setcolumnwidth"].contains(name) ? name : nil
         }
     }
+
+    /// The element methods this engine answers, on whatever kind defines them — `elementMethod` is
+    /// the kind-aware authority and this is the flat name set the corpus census classifies against.
+    /// Without it a call the runtime handles is still counted as unimplemented demand: that is how
+    /// `alphaBlendTo` came to be measured as the largest row on the backlog while `moveTo`, which
+    /// has been implemented since Phase 3, was counted beside it (W38).
+    static let implementedElementMethods: Set<String> = [
+        "moveto", "resizeto", "alphablendto", "close", "minimize",
+        "appenditem", "removeallitems", "getitem", "setcolumnresizemode", "setcolumnwidth"
+    ]
 
     /// Names WMP defines as element *methods*. One of these that this engine does not implement
     /// stays unrecognised rather than falling into the open property surface — otherwise
@@ -717,6 +735,23 @@ final class WMPObjectModel {
             _ = writeElement(element, "height",
                              .number(max(0, arguments.count > 1 ? (arguments[1].number ?? 0) : 0)))
             return .value(.null)
+        // The third of the trio, and the one the Alienware/ALX family is built out of: its big
+        // `m_anim_*` artwork hangs off subviews authored `alphaBlend="0"`, which the scene lays out
+        // and drops from the command list, and the only thing that was ever going to bring them
+        // back is this call. The endpoint is applied now, so the subtree arrives at the alpha the
+        // skin asked for without fading to it.
+        case (_, "alphablendto"):
+            _ = writeElement(element, "alphablend",
+                             .number(min(255, max(0, arguments.first?.number ?? 0))))
+            return .value(.null)
+        // Nothing draws playlist columns, so this stores what the skin asked for and is counted
+        // inert — the census keeps ranking the demand instead of losing it to a working-looking
+        // member.
+        case (_, "setcolumnwidth") where Self.isPlaylist(element.kind):
+            let column = Int(arguments.first?.number ?? 0)
+            element.columnWidths[column] = max(0, arguments.count > 1 ? (arguments[1].number ?? 0) : 0)
+            inert()
+            return .value(.null)
         default: return .unrecognised("element method")
         }
     }
@@ -778,6 +813,10 @@ final class WMPObjectModel {
     ]
 
     static let standardElementProperties: Set<String> = standardNumericProperties.union([
+        // `alphaBlend` is deliberately not in `standardNumericProperties`: it is rendered, so a
+        // write to it must commit as a mutation, but its unset value is 255 and not the 0 that set
+        // answers with. `readElement` holds that default.
+        "alphablend",
         "visible", "enabled", "down", "text", "tooltip", "image", "backgroundimage",
         "foregroundcolor", "backgroundcolor", "transparencycolor", "cursor", "sticky",
         "horizontalalignment", "verticalalignment"

@@ -113,6 +113,16 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertTrue(WMPJScriptCompatibility.supports(object: "mediacenter", member: "videoZoom"))
         XCTAssertTrue(WMPJScriptCompatibility.supports(object: "mediacenter", member: "getnamedstring"))
         XCTAssertFalse(WMPJScriptCompatibility.supports(object: "mediacenter", member: "dvdChapter"))
+        // Element *methods* count too: one the runtime answers but the table does not know is
+        // measured as demand for something that already works, which is how `alphaBlendTo` was
+        // ranked beside `moveTo` — implemented since Phase 3 — as outstanding work (W38).
+        for method in WMPObjectModel.implementedElementMethods {
+            XCTAssertTrue(WMPJScriptCompatibility.supports(object: "element", member: method),
+                          "\(method) is implemented and the census still counts it as unknown")
+            XCTAssertTrue(WMPObjectModel.elementMethodVocabulary.contains(method),
+                          "\(method) must be in the closed method vocabulary")
+        }
+        XCTAssertFalse(WMPJScriptCompatibility.supports(object: "element", member: "setFocus"))
     }
 
     /// The defect the whole phase exists for. `g_paneCurrent` is set by one click handler and read
@@ -639,6 +649,107 @@ final class WMPScriptRuntimeTests: XCTestCase {
         }
         XCTAssertEqual(resolvedCounts.count, 3)
         XCTAssertTrue(resolvedCounts.allSatisfy { $0 > 0 })
+    }
+
+    /// W38. `alphaBlendTo` is the third of WMP's element animation methods and, measured over the
+    /// 179 archives, the largest single unimplemented member on the backlog: 26 skins, 40 uses.
+    /// It is also the mechanism the Alienware/ALX family is built out of — the animation artwork
+    /// hangs off subviews authored `alphaBlend="0"`, which the builder lays out and then drops from
+    /// the command list, so until this call commits nothing brings them back.
+    ///
+    /// The endpoint is applied immediately, exactly as `moveTo`/`resizeTo` are; the tween itself is
+    /// rendering work and its completion callback is W55. What the test pins is the whole path, not
+    /// the member: the write must reach `overrides.properties` under the name the scene builder
+    /// reads, and the faded-in subtree must actually produce a paint command.
+    func testAlphaBlendToFadesInASubtreeTheSceneHadDropped() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <SUBVIEW id="pane" left="0" top="0" width="80" height="40" alphaBlend="0">
+            <TEXT id="label" left="0" top="0" width="40" height="10" value="art"/>
+          </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let label = try XCTUnwrap(skin.graph.nodes(id: "label").first)
+        let builder = WMPSceneBuilder(loadedSkin: skin)
+        let hidden = try await builder.build(viewID: "main", overrides: .empty)
+        XCTAssertFalse(hidden.commands.contains { $0.stableID == label.stableID },
+                       "an alphaBlend=0 subtree must not reach the command list to begin with")
+
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "pane",
+                         handlers: ["pane.alphaBlendTo(255, 300); pane.left = 1;"]))
+        let call = try XCTUnwrap(output.calls.first {
+            $0.path.hasSuffix("alphablendto") && $0.kind == .invoke
+        })
+        XCTAssertEqual(call.resolution, .live)
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: pane.stableID, property: "left")], 1,
+                       "the handler must keep running past the call")
+        XCTAssertEqual(output.overrides.properties[.init(stableID: pane.stableID, property: "alphablend")]?.number,
+                       255)
+        XCTAssertTrue(output.repaintNodeIDs.contains(pane.stableID))
+
+        let faded = try await builder.build(viewID: "main", overrides: output.overrides)
+        XCTAssertTrue(faded.commands.contains { $0.stableID == label.stableID },
+                      "the subtree the skin faded in is still missing from the scene")
+    }
+
+    /// The endpoint is clamped to WMP's 0-255, and an element that never authored `alphaBlend`
+    /// reads as fully opaque rather than as the 0 an unset numeric property answers — a skin that
+    /// steps its own alpha (`x.alphaBlendTo(x.alphaBlend - 64, 200)`) would otherwise start from
+    /// invisible and never come back.
+    func testAlphaBlendReadsOpaqueByDefaultAndTheEndpointIsClamped() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <SUBVIEW id="pane" left="0" top="0" width="80" height="40"/>
+        </VIEW></THEME>
+        """)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "pane",
+                         handlers: ["pane.top = pane.alphaBlend; pane.alphaBlendTo(400, 100);"]))
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: pane.stableID, property: "top")], 255,
+                       "an unauthored alphaBlend must read opaque")
+        XCTAssertEqual(output.overrides.properties[.init(stableID: pane.stableID, property: "alphablend")]?.number,
+                       255, "the endpoint must be clamped to WMP's 0-255")
+        await session.teardown()
+    }
+
+    /// The other half of W38. `setColumnWidth` is recognised on the playlist kinds so it stops
+    /// aborting the handler that calls it, but nothing draws playlist columns, so it is counted
+    /// **inert** — the census keeps ranking the demand instead of losing it to a member that reads,
+    /// from every instrument, exactly like a working one.
+    func testSetColumnWidthIsRecognisedOnPlaylistsAndCountedInert() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <PLAYLIST id="pl" left="0" top="0" width="80" height="40"/>
+          <SUBVIEW id="pane" left="0" top="50" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onLoad", targetID: "main",
+                         handlers: ["pl.setColumnWidth(0, 120); pane.left = 3;",
+                                    "pane.setColumnWidth(0, 120); pane.top = 7;"]))
+        let call = try XCTUnwrap(output.calls.first {
+            $0.path.hasSuffix("setcolumnwidth") && $0.kind == .invoke
+        })
+        XCTAssertEqual(call.resolution, .inert)
+        XCTAssertTrue(call.recognised, "an inert member must not abort the handler that touched it")
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: pane.stableID, property: "left")], 3)
+        // The method surface stays closed on the kinds WMP does not define it for.
+        XCTAssertNil(output.overrides.geometry[.init(stableID: pane.stableID, property: "top")],
+                     "setColumnWidth on a SUBVIEW must stay unrecognised")
+        XCTAssertTrue(output.calls.contains {
+            $0.path.hasSuffix("setcolumnwidth") && $0.kind == .read && !$0.recognised
+        }, "the SUBVIEW's method read must stay unrecognised")
+        await session.teardown()
     }
 
     private func fixtureScript(_ name: String) throws -> String {
