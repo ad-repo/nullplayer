@@ -81,6 +81,47 @@ Response contains all groups and their member zones.
 
 ## User Interface
 
+### Sonos Rooms window
+
+Open **Windows → Sonos Rooms** or **Output → Sonos → Rooms & Volume…**. The context-menu
+**Output Devices → Sonos** submenu exposes the same entry. The existing Sonos submenu remains
+available even before discovery finds a room, including its **Refresh** command.
+
+The window is a resizable center-stack room mixer. Its scrollable list has no fixed room limit;
+**Refresh** and **Start/Stop Casting** stay in a fixed footer. Each room has a selection checkbox,
+an independent 0–100 volume slider, a numeric level, and selection/error status. Volume is available
+before casting as well as during a cast. An unreadable volume is shown as unavailable, not as zero.
+The empty state retains Refresh. Native controls use a light/dark appearance matched to the skin;
+sliders use the skin's text color.
+
+- `Casting/SonosRoomMixer.swift` owns shared room selection/start actions and per-room volume state.
+  Both the existing menu and the window call these actions, including coordinator transfer when
+  removing the current coordinator. Starting a cast resolves an actual selected room and makes it
+  standalone before starting, so an unselected existing group is not used as a fallback target.
+- Room volume uses **RenderingControl**, `Channel=Master`, on the room representative's own
+  renderer. `UPnPManager.getSonosRoomVolume` / `setSonosRoomVolume` do not require an active session
+  and never send `SetGroupVolume`. The player's existing group-volume path is unchanged.
+- Writes are single-flight and latest-value-wins **per room**, with SOAP retries disabled for
+  superseded writes. Polling uses at most four concurrent reads; per-room revision checks prevent
+  a read begun before a slider edit from replacing the new value. One failed room does not disable
+  other rooms. Refresh retries discovery as well as topology and levels.
+- `Windows/Sonos/` owns the controller and shared controls; `Windows/ModernSonos/` supplies Original
+  and Metal chrome. `.wal` uses the `.sonos` hosted-window registry entry and a chromeless
+  `WinampModernHostedSurface`, with the standard hosted drag helper and palette.
+- WindowManager registers `.sonos` as a center-stack sizing policy with a double-height baseline.
+  User-expanded height is preserved on restore; the window participates in snapping, scaling,
+  stack collapse, Compact Mode, and live UI rebuilding. AppState stores visibility and frame with
+  backward-compatible decoding. Speaker volume is always read from the speaker, never restored
+  from saved window state.
+- Polling belongs to the visible view and is suspended on hide, minimize, occlusion, and teardown.
+  Volume writes belong to the mixer so an accepted slider edit can finish across a UI rebuild.
+
+`SonosRoomMixerTests` covers independent room writes, stale-read protection, bounded polling with
+32 rooms, scrolling to the last room, footer visibility with no rooms, restored sizing, and the
+Sonos menu. Set `SONOS_RENDER_DUMP` to an existing directory when running the tests to render
+empty and 32-room fixtures for Classic, Original, and Metal. These are rendering fixtures, not
+proof of playback or hardware volume control.
+
 ### Menu Structure
 
 ```
@@ -199,7 +240,9 @@ Sonos uses **GroupRenderingControl** (not `RenderingControl`) so that volume/mut
 | Set mute | `SetGroupMute` (no Channel arg) | `SetMute` (Channel=Master) |
 | Service type | `urn:schemas-upnp-org:service:GroupRenderingControl:1` | `urn:schemas-upnp-org:service:RenderingControl:1` |
 
-This is handled in `UPnPManager.setVolume(_:)`, `getVolume()`, and `setMute(_:)` by branching on `session.device.type == .sonos`.
+This group-level behavior is handled in `UPnPManager.setVolume(_:)`, `getVolume()`, and `setMute(_:)`
+by branching on `session.device.type == .sonos`. The room mixer's independent RenderingControl
+path is described above; do not route a room slider through these group methods.
 
 ### Playback State Monitoring
 
@@ -427,6 +470,16 @@ For non-Plex backends, preserve both `Track.contentType` and sample rate from se
 > Scan functions only reject _definitively_ incompatible formats (ALAC, AIFF, WavPack, Monkey's Audio, known >48 kHz SR). They pass nil-SR lossless tracks through so the cast function can fetch and decide. Never use strict mode in a skip/scan loop — it causes Plex FLAC tracks with nil SR to be skipped silently without a fetch attempt.
 
 ## Troubleshooting
+
+### Debugging a live defect
+
+For a screen-only defect, follow the live-defect process in
+[`winamp-modern-skin-guide/reference/harness.md`](../winamp-modern-skin-guide/reference/harness.md).
+Identify the running executable by PID and checkout before comparing it to a worktree build.
+Measure actual window/control frames, capture the window, and verify Refresh in both an empty
+list and a populated one. Check light/dark native control appearance as well as skin colors;
+a control with a valid frame can still be unreadable. For volume, read back the edited room and
+an untouched room to distinguish individual RenderingControl from group-volume changes.
 
 ### Confirming a cast is live from outside the app — use `nettop`, not `lsof`
 

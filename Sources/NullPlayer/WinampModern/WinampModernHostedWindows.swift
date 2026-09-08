@@ -68,6 +68,7 @@ enum WinampModernSurfaceID: Hashable, CustomStringConvertible {
 }
 
 enum WinampModernHostedWindowID: String, CaseIterable {
+    case sonos
     case spectrum
     case equalizer
     case cava
@@ -99,6 +100,18 @@ struct WinampModernHostedWindowDefinition {
 
 enum WinampModernHostedWindowRegistry {
     static let all: [WinampModernHostedWindowDefinition] = [
+        WinampModernHostedWindowDefinition(
+            id: .sonos, title: "Sonos Rooms",
+            defaultSize: CGSize(width: 275, height: 250),
+            minimumSize: CGSize(width: 250, height: 160), maximumSize: nil,
+            stackPolicy: WinampModernHostedStackPolicy(participatesInCenterStack: true,
+                                                       preferredHeightMultiplier: 2),
+            makeSurface: { context in
+                let view = SonosWindowView(frame: NSRect(x: 0, y: 0, width: 275, height: 250))
+                view.configureForHostedSurface(context: context)
+                return view
+            }
+        ),
         WinampModernHostedWindowDefinition(
             id: .spectrum,
             title: "Spectrum Analyzer",
