@@ -464,9 +464,11 @@ enum WMPHarness {
     private static func measure(view viewID: String, skin: WMPLoadedSkin, builder: WMPSceneBuilder,
                                 imageStore: WMPImageStore, pass: WMPScriptPass,
                                 dump: URL?, probe: WMPProbe) async throws {
-        // The size the scene is measured at. `WMP_RENDER_SIZE` reproduces the user's window, which
-        // for an expression-driven layout is a different layout, not the same one scaled.
-        var scene = try await builder.build(viewID: viewID, requestedSize: probe.requestedSize)
+        // A view opens at its own size and is then dragged, so that is the order this measures in:
+        // `onLoad` runs against the layout the skin authored, and `WMP_RENDER_SIZE` is a second
+        // pass over it. For an expression-driven layout that is a different layout, not the same
+        // one scaled, and the skin's `onResize` is how it gets there.
+        var scene = try await builder.build(viewID: viewID)
 
         var output: WMPScriptOutput?
         if let session = pass.session {
@@ -479,13 +481,28 @@ enum WMPHarness {
                                             snapshot: WMPHostSnapshot(),
                                             event: eventFor(name: "onLoad", skin: skin, viewID: viewID),
                                             geometry: scene.scriptGeometry)
-            if probe.requestedSize != nil {
-                // A resize is a second layout pass, not a re-scale: the expressions must run again
-                // against the new `view.width`/`view.height` before anything is measured.
-                output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
-                                                snapshot: WMPHostSnapshot(),
-                                                event: eventFor(name: "onResize", skin: skin, viewID: viewID),
-                                                geometry: scene.scriptGeometry)
+            if let requested = probe.requestedSize {
+                // A resize is a second layout pass, not a re-scale: the expressions run again
+                // against the new `view.width`/`view.height`, and then the skin's own `onResize`
+                // runs against the frames that came out — dispatched to the objects whose box
+                // actually moved, exactly as `WMPMainWindowController` does it on a real drag.
+                //
+                // The transaction runs whether or not a handler exists, exactly as the app's
+                // `renderCurrentSize` does: an expression is re-read from `view.width` on every
+                // resize, and a view with no `onResize` still relies on that.
+                let resized = try await builder.build(viewID: viewID, requestedSize: requested,
+                                                      overrides: output?.overrides ?? .empty)
+                let event = WMPMainWindowController.resizeEvent(in: skin, viewID: viewID,
+                                                                before: scene, after: resized)
+                WMPHarnessOutput.emit("RESIZE \(viewID): "
+                    + "\(WMPNumber.format(scene.canvasSize.width))x\(WMPNumber.format(scene.canvasSize.height))"
+                    + " -> \(WMPNumber.format(resized.canvasSize.width))x\(WMPNumber.format(resized.canvasSize.height))"
+                    + ", handlers=\(event?.handlers.count ?? 0)")
+                output = await session.transact(skin: skin, viewID: viewID,
+                                                size: resized.canvasSize,
+                                                snapshot: WMPHostSnapshot(), event: event,
+                                                geometry: resized.scriptGeometry)
+                scene = resized
             }
             if probe.settleSeconds > 0, let timer = eventFor(name: "onTimer", skin: skin, viewID: viewID) {
                 // The view's own timer, run for real rather than fired once.
@@ -599,10 +616,19 @@ enum WMPHarness {
         let report = skin.compatibilityReport
         let tags = report.tags.filter { !supportedTags.contains($0.name) }
         let members = report.members.filter { !supportsMember($0.name) }
+        // Events were collected and compared all along and never printed, so the largest single
+        // block of Class A demand in the corpus was invisible to the only instrument that ranks it:
+        // `onResize` sat unrecognised through three phases with 47 uses across 19 archives, and
+        // `value_onchange` still does with 2,207 across 174. A tally nothing emits is not a tally.
+        let events = report.events.filter { !WMPCorpusReportHarness.supportedEvents.contains($0.name) }
+        let missing = skin.resources.filter { $0.status == .missing }.count
+        let unsupported = skin.resources.filter { $0.status == .unsupported }.count
         var lines = ["COMPAT unknown-tags=\(tags.count) unknown-members=\(members.count) "
-            + "resources-missing=\(skin.resources.filter { $0.status == .missing }.count) "
-            + "resources-unsupported=\(skin.resources.filter { $0.status == .unsupported }.count)"]
+            + "unknown-events=\(events.count) "
+            + "resources-missing=\(missing) resources-unsupported=\(unsupported)"]
         lines += tags.sorted { $0.count > $1.count }.map { "UNKNOWN tag \($0.name) ×\($0.count)" }
+        lines += events.sorted { $0.count > $1.count }.prefix(40)
+            .map { "UNKNOWN event \($0.name) ×\($0.count)" }
         lines += members.sorted { $0.count > $1.count }.prefix(40)
             .map { "UNKNOWN member \($0.name) ×\($0.count)" }
         return lines

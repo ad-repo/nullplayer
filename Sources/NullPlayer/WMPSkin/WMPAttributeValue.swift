@@ -40,8 +40,15 @@ enum WMPAttributeParser {
         "mappingcolor", "transparencycolor", "clippingcolor", "backgroundcolor",
         "foregroundcolor", "color", "bordercolor"
     ]
+    /// An attribute here becomes a `.handler` the dispatcher can find. A name missing from it is
+    /// not a handler that fails — it is markup classified as a literal, invisible to every tally,
+    /// which is why `onResize` went unnoticed through Phase 3: 47 uses across 19 skins sitting in
+    /// the graph as `.literal` and `.jScript` text nothing would ever run. The corpus authors far
+    /// more of these than are listed (`value_onchange` alone is 2,207 uses across 174 skins); each
+    /// one also needs a dispatch site, so they are ranked in `WMP_TASKS.md` rather than added here
+    /// where they would only look implemented.
     private static let handlerNames: Set<String> = [
-        "onclick", "onchange", "onload", "onclose", "ontimer",
+        "onclick", "onchange", "onload", "onclose", "ontimer", "onresize",
         "onmouseover", "onmouseout", "onmousedown", "onmouseup",
         "openstatechange", "playstatechange", "status_onchange", "modechange",
         "buffering_onchange", "reception_onchange"

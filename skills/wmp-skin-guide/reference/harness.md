@@ -54,7 +54,7 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
 | `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]` | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after |
 | `WMP_RENDER_SETTLE` | seconds | run the **view's own timer loop** for that long before measuring — at the period the skin asks for, honouring every `setViewTimerInterval` its handlers post back, rebuilding the scene between ticks |
-| `WMP_RENDER_SIZE` | `<W>x<H>` | build at that size and re-drive `onResize` — an expression-driven layout is a *different* layout, not the same one scaled |
+| `WMP_RENDER_SIZE` | `<W>x<H>` | `RESIZE` — lay the view out at its **own** size first, run `onLoad` there, then resize to this and re-drive `onResize`, which is the order a user produces. An expression-driven layout is a *different* layout, not the same one scaled. The transaction runs whether or not the view declares an `onResize`, because an expression re-reads `view.width` either way; `handlers=` is how many the changed-object set actually raised, and `handlers=0` with a skin you know authors one means nothing moved |
 
 `WMP_TEST_WMZ` and `WMP_RENDER_DUMP_DIR` are accepted aliases for `WMP_SKIN` and `WMP_RENDER_DUMP`
 so the Phase 0–8 handoff docs' invocations still run. Use the names in the table.
@@ -89,13 +89,15 @@ SKIN <file.wmz>
 SKIN <file.wmz> FAILED <error>
 LOAD definition=<p> encoding=<e> entries=<n> bytes=<n> views=<n> nodes=<n> scripts=<n> resources=<n> loadms=<x>
 FINDING [<severity>] <WMP00xx> ×<n> <message>
-COMPAT unknown-tags=<n> unknown-members=<n> resources-missing=<n> resources-unsupported=<n>
+COMPAT unknown-tags=<n> unknown-members=<n> unknown-events=<n> resources-missing=<n> resources-unsupported=<n>
 UNKNOWN tag <name> ×<n>
+UNKNOWN event <name> ×<n>
 UNKNOWN member <path> ×<n>
 SCRIPTS programs=<n> bytes=<n> runtime=<available|unavailable (why)>
 SCRIPT <path>: bytes=<n> handlers=[…]
 SCRIPT inline: <event>×<n> …
 SCRIPT-DIAG <view> [<code>] <message>
+RESIZE <view>: <W>x<H> -> <W>x<H>, handlers=<n>
 RENDER-DUMP <view>: <W>x<H>, <n> nodes, <c> commands, <h> hits, <w> widgets, <u> unresolved
 RENDER-DUMP <view> FAILED <error>
 WIDGET <view>/<stableID> <kind> id=<id> frame=<f> clip=<c> visible=<f|none>

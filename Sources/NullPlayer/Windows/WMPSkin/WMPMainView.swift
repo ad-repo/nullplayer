@@ -1,5 +1,16 @@
 import AppKit
 
+/// Which window edges a borderless-window resize drag is moving.
+struct WMPWindowEdges: OptionSet {
+    let rawValue: Int
+    static let left = WMPWindowEdges(rawValue: 1 << 0)
+    static let right = WMPWindowEdges(rawValue: 1 << 1)
+    /// Named for the *window*: `.top` is the screen-upward edge, which in this flipped view is the
+    /// one nearest `bounds.minY`.
+    static let top = WMPWindowEdges(rawValue: 1 << 2)
+    static let bottom = WMPWindowEdges(rawValue: 1 << 3)
+}
+
 final class WMPMainView: NSView {
     var onInteractionChanged: ((WMPInteractionState, Set<Int>) -> Void)?
     var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
@@ -16,6 +27,16 @@ final class WMPMainView: NSView {
     private var tracking: NSTrackingArea?
     private var isDraggingWindow = false
     private var dragStart = NSPoint.zero
+    /// Which window edges a drag is moving, the frame it started from, and where the pointer was.
+    ///
+    /// A `.wmz` window is `.borderless`, and a borderless window has no frame view — so AppKit
+    /// draws and hit-tests no resize edge for it, `.resizable` in the style mask notwithstanding.
+    /// Before this there was simply no way to resize a skin in WMP mode: `windowWillResize` clamped
+    /// a drag that could never begin, and every expression-driven layout in the corpus was stuck at
+    /// the size its markup opened with.
+    private var resizeEdges: WMPWindowEdges = []
+    private var resizeStartFrame = NSRect.zero
+    private var resizeStartMouse = NSPoint.zero
     private var widgetViews: [Int: NSView] = [:]
     private var widgetValues: [Int: Double] = [:]
     private var currentSnapshot = WMPHostSnapshot()
@@ -149,13 +170,22 @@ final class WMPMainView: NSView {
         }
     }
 
-    override func mouseMoved(with event: NSEvent) { updateHover(event) }
+    override func mouseMoved(with event: NSEvent) {
+        updateResizeCursor(convert(event.locationInWindow, from: nil))
+        updateHover(event)
+    }
     override func mouseEntered(with event: NSEvent) { updateHover(event) }
     override func mouseExited(with event: NSEvent) { notify(interaction.move(over: nil)) }
 
     override func mouseDown(with event: NSEvent) {
         guard let scene else { return }
         let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
+        // The edge band is consulted only where hit testing found no control, so a button sitting
+        // against the window edge keeps every pixel it had.
+        if target == nil {
+            let edges = edges(at: convert(event.locationInWindow, from: nil))
+            if !edges.isEmpty { beginWindowResize(edges); return }
+        }
         guard let target else { beginWindowDrag(event); return }
         capturedTarget = target
         notify(interaction.press(target))
@@ -166,6 +196,7 @@ final class WMPMainView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if !resizeEdges.isEmpty { dragWindowResize(); return }
         if isDraggingWindow { dragWindow(event); return }
         guard let capturedTarget else { return }
         if isSlider(capturedTarget) { performSlider(capturedTarget, event: event) }
@@ -173,6 +204,7 @@ final class WMPMainView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if !resizeEdges.isEmpty { resizeEdges = []; return }
         if isDraggingWindow { finishWindowDrag(); return }
         guard let scene else { return }
         let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
@@ -313,6 +345,64 @@ final class WMPMainView: NSView {
     private func notify(_ changed: Set<Int>) {
         guard !changed.isEmpty else { return }
         onInteractionChanged?(interaction, changed)
+    }
+
+    // MARK: Resizing a borderless skin window
+
+    /// The band, in view points, that counts as an edge. Wide enough to hit on a shaped window and
+    /// narrow enough that it is only ever reached where no control is.
+    private static let resizeBandWidth: CGFloat = 6
+
+    private func edges(at point: NSPoint) -> WMPWindowEdges {
+        guard scene?.isResizable == true, bounds.width > 0, bounds.height > 0 else { return [] }
+        let band = Self.resizeBandWidth
+        var edges: WMPWindowEdges = []
+        if point.x <= band { edges.insert(.left) }
+        if point.x >= bounds.maxX - band { edges.insert(.right) }
+        // The view is flipped, so its y grows downward while the window's grows upward.
+        if point.y <= band { edges.insert(.top) }
+        if point.y >= bounds.maxY - band { edges.insert(.bottom) }
+        return edges
+    }
+
+    private func beginWindowResize(_ edges: WMPWindowEdges) {
+        guard let window else { return }
+        resizeEdges = edges
+        resizeStartFrame = window.frame
+        resizeStartMouse = NSEvent.mouseLocation
+    }
+
+    /// Tracked in screen coordinates on purpose: dragging a left or top edge moves the window's
+    /// origin, which moves `locationInWindow` under a stationary pointer and makes the drag run
+    /// away from the cursor.
+    private func dragWindowResize() {
+        guard let window, let limits = scene?.resizeLimits else { return }
+        let mouse = NSEvent.mouseLocation
+        let dx = mouse.x - resizeStartMouse.x, dy = mouse.y - resizeStartMouse.y
+        var width = resizeStartFrame.width, height = resizeStartFrame.height
+        if resizeEdges.contains(.right) { width += dx }
+        if resizeEdges.contains(.left) { width -= dx }
+        if resizeEdges.contains(.top) { height += dy }
+        if resizeEdges.contains(.bottom) { height -= dy }
+        let clamped = limits.clamp(WMPSize(width: width, height: height))
+        // The anchored edge is the one not being dragged, so it must not move when the clamp bites.
+        var frame = resizeStartFrame
+        frame.size = NSSize(width: clamped.width, height: clamped.height)
+        if resizeEdges.contains(.left) { frame.origin.x = resizeStartFrame.maxX - clamped.width }
+        if resizeEdges.contains(.bottom) { frame.origin.y = resizeStartFrame.maxY - clamped.height }
+        guard frame != window.frame else { return }
+        window.setFrame(frame, display: true)
+    }
+
+    private func updateResizeCursor(_ point: NSPoint) {
+        let edges = edges(at: point)
+        if edges.isEmpty {
+            if scene != nil { NSCursor.arrow.set() }
+            return
+        }
+        // AppKit publishes no diagonal resize cursor, so a corner takes the axis it is widest in.
+        let horizontal = edges.contains(.left) || edges.contains(.right)
+        (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set()
     }
 
     private func beginWindowDrag(_ event: NSEvent) {

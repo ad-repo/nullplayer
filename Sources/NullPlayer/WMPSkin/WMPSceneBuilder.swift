@@ -131,6 +131,23 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
         }
 
+        /// Did this coordinate come from something that already knows the view's current size?
+        ///
+        /// A script override and a `JScript:`/`wmpprop:` attribute both do — they were evaluated
+        /// against this canvas. So does a bare literal the static grammar has to parse rather than
+        /// read (`left="view.width-10"`, which the corpus writes without the prefix). Only a plain
+        /// finite number, or an absent attribute, is geometry alignment is entitled to move.
+        func isComputed(_ node: WMPNode, _ name: String) -> Bool {
+            if overrides.geometry[WMPScenePropertyAddress(stableID: node.stableID,
+                                                          property: name.lowercased())] != nil {
+                return true
+            }
+            guard let attribute = node.attribute(named: name) else { return false }
+            guard case let .literal(raw) = attribute.value else { return true }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Double(trimmed).map { !$0.isFinite } ?? true
+        }
+
         func resource(_ node: WMPNode, names: [String]) throws -> (String, String)? {
             try resolveResource(node, names: names)
         }
@@ -157,8 +174,15 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
 
             let frame: WMPRect
+            // The size this node would have had if its parent had not grown: the baseline every
+            // child's alignment delta is measured against. It is *not* re-read from the markup
+            // afterwards, because a node sized by its own artwork has no markup to re-read and the
+            // frame is by then the stretched one — which made the delta zero and stopped alignment
+            // cascading past any intrinsically sized container.
+            let ownAuthoredSize: WMPSize
             if isRoot {
                 frame = canvasRect
+                ownAuthoredSize = WMPSize(width: width, height: height)
             } else {
                 let leftAttribute = node.attribute(named: "left")
                 let topAttribute = node.attribute(named: "top")
@@ -203,22 +227,33 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     }
                     return
                 }
+                ownAuthoredSize = WMPSize(width: width, height: height)
+                // **Alignment moves geometry the skin left as a literal, and nothing else.**
+                //
+                // A resizing `.wmz` states the same intent twice: WoW's `pl5_1` authors
+                // `left="JScript:view.width-202"` *and* `horizontalAlignment="right"`, and so do its
+                // six siblings and `plFrame` with `stretch`. The expression already reads the new
+                // `view.width`, so adding the parent's growth on top counts the resize twice —
+                // measured at exactly +200 on a 453→653 drag, which threw the whole right-hand
+                // chrome (close button, search box, resize grip) off the canvas and read as "the
+                // window resizes and the skin doesn't". The literal cases are untouched: `pl8_1`
+                // has `left=208` with no `width`, and its `stretch` still fills the top tile.
                 let horizontal = WMPAxisAlignment(horizontal: literalString(node, "horizontalAlignment"))
                 let vertical = WMPAxisAlignment(vertical: literalString(node, "verticalAlignment"))
                 let deltaWidth = parentFrame.width - parentAuthoredSize.width
                 let deltaHeight = parentFrame.height - parentAuthoredSize.height
                 var x = left, y = top
                 switch horizontal {
-                case .center: x += deltaWidth / 2
-                case .trailing: x += deltaWidth
-                case .stretch: width = max(0, width + deltaWidth)
-                case .leading: break
+                case .center where !isComputed(node, "left"): x += deltaWidth / 2
+                case .trailing where !isComputed(node, "left"): x += deltaWidth
+                case .stretch where !isComputed(node, "width"): width = max(0, width + deltaWidth)
+                default: break
                 }
                 switch vertical {
-                case .center: y += deltaHeight / 2
-                case .trailing: y += deltaHeight
-                case .stretch: height = max(0, height + deltaHeight)
-                case .leading: break
+                case .center where !isComputed(node, "top"): y += deltaHeight / 2
+                case .trailing where !isComputed(node, "top"): y += deltaHeight
+                case .stretch where !isComputed(node, "height"): height = max(0, height + deltaHeight)
+                default: break
                 }
                 frame = WMPRect(x: parentFrame.x + x, y: parentFrame.y + y, width: width, height: height)
             }
@@ -348,12 +383,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
 
             let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
-            let authoredSize = isRoot
-                ? WMPSize(width: width, height: height)
-                : WMPSize(width: parseDimension(node, "width") ?? frame.width,
-                          height: parseDimension(node, "height") ?? frame.height)
             for child in node.children.sorted(by: nodeOrder) {
-                try walk(child, parentFrame: frame, parentAuthoredSize: authoredSize,
+                try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip)
             }
         }
@@ -377,7 +408,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
         } ?? allDirty
         let metrics = WMPSceneMetrics(resolvedNodeCount: resolvedNodes.count,
             unresolvedNodeCount: unresolvedNodes.count, visibleBounds: allDirty)
+        // `resizAble` is the corpus's dominant spelling and `resizable` the other; both appear in
+        // the same archive. Absent is false — a borderless window gets its resize edges from this
+        // and from nothing else.
+        let resizable = (literalString(view, "resizAble") ?? literalString(view, "resizable"))?
+            .caseInsensitiveCompare("true") == .orderedSame
         return WMPScene(viewID: registration.id, canvasSize: canvas, resizeLimits: resizeLimits,
+            isResizable: resizable,
             commands: commands, hits: hits, widgets: widgets, geometries: geometries, unresolved: unresolved,
             diagnostics: diagnostics, dirtyBounds: dirty, metrics: metrics,
             wasBuiltOnMainThread: Thread.isMainThread)

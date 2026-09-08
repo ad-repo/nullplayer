@@ -292,9 +292,15 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         "foregroundcolor", "color", "justification", "scriptfile"
     ]
 
-    private static let supportedEvents: Set<String> = [
+    /// An event belongs here only when the engine **dispatches** it. Being parsed as a handler is
+    /// not enough: `onmouseover`/`onmouseout` are classified by `WMPAttributeParser` and no call
+    /// site ever raises them, so they stay unknown here and keep ranking as measured demand. That
+    /// is the whole point of the list — a name added for tidiness makes the tally lie.
+    /// Internal rather than private: the probe harness prints the unknown remainder and must not
+    /// restate this list, or the tally and the report can disagree about what is implemented.
+    static let supportedEvents: Set<String> = [
         "onload", "onclose", "ontimer", "onmousedown", "onmouseup", "onclick", "onchange",
-        "openstatechange", "playstatechange", "status_onchange", "modechange", "buffering_onchange",
-        "reception_onchange", "viewchange"
+        "onresize", "openstatechange", "playstatechange", "status_onchange", "modechange",
+        "buffering_onchange", "reception_onchange", "viewchange"
     ]
 }

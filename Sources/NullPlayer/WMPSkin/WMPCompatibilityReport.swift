@@ -27,7 +27,14 @@ struct WMPCompatibilityReport: Equatable, Codable {
             for attribute in node.attributes {
                 let name = attribute.name.lowercased()
                 attributeCounts[name, default: 0] += 1
-                if name.hasPrefix("on") { eventCounts[name, default: 0] += 1 }
+                // WMP writes an event two ways and the corpus uses both: `onClick` and
+                // `value_onChange`. Counting only the `on…` spelling hid the larger half — 2,207
+                // `value_onchange` attributes across 174 archives were never in the event tally at
+                // all, so the demand for them could not rank against anything. This is the same
+                // vocabulary `collectEvents` already recognises in script text.
+                if name.hasPrefix("on") || name.hasSuffix("_onchange") {
+                    eventCounts[name, default: 0] += 1
+                }
                 switch attribute.value {
                 case let .jScript(source), let .handler(_, source):
                     Self.collectMembers(in: source, into: &memberCounts)

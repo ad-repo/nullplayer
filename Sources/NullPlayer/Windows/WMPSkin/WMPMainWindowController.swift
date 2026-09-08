@@ -386,8 +386,23 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     resolvedOverrides = output.overrides
                     scriptOutput = output
                 }
-                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                var scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID, requestedSize: requested, overrides: resolvedOverrides)
+                // The resize is now laid out, so what moved is a fact rather than a guess, and the
+                // skin's own `onResize` can run against it. Corona's `EqResize` re-spaces its ten
+                // sliders from `svEqualizerTopMiddle.width`; without this they stay at the spacing
+                // the window opened with and slide out from under their labels.
+                if let scriptRuntime, let self,
+                   let event = Self.resizeEvent(in: skin, viewID: viewID,
+                                                before: self.activeScene, after: scene) {
+                    let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
+                        size: scene.canvasSize, snapshot: self.host.snapshot, event: event,
+                        geometry: scene.scriptGeometry)
+                    resolvedOverrides = output.overrides
+                    scriptOutput = output
+                    scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                        .build(viewID: viewID, requestedSize: requested, overrides: resolvedOverrides)
+                }
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: self?.renderBackingScale ?? 1)
                 try Task.checkCancellation()
@@ -633,6 +648,43 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }), case let .literal(raw) = attribute.value,
               let milliseconds = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return 0 }
         return max(0, milliseconds)
+    }
+
+    /// The `onResize` dispatch for one completed relayout, or `nil` when there is nothing to say.
+    ///
+    /// WMP hands `onResize` to an object whose *own* box changed, not to every object in the view:
+    /// 19 corpus skins author 49 of these, and Corona alone authors one on the view (its transport
+    /// readout) and one on the equaliser subview (`EqResize`, which re-spaces the ten sliders from
+    /// `svEqualizerTopMiddle.width`). Firing both on every window resize would run the equaliser's
+    /// layout pass while the drawer is shut; firing neither leaves the sliders where the window
+    /// opened. So the changed set is read off the two scenes — the frames the builder actually
+    /// resolved — rather than inferred from which attributes carry an expression.
+    ///
+    /// Handlers are collected in document order, and the whole thing is skipped when the view
+    /// declares no `onResize` at all, which is 161 of the 180 archives: a resize then costs one
+    /// scene build exactly as it did before.
+    nonisolated static func resizeEvent(in skin: WMPLoadedSkin, viewID: String,
+                            before: WMPScene?, after: WMPScene) -> WMPJScriptEvent? {
+        guard !handlers(in: skin, event: "onResize", targetID: nil, viewID: viewID).isEmpty,
+              let before, before.viewID.caseInsensitiveCompare(after.viewID) == .orderedSame
+        else { return nil }
+        var changed = Set<Int>()
+        if before.canvasSize != after.canvasSize, let view = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node {
+            changed.insert(view.stableID)
+        }
+        for (stableID, geometry) in after.geometries
+        where before.geometries[stableID]?.localFrame != geometry.localFrame {
+            changed.insert(stableID)
+        }
+        guard !changed.isEmpty else { return nil }
+        let sources = skin.graph.allNodes.filter { changed.contains($0.stableID) }.flatMap {
+            handlers(in: skin, event: "onResize", targetID: nil,
+                     targetStableID: $0.stableID, viewID: viewID)
+        }
+        guard !sources.isEmpty else { return nil }
+        return WMPJScriptEvent(name: "resize", targetID: nil, handlers: sources)
     }
 
     static func handlers(in skin: WMPLoadedSkin, event: String, targetID: String?,

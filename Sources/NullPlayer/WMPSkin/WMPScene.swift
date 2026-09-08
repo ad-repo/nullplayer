@@ -100,6 +100,11 @@ struct WMPScene: Hashable, Codable {
     let viewID: String
     let canvasSize: WMPSize
     let resizeLimits: WMPResizeLimits
+    /// The view's authored `resizable`/`resizAble`. A `.wmz` window is borderless, so AppKit
+    /// supplies no resize edge of its own and the affordance has to be drawn from this: 477 of the
+    /// corpus's 596 views state it, and it is what says whether the window has draggable edges at
+    /// all. Absent means false, as in WMP — never invent a resize handle the skin did not ask for.
+    let isResizable: Bool
     let commands: [WMPPaintCommand]
     let hits: [WMPHitMetadata]
     let widgets: [WMPWidget]
@@ -111,11 +116,13 @@ struct WMPScene: Hashable, Codable {
     let wasBuiltOnMainThread: Bool
 
     init(viewID: String, canvasSize: WMPSize, resizeLimits: WMPResizeLimits,
+         isResizable: Bool = false,
          commands: [WMPPaintCommand], hits: [WMPHitMetadata], widgets: [WMPWidget] = [],
          geometries: [Int: WMPResolvedGeometry], unresolved: [WMPUnresolvedGeometry],
          diagnostics: [WMPDiagnostic], dirtyBounds: WMPRect?, metrics: WMPSceneMetrics,
          wasBuiltOnMainThread: Bool) {
         self.viewID = viewID; self.canvasSize = canvasSize; self.resizeLimits = resizeLimits
+        self.isResizable = isResizable
         self.commands = commands; self.hits = hits; self.widgets = widgets
         self.geometries = geometries; self.unresolved = unresolved; self.diagnostics = diagnostics
         self.dirtyBounds = dirtyBounds; self.metrics = metrics
