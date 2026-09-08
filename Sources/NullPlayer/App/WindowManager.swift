@@ -4563,6 +4563,14 @@ class WindowManager {
             // window and its contents change together.
             controller.applyUIScale(scale)
             mainTargetSize = controller.mainWindowSize(atScale: scale) ?? mainWindow.frame.size
+        } else if uiMode.controllerFamily == .wmp,
+                  let controller = mainWindowController as? WMPMainWindowController {
+            // A `.wmz` window is sized by the skin's own view, exactly as a `.wal` one is, so UI
+            // Size multiplies that rather than `Skin.mainWindowSize`. The controller keeps the
+            // scene on the skin's authored pixel grid and carries the multiplier on the window
+            // frame and the rasterization scale alone.
+            controller.applyUIScale(scale)
+            mainTargetSize = controller.mainWindowSize(atScale: scale) ?? mainWindow.frame.size
         } else if runningModernMode {
             mainTargetSize = NSSize(width: ModernSkinElements.mainWindowSize.width,
                                     height: fullMainHeightForCurrentScale())
@@ -4574,8 +4582,12 @@ class WindowManager {
         let mainAdjustedSize = mainTargetSize
         
         // Update minSize. A `.wal` skin declares its own `minimum_w`/`minimum_h` and may be freely
-        // resizable, so pinning the minimum to the current size would take that away.
-        if uiMode != .winampModern { mainWindow.minSize = mainAdjustedSize }
+        // resizable, so pinning the minimum to the current size would take that away. A `.wmz`
+        // skin declares the same thing as `WMPResizeLimits`, enforced in its own
+        // `windowWillResize`, and is excluded for the same reason.
+        if uiMode != .winampModern, uiMode.controllerFamily != .wmp {
+            mainWindow.minSize = mainAdjustedSize
+        }
 
         // Suppress windowDidMove → windowWillMove feedback during programmatic layout.
         // Animated setFrame fires windowDidMove on every display-link tick, which triggers

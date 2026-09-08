@@ -989,7 +989,7 @@ class AppStateManager {
             .flatMap(VisualizationType.init(rawValue:)) ?? .projectM
         let projectMFullscreen = state.isProjectMFullscreen
         let savedBrowseMode = state.browserBrowseMode
-        let savedScaleLevel = modeMatches && runningMode.controllerFamily != .wmp ? state.uiScaleLevel : .p100
+        let savedScaleLevel = modeMatches ? state.uiScaleLevel : .p100
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             // Restore UI size BEFORE showing sub-windows so applyDoubleSize

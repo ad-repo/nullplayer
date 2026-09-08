@@ -78,6 +78,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var mainView: WMPMainView?
     private var unskinnedView: WMPUnskinnedMainView?
     private var isApplyingSceneSize = false
+    /// The host's **UI Size** as a multiplier on this window, and the window's size in the skin's
+    /// own pixels — the size the scene is built and clamped at, which the multiplier never enters.
+    ///
+    /// A `.wmz` view is not resizable in the sense UI Size means: its size is authored, most of the
+    /// corpus pins `WMPResizeLimits` to exactly it, and growing the window re-*lays out* the scene
+    /// at the larger size (`renderCurrentSize`) rather than magnifying it — which for a fixed skin
+    /// is refused outright by `windowWillResize`. So UI Size is kept out of skin space entirely:
+    /// only the window frame and the rasterization scale carry it. `WMPMainView` already maps
+    /// drawing, hit testing, cursor rects and widget frames through `bounds / canvasSize`, so input
+    /// and the AppKit overlays follow the zoom with nothing further.
+    private(set) var uiScale: CGFloat = 1
+    private var skinSpaceSize = WMPMainWindowController.unskinnedSize
     private var pendingRestoredFrame: NSRect?
     private var pendingRestoredViewID: String?
     private(set) var lastLoadDiagnostic: String?
@@ -208,7 +220,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     let resolved = try await builder.build(viewID: registration.id,
                         requestedSize: scene.canvasSize, overrides: output.overrides)
                     let rendered = try await WMPRenderer(imageStore: store).render(
-                        scene: resolved, backingScale: renderBackingScale)
+                        scene: resolved, backingScale: renderScale(for: resolved.canvasSize))
                     try Task.checkCancellation()
                     apply(skin: skin, store: store, scene: resolved, image: rendered.image,
                           runtime: runtime, overrides: output.overrides)
@@ -320,10 +332,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if loadedSkin != nil { reloadSelectedSkin() }
         else if skinName == nil, let safe = pendingRestoredFrame {
             // The unskinned player owns a fixed safe size; restore position only.
+            skinSpaceSize = Self.unskinnedSize
             var positioned = safe
-            positioned.size = Self.unskinnedSize
-            positioned.origin.y = safe.maxY - Self.unskinnedSize.height
+            positioned.size = NSSize(width: Self.unskinnedSize.width * uiScale,
+                                     height: Self.unskinnedSize.height * uiScale)
+            positioned.origin.y = safe.maxY - positioned.height
             window?.setFrame(positioned, display: true)
+            unskinnedView?.setBoundsSize(Self.unskinnedSize)
         }
     }
 
@@ -385,8 +400,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         unskinnedView = nil
         window?.contentView = view
         if let restored = pendingRestoredFrame {
+            skinSpaceSize = NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height)
             var frame = restored
-            frame.size = NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height)
+            frame.size = NSSize(width: skinSpaceSize.width * uiScale,
+                                height: skinSpaceSize.height * uiScale)
             frame.origin.y = restored.maxY - frame.height
             isApplyingSceneSize = true
             window?.setFrame(frame, display: true)
@@ -432,15 +449,23 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         setWindowSize(Self.unskinnedSize)
     }
 
+    /// `size` is in the skin's own pixels. UI Size is applied here and in `windowWillResize`, and
+    /// nowhere else.
     private func setWindowSize(_ size: NSSize) {
         guard let window else { return }
+        skinSpaceSize = size
+        let scaled = NSSize(width: size.width * uiScale, height: size.height * uiScale)
         let old = window.frame
         var frame = old
-        frame.size = size
-        frame.origin.y = old.maxY - size.height
+        frame.size = scaled
+        frame.origin.y = old.maxY - scaled.height
         isApplyingSceneSize = true
         window.setFrame(frame, display: true)
         isApplyingSceneSize = false
+        // The app-authored player is real AppKit content rather than a bitmap, so it has no
+        // `bounds / canvasSize` mapping of its own to zoom through. Scaling its bounds gives it
+        // one: its layout stays in the 440x170 it is written for and AppKit draws it magnified.
+        unskinnedView?.setBoundsSize(size)
         // A borderless, non-opaque window keeps the shadow it had at its previous frame. Corona
         // resizes the view when a drawer opens, so without this the old outline is left behind
         // beside the window as a ghost of the shape it used to be.
@@ -451,7 +476,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         guard !isApplyingSceneSize, let skin = loadedSkin, let store = imageStore,
               let viewID = activeViewID, let window else { return }
         loadTask?.cancel()
-        let requested = WMPSize(width: window.contentLayoutRect.width, height: window.contentLayoutRect.height)
+        let requested = WMPSize(width: window.contentLayoutRect.width / uiScale,
+                                height: window.contentLayoutRect.height / uiScale)
         let overrides = sceneOverrides
         let scriptRuntime = scriptRuntime
         loadTask = Task { [weak self] in
@@ -483,7 +509,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         .build(viewID: viewID, requestedSize: requested, overrides: resolvedOverrides)
                 }
                 let result = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: self?.renderBackingScale ?? 1,
+                    scene: scene, backingScale: self?.renderScale(for: scene.canvasSize) ?? 1,
                     clock: self?.animationClock(for: scene.viewID) ?? 0)
                 try Task.checkCancellation()
                 self?.sceneOverrides = resolvedOverrides
@@ -583,7 +609,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     .build(viewID: registration.id, requestedSize: base.canvasSize,
                            overrides: output.overrides)
                 let rendered = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: renderBackingScale)
+                    scene: scene, backingScale: renderScale(for: scene.canvasSize))
                 try Task.checkCancellation()
                 apply(skin: skin, store: store, scene: scene, image: rendered.image,
                       runtime: scriptRuntime, overrides: output.overrides)
@@ -612,16 +638,29 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        guard let limits = activeLimits else { return Self.unskinnedSize }
-        let clamped = limits.clamp(WMPSize(width: frameSize.width, height: frameSize.height))
-        return NSSize(width: clamped.width, height: clamped.height)
+        // The skin's own limits are in the skin's own pixels, so the drag is measured there and the
+        // answer scaled back. A fixed skin stays fixed at every UI Size; a resizable one keeps the
+        // range it authored, expressed at the current zoom.
+        guard let limits = activeLimits else {
+            return NSSize(width: Self.unskinnedSize.width * uiScale,
+                          height: Self.unskinnedSize.height * uiScale)
+        }
+        let clamped = limits.clamp(WMPSize(width: frameSize.width / uiScale,
+                                           height: frameSize.height / uiScale))
+        return NSSize(width: clamped.width * uiScale, height: clamped.height * uiScale)
     }
 
     func windowDidResize(_ notification: Notification) {
-        if let window, let viewID = activeViewID {
-            WMPViewFrameStore(defaults: importer.defaults).setSize(
-                WMPSize(width: window.frame.width, height: window.frame.height),
-                skin: importer.selectedSkinName ?? "", view: viewID)
+        if let window {
+            skinSpaceSize = NSSize(width: window.frame.width / uiScale,
+                                   height: window.frame.height / uiScale)
+            // Persisted in skin space as well, so a size the user dragged out at 200% is not
+            // restored as a scene twice that size the next time the skin loads.
+            if let viewID = activeViewID {
+                WMPViewFrameStore(defaults: importer.defaults).setSize(
+                    WMPSize(width: skinSpaceSize.width, height: skinSpaceSize.height),
+                    skin: importer.selectedSkinName ?? "", view: viewID)
+            }
         }
         renderCurrentSize()
     }
@@ -1136,6 +1175,43 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private var renderBackingScale: CGFloat {
         max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+    }
+
+    /// What the scene is rasterized at: the display's backing scale multiplied by UI Size, so a
+    /// zoomed window is drawn from a larger bitmap rather than a magnified one.
+    ///
+    /// Clamped to the renderer's own pixel ceiling. `WMPRenderer` *throws* `oversizedImage` past
+    /// it, and a throw here leaves the window showing the frame it already had — a large skin at
+    /// 300% on a Retina display would simply stop repainting. Losing sharpness at the top of the
+    /// ladder is the right trade against that.
+    private func renderScale(for canvas: WMPSize) -> CGFloat {
+        let requested = renderBackingScale * uiScale
+        let pixels = canvas.width * canvas.height
+        guard pixels > 0, requested > 1 else { return max(1, requested) }
+        let ceiling = (CGFloat(WMPPhase0Limits.imagePixels) / pixels).squareRoot()
+        return max(1, min(requested, ceiling))
+    }
+
+    // MARK: - UI Size
+
+    /// Applies the host's UI Size to this window: the frame becomes the skin-space size times the
+    /// multiplier, anchored at its top-left, and the scene is re-rasterized at the new scale.
+    ///
+    /// `WindowManager.applyDoubleSize` calls this and then sets the frame itself from
+    /// `mainWindowSize(atScale:)`; the two agree, so the second set is a no-op.
+    func applyUIScale(_ scale: CGFloat) {
+        let target = max(0.1, scale)
+        guard target != uiScale else { return }
+        uiScale = target
+        setWindowSize(skinSpaceSize)
+        window?.invalidateShadow()
+        renderCurrentSize()
+    }
+
+    /// The window size this skin wants at `scale` — its skin-space size times the multiplier. The
+    /// unskinned player answers the same way, from its own fixed size.
+    func mainWindowSize(atScale scale: CGFloat) -> NSSize? {
+        NSSize(width: skinSpaceSize.width * scale, height: skinSpaceSize.height * scale)
     }
 }
 

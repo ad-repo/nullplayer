@@ -70,7 +70,7 @@ class ContextMenuBuilder {
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
 
-        if wm.uiMode.controllerFamily != .wmp { menu.addItem(buildUISizeMenuItem(wm: wm)) }
+        menu.addItem(buildUISizeMenuItem(wm: wm))
 
         menu.addItem(buildWindowLockMenuItem())
         menu.addItem(NSMenuItem.separator())
@@ -229,7 +229,7 @@ class ContextMenuBuilder {
             menu.addItem(hideTitleBars)
         }
 
-        if wm.uiMode.controllerFamily != .wmp { menu.addItem(buildUISizeMenuItem(wm: wm)) }
+        menu.addItem(buildUISizeMenuItem(wm: wm))
         if wm.uiMode.controllerFamily == .winampModern {
             menu.addItem(buildWinampModernTextSizeMenuItem(wm: wm))
         }
