@@ -3095,7 +3095,7 @@ class ContextMenuBuilder {
             let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
             let sonosMenu = NSMenu()
             sonosMenu.autoenablesItems = false
-            let windowItem = NSMenuItem(title: "Rooms & Volume…", action: #selector(MenuActions.showSonos), keyEquivalent: "")
+            let windowItem = NSMenuItem(title: "Sonos Rooms…", action: #selector(MenuActions.showSonos), keyEquivalent: "")
             windowItem.target = MenuActions.shared
             sonosMenu.addItem(windowItem)
             sonosMenu.addItem(.separator())
@@ -3335,7 +3335,7 @@ class ContextMenuBuilder {
             let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
             let sonosMenu = NSMenu()
             sonosMenu.autoenablesItems = false
-            let windowItem = NSMenuItem(title: "Rooms & Volume…", action: #selector(MenuActions.showSonos), keyEquivalent: "")
+            let windowItem = NSMenuItem(title: "Sonos Rooms…", action: #selector(MenuActions.showSonos), keyEquivalent: "")
             windowItem.target = MenuActions.shared
             sonosMenu.addItem(windowItem)
             sonosMenu.addItem(.separator())

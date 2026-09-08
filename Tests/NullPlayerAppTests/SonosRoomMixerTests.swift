@@ -7,7 +7,7 @@ final class SonosRoomMixerTests: XCTestCase {
     func testSonosMenuAlwaysIncludesRoomWindowAndRefresh() throws {
         let output = ContextMenuBuilder.buildMenuBarOutputMenu()
         let sonos = try XCTUnwrap(output.items.first { $0.title == "Sonos" }?.submenu)
-        XCTAssertEqual(sonos.items.first?.title, "Rooms & Volume…")
+        XCTAssertEqual(sonos.items.first?.title, "Sonos Rooms…")
         let refresh = try XCTUnwrap(sonos.items.first { $0.title == "Refresh" })
         XCTAssertTrue(refresh.isEnabled)
         XCTAssertEqual(refresh.action, #selector(MenuActions.refreshSonosRooms))

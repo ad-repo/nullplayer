@@ -17,7 +17,7 @@ This guide covers Sonos speaker discovery, casting, and multi-room grouping in N
 4. Click **🔴 Stop Casting** from the Sonos menu to fully end the cast session
 
 For a persistent room list and individual volume controls, open **Windows → Sonos Rooms** or
-**Output → Sonos → Rooms & Volume…**. Resize the window or scroll to reach additional rooms;
+**Output → Sonos → Sonos Rooms…**. Resize the window or scroll to reach additional rooms;
 **Refresh** remains in the footer even when no rooms are discovered.
 
 ## Discovery Methods
@@ -87,7 +87,7 @@ Response contains all groups and their member zones.
 
 ### Sonos Rooms window
 
-Open **Windows → Sonos Rooms** or **Output → Sonos → Rooms & Volume…**. The context-menu
+Open **Windows → Sonos Rooms** or **Output → Sonos → Sonos Rooms…**. The context-menu
 **Output Devices → Sonos** submenu exposes the same entry. The existing Sonos submenu remains
 available even before discovery finds a room, including its **Refresh** command.
 
