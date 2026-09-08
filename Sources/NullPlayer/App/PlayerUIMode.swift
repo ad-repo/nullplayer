@@ -35,7 +35,7 @@ enum PlayerUIMode: String, CaseIterable {
         case .modern: return ModernSkinFamily.modern.displayName
         case .metal: return ModernSkinFamily.metal.displayName
         case .winampModern: return "Modern"
-        case .wmp: return "Windows Media Player"
+        case .wmp: return "Media Player"
         }
     }
 

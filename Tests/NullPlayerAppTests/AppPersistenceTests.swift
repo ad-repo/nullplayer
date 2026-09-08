@@ -6,7 +6,7 @@ final class AppPersistenceTests: XCTestCase {
     func testSkinFamilyDisplayNamesUseOriginalBranding() {
         XCTAssertEqual(PlayerUIMode.modern.displayName, "Original")
         XCTAssertEqual(PlayerUIMode.metal.displayName, "Original-Metal")
-        XCTAssertEqual(PlayerUIMode.wmp.displayName, "Windows Media Player")
+        XCTAssertEqual(PlayerUIMode.wmp.displayName, "Media Player")
         XCTAssertEqual(ModernSkinFamily.modern.displayName, "Original")
         XCTAssertEqual(ModernSkinFamily.metal.displayName, "Original-Metal")
     }

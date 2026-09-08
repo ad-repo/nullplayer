@@ -1188,7 +1188,7 @@ class ContextMenuBuilder {
 
         for item in deferredFamilies { uiMenu.addItem(item) }
 
-        // --- Windows Media Player submenu ---
+        // --- Media Player submenu ---
         if AppCapabilities.supports(.wmpSkinMode) {
             let wmpItem = NSMenuItem(title: PlayerUIMode.wmp.displayName, action: nil, keyEquivalent: "")
             let wmpMenu = NSMenu()
@@ -1196,7 +1196,7 @@ class ContextMenuBuilder {
             let importer = WMPSkinImporter()
 
             if activeMode != .wmp {
-                let switchItem = NSMenuItem(title: "Switch to Windows Media Player",
+                let switchItem = NSMenuItem(title: "Switch to \(PlayerUIMode.wmp.displayName)",
                                             action: #selector(MenuActions.setWMPMode), keyEquivalent: "")
                 switchItem.target = MenuActions.shared
                 wmpMenu.addItem(switchItem)
