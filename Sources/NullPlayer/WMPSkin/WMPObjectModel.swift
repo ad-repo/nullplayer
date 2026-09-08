@@ -353,7 +353,8 @@ final class WMPObjectModel {
     private func readTheme(_ name: String) -> WMPMemberValue {
         switch name {
         case "currentviewid": return .value(.string(currentViewID))
-        case "loadpreference", "savepreference", "loadstring", "opendialog": return .function
+        case "loadpreference", "savepreference", "loadstring", "opendialog", "openview":
+            return .function
         default: return .unrecognised("theme member")
         }
     }
@@ -582,6 +583,17 @@ final class WMPObjectModel {
             return .value(.null)
         case ("eq", "reset"):
             for band in 0..<10 { hostCommand("setEQBand:\(band)", .number(0)) }
+            return .value(.null)
+        case ("theme", "openview"):
+            // WMP opens the named view as an *additional* window. This app has exactly one WMP
+            // window, so the honest reduction is to present the view: that is precisely right for
+            // the dominant corpus use — a windowless `controlView` whose `onLoad` opens the real
+            // player — and for an auxiliary panel it is a view switch the host can return from,
+            // which `closeView` does. It is live, not inert: something is drawn as a result.
+            guard let id = arguments.first?.string, !id.isEmpty else {
+                return .unrecognised("openView needs a view id")
+            }
+            hostCommand("openView", .string(id))
             return .value(.null)
         case ("theme", "loadpreference"):
             return .value(.string(preferences[arguments.first?.string ?? ""] ?? ""))

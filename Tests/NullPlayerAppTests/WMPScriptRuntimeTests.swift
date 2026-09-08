@@ -335,6 +335,50 @@ final class WMPScriptRuntimeTests: XCTestCase {
         await session.teardown()
     }
 
+    /// WMP opens the named view as an *additional* window; this app has one WMP window, so the
+    /// command is `openView` and the controller presents the view, remembering the one it covered
+    /// so `closeView` has somewhere to go back to. It is deliberately **not** an alias for
+    /// `setCurrentView`: the two mean different things to the host, and collapsing them here would
+    /// erase the distinction before the controller could act on it.
+    func testOpenViewPostsItsOwnHostCommandAndKeepsTheHandlerRunning() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60"/><VIEW id="panel" width="80" height="40"/></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "main",
+                         handlers: ["theme.openView('panel'); theme.currentViewID = 'main';"]))
+        let opened = try XCTUnwrap(output.hostCommands.first { $0.action == "openView" })
+        XCTAssertEqual(opened.value?.string, "panel")
+        XCTAssertFalse(output.hostCommands.contains { $0.action == "setCurrentView" && $0.value?.string == "panel" },
+                       "openView must not be posted as a view replacement")
+        // The statement after the call is what the whole entry was about: before this landed, the
+        // unimplemented member aborted the handler and everything below it was never reached.
+        XCTAssertTrue(output.hostCommands.contains { $0.action == "setCurrentView" && $0.value?.string == "main" })
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" })
+        let call = try XCTUnwrap(output.calls.first { $0.path == "theme.openview" && $0.kind == .invoke })
+        XCTAssertEqual(call.resolution, .live, "a view is presented as a result; this is not an inert answer")
+        await session.teardown()
+    }
+
+    /// A call with no view id names nothing the host could open. It stays unrecognised rather than
+    /// posting a command with an empty string, which the controller would silently discard — the
+    /// skin asking for something impossible must stay visible in the demand tally.
+    func testOpenViewWithNoViewIDStaysUnrecognised() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60"/></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "main", handlers: ["theme.openView('');"]))
+        XCTAssertFalse(output.hostCommands.contains { $0.action == "openView" })
+        let call = try XCTUnwrap(output.calls.first { $0.path == "theme.openview" && $0.kind == .invoke })
+        XCTAssertEqual(call.resolution, .unrecognised)
+        await session.teardown()
+    }
+
     func testSessionDetectsDependencyCycleWithoutCommittingPartialGeometry() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="100" height="50"><SUBVIEW id="a" left="0" top="0"

@@ -159,7 +159,7 @@ enum WMPJScriptCompatibility {
                "currentPresetTitle", "nextPreset", "previousPreset", "reset",
                "gainLevel1", "gainLevel2", "gainLevel3", "gainLevel4", "gainLevel5",
                "gainLevel6", "gainLevel7", "gainLevel8", "gainLevel9", "gainLevel10"],
-        "theme": ["currentViewID", "loadPreference", "savePreference", "loadString"],
+        "theme": ["currentViewID", "loadPreference", "savePreference", "loadString", "openView"],
         "view": ["left", "top", "width", "height", "close", "minimize", "visible"],
         "popup": ["appendItem", "removeAllItems", "getItem", "itemCount"],
         "element": Set(WMPObjectModel.standardElementProperties).union(["id"])

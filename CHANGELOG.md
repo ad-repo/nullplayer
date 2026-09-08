@@ -40,6 +40,7 @@
   was 80% solid red, v2 Underworld's player 79%. Both colours are now removed, so the skin keeps its
   own silhouette. Pharaoh, Tomb Raider 2, polygon, gadget and Plus! Mecha are fixed by the same
   change.
+- **Buttons in Windows Media Player skins that open a second panel now work.** A `.wmz` skin opens its equalizer, playlist, video or settings panel by asking for that panel by name, and NullPlayer had no answer for the request: the click did nothing at all, and every remaining line of that button's script was abandoned with it. Fifty-seven skins in a 180-skin library ask for a panel this way. Windows Media Player gives each panel its own floating window; NullPlayer has one Windows Media Player window, so the panel opens in it and the skin's own close button takes you straight back to the player you came from.
 - **Windows Media Player skins now open on their player instead of a still picture of it.** Many
   `.wmz` skins — WALL-E, Halo, Alienware, Crimson Skies, Need for Speed Underground and around
   thirty more — start on a small "preview" window meant for the Windows skin chooser, then run a

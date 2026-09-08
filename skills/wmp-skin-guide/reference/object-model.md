@@ -101,6 +101,34 @@ Implemented today: `moveTo`, `resizeTo` (endpoint applied immediately — the tw
 yet), `appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` on the playlist
 kinds including the unmodelled `ITEMSPLAYLIST`, and `close`/`minimize` on the view.
 
+## `theme.openView`
+
+WMP opens the named view as an **additional** window and `theme.closeView` closes it; that is what
+separates it from `theme.currentViewID`, which *replaces* the presented view. This app has one WMP
+window, so `openView` posts its own `openView` host command and `WMPMainWindowController` presents
+the view, pushing the view it covered onto `openedViewStack` (capped, cleared when the skin is torn
+down). `closeView` pops that stack and switches back; only with an empty stack does it still order
+the window out, which is what it always did.
+
+It is **live**, not `inert()`: a view is presented as a result, and the skin's own close button
+returns from it. What is lost is the extra window — an auxiliary panel covers the player instead of
+sitting beside it. That reduction is the whole of the deviation and is written here because nothing
+in the call trace can show it.
+
+Two things it is deliberately **not**:
+
+- **Not an alias for `setCurrentView`.** The two mean different things to the host, and collapsing
+  them in the object model would erase the distinction before the controller could act on it — the
+  return path is the part that depends on knowing a view was *opened* rather than switched to.
+- **Not extended to `theme.openViewRelative`.** That variant places the opened window at an offset
+  from the current one (`theme.openViewRelative('vwEQ', 0, 130)`), which is meaningless with one
+  window; aliasing it here would present the view, silently drop the offset, and vanish from the
+  demand tally. It stays unimplemented and is tracked as W50.
+
+Initial load treats `openView` and `setCurrentView` identically in one place only: the windowless-view
+redirect. A view that never becomes a window can honour neither as a window operation, and both are
+a request for which view to show next.
+
 ## `theme.openDialog`
 
 `FILE_OPEN` posts an `openFileDialog` host command and answers the empty string, counted **inert**.

@@ -111,6 +111,7 @@ queue, with the object model as the security boundary — see Amendment 2 in
   until a view has a canvas, and `switchView` runs a windowless view's script, honours its host
   commands, and stays where it is. `WMPRenderer` still refuses a non-positive canvas; a zero-area
   scene must never reach it.
+- **`theme.openView` opens a view; `theme.currentViewID` replaces one; this app has one window, so the difference is a return path rather than a second window.** 57 of 180 archives ask for a panel by name this way. `openView` is its own host command: the controller presents the view and remembers the one it covered, and `closeView` pops back to it instead of ordering the window out — without that, opening a settings panel is the W46 trap with no way home. `openViewRelative` is deliberately still unimplemented (W50): its offset is meaningless with one window, and aliasing it would drop the offset silently. See `reference/object-model.md`.
 - **A zero geometry override is a value, not an absence.** Every skin with a store-thumbnail
   `previewView` collapses it in `onLoad` — `view.width = 0; view.height = 0; view.backgroundImage =
   ""; theme.currentViewID = "controlView"` — and Microsoft's own `auto.js` in `Official_Xbox_XP`

@@ -15,6 +15,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var loadedSkin: WMPLoadedSkin?
     private var imageStore: WMPImageStore?
     private var activeViewID: String?
+    /// Views the skin asked to *open* on top of what was showing. WMP gives each one its own
+    /// window; this app has one, so the opened view is presented and the view it covered is
+    /// remembered here, which is what gives `closeView` somewhere to go back to.
+    private var openedViewStack: [String] = []
     private var activeLimits: WMPResizeLimits?
     private var activeScene: WMPScene?
     private var sceneOverrides = WMPSceneOverrides.empty
@@ -117,8 +121,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         recordScriptDiagnostics(output.diagnostics)
                         // The only host command a view with no window can honour is where to go
                         // next; the rest need the presented controller state this view never gets.
-                        if let next = output.hostCommands.last(where: { $0.action == "setCurrentView" })?
-                            .value?.string {
+                        // A windowless `controlView` opens the real player with `openView`
+                        // exactly as often as it redirects with `currentViewID`; both are a
+                        // request for which view to show next, and neither can do more than that
+                        // from a view that never becomes a window.
+                        if let next = output.hostCommands.last(where: {
+                            $0.action == "setCurrentView" || $0.action == "openView"
+                        })?.value?.string {
                             candidates.insert(next, at: index)
                         }
                         continue
@@ -318,6 +327,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         loadedSkin = nil
         imageStore = nil
         activeViewID = nil
+        openedViewStack.removeAll()
         activeLimits = nil
         activeScene = nil
         sceneOverrides = .empty
@@ -685,11 +695,29 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
             case "setViewTimerInterval": setViewTimer(milliseconds: Int(number ?? 0))
             case "openFileDialog": presentOpenMediaPanel()
-            case "closeView": window?.orderOut(nil)
+            case "closeView":
+                // A view this skin opened over another one closes back to it; only the outermost
+                // view closing means "close the player".
+                if let previous = openedViewStack.popLast() {
+                    switchedView = true; switchView(to: previous)
+                } else {
+                    window?.orderOut(nil)
+                }
             case "minimizeWindow": window?.miniaturize(nil)
             case let action where action.hasPrefix("playPlaylistItem:"):
                 if let index = Int(action.dropFirst("playPlaylistItem:".count)) {
                     host.perform(.playPlaylistItem(index), value: nil)
+                }
+            case "openView":
+                if let id = command.value?.string,
+                   loadedSkin?.views.contains(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) == true,
+                   id.caseInsensitiveCompare(activeViewID ?? "") != .orderedSame {
+                    if let covered = activeViewID,
+                       !openedViewStack.contains(where: { $0.caseInsensitiveCompare(covered) == .orderedSame }) {
+                        openedViewStack.append(covered)
+                        if openedViewStack.count > 8 { openedViewStack.removeFirst() }
+                    }
+                    switchedView = true; switchView(to: id)
                 }
             case "setCurrentView":
                 if let id = command.value?.string,
