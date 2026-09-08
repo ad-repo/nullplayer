@@ -52,7 +52,8 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_RENDER_SCRIPTS` | `1` | `SCRIPTS`/`SCRIPT` — per program: bytes, declared handlers, and the runtime's availability |
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
-| `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]` | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after |
+| `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]`, any entry may be a `>`-joined path | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after. **An entry written `x,y>x,y>x,y` is a drag**: press at the first point, move through the rest, release at the last, with the pointer captured on the object the press landed on. `DRAG` reports the control's direction, range and border, the value and drawn thumb frame at every step, and then the two claims the flag exists to settle — `follows-pointer=yes\|no\|flat` and `thumb-travel=<px>`. `flat` is the one to read for: a value that never moves is trivially monotonic, and a `yes/no` answer alone would call it a pass |
+| `WMP_RENDER_APPKIT` | `1` | `APPKIT` — host the scene in the **real `NSView` stack** and report what the AppKit layer adds over the artwork. `outside=` is the number that ranks: an overlay drawing inside its own widget frame is the hosting working, and one drawing anywhere else is the W43 class. `blit=`/`blit-max-delta=` is a second, separate comparison of the renderer's own image against the view's blit of it. Set `WMP_RENDER_APPKIT_DUMP=<dir>` alongside it to write both bitmaps as `<view>-scene.png` and `<view>-hosted.png` when isolating one view |
 | `WMP_RENDER_SETTLE` | seconds | run the **view's own timer loop** for that long before measuring — at the period the skin asks for, honouring every `setViewTimerInterval` its handlers post back, rebuilding the scene between ticks |
 | `WMP_RENDER_CLOCK` | `<s>[;<s>…]` | seconds into an animation to draw, one PNG per value (suffixed `@t<s>`; a zero clock keeps the original filename). **A render dump is a still, so this flag is the only way an animation is falsifiable** — frame zero is indistinguishable from an engine that never animates. Two pinned values, diffed, are the proof. `ANIMATION <view>: shortestDelay=… bounds=…` reports what the scene actually animates |
 | `WMP_RENDER_SIZE` | `<W>x<H>` | `RESIZE` — lay the view out at its **own** size first, run `onLoad` there, then resize to this and re-drive `onResize`, which is the order a user produces. An expression-driven layout is a *different* layout, not the same one scaled. The transaction runs whether or not the view declares an `onResize`, because an expression re-reads `view.width` either way; `handlers=` is how many the changed-object set actually raised, and `handlers=0` with a skin you know authors one means nothing moved |
@@ -110,8 +111,37 @@ CALL <view> <path> <read|write|invoke> value=<v> <ok|INERT|UNRECOGNISED>
 CALLS <view> <path> ×<n> <ok|INERT|UNRECOGNISED>
 CLICK <view>@x,y hit=<id>#<stableID> kind=<k> action=<a> sticky=<b> handlers=<n>
 CLICK <view>@x,y changed=[…] | command=<…> | unrecognised=[…] | after: <…> | MISS
+DRAG <view>@x,y>x,y hit=<id>#<sid> kind=<k> slider=<b> direction=<d> min=<m> max=<M> border=<b> steps=<n>
+DRAG <view>@x,y>x,y step=<i> at=<x>,<y> value=<v> drawn=<v> thumb=<rect>
+DRAG <view>@x,y>x,y value <v> -> <v> follows-pointer=<yes|no|flat> thumb-travel=<px>
+DRAG <view>@x,y>x,y MISS | not-a-slider — no value tracking to measure
+APPKIT <view>: <W>x<H>@<n>x differing=<n>/<n> (<pct>) hosted=<n>/<n> outside=<n> (<pct>) max-delta=<n> blit=<n> (<pct>) blit-max-delta=<n> [worst=<rect>]
+APPKIT <view>/<stableID> <kind> id=<id> frame=<rect> differing=<n> (<pct>)
+APPKIT <view>: SKIPPED <why>
 PNG <view>: <filename>
 ```
+
+`APPKIT` is the only line that has run an `NSView.draw`. Everything else in this file measures the
+scene; this measures the window. Two things make its numbers trustworthy and both were wrong first:
+
+* **The baseline is a second AppKit pass with the overlays hidden, not the renderer's image.**
+  `cacheDisplay` composites through the display's colour space and the renderer's context does not,
+  so comparing the two directly is a colour conversion as much as a measurement — it read 6.8% of
+  Corona (the control skin) as differing, and 61% of a four-colour fixture, at deltas up to 64. Two
+  passes through the *same* path cancel that exactly, and the corpus-wide noise floor is then **zero**,
+  not "small".
+* **Only a widget that actually hosts an `NSView` explains a difference.** `WMPMainView` builds
+  overlays for `playlist`, `dropdownPlaylist`, `popup`, `editBox`, `listBox` and `effects` and no
+  others — a slider and a text are drawn by the renderer into the image the view blits — so a
+  difference inside a *slider's* frame is a defect, not hosting, and attributing it to the widget it
+  happens to sit inside would file it as expected. Keep that list in step with
+  `WMPMainView.synchronizeWidgetViews`.
+
+The rep comes back at the display's backing scale, not the view's point size, and so does the image
+the app presents (`WMPMainWindowController.renderBackingScale`). Indexing a 2x rep in points reads
+the top-left quarter and calls it the window; presenting a 1x image into a 2x rep diffs AppKit's
+upscaler against the renderer. Both were made on the way to this line and both look exactly like a
+defect in the app.
 
 `WIDGET` is the only line about the AppKit overlays — playlist, equaliser, popup, effects, video —
 and they are **not in the dumped PNG at all**: the renderer draws the scene, and these are `NSView`s
@@ -144,6 +174,20 @@ git rev it was measured at. This is the only honest source for the reach numbers
 
 `--parse-only` re-derives the TSV from a previous run's logs without paying the sweep again — it is
 how a parsing change is checked against a capture that is already known-good.
+
+It also writes two **ranked promotion files**, every run, and names the worst rows on stdout where
+the person who ran it is already looking. Both exist because a number the instrument already
+measured and nobody ranked is worse than one it cannot see:
+
+* `starved.tsv` — every view by `unresolved / (nodes + unresolved)`, plus `hits == 0` and
+  `commands == 0`. **The rule has to be a ratio, not a count** (W70): `unresolved > 0` is true of
+  most views in the corpus, so a raw count ranks nothing. Corona — the skin the reporter called
+  working — carries 8 unresolved against 66 nodes on `vPlayer`; ALXMorph carries 15 against 15 and
+  draws a shell nothing reacts to. A promoted view is one worth dumping and looking at, never a
+  defect on its own: `hits == 0` is correct for a view that is pure artwork.
+* `appkit.tsv` — every hosted view by how much of the window an AppKit overlay painted **outside**
+  any widget frame (W71), with the magnitude of the worst pixel and the separate blit comparison.
+  This is the class that produced W43-W46, and it was invisible to every other instrument here.
 
 ### `scripts/wmp_markup_census.sh <outdir> [--corpus <dir>] [name ...]`
 
@@ -268,6 +312,7 @@ spots each made a real defect look absent. Four checks run on every plain `swift
 | `testExpressionProbeReportsSourceAndResolvedValue` | `EXPR` reports both the source text and the value it resolved to |
 | `testUprightCropColorKeyNestedClipZOrderAndBackingScale` | the renderer's own pixels, at 1× and 2× — the check that nothing else in this table substitutes for |
 | `testEmitsEveryLineWholeUnderConcurrentWriters` | eight concurrent writers and 9 KB lines all arrive whole and exactly once — the emitter cannot splice or drop a measurement |
+| `testAppKitProbeSeesAnOverlayAndReportsNothingWithoutOne` | `APPKIT` in both directions: a scene with nothing hosted over it diffs to **exactly zero**, and a scene carrying a `PLAYLIST` diffs inside that widget's frame and nowhere else. Without the first half, "no defect" and "blind instrument" print the same line |
 
 `compare` was checked the same way on 2026-09-07: a one-pixel **colour-only** change (alpha
 untouched) to one dumped PNG and a one-character change to one invariant line, each reported.
@@ -289,6 +334,17 @@ claim was made from it: `Xbox Live Skin` (whose `intro_anim.gif` is 145 frames) 
 the second two — and the logo visibly moves. A flag that reported the same PNG three times would
 have looked exactly like a working one on the `ANIMATION` line alone.
 
+**Proving the drag probe.** Same rule, and its negative answers are reachable: a drag along Corona's
+horizontal volume slider (`vPlayer@415,318>430,318>450,318>475,318`) gives `value 0 -> 100
+follows-pointer=yes thumb-travel=48`, and its vertical `eq1` (`286,250>286,230>286,200`) gives
+`-14 -> 14 follows-pointer=yes thumb-travel=34` — both axes, value and drawn thumb tracking
+together. A drag that never leaves its start point reports `follows-pointer=flat thumb-travel=0`,
+and one that starts on a button reports `not-a-slider`, so a mis-aimed probe reads as mis-aimed
+rather than as a passing slider. The handler lookup goes through
+`WMPMainWindowController.handlers(in:event:…)` — **the app's own matcher, never a second one**: 175
+of 179 archives author `value_onchange` rather than `onChange`, and a private lookup here would
+report every one of those sliders as having no handler.
+
 **Three things a clean sweep does not prove.** It measures the default state and nothing else — not a
 tab, a setting, a drag, a hover, or anything driven by live playback. A structural probe is not a
 picture: a node existing says nothing about where it is drawn. And **a correct dumped frame is not a
@@ -296,6 +352,10 @@ correct window**: the AppKit overlays, the window's shape and its shadow, and ev
 live outside the renderer. On 2026-09-07 the headless `vPlayer` and `viewTiny` frames were correct in
 every state tested while the live app showed a dark box the size of the window, drawers that were
 never erased, and a black panel during playback. Only the reporter driving the app found any of them.
+
+`WMP_RENDER_APPKIT` (W71) closes the *overlay* part of that third gap and none of the rest. Window
+shape and shadow live in the window server and stay a short, genuinely manual list; so do hover, a
+tab, a setting and live playback.
 
 ---
 
@@ -383,3 +443,46 @@ pane and a stray close box when nothing is playing, which is what WMP does.
 
 The remaining 228 handler errors are ranked in `WMP_TASKS.md`, and 102 of them are one missing host
 object (`mediacenter`).
+
+---
+
+## After Phase 6 (179-archive corpus, rev `824261d4` + the Phase 6 change)
+
+Phase 6 is where the corpus tooling stops being a description of the corpus and starts ranking work
+by itself. Three instruments and one capability landed; every number below is
+`scripts/wmp_skin_census.sh /tmp/wmp/census`, measured 2026-09-08 over 179 archives and **607 views**.
+
+**What the instruments found on their first run.**
+
+* **Starvation (W70).** 41 views across 36 skins resolve less than half the nodes they declare;
+  79 views across 49 skins have no hit target at all; 65 across 37 draw no command. The worst are
+  not the ones anybody had named: `Disney_Mix_Central/mainView` resolves **2 of 25**,
+  `Batman Begins/mainView` 2 of 21, `Alienware Invader/mainView` 2 of 20, and
+  `Cablemusic/mainview` 35 of 98. ALXMorph — the skin live QA reported as dead — sits at exactly
+  0.50 and is one of the *milder* cases. The ranking is in `starved.tsv` every run.
+* **AppKit hosting (W71).** 545 of the 607 views were hosted through the real `NSView` stack and
+  diffed. **Exactly two paint outside any widget frame** — `Revert.wmz` and `Revert (1).wmz`, both
+  releases of the same skin, `vwPL`, 4,000 px at delta 196, in a 250x4 band at `3,256` where the
+  playlist overlay's frame (`3,14 250x257`) runs past the 260-tall view's own bottom edge. That is
+  the entire W43 class in the corpus's default state, and it is one defect in one skin. The
+  reporter's "tons of issues" are therefore, on this evidence, mostly *scene*-side (the starvation
+  class above) or driven by something a default-state sweep still cannot reach.
+* **Drag (W72).** Every slider in the corpus is now drivable headlessly. See *Proving the drag
+  probe* above for the two worked axes.
+
+**What one capability change drained.** `value_onchange`, `OpenState_onchange` and
+`PlayState_onchange` are WMP's other spelling for three events the engine already dispatches, and
+the corpus writes them by an order of magnitude more than the spellings that worked: 175 of 179
+archives, 144 and 139, against 11 and 7. Accepting both spellings in the one matcher every dispatch
+site already goes through took measured event demand from **6,823 uses to 4,114** — 2,709 uses, 40%
+of everything the corpus asks for in this class, in one change with no new dispatch site. It also
+removed a phantom `UNKNOWN member player.settings.volume = value;updatevoltooltip()`, which was a
+handler body being read as a member path.
+
+`scripts/wmp_render_sweep.sh compare` across the change: **545 images identical, 0 differing, 0 lost,
+0 new**, and 2,070 green tests. The distinct-event vocabulary reads 140 → 142 rather than 140 → 137;
+36 blocks were damaged in both captures (W35), so the edges of that vocabulary move between runs and
+the *uses* figure is the one to quote.
+
+**What Phase 6 did not touch.** Everything the ranked lists now point at. Draining A/C/D
+automatically was the job; the lists are the output, not the fixes.

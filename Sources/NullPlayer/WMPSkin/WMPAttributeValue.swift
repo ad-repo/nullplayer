@@ -51,7 +51,13 @@ enum WMPAttributeParser {
         "onclick", "onchange", "onload", "onclose", "ontimer", "onresize",
         "onmouseover", "onmouseout", "onmousedown", "onmouseup",
         "openstatechange", "playstatechange", "status_onchange", "modechange",
-        "buffering_onchange", "reception_onchange"
+        "buffering_onchange", "reception_onchange",
+        // The `_onchange` spellings of three events the engine already dispatches. They are not
+        // new events: `WMPMainWindowController.handlers(in:event:…)` accepts either spelling for
+        // one dispatch, and the corpus writes these far more than the ones above — 175 archives
+        // author `value_onchange`, 144 `OpenState_onchange`, 139 `PlayState_onchange`, against 11
+        // and 7 for the `…change` forms.
+        "openstate_onchange", "playstate_onchange", "value_onchange"
     ]
 
     static func parse(name: String, value raw: String) -> WMPAttributeValue {

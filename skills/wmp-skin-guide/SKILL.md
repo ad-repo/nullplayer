@@ -183,12 +183,21 @@ session that produced the fixes below spent hours rediscovering five rules alrea
 
 The ones that cost the most, in WMP terms:
 
-- **A green corpus sweep says nothing about AppKit.** The harness builds scenes and rasterizes them;
-  it never calls an `NSView.draw`. It was completely right — correct scene, hit tests, dispatch, and
-  a dumped PNG with proper transparency — while the app on screen was a black rectangle.
+- **A green corpus sweep used to say nothing about AppKit; now it says one thing.**
+  `WMP_RENDER_APPKIT=1` runs the real `NSView.draw` of the view and every overlay over it and diffs
+  it against a second pass with the overlays hidden. **Start a live report here**: if the view diffs
+  to zero, the defect is not the overlays and not compositing, and the scene is where to look. It
+  cleared `ALXMorph/mainView` in one run. What it still does not reach is the window's shape and
+  shadow (the window server), hover, a timer and live playback — W73.
 - **Compare `WMPRenderer`'s own image against a screen capture of the same window rect.** Agreement
   means the defect is in the scene; disagreement means it is in the overlays or compositing. That one
-  comparison ended the hunt.
+  comparison ended the hunt, and `WMP_RENDER_APPKIT` is that comparison made automatic and
+  corpus-wide. **Do not do it by hand against a raw screen capture unless you have to**: the two
+  images go through different colour spaces, and reading that difference as a defect is what
+  reported 6.8% of the *control* skin as broken.
+- **A ratio, not a count, ranks a starved view.** `unresolved > 0` is true of most views in the
+  corpus, including corona's. `starved.tsv` from the census is the ranking; a raw count ranked
+  nothing and hid ALXMorph for three phases.
 - **Confirm the skin *and the view* before diagnosing.** `wmpSkinViewID` is persisted on every
   present, and Corona's compact view renders almost identically to its player.
 - **"The wrong button responds" is two questions, and the harness answers one of them for free.**
@@ -222,8 +231,13 @@ of these was invisible to the harness and visible in the first minute of live QA
 - **The overlays are not in the dumped PNG.** The renderer draws the scene; playlist, equaliser,
   popup, effects and video are `NSView`s hosted over it, and `WMPVideoPlaceholderView` and
   `WMPEffectsSurfaceView` both paint an opaque background. A skin can dump a perfect frame and look
-  wrong on screen. `WMP_RENDER_PROBE`'s `WIDGET` line is the only instrument that sees them; the
-  overlays currently ignore `WMPWidget.clipRect`, which is open as W43.
+  wrong on screen. `WMP_RENDER_PROBE`'s `WIDGET` line reports where the scene put them, and
+  **`WMP_RENDER_APPKIT` is what actually runs their `draw(_:)`** — it hosts the scene in a real
+  `WMPMainView`, `cacheDisplay`s it twice (once with the overlays hidden), and reports what the
+  AppKit layer added. `outside=` is the number that ranks: an overlay inside its own widget frame is
+  the hosting working. Corpus-wide that is **two views in one skin** (W74), which is the whole of
+  this class in the default state. The overlays still ignore `WMPWidget.clipRect`, which is what
+  W74 is.
 - **An overlay fills `bounds`, never `dirtyRect`.** AppKit is free to hand a view a dirty rect
   larger than itself, and it does: the 320x240 `WMPEffectsSurfaceView` was called with
   `{{-269, -26}, {596, 468}}` — the whole window in its own coordinates — and a layer-backed view

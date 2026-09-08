@@ -708,6 +708,25 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     static func handlers(in skin: WMPLoadedSkin, event: String, targetID: String?,
                          targetStableID: Int? = nil, viewID: String? = nil) -> [String] {
         let wanted = event.lowercased().replacingOccurrences(of: "_", with: "")
+        // **The corpus authors these events under WMP's other spelling, by an order of magnitude.**
+        // The engine dispatches `openstatechange` and `playstatechange`, which 7 and 11 archives
+        // write; 144 and 139 write `OpenState_onchange` and `PlayState_onchange`, on the same
+        // `<PLAYER>` element, calling the same handler — `<player PlayState_onchange="…"
+        // OpenState_onchange="…" status_onChange="…">` is the standard template, and `status_onchange`
+        // was already carried in the `_onchange` spelling. `value_onchange` is the same shape at
+        // 175 of 179 archives, raised where `change` already is: the user moved the control.
+        //
+        // Aliasing here rather than at the dispatch sites keeps one rule for both spellings, so a
+        // site cannot raise one name and miss the other. **What this does not do** is raise
+        // `value_onchange` when a bound host property moves the control on its own — that half has
+        // no observation path yet and is recorded as still-open work in `WMP_TASKS.md` (W51).
+        let accepted: Set<String>
+        switch wanted {
+        case "change", "onchange": accepted = ["change", "valueonchange"]
+        case "openstatechange": accepted = ["openstatechange", "openstateonchange"]
+        case "playstatechange": accepted = ["playstatechange", "playstateonchange"]
+        default: accepted = []
+        }
         var scope: Set<Int>?
         if let viewID, let view = skin.views.first(where: {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
@@ -732,6 +751,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let normalized = authored.lowercased().replacingOccurrences(of: "_", with: "")
                 let stripped = normalized.hasPrefix("on") ? String(normalized.dropFirst(2)) : normalized
                 let wantedStripped = wanted.hasPrefix("on") ? String(wanted.dropFirst(2)) : wanted
+                if accepted.contains(normalized) || accepted.contains(stripped) { return source }
                 return stripped == wantedStripped ? source : nil
             }
         }

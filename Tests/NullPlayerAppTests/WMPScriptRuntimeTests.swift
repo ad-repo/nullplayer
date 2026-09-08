@@ -59,6 +59,50 @@ final class WMPScriptRuntimeTests: XCTestCase {
                                                         viewID: "main").count, 3)
     }
 
+    /// W51/W52. The corpus writes three of this engine's events under WMP's `_onchange` spelling,
+    /// and by a wide margin: `value_onchange` in 175 of 179 archives against the `onChange` form,
+    /// `OpenState_onchange` in 144 and `PlayState_onchange` in 139 against 7 and 11 for
+    /// `OpenStateChange`/`PlayStateChange` — on the same `<PLAYER>` element, calling the same
+    /// handler. They were 2,750 uses of measured demand answering to nothing.
+    ///
+    /// Both spellings resolve through the **one** matcher every dispatch site already goes through,
+    /// so a site cannot raise one name and miss the other. The negative half matters as much: a
+    /// property whose `_onchange` this engine does not raise must still not be found, or the
+    /// `UNKNOWN event` tally stops ranking it while nothing runs.
+    func testTheOnchangeSpellingsResolveToTheEventsTheEngineDispatches() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <PLAYER PlayState_onchange="playState();" OpenState_onchange="openState();"/>
+            <SLIDER id="eq1" left="0" top="0" width="10" height="40" min="-14" max="14"
+                    value="wmpprop:eq.gainLevel1" value_onchange="eq.gainLevel1=value;"/>
+            <SLIDER id="eq2" left="20" top="0" width="10" height="40" onChange="plain();"/>
+            <TEXT id="label" left="40" top="0" width="20" height="10" textWidth_onchange="width();"/>
+        </VIEW></THEME>
+        """)
+        func node(_ id: String) throws -> WMPNode {
+            try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == id })
+        }
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "change", targetID: nil,
+                                                        targetStableID: try node("eq1").stableID,
+                                                        viewID: "main"),
+                       ["eq.gainLevel1=value;"], "value_onchange is the change event's other spelling")
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "change", targetID: nil,
+                                                        targetStableID: try node("eq2").stableID,
+                                                        viewID: "main"),
+                       ["plain();"], "the onChange spelling must keep working")
+        XCTAssertEqual(Set(WMPMainWindowController.handlers(in: skin, event: "openstatechange",
+                                                            targetID: nil, viewID: "main")),
+                       ["openState();"])
+        XCTAssertEqual(Set(WMPMainWindowController.handlers(in: skin, event: "playstatechange",
+                                                            targetID: nil, viewID: "main")),
+                       ["playState();"])
+        // Nothing raises a text element's width change, so nothing may answer for it either.
+        XCTAssertTrue(WMPMainWindowController.handlers(in: skin, event: "change", targetID: nil,
+                                                       targetStableID: try node("label").stableID,
+                                                       viewID: "main").isEmpty,
+                      "an _onchange this engine never raises must stay unmatched and keep ranking")
+    }
+
     func testCompatibilityTableIsClosedAndChecked() {
         XCTAssertTrue(WMPJScriptCompatibility.supports(object: "controls", member: "play"))
         XCTAssertTrue(WMPJScriptCompatibility.supports(object: "theme", member: "currentViewID"))

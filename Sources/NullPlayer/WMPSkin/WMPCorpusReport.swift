@@ -301,6 +301,11 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
     static let supportedEvents: Set<String> = [
         "onload", "onclose", "ontimer", "onmousedown", "onmouseup", "onclick", "onchange",
         "onresize", "openstatechange", "playstatechange", "status_onchange", "modechange",
-        "buffering_onchange", "reception_onchange", "viewchange"
+        "buffering_onchange", "reception_onchange", "viewchange",
+        // Aliases of three of the above, accepted by the one matcher that finds handlers, so a
+        // skin authoring either spelling is dispatched. `value_onchange` is honest here for the
+        // user-driven half only; the host-driven half is open work (W51) and is not claimed by
+        // anything else in the engine.
+        "openstate_onchange", "playstate_onchange", "value_onchange"
     ]
 }

@@ -10,7 +10,9 @@
 #
 #   scripts/wmp_skin_census.sh <outdir> [--corpus <dir>] [--allow-dirty] [--parse-only]
 #
-# Output: <outdir>/census.tsv, plus the raw logs it was derived from (render.txt, render.stderr.txt),
+# Output: <outdir>/census.tsv, <outdir>/starved.tsv (every view ranked by how much of it failed to
+# resolve — see W70), <outdir>/appkit.tsv (every hosted view ranked by how much of the window an
+# AppKit overlay painted outside any widget frame — see W71), plus the raw logs it was derived from (render.txt, render.stderr.txt),
 # invariants.txt, damaged.txt, and <outdir>/png/<skin>/*.png.
 #
 # The canonical probe reference is skills/wmp-skin-guide/reference/harness.md. This script restates
@@ -40,7 +42,7 @@ readonly CORPUS_DEFAULT="$HOME/Library/Application Support/NullPlayer/WMPSkins"
 # A loading skin emits at least SKIN + LOAD + COMPAT + one RENDER-DUMP. A *rejected* skin emits only
 # SKIN + SKIN…FAILED, and 10 of 14 archives are rejected today, so the floor cannot assume a load.
 readonly MINIMUM_INVARIANT_LINES_PER_SKIN=2
-readonly INVARIANT_PATTERN='^(HARNESS |SKIN |LOAD |COMPAT |UNKNOWN |FINDING \[|SCRIPTS |RENDER-DUMP |BITMAPS )'
+readonly INVARIANT_PATTERN='^(HARNESS |SKIN |LOAD |COMPAT |UNKNOWN |FINDING \[|SCRIPTS |RENDER-DUMP |BITMAPS |APPKIT )'
 
 # ---- exclusions ---------------------------------------------------------------------------------
 # A blacklisted archive is dropped before anything measures it, by linking the corpus into a farm of
@@ -130,6 +132,7 @@ if [ "$parse_only" -eq 0 ]; then
     WMP_RENDER_BITMAPS=1 \
     WMP_RENDER_SCRIPTS=1 \
     WMP_CALL_TRACE=1 \
+    WMP_RENDER_APPKIT=1 \
         swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus \
         > "$out/render.txt" 2> "$out/render.stderr.txt"
     render_status=$?
@@ -242,11 +245,19 @@ SCRIPTS = re.compile(r"^SCRIPTS programs=(\d+)(?: bytes=(\d+))? runtime=(\S+)")
 UNKNOWN_TAG = re.compile(r"^UNKNOWN tag (\S+) ×(\d+)")
 UNKNOWN_MEMBER = re.compile(r"^UNKNOWN member (\S+) ×(\d+)")
 CALLS = re.compile(r"^CALLS \S+ (\S+) ×(\d+) (ok|INERT|UNRECOGNISED)")
+# W71. `outside` is the number that ranks: an overlay painting inside its own widget frame is the
+# hosting working, and one painting anywhere else is the W43 class — an AppKit surface over the
+# artwork, which no dumped PNG can see because the renderer draws the scene and these are NSViews
+# hosted over it.
+APPKIT = re.compile(r"^APPKIT (\S+): (\S+)@(\d+)x differing=(\d+)/(\d+) \S+ hosted=(\d+)/(\d+) "
+                    r"outside=(\d+) \(\S+\) max-delta=(\d+) blit=(\d+) \(\S+\) blit-max-delta=(\d+)")
 
 COLUMNS = ["file", "sha256", "duplicate_of", "damaged", "load", "reject_codes",
            "encoding", "entries", "views", "nodes", "scripts", "script_runtime",
            "findings_error", "findings_warning", "finding_codes",
            "layouts", "layout_nodes", "commands", "hits", "widgets", "unresolved",
+           "starved_views", "blind_views", "silent_views", "worst_view", "worst_ratio",
+           "appkit_outside_px", "appkit_max_delta", "appkit_worst_view", "appkit_blit_px",
            "bitmaps_resolved", "bitmaps_missing", "missing_bitmaps",
            "unknown_tags", "unknown_members", "top_unknown_members",
            "traced_calls", "unrecognised_calls", "inert_calls",
@@ -255,7 +266,63 @@ COLUMNS = ["file", "sha256", "duplicate_of", "damaged", "load", "reject_codes",
 def cell(value):
     return str(value).replace("\t", " ").replace("\n", " ")
 
+# ---- W70: rank a view by how much of it failed to resolve ---------------------------------------
+# `unresolved` sat in every capture since the sweep existed and nothing looked at it, so ALXMorph —
+# 15 nodes, 15 unresolved, five hit targets, a whole player's worth of controls missing — was
+# invisible until a human opened it. **The rule has to be a ratio, not a count.** The reporter's own
+# control proves why: corona, the skin they called working, carries 8 unresolved on `vPlayer` against
+# 66 nodes, and `unresolved > 0` is true of most views in the corpus. Against 66, 8 is noise; against
+# 15, 15 is the whole view.
+#
+# `nodes` in the RENDER-DUMP line is `resolvedNodeCount`, so the denominator here is nodes+unresolved
+# — every node the view declared — rather than `nodes`, which would divide by zero exactly where the
+# defect is worst (Alienware Invader: 2 resolved, 18 unresolved).
+#
+# A ranked list is not a picture. A promoted view is a view worth dumping and looking at, never a
+# defect on its own: `hits == 0` is correct for a view that is pure artwork.
+class WMPView:
+    __slots__ = ("skin", "view", "nodes", "commands", "hits", "widgets", "unresolved")
+
+    def __init__(self, skin, view, nodes, commands, hits, widgets, unresolved):
+        self.skin, self.view = skin, view
+        self.nodes, self.commands = nodes, commands
+        self.hits, self.widgets, self.unresolved = hits, widgets, unresolved
+
+    @property
+    def declared(self):
+        return self.nodes + self.unresolved
+
+    @property
+    def ratio(self):
+        return self.unresolved / self.declared if self.declared else 0.0
+
+    # Half the nodes the view declared never got a frame. At that point the view is not degraded,
+    # it is starved: what draws is a shell.
+    @property
+    def starved(self):
+        return self.declared > 0 and self.ratio >= 0.5
+
+    @property
+    def blind(self):
+        return self.hits == 0
+
+    @property
+    def silent(self):
+        return self.commands == 0
+
+class WMPHostedView:
+    __slots__ = ("skin", "view", "outside", "max_delta", "differing", "total", "hosted",
+                 "blit", "blit_delta")
+
+    def __init__(self, skin, view, outside, max_delta, differing, total, hosted, blit, blit_delta):
+        self.skin, self.view = skin, view
+        self.outside, self.max_delta = outside, max_delta
+        self.differing, self.total, self.hosted = differing, total, hosted
+        self.blit, self.blit_delta = blit, blit_delta
+
 rows = []
+all_views = []
+all_hosted = []
 for name in files:
     row = dict.fromkeys(COLUMNS, "-")
     row.update(file=name, sha256=digests[name], duplicate_of=duplicate_of.get(name, "-"),
@@ -285,6 +352,8 @@ for name in files:
     resolved, missing = 0, set()
     unknown_tags, unknown_members = [], []
     traced, unrecognised, inert = 0, set(), set()
+    views_measured = []
+    appkit = []
 
     for line in lines:
         if (match := LOAD.match(line)):
@@ -305,6 +374,14 @@ for name in files:
             hits += int(match.group(6))
             widgets += int(match.group(7))
             unresolved += int(match.group(8))
+            views_measured.append(WMPView(name, match.group(1), int(match.group(4)),
+                                          int(match.group(5)), int(match.group(6)),
+                                          int(match.group(7)), int(match.group(8))))
+        elif (match := APPKIT.match(line)):
+            appkit.append(WMPHostedView(name, match.group(1), int(match.group(8)),
+                                        int(match.group(9)), int(match.group(4)),
+                                        int(match.group(5)), int(match.group(6)),
+                                        int(match.group(10)), int(match.group(11))))
         elif (match := BITMAPS.match(line)):
             resolved += int(match.group(2))
             missing.update(match.group(3).split())
@@ -321,6 +398,20 @@ for name in files:
                 # stub that reads as working is the most expensive bug this engine can carry.
                 inert.add(match.group(1))
 
+    starved = [view for view in views_measured if view.starved]
+    worst = max(views_measured, key=lambda view: (view.ratio, view.unresolved), default=None)
+    all_views.extend(views_measured)
+    row.update(starved_views=len(starved),
+               blind_views=sum(1 for view in views_measured if view.blind),
+               silent_views=sum(1 for view in views_measured if view.silent),
+               worst_view=("%s:%d/%d" % (worst.view, worst.unresolved, worst.nodes)) if worst else "-",
+               worst_ratio=("%.2f" % worst.ratio) if worst else "-")
+    all_hosted.extend(appkit)
+    worst_hosted = max(appkit, key=lambda view: (view.outside, view.max_delta), default=None)
+    row.update(appkit_outside_px=sum(view.outside for view in appkit),
+               appkit_max_delta=max((view.max_delta for view in appkit), default=0),
+               appkit_worst_view=(worst_hosted.view if worst_hosted and worst_hosted.outside else "-"),
+               appkit_blit_px=sum(view.blit for view in appkit))
     row.update(findings_error=severities.get("error", 0),
                findings_warning=severities.get("warning", 0),
                finding_codes=";".join(sorted(set(codes))) or "-",
@@ -341,6 +432,37 @@ with open(path, "w") as handle:
     for row in rows:
         handle.write("\t".join(cell(row[column]) for column in COLUMNS) + "\n")
 
+# The promotion. A ranked file, written every run, so a starved view cannot sit in a capture
+# unread the way ALXMorph's did: the census names the worst of them on stdout where the person who
+# ran it is already looking.
+starved_path = os.path.join(out, "starved.tsv")
+ranked = sorted((view for view in all_views if view.starved or view.blind or view.silent),
+                key=lambda view: (-view.ratio, -view.unresolved, view.skin.lower(), view.view))
+with open(starved_path, "w") as handle:
+    handle.write("\t".join(["ratio", "skin", "view", "nodes", "unresolved", "declared",
+                            "commands", "hits", "widgets", "why"]) + "\n")
+    for view in ranked:
+        why = ",".join(word for word, flag in
+                       (("starved", view.starved), ("blind", view.blind), ("silent", view.silent))
+                       if flag)
+        handle.write("\t".join(str(field) for field in
+                                ["%.3f" % view.ratio, view.skin, view.view, view.nodes,
+                                 view.unresolved, view.declared, view.commands, view.hits,
+                                 view.widgets, why]) + "\n")
+
+# The AppKit promotion. Same rule as the starvation one: written every run, worst named on stdout.
+hosted_path = os.path.join(out, "appkit.tsv")
+hosted_ranked = sorted((view for view in all_hosted if view.outside or view.blit),
+                       key=lambda view: (-view.outside, -view.max_delta, -view.blit))
+with open(hosted_path, "w") as handle:
+    handle.write("\t".join(["outside_px", "max_delta", "blit_px", "blit_delta", "skin", "view",
+                            "differing_px", "total_px", "hosted_widgets"]) + "\n")
+    for view in hosted_ranked:
+        handle.write("\t".join(str(field) for field in
+                                [view.outside, view.max_delta, view.blit, view.blit_delta,
+                                 view.skin, view.view, view.differing, view.total,
+                                 view.hosted]) + "\n")
+
 print("wmp_skin_census: %d rows -> %s" % (len(rows), path))
 print("wmp_skin_census: %d archives, %d distinct skins by sha256"
       % (len(files), len(set(digests.values()))))
@@ -357,6 +479,33 @@ for row in rows:
 if codes:
     print("wmp_skin_census: rejections by code " +
           ", ".join("%s=%d" % pair for pair in sorted(codes.items(), key=lambda p: -p[1])))
+starved_views = [view for view in all_views if view.starved]
+blind_views = [view for view in all_views if view.blind]
+silent_views = [view for view in all_views if view.silent]
+print("wmp_skin_census: %d views measured; starved(>=50%% unresolved)=%d/%d skins, "
+      "hits==0=%d/%d skins, commands==0=%d/%d skins -> %s"
+      % (len(all_views),
+         len(starved_views), len({view.skin for view in starved_views}),
+         len(blind_views), len({view.skin for view in blind_views}),
+         len(silent_views), len({view.skin for view in silent_views}),
+         starved_path))
+if ranked:
+    print("wmp_skin_census: worst views by unresolved ratio — dump these and look at them:")
+    for view in ranked[:12]:
+        print("  %.2f  %-34s %-16s %2d/%2d nodes resolved, %d commands, %d hits"
+              % (view.ratio, view.skin, view.view, view.nodes, view.declared,
+                 view.commands, view.hits))
+
+outside_views = [view for view in all_hosted if view.outside]
+print("wmp_skin_census: %d views hosted through AppKit; %d in %d skins paint outside every widget "
+      "frame -> %s"
+      % (len(all_hosted), len(outside_views), len({view.skin for view in outside_views}), hosted_path))
+if outside_views:
+    print("wmp_skin_census: AppKit overlays painting where no widget is — the W43 class:")
+    for view in sorted(outside_views, key=lambda view: -view.outside)[:12]:
+        print("  %7d px  delta %3d  %-34s %s"
+              % (view.outside, view.max_delta, view.skin, view.view))
+
 if damaged:
     print("wmp_skin_census: DAMAGED LOG — no populated row for:")
     for name in sorted(damaged):

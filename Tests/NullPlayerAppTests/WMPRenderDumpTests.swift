@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import XCTest
@@ -25,9 +26,11 @@ import XCTest
 //   WMP_RENDER_EXPR=1              every JScript: geometry expression, its value, its order, deps
 //   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
 //   WMP_RENDER_CLICK=<view>@x,y[;x,y…]   drive clicks in order and report what each one moved
+//                                        an entry written x,y>x,y>x,y is a drag along that path
 //   WMP_RENDER_SETTLE=<seconds>    pump the run loop and drive onTimer before measuring
 //   WMP_RENDER_CLOCK=<s>[;<s>…]    seconds into an animation to draw; one PNG per value
 //   WMP_RENDER_SIZE=<W>x<H>        resize before measuring, then re-drive onResize
+//   WMP_RENDER_APPKIT=1            host the scene in the real NSView stack and diff the two images
 //
 // A skin that fails to load prints `SKIN <file> FAILED <error>` and the sweep carries on: one
 // broken archive must not abandon the other thirteen, and with 10 of 14 rejected today a harness
@@ -91,6 +94,13 @@ struct WMPProbe {
     var wantsScripts: Bool { env["WMP_RENDER_SCRIPTS"] != nil }
     var wantsExpressions: Bool { env["WMP_RENDER_EXPR"] != nil }
     var wantsCallTrace: Bool { env["WMP_CALL_TRACE"] != nil }
+    /// W71. The harness builds scenes and rasterizes them and never calls an `NSView.draw`, so
+    /// every overlay painted over the artwork, every stale overlay frame and every `dirtyRect` bug
+    /// is invisible to it — the class that produced W43-W46 and, on the reporter's evidence, most
+    /// of what live QA found. `cacheDisplay(in:to:)` runs the real `draw(_:)` of the hosted view
+    /// and every overlay over it into a bitmap, with no window on screen and no screen-recording
+    /// permission, and the diff against the renderer's own image says which half a defect is in.
+    var wantsAppKit: Bool { env["WMP_RENDER_APPKIT"] != nil }
 
     var requestedSize: WMPSize? {
         guard let spec = env["WMP_RENDER_SIZE"] else { return nil }
@@ -115,18 +125,28 @@ struct WMPProbe {
         return values.isEmpty ? [0] : values
     }
 
-    /// `<view>@x,y[;x,y…]`. Several points in one run is how a second click is checked to undo the
-    /// first: state that does not survive between them is the defect, not the harness.
-    var clicks: (viewID: String, points: [WMPPoint])? {
+    /// `<view>@x,y[;x,y…]`, where any one entry may instead be a `>`-joined path — `x,y>x,y>x,y` —
+    /// which is a **drag**: press at the first point, move through the rest, release at the last.
+    ///
+    /// Several entries in one run is how a second click is checked to undo the first: state that
+    /// does not survive between them is the defect, not the harness. The drag form is W72: nothing
+    /// in this harness moved the pointer while it was captured, which is exactly where the slider
+    /// math lives, and 163 corpus skins drive volume, seek and ten equaliser bands through it. One
+    /// flag rather than two, because a click is a drag of one point and the two share every line of
+    /// their setup.
+    var gestures: (viewID: String, gestures: [[WMPPoint]])? {
         guard let spec = env["WMP_RENDER_CLICK"] else { return nil }
         let halves = spec.split(separator: "@", maxSplits: 1).map(String.init)
         guard halves.count == 2 else { return nil }
-        let points = halves[1].split(separator: ";").compactMap { entry -> WMPPoint? in
+        func point(_ entry: Substring) -> WMPPoint? {
             let pair = entry.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
             guard pair.count == 2 else { return nil }
             return WMPPoint(x: CGFloat(pair[0]), y: CGFloat(pair[1]))
         }
-        return points.isEmpty ? nil : (halves[0], points)
+        let gestures = halves[1].split(separator: ";").map { entry in
+            entry.split(separator: ">").compactMap(point)
+        }.filter { !$0.isEmpty }
+        return gestures.isEmpty ? nil : (halves[0], gestures)
     }
 
     func probes(_ viewID: String) -> Bool {
@@ -321,6 +341,54 @@ final class WMPRenderDumpTests: XCTestCase {
 
     /// The emitter itself, because a lost line is the one defect this harness cannot report on.
     ///
+    /// The AppKit probe (W71) proves itself in both directions before anything trusts it about a
+    /// skin.
+    ///
+    /// **A probe that reports nothing has to be shown it can see something**, or "no defect" and
+    /// "blind instrument" are the same output — three `.wal` harness blind spots each made a real
+    /// defect look absent. So: a scene with nothing hosted over it must diff to exactly zero (the
+    /// renderer's image is what the view blits, and any non-zero there is the instrument's own
+    /// colour management or scaling, both of which produced false 34% and 47% readings on the way
+    /// to this line), and a scene carrying a `PLAYLIST` must diff *inside* that widget's frame,
+    /// because an `NSView` overlay is drawn there and the scene image contains none of it.
+    @MainActor
+    func testAppKitProbeSeesAnOverlayAndReportsNothingWithoutOne() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .bmp)
+
+        func lines(_ viewName: String, _ body: String) async throws -> [String] {
+            let xml = "<THEME><VIEW id=\"main\" width=\"60\" height=\"40\">\(body)</VIEW></THEME>"
+            let url = try WMPSkinTestSupport.makeArchive([
+                WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+                WMPTestArchiveEntry("pixel.bmp", data: bmp)
+            ])
+            let skin = try await WMPSkinLoader().load(from: url)
+            let store = WMPImageStore(provider: skin.archive)
+            let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+            return await WMPHarness.appKitLines(scene: scene, viewID: viewName, imageStore: store)
+        }
+
+        let plain = try await lines("plain", "<IMAGE id=\"art\" left=\"0\" top=\"0\" width=\"60\" height=\"40\" image=\"pixel.bmp\"/>")
+        let plainSummary = try XCTUnwrap(plain.first)
+        XCTAssertTrue(plainSummary.contains("differing=0/"),
+                      "artwork with nothing hosted over it must diff to zero: \(plainSummary)")
+        XCTAssertTrue(plainSummary.contains("outside=0 "), plainSummary)
+        XCTAssertEqual(plain.count, 1, "no overlay means no per-widget line: \(plain)")
+
+        let hosted = try await lines("hosted", """
+        <IMAGE id="art" left="0" top="0" width="60" height="40" image="pixel.bmp"/>
+        <PLAYLIST id="pl" left="10" top="10" width="40" height="20"/>
+        """)
+        let hostedSummary = try XCTUnwrap(hosted.first)
+        XCTAssertFalse(hostedSummary.contains("differing=0/"),
+                       "an NSView overlay is not in the scene image and must show as differing: \(hostedSummary)")
+        XCTAssertTrue(hostedSummary.contains("hosted=1/"), hostedSummary)
+        // Attributed to the widget, not counted as an unexplained wash: `outside` is the number
+        // that ranks work, so a hosted overlay drawing inside its own frame must not inflate it.
+        XCTAssertTrue(hostedSummary.contains("outside=0 "),
+                      "an overlay inside its own frame is hosting working, not a defect: \(hostedSummary)")
+        XCTAssertTrue(hosted.contains { $0.contains("playlist id=pl") }, hosted.joined(separator: "\n"))
+    }
+
     /// W35 lost 5,087 bytes of one skin's measurements mid-line in a 180-archive sweep, and the
     /// only reason anyone knew is that the collision left a visible splice for the census to flag.
     /// A loss that had landed on a line boundary would have read as a skin that simply drew less.
@@ -593,9 +661,14 @@ enum WMPHarness {
                 WMPHarnessOutput.emit(line)
             }
         }
-        if let clicks = probe.clicks, clicks.viewID.caseInsensitiveCompare(viewID) == .orderedSame {
-            scene = await drive(clicks: clicks.points, on: scene, viewID: viewID, skin: skin,
+        if let driven = probe.gestures, driven.viewID.caseInsensitiveCompare(viewID) == .orderedSame {
+            scene = await drive(gestures: driven.gestures, on: scene, viewID: viewID, skin: skin,
                                 builder: builder, pass: pass, probe: probe)
+        }
+        if probe.wantsAppKit {
+            for line in await appKitLines(scene: scene, viewID: viewID, imageStore: imageStore) {
+                WMPHarnessOutput.emit(line)
+            }
         }
         if let dump {
             try FileManager.default.createDirectory(at: dump, withIntermediateDirectories: true)
@@ -870,13 +943,19 @@ enum WMPHarness {
     /// Several points in order, because a second click undoing the first is the thing worth
     /// checking: under a runtime that cannot hold state between events it does not, and that is the
     /// defect this probe is here to make visible rather than infer.
-    private static func drive(clicks: [WMPPoint], on scene: WMPScene, viewID: String,
+    private static func drive(gestures: [[WMPPoint]], on scene: WMPScene, viewID: String,
                               skin: WMPLoadedSkin, builder: WMPSceneBuilder,
                               pass: WMPScriptPass, probe: WMPProbe) async -> WMPScene {
         var scene = scene
         let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
         var previous = WMPSceneOverrides.empty
-        for point in clicks {
+        for gesture in gestures {
+            guard gesture.count == 1 else {
+                scene = await drag(path: gesture, on: scene, viewID: viewID, skin: skin,
+                                   builder: builder, pass: pass, probe: probe, nodes: nodesByID)
+                continue
+            }
+            let point = gesture[0]
             let where_ = "\(viewID)@\(WMPNumber.format(point.x)),\(WMPNumber.format(point.y))"
             guard let target = WMPHitTester(hits: scene.hits).hitTest(point) else {
                 WMPHarnessOutput.emit("CLICK \(where_) MISS")
@@ -923,6 +1002,344 @@ enum WMPHarness {
             }
         }
         return scene
+    }
+
+
+    // MARK: The AppKit half (W71)
+
+    /// Render the scene twice — once with `WMPRenderer`, once through the **real** `NSView` stack —
+    /// and report where the two disagree.
+    ///
+    /// The harness's whole blind spot was that it never called an `NSView.draw`. `WMPMainView` is
+    /// what the user sees: the scene image drawn into it, plus every AppKit overlay hosted over the
+    /// artwork — playlist, dropdown playlist, popup, edit box, list box, effects. A skin can dump a
+    /// perfect PNG and still be wrong on screen, which is exactly what W43 was (an overlay filling
+    /// `dirtyRect` rather than `bounds`, and AppKit hands a layer-backed view a dirty rect larger
+    /// than itself). `cacheDisplay(in:to:)` runs those `draw(_:)` methods into a bitmap with no
+    /// window on screen and no screen-recording permission, so this scales to the whole corpus.
+    ///
+    /// **The number that ranks work is `outside`, not `differing`.** An overlay is *supposed* to
+    /// paint inside its own widget frame — that is what a widget is — so a difference there is the
+    /// hosting doing its job. A difference outside every widget frame is an overlay painting where
+    /// nothing declared one, and that is the W43 class. `worst=` is its bounding box, which is
+    /// where to look.
+    ///
+    /// Window shape and shadow stay outside this: they live in the window server, and remain a
+    /// short genuinely manual list.
+    @MainActor
+    static func appKitLines(scene: WMPScene, viewID: String, imageStore: WMPImageStore) async -> [String] {
+        let width = Int(scene.canvasSize.width.rounded()), height = Int(scene.canvasSize.height.rounded())
+        guard width > 0, height > 0, width * height <= 16_000_000 else {
+            return ["APPKIT \(viewID): SKIPPED canvas=\(width)x\(height)"]
+        }
+        let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            return ["APPKIT \(viewID): SKIPPED no bitmap rep"]
+        }
+        // **The rep is at the display's backing scale, not the view's point size**, and so is the
+        // image the app presents: `WMPMainWindowController.renderBackingScale` renders at the
+        // window's scale. Two mistakes hide here and both were made on the way to this line —
+        // indexing a 2x rep in points reads the top-left quarter and calls it the window (34% of
+        // Corona "differing"), and presenting a 1x image into a 2x rep diffs AppKit's upscaler
+        // against the renderer (47%). Neither is a defect in the app; both look exactly like one.
+        let scale = max(1, rep.pixelsWide / max(1, width))
+        let pixelWidth = rep.pixelsWide, pixelHeight = rep.pixelsHigh
+        guard let rendered = try? await WMPRenderer(imageStore: imageStore)
+                .render(scene: scene, backingScale: CGFloat(scale)).image,
+              let renderedPixels = pixels(of: rendered, width: pixelWidth, height: pixelHeight) else {
+            return ["APPKIT \(viewID): SKIPPED renderer produced no image at \(scale)x"]
+        }
+
+        view.present(rendered, scene: scene)
+        // AppKit runs neither of these on its own for a view that is in no window, and the overlay
+        // frames come from `layout()`. Without it every overlay sits at `.zero` and the diff below
+        // measures the harness rather than the app.
+        view.layoutSubtreeIfNeeded()
+        view.displayIfNeeded()
+
+        // **The baseline is a second AppKit pass with the overlays hidden, not the renderer's own
+        // image.** `cacheDisplay` composites through the display's colour space and the renderer's
+        // context does not, so a straight comparison of the two is a colour conversion as much as
+        // a measurement: it shifted Corona by a dozen levels (6.8% "differing" on the skin the
+        // reporter called working) and a saturated red by 64 (61% on a four-colour fixture). Both
+        // readings are the instrument, not the app. Two passes through the *same* path cancel that
+        // exactly — what is left between them is precisely what the AppKit layer adds over the
+        // artwork, which is the question W71 asks.
+        let overlays = view.subviews
+        overlays.forEach { $0.isHidden = true }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let bareImage = rep.cgImage,
+              let bare = pixels(of: bareImage, width: pixelWidth, height: pixelHeight) else {
+            return ["APPKIT \(viewID): SKIPPED rep had no data"]
+        }
+        overlays.forEach { $0.isHidden = false }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let hostedImage = rep.cgImage,
+              let hosted = pixels(of: hostedImage, width: pixelWidth, height: pixelHeight) else {
+            return ["APPKIT \(viewID): SKIPPED rep had no data on the second pass"]
+        }
+        let scenePixels = bare
+
+        if let debug = ProcessInfo.processInfo.environment["WMP_RENDER_APPKIT_DUMP"] {
+            let base = URL(fileURLWithPath: debug, isDirectory: true)
+            try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+            if let data = NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:]) {
+                try? data.write(to: base.appendingPathComponent("\(viewID)-scene.png"))
+            }
+            if let data = rep.representation(using: .png, properties: [:]) {
+                try? data.write(to: base.appendingPathComponent("\(viewID)-hosted.png"))
+            }
+        }
+        // Widget frames in the same top-left pixel space as both buffers. The scene's coordinates
+        // are already top-left (`WMPMainView.isFlipped`), and the view is hosted 1:1 here, so no
+        // scale is involved — a scaled window is a different measurement and gets its own run
+        // through `WMP_RENDER_SIZE`.
+        // **Only a widget that actually hosts an `NSView` explains a difference.** `WMPMainView`
+        // builds overlays for these kinds and no others — a `.slider` and a `.text` are drawn by
+        // the renderer into the same image the view then blits, so a difference inside a slider's
+        // frame is not hosting doing its job, it is a defect, and attributing it to the widget it
+        // happens to sit inside would file it as expected. Keep this list in step with
+        // `WMPMainView.synchronizeWidgetViews`; a kind that leaves that list must leave this one.
+        let hostedKinds: Set<WMPWidgetKind> = [.playlist, .dropdownPlaylist, .popup,
+                                               .editBox, .listBox, .effects]
+        let widgetRects = scene.widgets.filter { hostedKinds.contains($0.kind) }
+            .map { widget -> (WMPWidget, WMPRect) in
+                let rect = widget.clipRect.flatMap { widget.frame.intersection($0) } ?? widget.frame
+                return (widget, WMPRect(x: rect.x * CGFloat(scale), y: rect.y * CGFloat(scale),
+                                        width: rect.width * CGFloat(scale),
+                                        height: rect.height * CGFloat(scale)))
+            }
+        var differing = 0, outside = 0, worstDelta = 0
+        var perWidget = [Int: Int]()
+        var minX = pixelWidth, minY = pixelHeight, maxX = -1, maxY = -1
+
+        for y in 0..<pixelHeight {
+            for x in 0..<pixelWidth {
+                let a = (y * pixelWidth + x) * 4
+                let b = a
+                // Alpha first: a transparent pixel in both is the same pixel whatever its RGB, and
+                // most of a `.wmz` canvas is transparent — Corona's player block is the right 346
+                // of 596. Comparing RGB under zero alpha reported the whole surround as differing.
+                let alphaA = Int(scenePixels[a + 3]), alphaB = Int(hosted[b + 3])
+                var different = abs(alphaA - alphaB) > TOLERANCE
+                if !different, alphaA > 0 {
+                    for channel in 0..<3 where abs(Int(scenePixels[a + channel]) - Int(hosted[b + channel])) > TOLERANCE {
+                        different = true
+                    }
+                }
+                guard different else { continue }
+                differing += 1
+                // How *far* apart, not only that they differ. An overlay painting over artwork
+                // moves a channel by hundreds; premultiplied rounding on an antialiased edge moves
+                // it by tens, and the two are indistinguishable from a count alone.
+                var delta = abs(alphaA - alphaB)
+                for channel in 0..<3 {
+                    delta = max(delta, abs(Int(scenePixels[a + channel]) - Int(hosted[b + channel])))
+                }
+                worstDelta = max(worstDelta, delta)
+                let point = WMPPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5)
+                if let index = widgetRects.firstIndex(where: { $0.1.contains(point) }) {
+                    perWidget[index, default: 0] += 1
+                } else {
+                    outside += 1
+                    minX = min(minX, x); minY = min(minY, y)
+                    maxX = max(maxX, x); maxY = max(maxY, y)
+                }
+            }
+        }
+
+        // The blit itself, reported separately and never mixed into the numbers above: does
+        // `WMPMainView.draw` put the renderer's image on screen unchanged? Its `max-delta` is
+        // colour management as much as drawing — a saturated primary round-trips through the
+        // display profile up to ~64 levels off — so read the *shape* of it, not the level: a wrong
+        // rect, a flip or a scale moves whole regions, and this line is how they would be seen.
+        var blitDiffering = 0, blitDelta = 0
+        for index in stride(from: 0, to: pixelWidth * pixelHeight * 4, by: 4) {
+            var delta = abs(Int(renderedPixels[index + 3]) - Int(bare[index + 3]))
+            if renderedPixels[index + 3] > 0 {
+                for channel in 0..<3 {
+                    delta = max(delta, abs(Int(renderedPixels[index + channel]) - Int(bare[index + channel])))
+                }
+            }
+            if delta > TOLERANCE { blitDiffering += 1; blitDelta = max(blitDelta, delta) }
+        }
+
+        let total = pixelWidth * pixelHeight
+        var lines = ["APPKIT \(viewID): \(width)x\(height)@\(scale)x differing=\(differing)/\(total) "
+            + "(\(percent(differing, total))) hosted=\(widgetRects.count)/\(scene.widgets.count) "
+            + "outside=\(outside) (\(percent(outside, total))) max-delta=\(worstDelta) "
+            + "blit=\(blitDiffering) (\(percent(blitDiffering, total))) blit-max-delta=\(blitDelta)"
+            + (maxX >= 0 ? " worst=\(minX / scale),\(minY / scale) "
+                + "\((maxX - minX + 1) / scale)x\((maxY - minY + 1) / scale)" : "")]
+        for (index, count) in perWidget.sorted(by: { $0.value > $1.value }).prefix(8) {
+            let (widget, rect) = widgetRects[index]
+            lines.append("APPKIT \(viewID)/\(widget.stableID) \(widget.kind.rawValue) "
+                + "id=\(widget.nodeID ?? "-") frame=\(rectText(widget.frame)) "
+                + "differing=\(count) (\(percent(count, max(1, Int(rect.width * rect.height)))))")
+        }
+        view.prepareForUITeardown()
+        return lines
+    }
+
+    /// Colour management, not drawing, is what a loose tolerance buys off: `cacheDisplay` composites
+    /// through the display's colour space and the renderer's context does not, so identical artwork
+    /// lands a few levels apart. Anything this probe is for — an overlay over the artwork, a wash
+    /// across the window, a control at a stale frame — moves whole channels, not four levels.
+    private static let TOLERANCE = 12
+
+    private static func percent(_ part: Int, _ whole: Int) -> String {
+        whole > 0 ? String(format: "%.2f%%", 100 * Double(part) / Double(whole)) : "-"
+    }
+
+    /// Top-row-first RGBA8. `NSBitmapImageRep` is top-first and a `CGContext` is bottom-first, so
+    /// one of the two has to be flipped before they can be compared at all; flipping here keeps the
+    /// reported rectangles in the scene's own coordinates.
+    private static func pixels(of image: CGImage, width: Int, height: Int) -> [UInt8]? {
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        let ok: Bool = buffer.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(data: raw.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return ok ? buffer : nil
+    }
+
+    // MARK: Drags
+
+    /// Press, move along a path with the pointer captured, release — W72.
+    ///
+    /// `WMP_RENDER_CLICK` pressed and released and nothing ever moved between the two, so the
+    /// slider math the whole Phase 5 rewrite lives in was measured by nobody: 163 corpus skins
+    /// drive volume, seek and ten equaliser bands through a drag, and the harness could not tell a
+    /// thumb that follows the pointer from one that jumps to the press point and stays there.
+    ///
+    /// It computes the value the way `WMPMainView.performSlider` does — the same `WMPSliderMetrics`
+    /// and the same `positionMap` short-circuit, read out of the scene rather than reimplemented —
+    /// and then rebuilds. **The two claims it can settle are the two the flag exists for**: the
+    /// value moves monotonically with the pointer along the control's own axis, and the drawn thumb
+    /// moves with it. A value that tracks while the thumb does not is a rendering defect; a thumb
+    /// that tracks a value nothing else sees is a binding defect. Both were previously invisible.
+    private static func drag(path: [WMPPoint], on scene: WMPScene, viewID: String,
+                             skin: WMPLoadedSkin, builder: WMPSceneBuilder, pass: WMPScriptPass,
+                             probe: WMPProbe, nodes: [Int: WMPNode]) async -> WMPScene {
+        var scene = scene
+        let start = path[0]
+        let where_ = "\(viewID)@\(WMPNumber.format(start.x)),\(WMPNumber.format(start.y))"
+            + ">\(WMPNumber.format(path[path.count - 1].x)),\(WMPNumber.format(path[path.count - 1].y))"
+        guard let target = WMPHitTester(hits: scene.hits).hitTest(start) else {
+            WMPHarnessOutput.emit("DRAG \(where_) MISS")
+            return scene
+        }
+        // The captured target, exactly as the view holds it from `mouseDown` to `mouseUp`: a drag
+        // that left the control's frame would otherwise re-hit-test onto whatever is under the
+        // pointer, which is the one thing a captured drag never does.
+        let widget = scene.widgets.first { $0.stableID == target.stableID }
+        let isSlider = target.kind.lowercased().contains("slider")
+            || [WMPTransportAction.seek, .volume, .balance].contains(where: { $0 == target.action })
+        WMPHarnessOutput.emit("DRAG \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) "
+            + "kind=\(target.kind) slider=\(isSlider) "
+            + "direction=\(widget?.direction.map(String.init(describing:)) ?? "-") "
+            + "min=\(WMPNumber.format(CGFloat(widget?.minimumValue ?? 0))) "
+            + "max=\(WMPNumber.format(CGFloat(widget?.maximumValue ?? 0))) "
+            + "border=\(WMPNumber.format(widget?.borderSize ?? 0)) steps=\(path.count)")
+        guard isSlider else {
+            // Not a defect: a drag that starts on a button is how a `.wmz` moves its own window.
+            // Reported rather than skipped, so a mis-aimed probe reads as mis-aimed.
+            WMPHarnessOutput.emit("DRAG \(where_) not-a-slider — no value tracking to measure")
+            return scene
+        }
+
+        var values: [Double] = []
+        var thumbs: [WMPRect] = []
+        for (step, point) in path.enumerated() {
+            let live = scene.widgets.first { $0.stableID == target.stableID }
+            let minimum = live?.minimumValue ?? 0, maximum = live?.maximumValue ?? 100
+            let metrics = WMPSliderMetrics(direction: live?.direction ?? .horizontal,
+                                           minimum: minimum, maximum: maximum,
+                                           value: live?.value ?? minimum,
+                                           borderSize: live?.borderSize ?? 0)
+            let map = scene.hits.first { $0.stableID == target.stableID }?.positionMap
+            let mapped = map?.fraction(at: point, in: target.frame)
+            let value = mapped.map { minimum + $0 * (maximum - minimum) }
+                ?? metrics.value(at: point, in: target.frame, thumbSize: live?.thumbSize ?? .zero)
+            values.append(value)
+
+            if let session = pass.session {
+                await session.setWidgetValue(stableID: target.stableID, value: value)
+                // **The app's own matcher, not a second one.** A harness that looks up handlers by
+                // its own rule measures a different engine: `value_onchange` is authored by 175 of
+                // 179 archives and is accepted for `change` by
+                // `WMPMainWindowController.handlers(in:event:…)`, so a private lookup here would
+                // report every one of those sliders as having no handler.
+                let handlers = await MainActor.run {
+                    WMPMainWindowController.handlers(in: skin, event: "change", targetID: nil,
+                                                     targetStableID: target.stableID, viewID: viewID)
+                }
+                let output = await session.transact(skin: skin, viewID: viewID,
+                    size: scene.canvasSize, snapshot: WMPHostSnapshot(),
+                    event: handlers.isEmpty ? nil
+                        : WMPJScriptEvent(name: "onChange", targetID: target.nodeID, handlers: handlers),
+                    geometry: scene.scriptGeometry)
+                for diagnostic in output.diagnostics {
+                    WMPHarnessOutput.emit("DRAG \(where_) [\(diagnostic.code)] \(diagnostic.message)")
+                }
+                if let rebuilt = try? await builder.build(viewID: viewID,
+                                                          requestedSize: probe.requestedSize,
+                                                          overrides: output.overrides) {
+                    scene = rebuilt
+                }
+            }
+            // What the renderer will actually paint the thumb at. The scene builder appends the
+            // thumb last for a slider node, so the last command carrying that stable id *is* the
+            // thumb; the track and any progress fill precede it.
+            let thumb = scene.commands.last { $0.stableID == target.stableID }?.frame
+            thumbs.append(thumb ?? .zero)
+            WMPHarnessOutput.emit("DRAG \(where_) step=\(step) at=\(WMPNumber.format(point.x)),"
+                + "\(WMPNumber.format(point.y)) value=\(WMPNumber.format(CGFloat(value))) "
+                + "drawn=\(scene.widgets.first { $0.stableID == target.stableID }?.value.map { WMPNumber.format(CGFloat($0)) } ?? "-") "
+                + "thumb=\(thumb.map(rectText) ?? "-")")
+        }
+
+        // Monotonic **against the pointer**, not in the abstract: a vertical slider's value rises
+        // as `y` falls, so the expected sign comes from the path, and a drag that doubles back is
+        // reported as `mixed` rather than failed.
+        let vertical = (scene.widgets.first { $0.stableID == target.stableID }?.direction ?? .horizontal) == .vertical
+        let axis = path.map { vertical ? -$0.y : $0.x }
+        let travel = thumbs.dropFirst().enumerated().reduce(CGFloat(0)) { total, entry in
+            let previous = thumbs[entry.offset]
+            return total + abs(entry.element.x - previous.x) + abs(entry.element.y - previous.y)
+        }
+        WMPHarnessOutput.emit("DRAG \(where_) value \(WMPNumber.format(CGFloat(values[0]))) -> "
+            + "\(WMPNumber.format(CGFloat(values[values.count - 1]))) "
+            + "follows-pointer=\(agreement(values: values, axis: axis)) "
+            + "thumb-travel=\(WMPNumber.format(travel))")
+        return scene
+    }
+
+    /// `yes` when every step the pointer moved along the axis moved the value the same way, `no`
+    /// when one moved it the other way, `flat` when the value never changed at all — which is the
+    /// failure a `yes`/`no` answer would hide, because a slider stuck at one value is trivially
+    /// non-decreasing.
+    private static func agreement(values: [Double], axis: [CGFloat]) -> String {
+        var sawAgreement = false
+        for index in 1..<max(values.count, 2) where index < values.count {
+            let pointer = axis[index] - axis[index - 1]
+            let value = values[index] - values[index - 1]
+            guard abs(pointer) > 0.001 else { continue }
+            if abs(value) < 0.000_1 { continue }
+            if (pointer > 0) != (value > 0) { return "no" }
+            sawAgreement = true
+        }
+        return sawAgreement ? "yes" : "flat"
+    }
+
+    private static func rectText(_ rect: WMPRect) -> String {
+        "\(WMPNumber.format(rect.x)),\(WMPNumber.format(rect.y)) "
+            + "\(WMPNumber.format(rect.width))x\(WMPNumber.format(rect.height))"
     }
 
     private static func changeLines(from before: WMPSceneOverrides, to after: WMPSceneOverrides,
