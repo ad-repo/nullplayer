@@ -2,9 +2,18 @@ import Foundation
 
 /// A surface a `.wmz` skin may provide itself, and that NullPlayer also has a window for.
 ///
-/// Only these two. Every other window NullPlayer opens — the library, the spectrum analyser, Cava,
-/// Flow, PeppyMeter, the waveform, the analysis panes, the visualizer — has no counterpart in the
-/// WMP skin format at all, so nothing there can be redundant.
+/// **Only these two, and that is a gap rather than the whole list.** This comment used to say every
+/// other window NullPlayer opens has no counterpart in the WMP skin format at all; measured over the
+/// 179-archive corpus on 2026-09-09, four do. `<EFFECTS>` reaches **171 skins** and `<VIDEO>` 170 —
+/// more than the playlist's 170 and the equaliser's 163 — plus `<VIDEOSETTINGS>` (94) and
+/// `<NETWORK>` (4). So the visualizer and video toggles still open our window over a skin that
+/// declares its own, which is the defect this type exists to prevent.
+///
+/// A case is not the fix on its own: routing stands NullPlayer's window aside on the strength of an
+/// authored tag, so **adding one before `WMPMainView` hosts that surface trades a duplicate window
+/// for an empty drawer.** W101-W105 in `WMP_TASKS.md` § *Tier 1e* rank the hosting ahead of the
+/// routing for that reason. The library, Cava, PeppyMeter, the waveform and the analysis panes do
+/// genuinely have no counterpart.
 enum WMPSkinSurface: String, CaseIterable {
     case playlist
     case equalizer

@@ -36,6 +36,28 @@ one** — the corpus moves, and a document quoting a frozen number goes wrong in
 right. Each row carries a sha256 so byte-identical archives under two filenames are visible as
 duplicates instead of counted twice.
 
+### Counting a tag across the corpus
+
+`scripts/wmp_markup_census.sh <outdir> <tag-or-attribute ...>` is the instrument, and it is the only
+one to use. It matches `<NAME[[:space:]/>]`, so `VIDEO` does not catch `<VIDEOSETTINGS>`, and it
+strips each `.wms` to ASCII first for the two traps in its own header comment (grep goes silent on a
+UTF-16 file; a tag is spread over many lines).
+
+**Do not write your own scanner for this, and distrust any number that came from one.** The surface
+inventory in `SKILL.md` was first measured by an ad-hoc Python scan trying `utf-8-sig`, then
+`utf-16`, then `cp1252` — and **`bytes.decode('utf-16')` does not fail on Windows-1252 text**. Any
+even-length cp1252 `.wms` decodes to silent garbage, so the tag is simply absent from the result:
+`activate.wmz` reported zero `<EFFECTS>` elements and has one, and the corpus totals came out
+**151 / 138 skins where the census says 183 / 166**. Every count was low, none was obviously wrong,
+and the error was invisible until two instruments were compared. If a scan of your own is genuinely
+unavoidable, decode the way `WMPTextDecoder` does — BOM first, then a **positional** BOM-less UTF-16
+sniff, then Windows-1252 — and reconcile it against the census before recording a number anywhere.
+
+**Views are the one thing the census does not count**, so the per-view numbers in `SKILL.md`
+§ *Ask what the skin provides* (595 views across 179 archives; which surface lives in which view;
+`openView` targets by name) came from splitting each `.wms` on `<VIEW` with that decoder. Re-derive
+them the same way and state the denominator, exactly as every other count on this page does.
+
 ---
 
 ## The probe flags

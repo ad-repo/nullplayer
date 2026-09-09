@@ -430,9 +430,14 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // **The skin draws its own controls; an overlay is for what the scene genuinely cannot
         // paint.** `.video` left this list because `WMPVideoPlaceholderView` filled its frame with
         // opaque black over the artwork of every skin that authors a `<VIDEO>` — 167 of 178 — and
-        // an audio player has no video to put there instead (W9). `.equalizer` left it because
-        // `EQUALIZERSETTINGS` is no longer a widget at all: the skin's own bound sliders are the
-        // equaliser.
+        // an audio player has no video to put there instead (W9) — which stopped being true when
+        // `Windows/VideoPlayer` landed, so W102 is conditional hosting rather than a placeholder.
+        // `.equalizer` left it because `EQUALIZERSETTINGS` is no longer a widget at all: the skin's
+        // own bound sliders are the equaliser.
+        //
+        // **`.effects` is in this list and has almost never been reached**: `WMPElementKind` maps
+        // `wmpeffects` and not `effects`, so 166 of the corpus's 177 archives spell their
+        // visualization surface in a tag that falls to `.unknown` and is never a widget (W101).
         let native = widgets.filter { [WMPWidgetKind.playlist, .dropdownPlaylist, .popup,
                                        .editBox, .listBox, .effects].contains($0.kind) }
         let wanted = Set(native.map(\.stableID))

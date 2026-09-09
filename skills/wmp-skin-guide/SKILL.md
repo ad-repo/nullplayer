@@ -294,6 +294,34 @@ found by looking at the screen rather than by reasoning.
 
 ### Ask what the skin provides before opening a window of your own
 
+**The corpus declares six surfaces and this engine hosts two.** Measured 2026-09-09 over the 179
+archives and their 595 views — `views` counts views declaring the surface, `own view` counts skins
+that put it somewhere other than the view they open on:
+
+| Surface | views | skins | own view | Hosted |
+|---|---:|---:|---:|---|
+| `<VIDEO>` / `<WMPVIDEO>` | 268 | 170 | 165 | no (W9 removed the opaque placeholder; W102 is the row) |
+| `<EFFECTS>` / `<WMPEFFECTS>` | 178 | 171 | 144 | 5 skins only — the tag `<EFFECTS>` is not an element kind (W101) |
+| `<PLAYLIST>` family | 175 | 170 | 162 | yes |
+| `<EQUALIZERSETTINGS>` | 170 | 163 | 147 | yes — the skin's own bound sliders are the equaliser |
+| `<VIDEOSETTINGS>` | 94 | 94 | 93 | no (W103) |
+| `<NETWORK>` | 6 | 4 | 4 | object-only, and correctly so (W104) |
+
+**`WMPSkinSurface` models the middle two, and its doc comment used to claim there was nothing else
+to model.** There is: the visualizer and the video window are surfaces this app has its own window
+for and 170 skins declare themselves, so the menu toggles for those open ours over the skin's own —
+the same defect W93 opened for the playlist. **Adding a routing case before the surface is hosted
+trades a duplicate window for an empty drawer**, which is why the routing row (W105) is ranked
+behind the hosting rows and not with them.
+
+**A `.wmz` also authors windows this player has no content for at all**, and they are not defects:
+`infoView` (45 `openView` calls across the corpus) is the skin's own about/links/gallery panel,
+`contentView` (24) a promotional content viewer, `vidRemoteView`/`remoteView` a floating remote, and
+`previewView` (16 skins), `mediaSwitcherView` (21) and `versionView`/`upgradeView` are opened by the
+*host*, not the user — a skin-chooser thumbnail, a media-type switch, and a "you need a newer
+player" notice. `controlView` (24 skins) is the windowless dispatcher described above. None of these
+wants NullPlayer content mapped into it; leave them to the skin.
+
 **171 of the 180 corpus skins declare a playlist and 164 an equaliser** (164 declare both), so for
 those two surfaces NullPlayer's window is the *fallback*, not the default — opening it
 unconditionally puts a second, differently-styled playlist over nearly every skin in the corpus.

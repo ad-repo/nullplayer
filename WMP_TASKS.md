@@ -10,6 +10,11 @@ same change that closes them, so this file stays a list of work that is still op
 
 ## Ranking
 
+**Start here: W101, in Tier 1e.** `<EFFECTS>` is not an element kind, so the visualization surface
+of **166 of 177 archives** is hosted on nothing at all — the largest single unhosted surface left in
+the corpus, and the one with authored geometry already waiting for it. Taken 2026-09-09 by another
+session; the four rows beside it (W102-W105) are the rest of the surface-mapping work and are not.
+
 **Tier 0 is empty and the magenta class is closed.** W78 landed on 2026-09-08 and **W78a closed the
 same day**, taking the corpus residual from 7,253 opaque magenta pixels across 15 views to **878
 across 2 of 545** — and neither of those two is an implicit-key case. `portals/mode1` (829 px, 0.38%)
@@ -195,16 +200,37 @@ What is left of that gap is one row.
 
 ## Tier 1e — a surface the skin owns and this engine does not host
 
-Opened 2026-09-09 by W93 and **empty since the same day**: W97 closed the only row it held, so what
-the skin declares as a playlist and what this engine hosts are now the same list. The tier stays
-because the question recurs — routing stands NullPlayer's own window aside on the strength of an
-authored tag, so any new playlist or equaliser spelling this engine recognises for *routing* and
-does not host draws the user an empty drawer. Both W97 and W93 are in
+Opened 2026-09-09 by W93, emptied the same day by W97, and **re-opened 2026-09-09 with four
+surfaces in it**: playlist and equaliser are the two this engine hosts, and the corpus declares six.
+The tier's own rule is why the routing row (W105) sits *behind* the hosting rows rather than with
+them — routing stands NullPlayer's own window aside on the strength of an authored tag, so a surface
+recognised for *routing* and not hosted draws the user an empty drawer. Both W97 and W93 are in
 [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 13* and
 § *Phase 11*; the rule is in `skills/wmp-skin-guide/reference/object-model.md` § *Playlist kinds*.
 
+**What the corpus declares, measured 2026-09-09 over the 179 archives and 595 views** (`skins` is
+skins declaring it anywhere; `own view` is skins that put it in a view other than the one they open
+on). Reproduce the element counts with `scripts/wmp_markup_census.sh <outdir> EFFECTS WMPEFFECTS
+VIDEO WMPVIDEO VIDEOSETTINGS NETWORK PLAYLIST EQUALIZERSETTINGS` — **never with an ad-hoc script
+that decodes the `.wms` itself**, and `skills/wmp-skin-guide/reference/harness.md` § *Counting a tag
+across the corpus* is the trap that rule exists for.
+
+| Surface | views | skins | own view | Hosted today | Row |
+|---|---:|---:|---:|---|---|
+| `<VIDEO>` / `<WMPVIDEO>` | 268 | 170 | 165 | no — placeholder removed by W9 | **W102** |
+| `<EFFECTS>` / `<WMPEFFECTS>` | 178 | 171 | 144 | 5 skins only, and by accident | **W101** |
+| `<PLAYLIST>` family | 175 | 170 | 162 | yes (W93, W97) | — |
+| `<EQUALIZERSETTINGS>` | 170 | 163 | 147 | yes, as the skin's own bound sliders | — |
+| `<VIDEOSETTINGS>` | 94 | 94 | 93 | no | **W103** |
+| `<NETWORK>` | 6 | 4 | 4 | object-only, correctly | **W104** |
+
 | ID | Item | Reach | Notes |
 |---|---|---|---|
+| W101 | `<EFFECTS>` is not an element kind, so the visualization surface of 166 skins is hosted on nothing | **183 uses across 166 of 177 archives**, against `<WMPEFFECTS>`'s **5 / 5**, measured 2026-09-09 with `scripts/wmp_markup_census.sh <outdir> EFFECTS WMPEFFECTS` | `WMPElementKind(tagName:)` (`Sources/NullPlayer/WMPSkin/WMPNode.swift:55`) maps `wmpeffects` and **not** `effects`, so `<EFFECTS>` falls to `.unknown`, `widgetKind` returns nil, and `WMPMainView.synchronizeWidgetViews` never attaches `WMPEffectsSurfaceView` — which has therefore only ever run on the five archives that spell it `<WMPEFFECTS>`, with `onSpectrumDemandChanged` false across the rest of the corpus. **The geometry is authored and nothing has to be invented**: every `<EFFECTS>` element measured carries `width` and `height`, most of them expressions off the frame the skin drew for it (`WoW`: `<effects id="visEffects" width="jscript:visFrame.width" height="jscript:visFrame.height" windowed="false" …/>`). **What goes in it is the second half and the larger one.** `WMPEffectsSurfaceView` is a hand-rolled 32-bar green spectrum, not this player's own visuals; the work is routing `Visualization/VisualizationEngine` **or** the spectrum window's renderer into that rect, selectable rather than fixed. **The skin has already said which it wants and where the choice lives**: 96 skins bind `currentEffectType="wmpprop:mediacenter.effectType"` and `currentPreset="wmpprop:mediacenter.effectPreset"` (172 and 144 uses), so the selector is a host property on `mediacenter`, not a menu to invent — `currentEffectType` reaches 119 skins and `currentPreset` 110 as attributes, `effectType` 67, and 52 skins wire `onClick` on the rect to cycle it. `windowed` (125 skins, `"false"` in 108) is the flag saying whether the surface is inline or its own window. **Do not repeat W9's mistake**: an opaque surface with nothing to show is worse than none, so the rect must be transparent when no visualizer is running. Reproduce with `WMP_SKIN=…/WoW.wmz WMP_RENDER_PROBE=visView` — a `WIDGET` line per hosted surface — and count the corpus before and after with a render sweep, since 144 skins put this in a view of its own. |
+| W102 | `<VIDEO>` is hosted on nothing, and this player has a video window | **268 views across 170 of 179 archives**, 165 of them in a view of their own; `<WMPVIDEO>` a further 16 / 16 | W9 removed the opaque `WMPVideoPlaceholderView` for the right reason — it filled its frame with black over the artwork of 166 skins and an audio player had nothing to put there — and the note it left (`WMPMainView.swift:431`) says "an audio player has no video to put there instead", which **is no longer true**: `Windows/VideoPlayer/VideoPlayerView.swift` exists and plays. The row is therefore conditional hosting, not a placeholder: host the video layer in the authored frame **only while the current track actually has a video track**, and keep standing aside otherwise. Two things fall out of it rather than being separate work — W56's `onVideoStart`/`onVideoEnd` (114 and 105 skins) become raisable off a real surface, and `fullscreen` (80 skins), `shrinkToFit` (87) and `stretchToFit` (83) become answerable. Settle what a `.wmz` may see of the video path before writing any of it, the way W66 is held on the media-collection question. |
+| W103 | `<VIDEOSETTINGS>` binds 94 skins' sliders to controls this player does not have | **94 uses across 94 of 177 archives**, one per skin, 93 of them in a view of their own | The brightness / contrast / hue / saturation panel — and the tooltip vocabulary is unambiguous about what the sliders are (`brightness` 80, `hue` 80, `saturation` 79, `contrast` 78, plus `reset …` ×20 each across the corpus's `toolTip` attributes). NullPlayer's video path exposes none of the four, so **this is a decision, not drawing work**: either `inert()` — the trap `INERT` exists for — or add the four controls to the video path in W102's wake and bind them honestly. Do not resolve them to a value this player never applies; a slider that moves and changes nothing is the worse of the two outcomes. Rank it behind W102, which decides whether there is anything to bind to. |
+| W104 | `<NETWORK>` answers nothing, and Flow is not what it means | **6 uses across 4 of 177 archives**; the smallest surface in the corpus | `<NETWORK>` is an object, not a control — it authors no attributes at all in the whole corpus, so `WMPSceneBuilder.isNonLayout` treating it as non-layout is correct and stays. What a skin reads off it is stream state: `player.network.downloadProgress` and `player.network.bufferingProgress` already resolve in `WMPPropertyRegistry.swift:126`, and `bandwidth`, `receivedPackets` and `lostPackets` are the members behind the `network bandwidth` (12) and `buffering progress` (10) tooltips. **Feed it from the streaming player's own statistics, never from Flow**: `Windows/NetworkMonitor` measures *interface* throughput for the whole machine, which is a different quantity from this stream's bitrate and buffer, and wiring one to the other would draw a confident wrong number. Flow is still the right *window* for the routing half (W105) — 4 skins declare a network view and nothing else in this app claims that menu slot — but the object and the window are two separate answers. |
+| W105 | `WMPSkinSurface` models two of the six surfaces the corpus declares | visualization **171 skins**, video **170**, video settings **94**, network **4** — against playlist 170 and equaliser 163, all measured 2026-09-09 over 179 archives | `WMPSkinSurface` has exactly two cases, and its own doc comment claims "every other window NullPlayer opens … has no counterpart in the WMP skin format at all, so nothing there can be redundant" — **false, and corrected in place 2026-09-09**; four surfaces have a counterpart. The consequence is that the Windows-menu toggles for the visualizer and the video window open ours over a skin that declares its own, which is the exact defect W93 was opened to stop for the playlist. The change is small and its ordering is not: adding a case makes `routeWMPSkinSurface` stand our window aside, so **a case added before its surface is hosted trades a duplicate window for an empty drawer** — this tier's founding rule. Land W101 and W102 first, then add `.visualization` and `.video`; `.networkStats` may go in ahead of them because Flow's own window is the fallback either way, and `.videoSettings` earns a case only if W103 implements something. The three shapes the routing has to answer are unchanged and are in `skills/wmp-skin-guide/SKILL.md` § *Ask what the skin provides before opening a window of your own*. |
 | W98 | A `DROPDOWNPLAYLIST` with no authored height never resolves, so it is never hosted | `corona`'s `ddpl`; **unmeasured corpus-wide — count it before taking the row** | Found 2026-09-09 while closing W55, and it is the `+1 unresolved` on Corona's drawer opening. `<DROPDOWNPLAYLIST id="ddpl" left="60" top="7" width="170" visible="false" dropDownList="showAll" dropDownVisible="true"/>` authors no height and has no artwork to take one from, so the builder — which correctly never invents geometry — leaves it unresolved and `widgetKind` never runs. Its sibling `ipl` hosts fine, which is why Corona's drawer has a list and no chooser above it. A dropdown is one of the few controls with an *intrinsic* height (the platform combo's), so this may be the one place the builder should ask the widget rather than the markup — establish what WMP sizes it to first. Start by counting how many `DROPDOWNPLAYLIST`/`POPUP` nodes in the corpus author no height. |
 
 ## Tier 2 — the script runtime, after Phase 3
