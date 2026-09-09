@@ -20,6 +20,13 @@ corpus scripts read, and a skin belongs on it when no work in this engine change
 panel without one, exactly as real WMP does. An excluded archive never ranks work; see
 `reference/harness.md`.
 
+**A skin that has taught this engine something has a dossier: `reference/skins/`.** One file per
+`.wmz` that produced two or more unrelated defects, or one no probe could see — what it exercises,
+what it found, **what was ruled out**, and the decoded coordinates that reach its controls.
+`reference/skins/README.md` says when to write one and what belongs in it, and carries the
+counter-evidence table: the skins that disagree with a change that looked right, and the rule each
+one holds down. Check that table before landing an engine-wide change.
+
 **Measure before you reason.** `reference/harness.md` is the canonical probe and corpus reference —
 every env-var flag, the line grammar, `scripts/wmp_skin_census.sh`, `scripts/wmp_render_sweep.sh`,
 `scripts/wmp_markup_census.sh`, and the traps those scripts enforce. No other file restates a command; add a flag there in the same
@@ -116,6 +123,49 @@ queue, with the object model as the security boundary — see Amendment 2 in
 - **A view arrived at by a switch loads exactly like one arrived at by launch, and a `.wmz` compact mode is built entirely out of that.** `switchView(to:)` raises `load` on the new view, applies the host commands the handler posts — *after* `apply`, which sets the view timer from markup, so the script's `setViewTimerInterval` is the override and not the other way round — and schedules its `timerRequests`. It did none of the three for a long time (W46), and Corona's `viewTiny` is authored `timerInterval="0"` and animates itself into the mini player from `OnTinyLoad` alone: the switch happened, nothing ran, and the compact view drew **the same artwork at the same size as the player**. The only visible symptom was the playlist and equaliser drawers going away, because `viewTiny`'s markup does not have them. Two consequences bind: the initial-load `collapsed` guard applies here too, since a view can now blank itself in an `onLoad` this path finally runs; and `viewchange` is dispatched only when the markup authors a handler, because a transaction's `timerRequests` are what *that* transaction registered and an unconditional binding-only one posts an empty set that cancels what `load` just scheduled.
 - **The skin's own JScript is ES3, and `JSContext` is not — `WMPJScriptDialect` is where that is reconciled (W86).** WMP9's `corona_tiny.js` chains its compact-mode animation by appending a timer event to the array its `TimerDispatch` is enumerating with `for-in`. JScript visits the appended index; JavaScriptCore snapshots and does not, so the chained event was dropped on the tick it was registered and the whole WMP9 family could neither collapse its video panel nor get back to `vPlayer`. Corona's 2002 script splices the array instead and is unaffected, which is what made `corona` the control and `9SeriesDefault` the case. The rewrite is bounded, skips strings/comments/regex literals, and leaves a program with no `for-in` byte-identical; **3 of 180 archives use `for-in` at all and one depends on the live semantic**, so the corpus sweep is the proof it changed nothing else. **Before ranking a "the script runs and nothing happens" defect, ask whether the handler depends on an ES3 semantic** — no headless probe here can see that class, and the live `INPUT script-diag` line stays silent because nothing throws. And when you add to this file's scanner: **test a CRLF fixture.** Swift folds `"\r\n"` into one `Character` that is not `"\n"`, and the first version of the rewrite silently did nothing to the entire corpus for that reason while every LF-only unit test passed.
 - **A `<property>_onchange` fires in the same transaction as the write that triggered it, and the view's `JScript:` geometry expressions are *not* re-run to achieve the same thing.** A `.wmz` animates by writing geometry once per timer tick, so a pane positioned off a moving one has to move in the same frame; letting it catch up on the next transaction tore the compact view into two visible halves that closed four seconds later (W87). Only what the skin declared is raised — 16 geometry `_onchange` attributes across 6 archives — bounded and once per property per transaction, so two panes positioned off each other cannot loop. **Re-resolving the expression set after the handlers is the tempting general form and it is wrong**: those attributes are an initial layout rather than a live binding, and several read the property they write (`left="JScript:svBottomLeft.width-left"`), so re-running them moved 175 of 545 corpus images and shattered `Back to the Future Trilogy`'s `videoView` and `ALXMorph`'s frame. That is what a sweep is for; it was reverted on the measurement, not on taste.
+- **A tween's endpoint is not readable by the rest of the handler that started it (W112).** WMP
+  animates `moveTo`/`resizeTo`/`alphaBlendTo` over the call's duration argument, so an element's
+  `left` still answers where it *is* for the remaining statements — and skins are written against
+  exactly that. `Cablemusic`'s playlist tab is `onClick="PlayListMove();HidePlist();"`: the first
+  slides the drawer, the second reads `subPlayList.left` to decide whether it is now open or shut.
+  With the endpoint applied inside the call that read answered the destination, so closing the
+  drawer never hid the playlist and it stayed over the player forever — reported as "the playlist is
+  always showing". `WMPObjectModel.tween` queues the endpoint and `WMPScriptContext` flushes at each
+  handler boundary, so W38 (the endpoint lands this transaction) and W55 (`onEndMove` is raised from
+  it) both still hold. **A duration of zero is not a tween** and applies immediately, which is what
+  `movePlayButton()`'s `moveTo(x, 116, 0)` toggle depends on.
+- **A `.wmz` compact mode is a script resizing its own window, and it is the script's output rather
+  than the drawing's (W113).** `SwitchSmall()` writes `view.width = 475; view.height = 373` and
+  swaps one shell for another. Three separate things had to hold and none of them did:
+  **the view root reads its own size overrides before its markup**, like every other node — the
+  literal used to win, so a `<VIEW width="593">` could never be resized by its own script;
+  **the size a script assigns is not the size alignment is measured from** — `ownAuthoredSize` stays
+  the markup's, because `LostPlanet`'s `onLoadInfo` opens with `view.width = view.minWidth` and
+  collapsing the delta to zero stopped its stretch tiles covering the 61 px they were covering,
+  punching holes through the window frame; and **it is committed in the uncancellable half of the
+  transaction**, beside the host commands, because with a track playing a `status_onchange` lands
+  five times a second and cancels the click's task after its render (W88). The overrides had already
+  committed, so the *next* rebuild drew the compact player at the old canvas — a 475x373 player in a
+  593x600 window, which is the "large overlay" that was reported. `WMPScriptOutput.viewSize` carries
+  it, keyed off the **mutations** so an expression-driven `<VIEW width="jscript:…">` — which already
+  read the window's current size — is not mistaken for a resize request. A non-positive result is
+  not a size: that is the store-thumbnail collapse, and ten more `mediaSwitcherView`s joined the
+  documented `WMP0035` windowless class when the override finally reached the view root.
+- **A number a script writes must reach the drawing, and `<TEXT>` is where it did not (W114).**
+  `WMPSceneBuilder.literal(_:_:)` reads the attribute and nothing else — geometry has
+  `parseDimension` and a slider has `sliderMetrics`, and the rest had nothing. `Cablemusic` lays its
+  readouts out with `txtShowLabel.fontSize = 7` over a markup that says `fontSize="10"`, so every
+  label was measured *and* drawn three points too large and "Copyright:" ran out of its 55 px box
+  and off the left edge of the LCD it belongs in. `literalNumber` is the override-aware resolver;
+  `fontSize`, `scrollingDelay` and `scrollingAmount` go through it, as does the intrinsic text size.
+  The object-model half is the same rule: `justification`, `fontFace`, `fontStyle` and `fontSize`
+  are **rendered**, so a write to one has to commit as a mutation rather than be stored inert, and
+  each was only reaching the scene when the markup happened to author the same attribute.
+- **A text baseline may never sit higher than the face's own ascent (W114).** The rule was
+  `max(fontSize, (height + fontSize) / 2)` measured from the box's bottom — fine while every
+  `<TEXT>` had a generously tall authored box, and four pixels *above* the box once a text is sized
+  by its own glyphs. `CTFontGetAscent` is the floor. It moves nothing that was already inside its
+  box and 142 corpus images where text was drawing over the artwork above it.
 - **A call that lands its endpoint completes in the same transaction, and a skin's sequence is
   chained from that completion (W55).** `moveTo`/`alphaBlendTo` have applied their endpoint
   immediately since W38, so the step that follows was the missing half: `onEndMove` is 247 uses
@@ -131,6 +181,62 @@ queue, with the object model as the security boundary — see Amendment 2 in
   wrong place. `onDragEnd` is the input-side sibling, raised from `WMPMainView.mouseUp` for a
   captured slider, and it is where a seek commits. See `reference/object-model.md` § *Methods*, and
   `reference/harness.md` for why an image-only sweep cannot see any of it.
+- **A `<TEXT>`'s own artwork is its glyphs, and a `<BUTTONGROUP>`'s is its mapping image.** Every
+  other node falls back to the natural size of its `backgroundImage`; these two have none, and both
+  were the largest starvation classes in the corpus. **1,441 `<TEXT>` nodes across 127 of the 179
+  archives** resolved no size — 1,058 of them missing width *and* height — because WMP sizes a text
+  from the face and the string and a skin therefore never states it: `Cablemusic`'s script lays out
+  ten readouts with `txtShow.top/left/width/fontSize` and no `height`, so the whole
+  show/clip/author/copyright block never drew and the report was "there is no track display". A
+  width measured from the *current* value is WMP's own behaviour — the box grows with the string, an
+  empty value is honestly zero-wide, and it starts drawing on the transaction that gives it one.
+  **31 `<BUTTONGROUP>`s across 16 skins** resolved no size for the mirror reason: the group's normal
+  state is the window's own background artwork, so the skin authors no `image` and no geometry at
+  all, and with no frame the group registered no hit target — every control in it dead while the
+  artwork beneath still drew the buttons. `Cablemusic`'s presets, stop, close, minimize, next and
+  previous effect, shrink, bandwidth and all three drawer tabs are one such group each: "most
+  buttons don't work". The mapping image is definitionally the group's own pixel grid.
+- **An origin the markup never stated can still have been written by script, and asking the markup
+  first meant it never was.** `left`/`top` default to 0 when unauthored — but the check was
+  `attribute == nil ? 0 : resolve`, which short-circuited *before* `parseDimension` could look in
+  the scene overrides. Size never had the bug, so a script-positioned element came out the right
+  size in the wrong place: `Cablemusic`'s two drawers are seventeen station rows each, laid out
+  entirely by `InitPrograms()` writing `pr<N>.top`/`.left`, and all thirty-four drew on top of one
+  another in the corner of the drawer. Overrides first, then the markup, then the default.
+- **WMP spells every transport control twice, and only one half of each pair was ever a kind.**
+  `<…ELEMENT>` is a `BUTTONELEMENT` subtype — a colour region of a `BUTTONGROUP`'s mapping image —
+  and `<…BUTTON>` is a `BUTTON` subtype with its own artwork and frame. `WMPElementKind` had
+  `playElement` but no `playButton`, `pauseButton` but no `pauseElement`, and so on, so half the
+  vocabulary fell to `.unknown`: **`PAUSEELEMENT` 80 uses / 69 skins, `PLAYBUTTON` 50 / 45,
+  `PREVBUTTON` 50 / 45, `NEXTBUTTON` 49 / 44, `STOPBUTTON` 48 / 42, `MUTEBUTTON` 10 / 9,
+  `REPEATBUTTON` 5 / 4.** An unknown kind still paints its `image` and is not interactive, so the
+  button **drew and did nothing** and the pointer fell through to whatever overlapped it —
+  `WMP_RENDER_CLICK` on `Cablemusic`'s play button answered `hit=ffw`. `MUTEELEMENT`,
+  `REPEATELEMENT`, `SHUFFLEELEMENT` and `RETURNELEMENT` are zero in the corpus and are deliberately
+  absent: a kind nothing authors is a phantom. The `*ELEMENT` half is `isNonLayout` — but keyed on
+  **`mappingColor` under a `BUTTONGROUP`**, not on the kind and not on the attribute alone;
+  `polygon` puts a `mappingColor` on a `<SUBVIEW>` with real geometry as a self-mask.
+- **A `BUTTONGROUP`'s state artwork is a sheet the size of the whole group, and it is only ever
+  painted through the group's mapping mask (W116).** `hoverImage`/`downImage` are the *entire*
+  player redrawn with one control lit, and the mask cuts out the region the pointer is over. The
+  normal `image` used to be **required** for any of that to happen, so a group that authors none —
+  its normal state being the window's own background artwork — fell through to the generic
+  single-image path and painted the whole sheet over the window. `Cablemusic`'s is a 593x600 bitmap
+  with a dark green surround, so hovering any button in any of its six groups covered the entire
+  player: reported as "when you mouse over the compact button there is a huge overlay". The normal
+  artwork is now optional and only the mask is required; with no `image` there is nothing to draw
+  *under* the lit region, which is correct, because what is under it is the window. **No corpus
+  sweep can see this class** — a default-state capture never enters a hover or a down state (W73),
+  and the 535-image sweep across this fix is byte-identical. `WMP_RENDER_HOVER` and
+  `WMP_RENDER_CLICK` are what measure it.
+- **A fix that makes dead code reachable is where a latent trap fires.** Sizing a `BUTTONGROUP` from
+  its mapping image reached, for the first time on `Cablemusic`, a
+  `Dictionary(uniqueKeysWithValues:)` over the group's `mappingColor`s — and that skin authors
+  `bnpb6` and `bnpb7` both as `#00C0FF`, one preset too many for the eight regions its `map.gif`
+  has. A dead control became a **crash on load**. WMP takes the first and draws it; so does this.
+  **It fired twice**: the same row also made the unmasked state-sheet paint above reachable, and
+  that one was invisible to every headless probe. Budget for both shapes whenever a row turns a
+  whole class of nodes from unresolved into drawn.
 - **A `<TEXT>` is a box, the clip is horizontal, and `scrolling` is what a skin turns on when the
   value overflows it (W94).** Drawing text unclipped let `WoW`'s 77x30 `metadata` readout paint
   "- AC/DC - Shoot to Thrill / Playing" straight across the player's buttons. Three things had to
@@ -385,9 +491,13 @@ The ones that cost the most, in WMP terms:
   `mainView`. Scoped the way the engine is, the corpus reads **7,569 / 7,569**. Before believing a
   probe about a population, check it is asking the same question the engine answers;
   `reference/harness.md` § *After the cascade* has the numbers and the check that holds it.
-- **Expressions are not what starves a view.** `starved.tsv` did not move by one row when the above
-  was corrected, and `Cablemusic/mainview` — 63 unresolved nodes — declares no geometry expressions
-  at all. A high `unresolved` ratio also does not mean a blank window: two of the three worst-ranked
+- **Expressions are not what starves a view — three engine rules were.** `starved.tsv` did not move
+  by one row when the above was corrected, and `Cablemusic/mainview` — 63 unresolved nodes then, 8
+  now — declares no geometry expressions at all. What it declares is unsized `<TEXT>`, unsized
+  `<BUTTONGROUP>` and mapping-region `<…ELEMENT>` nodes, and those three accounted for **83% of the
+  corpus's 2,380 unresolved nodes** (2026-09-09). `WMP_RENDER_UNRESOLVED` is the flag that says so;
+  the count alone names nothing, which is why the file ranked views for two phases and nobody could
+  take a row off the top of it. A high `unresolved` ratio also does not mean a blank window: two of the three worst-ranked
   views render substantially. See W68 and W75.
 - **A ratio, not a count, ranks a starved view.** `unresolved > 0` is true of most views in the
   corpus, including corona's. `starved.tsv` from the census is the ranking; a raw count ranked

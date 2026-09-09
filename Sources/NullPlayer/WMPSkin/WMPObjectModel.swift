@@ -92,6 +92,9 @@ final class WMPObjectModel {
     /// step from (W55). Recorded here rather than dispatched here because the model has no view
     /// plan and therefore no handler sources; it knows only that a call completed.
     private(set) var completions: [(stableID: Int, event: String)] = []
+    /// Endpoints of `moveTo`/`resizeTo`/`alphaBlendTo` calls that named a duration, held until the
+    /// handler that made them returns. See `flushPendingTweens()`.
+    private var pendingTweens: [(element: WMPScriptElement, property: String, value: WMPJSONValue)] = []
     private(set) var diagnostics: [WMPJScriptDiagnostic] = []
     /// Reads made since the last `beginDependencyCapture()`, in order. One expression's dependency
     /// list; the topological sort is built out of these.
@@ -342,6 +345,12 @@ final class WMPObjectModel {
         case "name": return .value(.string(snapshot.metadata.title))
         case "duration": return .value(.number(snapshot.duration))
         case "durationstring": return .value(.string(snapshot.durationText))
+        // **`sourceURL` is what a skin asks before it asks anything else.** It was unrecognised, and
+        // an unrecognised member aborts the handler that touched it — `Cablemusic` reads it on the
+        // third line of the one function that fills its show/clip/author/copyright readouts, so
+        // every one of them stayed empty through a whole track. Reported as "the track information
+        // does not appear".
+        case "sourceurl": return .value(.string(snapshot.metadata.sourceURL))
         case "getiteminfo", "getiteminfobyatom", "setiteminfo", "isreadonly": return .function
         // No video surface exists yet, so there is genuinely no image source. Zero is the true
         // answer rather than a placeholder, and it is what makes Corona take its audio path.
@@ -374,6 +383,14 @@ final class WMPObjectModel {
         switch name {
         case "bufferingprogress": return .value(.number(snapshot.bufferingProgress))
         case "receptionquality": return .value(.number(snapshot.receptionQuality))
+        // **`bitRate` is a real number this player has, and it was aborting a handler.**
+        // `Cablemusic`'s `handlePlayStateChange` reaches `UpdateBitrate()` before it reaches the
+        // function that fills every readout in the player, so an unrecognised member here cost the
+        // whole show/clip/author/copyright block on every track — the second cause of "the track
+        // information does not appear", found only by reading `INPUT script-diag` in the running
+        // app after the first one (`player.currentMedia.sourceURL`) was closed. `Track.bitrate` is
+        // kilobits; WMP's unit is bits per second, and the skin prints it with a `bps` suffix.
+        case "bitrate": return .value(.number(snapshot.bitrate))
         case "bandwidth", "framesskipped", "lostpackets", "receivedpackets":
             inert(); return .value(.number(0))
         // The transport a stream arrived over — `mms`, `http`, `rtsp` — which is a property of the
@@ -850,18 +867,22 @@ final class WMPObjectModel {
         case (.effects, "nextpreset"): hostCommand("stepEffectPreset", .number(1)); return .value(.null)
         case (.view, "close"): hostCommand("closeView", nil); return .value(.null)
         case (.view, "minimize"): hostCommand("minimizeWindow", nil); return .value(.null)
-        // WMP tweens these over the third argument's milliseconds. The endpoint is applied now and
-        // the tween is not drawn yet, so a pane arrives where the skin put it without sliding; the
-        // animation is tracked as rendering work, not as a missing member.
+        // WMP tweens these over the third argument's milliseconds. The endpoint still lands in this
+        // transaction — the tween itself is rendering work, not a missing member (W38) — but **not
+        // until the handler that asked for it has returned**; see `tween(_:_:_:duration:)`.
         case (_, "moveto"):
-            _ = writeElement(element, "left", .number(arguments.first?.number ?? 0))
-            _ = writeElement(element, "top", .number(arguments.count > 1 ? (arguments[1].number ?? 0) : 0))
+            tween(element, "left", .number(arguments.first?.number ?? 0),
+                  duration: arguments.count > 2 ? arguments[2].number : nil)
+            tween(element, "top", .number(arguments.count > 1 ? (arguments[1].number ?? 0) : 0),
+                  duration: arguments.count > 2 ? arguments[2].number : nil)
             completions.append((element.stableID, "endmove"))
             return .value(.null)
         case (_, "resizeto"):
-            _ = writeElement(element, "width", .number(max(0, arguments.first?.number ?? 0)))
-            _ = writeElement(element, "height",
-                             .number(max(0, arguments.count > 1 ? (arguments[1].number ?? 0) : 0)))
+            tween(element, "width", .number(max(0, arguments.first?.number ?? 0)),
+                  duration: arguments.count > 2 ? arguments[2].number : nil)
+            tween(element, "height",
+                  .number(max(0, arguments.count > 1 ? (arguments[1].number ?? 0) : 0)),
+                  duration: arguments.count > 2 ? arguments[2].number : nil)
             return .value(.null)
         // The third of the trio, and the one the Alienware/ALX family is built out of: its big
         // `m_anim_*` artwork hangs off subviews authored `alphaBlend="0"`, which the scene lays out
@@ -869,8 +890,9 @@ final class WMPObjectModel {
         // back is this call. The endpoint is applied now, so the subtree arrives at the alpha the
         // skin asked for without fading to it.
         case (_, "alphablendto"):
-            _ = writeElement(element, "alphablend",
-                             .number(min(255, max(0, arguments.first?.number ?? 0))))
+            tween(element, "alphablend",
+                  .number(min(255, max(0, arguments.first?.number ?? 0))),
+                  duration: arguments.count > 1 ? arguments[1].number : nil)
             completions.append((element.stableID, "endalphablend"))
             return .value(.null)
         // Nothing draws playlist columns, so this stores what the skin asked for and is counted
@@ -886,6 +908,40 @@ final class WMPObjectModel {
     }
 
     // MARK: Helpers
+
+    /// **A tween's endpoint is not readable by the rest of the handler that started it.**
+    ///
+    /// WMP animates `moveTo`/`resizeTo`/`alphaBlendTo` over the duration argument, so an element's
+    /// `left` still answers where it *is* for the remainder of the statement list — and skins write
+    /// code that depends on exactly that. `Cablemusic`'s playlist tab is
+    /// `onClick="PlayListMove();HidePlist();"`: the first call slides the drawer and the second
+    /// reads `subPlayList.left` to decide whether the drawer is now open or shut, and hides the
+    /// playlist control while it slides. Applying the endpoint inside the call made that read
+    /// answer the destination, so closing the drawer left `pl.visible` true and the playlist
+    /// stayed on screen over the player forever. Reported as "the playlist is always showing".
+    ///
+    /// The endpoint still lands in the same transaction, which is W38, and `onEndMove` is still
+    /// raised from it, which is W55 — `WMPScriptContext` flushes the queue when the handler
+    /// returns, before it raises any completion. **A duration of zero is not a tween**: it is an
+    /// instant move and a later read in the same handler must see it, which is what
+    /// `movePlayButton()` and `moveSetDrawer()` toggle on.
+    private func tween(_ element: WMPScriptElement, _ property: String, _ value: WMPJSONValue,
+                       duration: Double?) {
+        guard let duration, duration.isFinite, duration > 0 else {
+            _ = writeElement(element, property, value)
+            return
+        }
+        pendingTweens.append((element, property, value))
+    }
+
+    /// Applies every endpoint queued since the last flush. Called by `WMPScriptContext` at each
+    /// handler boundary — the point at which WMP's own tween would have been free to advance.
+    func flushPendingTweens() {
+        guard !pendingTweens.isEmpty else { return }
+        let queued = pendingTweens
+        pendingTweens.removeAll()
+        for entry in queued { _ = writeElement(entry.element, entry.property, entry.value) }
+    }
 
     private func hostCommand(_ action: String, _ value: WMPJSONValue?) {
         guard hostCommands.count < WMPJScriptProtocol.maximumHostCommands else { return }
@@ -941,7 +997,9 @@ final class WMPObjectModel {
         "left", "top", "width", "height", "zindex", "value", "alpha", "min", "max",
         // The marquee's clock and step. Rendered, so a script write has to commit as a mutation
         // rather than be stored inert; see `scrolling` below.
-        "scrollingdelay", "scrollingamount"
+        "scrollingdelay", "scrollingamount",
+        // Rendered, and numeric: an unset read answers 0 like every other number here.
+        "fontsize"
     ]
 
     static let standardElementProperties: Set<String> = standardNumericProperties.union([
@@ -952,6 +1010,14 @@ final class WMPObjectModel {
         "visible", "enabled", "down", "text", "tooltip", "image", "backgroundimage",
         "foregroundcolor", "backgroundcolor", "transparencycolor", "cursor", "sticky",
         "horizontalalignment", "verticalalignment",
+        // **The `<TEXT>` face, laid out by script.** All four are read by `WMPSceneBuilder`'s text
+        // path, so a write to one has to commit as a mutation rather than be stored inert. They
+        // were only reached when the markup happened to author the same attribute:
+        // `Cablemusic`'s `LayoutProgramInfoExpanded()` sets `justification` on ten readouts that
+        // declare none, and every one of those writes was dropped, drawing a right-aligned label
+        // column flush left. `justification` alone is 788 authored uses across 150 of the 172
+        // archives the markup census can read.
+        "justification", "fontface", "fontstyle",
         // **`scrolling` is written by script far more often than it is authored.** `WoW`'s
         // `metadata` declares `scrollingDelay` and `scrollingAmount` in markup and never
         // `scrolling` — the handler turns it on when the new title does not fit. Without this the

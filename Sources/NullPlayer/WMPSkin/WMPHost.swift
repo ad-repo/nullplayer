@@ -39,6 +39,11 @@ struct WMPMediaMetadata: Hashable, Codable {
     var title = ""
     var artist = ""
     var album = ""
+    /// `player.currentMedia.sourceURL`, which a skin reads to decide what it is playing before it
+    /// reads anything else about it. `Cablemusic`'s `GenericProgramInfoBig()` opens with
+    /// `pullString.indexOf('http')` to tell a stream from a file, and it is the third statement in
+    /// the function that fills every readout in the player.
+    var sourceURL = ""
 }
 
 struct WMPPlaylistItemSnapshot: Hashable, Codable {
@@ -78,6 +83,10 @@ struct WMPHostSnapshot: Hashable, Codable {
     var repeatMode = false
     var bufferingProgress: Double = 0
     var receptionQuality: Double = 0
+    /// `player.network.bitRate`, in **bits per second** — WMP's unit, and the one a skin prints:
+    /// `Cablemusic` writes `txtBit.value = bitrate + ' bps'`. Zero when nothing is playing or the
+    /// track carries no rate, which is the honest answer rather than a guess.
+    var bitrate: Double = 0
     var metadata = WMPMediaMetadata()
     var playlistIndex = -1
     var playlistCount = 0
@@ -150,16 +159,21 @@ extension WMPTransportAction {
 
     static func authoredAction(for node: WMPNode) -> WMPTransportAction? {
         switch node.kind {
-        case .playElement: return .play
-        case .pauseButton: return .pause
-        case .stopElement: return .stop
-        case .prevElement: return .previous
-        case .nextElement: return .next
+        // Both spellings of every transport control carry the same action: `<PLAYELEMENT>` is the
+        // region of a `BUTTONGROUP`'s mapping image and `<PLAYBUTTON>` the standalone button, and
+        // WMP's own template family uses each about as often as the other.
+        case .playElement, .playButton: return .play
+        case .pauseElement, .pauseButton: return .pause
+        case .stopElement, .stopButton: return .stop
+        case .prevElement, .prevButton: return .previous
+        case .nextElement, .nextButton: return .next
         case .rewButton, .rewElement: return .beginScan(.reverse)
         case .ffwdButton, .ffwdElement: return .beginScan(.forward)
         case .volumeSlider: return .volume
         case .seekSlider: return .seek
         case .balanceSlider: return .balance
+        case .muteButton: return .toggleMute
+        case .repeatButton: return .toggleRepeat
         case .shuffleButton: return .toggleShuffle
         default: break
         }

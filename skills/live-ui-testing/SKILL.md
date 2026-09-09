@@ -175,6 +175,32 @@ Report **distributions, never samples**, for anything timing-shaped, and **read 
 never independently-grepped halves** — pairing two `grep -o` results from different windows
 manufactured a false causal claim once already.
 
+## What a green sweep does not cover
+
+A corpus sweep renders every skin in its **default state**. That is a real proof and a narrow one,
+and reading it as a general one has now cost two sessions.
+
+- **A byte-identical sweep across an interaction-state change means *unmeasured*, not *unchanged*.**
+  A default capture never enters a hover, a down state, a drag, a timer tick or live playback. A
+  `.wmz` `BUTTONGROUP` painting its entire 593x600 hover sheet over the window swept **535 identical,
+  0 differing** — because nothing in the sweep hovers. Say which of the two you have before quoting
+  the number.
+- **Live QA without playback is a different test from live QA with it.** Two `.wmz` defects lived
+  only in the `psPlaying` branch — a host member that aborted the handler filling every readout —
+  and a third appeared *only* while a status transaction was landing five times a second and
+  cancelling the click's task. A pass without a track playing found none of the three and looked
+  clean. If the subsystem has a playing state, drive one.
+- **A fix that makes dead code reachable is where latent traps fire.** Giving a node a frame for the
+  first time reached, in the same change, a `Dictionary(uniqueKeysWithValues:)` that trapped the
+  process on a skin with two identical keys, and a paint path that had never had a caller. Neither
+  was a regression in the new code; both were waiting. When a change turns a class of nodes from
+  ignored into drawn, budget a pass for what it uncovers rather than treating the first crash as
+  proof the change was wrong.
+- **Close the biggest abort and re-measure the whole table.** A handler dies on its *first*
+  unrecognised member, so one missing name hides every one behind it. Two host members were found
+  this way, one per launch, each invisible until the one in front of it was implemented — the same
+  shape as the `.wmz` `mediacenter` row. Never read one row falling as progress without re-measuring.
+
 ## Reading a result without fooling yourself
 
 - **A structural probe is not a picture.** "The widget exists at frame X" says nothing about what is
@@ -199,6 +225,12 @@ manufactured a false causal claim once already.
   and backlog come after the user says it looks right (`verify-before-investing`).
 - **When the user contradicts you, check their claim before defending yours.** They are reporting the
   screen; you are reporting a model of it.
+- **A skin, theme or preset that produced two or more unrelated defects earns a dossier**, not just
+  backlog rows: what it exercises that nothing else does, what it found, **what was ruled out**, and
+  the coordinates that reach its controls. The ruled-out section is what saves the next session and
+  the one always left out. `skills/wmp-skin-guide/reference/skins/` is the worked example. Record
+  beside it the *counter-evidence* — the cases that disagreed with a fix that looked right, one rule
+  each. A sweep tells you that once and nothing else remembers it.
 - **Land the finding in the owning subsystem's skill**, not here and not in `CLAUDE.md`. An ad-hoc
   dump nobody wrote down gets re-derived — two `.wal` phases were lost that way. Keep measured
   numbers next to the command that produces them; a number pasted into prose goes stale silently

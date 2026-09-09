@@ -199,6 +199,31 @@ What is left of that gap is one row.
 |---|---|---|---|
 | W73 | A clean sweep still proves only the default state | every skin | Narrowed by W71 and W72, not closed by them. The AppKit *overlay* class is now measured — 545 hosted views, two defects, both in W74 — and every slider in the corpus is drivable. What no sweep here still says anything about: a tab, a setting, a **hover**, a drawer, the window's shape and its shadow (those live in the window server and stay a short, genuinely manual list), and anything driven by live playback. W69's flicker is in that remainder, which is why it needs its own instrumentation rather than another sweep. |
 
+## Tier 1f — the residue of the starvation classes
+
+**W112-W116 closed 2026-09-09 too**, from the second report on the same skin — a tween endpoint
+readable by the handler that started it, a script that could not resize its own window, a `fontSize`
+that never reached the drawing beside a baseline that sat above its own box, and two host members
+that aborted the handler filling every readout, and a `BUTTONGROUP` painting its whole hover
+sheet over the window. **Two of the four were reachable headlessly and two
+were not**: no sweep here has a host snapshot, so nothing but `INPUT script-diag` in the running app
+could see a `psPlaying` branch dying on its first statement. They are in
+[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 14 (third
+pass)*.
+
+**W107-W110 closed 2026-09-09** and are in
+[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 14*: an
+unsized `<TEXT>`, an unsized `<BUTTONGROUP>`, a mapping-region `<…ELEMENT>` laid out as a control,
+and half of WMP's transport vocabulary missing from `WMPElementKind`. Together they were **83% of
+the corpus's 2,380 unresolved nodes**, and closing them took the corpus to **1,067** while adding
+689 nodes, 611 paint commands, 253 hit targets and 609 widgets. The evidence, the sweep and the two
+rules that came back narrower are in `skills/wmp-skin-guide/reference/harness.md` § *After the
+starvation classes*. What is left of the class is one row.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W111 | Objects a skin declares inside `<PLAYER>` are laid out as controls, and count as starved | `<controls>` **103 nodes / 67 of 179 skins**, `<VIDEOSETTINGS>` 28 / 24, plus `currentPositionText` 11 / 13, `statusText` 6 / 7, `durationText` 2 / 2 and `automenu` 4 / 3 as unknown tags, measured 2026-09-09 with `WMP_RENDER_UNRESOLVED=1` over the 179-archive sweep | **Costs no pixels and distorts the ranking**, which is the only reason it is a row: `starved.tsv` scores `unresolved / declared`, and ~154 of the 1,067 unresolved nodes left in the corpus are objects that were never boxes. `<controls>` is a child of `<PLAYER>` carrying nothing but `currentPosition_onchange` handlers — `aom.wms` is the worked case — and `WMPSceneBuilder.isNonLayout` already treats `.player` and `.network` exactly that way, so this is the same one-line rule applied to two more kinds. The four `*Text` tags and `automenu` are a separate question and need a census before a kind: decide whether each is a `<TEXT>` WMP fills in for the skin (which is drawing work, not classification) or an object. Do **not** batch them with `<controls>`. |
+
 ## Tier 1e — a surface the skin owns and this engine does not host
 
 Opened 2026-09-09 by W93, emptied the same day by W97, and **re-opened 2026-09-09 with four

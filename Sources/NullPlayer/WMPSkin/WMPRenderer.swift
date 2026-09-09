@@ -280,7 +280,18 @@ struct WMPRenderer: @unchecked Sendable {
         let line = WMPTextMetrics.line(text.value, font: font, color: color,
                                        underline: text.underline)
         let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-        let baseline = frame.y + max(text.fontSize, (frame.height + text.fontSize) / 2)
+        // **The baseline is measured from the box's bottom, and it may never sit higher than the
+        // face's own ascent.** The old rule was `max(fontSize, (height + fontSize) / 2)`, which
+        // reads as "put the baseline `(height − fontSize) / 2` below the top" — fine while every
+        // `<TEXT>` had a generously tall authored box, and four pixels *above* the box once a text
+        // is sized by its own glyphs: at `height = 12`, `fontSize = 7`, that put the baseline 2.5 px
+        // below the top of a box whose ascent is 6.3. `Cablemusic`'s show/clip/author/copyright
+        // column drew above the LCD it belongs in, over the bezel. The ascent floor changes nothing
+        // for a box that was already tall enough and stops the overflow that is measurable here;
+        // the clip below still leaves the vertical overflow that is not.
+        let ascent = CTFontGetAscent(font)
+        let baseline = frame.y + frame.height
+            - max(ascent, (frame.height - text.fontSize) / 2)
         let centerY = frame.y + frame.height / 2
         context.saveGState()
         // **A `<TEXT>` is a box, and the clip is horizontal only.** WMP clips its text to the

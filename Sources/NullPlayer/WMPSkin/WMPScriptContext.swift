@@ -389,6 +389,9 @@ final class WMPScriptContext: @unchecked Sendable {
             }
         }
 
+        // A tween started by a top-level program rather than by a handler has no handler boundary
+        // to land on; this is it.
+        model.flushPendingTweens()
         // Completions first: a chained step writes geometry, and those writes are what the
         // geometry cascade below exists to propagate. The other order would make a pane positioned
         // off a moved one trail it by a transaction, which is W87 again.
@@ -573,6 +576,10 @@ final class WMPScriptContext: @unchecked Sendable {
     }
 
     private func invokeHandler(_ source: String, label: String) -> String? {
+        // The handler boundary is where a tween's endpoint lands: WMP is animating for the
+        // duration the call named, so the rest of *this* handler must still read the element where
+        // it was. See `WMPObjectModel.tween(_:_:_:duration:)`.
+        defer { model.flushPendingTweens() }
         if let token = WMPJScriptTimerRequest(token: 0, periodMilliseconds: 0, repeats: false,
                                               source: source).callbackToken {
             guard let function = timerFunctions[token] else { return nil }

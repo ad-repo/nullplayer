@@ -38,6 +38,20 @@ enum WMPTextMetrics {
             NSAttributedString(string: value, attributes: attributes))
     }
 
+    /// The height of one line in the authored face, in skin pixels.
+    ///
+    /// A `<TEXT>` that authors no `height` is sized by its own glyphs, the way every other node is
+    /// sized by its own artwork — the face's ascent, descent and leading are the box. It is rounded
+    /// up because the renderer's baseline is derived from `fontSize` rather than from these
+    /// metrics, and a box a fraction of a pixel short of the face clips the descenders of the row
+    /// of links it was measured for.
+    static func lineHeight(fontName base: String, fontSize: CGFloat,
+                           bold: Bool, italic: Bool) -> CGFloat {
+        let font = font(base, size: fontSize, bold: bold, italic: italic)
+        let height = CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
+        return max(fontSize, height.rounded(.up))
+    }
+
     /// Typographic width of `value` in the authored face, in skin pixels.
     static func width(of value: String, fontName base: String, fontSize: CGFloat,
                       bold: Bool, italic: Bool) -> CGFloat {

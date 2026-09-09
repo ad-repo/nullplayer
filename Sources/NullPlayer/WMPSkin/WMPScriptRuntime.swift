@@ -174,10 +174,11 @@ enum WMPJScriptCompatibility {
         "settings": ["volume", "balance", "mute", "getMode", "setMode", "getString", "setString",
                      "autoStart", "enableErrorDialogs", "invokeURLs"],
         "media": ["name", "duration", "durationString", "getItemInfo", "getItemInfoByAtom",
-                  "isReadOnly", "imageSourceWidth", "imageSourceHeight", "attributeCount"],
+                  "isReadOnly", "imageSourceWidth", "imageSourceHeight", "attributeCount",
+                  "sourceURL"],
         "playlist": ["count", "name", "item", "attributeCount", "getAttributeName",
                      "setColumnResizeMode", "setColumnWidth"],
-        "network": ["bufferingProgress", "receptionQuality", "bandWidth", "framesSkipped",
+        "network": ["bufferingProgress", "receptionQuality", "bandWidth", "bitRate", "framesSkipped",
                     "lostPackets", "receivedPackets"],
         "eq": ["enabled", "bands", "presetCount", "presetTitle", "currentPreset",
                "currentPresetTitle", "nextPreset", "previousPreset", "reset",
@@ -229,13 +230,22 @@ struct WMPScriptOutput: Sendable {
     /// `popupPreset.appendItem(...)` in an `onLoad` — so they are transaction output, not markup,
     /// and the AppKit menu has no other source for them.
     let listItems: [Int: [String]]
+    /// The size this transaction's script **assigned to the view itself**, when it did.
+    ///
+    /// A `.wmz` compact mode is a script writing `view.width`/`view.height` and hiding one shell in
+    /// favour of another, so it is the one thing in a transaction that has to reach the window
+    /// rather than only the scene. Nil on every other transaction, which is nearly all of them —
+    /// and nil for the store-thumbnail collapse to `0x0`, which is a view saying it has no window
+    /// rather than one asking for a smaller one.
+    let viewSize: WMPSize?
 
     init(overrides: WMPSceneOverrides, hostCommands: [WMPJScriptHostCommand] = [],
          diagnostics: [WMPJScriptDiagnostic] = [], repaintNodeIDs: Set<Int> = [],
          timerRequests: [WMPJScriptTimerRequest] = [], calls: [WMPJScriptCall] = [],
          expressions: [WMPJScriptExpressionResult] = [], expressionOrder: [String] = [],
-         listItems: [Int: [String]] = [:]) {
+         listItems: [Int: [String]] = [:], viewSize: WMPSize? = nil) {
         self.listItems = listItems
+        self.viewSize = viewSize
         self.overrides = overrides
         self.hostCommands = hostCommands
         self.diagnostics = diagnostics
@@ -410,7 +420,38 @@ actor WMPScriptRuntime {
                                diagnostics: diagnostics, repaintNodeIDs: repaint,
                                timerRequests: result.timers, calls: result.calls,
                                expressions: result.expressions, expressionOrder: result.expressionOrder,
-                               listItems: context.listItems())
+                               listItems: context.listItems(),
+                               viewSize: Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
+                                                               mutations: result.mutations,
+                                                               overrides: overrides))
+    }
+
+    /// The size a transaction's script gave the view, or nil when it gave it none.
+    ///
+    /// Keyed off the **mutations**, not off `overrides.geometry`: an expression-driven
+    /// `<VIEW width="jscript:…">` re-resolves on every transaction and is not a request to resize
+    /// the window — it is a layout that already read the window's current size. Only an explicit
+    /// assignment counts, which is what a compact-mode toggle is. A non-positive result is not a
+    /// size: 34 corpus skins collapse a store-thumbnail `previewView` with `view.width = 0` before
+    /// redirecting, and that view is one the controller declines to make a window out of.
+    nonisolated static func assignedViewSize(skin: WMPLoadedSkin, viewID: String,
+                                             plan: WMPScriptViewPlan,
+                                             mutations: [WMPJScriptMutation],
+                                             overrides: WMPSceneOverrides) -> WMPSize? {
+        guard let root = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node else { return nil }
+        let assigned = mutations.contains { mutation in
+            plan.idToStableID[WMPPath.fold(mutation.targetID)] == root.stableID
+                && ["width", "height"].contains(mutation.property.lowercased())
+        }
+        guard assigned,
+              let width = overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
+                                                                     property: "width")],
+              let height = overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
+                                                                      property: "height")],
+              width > 0, height > 0 else { return nil }
+        return WMPSize(width: width, height: height)
     }
 
     /// One transaction for a **background dispatcher view** — a windowless view the skin keeps

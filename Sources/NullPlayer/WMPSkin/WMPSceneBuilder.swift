@@ -37,14 +37,28 @@ struct WMPSceneBuilder: @unchecked Sendable {
         // author a top-level `<VIEW backgroundImage="...">` with no width or height at all — the
         // window *is* the bitmap — and rejecting those was the single largest cause of a skin that
         // loads and then draws nothing.
+        func viewOverride(_ name: String) -> CGFloat? {
+            guard let value = overrides.geometry[WMPScenePropertyAddress(stableID: view.stableID,
+                                                                         property: name.lowercased())],
+                  value.isFinite, value >= 0 else { return nil }
+            return value
+        }
         func viewDimension(_ name: String) throws -> CGFloat? {
+            // **Script override first, then the markup — the same order as every other node.**
+            // `parseDimension` has always read the overrides before the attribute; the view root
+            // read them the other way round, so a `<VIEW width="593" height="600">` could never be
+            // resized by its own script. That is what a `.wmz` compact mode is made of:
+            // `Cablemusic`'s `SwitchSmall()` writes `view.width = 475; view.height = 373` and hides
+            // the full-size artwork, and with the literal winning the canvas stayed 593x600 — the
+            // compact player drawn in the corner of a window two hundred pixels too big on both
+            // axes, the rest of it empty. Reported as "when you click the compact button there is
+            // a large overlay".
+            //
             // A literal zero is authored on purpose: `pharaoh` declares `vGhost` and
             // `vGhostAutoDetect` as `width="0" height="0"` views whose only job is to run an
-            // `onLoad` that redirects to another view. Zero is an answer; only a negative one is not.
+            // `onLoad` that redirects to another view. Zero is an answer; only a negative one is
+            // not — and that is true of an override too, which is the store-thumbnail collapse.
             if let value = literal(view, name), value >= 0 { return value }
-            if let value = overrides.geometry[WMPScenePropertyAddress(stableID: view.stableID,
-                                                                      property: name.lowercased())],
-               value.isFinite, value >= 0 { return value }
             return nil
         }
         // Declared here rather than with the other scene accumulators below: resolving the view's
@@ -81,14 +95,26 @@ struct WMPSceneBuilder: @unchecked Sendable {
         // The builder still invents no geometry; the honest size of empty content is empty.
         let width = authoredWidth ?? 0
         let height = authoredHeight ?? 0
-        let minimum = WMPSize(width: literal(view, "minWidth") ?? width,
-                              height: literal(view, "minHeight") ?? height)
+        // **The size a script assigned the view is the window's; the size the markup authored stays
+        // the baseline every child's alignment delta is measured against.** They are two different
+        // questions and reading one value for both broke each in turn. A `.wmz` compact mode is a
+        // handler writing `view.width`/`view.height` — `Cablemusic`'s `SwitchSmall()` asks for
+        // 475x373 — and with the literal winning the canvas the compact player drew inside a
+        // 593x600 window with two hundred empty pixels around it ("a large overlay"). But letting
+        // the override *replace* the authored size collapsed every alignment delta to zero:
+        // `LostPlanet`'s `onLoadInfo` opens with `view.width = view.minWidth`, and its stretch
+        // tiles — sized from `canvas − authored` — stopped covering the 61 px they had been
+        // covering, punching holes through the window frame.
+        let defaultSize = WMPSize(width: viewOverride("width") ?? width,
+                                  height: viewOverride("height") ?? height)
+        let minimum = WMPSize(width: literal(view, "minWidth") ?? defaultSize.width,
+                              height: literal(view, "minHeight") ?? defaultSize.height)
         let maxWidth = literal(view, "maxWidth"), maxHeight = literal(view, "maxHeight")
         let maximum: WMPSize? = maxWidth == nil && maxHeight == nil ? nil
             : WMPSize(width: maxWidth ?? .greatestFiniteMagnitude,
                       height: maxHeight ?? .greatestFiniteMagnitude)
         let resizeLimits = WMPResizeLimits(minimum: minimum, maximum: maximum)
-        let canvas = resizeLimits.clamp(requestedSize ?? WMPSize(width: width, height: height))
+        let canvas = resizeLimits.clamp(requestedSize ?? defaultSize)
         let canvasRect = WMPRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
 
         var commands: [WMPPaintCommand] = []
@@ -108,6 +134,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
             node.children.forEach(indexIDs)
         }
         indexIDs(view)
+
+        /// A number a script may have written, then the markup's own.
+        ///
+        /// The type's `literal(_:_:)` reads the attribute and nothing else, and `<TEXT>` is where
+        /// that showed: `Cablemusic` lays its readouts out with `txtShowLabel.fontSize = 7` over a
+        /// markup that says `fontSize="10"`, so every label was measured *and* drawn three points
+        /// too large — "Copyright:" ran out of its 55 px box and off the left edge of the LCD it
+        /// was supposed to sit inside. Geometry has `parseDimension` and a slider has
+        /// `sliderMetrics`; this is the same rule for the rest.
+        func literalNumber(_ node: WMPNode, _ name: String) -> CGFloat? {
+            if let value = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
+                                                                        property: name.lowercased())],
+               let number = value.number, number.isFinite { return CGFloat(number) }
+            return literal(node, name)
+        }
 
         func literalString(_ node: WMPNode, _ name: String) -> String? {
             if let value = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
@@ -257,7 +298,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             } else if literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame {
                 return
             }
-            if isNonLayout(node.kind) {
+            if isNonLayout(node) {
                 for child in node.children.sorted(by: nodeOrder) {
                     try walk(child, parentFrame: parentFrame, parentAuthoredSize: parentAuthoredSize,
                              inheritedClip: inheritedClip, parentAlpha: parentAlpha)
@@ -276,10 +317,20 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 frame = canvasRect
                 ownAuthoredSize = WMPSize(width: width, height: height)
             } else {
-                let leftAttribute = node.attribute(named: "left")
-                let topAttribute = node.attribute(named: "top")
-                let left = leftAttribute == nil ? 0 : parseDimension(node, "left")
-                let top = topAttribute == nil ? 0 : parseDimension(node, "top")
+                // **An origin the markup never stated can still have been written by script, and
+                // asking the markup first meant it never was.** `left`/`top` default to 0 when the
+                // skin authors neither — but the check was `attribute == nil ? 0 : resolve`, so a
+                // node with no authored `left` short-circuited to 0 *before* `parseDimension` could
+                // look in the scene overrides, and every element a handler positions from nothing
+                // stacked at its parent's origin. `Cablemusic`'s two drawers are seventeen station
+                // rows each, laid out entirely by `InitPrograms()` writing `pr<N>.top`/`.left`:
+                // all thirty-four drew on top of one another in the corner of the drawer. Size
+                // never had the bug, which is why the rows were the right *width* in the wrong
+                // place. Overrides first, then the markup, then the default.
+                let left = parseDimension(node, "left")
+                    ?? (node.attribute(named: "left") == nil ? 0 : nil)
+                let top = parseDimension(node, "top")
+                    ?? (node.attribute(named: "top") == nil ? 0 : nil)
                 var width = parseDimension(node, "width")
                 var height = parseDimension(node, "height")
 
@@ -296,6 +347,12 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     if node.attribute(named: "width") == nil, width == nil { width = intrinsic.width }
                     if node.attribute(named: "height") == nil, height == nil { height = intrinsic.height }
                 }
+                if node.kind == .text, width == nil || height == nil,
+                   let glyphs = intrinsicTextSize(node, literal: literalNumber,
+                                                  literalString: literalString) {
+                    if node.attribute(named: "width") == nil, width == nil { width = glyphs.width }
+                    if node.attribute(named: "height") == nil, height == nil { height = glyphs.height }
+                }
                 guard let left, let top else {
                     if !unresolvedNodes.contains(node.stableID) {
                         recordUnresolved(node, attribute: "position", value: "missing literal geometry")
@@ -304,7 +361,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 }
                 guard var width, var height else {
                     if !unresolvedNodes.contains(node.stableID) {
-                        recordUnresolved(node, attribute: "size", value: "missing literal geometry")
+                        let missing = [width == nil ? "width" : nil, height == nil ? "height" : nil]
+                            .compactMap { $0 }.joined(separator: "+")
+                        recordUnresolved(node, attribute: "size",
+                                         value: "missing literal geometry (\(missing))")
                     }
                     // A script-sized container can still have a literal origin and independently
                     // literal descendants. Keep the container unresolved/unpainted and carry only
@@ -407,26 +467,44 @@ struct WMPSceneBuilder: @unchecked Sendable {
             case .normal: foregroundNames = ["image"]
             }
             if !frame.isEmpty, node.kind != .subview && node.kind != .view {
+                // **A `BUTTONGROUP`'s state artwork is a sheet the size of the whole group, and it
+                // is only ever painted through the group's mapping mask.** `hoverImage` and
+                // `downImage` are the *entire* player redrawn with one control lit; the mask is
+                // what cuts out the region the pointer is actually over.
+                //
+                // The normal `image` used to be required for any of that to happen, and a group
+                // that authors none — its normal state being the window's own background artwork —
+                // fell through to the generic single-image path below and painted the whole sheet
+                // over the window. On `Cablemusic` that is a 593x600 bitmap with a dark green
+                // surround, so hovering any button in any of its six groups covered the entire
+                // player: reported as "when you mouse over the compact button there is a huge
+                // overlay". Nothing reached it before W108 gave those groups a frame at all — the
+                // second latent trap that row uncovered, after the duplicate `mappingColor`.
+                //
+                // So the normal artwork is now optional and only the mask is required. With no
+                // `image` there is nothing to draw *under* the lit region, which is correct: what
+                // is under it is the window, exactly as in the group's normal state.
                 if node.kind == .buttonGroup, visualState != .normal,
-                   let (_, normalPath) = try resource(node, names: ["image"]),
                    let (_, statePath) = try resource(node, names: foregroundNames),
                    let (_, mappingPath) = try resource(node, names: ["mappingImage"]) {
-                    let colors = Dictionary(uniqueKeysWithValues: node.children.compactMap { child -> (WMPColor, Int)? in
-                        guard let value = child.attribute(named: "mappingColor")?.value,
-                              case let .color(color) = value else { return nil }
-                        return (color, child.stableID)
-                    })
+                    let normalPath = try resource(node, names: ["image"])?.1
+                    let colors = mappingColors(of: node)
                     let activeIDs = childStates.filter { $0.1 == visualState }.map(\.0)
                     if !colors.isEmpty, !activeIDs.isEmpty {
                         let mapping = try imageStore.mappingImage(for: mappingPath, nodeByColor: colors)
-                        commands.append(imageCommand(node: node, path: normalPath, frame: frame,
-                            clip: inheritedClip, z: z, background: false, alpha: alpha,
-                            clippingPath: clippingPath))
+                        if let normalPath {
+                            commands.append(imageCommand(node: node, path: normalPath, frame: frame,
+                                clip: inheritedClip, z: z, background: false, alpha: alpha,
+                                clippingPath: clippingPath))
+                        }
                         commands.append(imageCommand(node: node, path: statePath, frame: frame,
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
                             mappingMask: WMPSceneMappingMask(mapping: mapping, nodeIDs: activeIDs),
                             clippingPath: clippingPath))
-                    } else {
+                    } else if normalPath != nil {
+                        // A group whose own artwork *is* the sheet swaps it wholesale, the way a
+                        // `<BUTTON>` does. One with no artwork of its own and nothing lit draws
+                        // nothing, which is its normal state.
                         commands.append(imageCommand(node: node, path: statePath, frame: frame,
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
                             clippingPath: clippingPath))
@@ -496,7 +574,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 let disabled = visualState == .disabled
                 let text = WMPSceneText(value: value,
                     fontName: literalString(node, "fontFace") ?? literalString(node, "fontType") ?? "Arial",
-                    fontSize: max(1, literal(node, "fontSize") ?? 12),
+                    fontSize: max(1, literalNumber(node, "fontSize") ?? 12),
                     bold: style.contains("bold"), italic: style.contains("italic"),
                     underline: style.contains("underline"),
                     smoothed: literalString(node, "fontSmoothing")?.caseInsensitiveCompare("false") != .orderedSame,
@@ -505,8 +583,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         ?? WMPColor(red: 255, green: 255, blue: 255), alignment: alignment,
                     scrolling: literalString(node, "scrolling")?.caseInsensitiveCompare("true")
                         == .orderedSame,
-                    scrollDelayMilliseconds: Double(literal(node, "scrollingDelay") ?? 100),
-                    scrollAmount: max(1, literal(node, "scrollingAmount") ?? 1))
+                    scrollDelayMilliseconds: Double(literalNumber(node, "scrollingDelay") ?? 100),
+                    scrollAmount: max(1, literalNumber(node, "scrollingAmount") ?? 1))
                 commands.append(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .text(text), alpha: alpha))
@@ -526,11 +604,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // WMP allows both literal BUTTONELEMENT nodes and semantic transport elements
                     // (PLAYELEMENT, NEXTELEMENT, and peers) inside one mapping image.
                     let children = node.children.filter { $0.attribute(named: "mappingColor") != nil }
-                    let colors = Dictionary(uniqueKeysWithValues: children.compactMap { child -> (WMPColor, Int)? in
-                        guard let value = child.attribute(named: "mappingColor")?.value,
-                              case let .color(color) = value else { return nil }
-                        return (color, child.stableID)
-                    })
+                    let colors = mappingColors(of: node)
                     if !colors.isEmpty {
                         mappingImage = try imageStore.mappingImage(for: mappingPath, nodeByColor: colors)
                         mappingTargets = children.compactMap { child in
@@ -777,8 +851,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
     private func isInteractive(_ kind: WMPElementKind) -> Bool {
         switch kind {
         case .button, .buttonGroup, .slider, .volumeSlider, .seekSlider,
-             .balanceSlider, .customSlider, .playElement, .pauseButton, .stopElement, .prevElement,
-             .nextElement, .rewButton, .rewElement, .ffwdButton, .ffwdElement,
+             .balanceSlider, .customSlider, .playElement, .pauseElement, .stopElement, .prevElement,
+             .nextElement, .rewElement, .ffwdElement,
+             .playButton, .pauseButton, .stopButton, .prevButton, .nextButton,
+             .rewButton, .ffwdButton, .muteButton, .repeatButton,
              .returnButton, .shuffleButton, .playlist, .dropdownPlaylist, .popup,
              .editBox, .listBox: return true
         default: return false
@@ -794,7 +870,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                   warn: (WMPDiagnostic) -> Void) throws -> WMPSize {
         var extent = WMPSize(width: 0, height: 0)
         for child in node.children {
-            if isNonLayout(child.kind) {
+            if isNonLayout(child) {
                 let nested = try contentUnionSize(of: child, overrides: overrides, warn: warn)
                 extent = WMPSize(width: max(extent.width, nested.width),
                                  height: max(extent.height, nested.height))
@@ -823,6 +899,42 @@ struct WMPSceneBuilder: @unchecked Sendable {
         return extent
     }
 
+    /// **A `<TEXT>`'s own artwork is its glyphs.** Every other node falls back to the natural size
+    /// of its `backgroundImage`; a text has none, and WMP sizes it from the face and the string.
+    ///
+    /// This is the single largest starvation class in the corpus: **1,441 `<TEXT>` nodes across 127
+    /// of the 179 archives** resolve no size in the default state, 1,058 of them missing width
+    /// *and* height. `Cablemusic` is the worked case — its script lays out ten readouts with
+    /// `txtShow.top/left/width/fontSize` and never a `height`, because in WMP there is nothing to
+    /// set — so the whole show/clip/author/copyright/bitrate block, and the seventeen station rows
+    /// in each of its two drawers, had no frame and never drew. Reported as "there is no track
+    /// display".
+    ///
+    /// A width measured from the *current* value is WMP's own behaviour: the box grows with the
+    /// string. That makes an empty value legitimately zero-wide and therefore still undrawn, which
+    /// is correct — there is nothing to draw — and it starts drawing on the transaction that gives
+    /// it a value, because a script write to `value` rebuilds the scene. An authored dimension
+    /// always wins; this only answers one the skin never stated.
+    ///
+    /// `literal`/`literalString` are the caller's override-aware resolvers rather than this type's
+    /// markup-only ones. That is the whole point here: the string and the face this measures are
+    /// what a script just wrote, not what the markup declared, and reading the markup answered nil
+    /// for every node whose value only exists at runtime — which is all of them.
+    private func intrinsicTextSize(_ node: WMPNode,
+                                   literal: (WMPNode, String) -> CGFloat?,
+                                   literalString: (WMPNode, String) -> String?) -> WMPSize? {
+        guard let value = literalString(node, "value") else { return nil }
+        let face = literalString(node, "fontFace") ?? literalString(node, "fontType") ?? "Arial"
+        let size = max(1, literal(node, "fontSize") ?? 12)
+        let style = (literalString(node, "fontStyle") ?? "").lowercased()
+        let bold = style.contains("bold"), italic = style.contains("italic")
+        return WMPSize(
+            width: WMPTextMetrics.width(of: value, fontName: face, fontSize: size,
+                                        bold: bold, italic: italic).rounded(.up),
+            height: WMPTextMetrics.lineHeight(fontName: face, fontSize: size,
+                                              bold: bold, italic: italic))
+    }
+
     private func intrinsicSizeResourceNames(for kind: WMPElementKind) -> [String] {
         switch kind {
         case .customSlider:
@@ -835,6 +947,20 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // WMP slider controls conventionally omit width/height and take their track size from
             // foregroundImage. thumbImage is a last-resort size for unusual authored controls.
             return ["image", "backgroundImage", "background", "foregroundImage", "thumbImage"]
+        case .buttonGroup:
+            // **A `BUTTONGROUP`'s size is its mapping image's size, and often nothing else can say
+            // so.** The group's normal state is usually the window's own background artwork, so the
+            // skin authors no `image` and no geometry at all: `Cablemusic`'s six groups — its eight
+            // presets, stop, close, minimize, next/previous effect, shrink, the bandwidth pair and
+            // all three drawer tabs — are `<BUTTONGROUP mappingImage="map.gif" hoverImage="…"
+            // downImage="…">` and nothing more. With no size the group resolved no frame, so it
+            // registered no hit target and every control in it was dead, while the artwork beneath
+            // still drew the buttons: reported as "most buttons don't work". The mapping image is
+            // definitionally the group's own pixel grid — every child is a colour region inside
+            // it — so it is the right fallback, and the state images are the same bitmap again.
+            // 31 groups across 16 of the 179 corpus archives resolve no size today.
+            return ["image", "mappingImage", "hoverImage", "downImage",
+                    "backgroundImage", "background"]
         default:
             return ["image", "backgroundImage", "background"]
         }
@@ -854,6 +980,46 @@ struct WMPSceneBuilder: @unchecked Sendable {
         case .video, .wmpVideo: return .video
         default: return nil
         }
+    }
+
+    /// The mapping-image colour of each child that declares one, keyed by colour.
+    ///
+    /// **Two children can declare the same `mappingColor`, and building this with
+    /// `uniqueKeysWithValues` traps the process.** `Cablemusic` authors `bnpb6` and `bnpb7` both as
+    /// `#00C0FF` — one preset button too many for the eight regions its `map.gif` has — and WMP
+    /// draws and hits the first of them rather than refusing the skin. Nothing reached this code
+    /// before because that skin's groups resolved no frame at all; sizing them from the mapping
+    /// image is what turned a dead control into a crash on load. First in document order wins.
+    private func mappingColors(of group: WMPNode) -> [WMPColor: Int] {
+        Dictionary(group.children.compactMap { child -> (WMPColor, Int)? in
+            guard let value = child.attribute(named: "mappingColor")?.value,
+                  case let .color(color) = value else { return nil }
+            return (color, child.stableID)
+        }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// **A `BUTTONGROUP` child that declares a `mappingColor` is a region of the group's mapping
+    /// image, not a box on the canvas.** `<BUTTONELEMENT>` was already exempt from layout; its
+    /// semantic siblings — `<PLAYELEMENT>`, `<STOPELEMENT>`, `<NEXTELEMENT>` and peers — were not,
+    /// so every one of them was walked as a control, failed to find geometry it never had, and was
+    /// recorded `unresolved`. That is **494 of the corpus's 2,380 unresolved nodes across ~90
+    /// skins**, and none of it was ever a drawing defect: hit testing already reaches them through
+    /// the group's `mappingTargets`. It mattered because `starved.tsv` ranks on that numerator, so
+    /// a fifth of the ranking was phantom rows.
+    ///
+    /// The test is the attribute **under a `BUTTONGROUP`** rather than the kind, because that pair
+    /// is exactly what `mappingColors(of:)` builds the group's targets from — and the attribute
+    /// alone is not enough. `polygon` authors `<subview id="ToggleButton" left="75" top="27"
+    /// width="18" height="18" mappingImage="Toggle_MAP.bmp" mappingColor="#FF0000">`: a mask on the
+    /// subview itself, not a group membership. Testing the attribute alone dropped its geometry,
+    /// which lost the panel it draws and moved the `returnButton` inside it to the window's corner.
+    /// A skin that authors one of the transport tags standalone, with its own artwork and frame,
+    /// still lays out for the same reason.
+    private func isNonLayout(_ node: WMPNode) -> Bool {
+        if node.parent?.kind == .buttonGroup, node.attribute(named: "mappingColor") != nil {
+            return true
+        }
+        return isNonLayout(node.kind)
     }
 
     private func isNonLayout(_ kind: WMPElementKind) -> Bool {

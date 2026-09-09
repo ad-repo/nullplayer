@@ -22,6 +22,7 @@ import XCTest
 //   WMP_RENDER_DUMP=<dir>          write every view to PNG, per-skin subdirectory in a sweep
 //   WMP_RENDER_PROBE=<view|all>    every scene node: type, id, resolved frame, clip, paint, attrs
 //   WMP_RENDER_BITMAPS=1           resolved bitmap count and every one that failed, with missing=
+//   WMP_RENDER_UNRESOLVED=1        name every node the unresolved count reports, and which dimension
 //   WMP_RENDER_SCRIPTS=1           per program: bytes, declared handlers, whether it evaluated
 //   WMP_RENDER_EXPR=1              every JScript: geometry expression, its value, its order, deps
 //   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
@@ -93,6 +94,10 @@ struct WMPProbe {
 
     var wantsProbe: Bool { env["WMP_RENDER_PROBE"] != nil }
     var wantsBitmaps: Bool { env["WMP_RENDER_BITMAPS"] != nil }
+    /// `RENDER-DUMP`'s `unresolved` is the number `starved.tsv` ranks on and it names nothing, so
+    /// every use of it so far has been followed by opening the `.wms` by hand to guess which nodes
+    /// it counted. This prints them.
+    var wantsUnresolved: Bool { env["WMP_RENDER_UNRESOLVED"] != nil }
     var wantsScripts: Bool { env["WMP_RENDER_SCRIPTS"] != nil }
     var wantsExpressions: Bool { env["WMP_RENDER_EXPR"] != nil }
     var wantsCallTrace: Bool { env["WMP_CALL_TRACE"] != nil }
@@ -794,6 +799,9 @@ enum WMPHarness {
             let tally = bitmapTally(scene: scene, skin: skin, imageStore: imageStore)
             WMPHarnessOutput.emit("BITMAPS \(viewID): resolved=\(tally.resolved) missing=\(tally.missing.joined(separator: " "))")
         }
+        if probe.wantsUnresolved {
+            for line in unresolvedLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
+        }
         if probe.wantsExpressions {
             for line in expressionLines(scene: scene, skin: skin, viewID: viewID, output: output) { WMPHarnessOutput.emit(line) }
         }
@@ -885,6 +893,22 @@ enum WMPHarness {
         }
         lines += Self.paintProbeLines(scene: scene, skin: skin)
         return lines
+    }
+
+    /// One line per node the scene could not place, in the order the builder gave up on them.
+    ///
+    /// `unresolved` is the numerator of `starved.tsv` and it names nothing, so a high ratio has
+    /// always been followed by reading the `.wms` and guessing. The authored tag and the missing
+    /// attribute together are what separates the two populations that number conflates: a node
+    /// whose geometry an unrun script owes it, and a node whose kind this engine sizes wrong.
+    static func unresolvedLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
+        let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        return scene.unresolved.map { entry in
+            let node = nodesByID[entry.stableID]
+            return "UNRESOLVED \(scene.viewID)/\(entry.stableID) "
+                + "\(node?.authoredTagName ?? "?") id=\(entry.nodeID ?? "-") "
+                + "\(entry.attribute)=\(condense(entry.authoredValue))"
+        }
     }
 
     private static func paintProbeLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {

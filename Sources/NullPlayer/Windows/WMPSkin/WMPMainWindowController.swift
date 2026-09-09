@@ -126,6 +126,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var mainView: WMPMainView?
     private var unskinnedView: WMPUnskinnedMainView?
     private var isApplyingSceneSize = false
+    /// The size the skin's own script last assigned the view, held until a user resize replaces it.
+    ///
+    /// **A scripted view size is the script's output, not the drawing's**, so it is committed in the
+    /// uncancellable half of a transaction beside the host commands and it outlives the scene that
+    /// carried it. `Cablemusic`'s compact mode is why: `SwitchSmall()` runs on a click, and with a
+    /// track playing a `status_onchange` transaction lands five times a second and cancels the
+    /// click's task after its render. The overrides had already committed, so the *next* rebuild
+    /// drew the compact player — at the old canvas, in a 593x600 window, which is precisely the
+    /// "large overlay" that was reported. This is W88's rule applied to the one geometry a
+    /// transaction owns that the scene alone cannot carry.
+    private var scriptViewSize: WMPSize?
     /// The host's **UI Size** as a multiplier on this window, and the window's size in the skin's
     /// own pixels — the size the scene is built and clamped at, which the multiplier never enters.
     ///
@@ -458,6 +469,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             self?.renderInteraction(state: state, changed: changed)
         }
         unskinnedView = nil
+        // A present is a new view (or a reload of this one): the previous view's scripted size is
+        // not this one's, and `apply` sizes the window from the scene it was handed.
+        scriptViewSize = nil
         window?.contentView = view
         if let restored = pendingRestoredFrame {
             skinSpaceSize = NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height)
@@ -585,6 +599,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private func renderCurrentSize() {
         guard !isApplyingSceneSize, let skin = loadedSkin, let store = imageStore,
               let viewID = activeViewID, let window else { return }
+        // The user has just chosen a size, which retires whatever the script last asked for.
+        scriptViewSize = nil
         loadTask?.cancel()
         let requested = WMPSize(width: window.contentLayoutRect.width / uiScale,
                                 height: window.contentLayoutRect.height / uiScale)
@@ -974,6 +990,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // A command that switches views owns everything after it, exactly as on initial load,
             // so this transaction's scene is abandoned rather than drawn over the new view's.
             let switchedView = applyHostCommands(output.hostCommands)
+            if let assigned = output.viewSize, !switchedView {
+                scriptViewSize = assigned
+                setWindowSize(NSSize(width: assigned.width, height: assigned.height))
+            }
             if !switchedView { scheduleTimers(output.timerRequests) }
             recordScriptDiagnostics(output.diagnostics)
             guard !switchedView, !Task.isCancelled else { return }
@@ -985,8 +1005,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // moves, none of which the script mentioned — and a subview carries no hit metadata,
                 // so the narrowed bounds came out as the one button that was clicked. Partial
                 // repaints belong to hover and slider drags, where only artwork state changes.
+                // **A `.wmz` compact mode is a script resizing its own window.** Every other
+                // transaction rebuilds at the size the window already has, because that size is the
+                // user's; a transaction that *assigned* `view.width`/`view.height` is the one case
+                // where the skin is asking for a different one, and pinning `requestedSize` to the
+                // old canvas made `SwitchSmall()` draw a 475x373 player inside a 593x600 window
+                // with two hundred empty pixels around it.
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: viewID, requestedSize: activeScene.canvasSize,
+                    .build(viewID: viewID, requestedSize: scriptViewSize ?? activeScene.canvasSize,
                            interactionState: interactionState, overrides: output.overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderBackingScale,

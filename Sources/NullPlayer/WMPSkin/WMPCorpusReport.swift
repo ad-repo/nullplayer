@@ -277,9 +277,17 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
     private static let supportedTags: Set<String> = [
         "theme", "view", "subview", "text", "image", "button", "buttongroup", "buttonelement",
         "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "itemsplaylist", "dropdownplaylist",
-        "playelement", "pausebutton", "stopelement", "prevelement", "nextelement", "rewbutton",
-        "rewelement", "ffwdbutton", "ffwdelement", "returnbutton", "shufflebutton",
-        "equalizersettings", "popup", "wmpeffects", "video", "wmpvideo", "player", "network", "script"
+        "customslider", "progressbar",
+        "playelement", "pauseelement", "stopelement", "prevelement", "nextelement",
+        "rewelement", "ffwdelement",
+        "playbutton", "pausebutton", "stopbutton", "prevbutton", "nextbutton", "rewbutton",
+        "ffwdbutton", "mutebutton", "repeatbutton", "returnbutton", "shufflebutton",
+        // `effects` and `customslider` are the corpus's spelling of two surfaces this engine has
+        // hosted since Phase 6 and W101, and neither was in this set — so a skin that draws both
+        // was reported as demanding two unimplemented tags. A tally that is wrong in this direction
+        // ranks work that is already done.
+        "equalizersettings", "popup", "effects", "wmpeffects", "video", "wmpvideo",
+        "player", "network", "script"
     ]
 
     private static let supportedAttributes: Set<String> = [

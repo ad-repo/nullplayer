@@ -3,8 +3,10 @@ import Foundation
 enum WMPElementKind: Hashable, CustomStringConvertible {
     case theme, view, subview, text, image, button, buttonGroup, buttonElement
     case slider, volumeSlider, seekSlider, balanceSlider, customSlider, progressBar
-    case playElement, pauseButton, stopElement, prevElement, nextElement
-    case rewButton, rewElement, ffwdButton, ffwdElement, returnButton, shuffleButton
+    case playElement, pauseElement, stopElement, prevElement, nextElement
+    case rewElement, ffwdElement
+    case playButton, pauseButton, stopButton, prevButton, nextButton
+    case rewButton, ffwdButton, muteButton, repeatButton, returnButton, shuffleButton
     case playlist, dropdownPlaylist, video, wmpVideo, effects
     case equalizerSettings, popup, editBox, listBox, player, network, script
     case unknown(String)
@@ -25,15 +27,34 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case "balanceslider": self = .balanceSlider
         case "customslider": self = .customSlider
         case "progressbar": self = .progressBar
+        // **WMP spells every transport control twice, and only one half was ever a kind.**
+        // `<…ELEMENT>` is a `BUTTONELEMENT` subtype — a region of a `BUTTONGROUP`'s mapping image;
+        // `<…BUTTON>` is a `BUTTON` subtype with artwork and a frame of its own. The table had
+        // `playElement` but no `playButton`, `pauseButton` but no `pauseElement`, and so on for
+        // every pair, so half of the vocabulary fell to `.unknown`: the node still painted its
+        // `image`, was not interactive, and had no transport action, which is a play button that
+        // draws and does nothing. Measured over the 172-archive markup census
+        // (`scripts/wmp_markup_census.sh`), the missing spellings are
+        // `PAUSEELEMENT` 80 uses / 69 skins, `PLAYBUTTON` 50 / 45, `PREVBUTTON` 50 / 45,
+        // `NEXTBUTTON` 49 / 44, `STOPBUTTON` 48 / 42, `MUTEBUTTON` 10 / 9 and `REPEATBUTTON` 5 / 4.
+        // `MUTEELEMENT`, `REPEATELEMENT`, `SHUFFLEELEMENT` and `RETURNELEMENT` are zero in the
+        // corpus and are deliberately absent: a kind nothing authors is a phantom.
         case "playelement": self = .playElement
-        case "pausebutton": self = .pauseButton
+        case "pauseelement": self = .pauseElement
         case "stopelement": self = .stopElement
         case "prevelement": self = .prevElement
         case "nextelement": self = .nextElement
-        case "rewbutton": self = .rewButton
         case "rewelement": self = .rewElement
-        case "ffwdbutton": self = .ffwdButton
         case "ffwdelement": self = .ffwdElement
+        case "playbutton": self = .playButton
+        case "pausebutton": self = .pauseButton
+        case "stopbutton": self = .stopButton
+        case "prevbutton": self = .prevButton
+        case "nextbutton": self = .nextButton
+        case "rewbutton": self = .rewButton
+        case "ffwdbutton": self = .ffwdButton
+        case "mutebutton": self = .muteButton
+        case "repeatbutton": self = .repeatButton
         case "returnbutton": self = .returnButton
         case "shufflebutton": self = .shuffleButton
         case "playlist": self = .playlist
@@ -87,14 +108,21 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case .customSlider: return "customSlider"
         case .progressBar: return "progressBar"
         case .playElement: return "playElement"
-        case .pauseButton: return "pauseButton"
+        case .pauseElement: return "pauseElement"
         case .stopElement: return "stopElement"
         case .prevElement: return "prevElement"
         case .nextElement: return "nextElement"
-        case .rewButton: return "rewButton"
         case .rewElement: return "rewElement"
-        case .ffwdButton: return "ffwdButton"
         case .ffwdElement: return "ffwdElement"
+        case .playButton: return "playButton"
+        case .pauseButton: return "pauseButton"
+        case .stopButton: return "stopButton"
+        case .prevButton: return "prevButton"
+        case .nextButton: return "nextButton"
+        case .rewButton: return "rewButton"
+        case .ffwdButton: return "ffwdButton"
+        case .muteButton: return "muteButton"
+        case .repeatButton: return "repeatButton"
         case .returnButton: return "returnButton"
         case .shuffleButton: return "shuffleButton"
         case .playlist: return "playlist"

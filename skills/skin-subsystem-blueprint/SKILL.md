@@ -175,6 +175,7 @@ skills/<family>-skin-guide/
   reference/harness.md  the ONLY place a probe flag or corpus command is documented
   reference/loading.md  what is tolerated, what stays fatal
   reference/<area>.md   rendering, scripting, components — split when a file gets long
+  reference/skins/      one dossier per skin that taught the engine something, plus the index
 <FAMILY>_TASKS.md       the ranked backlog
 docs/<family>/          phase handoffs and the closed-entry archive
 ```
@@ -185,6 +186,17 @@ docs/<family>/          phase handoffs and the closed-entry archive
 - **Treat phase handoffs as unverified narrative.** Check their claims against the code before
   relying on them — `.wmz`'s phase 7 asserts a capability gate that does not exist, and its census
   numbers were wrong in both directions.
+- **A corpus sweep proves the default state and nothing else.** No sweep here hovers, drags, ticks a
+  timer or plays a track, so a byte-identical capture across a change to any of those means
+  *unmeasured*. Build a state-aware probe (`WMP_RENDER_HOVER`, `WMP_RENDER_CLICK`'s drag form) beside
+  the sweep, and say which of the two a number came from.
+- **A corpus is not a memory.** A skin that produced two or more unrelated defects, or one no probe
+  could see, earns a dossier in `reference/skins/`: what it exercises, what it found, **what was
+  ruled out**, and the decoded coordinates that reach its controls. The ruled-out section is the one
+  that saves a session and the one most often left out. Its index also carries the family's
+  *counter-evidence* table — the skins that disagree with a change that looked right, one rule each —
+  which is what a sweep tells you once and nothing records. `wmp-skin-guide/reference/skins/` is the
+  worked example; `Cablemusic` is the dossier to copy the shape from.
 - Keep a measured number next to the command that produces it. A number pasted into prose goes stale
   silently and nothing fails.
 

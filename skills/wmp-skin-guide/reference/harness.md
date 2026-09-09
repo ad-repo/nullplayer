@@ -71,6 +71,7 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_RENDER_DUMP` | directory | one PNG per view; per-skin subdirectory in a sweep |
 | `WMP_RENDER_PROBE` | `all` or a view id | `PROBE` — every drawn node's type, id, resolved frame, clip, z, paint and authored attributes; plus a `WIDGET` line per widget — the AppKit-hosted surfaces the scene image does **not** contain |
 | `WMP_RENDER_BITMAPS` | `1` | `BITMAPS` — resolved count and every path that failed to load, with `missing=` |
+| `WMP_RENDER_UNRESOLVED` | `1` | `UNRESOLVED` — one line per node the scene could not place: authored tag, id, and **which dimension** was missing (`width`, `height` or `width+height`). `RENDER-DUMP`'s `unresolved` count is the numerator `starved.tsv` ranks on and it names nothing, so every use of it had been followed by opening the `.wms` and guessing. It is what separated the three populations that count conflates — a `<TEXT>` sized by its own glyphs, a `<BUTTONGROUP>` sized by its mapping image, and a `<PLAYELEMENT>` that is a colour region and was never a box — and each was a rule rather than a skin |
 | `WMP_RENDER_SCRIPTS` | `1` | `SCRIPTS`/`SCRIPT` — per program: bytes, declared handlers, and the runtime's availability |
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
@@ -942,6 +943,127 @@ returning `nil`. A skin assigning a `res://wmploc/RT_IMAGE/#2024` it had read ba
 therefore took its whole view down with `WMP0024`: **5 views across 3 skins** — `corona` and
 `9SeriesDefault` each lost `vPlayer` *and* `viewTiny`, plus `Compact/compact`. `try?` and the same
 warning path as a missing file. An override is runtime data; nothing it carries may reject a view.
+
+---
+
+## After the starvation classes (179-archive corpus, 2026-09-09)
+
+`starved.tsv` had ranked views for two phases and nothing had been taken off the top of it, because
+the number it ranks on names no node. `WMP_RENDER_UNRESOLVED` names them, and the first corpus-wide
+run said the ranking was not a list of skins at all — **83% of the corpus's 2,380 unresolved nodes
+were three rules**:
+
+| what the tag was | nodes | skins | why it resolved nothing |
+|---|---:|---:|---|
+| `<TEXT>` | 1,441 | 127 | no intrinsic size; 1,058 were missing width *and* height |
+| `<PLAYELEMENT>` / `<STOPELEMENT>` / `<NEXTELEMENT>` / `<PREVELEMENT>` / `<PAUSEELEMENT>` / `<REWELEMENT>` / `<FFWDELEMENT>` | 494 | ~90 | laid out as controls; they are colour regions of a `BUTTONGROUP`'s mapping image |
+| `<BUTTONGROUP>` | 31 | 16 | no intrinsic size; the group's normal state is usually the window's own artwork, so it authors no `image` and no geometry |
+
+**The reporter's skin was one skin with all three, plus two more.** `Cablemusic` — "most buttons
+don't work, there is no track display" — is `35 nodes, 42 commands, 20 hits, 63 unresolved` before
+and `89 / 87 / 66 / 8` after. The remaining 8 are the eight `<TEXT>` nodes it declares **twice**; the
+second declaration wins the id and the first is never written, which is WMP's own outcome and not a
+defect. The two beyond the table:
+
+* **`<PLAYBUTTON>`, `<NEXTBUTTON>`, `<PREVBUTTON>`, `<STOPBUTTON>`, `<MUTEBUTTON>`, `<REPEATBUTTON>`
+  and `<PAUSEELEMENT>` were not element kinds at all.** WMP spells every transport control twice and
+  only one half of each pair was in the table. Measured with `scripts/wmp_markup_census.sh`:
+  `PAUSEELEMENT` 80 uses / 69 skins, `PLAYBUTTON` 50 / 45, `PREVBUTTON` 50 / 45, `NEXTBUTTON` 49 /
+  44, `STOPBUTTON` 48 / 42, `MUTEBUTTON` 10 / 9, `REPEATBUTTON` 5 / 4. An unknown kind still paints
+  its `image`, so the button **drew and did nothing**, and `WMP_RENDER_CLICK` on `Cablemusic`'s play
+  button returned `hit=ffw` — the pointer fell through to the neighbour whose frame overlapped it.
+  That is what "the wrong button responds" looks like from the other side of § *"The wrong button
+  responds" is two questions*.
+* **An origin the markup never stated could not be written by script.** `left`/`top` default to 0
+  when unauthored, and the check was `attribute == nil ? 0 : resolve` — short-circuiting *before*
+  the scene overrides were consulted. Size never had it. So a handler that positions an element
+  from nothing moved it nowhere: `Cablemusic`'s two drawers are seventeen station rows each, laid
+  out entirely by `InitPrograms()` writing `pr<N>.top`, and all thirty-four drew on top of one
+  another in the corner of the drawer — the right width, in the wrong place.
+
+**What the sweep said.** `scripts/wmp_render_sweep.sh compare` over 179 archives / 545 PNGs: **422
+identical, 123 differing, none lost, none new**, and exactly one image lost any coverage (2 px on
+`SplinterCellWMPSkin/videoView`). Summed over every view: nodes 11,284 → **11,973**, paint commands
+9,459 → **10,070**, hit targets 3,996 → **4,249**, widgets 1,650 → **2,259**, and unresolved nodes
+2,210 → **1,067**. 268 views improved and **one** decreased — `LostPlanet/infoView`, 5 hits → 1, and
+that one is the origin fix working: its four gallery thumbnails are `moveTo`'d off-stage by
+`onLoadInfo()` and used to be pinned at the gallery's corner as four invisible stacked hit targets.
+`GEOM` says thumb1 now resolves to `-143,43`, outside its parent's clip.
+
+**Two rules came back narrower after the sweep disagreed with them**, and neither was findable any
+other way:
+
+* **`mappingColor` alone does not mean "a region, not a box".** The first version exempted any node
+  declaring one from layout. `polygon` authors `<subview id="ToggleButton" left="75" top="27"
+  width="18" height="18" mappingImage="Toggle_MAP.bmp" mappingColor="#FF0000">` — a mask on the
+  subview itself — and lost its geometry, which dropped the panel it draws and moved the
+  `returnButton` inside it to the window's corner. The test is the attribute **under a
+  `BUTTONGROUP`**, which is the same pair the group's own `mappingTargets` are built from.
+* **Two children can declare the same `mappingColor`, and `Dictionary(uniqueKeysWithValues:)` traps
+  the process.** `Cablemusic` authors `bnpb6` and `bnpb7` both as `#00C0FF`. Nothing had ever
+  reached that code for this skin because its groups resolved no frame at all, so sizing the group
+  from its mapping image turned a dead control into a **crash on load**. First in document order
+  wins, as WMP does. Expect this shape whenever a fix makes previously-dead code reachable.
+
+### The second report on the same skin, and what only the running app could say
+
+The first round left `Cablemusic` drawing a whole player and four defects still on the screen:
+"when you click the compact button there is a large overlay, the track information does not appear
+and the track text is shifted up too high in the track window, the playlist is always showing."
+**Two of the four were reachable headlessly and two were not**, and the two that were not are the
+reason `WMP_TRACE_INPUT`'s `script-diag` line exists.
+
+* **Headless, one command each.** `WMP_RENDER_CLICK='mainview@384,390;579,390'` opens the playlist
+  drawer and closes it again: the second click printed `changed=[subPlayList.left=178]` and
+  `61 widgets[… playlist×1 …]` — the drawer shut and the playlist stayed. `moveTo` applied its
+  endpoint inside the call, so `HidePlist()`'s `if (subPlayList.left == 373)` read the destination
+  instead of the origin (W112). The label geometry was the same shape: `WMP_RENDER_PROBE` said
+  `frame=50,350 55x12` against a `fontSize` the script had set to 7, which is a 10 pt box (W114).
+* **Live, and invisible to every probe here.** The readouts were empty with a track playing and
+  nothing in the corpus sweep could say why, because the sweep has no snapshot. `INPUT script-diag`
+  named it in one launch — `unimplemented player.network.bitrate (network member)` — and then, with
+  that closed, named the next one behind it: `unimplemented player.currentmedia.sourceurl`. **Both
+  are in `handlePlayStateChange`'s path *before* the function that fills every readout**, so one
+  missing member cost the whole block. This is § *After W37*'s rule arriving twice in one session:
+  close the biggest row and re-measure, because the row behind it was never visible.
+* **Live, and the fix moved twice.** Compact mode resized the *scene* on the first attempt and left
+  the window at 593x600 whenever a track was playing — `status_onchange` lands five times a second
+  and cancels the click's task after its render (W88), so the present that carried the resize never
+  happened while the overrides that carried the compact layout already had. The size had to move
+  into the uncancellable half of the transaction, beside the host commands (W113). **A live QA pass
+  with playback running is a different test from one without**, and this is the second defect in
+  this engine that only appears in the first.
+
+**What the sweep said, in three rounds.** Every engine change here went through
+`scripts/wmp_render_sweep.sh`, and it rejected two versions of one rule before accepting the third:
+
+| round | change | images |
+|---|---|---|
+| 1 | scripted view size + tween deferral | 443 identical, 92 differing, **10 lost** |
+| 2 | …with `ownAuthoredSize` kept at the markup's | 500 identical, 35 differing, 0 lost |
+| 3 | override-aware `fontSize` + the ascent floor | 393 identical, 142 differing, 0 lost, **no view row changed at all** |
+| 4 | `sourceURL` + `bitRate` | 532 identical, **3 differing**, 0 lost |
+
+Round 1's ten losses were `LostPlanet/infoView` shattering and the `mediaSwitcherView` class; round
+3 changed 142 images and not one node, command, hit or widget count, which is what a pure text-metrics
+change should look like. Round 4's three are skins whose readouts came back: `Thomas/main` draws
+`0 kbps` and `0%` where a dead handler used to leave blanks. Corpus totals across the whole session:
+nodes 11,284 → **11,972**, commands 9,459 → **10,049**, hits 3,996 → **4,248**, widgets 1,650 →
+**2,259**, unresolved 2,210 → **1,067**.
+
+**And a fifth, on a follow-up report, that no sweep here can see.** "When you mouse over the compact
+button there is a huge overlay" is a `BUTTONGROUP` whose `hoverImage` is the whole 593x600 player
+and which authors no normal `image`, so the sheet was painted unmasked over the window (W116).
+`scripts/wmp_render_sweep.sh compare` across that fix is **535 identical, 0 differing** — a
+default-state capture never enters a hover or a down state, which is W73 stated as a number.
+`WMP_RENDER_HOVER` and `WMP_RENDER_CLICK` are the instruments for it, and a live hover is what found
+it. **Read a byte-identical sweep across an interaction-state change as "unmeasured", never as
+"unchanged".**
+
+**What it does not close.** `<controls>` (103 nodes / 67 skins) and `<VIDEOSETTINGS>` (28 / 24) are
+still counted as unresolved and are objects rather than controls — phantom rows in `starved.tsv`
+that cost no pixels. `currentPositionText`, `durationText`, `statusText` and `automenu` are unknown
+tags in the same shape. See `WMP_TASKS.md`.
 
 ---
 
