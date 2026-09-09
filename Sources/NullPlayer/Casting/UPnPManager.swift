@@ -2017,22 +2017,18 @@ class UPnPManager {
     /// Room controls deliberately address the representative renderer, never the group.
     /// This also works before NullPlayer starts a casting session.
     func setSonosRoomVolume(_ volume: Int, roomUDN: String) async throws {
-        guard let controlURL = sonosRoomRenderingControlURL(forZoneUDN: roomUDN) else {
-            throw CastError.deviceNotFound
-        }
+        guard let device = sonosCastDevice(forZoneUDN: roomUDN) else { throw CastError.deviceNotFound }
         try await sendRenderingControlAction(
-            controlURL: controlURL, action: "SetVolume",
+            controlURL: getRenderingControlURL(for: device), action: "SetVolume",
             arguments: [("InstanceID", "0"), ("Channel", "Master"),
                         ("DesiredVolume", "\(max(0, min(100, volume)))")], retries: 0
         )
     }
 
     func getSonosRoomVolume(roomUDN: String) async throws -> Int {
-        guard let controlURL = sonosRoomRenderingControlURL(forZoneUDN: roomUDN) else {
-            throw CastError.deviceNotFound
-        }
+        guard let device = sonosCastDevice(forZoneUDN: roomUDN) else { throw CastError.deviceNotFound }
         let response = try await sendRenderingControlAction(
-            controlURL: controlURL, action: "GetVolume",
+            controlURL: getRenderingControlURL(for: device), action: "GetVolume",
             arguments: [("InstanceID", "0"), ("Channel", "Master")], retries: 0
         )
         guard let value = extractXMLValue(response, tag: "CurrentVolume"),
@@ -2040,20 +2036,6 @@ class UPnPManager {
             throw CastError.playbackFailed("Invalid room volume response")
         }
         return volume
-    }
-
-    /// Room-volume control only requires the representative's discovered address and port.
-    /// Unlike casting, RenderingControl does not depend on an AVTransport service URL.
-    private func sonosRoomRenderingControlURL(forZoneUDN udn: String) -> URL? {
-        stateQueue.sync {
-            guard let zone = sonosZones[udn] else { return nil }
-            var components = URLComponents()
-            components.scheme = "http"
-            components.host = zone.address
-            components.port = zone.port
-            components.path = "/MediaRenderer/RenderingControl/Control"
-            return components.url
-        }
     }
     
     /// Set volume on the connected device (0-100).
