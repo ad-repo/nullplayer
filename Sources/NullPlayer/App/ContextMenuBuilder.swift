@@ -3520,7 +3520,7 @@ class SonosRoomCheckboxView: NSView {
             defer { sender.isEnabled = true }
             do {
                 try await SonosRoomMixer.shared.selectRoom(info.roomUDN, selected: selected)
-                if info.roomUDN == info.coordinatorUDN && !selected {
+                if !selected, info.roomUDN == CastManager.shared.activeSession?.device.id {
                     parentMenu?.cancelTracking()
                 }
             } catch {
