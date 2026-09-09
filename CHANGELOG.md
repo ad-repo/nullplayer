@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Sonos room volume control
+- **Download your complete Play History as a CSV** — the Library Data and Play History views now
+  include a download button that exports every recorded event, including older and skipped plays,
+  rather than only the 200 recent entries visible in the table.
 
 ## 0.30.0
 
