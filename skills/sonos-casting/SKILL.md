@@ -455,11 +455,11 @@ Functions that advance the playlist index use `allowUnknownSampleRate: true` bec
 ### Cast Functions Are the Final Authority
 
 `castCurrentTrack` and `castNewTrack` in `CastManager.swift` call `resolveSonosSampleRate(for:)`
-for lossless tracks with nil SR. Plex tracks fetch the actual rate from the server; local files
-are probed directly with `AVAudioFile` and asynchronously-loaded `AVAsset` format descriptions.
-The resolution decision must use the same URL-extension-or-content-type classification as
-`isSonosCompatible`; Plex stream URLs are often extensionless, so `Track.contentType` must
-identify FLAC/WAV for the fetch to happen. If a track fails there,
+when metadata has nil SR. Plex tracks fetch the actual rate from the server; local files
+are probed directly with `AVAudioFile` and asynchronously-loaded `AVAsset` format descriptions,
+even when their extension or MIME type is unfamiliar. Plex rate resolution does not depend on
+format classification; classification remains relevant for unsupported codecs and strict unknown
+FLAC/WAV handling. If a track fails there,
 `advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
 
 The final compatibility call remains strict for server tracks. A local file whose sample rate is

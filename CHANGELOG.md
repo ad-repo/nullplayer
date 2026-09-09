@@ -2,10 +2,14 @@
 
 ## Unreleased
 
-- Sonos room volume control
+- **Sonos room volume control** - select rooms and control each room's volume individualy
 - **Download your complete Play History as a CSV** — the Library Data and Play History views now
   include a download button that exports every recorded event, including older and skipped plays,
   rather than only the 200 recent entries visible in the table. Available in every UI mode.
+- **Sonos no longer receives audio above its 48 kHz limit** — the compatibility gate now rejects
+  any track with a known or resolved sample rate above 48 kHz, even when its URL extension or MIME
+  type is unrecognized. Local files with unusual extensions are probed before casting, and Plex
+  tracks with missing rate metadata are resolved from the server (GH #422).
 
 ## 0.30.0
 
