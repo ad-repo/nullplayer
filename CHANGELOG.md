@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### New Features
+
+- **NullPlayer's own windows now open beside a Media Player skin, in that skin's colours** — the
+  playlist, equalizer, library browser, spectrum analyzer, audio analyzer, PeppyMeter, Flow, Cava,
+  waveform and visualizer are all available in Media Player mode, where they were previously hidden.
+  They take their colours from the `.wmz` you are actually looking at: the skin's own playlist,
+  view and text colours where it declares them, and where it declares none — nearly half of all
+  skins — the dominant colour of the artwork the skin draws, so the windows still belong to it.
+  Text is checked for contrast against the surface it lands on, so a skin whose declared colours
+  were never meant to sit together stays readable.
+
+  Where the skin has a playlist or an equalizer **of its own**, that one is used and no second
+  NullPlayer window opens — most Media Player skins do. If the skin keeps its playlist on a
+  separate screen, the Playlist Editor item takes you there, exactly as the skin's own button does.
+
 ### Bug Fixes
 
 - **Sonos no longer receives audio above its 48 kHz limit** — the compatibility gate now rejects

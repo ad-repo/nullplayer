@@ -41,7 +41,9 @@ final class WMPPhase3Tests: XCTestCase {
         XCTAssertTrue(AppCapabilities.supports(.wmpSkinMode))
         XCTAssertEqual(PlayerUIMode.argumentOverride(from: ["uiMode": "wmp"]), .wmp)
         XCTAssertNil(PlayerUIMode.argumentOverride(from: ["uiMode": "unknown"]))
-        XCTAssertFalse(ContextMenuBuilder.supportsSkinnedAuxiliaryWindows(for: .wmp))
+        // WMP hosts NullPlayer's own windows in chrome derived from the active `.wmz`
+        // (`WMPSurfacePalette`), so they are offered here like every other family's.
+        XCTAssertTrue(ContextMenuBuilder.supportsSkinnedAuxiliaryWindows(for: .wmp))
         XCTAssertTrue(ContextMenuBuilder.supportsSkinnedAuxiliaryWindows(for: .classic))
         XCTAssertTrue(ContextMenuBuilder.supportsSkinnedAuxiliaryWindows(for: .modern))
         let uiMenu = ContextMenuBuilder.buildMenuBarUIMenu()

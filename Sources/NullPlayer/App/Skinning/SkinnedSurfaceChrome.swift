@@ -1,11 +1,13 @@
 import AppKit
 
-/// Palette-derived chrome for app-owned fallback windows shown beside a `.wal` skin.
+/// Palette-derived chrome for NullPlayer's own windows shown beside somebody else's skin — a
+/// `.wal` skin that declares no such window, or a `.wmz` skin, which has no frame system to mount one
+/// in at all.
 ///
 /// The caller continues to own its window geometry and hit testing. This painter only replaces the
-/// classic `.wsz` artwork when `WindowManager.winampModernSurfaceStyle` is available; a surface
+/// classic `.wsz` artwork when `WindowManager.hostedSurfaceStyle` is available; a surface
 /// mounted in a Wasabi holder never calls it.
-struct WinampModernChrome {
+struct SkinnedSurfaceChrome {
     struct Metrics: Equatable {
         let titleHeight: CGFloat
         let leftBorder: CGFloat
@@ -31,7 +33,7 @@ struct WinampModernChrome {
         }
     }
 
-    let style: WinampModernSurfaceStyle
+    let style: SkinnedSurfaceStyle
 
     /// Draws spectrum-family chrome in the same flipped, top-left coordinate system used by
     /// `SkinRenderer`. `fillBackground` distinguishes the old full-window and overlay entry points.
@@ -95,14 +97,14 @@ struct WinampModernChrome {
                             width: bounds.width, height: min(1, bottomHeight)))
 
         let scale = max(controlScale, 0.01)
-        let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: scale)
+        let titleWidth = SkinnedSurfaceStyle.measuredWidth(title, scale: scale)
         let closeRegionWidth = min(25, bounds.width)
         let labelLimit = max(bounds.minX, bounds.maxX - closeRegionWidth)
         let labelX = max(bounds.minX + leftWidth,
                          min(labelLimit - titleWidth,
                              bounds.midX - titleWidth / 2))
-        let labelY = bounds.minY + max(0, (titleHeight - WinampModernSurfaceStyle.classicCharHeight * scale) / 2)
-        WinampModernSurfaceStyle.drawText(title, at: NSPoint(x: labelX, y: labelY),
+        let labelY = bounds.minY + max(0, (titleHeight - SkinnedSurfaceStyle.classicCharHeight * scale) / 2)
+        SkinnedSurfaceStyle.drawText(title, at: NSPoint(x: labelX, y: labelY),
                                           scale: scale, color: labelColor, in: context)
 
         drawCloseButton(in: context,

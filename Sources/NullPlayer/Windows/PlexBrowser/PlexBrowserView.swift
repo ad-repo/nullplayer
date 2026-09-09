@@ -1530,7 +1530,7 @@ class PlexBrowserView: NSView {
     ///
     /// Cached because `drawScaledSkinText` asks for it once per string — ~77 times a frame — and
     /// deriving a style converts seven colours through a colour space. The palette only changes on a
-    /// colour-theme switch, which invalidates this through `winampModernThemeDidChange`.
+    /// colour-theme switch, which invalidates this through `hostedSurfaceStyleDidChange`.
     private var cachedWindowWinampModernStyle: WinampModernSurfaceStyle?
     private var hasResolvedWindowWinampModernStyle = false
 
@@ -1542,7 +1542,7 @@ class PlexBrowserView: NSView {
     var winampModernStyle: WinampModernSurfaceStyle? {
         if isEmbeddedInSkin { return embeddedWinampModernStyle }
         if !hasResolvedWindowWinampModernStyle {
-            cachedWindowWinampModernStyle = WindowManager.shared.winampModernSurfaceStyle
+            cachedWindowWinampModernStyle = WindowManager.shared.hostedSurfaceStyle
             hasResolvedWindowWinampModernStyle = true
         }
         return cachedWindowWinampModernStyle
@@ -1897,8 +1897,8 @@ class PlexBrowserView: NSView {
         // directly through `applyWinampModernStyle`; a fallback window has no such handle.
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(winampModernThemeDidChange),
-            name: .winampModernThemeDidChange,
+            selector: #selector(hostedSurfaceStyleDidChange),
+            name: .hostedSurfaceStyleDidChange,
             object: nil
         )
 
@@ -7040,7 +7040,7 @@ class PlexBrowserView: NSView {
     
     /// A `.wal` skin switched colour theme; the style is re-derived on each draw, so a repaint is
     /// the whole job.
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
         hasResolvedWindowWinampModernStyle = false
         needsDisplay = true
     }

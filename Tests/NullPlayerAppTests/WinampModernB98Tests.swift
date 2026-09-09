@@ -7,7 +7,7 @@ import ZIPFoundation
 ///
 /// The Media Library, the playlist, the equalizer and the visualization windows are painted from
 /// `WinampModernSurfaceStyle`, derived from the loaded skin's palette. None of them has a handle on
-/// the skin controller, so they learn that the palette moved from `.winampModernThemeDidChange` —
+/// the skin controller, so they learn that the palette moved from `.hostedSurfaceStyleDidChange` —
 /// and `PlexBrowserView`, the Media Library in this mode, caches its resolved style and drops that
 /// cache only on that notification. Until B98 the notification was posted by a colour-theme switch
 /// and by nothing else, so loading a *different skin* changed every surface the renderer draws and
@@ -62,11 +62,11 @@ final class WinampModernB98Tests: XCTestCase {
         return controller
     }
 
-    /// A live count of `.winampModernThemeDidChange` posts, removed when the test ends.
+    /// A live count of `.hostedSurfaceStyleDidChange` posts, removed when the test ends.
     private func countPosts() -> PostCounter {
         let counter = PostCounter()
         let token = NotificationCenter.default.addObserver(
-            forName: .winampModernThemeDidChange, object: nil, queue: nil) { _ in
+            forName: .hostedSurfaceStyleDidChange, object: nil, queue: nil) { _ in
                 counter.count += 1
             }
         addTeardownBlock { NotificationCenter.default.removeObserver(token) }

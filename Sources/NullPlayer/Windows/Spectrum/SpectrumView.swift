@@ -73,8 +73,8 @@ class SpectrumView: NSView {
                                                name: .visClassicProfileCommand, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
         WindowManager.shared.audioEngine.addSpectrumConsumer("spectrumView")
     }
     
@@ -180,7 +180,7 @@ class SpectrumView: NSView {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
 
-        if let style = WindowManager.shared.winampModernSurfaceStyle {
+        if let style = WindowManager.shared.hostedSurfaceStyle {
             WinampModernChrome(style: style).drawSpectrumFamilyWindow(
                 in: context,
                 bounds: bounds,
@@ -262,7 +262,7 @@ class SpectrumView: NSView {
         needsDisplay = true
     }
 
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
         needsDisplay = true
     }
     

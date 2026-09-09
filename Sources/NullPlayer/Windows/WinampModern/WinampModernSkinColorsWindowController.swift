@@ -23,7 +23,7 @@ import AppKit
 ///   selected-row text on the selection bar, tree text on the tree selection.
 ///
 /// Styled from `WindowManager.shared.winampModernSurfaceStyle` like every other surface NullPlayer
-/// draws inside a `.wal` skin, and it re-reads on `.winampModernThemeDidChange` — the theme can move
+/// draws inside a `.wal` skin, and it re-reads on `.hostedSurfaceStyleDidChange` — the theme can move
 /// under this window from the skin's own picker, and then it is editing a different theme's slots.
 final class WinampModernSkinColorsWindowController: NSWindowController {
 
@@ -59,7 +59,7 @@ final class WinampModernSkinColorsWindowController: NSWindowController {
         refreshValues()
         applyStyle()
         NotificationCenter.default.addObserver(self, selector: #selector(paletteDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

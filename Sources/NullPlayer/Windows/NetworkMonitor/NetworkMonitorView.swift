@@ -48,8 +48,8 @@ final class NetworkMonitorView: NSView {
             name: .connectedWindowHighlightDidChange,
             object: nil
         )
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     private func contentAreaRect() -> NSRect {
@@ -91,7 +91,7 @@ final class NetworkMonitorView: NSView {
         if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
         }
-        if let style = WindowManager.shared.winampModernSurfaceStyle {
+        if let style = WindowManager.shared.hostedSurfaceStyle {
             WinampModernChrome(style: style).drawSpectrumFamilyWindow(
                 in: context,
                 bounds: bounds,
@@ -148,7 +148,7 @@ final class NetworkMonitorView: NSView {
         needsDisplay = true
     }
 
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
         needsDisplay = true
     }
 

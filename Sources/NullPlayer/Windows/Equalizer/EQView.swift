@@ -113,7 +113,7 @@ class EQView: NSView {
         // A `.wal` colour-theme switch recolours this window when it is a Winamp Modern fallback
         // (Phase 16); the style is re-derived on each draw, so a repaint is the whole job.
         NotificationCenter.default.addObserver(self, selector: #selector(skinDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
     
     /// Handle track change for Auto EQ
@@ -413,7 +413,7 @@ class EQView: NSView {
         // Mounted in a `.wal` skin's own frame (B55): the frame draws the chrome, so this view draws
         // the controls only, scaled into the client area the holder gave it.
         if hostedContext != nil {
-            let style = WindowManager.shared.winampModernSurfaceStyle ?? .fallback
+            let style = WindowManager.shared.hostedSurfaceStyle ?? .fallback
             context.scaleBy(x: scale, y: scale)
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
             let layoutWidth = scale > 0 ? bounds.width / scale : Skin.baseEQSize.width
@@ -455,7 +455,7 @@ class EQView: NSView {
 
         // Draw normal mode — the flat palette version when this window is a `.wal` skin's fallback
         // equalizer (Phase 16), the classic sprites otherwise.
-        if let style = WindowManager.shared.winampModernSurfaceStyle {
+        if let style = WindowManager.shared.hostedSurfaceStyle {
             drawWinampModernNormalMode(style: style, context: context, isActive: isActive,
                                        drawBounds: drawBounds, drawsChrome: true)
         } else {

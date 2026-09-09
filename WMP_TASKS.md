@@ -168,6 +168,17 @@ What is left of that gap is one row.
 |---|---|---|---|
 | W73 | A clean sweep still proves only the default state | every skin | Narrowed by W71 and W72, not closed by them. The AppKit *overlay* class is now measured — 545 hosted views, two defects, both in W74 — and every slider in the corpus is drivable. What no sweep here still says anything about: a tab, a setting, a **hover**, a drawer, the window's shape and its shadow (those live in the window server and stay a short, genuinely manual list), and anything driven by live playback. W69's flicker is in that remainder, which is why it needs its own instrumentation rather than another sweep. |
 
+## Tier 1e — a surface the skin owns and this engine does not host
+
+Opened 2026-09-09 by W93, which made the question visible: routing now hands the playlist and the
+equaliser to the skin whenever the skin declares one, so what the skin declares and what this engine
+*draws* have to be the same list. Where they differ, the user gets an empty drawer instead of a
+second window — the better failure of the two, but still a failure.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W94 | `ITEMSPLAYLIST` is a playlist the object model does not model, so the skin's own drawer draws nothing | **Unmeasured across the corpus — count it before taking the row.** Confirmed on `corona`, whose 250px playlist drawer is one | `WMPElementKind` has `.playlist` and `.dropdownPlaylist`; `ITEMSPLAYLIST` falls to `.unknown` and never becomes a `WMPWidget`, so nothing hosts a `WMPPlaylistSurfaceView` over it. W93 deliberately recognises it as skin-owned anyway (it matches on the authored tag), because opening ours on top of a drawer the skin draws is the worse outcome — but that makes this row the reason a Corona user sees an empty drawer. Start by measuring: how many archives declare `ITEMSPLAYLIST`, and how many of those declare no `PLAYLIST` beside it. Then decide whether it maps onto `.playlist` wholesale or needs its own kind — the corpus's `<ITEMSPLAYLIST>` attributes are the evidence, not the name. `reference/object-model.md` § *playlist kinds* is where the model side is written down. |
+
 ## Tier 2 — the script runtime, after Phase 3
 
 The runtime is one persistent `JSContext` per skin session with a native Swift object model

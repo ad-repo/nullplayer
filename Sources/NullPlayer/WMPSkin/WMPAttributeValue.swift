@@ -120,7 +120,10 @@ enum WMPAttributeParser {
             || lower.hasPrefix("activex:")
     }
 
-    private static func color(from value: String) -> WMPColor? {
+    /// The engine's strict `#RRGGBB` parse, shared with `WMPSurfacePalette` — which reads colour
+    /// attributes this parser does not classify (`itemPlayingColor` and its peers) out of their raw
+    /// values, and must reject exactly what the engine rejects.
+    static func color(from value: String) -> WMPColor? {
         guard value.count == 7, value.first == "#",
               let number = UInt32(value.dropFirst(), radix: 16) else { return nil }
         return WMPColor(red: UInt8((number >> 16) & 0xFF),

@@ -93,6 +93,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var viewTimerMilliseconds = 0
     private var activeLimits: WMPResizeLimits?
     private var activeScene: WMPScene?
+    /// Which surfaces the loaded skin provides itself (`WMPSkinSurfaces`). Empty while the
+    /// app-authored unskinned player is up, which is what makes NullPlayer's playlist and equalizer
+    /// available there.
+    private(set) var skinSurfaces = WMPSkinSurfaces.empty
+
+    /// The colours NullPlayer's *own* windows are drawn in while this skin is presented — see
+    /// `WMPSurfacePalette`. Nil whenever the app-authored unskinned player is up, which is what makes
+    /// `WindowManager.hostedSurfaceStyle` nil there and sends those windows back to their own drawing.
+    private(set) var currentSurfacePalette: WMPSurfacePalette?
     private var sceneOverrides = WMPSceneOverrides.empty
     /// The pointer/keyboard state the view last reported, so a **script** transaction can rebuild
     /// the scene with it. Without it a script present erases whatever hover or pressed artwork the
@@ -446,9 +455,57 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         view.present(image, scene: scene)
         view.refreshHostState(host.snapshot)
         startAnimation(for: scene)
+        publishSurfacePalette(skin: skin, viewID: scene.viewID, rendered: image)
+        skinSurfaces = WMPSkinSurfaces(skin: skin)
+    }
+
+    /// Whether the skin owns this surface, and — when asked to switch — showing it the way the skin
+    /// itself would.
+    ///
+    /// Returns `true` when the skin provides the surface at all, which is the signal to NullPlayer
+    /// not to open a window of its own: 171 of the 180 corpus skins declare a playlist and 164 an
+    /// equaliser, so a second copy is the common case, not the exception.
+    ///
+    /// - Parameter switchingViews: when the surface lives in a view that is *not* on screen, open
+    ///   that view — the same thing the skin's own button does through `theme.openView`. False for
+    ///   the restore path, which must never move the user to a different view at launch, and true
+    ///   for an explicit toggle from a menu.
+    @discardableResult
+    func revealSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool) -> Bool {
+        guard skinSurfaces.provides(surface) else { return false }
+        // Already on screen as part of the skin: nothing to open, and nothing of ours to add.
+        if skinSurfaces.view(activeViewID, provides: surface) { return true }
+        if switchingViews, let target = skinSurfaces.viewIDs(for: surface).first {
+            switchView(to: target)
+        }
+        return true
+    }
+
+    /// Hand `WMPSurfacePalette` to NullPlayer's own windows, and tell the open ones to repaint.
+    ///
+    /// The rendered bitmap is only *sampled* when the markup declared no background — 84 of the 180
+    /// corpus archives declare no colour at all — and the sample is taken from the same image the
+    /// window is showing, so what our chrome is coloured from is literally what the user is looking
+    /// at.
+    private func publishSurfacePalette(skin: WMPLoadedSkin, viewID: String, rendered: CGImage) {
+        var palette = WMPSurfacePalette(skin: skin, viewID: viewID)
+        if palette.background == nil {
+            palette.sampledBackground = WMPSurfacePalette.dominantColor(of: rendered)
+        }
+        guard palette != currentSurfacePalette else { return }
+        currentSurfacePalette = palette
+        NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
+    }
+
+    private func clearSurfacePalette() {
+        skinSurfaces = .empty
+        guard currentSurfacePalette != nil else { return }
+        currentSurfacePalette = nil
+        NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     private func presentUnskinned(message: String?) {
+        clearSurfacePalette()
         loadedSkin = nil
         imageStore = nil
         activeViewID = nil
@@ -576,6 +633,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         unskinnedView?.onClose = nil
         unskinnedView?.host = nil
         unskinnedView = nil
+        clearSurfacePalette()
         loadedSkin = nil
         imageStore = nil
         activeScene = nil

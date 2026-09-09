@@ -77,15 +77,36 @@ the intended workflow: let the build tell you the seams instead of grepping for 
 
 Every family must answer what happens to NullPlayer's own windows (playlist, EQ, library, visualizer,
 spectrum, waveform, analysis, PeppyMeter, Cava, Flow). `WindowManager.auxiliaryControllerStyle` is
-the seam. The three answers in use:
+the seam. The answers in use:
 
 - reuse the **classic** providers (`winampModern` does, by Phase-1 policy),
 - use the **nullPlayerModern** providers,
-- **unavailable** — hide or disable the window until it has chrome of your own.
+- **your own** — the shared NullPlayer window controllers, painted in chrome derived from your skin
+  (`wmp`, 2026-09-09),
+- **unavailable** — hide or disable the window until it has chrome of your own. A holding answer,
+  not a destination: `wmp` shipped in this state for eight phases and it left the mode with no route
+  to a track at all (`wmp-skin-guide`: *`.wmz` mode must offer a route to a track*).
 
-Never fall back to another family's chrome. `wmp` chose *unavailable*, which is honest but means the
-mode must offer some route to a track before it is usable at all — that was a real defect, not a
-detail (`wmp-skin-guide`: *`.wmz` mode must offer a route to a track*).
+Never fall back to another family's chrome. Two things make the third answer cheap, and both already
+exist because `.wal` paid for them:
+
+- **The style is family-neutral.** `SkinnedSurfaceStyle` (`App/Skinning/`) is built from seven
+  colours — `SkinnedSurfaceRoles` — and every shared view reads exactly one property,
+  `WindowManager.hostedSurfaceStyle`, which switches on the controller family. A new family supplies
+  a palette and inherits a complete flat-drawn playlist, equalizer, library and spectrum family.
+  Nothing in it may learn your markup.
+- **Run every foreground through `SkinnedSurfaceStyle.legible`.** A skin format that declares colour
+  per element hands you pairings the skin itself never shows, and a palette sampled from artwork was
+  never chosen against any text colour. Guard each role against the ground it is *actually* drawn on.
+
+**And ask what the skin provides before opening a window of your own.** This is the half `.wmz`
+missed on the first pass: 171 of its 180 corpus skins declare a playlist and 164 an equaliser, so an
+unconditional NullPlayer playlist put a second, foreign-looking one over nearly every skin in the
+corpus. `routeWinampModernSurface` and `routeWMPSkinSurface` are the same idea in both families —
+the skin's own surface takes the toggle first, and NullPlayer's window is the fallback for the skins
+that declare none. Answer all three shapes: declared in the view on screen (nothing to open, and the
+menu item should say so), declared in another view (open that view the way the skin's own button
+does), declared nowhere (your window).
 
 ## Isolation
 

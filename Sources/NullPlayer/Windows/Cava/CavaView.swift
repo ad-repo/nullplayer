@@ -62,8 +62,8 @@ final class CavaView: NSView {
             name: .connectedWindowHighlightDidChange,
             object: nil
         )
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     func startRendering() {
@@ -137,7 +137,7 @@ final class CavaView: NSView {
         if WindowManager.shared.hideTitleBars {
             context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
         }
-        if let style = WindowManager.shared.winampModernSurfaceStyle {
+        if let style = WindowManager.shared.hostedSurfaceStyle {
             WinampModernChrome(style: style).drawSpectrumFamilyWindow(
                 in: context,
                 bounds: bounds,
@@ -176,7 +176,7 @@ final class CavaView: NSView {
         )
     }
 
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
         needsDisplay = true
     }
 

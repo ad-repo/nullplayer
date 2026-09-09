@@ -431,7 +431,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         //
         // Posted on the failure path too: the placeholder has no palette, so those windows must fall
         // back to their classic drawing rather than keep painting a skin that is gone.
-        NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
         // A film that was running when this skin loaded has to be re-offered to it — see
         // `rehostVideoOutputIfPlaying()`. Also on the failure path: the placeholder declares no video,
         // so the answer there is "NullPlayer's own window keeps it", which is what that call arrives at.

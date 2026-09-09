@@ -9,8 +9,16 @@ class ContextMenuBuilder {
     private static let compactBackdropFallbackPresenter = CavaPresenter(scope: .compactWindow)
     private static let libraryBackdropFallbackPresenter = CavaPresenter(scope: .libraryWindow)
 
+    /// Whether NullPlayer's own windows can be opened in this mode.
+    ///
+    /// True in every family now that `.wmz` hosts them in chrome derived from the active skin
+    /// (`WMPSurfacePalette`). It stays a named question rather than a constant because the answer is
+    /// a per-family policy — see `skin-subsystem-blueprint` § *The auxiliary-window policy is a
+    /// decision, not a default*.
     static func supportsSkinnedAuxiliaryWindows(for mode: PlayerUIMode) -> Bool {
-        mode.controllerFamily != .wmp
+        switch mode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern, .wmp: return true
+        }
     }
     
     // MARK: - Main Menu Builder
@@ -167,8 +175,8 @@ class ContextMenuBuilder {
         let supportsSkinnedAuxiliaryWindows = supportsSkinnedAuxiliaryWindows(for: wm.uiMode)
 
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
-        menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildSkinOwnableWindowItem("Equalizer", surface: .equalizer, visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildSkinOwnableWindowItem("Playlist Editor", surface: .playlist, visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter), enabled: supportsSkinnedAuxiliaryWindows))
@@ -702,6 +710,25 @@ class ContextMenuBuilder {
 
     // MARK: - Window Toggle Items
     
+    /// The Equalizer / Playlist item, which in `.wmz` mode may be describing the *skin's* surface
+    /// rather than a NullPlayer window.
+    ///
+    /// A skin that declares one of these (171 of the 180 corpus skins declare a playlist, 164 an
+    /// equaliser) owns it, so there is no window of ours to toggle. When the skin keeps it in
+    /// another view the item still acts — it opens that view, the way the skin's own button does —
+    /// and when it is part of the view already on screen the item is checked and inert, because the
+    /// thing it names is right there.
+    private static func buildSkinOwnableWindowItem(_ title: String, surface: WMPSkinSurface,
+                                                   visible: Bool, action: Selector,
+                                                   enabled: Bool) -> NSMenuItem {
+        let wm = WindowManager.shared
+        guard wm.wmpSkinProvides(surface) else {
+            return buildWindowItem(title, visible: visible, action: action, enabled: enabled)
+        }
+        let onScreen = wm.wmpSkinShowsInActiveView(surface)
+        return buildWindowItem(title, visible: onScreen, action: action, enabled: !onScreen)
+    }
+
     private static func buildWindowItem(_ title: String, visible: Bool, action: Selector, enabled: Bool = true) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = MenuActions.shared

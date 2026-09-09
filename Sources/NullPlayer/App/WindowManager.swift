@@ -11,9 +11,10 @@ extension Notification.Name {
     static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
     static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
     static let windowDragDidEnd = Notification.Name("windowDragDidEnd")
-    /// A `.wal` skin switched colour theme. The surfaces NullPlayer draws itself take their colours
-    /// from the skin's palette (Phase 16), and the fallback windows have no handle on the skin view.
-    static let winampModernThemeDidChange = Notification.Name("winampModernThemeDidChange")
+    /// The palette NullPlayer's own surfaces are drawn from has moved — a `.wal` skin switched colour
+    /// theme (Phase 16), or a `.wmz` skin or view was presented. Those windows take their colours
+    /// from `hostedSurfaceStyle` and have no handle on the skin view.
+    static let hostedSurfaceStyleDidChange = Notification.Name("hostedSurfaceStyleDidChange")
 }
 
 #if DEBUG
@@ -146,8 +147,13 @@ private enum CompactModeState {
 private enum AuxiliaryControllerStyle {
     case classic
     case nullPlayerModern
-    /// WMP-hosted auxiliary chrome is a later phase. Never substitute another skin family's UI.
-    case wmpUnavailable
+    /// A `.wmz` skin hosts NullPlayer's own windows, and they are drawn in chrome derived from that
+    /// skin (`WMPSurfacePalette`) — never in another family's artwork. The window *controllers* are
+    /// the shared NullPlayer-owned ones the `.classic` arm also builds, because the chrome comes from
+    /// `hostedSurfaceStyle` rather than from the controller: in this mode those views draw no `.wsz`
+    /// sprite and read no classic skin. Kept a separate case so a policy that has to differ (docking,
+    /// default placement) has somewhere to say so, and so the compiler asks.
+    case wmp
 }
 
 enum BrowserBackdropMode: Int, CaseIterable {
@@ -308,10 +314,17 @@ class WindowManager {
         uiScaleLevel.scaleFactor
     }
 
-    /// Scale factor for playlist-style title-bar controls on classic secondary windows,
+    /// Scale factor for playlist-style title-bar controls on NullPlayer's own secondary windows,
     /// derived from the live main-window width so chrome stays in sync when the user resizes.
+    ///
+    /// **Except beside a `.wmz` skin, where that derivation is meaningless.** The ratio assumes the
+    /// main window is a *classic* player, 275 skin-pixels wide, so its width is the zoom the user
+    /// chose. A `.wmz` main window is the skin's own canvas instead — Corona's is over three times
+    /// that — and reading it as a zoom drew our playlist title and rows at 3x. UI Size in WMP mode
+    /// zooms the skin's window and nothing else, so these windows stay at the app's own scale.
     var playlistChromeScale: CGFloat {
-        if let mainWindow = mainWindowController?.window, mainWindow.frame.width > 0 {
+        if uiMode.controllerFamily != .wmp,
+           let mainWindow = mainWindowController?.window, mainWindow.frame.width > 0 {
             return mainWindow.frame.width / Skin.baseMainSize.width
         }
         return Skin.scaleFactor * classicScaleMultiplier
@@ -386,7 +399,7 @@ class WindowManager {
         // Phase 1 aux-window policy (§5): winampModern reuses the classic providers.
         case .classic, .winampModern: return .classic
         case .nullPlayerModern: return .nullPlayerModern
-        case .wmp: return .wmpUnavailable
+        case .wmp: return .wmp
         }
     }
 
@@ -987,12 +1000,35 @@ class WindowManager {
     /// Non-nil **only** in `winampModern` mode and only once a skin has actually loaded, so every
     /// other mode — and this mode's own placeholder — runs the untouched classic path. The style is
     /// derived on each read rather than cached: a colour-theme switch changes the palette underneath
-    /// us, and `.winampModernThemeDidChange` only tells a window to repaint.
+    /// us, and `.hostedSurfaceStyleDidChange` only tells a window to repaint.
     var winampModernSurfaceStyle: WinampModernSurfaceStyle? {
         guard uiMode.controllerFamily == .winampModern,
               let palette = (mainWindowController as? WinampModernMainWindowController)?.currentPalette
         else { return nil }
         return WinampModernSurfaceStyle(palette: palette)
+    }
+
+    /// The colours NullPlayer's own windows take from the active `.wmz`, or nil in every other mode
+    /// and while WMP's app-authored unskinned player is up (`WMPSurfacePalette`).
+    var wmpSurfaceStyle: SkinnedSurfaceStyle? {
+        guard uiMode.controllerFamily == .wmp,
+              let palette = (mainWindowController as? WMPMainWindowController)?.currentSurfacePalette
+        else { return nil }
+        return palette.surfaceStyle
+    }
+
+    /// How the surfaces NullPlayer draws itself should look right now, whichever foreign skin family
+    /// is hosting them — or nil when they should use their own classic drawing.
+    ///
+    /// This is the one seam those views read. It is a `switch` on the controller family rather than a
+    /// pair of `??`s so that a family which has not answered the auxiliary-window question cannot
+    /// silently inherit another one's answer (`skin-subsystem-blueprint`).
+    var hostedSurfaceStyle: SkinnedSurfaceStyle? {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern: return nil
+        case .winampModern: return winampModernSurfaceStyle
+        case .wmp: return wmpSurfaceStyle
+        }
     }
 
     /// Whether the loaded `.wal` skin registered any settings of its own (Phase 27.3). Safe default
@@ -1191,6 +1227,41 @@ class WindowManager {
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
         return true
+    }
+
+    /// Give a `.wmz` skin's own playlist or equaliser the toggle before NullPlayer opens one.
+    ///
+    /// The `.wmz` counterpart of `routeWinampModernSurface`, and it matters more here than there:
+    /// **171 of the 180 corpus skins declare a playlist and 164 an equaliser** (`WMPSkinSurfaces`),
+    /// so opening ours unconditionally would put a second, differently-styled playlist over nearly
+    /// every skin. Ours is the fallback for the handful that declare none.
+    ///
+    /// - Parameter switchingViews: true for an explicit toggle, which may open the skin's own
+    ///   playlist *view* the way its own button does; false on the restore path, which must not move
+    ///   the user to another view at launch.
+    @discardableResult
+    private func routeWMPSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool) -> Bool {
+        guard uiMode.controllerFamily == .wmp,
+              let controller = mainWindowController as? WMPMainWindowController,
+              controller.revealSkinSurface(surface, switchingViews: switchingViews) else { return false }
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+        return true
+    }
+
+    /// Whether the skin's own copy of this surface is part of the view currently on screen — the
+    /// case where there is nothing for a menu item to open, because the skin is already showing it.
+    func wmpSkinShowsInActiveView(_ surface: WMPSkinSurface) -> Bool {
+        guard uiMode.controllerFamily == .wmp,
+              let controller = mainWindowController as? WMPMainWindowController else { return false }
+        return controller.skinSurfaces.view(controller.selectedViewID, provides: surface)
+    }
+
+    /// Whether the active `.wmz` skin owns this surface. Answers false in every other mode, so the
+    /// menu asks one question rather than branching on the family.
+    func wmpSkinProvides(_ surface: WMPSkinSurface) -> Bool {
+        guard uiMode.controllerFamily == .wmp else { return false }
+        return (mainWindowController as? WMPMainWindowController)?.skinSurfaces.provides(surface) ?? false
     }
 
     @discardableResult
@@ -1435,16 +1506,15 @@ class WindowManager {
     }
 
     func showPlaylist(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernSurface(.playlist, toggle: false, restoredFrame: restoredFrame) { return }
+        if routeWMPSkinSurface(.playlist, switchingViews: false) { return }
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
             case .nullPlayerModern:
                 playlistWindowController = ModernPlaylistWindowController()
-            case .classic:
+            case .classic, .wmp:
                 playlistWindowController = PlaylistWindowController()
-            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(playlistWindowController?.window)
@@ -1480,11 +1550,15 @@ class WindowManager {
         if let coordinator = winampModernSurfaces, coordinator.handles(.playlist) {
             return coordinator.isSurfaceVisible(.playlist)
         }
+        // A `.wmz` that declares its own playlist is showing it whenever that view is the one on
+        // screen, and NullPlayer never opened a window to ask about.
+        if wmpSkinProvides(.playlist) { return wmpSkinShowsInActiveView(.playlist) }
         return playlistWindowController?.window?.isVisible == true
     }
 
     func togglePlaylist() {
         if routeWinampModernSurface(.playlist, toggle: true) { return }
+        if routeWMPSkinSurface(.playlist, switchingViews: true) { return }
         classicTogglePlaylist()
     }
 
@@ -1505,8 +1579,8 @@ class WindowManager {
     }
     
     func showEqualizer(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernSurface(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
+        if routeWMPSkinSurface(.equalizer, switchingViews: false) { return }
         // The skin owns no equalizer, so NullPlayer's goes inside the skin's own frame when one
         // qualifies (B55) and into the standalone window below when none does.
         if routeWinampModernHostedWindow(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
@@ -1515,9 +1589,8 @@ class WindowManager {
             switch auxiliaryControllerStyle {
             case .nullPlayerModern:
                 equalizerWindowController = ModernEQWindowController()
-            case .classic:
+            case .classic, .wmp:
                 equalizerWindowController = EQWindowController()
-            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(equalizerWindowController?.window)
@@ -1548,6 +1621,7 @@ class WindowManager {
         if winampModernHostedController?.handlesHostedWindow(.equalizer) == true {
             return winampModernHostedController?.isHostedWindowVisible(.equalizer) == true
         }
+        if wmpSkinProvides(.equalizer) { return wmpSkinShowsInActiveView(.equalizer) }
         return equalizerWindowController?.window?.isVisible == true
     }
 
@@ -1563,6 +1637,7 @@ class WindowManager {
 
     func toggleEqualizer() {
         if routeWinampModernSurface(.equalizer, toggle: true) { return }
+        if routeWMPSkinSurface(.equalizer, switchingViews: true) { return }
         if routeWinampModernHostedWindow(.equalizer, toggle: true) { return }
         classicToggleEqualizer()
     }
@@ -1870,7 +1945,6 @@ class WindowManager {
     // MARK: - Plex Browser Window
     
     func showPlexBrowser(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernSurface(.library, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = plexBrowserWindowController == nil
         if isNewWindow {
@@ -1908,10 +1982,8 @@ class WindowManager {
         switch auxiliaryControllerStyle {
         case .nullPlayerModern:
             plexBrowserWindowController = ModernLibraryBrowserWindowController()
-        case .classic:
+        case .classic, .wmp:
             plexBrowserWindowController = PlexBrowserWindowController()
-        case .wmpUnavailable:
-            return
         }
         markModeDependentWindow(plexBrowserWindowController?.window)
     }
@@ -3340,7 +3412,6 @@ class WindowManager {
     ///   fullscreen (`VIS_FS`) and the classic fallback the surface coordinator calls back into.
     func showProjectM(at restoredFrame: NSRect? = nil, restoringPresetIndex presetIndex: Int? = nil,
                       routeToSkin: Bool = true) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeToSkin,
            routeWinampModernSurface(.visualization, toggle: false, restoredFrame: restoredFrame) { return }
         if routeToSkin,
@@ -3357,9 +3428,8 @@ class WindowManager {
             switch auxiliaryControllerStyle {
             case .nullPlayerModern:
                 projectMWindowController = ModernProjectMWindowController()
-            case .classic:
+            case .classic, .wmp:
                 projectMWindowController = ProjectMWindowController()
-            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(projectMWindowController?.window)
@@ -3512,16 +3582,14 @@ class WindowManager {
     // MARK: - Spectrum Analyzer Window
     
     func showSpectrum(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernHostedWindow(.spectrum, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = spectrumWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
             case .nullPlayerModern:
                 spectrumWindowController = ModernSpectrumWindowController()
-            case .classic:
+            case .classic, .wmp:
                 spectrumWindowController = SpectrumWindowController()
-            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(spectrumWindowController?.window)
@@ -3594,7 +3662,6 @@ class WindowManager {
     // MARK: - Audio Analysis Window
 
     func showAudioAnalysis(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernHostedWindow(.audioAnalysis, toggle: false, restoredFrame: restoredFrame) { return }
         let runningModernMode = isRunningModernUI
         if audioAnalysisWindowController == nil {
@@ -3669,7 +3736,6 @@ class WindowManager {
     // MARK: - PeppyMeter Window
 
     func showPeppyMeter(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernHostedWindow(.peppyMeter, toggle: false, restoredFrame: restoredFrame) { return }
         let runningModernMode = isRunningModernUI
         if peppyMeterWindowController == nil {
@@ -3767,7 +3833,6 @@ class WindowManager {
     // MARK: - Network Monitor Window
 
     func showNetworkMonitor(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernHostedWindow(.flow, toggle: false, restoredFrame: restoredFrame) { return }
         let runningModernMode = isRunningModernUI
         if networkMonitorWindowController == nil {
@@ -3841,7 +3906,6 @@ class WindowManager {
     // MARK: - Cava Window
 
     func showCava(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernHostedWindow(.cava, toggle: false, restoredFrame: restoredFrame) { return }
         let runningModernMode = isRunningModernUI
         if cavaWindowController == nil {
@@ -3915,7 +3979,6 @@ class WindowManager {
     // MARK: - Waveform Window
 
     func showWaveform(at restoredFrame: NSRect? = nil) {
-        guard auxiliaryControllerStyle != .wmpUnavailable else { return }
         if routeWinampModernHostedWindow(.waveform, toggle: false, restoredFrame: restoredFrame) {
             if let surface = winampModernHostedController?.hostedWindowSurface(.waveform)
                 as? WinampModernHostedWaveformSurface {
@@ -3929,9 +3992,8 @@ class WindowManager {
             switch auxiliaryControllerStyle {
             case .nullPlayerModern:
                 waveformWindowController = ModernWaveformWindowController()
-            case .classic:
+            case .classic, .wmp:
                 waveformWindowController = WaveformWindowController()
-            case .wmpUnavailable: return
             }
         }
         markModeDependentWindow(waveformWindowController?.window)

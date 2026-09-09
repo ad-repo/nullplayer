@@ -200,9 +200,70 @@ queue, with the object model as the security boundary — see Amendment 2 in
   scene, archive, and image-store ownership before the controller is discarded.
 - NullPlayer-owned native windows exposed in WMP mode must be hosted in WMP-owned chrome derived
   from the active `.wmz`: borders, colors, title/window controls, metrics, resize affordances, and
-  docking treatment. Never fall back to another skin family's controller or chrome. Until a window
-  has a WMP host, hide or disable it; missing skin chrome uses only an app-authored WMP-neutral
-  fallback.
+  docking treatment. Never fall back to another skin family's controller or chrome. Missing skin
+  chrome uses only an app-authored WMP-neutral fallback. **This shipped on 2026-09-09 and the
+  "hide or disable it until it has a host" clause is spent** — `AuxiliaryControllerStyle.wmpUnavailable`
+  is gone. How it works is *NullPlayer's own windows beside a skin* below.
+
+## NullPlayer's own windows beside a skin
+
+Landed 2026-09-09. A `.wmz` has no frame system to mount a foreign window in — no
+`<Wasabi:StandardFrame>` a playlist can be dropped into — so NullPlayer's own windows are
+app-authored chrome *coloured* from the skin instead. Four things carry it, and the last two were
+found by looking at the screen rather than by reasoning.
+
+- **The seam is family-neutral, and it is the one `.wal` already had.** `SkinnedSurfaceStyle` /
+  `SkinnedSurfaceChrome` (in `App/Skinning/`, formerly `WinampModernSurfaceStyle`/`Chrome`) are built
+  from `SkinnedSurfaceRoles` — seven colours and nothing else — so neither engine knows the other's
+  markup. `.wal` derives the roles from a `WasabiPalette`, `.wmz` from `WMPSurfacePalette`, and both
+  reach the views through **one** property, `WindowManager.hostedSurfaceStyle`, a `switch` on the
+  controller family. The `.wal` names survive as typealiases, so no `.wal` call site moved.
+- **The palette is declaration-first and then measured off the artwork.**
+  `PLAYLIST` (`backgroundColor`, `foregroundColor`, `itemPlayingColor`,
+  `itemPlayingBackgroundColor`) → `VIEW`/`SUBVIEW` background plus `TEXT` foreground → the **dominant
+  opaque colour of the presented view's own rendered bitmap** → an app-authored WMP-neutral pair.
+  The sampling step is not a nicety: measured over the 180-archive corpus on 2026-09-09, **only 96
+  archives declare any background colour and 95 any foreground**, so declarations alone leave nearly
+  half the corpus with no palette at all. Counts per role are in `WMPSurfacePalette`'s own doc
+  comment, next to the scan that produced them.
+- **Every foreground goes through the legibility guard, against the ground it is actually drawn on.**
+  `SkinnedSurfaceStyle.legible`, the same WCAG 3.0:1 bar `.wal` uses — but it is load-bearing here in
+  a way it is not there, because a `.wms` declares colour per *element*: the ground can come from a
+  `VIEW` and the lettering from a `PLAYLIST` three levels down that was never drawn on it, and a
+  sampled ground is one no author ever chose text against. Guard each role separately: the playing
+  row's text sits on the window background until the row is *also* selected, the selection's text on
+  the highlight. Guarding both against one background leaves an unreadable current track, which is
+  what the reporter saw.
+- **A `.wmz` main window's width is not a zoom.** `playlistChromeScale` is
+  `mainWindow.width / Skin.baseMainSize.width` — true of a *classic* player, whose 275px grid means
+  its width is the size the user chose. A `.wmz` main window is the skin's own canvas: Corona's is
+  596px, so our playlist drew its title and every row at 2.2x and the reporter's words were "the
+  windows and title fonts are huge". It now falls back to the app's own scale in WMP mode, and
+  `PlaylistView.scaleFactor` and the playlist's snapped default width route through that same
+  property so the three cannot drift apart.
+
+### Ask what the skin provides before opening a window of your own
+
+**171 of the 180 corpus skins declare a playlist and 164 an equaliser** (164 declare both), so for
+those two surfaces NullPlayer's window is the *fallback*, not the default — opening it
+unconditionally puts a second, differently-styled playlist over nearly every skin in the corpus.
+`WMPSkinSurfaces` reads what the skin declares and `WindowManager.routeWMPSkinSurface` takes the
+toggle first, exactly as `routeWinampModernSurface` does for `.wal`. Three shapes, and routing has to
+answer all three — the corpus splits almost evenly between the first two (87 / 84):
+
+| The skin declares it… | What the toggle does |
+|---|---|
+| in the view on screen (Corona's drawer) | nothing opens; the menu item is checked and inert, because the thing it names is already there |
+| in another view (WoW's `plView`) | opens that view, the way the skin's own button does through `theme.openView` |
+| nowhere (9 skins for playlist, 16 for EQ) | NullPlayer's window opens, in the palette chrome above |
+
+**Match on the authored tag, not only on `WMPElementKind`.** `ITEMSPLAYLIST` is a playlist the object
+model does not model yet — Corona's drawer is one — so a kind-only test reports that skin as owning
+no playlist and opens ours on top of it. What decides this routing is what the skin *declares*, not
+how much of it this engine hosts today.
+
+The restore path passes `switchingViews: false`: a saved session must never move the user to a
+different view at launch.
 
 ## Debugging a live defect
 

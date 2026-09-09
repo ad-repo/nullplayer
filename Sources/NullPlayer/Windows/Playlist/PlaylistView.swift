@@ -138,8 +138,8 @@ class PlaylistView: NSView {
 
         // A `.wal` colour-theme switch recolours this window when it is a Winamp Modern fallback
         // (Phase 16); the style is re-derived on each draw, so a repaint is the whole job.
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
 
         // Observe playback state changes to restart timer when needed
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
@@ -439,12 +439,11 @@ class PlaylistView: NSView {
 
     /// Derive render scale from the main window width so point rounding does not
     /// introduce fractional skin-space tile boundaries in playlist chrome.
+    /// The same number `playlistChromeScale` answers — the window's chrome and its rows have to be
+    /// drawn at one scale — which is where the `.wmz` exception to deriving it from the main window
+    /// lives.
     private var scaleFactor: CGFloat {
-        if let mainWidth = WindowManager.shared.mainWindowController?.window?.frame.width,
-           mainWidth > 0 {
-            return mainWidth / Skin.baseMainSize.width
-        }
-        return Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
+        WindowManager.shared.playlistChromeScale
     }
 
     /// Get the original window size (unscaled base size)
@@ -519,7 +518,7 @@ class PlaylistView: NSView {
 
         // Draw window frame using skin sprites (SkinRenderer tiles to fill the space) — or, for a
         // `.wal` skin's fallback playlist, the flat palette chrome (Phase 16).
-        let style = WindowManager.shared.winampModernSurfaceStyle
+        let style = WindowManager.shared.hostedSurfaceStyle
         if let style {
             drawWinampModernChrome(style: style, context: context, bounds: drawBounds, isActive: isActive)
         } else {
@@ -543,7 +542,7 @@ class PlaylistView: NSView {
 
     // MARK: - Winamp Modern chrome (Phase 16)
 
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
         needsDisplay = true
     }
 
