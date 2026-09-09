@@ -104,7 +104,9 @@ sliders use the skin's text color.
   standalone before starting, so an unselected existing group is not used as a fallback target.
 - Room volume uses **RenderingControl**, `Channel=Master`, on the room representative's own
   renderer. `UPnPManager.getSonosRoomVolume` / `setSonosRoomVolume` do not require an active session
-  and never send `SetGroupVolume`. The player's existing group-volume path is unchanged.
+  or an AVTransport URL: they resolve the discovered zone's address and port directly and never send
+  `SetGroupVolume`. AVTransport remains required for casting and group operations. The player's
+  existing group-volume path is unchanged.
 - Writes are single-flight and latest-value-wins **per room**, with SOAP retries disabled for
   superseded writes. Polling uses at most four concurrent reads; per-room revision checks prevent
   a read begun before a slider edit from replacing the new value. One failed room does not disable
