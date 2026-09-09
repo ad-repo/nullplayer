@@ -172,10 +172,8 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Sonos Rooms", visible: wm.isSonosVisible, action: #selector(MenuActions.toggleSonos)))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
-        if wm.isRunningModernUI {
-            menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
-                                         action: #selector(MenuActions.toggleLibraryHistory)))
-        }
+        menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
+                                     action: #selector(MenuActions.toggleLibraryHistory)))
         menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Video Player", visible: wm.isVideoPlayerVisible,
                                      action: #selector(MenuActions.toggleVideoPlayer),
@@ -3659,7 +3657,6 @@ class MenuActions: NSObject {
     #endif
 
     @objc func toggleLibraryHistory() {
-        guard WindowManager.shared.isModernUIEnabled else { return }
         WindowManager.shared.toggleLibraryHistory()
     }
 

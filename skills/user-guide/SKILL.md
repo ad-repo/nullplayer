@@ -28,7 +28,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **Visualizations** | Visualization engine host for ProjectM, Geiss and Tripex (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
-In Original and Original-Metal UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the Classic library browser. The Data tab shows:
+In every UI mode — Classic, Original, Original-Metal, and Winamp Modern — **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows:
 - **Play Time** summary (day/week/month/year/all-time)
 - **Top Artists** (music only)
 - **Top Movies** and **Top TV Shows** (separate sections; TV groups by show name)
