@@ -2013,6 +2013,30 @@ class UPnPManager {
     }
     
     // MARK: - Volume Control
+
+    /// Room controls deliberately address the representative renderer, never the group.
+    /// This also works before NullPlayer starts a casting session.
+    func setSonosRoomVolume(_ volume: Int, roomUDN: String) async throws {
+        guard let device = sonosCastDevice(forZoneUDN: roomUDN) else { throw CastError.deviceNotFound }
+        try await sendRenderingControlAction(
+            controlURL: getRenderingControlURL(for: device), action: "SetVolume",
+            arguments: [("InstanceID", "0"), ("Channel", "Master"),
+                        ("DesiredVolume", "\(max(0, min(100, volume)))")], retries: 0
+        )
+    }
+
+    func getSonosRoomVolume(roomUDN: String) async throws -> Int {
+        guard let device = sonosCastDevice(forZoneUDN: roomUDN) else { throw CastError.deviceNotFound }
+        let response = try await sendRenderingControlAction(
+            controlURL: getRenderingControlURL(for: device), action: "GetVolume",
+            arguments: [("InstanceID", "0"), ("Channel", "Master")], retries: 0
+        )
+        guard let value = extractXMLValue(response, tag: "CurrentVolume"),
+              let volume = Int(value), (0...100).contains(volume) else {
+            throw CastError.playbackFailed("Invalid room volume response")
+        }
+        return volume
+    }
     
     /// Set volume on the connected device (0-100).
     /// `retries` overrides the default SOAP retry count (pass 0 for coalesced volume commands

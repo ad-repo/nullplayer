@@ -211,6 +211,7 @@ private struct CompactWindowSnapshot {
     var peppyMeter: WindowSnapshot?
     var networkMonitor: WindowSnapshot?
     var cava: WindowSnapshot?
+    var sonos: WindowSnapshot?
     var waveform: WindowSnapshot?
     var projectM: WindowSnapshot?
     var library: WindowSnapshot?
@@ -613,6 +614,7 @@ class WindowManager {
 
     /// Cava spectrum analyzer window controller for the active UI mode, accessed via protocol.
     private var cavaWindowController: CavaWindowProviding?
+    private var sonosWindowController: SonosWindowController?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
@@ -660,6 +662,7 @@ class WindowManager {
         add(peppyMeterWindowController?.window, centerStack: true, snapTarget: true)
         add(networkMonitorWindowController?.window, centerStack: true, snapTarget: true)
         add(cavaWindowController?.window, centerStack: true, snapTarget: true)
+        add(sonosWindowController?.window, centerStack: true, snapTarget: true)
         add(waveformWindowController?.window, centerStack: true, snapTarget: true)
         add(plexBrowserWindowController?.window, snapTarget: true)
         add(projectMWindowController?.window, snapTarget: true)
@@ -1254,6 +1257,7 @@ class WindowManager {
         case .spectrum: return spectrumWindowController?.window
         case .equalizer: return equalizerWindowController?.window
         case .cava: return cavaWindowController?.window
+        case .sonos: return sonosWindowController?.window
         case .flow: return networkMonitorWindowController?.window
         case .peppyMeter: return peppyMeterWindowController?.window
         case .audioAnalysis: return audioAnalysisWindowController?.window
@@ -1310,6 +1314,7 @@ class WindowManager {
         case .spectrum: showOnly ? showSpectrum() : toggleSpectrum()
         case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
         case .cava: showOnly ? showCava() : toggleCava()
+        case .sonos: showOnly ? showSonos() : toggleSonos()
         case .flow: showOnly ? showNetworkMonitor() : toggleNetworkMonitor()
         case .peppyMeter: showOnly ? showPeppyMeter() : togglePeppyMeter()
         case .audioAnalysis: showOnly ? showAudioAnalysis() : toggleAudioAnalysis()
@@ -2258,6 +2263,7 @@ class WindowManager {
             peppyMeter: snapWindow(peppyMeterWindow, trackDetachedState: true),
             networkMonitor: snapWindow(networkMonitorWindow, trackDetachedState: true),
             cava: snapWindow(cavaWindow, trackDetachedState: true),
+            sonos: snapWindow(sonosWindow, trackDetachedState: true),
             waveform: snapWindow(waveformWindow, trackDetachedState: true),
             projectM: snap(projectMWindowController, trackDetachedState: true)
                 ?? snapWindow(winampModernHostedController?.hostedWindow(ifMaterialized: .projectM),
@@ -2413,6 +2419,8 @@ class WindowManager {
                                  window: networkMonitorWindow, show: showNetworkMonitor)
         restoreCentreStackWindow(snapshot.cava, controller: cavaWindowController,
                                  window: cavaWindow, show: showCava)
+        restoreCentreStackWindow(snapshot.sonos, controller: sonosWindowController,
+                                 window: sonosWindow, show: showSonos)
         restoreCentreStackWindow(snapshot.waveform, controller: waveformWindowController,
                                  window: waveformWindow, show: showWaveform)
         restore(snapshot.projectM, controller: projectMWindowController)
@@ -2449,6 +2457,7 @@ class WindowManager {
         case "peppyMeter": return snapshot.peppyMeter?.wasVisible ?? current
         case "networkMonitor": return snapshot.networkMonitor?.wasVisible ?? current
         case "cava": return snapshot.cava?.wasVisible ?? current
+        case "sonos": return snapshot.sonos?.wasVisible ?? current
         case "waveform": return snapshot.waveform?.wasVisible ?? current
         case "projectM": return snapshot.projectM?.wasVisible ?? current
         case "plexBrowser": return snapshot.library?.wasVisible ?? current
@@ -3792,6 +3801,59 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
+    // MARK: - Sonos Rooms Window
+
+    var sonosWindow: NSWindow? {
+        if winampModernHostedController?.handlesHostedWindow(.sonos) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: .sonos)
+        }
+        return sonosWindowController?.window
+    }
+
+    var isSonosVisible: Bool { sonosWindow?.isVisible == true }
+    var sonosWindowFrame: NSRect? { sonosWindow?.frame }
+
+    func showSonos(at restoredFrame: NSRect? = nil) {
+        if routeWinampModernHostedWindow(.sonos, toggle: false, restoredFrame: restoredFrame) { return }
+        let created = sonosWindowController == nil
+        if created { sonosWindowController = SonosWindowController() }
+        guard let window = sonosWindowController?.window else { return }
+        markModeDependentWindow(window)
+        if !isRunningModernUI {
+            let scale = uiScaleLevel.scaleFactor
+            window.minSize = NSSize(width: 250 * scale, height: 160 * scale)
+        }
+        applyCenterStackSizingConstraints(window, kind: .sonos)
+        if let restoredFrame, restoredFrame != .zero {
+            applyRestoredCenterStackFrame(restoredFrame, to: window, kind: .sonos)
+        } else if created {
+            let width = mainWindowController?.window?.frame.width ?? 360
+            window.setContentSize(NSSize(width: width, height: 270 * uiScaleLevel.scaleFactor))
+            if isRunningModernUI { applyDefaultCenterStackFrameForCurrentHT(window, kind: .sonos) }
+            positionSubWindow(window)
+        } else if !window.isVisible, sonosWindowController?.wasDockedWhenHidden == true {
+            positionSubWindow(window)
+        }
+        sonosWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(window)
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
+    func toggleSonos() {
+        if routeWinampModernHostedWindow(.sonos, toggle: true) { return }
+        if let window = sonosWindowController?.window, window.isVisible {
+            let frame = window.frame
+            sonosWindowController?.prepareForUITeardown()
+            window.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: frame)
+        } else { showSonos() }
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
     // MARK: - Cava Window
 
     func showCava(at restoredFrame: NSRect? = nil) {
@@ -4391,6 +4453,7 @@ class WindowManager {
         peppyMeterWindowController?.skinDidChange()
         networkMonitorWindowController?.skinDidChange()
         cavaWindowController?.skinDidChange()
+        sonosWindowController?.skinDidChange()
         waveformWindowController?.skinDidChange()
         compactWindowController?.skinDidChange()
     }
@@ -4790,6 +4853,37 @@ class WindowManager {
                 cavaWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
             }
         }
+        if let sonosWindow = sonosWindowController?.window {
+            let baseMinSize: NSSize = runningModernMode
+                ? ModernSkinElements.spectrumMinSize
+                : SkinElements.SpectrumWindow.minSize
+            let heightMultiplier = centerStackHeightMultiplier(for: .sonos)
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
+            let adjustedMinHeight = minHeight * heightMultiplier
+            let minWidth = runningModernMode
+                ? ModernSkinElements.spectrumMinSize.width
+                : baseMinSize.width * scale
+            sonosWindow.minSize = NSSize(width: minWidth, height: adjustedMinHeight)
+            sonosWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = sonosWindow.frame
+            let newHeight = max(adjustedMinHeight, currentFrame.height * ratio)
+            let newWidth = max(minWidth, currentFrame.width * ratio)
+            if sonosWindow.isVisible {
+                let sonosFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: newWidth,
+                    height: newHeight
+                )
+                sonosWindow.setFrame(sonosFrame, display: true, animate: false)
+                nextY = sonosFrame.minY
+            } else {
+                sonosWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
+            }
+        }
 
         // Side windows - match the vertical stack height and reposition
         let stackTopY = mainFrame.maxY
@@ -4828,6 +4922,7 @@ class WindowManager {
                            peppyMeterWindowController,
                            networkMonitorWindowController,
                            cavaWindowController,
+                           sonosWindowController,
                            plexBrowserWindowController, projectMWindowController] {
             guard let window = controller?.window, window.isVisible,
                   let contentView = window.contentView else { continue }
@@ -4874,6 +4969,7 @@ class WindowManager {
             peppyMeterWindowController?.window,
             networkMonitorWindowController?.window,
             cavaWindowController?.window,
+            sonosWindowController?.window,
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
@@ -4949,6 +5045,7 @@ class WindowManager {
     }
 
     enum CenterStackWindowKind {
+        case sonos
         case equalizer
         case playlist
         case spectrum
@@ -4964,6 +5061,7 @@ class WindowManager {
         case .spectrum: return .spectrum
         case .equalizer: return .equalizer
         case .cava: return .cava
+        case .sonos: return .sonos
         case .flow: return .networkMonitor
         case .peppyMeter: return .peppyMeter
         case .audioAnalysis: return .audioAnalysis
@@ -4981,6 +5079,7 @@ class WindowManager {
         if window === peppyMeterWindowController?.window { return .peppyMeter }
         if window === networkMonitorWindowController?.window { return .networkMonitor }
         if window === cavaWindowController?.window { return .cava }
+        if window === sonosWindowController?.window { return .sonos }
         if let hosted = winampModernHostedController?.materializedHostedWindows.first(where: {
             $0.window === window
         }) {
@@ -5082,7 +5181,11 @@ class WindowManager {
     /// Height multiplier for a center-stack window's default/minimum height.
     /// PeppyMeter is taller than single-height windows, but not double-height: its bundled assets are landscape.
     private func centerStackHeightMultiplier(for kind: CenterStackWindowKind) -> CGFloat {
-        kind == .peppyMeter ? 1.75 : 1
+        switch kind {
+        case .peppyMeter: return 1.75
+        case .sonos: return 2
+        default: return 1
+        }
     }
 
     private func peppyMeterHeight(for baseHeight: CGFloat) -> CGFloat {
@@ -5105,7 +5208,7 @@ class WindowManager {
         let target = kind == .peppyMeter
             ? peppyMeterHeight(for: baseTarget)
             : baseTarget * centerStackHeightMultiplier(for: kind)
-        guard kind == .playlist || kind == .waveform else { return target }
+        guard kind == .playlist || kind == .waveform || kind == .sonos else { return target }
         guard preservePlaylistContentHeight else { return target }
         let adjusted = hideTitleBars ? (currentHeight - titleBarDelta) : (currentHeight + titleBarDelta)
         return max(target, adjusted)
@@ -5116,6 +5219,9 @@ class WindowManager {
         let targetWidth = mainWindow.frame.width
         let targetHeight = expectedMainHeightForCurrentHT(mainWindow)
         switch kind {
+        case .sonos:
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight * 2)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         case .equalizer:
             window.minSize = NSSize(width: targetWidth, height: targetHeight)
             window.maxSize = NSSize(width: targetWidth, height: targetHeight)
@@ -5177,7 +5283,7 @@ class WindowManager {
             return mainWindowController?.window?.frame.width ?? ModernSkinElements.mainWindowSize.width
         case .playlist:
             return ModernSkinElements.playlistMinSize.width
-        case .spectrum, .audioAnalysis, .peppyMeter, .networkMonitor, .cava:
+        case .spectrum, .audioAnalysis, .peppyMeter, .networkMonitor, .cava, .sonos:
             return ModernSkinElements.spectrumMinSize.width
         case .waveform:
             return ModernSkinElements.waveformMinSize.width
@@ -5202,6 +5308,8 @@ class WindowManager {
 
         let topY = normalized.maxY
         switch kind {
+        case .sonos:
+            normalized.size.height = max(targetHeight * 2, normalized.height)
         case .equalizer:
             normalized.size.height = targetHeight
         case .playlist, .spectrum, .waveform, .audioAnalysis, .networkMonitor, .cava:
@@ -5320,6 +5428,7 @@ class WindowManager {
         let peppyMeterWindow = peppyMeterWindowController?.window
         let networkMonitorWindow = networkMonitorWindowController?.window
         let cavaWindow = cavaWindowController?.window
+        let sonosWindow = sonosWindowController?.window
 
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
@@ -5331,6 +5440,7 @@ class WindowManager {
             peppyMeterFrame: (peppyMeterWindow?.isVisible == true) ? peppyMeterWindow?.frame : nil,
             networkMonitorFrame: (networkMonitorWindow?.isVisible == true) ? networkMonitorWindow?.frame : nil,
             cavaFrame: (cavaWindow?.isVisible == true) ? cavaWindow?.frame : nil,
+            sonosFrame: (sonosWindow?.isVisible == true) ? sonosWindow?.frame : nil,
             scale: scale
         )
 
@@ -5394,6 +5504,12 @@ class WindowManager {
            let repairedFrame = repaired.cavaFrame,
            repairedFrame != cavaWindow.frame {
             cavaWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
+        if let sonosWindow,
+           sonosWindow.isVisible,
+           let repairedFrame = repaired.sonosFrame,
+           repairedFrame != sonosWindow.frame {
+            sonosWindow.setFrame(repairedFrame, display: true, animate: false)
         }
 
         return true
@@ -5593,6 +5709,7 @@ class WindowManager {
         if let window = peppyMeterWindow, window.isVisible { height += window.frame.height }
         if let window = networkMonitorWindow, window.isVisible { height += window.frame.height }
         if let window = cavaWindow, window.isVisible { height += window.frame.height }
+        if let window = sonosWindow, window.isVisible { height += window.frame.height }
         return height
     }
 
@@ -5701,6 +5818,13 @@ class WindowManager {
             nextY -= h
             cavaFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
         }
+        var sonosFrame: NSRect?
+        if let sonosWindow, sonosWindow.isVisible {
+            let h = sonosWindow.frame.height
+            let w = sonosWindow.frame.width
+            nextY -= h
+            sonosFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
+        }
 
         // Side windows span the full stack height
         let stackTopY = mainFrame.maxY
@@ -5752,6 +5876,9 @@ class WindowManager {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = cavaFrame, let window = cavaWindow {
+            window.setFrame(frame, display: true, animate: false)
+        }
+        if let frame = sonosFrame, let window = sonosWindow {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
@@ -6753,6 +6880,7 @@ class WindowManager {
          peppyMeterWindowController,
          networkMonitorWindowController,
          cavaWindowController,
+         sonosWindowController,
          waveformWindowController].compactMap { $0 }
     }
 
@@ -6817,6 +6945,8 @@ class WindowManager {
         networkMonitorWindowController = nil
         cavaWindowController?.window?.close()
         cavaWindowController = nil
+        sonosWindowController?.window?.close()
+        sonosWindowController = nil
         waveformWindowController?.window?.close()
         waveformWindowController = nil
 
@@ -6862,6 +6992,7 @@ class WindowManager {
         var peppyMeter: UIWindowSnapshot?
         var networkMonitor: UIWindowSnapshot?
         var cava: UIWindowSnapshot?
+        var sonos: UIWindowSnapshot?
         var waveform: UIWindowSnapshot?
         /// Live ProjectM preset index, carried across the rebuild so the visualization stays on the
         /// exact preset the user was viewing rather than reverting to the saved startup default.
@@ -6894,6 +7025,7 @@ class WindowManager {
             peppyMeter: snapWindow(peppyMeterWindow),
             networkMonitor: snapWindow(networkMonitorWindow),
             cava: snapWindow(cavaWindow),
+            sonos: snapWindow(sonosWindow),
             waveform: snapWindow(waveformWindow),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
@@ -6966,6 +7098,7 @@ class WindowManager {
         if snapshot.peppyMeter?.visible == true { showPeppyMeter(at: snapshot.peppyMeter?.frame) }
         if snapshot.networkMonitor?.visible == true { showNetworkMonitor(at: snapshot.networkMonitor?.frame) }
         if snapshot.cava?.visible == true { showCava(at: snapshot.cava?.frame) }
+        if snapshot.sonos?.visible == true { showSonos(at: snapshot.sonos?.frame) }
         if let waveform = snapshot.waveform, waveform.visible {
             showWaveform(at: waveform.frame)
         }
@@ -7196,6 +7329,7 @@ class WindowManager {
         var peppyMeter: NSRect?
         var networkMonitor: NSRect?
         var cava: NSRect?
+        var sonos: NSRect?
         var library: NSRect?
         var projectM: NSRect?
     }
@@ -7240,6 +7374,7 @@ class WindowManager {
             peppyMeter: detachedFrame(peppyMeterWindow),
             networkMonitor: detachedFrame(networkMonitorWindow),
             cava: detachedFrame(cavaWindow),
+            sonos: detachedFrame(sonosWindow),
             library: detachedFrame(plexBrowserWindowController?.window),
             projectM: detachedFrame(projectMWindowController?.window
                 ?? winampModernHostedController?.hostedWindow(ifMaterialized: .projectM))
@@ -7281,6 +7416,7 @@ class WindowManager {
             peppyMeter: detachedFrame(snapshot.peppyMeter),
             networkMonitor: detachedFrame(snapshot.networkMonitor),
             cava: detachedFrame(snapshot.cava),
+            sonos: detachedFrame(snapshot.sonos),
             library: detachedFrame(snapshot.library),
             projectM: detachedFrame(snapshot.projectM)
         )
@@ -7296,6 +7432,7 @@ class WindowManager {
             (frames.peppyMeter, peppyMeterWindow),
             (frames.networkMonitor, networkMonitorWindow),
             (frames.cava, cavaWindow),
+            (frames.sonos, sonosWindow),
             (frames.library, plexBrowserWindowController?.window),
             (frames.projectM, projectMWindowController?.window),
         ]
@@ -7362,6 +7499,7 @@ class WindowManager {
             peppyMeter: convScaled(snapshot.peppyMeter),
             networkMonitor: convScaled(snapshot.networkMonitor),
             cava: convScaled(snapshot.cava),
+            sonos: convScaled(snapshot.sonos),
             waveform: convScaled(snapshot.waveform),
             projectMPresetIndex: restorableProjectMPresetIndex()
         )
