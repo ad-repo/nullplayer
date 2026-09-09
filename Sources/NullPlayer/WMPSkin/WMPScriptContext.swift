@@ -135,6 +135,14 @@ final class WMPScriptContext: @unchecked Sendable {
     private var pendingTimers: [WMPJScriptTimerRequest] = []
     private var nextTimerToken = 0
     private var lastException: String?
+    /// The live elements of every view this session has installed, and which one is installed now.
+    ///
+    /// Two paths read this back. A background dispatcher swaps its own in for the length of a tick
+    /// (`runBackground`), and a view **covered** by `theme.openView` gets its own back when the
+    /// panel over it closes (`restoreElements(for:)`) — WMP opened a second window and never
+    /// touched the first, so coming back is a restore rather than a load.
+    private var viewRegistries: [String: WMPObjectModel.ElementRegistry] = [:]
+    private var installedViewID: String?
 
     init(executionSeconds: TimeInterval = WMPPhase0Limits.scriptExecutionSeconds) {
         self.executionSeconds = executionSeconds
@@ -164,23 +172,46 @@ final class WMPScriptContext: @unchecked Sendable {
         }
     }
 
-    func install(elements definitions: [WMPScriptElementDefinition]) {
+    func install(elements definitions: [WMPScriptElementDefinition], for viewID: String) {
         queue.sync {
-            model.resetElements(definitions.map {
-                WMPScriptElement(id: $0.id, stableID: $0.stableID, kind: $0.kind,
-                                 properties: $0.properties, authored: $0.authored)
-            })
-            for definition in definitions {
-                bind(global: definition.id, to: "element:\(WMPPath.fold(definition.id))")
-                for alias in definition.aliases {
-                    model.elements[WMPPath.fold(alias)] = model.element(definition.id)
-                    bind(global: alias, to: "element:\(WMPPath.fold(definition.id))")
-                }
-            }
-            // The host objects win any name collision with an element id: a skin naming an element
-            // `player` still means the player when it writes `player.controls.play()`.
-            bindHostGlobals()
+            stashInstalled()
+            installElements(definitions)
+            installedViewID = WMPPath.fold(viewID)
         }
+    }
+
+    /// Put a covered view's own live elements back, and say whether this session still had them.
+    /// A `false` answer means the caller must `install` from the plan instead.
+    func restoreElements(for viewID: String) -> Bool {
+        queue.sync {
+            guard let cached = viewRegistries[WMPPath.fold(viewID)] else { return false }
+            stashInstalled()
+            model.restoreElements(cached)
+            installedViewID = WMPPath.fold(viewID)
+            return true
+        }
+    }
+
+    private func stashInstalled() {
+        guard let installedViewID else { return }
+        viewRegistries[installedViewID] = model.captureElements()
+    }
+
+    private func installElements(_ definitions: [WMPScriptElementDefinition]) {
+        model.resetElements(definitions.map {
+            WMPScriptElement(id: $0.id, stableID: $0.stableID, kind: $0.kind,
+                             properties: $0.properties, authored: $0.authored)
+        })
+        for definition in definitions {
+            bind(global: definition.id, to: "element:\(WMPPath.fold(definition.id))")
+            for alias in definition.aliases {
+                model.elements[WMPPath.fold(alias)] = model.element(definition.id)
+                bind(global: alias, to: "element:\(WMPPath.fold(definition.id))")
+            }
+        }
+        // The host objects win any name collision with an element id: a skin naming an element
+        // `player` still means the player when it writes `player.controls.play()`.
+        bindHostGlobals()
     }
 
     /// The items every list-like element currently holds, by stable id. A skin fills a `POPUP`
@@ -217,6 +248,8 @@ final class WMPScriptContext: @unchecked Sendable {
         queue.sync {
             timerFunctions.removeAll()
             pendingTimers.removeAll()
+            viewRegistries.removeAll()
+            installedViewID = nil
             model.resetElements([])
         }
     }
@@ -235,10 +268,44 @@ final class WMPScriptContext: @unchecked Sendable {
         }
     }
 
+    /// One transaction for a view that is **not** the one on screen.
+    ///
+    /// 24 of the 180 corpus archives — the whole Alienware/Skins Factory family and every skin
+    /// built from its template — author a windowless `controlView` polling at 100 ms, and route
+    /// their panel, minimize and close buttons through it: the button writes a preference and this
+    /// handler is what reads it back and acts (W89). It is a real open window in WMP; here it is a
+    /// view that never becomes one, so it runs on its own timer with its own elements swapped in
+    /// for the length of the call and the presented view's swapped back afterwards, objects and
+    /// all. Nothing it produces describes the drawing: the caller wants its host commands.
+    ///
+    /// `currentViewID` is the view the *user* is looking at, not this one — a script asking
+    /// `theme.currentViewID` from a dispatcher means the window, and answering `controlView` would
+    /// name something that is not on screen.
+    func runBackground(plan: WMPScriptViewPlan, currentViewID: String, snapshot: WMPHostSnapshot,
+                       preferences: [String: String], event: WMPJScriptEvent) async -> WMPScriptRunResult {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                let presented = model.captureElements()
+                if let cached = viewRegistries[WMPPath.fold(plan.viewID)] {
+                    model.restoreElements(cached)
+                } else {
+                    installElements(plan.elements)
+                }
+                let result = perform(plan: plan, size: WMPSize(width: 0, height: 0),
+                                     snapshot: snapshot, preferences: preferences, event: event,
+                                     geometry: [:], currentViewID: currentViewID)
+                viewRegistries[WMPPath.fold(plan.viewID)] = model.captureElements()
+                model.restoreElements(presented)
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
     private func perform(plan: WMPScriptViewPlan, size: WMPSize, snapshot: WMPHostSnapshot,
                          preferences: [String: String], event: WMPJScriptEvent?,
-                         geometry: [Int: WMPRect]) -> WMPScriptRunResult {
-        model.beginTransaction(snapshot: snapshot, preferences: preferences, viewID: plan.viewID)
+                         geometry: [Int: WMPRect], currentViewID: String? = nil) -> WMPScriptRunResult {
+        model.beginTransaction(snapshot: snapshot, preferences: preferences,
+                               viewID: currentViewID ?? plan.viewID)
         pendingTimers.removeAll()
         // Sync the element state to the layout the skin is drawn at. The scene was built with the
         // previous transaction's overrides, so this is the skin's own values where it set them and

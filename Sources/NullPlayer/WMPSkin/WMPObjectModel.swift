@@ -136,6 +136,27 @@ final class WMPObjectModel {
         }
     }
 
+    /// The live element objects of one view, lifted out whole.
+    ///
+    /// A windowless dispatcher view runs a transaction of its own while another view is on screen
+    /// (W89), and the two cannot share a registry: element ids collide — every view root is `view`
+    /// — and rebuilding the presented view's elements afterwards would discard the state a skin
+    /// keeps in them between clicks. So the background view's registry is swapped in for the length
+    /// of its transaction and the presented one swapped back, objects and all. The JavaScript
+    /// globals need no part in this: each is a wrapper around the folded id, resolved through
+    /// whichever registry is installed at the moment it is read.
+    struct ElementRegistry {
+        fileprivate let elements: [String: WMPScriptElement]
+        fileprivate let order: [String]
+    }
+
+    func captureElements() -> ElementRegistry { .init(elements: elements, order: elementOrder) }
+
+    func restoreElements(_ registry: ElementRegistry) {
+        elements = registry.elements
+        elementOrder = registry.order
+    }
+
     var elementIDs: [String] { elementOrder }
 
     func element(_ id: String) -> WMPScriptElement? { elements[WMPPath.fold(id)] }

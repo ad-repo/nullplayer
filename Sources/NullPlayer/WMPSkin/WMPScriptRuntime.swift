@@ -288,6 +288,9 @@ actor WMPScriptRuntime {
     private var propertyRegistry: WMPObservablePropertyRegistry?
     private var committedOverrides = WMPSceneOverrides.empty
     private var recentTransactionTimes: [Date] = []
+    /// The dispatcher view's plan, built once. Building one walks the whole graph, and a dispatcher
+    /// runs at the period its markup authored — 100 ms in every corpus skin that has one.
+    private var dispatcherPlans: [String: WMPScriptViewPlan] = [:]
     private var torndown = false
 
     init(preferences: WMPPreferenceStore,
@@ -327,7 +330,7 @@ actor WMPScriptRuntime {
         guard let context else { return WMPScriptOutput(overrides: committedOverrides) }
         if propertyRegistry == nil { propertyRegistry = WMPObservablePropertyRegistry(graph: skin.graph) }
         if contextViewID?.caseInsensitiveCompare(viewID) != .orderedSame {
-            context.install(elements: plan.elements)
+            context.install(elements: plan.elements, for: viewID)
             contextViewID = viewID
         }
         // The elements are installed first on purpose: a skin's programs run top-level code that
@@ -382,6 +385,46 @@ actor WMPScriptRuntime {
                                listItems: context.listItems())
     }
 
+    /// One transaction for a **background dispatcher view** — a windowless view the skin keeps
+    /// running alongside the player, polling its own preferences on its own timer (W89).
+    ///
+    /// It is deliberately not `transact`. A dispatcher produces no drawing: it has no window, so it
+    /// has no scene, and letting its writes reach `committedOverrides` would apply one view's
+    /// geometry to another's. It must also not consume the observable-property changes, which are
+    /// delivered once and belong to the view that is on screen. What is left is what the caller
+    /// wants: the host commands the handler posted, its preference writes, and its diagnostics.
+    ///
+    /// The rate limit is shared with `transact` on purpose — it bounds the whole session's script
+    /// work, and a 100 ms dispatcher spends 10 of the 120 transactions a second it allows.
+    func dispatch(skin: WMPLoadedSkin, viewID: String, currentViewID: String,
+                  snapshot: WMPHostSnapshot, event: WMPJScriptEvent) async -> WMPScriptOutput {
+        guard !torndown, let context, contextSkin == ObjectIdentifier(skin) else {
+            return WMPScriptOutput(overrides: .empty)
+        }
+        let now = Date()
+        recentTransactionTimes.removeAll { now.timeIntervalSince($0) >= 1 }
+        guard recentTransactionTimes.count < WMPJScriptProtocol.maximumTransactionsPerSecond else {
+            return WMPScriptOutput(overrides: .empty,
+                diagnostics: [.init(code: "script-rate-limit",
+                                    message: "more than 120 transactions per second")])
+        }
+        recentTransactionTimes.append(now)
+
+        let plan = dispatcherPlans[WMPPath.fold(viewID)] ?? {
+            let built = WMPScriptViewPlan(skin: skin, viewID: viewID)
+            dispatcherPlans[WMPPath.fold(viewID)] = built
+            return built
+        }()
+        let result = await context.runBackground(plan: plan, currentViewID: currentViewID,
+                                                 snapshot: snapshot,
+                                                 preferences: preferences.values(), event: event)
+        var diagnostics = result.diagnostics
+        diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
+        return WMPScriptOutput(overrides: .empty, hostCommands: result.hostCommands,
+                               diagnostics: diagnostics, timerRequests: result.timers,
+                               calls: result.calls)
+    }
+
     func resetPreferences() { preferences.reset() }
 
     func setWidgetValue(stableID: Int, value: Double) {
@@ -403,8 +446,29 @@ actor WMPScriptRuntime {
         contextViewID = nil
     }
 
+    /// **Come back to a view that was covered rather than replaced.**
+    ///
+    /// `theme.openView` opens a *second window* in WMP and leaves the first one alone; only
+    /// `theme.currentViewID` replaces a view. With one window the difference is this method: a
+    /// `closeView` return puts back the overrides the covered view was drawn with and the live
+    /// elements it was left holding, instead of rebuilding it from its markup.
+    ///
+    /// Reloading it was wrong in a way that was invisible until a skin could open a panel at all.
+    /// `Alienware Invader` reveals its player by writing `mainBack.backgroundImage` and
+    /// `mainBackGroup1.visible` from a 568-frame intro and then stopping its own timer; a rebuilt
+    /// `mainView` had none of that, so closing the equaliser returned to a view that drew **nothing**
+    /// (`commands=0`) and then re-ran the markup's `timerInterval="500"` — which fires
+    /// `toggleShutter()` with the skin's own `introStatus` already true and closes the shutter over
+    /// the whole player. Reported live as "closing an interior window closes the whole UI".
+    func prepareForRestore(viewID: String, overrides: WMPSceneOverrides) {
+        committedOverrides = overrides
+        propertyRegistry = nil
+        contextViewID = context?.restoreElements(for: viewID) == true ? viewID : nil
+    }
+
     func teardown() {
         torndown = true
+        dispatcherPlans.removeAll()
         context?.teardown()
         context = nil
         contextSkin = nil

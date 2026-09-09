@@ -43,6 +43,19 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var scriptTimerTasks: [Int: Task<Void, Never>] = [:]
     /// The active view's own `timerInterval`, which is a host timer rather than a scene property.
     private var viewTimerTask: Task<Void, Never>?
+    /// **The windowless view the skin keeps running alongside the player, and its clock.**
+    ///
+    /// 24 of the 180 corpus archives author a `controlView` that is never a window and poll it at
+    /// 100 ms; their panel, minimize and close buttons do not call the host at all, they write a
+    /// preference and let this view's `onTimer` read it back and act (W89). It outlives a view
+    /// switch on purpose — it is the way back from the panel it opened — so it is not part of
+    /// `stopAllTimers`, and only teardown and a skin reload stop it.
+    private var dispatcherViewID: String?
+    private var dispatcherTimerTask: Task<Void, Never>?
+    /// The dispatcher's `onTimer` sources, resolved once. `handlers` walks the whole graph, and at
+    /// the 100 ms this idiom is authored at that is ten walks a second for an answer the markup
+    /// fixed before the skin loaded.
+    private var dispatcherHandlers: [String] = []
     /// The animation repaint loop and the instant its clock is measured from. Separate from
     /// `viewTimerTask`: that one dispatches the skin's own `onTimer` and rebuilds the scene, and an
     /// animation must not do either — it re-renders the scene that already exists.
@@ -63,7 +76,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Views the skin asked to *open* on top of what was showing. WMP gives each one its own
     /// window; this app has one, so the opened view is presented and the view it covered is
     /// remembered here, which is what gives `closeView` somewhere to go back to.
-    private var openedViewStack: [String] = []
+    ///
+    /// **What is remembered is the view as it was drawn, not just its name.** WMP never touched the
+    /// covered window — `openView` opened a second one beside it — so coming back has to restore it
+    /// rather than load it: the overrides its script had accumulated and the period its script had
+    /// left its own timer at. Rebuilding it from markup instead is what made `Alienware Invader`
+    /// return from its equaliser to a blank player and then shutter itself, reported as "closing an
+    /// interior window closes the whole UI".
+    private var openedViewStack: [CoveredView] = []
+    struct CoveredView {
+        let viewID: String
+        let overrides: WMPSceneOverrides
+        let viewTimerMilliseconds: Int
+    }
+    /// The period the view timer is currently running at, so a covered view can be given it back.
+    private var viewTimerMilliseconds = 0
     private var activeLimits: WMPResizeLimits?
     private var activeScene: WMPScene?
     private var sceneOverrides = WMPSceneOverrides.empty
@@ -132,6 +159,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     func reloadSelectedSkin() {
         loadTask?.cancel()
+        stopDispatcher()
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -227,6 +255,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     let switchedView = applyHostCommands(output.hostCommands)
                     if !switchedView { scheduleTimers(output.timerRequests) }
                     recordScriptDiagnostics(output.diagnostics)
+                    await adoptDispatcher(in: skin, store: store, presenting: registration.id)
                     presented = true
                     break
                 }
@@ -431,6 +460,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         scriptRuntime = nil
         lastScriptSnapshot = nil
         stopAllTimers()
+        stopDispatcher()
         lastLoadDiagnostic = message
         mainView?.prepareForUITeardown()
         mainView = nil
@@ -535,6 +565,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         scriptTask?.cancel()
         scriptTask = nil
         stopAllTimers()
+        stopDispatcher()
         if let scriptRuntime { Task { await scriptRuntime.teardown() } }
         scriptRuntime = nil
         lastScriptSnapshot = nil
@@ -552,7 +583,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         host.stopContinuousCommands()
     }
 
-    func switchView(to requestedID: String) {
+    /// `restoring` is set only by `closeView` popping back to a view that was **covered** by
+    /// `theme.openView` rather than replaced by `theme.currentViewID`. That view's window was never
+    /// closed in WMP, so it comes back exactly as it was left: its own overrides, its own live
+    /// elements, its own timer period, and **no second `load`**. Every other route through here is
+    /// a genuine view change and still loads exactly like a launch (W46).
+    func switchView(to requestedID: String, restoring covered: CoveredView? = nil) {
         guard let skin = loadedSkin, let store = imageStore,
               let registration = skin.views.first(where: {
                   $0.id.caseInsensitiveCompare(requestedID) == .orderedSame
@@ -565,10 +601,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             skin: importer.selectedSkinName ?? "", view: registration.id)
         loadTask = Task { [weak self] in
             guard let self else { return }
-            await scriptRuntime.prepareForViewSwitch()
+            if let covered {
+                await scriptRuntime.prepareForRestore(viewID: covered.viewID,
+                                                      overrides: covered.overrides)
+            } else {
+                await scriptRuntime.prepareForViewSwitch()
+            }
             do {
                 let base = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: registration.id, requestedSize: savedSize)
+                    .build(viewID: registration.id, requestedSize: savedSize,
+                           overrides: covered?.overrides ?? .empty)
                 // **A view arrived at by a switch loads exactly as one arrived at by launch.**
                 // Initial load raises `load` here, honours the host commands the handler posts and
                 // schedules the timers it asks for; this path did none of the three, and a
@@ -582,7 +624,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // indistinguishable from the player**, and the only symptom was that the playlist
                 // and equaliser buttons — markup `viewTiny` does not have — stopped answering.
                 // `RestorePlayer()` is driven by the same timer, so there was also no way back.
-                let loadEvent = WMPJScriptEvent(name: "load", targetID: registration.id,
+                // A restore raises nothing. The covered view already ran its `load` when it was
+                // first presented, and running it again is precisely what this path is fixing.
+                let loadEvent = covered != nil ? nil : WMPJScriptEvent(
+                    name: "load", targetID: registration.id,
                     handlers: Self.handlers(in: skin, event: "load", targetID: nil,
                                             viewID: registration.id))
                 let output = await scriptRuntime.transact(skin: skin, viewID: registration.id,
@@ -621,6 +666,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // that order. A command that switches again owns the timers of the view it moved
                 // to, exactly as on initial load, and there is no `viewchange` to raise for a view
                 // this controller is no longer on.
+                // `apply` sets the view timer from markup, which is the default a script's
+                // `setViewTimerInterval` overrides. A restored view's script already overrode it
+                // once — `Alienware Invader`'s intro ends on `view.timerInterval = 0` — and that
+                // answer has to survive the return, or the markup's period restarts an animation
+                // the skin had finished with.
+                if let covered { setViewTimer(milliseconds: covered.viewTimerMilliseconds) }
                 let switchedAgain = applyHostCommands(output.hostCommands)
                 recordScriptDiagnostics(output.diagnostics)
                 guard !switchedAgain else { return }
@@ -631,6 +682,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // cancelled every script timer the `load` above had just scheduled. The bindings
                 // themselves have nothing left to settle — the load transaction built the scene
                 // that is on screen.
+                guard covered == nil else { return }
                 dispatchScriptEvent(name: "viewchange", targetID: registration.id,
                                     onlyWhenAuthored: true)
             } catch is CancellationError {} catch { lastLoadDiagnostic = error.localizedDescription }
@@ -974,9 +1026,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             case "openFileDialog": presentOpenMediaPanel()
             case "closeView":
                 // A view this skin opened over another one closes back to it; only the outermost
-                // view closing means "close the player".
+                // view closing means "close the player". The covered view is *restored*, not
+                // reloaded — see `CoveredView`.
                 if let previous = openedViewStack.popLast() {
-                    switchedView = true; switchView(to: previous)
+                    switchedView = true; switchView(to: previous.viewID, restoring: previous)
                 } else {
                     window?.orderOut(nil)
                 }
@@ -990,8 +1043,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                    loadedSkin?.views.contains(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) == true,
                    id.caseInsensitiveCompare(activeViewID ?? "") != .orderedSame {
                     if let covered = activeViewID,
-                       !openedViewStack.contains(where: { $0.caseInsensitiveCompare(covered) == .orderedSame }) {
-                        openedViewStack.append(covered)
+                       !openedViewStack.contains(where: {
+                           $0.viewID.caseInsensitiveCompare(covered) == .orderedSame
+                       }) {
+                        openedViewStack.append(.init(viewID: covered, overrides: sceneOverrides,
+                                                     viewTimerMilliseconds: viewTimerMilliseconds))
                         if openedViewStack.count > 8 { openedViewStack.removeFirst() }
                     }
                     switchedView = true; switchView(to: id)
@@ -1067,9 +1123,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         scriptTimerTasks.removeAll()
     }
 
-    /// Everything in this controller with a clock. Teardown and a view switch are synchronous and
-    /// idempotent, and the animation loop retains the scene it draws — a repaint arriving after
-    /// teardown would present into a view being discarded.
+    /// Everything in this controller with a clock **that belongs to the presented view**. Teardown
+    /// and a view switch are synchronous and idempotent, and the animation loop retains the scene it
+    /// draws — a repaint arriving after teardown would present into a view being discarded.
+    ///
+    /// The background dispatcher is deliberately not here: it belongs to the skin session rather
+    /// than to a view, and a view switch is exactly when it is most needed — a `.wmz` panel opened
+    /// by `theme.openView` is closed again by the same `onTimer`. `stopDispatcher()` is what ends
+    /// it, and only teardown and a skin reload call it.
     private func stopAllTimers() {
         cancelScriptTimers()
         setViewTimer(milliseconds: 0)
@@ -1176,6 +1237,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         Self.traceInput("view-timer \(milliseconds)ms")
         viewTimerTask?.cancel()
         viewTimerTask = nil
+        viewTimerMilliseconds = max(0, milliseconds)
         guard milliseconds > 0 else { return }
 
         let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, milliseconds)
@@ -1186,6 +1248,100 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self?.dispatchScriptEvent(name: "timer", targetID: nil)
             }
         }
+    }
+
+    /// **Find the windowless view the skin keeps running alongside the player, and start it (W89).**
+    ///
+    /// 24 of the 180 corpus archives — the whole Skins Factory family and everything built from its
+    /// template — author `<view id="controlView" timerInterval="100" onTimer="checkRemoteViewStatus()">`
+    /// with no window of its own, and route their panel, minimize and close buttons through it: the
+    /// button writes a preference and this handler is what reads it back and answers with
+    /// `theme.openView`, `view.minimize()` or `view.close()`. Real WMP keeps it open beside the
+    /// player. Here it never becomes a window, so nothing ticked it and every one of those buttons
+    /// was dead — reported live, and recorded in the user's own defaults as four `remoteCall*`
+    /// flags stuck `true`, written by clicks that nothing consumed.
+    ///
+    /// **This is a scan, not a by-product of the candidate walk, because the walk usually never
+    /// gets there.** `wmpSkinViewID` is persisted on every present, so the second launch onward
+    /// starts at the player and stops — `controlView` is behind it in the list and is never
+    /// visited. The first fix keyed off the walk and did nothing on any launch but the first.
+    ///
+    /// Three things identify it, and all three are needed. A live `timerInterval` and an authored
+    /// `onTimer` are what make it a dispatcher; not being the presented view is what makes it a
+    /// *background* one; and a zero canvas is what makes it windowless — without that last test an
+    /// equaliser panel that happens to declare a clock would be run while it is off screen. The
+    /// markup prefilter is only to bound the cost: a view sized by its own artwork or by the union
+    /// of its subtree declares none of the three attributes either, so the build is what decides.
+    private func adoptDispatcher(in skin: WMPLoadedSkin, store: WMPImageStore,
+                                 presenting viewID: String) async {
+        stopDispatcher()
+        for registration in skin.views
+        where registration.id.caseInsensitiveCompare(viewID) != .orderedSame {
+            let declares = { (name: String) in
+                registration.node.attributes.contains {
+                    $0.name.caseInsensitiveCompare(name) == .orderedSame
+                }
+            }
+            guard !declares("width"), !declares("height"), !declares("backgroundImage"),
+                  Self.authoredTimerInterval(in: skin, viewID: registration.id) > 0,
+                  !Self.handlers(in: skin, event: "timer", targetID: nil,
+                                 viewID: registration.id).isEmpty,
+                  let scene = try? await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                      .build(viewID: registration.id),
+                  scene.canvasSize.width <= 0 || scene.canvasSize.height <= 0 else { continue }
+            dispatcherViewID = registration.id
+            startDispatcherTimer(in: skin)
+            return
+        }
+    }
+
+    /// Start the background dispatcher's clock. Its period is the `timerInterval` the view authors,
+    /// which is 100 ms in all 24 corpus skins that use this idiom. Unlike the view timer, a tick
+    /// builds no scene and renders nothing — it runs one handler and applies whatever host commands
+    /// it posts — so it neither cancels `scriptTask` nor competes with the view's own animation.
+    private func startDispatcherTimer(in skin: WMPLoadedSkin) {
+        dispatcherTimerTask?.cancel()
+        dispatcherTimerTask = nil
+        guard let viewID = dispatcherViewID else { return }
+        let milliseconds = Self.authoredTimerInterval(in: skin, viewID: viewID)
+        dispatcherHandlers = Self.handlers(in: skin, event: "timer", targetID: nil, viewID: viewID)
+        guard milliseconds > 0, !dispatcherHandlers.isEmpty else { return }
+        Self.traceInput("dispatcher \(viewID) \(milliseconds)ms")
+        let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, milliseconds)
+        dispatcherTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
+                guard !Task.isCancelled else { return }
+                await self?.dispatchDispatcherTick()
+            }
+        }
+    }
+
+    private func dispatchDispatcherTick() async {
+        guard let skin = loadedSkin, let scriptRuntime, let viewID = dispatcherViewID,
+              let currentViewID = activeViewID, !dispatcherHandlers.isEmpty else { return }
+        let event = WMPJScriptEvent(name: "timer", targetID: viewID, handlers: dispatcherHandlers)
+        let output = await scriptRuntime.dispatch(skin: skin, viewID: viewID,
+                                                  currentViewID: currentViewID,
+                                                  snapshot: host.snapshot, event: event)
+        guard !Task.isCancelled, dispatcherViewID == viewID else { return }
+        // `timerRequests` are deliberately dropped rather than scheduled. `scheduleTimers` replaces
+        // the *presented* view's set, and `dispatchTimer` runs what it schedules against the
+        // presented view — so honouring a dispatcher's `setTimeout` here would cancel the timers of
+        // the view on screen and then run the callback in the wrong view. No corpus dispatcher asks
+        // for one; if one ever does, it needs its own schedule, not this one.
+        if !output.timerRequests.isEmpty {
+            Self.traceInput("dispatcher-timers-dropped \(output.timerRequests.count)")
+        }
+        _ = applyHostCommands(output.hostCommands)
+        recordScriptDiagnostics(output.diagnostics)
+    }
+
+    private func stopDispatcher() {
+        dispatcherTimerTask?.cancel()
+        dispatcherTimerTask = nil
+        dispatcherViewID = nil
+        dispatcherHandlers = []
     }
 
     private func recordScriptDiagnostics(_ diagnostics: [WMPJScriptDiagnostic]) {
