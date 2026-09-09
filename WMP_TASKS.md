@@ -126,6 +126,17 @@ W74. So whatever the reporter saw is, on this evidence, mostly *scene*-side (the
 W68 sits in, now ranked automatically by W70) or driven by a hover, a timer or live playback, which
 W73 records as still unreachable. That narrows the gap; it does not substitute for the list.
 
+**Three more closed on 2026-09-09, all from one report on `WoW`** — "wow skin is empty and shows no
+player or skin windows", then "adding to the playlist does not work", then "why does the now playing
+look like this? it should fit and marquee". They were three unrelated engine defects, each of which
+hid the other two: a panel opened with `theme.openView` was persisted as the session's view (**W96**),
+an unanswerable `wmpprop:` on `visible` deleted the playlist control outright (**W95**), and a
+`<TEXT>` was drawn unclipped while no skin in the corpus could turn its marquee on (**W94**). All
+three are in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md)
+§ *Phase 12*, with the sweep that bounded the second. One thing the report did **not** turn out to be:
+"launching a track from library does not play it" did not reproduce — playback started every time
+from the Plex browser, and the queue reached the engine; what was missing was any way to *see* it.
+
 **What the reporter did report, 2026-09-08.** Three skins, three different classes. `corona` is the
 control: it "works well, has all its sliders and buttons for the most part", which is the reference
 result and the reason the other two are legible as defects rather than as the engine being broken.

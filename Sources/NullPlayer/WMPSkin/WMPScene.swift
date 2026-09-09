@@ -59,6 +59,15 @@ struct WMPSceneText: Hashable, Codable {
     let smoothed: Bool
     let color: WMPColor
     let alignment: WMPTextAlignment
+    /// **A `<TEXT>` is a box, and WMP clips to it.** `scrolling` is what a skin turns on when the
+    /// value is wider than the box — `WoW` writes `metadata.scrolling = (metadata.textWidth >
+    /// metadata.width)` on every metadata change — and `scrollingDelay`/`scrollingAmount` are the
+    /// marquee's clock and step. 114 of the 180 corpus archives author `scrolling`.
+    let scrolling: Bool
+    /// Milliseconds between marquee steps. WMP's default is 100.
+    let scrollDelayMilliseconds: Double
+    /// Skin pixels per marquee step. WMP's default is 1.
+    let scrollAmount: CGFloat
 }
 
 enum WMPPaint: Hashable, Codable {

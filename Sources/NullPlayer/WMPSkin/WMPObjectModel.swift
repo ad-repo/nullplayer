@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import NullPlayerCore
 
@@ -436,6 +437,14 @@ final class WMPObjectModel {
         case "id": return .value(.string(element.id))
         case "itemcount" where element.kind == .popup:
             return .value(.number(Double(element.items.count)))
+        // **`textWidth` is how a skin decides to marquee.** `WoW` writes
+        // `metadata.scrolling = (metadata.textWidth > metadata.width)` on every metadata change,
+        // and 92 of the 180 corpus archives read it. Answering the unset-numeric 0 told every one
+        // of them the string fits, so scrolling was never turned on and the readout was drawn in
+        // full — unclipped, across the rest of the player. Measured through `WMPTextMetrics`, the
+        // same path the renderer lays the line out with, so the comparison is against what is drawn.
+        case "textwidth":
+            return .value(.number(Double(Self.measuredTextWidth(element))))
         default: break
         }
         if let value = element.properties[name] { return .value(value) }
@@ -460,6 +469,19 @@ final class WMPObjectModel {
         // losing them: the surface is open, the tally is not.
         inert()
         return .value(Self.standardNumericProperties.contains(name) ? .number(0) : .string(""))
+    }
+
+    /// The element's current `value` measured in its current face — both read from the live property
+    /// bag, so a `textWidth` read in the same handler that just assigned `value` sees the new string.
+    private static func measuredTextWidth(_ element: WMPScriptElement) -> CGFloat {
+        guard let value = element.properties["value"]?.string, !value.isEmpty else { return 0 }
+        let style = (element.properties["fontstyle"]?.string ?? "").lowercased()
+        let face = ["fontface", "fonttype"].lazy
+            .compactMap { element.properties[$0]?.string }
+            .first { !$0.isEmpty } ?? "Arial"
+        let size = element.properties["fontsize"]?.number ?? 12
+        return WMPTextMetrics.width(of: value, fontName: face, fontSize: CGFloat(max(1, size)),
+                                    bold: style.contains("bold"), italic: style.contains("italic"))
     }
 
     private func readViewHost(_ name: String) -> WMPMemberValue? {
@@ -830,7 +852,10 @@ final class WMPObjectModel {
     }
 
     static let standardNumericProperties: Set<String> = [
-        "left", "top", "width", "height", "zindex", "value", "alpha", "min", "max"
+        "left", "top", "width", "height", "zindex", "value", "alpha", "min", "max",
+        // The marquee's clock and step. Rendered, so a script write has to commit as a mutation
+        // rather than be stored inert; see `scrolling` below.
+        "scrollingdelay", "scrollingamount"
     ]
 
     static let standardElementProperties: Set<String> = standardNumericProperties.union([
@@ -840,7 +865,12 @@ final class WMPObjectModel {
         "alphablend",
         "visible", "enabled", "down", "text", "tooltip", "image", "backgroundimage",
         "foregroundcolor", "backgroundcolor", "transparencycolor", "cursor", "sticky",
-        "horizontalalignment", "verticalalignment"
+        "horizontalalignment", "verticalalignment",
+        // **`scrolling` is written by script far more often than it is authored.** `WoW`'s
+        // `metadata` declares `scrollingDelay` and `scrollingAmount` in markup and never
+        // `scrolling` — the handler turns it on when the new title does not fit. Without this the
+        // write was stored inert, never reached the scene, and the marquee could not start.
+        "scrolling"
     ])
 }
 

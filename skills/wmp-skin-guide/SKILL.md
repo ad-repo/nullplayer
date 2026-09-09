@@ -116,6 +116,41 @@ queue, with the object model as the security boundary — see Amendment 2 in
 - **A view arrived at by a switch loads exactly like one arrived at by launch, and a `.wmz` compact mode is built entirely out of that.** `switchView(to:)` raises `load` on the new view, applies the host commands the handler posts — *after* `apply`, which sets the view timer from markup, so the script's `setViewTimerInterval` is the override and not the other way round — and schedules its `timerRequests`. It did none of the three for a long time (W46), and Corona's `viewTiny` is authored `timerInterval="0"` and animates itself into the mini player from `OnTinyLoad` alone: the switch happened, nothing ran, and the compact view drew **the same artwork at the same size as the player**. The only visible symptom was the playlist and equaliser drawers going away, because `viewTiny`'s markup does not have them. Two consequences bind: the initial-load `collapsed` guard applies here too, since a view can now blank itself in an `onLoad` this path finally runs; and `viewchange` is dispatched only when the markup authors a handler, because a transaction's `timerRequests` are what *that* transaction registered and an unconditional binding-only one posts an empty set that cancels what `load` just scheduled.
 - **The skin's own JScript is ES3, and `JSContext` is not — `WMPJScriptDialect` is where that is reconciled (W86).** WMP9's `corona_tiny.js` chains its compact-mode animation by appending a timer event to the array its `TimerDispatch` is enumerating with `for-in`. JScript visits the appended index; JavaScriptCore snapshots and does not, so the chained event was dropped on the tick it was registered and the whole WMP9 family could neither collapse its video panel nor get back to `vPlayer`. Corona's 2002 script splices the array instead and is unaffected, which is what made `corona` the control and `9SeriesDefault` the case. The rewrite is bounded, skips strings/comments/regex literals, and leaves a program with no `for-in` byte-identical; **3 of 180 archives use `for-in` at all and one depends on the live semantic**, so the corpus sweep is the proof it changed nothing else. **Before ranking a "the script runs and nothing happens" defect, ask whether the handler depends on an ES3 semantic** — no headless probe here can see that class, and the live `INPUT script-diag` line stays silent because nothing throws. And when you add to this file's scanner: **test a CRLF fixture.** Swift folds `"\r\n"` into one `Character` that is not `"\n"`, and the first version of the rewrite silently did nothing to the entire corpus for that reason while every LF-only unit test passed.
 - **A `<property>_onchange` fires in the same transaction as the write that triggered it, and the view's `JScript:` geometry expressions are *not* re-run to achieve the same thing.** A `.wmz` animates by writing geometry once per timer tick, so a pane positioned off a moving one has to move in the same frame; letting it catch up on the next transaction tore the compact view into two visible halves that closed four seconds later (W87). Only what the skin declared is raised — 16 geometry `_onchange` attributes across 6 archives — bounded and once per property per transaction, so two panes positioned off each other cannot loop. **Re-resolving the expression set after the handlers is the tempting general form and it is wrong**: those attributes are an initial layout rather than a live binding, and several read the property they write (`left="JScript:svBottomLeft.width-left"`), so re-running them moved 175 of 545 corpus images and shattered `Back to the Future Trilogy`'s `videoView` and `ALXMorph`'s frame. That is what a sweep is for; it was reverted on the measurement, not on taste.
+- **A `<TEXT>` is a box, the clip is horizontal, and `scrolling` is what a skin turns on when the
+  value overflows it (W94).** Drawing text unclipped let `WoW`'s 77x30 `metadata` readout paint
+  "- AC/DC - Shoot to Thrill / Playing" straight across the player's buttons. Three things had to
+  land together, and any one alone does nothing: the clip, a marquee driven off the render clock
+  with `scrollingDelay`/`scrollingAmount`, and a **measured** `textWidth` on the object model,
+  because the skin decides for itself with `metadata.scrolling = (metadata.textWidth >
+  metadata.width)` and an answer of 0 says the string fits. `scrolling` is 358 uses across 114 of
+  180 archives. **The vertical half of the clip is deliberately left open**: a skin routinely
+  authors a row of links shorter than their own line box — `v2_underworld`'s About page is eight of
+  them — and this engine's baseline comes from `fontSize` rather than the face's real metrics, so
+  clipping to the authored height shaved those to a sliver. Cut the overflow that is measured;
+  leave the one that is not. A scrolling text also contributes to `animationCadence`, endlessly and
+  bounded to its own box — it is the only animation a skin turns on from script rather than by
+  naming a GIF.
+- **An unanswerable `wmpprop:` is not the answer "false", and on `visible` that distinction is a
+  whole control (W95).** A path can name a *host* property (`eq.enhancedAudio`) or an *element in
+  the skin's own graph* (`plMode.visible`); 1,459 of the corpus's uses resolve to neither today, and
+  the registry answered every one with a falsy empty string. The builder deletes a node whose
+  `visible` override is false, so `WoW`'s `<PLAYLIST visible="wmpprop:plMode.visible">` — `plMode`
+  being a name WMP's own UI owns and this skin never declares — had no paint command, no hosted
+  widget and no rows, however many tracks were queued. Reported as "adding to the playlist does not
+  work". The rule now has three cases and they were arrived at one sweep each:
+  **a host root this engine does not implement stays falsy** (`xsn_sports` hangs its whole SRS WOW
+  panel off `visible="wmpprop:eq.enhancedAudio"`, and showing the badge would claim a feature that
+  does nothing); **an element the skin *does* declare is mirrored** by `WMPSceneBuilder`, one hop,
+  which is what keeps `WoW`'s CD-rip bar hidden behind `wmpprop:playlist2.visible` (150 corpus uses
+  of `visible="wmpprop:…"`); **an element it does not declare answers nothing**, leaving the markup's
+  own value. Only `visible` declines to default — on every other property the empty string is the
+  honest answer, and `wmpenabled:` still disables.
+- **A panel opened with `theme.openView` is not the session's view (W96).** `apply` persisted
+  `wmpSkinViewID` on every present, so quitting with a playlist open recorded the playlist; the
+  covered view is not persisted, so the next launch restored a panel with no player and no route
+  back to one. Reported as "the skin is empty and shows no player or skin windows", and it strands
+  any skin whose panels are `openView` rather than `currentViewID`. Only a present with an empty
+  `openedViewStack` writes the key.
 - **A zero geometry override is a value, not an absence.** Every skin with a store-thumbnail
   `previewView` collapses it in `onLoad` — `view.width = 0; view.height = 0; view.backgroundImage =
   ""; theme.currentViewID = "controlView"` — and Microsoft's own `auto.js` in `Official_Xbox_XP`

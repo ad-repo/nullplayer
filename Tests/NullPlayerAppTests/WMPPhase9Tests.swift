@@ -87,6 +87,41 @@ final class WMPPhase9Tests: XCTestCase {
         controller.window?.close()
     }
 
+    /// **A panel opened over the player is not the session's view.**
+    ///
+    /// `theme.openView` opens a *second* window in WMP; this app presents it in the one window it
+    /// has and remembers the view it covered. `apply` persisted the presented view on every
+    /// present, so quitting with a panel open recorded the panel — and the covered view is not
+    /// persisted, so the next launch restored a playlist with no player and no route to one.
+    /// `WoW` opens its playlist exactly this way, and it was reported as "the skin is empty and
+    /// shows no player or skin windows".
+    func testAViewOpenedOverThePlayerIsNotPersistedAsTheSessionView() async throws {
+        let (controller, defaults, cleanup) = try await controller(wms: """
+        <THEME>
+          <VIEW id="main" width="120" height="80">
+            <SUBVIEW id="btn" left="0" top="0" width="120" height="80" backgroundColor="#224466"
+                     onClick="JScript:theme.openView('panel');"/>
+          </VIEW>
+          <VIEW id="panel" width="100" height="60">
+            <SUBVIEW left="0" top="0" width="100" height="60" backgroundColor="#112233"/>
+          </VIEW>
+        </THEME>
+        """, filename: "Phase9Opened.wmz")
+        defer { cleanup() }
+        try await waitUntil { controller.window?.contentView is WMPMainView }
+        XCTAssertEqual(defaults.string(forKey: WMPSkinImporter.selectedViewIDKey), "main")
+
+        // Through the view's own callback, which is the path a real click takes.
+        let view = try XCTUnwrap(controller.window?.contentView as? WMPMainView)
+        view.onScriptEvent?("click", "btn", nil)
+        try await waitUntil { controller.selectedViewID == "panel" }
+        XCTAssertEqual(defaults.string(forKey: WMPSkinImporter.selectedViewIDKey), "main",
+                       "the covering view is presented and not recorded, so the next launch still "
+                       + "opens on the player")
+        controller.prepareForUITeardown()
+        controller.window?.close()
+    }
+
     /// A view that blanks itself in the `onLoad` this path now runs must not become the window.
     /// `Halo 2` opens on a store-thumbnail `previewView` whose handler sets `view.width = 0` and
     /// redirects; presenting it leaves an empty window the size of a thumbnail. Initial load already

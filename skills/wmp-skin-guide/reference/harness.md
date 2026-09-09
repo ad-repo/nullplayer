@@ -199,6 +199,22 @@ identity, so any interleaving of them is inferred; a sequence number makes it re
 one would have to be — and the thing worth keeping is the technique, not the instrument. When a
 transaction-level defect resists two readings of the trace, number them rather than reason harder.
 
+### Read the probe for what is *absent*
+
+`WMP_RENDER_PROBE` is normally read as "is this node's frame right". W95 was found by reading it the
+other way: `WoW`'s `plView` printed a `WIDGET` line for its edit box and its list box and **no line
+at all** for `playlist1` — no `PROBE` row either, so the node was not merely mispositioned, it was
+never in the scene. That is a different class from every defect the probe was built for, and it is
+invisible in a screen capture, where a missing control and a control drawn empty look the same: the
+authored `backgroundImage` still painted a white slab where the rows should have been.
+
+The check is cheap and worth making the first move on any "this control does nothing" report: grep
+the probe for the element's authored id. Nothing back means the walk dropped it, and the reasons it
+can are few — a falsy `visible` (an override, a `wmpprop:` binding, or the literal), an empty frame,
+or an ancestor that went first. `RENDER-DUMP`'s `N nodes, N commands, N hits, N widgets` counts are
+the same signal one level up; a `widgets` count lower than the controls you can see in the markup is
+the same finding without needing the id.
+
 **Shorten a long intro with the skin's own preference rather than waiting it out.** `Alienware
 Invader` plays 568 frames before it reveals anything, which is minutes per launch in a debug build.
 Its own script skips to frame 362 when `theme.loadPreference('soundFX')` is `"false"`, and skin

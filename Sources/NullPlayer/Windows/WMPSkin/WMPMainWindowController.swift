@@ -400,7 +400,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         window?.hasShadow = false
         window?.invalidateShadow()
         Self.traceInput("present-view \(scene.viewID) canvas=\(scene.canvasSize) commands=\(scene.commands.count)")
-        importer.defaults.set(scene.viewID, forKey: WMPSkinImporter.selectedViewIDKey)
+        // **Only the base view is the session's view.** `theme.openView` opens a *second* window in
+        // WMP and this app presents it in the one window it has (`CoveredView`), so persisting the
+        // presented view here recorded a panel as the thing to restore. `WoW` opens its playlist
+        // with `theme.openView('plView')`; quitting with it open persisted `plView`, and the next
+        // launch restored a playlist panel with an empty listbox and **no player at all** — the
+        // covered view is not persisted, so nothing could close back to it. Reported as "the skin
+        // is empty and shows no player". A covering view is presented and not recorded; the base
+        // view is rewritten when `closeView` pops back to it.
+        if openedViewStack.isEmpty {
+            importer.defaults.set(scene.viewID, forKey: WMPSkinImporter.selectedViewIDKey)
+        }
         setViewTimer(milliseconds: Self.authoredTimerInterval(in: skin, viewID: scene.viewID))
 
         let view = mainView ?? WMPMainView(frame: .zero)

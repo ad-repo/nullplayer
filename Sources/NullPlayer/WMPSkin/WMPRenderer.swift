@@ -60,11 +60,24 @@ struct WMPRenderer: @unchecked Sendable {
         var bounds: WMPRect?
         var endsAt: TimeInterval? = 0
         for command in scene.commands {
+            let visible = command.clipRect.flatMap { command.frame.intersection($0) } ?? command.frame
+            // A marquee is an animation like any other, and it is the only one a skin turns on from
+            // script rather than by naming a GIF. It never ends while it is on, so it makes the
+            // scene endless — and its bounds are its own box, which is why the repaint stays cheap.
+            if case let .text(text) = command.paint, text.scrolling,
+               WMPTextMetrics.width(of: text.value, fontName: text.fontName,
+                                    fontSize: text.fontSize, bold: text.bold,
+                                    italic: text.italic) > command.frame.width {
+                let delay = max(1, text.scrollDelayMilliseconds) / 1_000
+                shortest = min(shortest ?? delay, delay)
+                bounds = bounds.map { $0.union(visible) } ?? visible
+                endsAt = nil
+                continue
+            }
             guard case let .image(specification) = command.paint,
                   let animation = try? imageStore.animation(for: specification.resourcePath),
                   let delay = animation.delays.min() else { continue }
             shortest = min(shortest ?? delay, delay)
-            let visible = command.clipRect.flatMap { command.frame.intersection($0) } ?? command.frame
             bounds = bounds.map { $0.union(visible) } ?? visible
             // One endless animation makes the whole scene endless; otherwise the scene stops when
             // its longest-running one does.
@@ -187,7 +200,7 @@ struct WMPRenderer: @unchecked Sendable {
                     drawImage(sourceImage, in: command.frame, context: context)
                 }
             case let .text(text):
-                draw(text, in: command.frame, context: context)
+                draw(text, in: command.frame, context: context, clock: clock)
             }
             context.restoreGState()
         }
@@ -247,45 +260,68 @@ struct WMPRenderer: @unchecked Sendable {
         }
     }
 
-    private func draw(_ text: WMPSceneText, in frame: WMPRect, context: CGContext) {
+    /// The gap between the tail of a marquee and the head of its repeat, in skin pixels. WMP leaves
+    /// clear air between the two so a wrapping string does not read as one run-on word.
+    private static let marqueeGap: CGFloat = 16
+
+    private func draw(_ text: WMPSceneText, in frame: WMPRect, context: CGContext,
+                      clock: TimeInterval) {
         // `fontStyle` is a space- or comma-separated set, not one word: the corpus writes
         // "bold underline" and "UNDERLINE, bold" as well as each alone. Bold and italic are a face
         // request; underline is a decoration CoreText draws for us.
-        var suffix = ""
-        if text.bold { suffix += " Bold" }
-        if text.italic { suffix += " Italic" }
-        let font = CTFontCreateWithName((text.fontName + suffix) as CFString, text.fontSize, nil)
+        let font = WMPTextMetrics.font(text.fontName, size: text.fontSize,
+                                       bold: text.bold, italic: text.italic)
         let color = CGColor(red: CGFloat(text.color.red) / 255,
             green: CGFloat(text.color.green) / 255, blue: CGFloat(text.color.blue) / 255, alpha: 1)
-        var attributes: [NSAttributedString.Key: Any] = [
-            NSAttributedString.Key(kCTFontAttributeName as String): font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color
-        ]
-        if text.underline {
-            attributes[NSAttributedString.Key(kCTUnderlineStyleAttributeName as String)] =
-                CTUnderlineStyle.single.rawValue
-        }
         // `fontSmoothing="false"` is a readout the skin drew as pixels; antialiasing it turns a
         // 6 px digit into grey mush.
         context.setShouldAntialias(text.smoothed)
         context.setShouldSmoothFonts(text.smoothed)
-        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text.value,
-                                                                        attributes: attributes))
+        let line = WMPTextMetrics.line(text.value, font: font, color: color,
+                                       underline: text.underline)
         let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-        let x: CGFloat
-        switch text.alignment {
-        case .left: x = frame.x
-        case .center: x = frame.x + max(0, (frame.width - width) / 2)
-        case .right: x = frame.maxX - min(frame.width, width)
-        }
         let baseline = frame.y + max(text.fontSize, (frame.height + text.fontSize) / 2)
         let centerY = frame.y + frame.height / 2
         context.saveGState()
+        // **A `<TEXT>` is a box, and the clip is horizontal only.** WMP clips its text to the
+        // element's frame; drawing it unclipped let `WoW`'s 77x30 `metadata` readout paint
+        // "- AC/DC - Shoot to Thrill / Playing" straight across the player's buttons, and it is
+        // what a marquee has to be drawn inside. The *vertical* half is deliberately left open:
+        // a skin routinely authors a row of links shorter than their own line box —
+        // `v2_underworld`'s About page is eight of them — and this engine's baseline is derived
+        // from `fontSize` rather than from the face's real metrics, so clipping to the authored
+        // height shaved those to a sliver. Cut the overflow that is measured here; leave the one
+        // that is not.
+        context.clip(to: CGRect(x: frame.cgRect.minX, y: -.greatestFiniteMagnitude / 2,
+                                width: frame.cgRect.width, height: .greatestFiniteMagnitude))
         context.translateBy(x: 0, y: centerY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -centerY)
-        context.textPosition = CGPoint(x: x, y: baseline)
-        CTLineDraw(line, context)
+        // A marquee only runs when the skin asked for one *and* there is something to reveal;
+        // scrolling a string that already fits would just jitter a static readout.
+        if text.scrolling, width > frame.width {
+            let period = width + Self.marqueeGap
+            let step = max(1, text.scrollDelayMilliseconds) / 1_000
+            let travelled = (clock / step) * Double(text.scrollAmount)
+            var offset = CGFloat(travelled.truncatingRemainder(dividingBy: Double(period)))
+            if offset < 0 { offset += period }
+            // Two draws, one period apart, so the tail and the head of the next pass are both on
+            // screen through the wrap and the readout never blanks.
+            for repetition in 0...1 {
+                context.textPosition = CGPoint(x: frame.x - offset + period * CGFloat(repetition),
+                                               y: baseline)
+                CTLineDraw(line, context)
+            }
+        } else {
+            let x: CGFloat
+            switch text.alignment {
+            case .left: x = frame.x
+            case .center: x = frame.x + max(0, (frame.width - width) / 2)
+            case .right: x = frame.maxX - min(frame.width, width)
+            }
+            context.textPosition = CGPoint(x: x, y: baseline)
+            CTLineDraw(line, context)
+        }
         context.restoreGState()
     }
 }

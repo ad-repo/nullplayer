@@ -100,6 +100,14 @@ struct WMPSceneBuilder: @unchecked Sendable {
         var unresolvedAttributes = Set<String>()
         var resolvedNodes = Set<Int>()
         var layoutResolver = WMPInitialLayoutResolver(graph: loadedSkin.graph, view: view, canvas: canvas)
+        // Folded element id to node, for the view being built. `wmpprop:` paths that name another
+        // element resolve through this; the first id wins, matching the duplicate-id rule.
+        var idToNode: [String: WMPNode] = [:]
+        func indexIDs(_ node: WMPNode) {
+            if let id = node.xmlID?.lowercased(), idToNode[id] == nil { idToNode[id] = node }
+            node.children.forEach(indexIDs)
+        }
+        indexIDs(view)
 
         func literalString(_ node: WMPNode, _ name: String) -> String? {
             if let value = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
@@ -109,6 +117,27 @@ struct WMPSceneBuilder: @unchecked Sendable {
             guard let attribute = node.attribute(named: name),
                   case let .literal(value) = attribute.value else { return nil }
             return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        /// A `visible="wmpprop:<element>.<property>"` answered from the skin's own graph, or nil
+        /// when the path names no element here — `WoW` writes `wmpprop:plMode.visible`, and
+        /// `plMode` is a name WMP's own object model owns and this skin never declares. Nil means
+        /// *no answer*, which leaves the authored value standing; it is never the answer "hidden".
+        /// Bounded to one hop: a mirror of a mirror is not authored anywhere in the corpus.
+        func mirroredVisibility(of node: WMPNode) -> Bool? {
+            guard let attribute = node.attribute(named: "visible"),
+                  case let .binding(kind, path) = attribute.value, kind == .property else { return nil }
+            let parts = path.split(separator: ".", maxSplits: 1)
+            guard parts.count == 2,
+                  let target = idToNode[String(parts[0]).lowercased()] else { return nil }
+            let property = String(parts[1]).lowercased()
+            if let override = overrides.properties[WMPScenePropertyAddress(stableID: target.stableID,
+                                                                           property: property)] {
+                return override.truth
+            }
+            guard let mirrored = target.attribute(named: property) else { return nil }
+            guard case let .literal(value) = mirrored.value else { return nil }
+            return value.caseInsensitiveCompare("false") != .orderedSame && !value.isEmpty
         }
 
         func recordUnresolved(_ node: WMPNode, attribute: String, value: String) {
@@ -218,6 +247,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if let override = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
                                                                           property: "visible")] {
                 if !override.truth { return }
+            } else if let mirrored = mirroredVisibility(of: node) {
+                // **A `wmpprop:` path can name another element in the same skin, not only a host
+                // property.** 150 of the corpus's `visible="wmpprop:…"` attributes do: `WoW` hangs
+                // its CD-rip bar off `wmpprop:playlist2.visible`, and 8 skins share that exact
+                // line. Resolving it here is what keeps the bar hidden now that an *unanswerable*
+                // path no longer resolves to a falsy empty string.
+                if !mirrored { return }
             } else if literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame {
                 return
             }
@@ -466,7 +502,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     smoothed: literalString(node, "fontSmoothing")?.caseInsensitiveCompare("false") != .orderedSame,
                     color: (disabled ? color(node, names: ["disabledForegroundColor"]) : nil)
                         ?? color(node, names: ["foregroundColor", "color"])
-                        ?? WMPColor(red: 255, green: 255, blue: 255), alignment: alignment)
+                        ?? WMPColor(red: 255, green: 255, blue: 255), alignment: alignment,
+                    scrolling: literalString(node, "scrolling")?.caseInsensitiveCompare("true")
+                        == .orderedSame,
+                    scrollDelayMilliseconds: Double(literal(node, "scrollingDelay") ?? 100),
+                    scrollAmount: max(1, literal(node, "scrollingAmount") ?? 1))
                 commands.append(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .text(text), alpha: alpha))

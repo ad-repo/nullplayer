@@ -141,6 +141,18 @@ load-bearing:
 * The endpoint is clamped to 0-255. The builder normalises by dividing by 255, so an unclamped
   endpoint would multiply a subtree's inherited alpha past opaque.
 
+`textWidth` is **measured**, not stored. It is the one element property whose answer this engine has
+to compute, because 92 of the 180 archives use it to decide whether to marquee —
+`metadata.scrolling = (metadata.textWidth > metadata.width)` is the idiom, and `WoW` runs it on every
+metadata change. Falling into the open property surface answered the unset-numeric `0`, so every one
+of those skins concluded its text fits and the marquee could never start. It measures the element's
+*live* `value` in its live `fontFace`/`fontSize`/`fontStyle` through `WMPTextMetrics`, which is the
+same code the renderer lays the line out with — the comparison has to be against what is drawn, and
+a second measurement path would drift from it. `scrolling`, `scrollingDelay` and `scrollingAmount`
+are in `standardElementProperties`/`standardNumericProperties` for the reason `alphaBlend` is:
+`WoW`'s markup authors the two numbers and never `scrolling`, so a write to it would otherwise be
+stored inert and never reach the scene.
+
 `setColumnWidth` is recognised so it stops aborting the handler that calls it, and counted
 **`inert()`**: nothing draws playlist columns. `setColumnResizeMode` predates the `inert` convention
 and is still counted live; that is a known inconsistency, not a statement that a resize mode does

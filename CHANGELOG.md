@@ -19,6 +19,18 @@
 
 ### Bug Fixes
 
+- **A Media Player skin no longer opens on an empty panel with no player** — closing NullPlayer with
+  a skin's playlist or equalizer panel open recorded that panel as the window to restore, and the
+  next launch came up on it with no way back to the player. Only the player view is remembered now.
+  If you have hit this, the affected skin opens correctly again from the next launch after this
+  build.
+- **A Media Player skin's playlist shows your tracks again** — on skins that hang their playlist off
+  a Media Player property this app does not answer, the playlist control was being dropped from the
+  window entirely, so it stayed empty however many tracks were queued. Affects `WoW`, `LostPlanet`,
+  `STALKER`, `Constantine` and `Alienware Invader`, among others.
+- **Now Playing text stays inside the readout and scrolls when it overflows** — a long title used to
+  be drawn straight across the rest of the skin. It is clipped to the box the skin drew for it and
+  marquees when it does not fit, which is what the skin asks for.
 - **Sonos no longer receives audio above its 48 kHz limit** — the compatibility gate now rejects
   any track with a known or resolved sample rate above 48 kHz, even when its URL extension or MIME
   type is unrecognized. Local files with unusual extensions are probed before casting, and Plex
