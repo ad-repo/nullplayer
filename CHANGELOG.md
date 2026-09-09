@@ -19,6 +19,21 @@
 
 ### Bug Fixes
 
+- **A Media Player skin's own playlist drawer shows your tracks** — skins that write their playlist
+  in Media Player's `ITEMSPLAYLIST` form had the control recognized as the skin's own, so no second
+  NullPlayer playlist opened over it, but nothing was ever drawn inside it either. The drawer was
+  simply empty. It now holds the playlist. Affects `corona`, `pharaoh`, `gadget`, `gnome`, `claw`,
+  `anemone`, `aoe`, `Optik` and five others.
+- **Skins that animate now finish what they start** — a skin chains each step of an animation from
+  the end of the one before it, and this app was never signalling that a step had finished, so
+  sequences stopped after the first move. Players that came up as a closed shell with no controls
+  at all now open properly, including the `US Air Force`, `US Army`, `US Coast Guard`,
+  `US Marine Corps` and `US Navy` skins, `Secura` and `Stars and Stripes`. Slide-out drawers of
+  video and equalizer settings now open and close correctly on the skins that have them, and
+  correctly start closed rather than leaving their controls stranded on the window.
+- **Dragging a Media Player skin's seek bar commits the seek when you let go** — skins that scrub
+  the thumb while you drag and jump to the new position on release were never being told the drag
+  had ended, so the position was not applied.
 - **A Media Player skin no longer opens on an empty panel with no player** — closing NullPlayer with
   a skin's playlist or equalizer panel open recorded that panel as the window to restore, and the
   next launch came up on it with no way back to the player. Only the player view is remembered now.

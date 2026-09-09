@@ -1154,13 +1154,26 @@ enum WMPHarness {
             if let rebuilt = try? await builder.build(viewID: viewID, requestedSize: probe.requestedSize,
                                                       overrides: output.overrides) {
                 scene = rebuilt
+                // Widgets are on this line because the defects this probe is pointed at are
+                // increasingly "did the control the click was supposed to reveal actually get
+                // hosted" — a drawer that opens onto nothing changes no command count (W55, W97).
                 WMPHarnessOutput.emit("CLICK \(where_) after: \(rebuilt.commands.count) commands, "
+                    + "\(rebuilt.widgets.count) widgets[\(Self.widgetTally(rebuilt.widgets))], "
                     + "\(rebuilt.metrics.unresolvedNodeCount) unresolved")
             }
         }
         return scene
     }
 
+
+    /// Widget kinds and how many of each, so a `CLICK` that reveals a control says *which* kind
+    /// arrived. Corona's drawer turns on a `PLAYLIST` and a `DROPDOWNPLAYLIST` in one handler, and
+    /// a bare count cannot tell you which of the two the engine actually hosted (W55, W97).
+    private static func widgetTally(_ widgets: [WMPWidget]) -> String {
+        var counts: [String: Int] = [:]
+        for widget in widgets { counts["\(widget.kind)", default: 0] += 1 }
+        return counts.sorted { $0.key < $1.key }.map { "\($0.key)×\($0.value)" }.joined(separator: " ")
+    }
 
     // MARK: Hover (W54)
 
@@ -1527,6 +1540,30 @@ enum WMPHarness {
                 + "thumb=\(thumb.map(rectText) ?? "-")")
         }
 
+        // **The release, which is where a seek is actually committed** (W55). `WMPMainView.mouseUp`
+        // raises `dragend` for a captured slider, so a drag driven here that stopped at the last
+        // move would measure a different engine — and `onDragEnd` is authored only on sliders, 111
+        // of its 141 sources being `player.controls.currentPosition = value`. The host command it
+        // posts is the thing to read: that is the seek this drag asked for.
+        if let session = pass.session {
+            let handlers = await MainActor.run {
+                WMPMainWindowController.handlers(in: skin, event: "dragend", targetID: nil,
+                                                 targetStableID: target.stableID, viewID: viewID)
+            }
+            if !handlers.isEmpty {
+                let output = await session.transact(skin: skin, viewID: viewID,
+                    size: scene.canvasSize, snapshot: WMPHostSnapshot(),
+                    event: WMPJScriptEvent(name: "onDragEnd", targetID: target.nodeID,
+                                           handlers: handlers),
+                    geometry: scene.scriptGeometry)
+                WMPHarnessOutput.emit("DRAG \(where_) dragend handlers=\(handlers.count) "
+                    + "commands=[\(output.hostCommands.map { "\($0.action)=\($0.value?.string ?? "-")" }.joined(separator: ","))]")
+                for diagnostic in output.diagnostics {
+                    WMPHarnessOutput.emit("DRAG \(where_) dragend [\(diagnostic.code)] \(diagnostic.message)")
+                }
+            }
+        }
+
         // Monotonic **against the pointer**, not in the abstract: a vertical slider's value rises
         // as `y` falls, so the expected sign comes from the path, and a drag that doubles back is
         // reported as `mixed` rather than failed.
@@ -1599,7 +1636,7 @@ enum WMPHarness {
 
     private static let supportedTags: Set<String> = [
         "theme", "view", "subview", "text", "image", "button", "buttongroup", "buttonelement",
-        "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "dropdownplaylist",
+        "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "itemsplaylist", "dropdownplaylist",
         "playelement", "pausebutton", "stopelement", "prevelement", "nextelement", "rewbutton",
         "rewelement", "ffwdbutton", "ffwdelement", "returnbutton", "shufflebutton",
         "equalizersettings", "popup", "wmpeffects", "video", "wmpvideo", "player", "network", "script"

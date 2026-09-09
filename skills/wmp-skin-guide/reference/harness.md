@@ -201,6 +201,22 @@ transaction-level defect resists two readings of the trace, number them rather t
 
 ### Read the probe for what is *absent*
 
+**A widget is not in the PNG, so a sweep that compares only images cannot see one appear or go.**
+W55 changed 57 views' widget counts corpus-wide — 1,863 to 1,711 — while moving **22 images**, and
+the two facts are not in conflict: playlists, sliders, popups, edit boxes and effects surfaces are
+AppKit overlays the scene image never contains. Read `widgets` out of `RENDER-DUMP` and the
+`CLICK … after:` tally alongside the image diff, or a drawer that opens onto nothing reads as a
+clean sweep. That is the same blind spot W71 measured for overlay *painting*, in a different
+direction: W71 asked whether an overlay painted where the scene did not, this asks whether it exists
+at all. `CLICK … after:` names the kinds for that reason — Corona's drawer turns on a `PLAYLIST` and
+a `DROPDOWNPLAYLIST` in one handler, and a bare count cannot say which one the engine hosted.
+
+**A drag that stops at the last move measures a different engine than the app.** `WMPMainView.mouseUp`
+raises `dragend` for a captured slider, so the harness's drag does too, and the host command on that
+line is the seek the drag asked for (W55). With no media loaded the snapshot's duration is 0, so the
+value is 0 and `follows-pointer` reads `flat`: that is the empty snapshot, not the dispatch. Read
+`handlers=` and `commands=[…]` to tell a handler that ran from one that was never found.
+
 `WMP_RENDER_PROBE` is normally read as "is this node's frame right". W95 was found by reading it the
 other way: `WoW`'s `plView` printed a `WIDGET` line for its edit box and its list box and **no line
 at all** for `playlist1` — no `PROBE` row either, so the node was not merely mispositioned, it was
@@ -306,9 +322,11 @@ EXPR <view>/<id>.<prop> #<order>: <source> -> <static> live=<live> deps=[…]
 CALL <view> <path> <read|write|invoke> value=<v> <ok|INERT|UNRECOGNISED>
 CALLS <view> <path> ×<n> <ok|INERT|UNRECOGNISED>
 CLICK <view>@x,y hit=<id>#<stableID> kind=<k> action=<a> sticky=<b> handlers=<n>
-CLICK <view>@x,y changed=[…] | command=<…> | unrecognised=[…] | after: <…> | MISS
+CLICK <view>@x,y changed=[…] | command=<…> | unrecognised=[…] | MISS
+CLICK <view>@x,y after: <n> commands, <n> widgets[<kind>×<n> …], <n> unresolved
 DRAG <view>@x,y>x,y hit=<id>#<sid> kind=<k> slider=<b> direction=<d> min=<m> max=<M> border=<b> steps=<n>
 DRAG <view>@x,y>x,y step=<i> at=<x>,<y> value=<v> drawn=<v> thumb=<rect>
+DRAG <view>@x,y>x,y dragend handlers=<n> commands=[<action>=<value>,…]
 DRAG <view>@x,y>x,y value <v> -> <v> follows-pointer=<yes|no|flat> thumb-travel=<px>
 DRAG <view>@x,y>x,y MISS | not-a-slider — no value tracking to measure
 HOVER <view>@x,y <onMouseOut|onMouseOver> <id>#<stableID> kind=<k> handlers=<n>

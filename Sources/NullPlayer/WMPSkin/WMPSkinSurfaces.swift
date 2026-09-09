@@ -59,10 +59,11 @@ struct WMPSkinSurfaces: Equatable, Sendable {
 
     /// Matched on the **authored tag name**, not only on `WMPElementKind`.
     ///
-    /// `ITEMSPLAYLIST` is a playlist the object model does not model yet — Corona's drawer is one —
-    /// so it resolves to `.unknown` and a kind-only test would report that skin as owning no
-    /// playlist and open ours on top of it. What decides this routing is what the skin *declares*,
-    /// not how much of it this engine hosts today; any tag ending in `PLAYLIST` is a playlist.
+    /// `ITEMSPLAYLIST` resolved to `.unknown` when this was written — Corona's drawer is one — so a
+    /// kind-only test reported that skin as owning no playlist and opened ours on top of it. It is
+    /// `.playlist` since W97 and the first case now catches it, but the tag rule is deliberately
+    /// kept: what decides this routing is what the skin *declares*, not how much of it this engine
+    /// hosts today, so any tag ending in `PLAYLIST` is a playlist here even before it is one there.
     private static func matches(_ surface: WMPSkinSurface, _ node: WMPNode) -> Bool {
         let tag = node.authoredTagName.uppercased()
         switch surface {

@@ -86,6 +86,12 @@ final class WMPObjectModel {
     private(set) var hostCommands: [WMPJScriptHostCommand] = []
     private(set) var preferenceWrites: [WMPJScriptPreferenceMutation] = []
     private(set) var repaintHints: [String] = []
+    /// Elements whose `moveTo`/`alphaBlendTo` endpoint landed this transaction, in call order, as
+    /// `(stableID, event)`. `WMPScriptContext.raiseCompletionHandlers` turns each into the
+    /// `onEndMove`/`onEndAlphaBlend` the skin authored — the callback a sequence chains its next
+    /// step from (W55). Recorded here rather than dispatched here because the model has no view
+    /// plan and therefore no handler sources; it knows only that a call completed.
+    private(set) var completions: [(stableID: Int, event: String)] = []
     private(set) var diagnostics: [WMPJScriptDiagnostic] = []
     /// Reads made since the last `beginDependencyCapture()`, in order. One expression's dependency
     /// list; the topological sort is built out of these.
@@ -107,6 +113,7 @@ final class WMPObjectModel {
         repaintHints.removeAll(keepingCapacity: true)
         diagnostics.removeAll(keepingCapacity: true)
         dependencyReads.removeAll(keepingCapacity: true)
+        completions.removeAll(keepingCapacity: true)
     }
 
     func beginDependencyCapture() {
@@ -523,9 +530,10 @@ final class WMPObjectModel {
         "next", "previous"
     ]
 
-    /// `PLAYLIST`, `DROPDOWNPLAYLIST` and the `ITEMSPLAYLIST` the corpus actually ships — the last
-    /// is not a modelled element kind yet, and its column setup is the first thing Corona's
-    /// `OnLoad` does, so refusing it there costs the whole handler.
+    /// `PLAYLIST`, `DROPDOWNPLAYLIST` and the `ITEMSPLAYLIST` the corpus actually ships. The last
+    /// now parses as `.playlist` (W97), so the first case answers it; the suffix rule stays because
+    /// it is what let Corona's `OnLoad` reach its column setup before the kind existed, and it
+    /// still covers any `*PLAYLIST` spelling the corpus has not shown us.
     static func isPlaylist(_ kind: WMPElementKind) -> Bool {
         switch kind {
         case .playlist, .dropdownPlaylist: return true
@@ -772,6 +780,7 @@ final class WMPObjectModel {
         case (_, "moveto"):
             _ = writeElement(element, "left", .number(arguments.first?.number ?? 0))
             _ = writeElement(element, "top", .number(arguments.count > 1 ? (arguments[1].number ?? 0) : 0))
+            completions.append((element.stableID, "endmove"))
             return .value(.null)
         case (_, "resizeto"):
             _ = writeElement(element, "width", .number(max(0, arguments.first?.number ?? 0)))
@@ -786,6 +795,7 @@ final class WMPObjectModel {
         case (_, "alphablendto"):
             _ = writeElement(element, "alphablend",
                              .number(min(255, max(0, arguments.first?.number ?? 0))))
+            completions.append((element.stableID, "endalphablend"))
             return .value(.null)
         // Nothing draws playlist columns, so this stores what the skin asked for and is counted
         // inert — the census keeps ranking the demand instead of losing it to a working-looking

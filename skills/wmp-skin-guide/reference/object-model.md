@@ -112,15 +112,68 @@ and refusing `hoverFontStyle` on a `TEXT` would abort the handler that sets it, 
 the whole of `InitControls`. An unauthored, undrawn property is stored and answers `inert`, so the
 census can rank "properties skins set that nothing renders" instead of losing them.
 
+### Playlist kinds
+
+`WMPElementKind` models three spellings and they are not interchangeable. `PLAYLIST` and
+`ITEMSPLAYLIST` are both **lists** and both map to `.playlist`; `DROPDOWNPLAYLIST` is a chooser and
+maps to `.dropdownPlaylist`, which is hosted as an `NSPopUpButton`.
+
+**`ITEMSPLAYLIST` maps onto `.playlist` wholesale, and the corpus is the evidence rather than the
+name** (W97). 13 of the 179 measured archives declare one — `corona`, `Optik`, `anemone`, `aoe`,
+`bluegrid`, `cerulean`, `claw`, `Cubist`, `gadget`, `gnome`, `modernblue`, `pharaoh`, `polygon` —
+and **not one declares a `PLAYLIST` beside it**, so it is the only playlist those skins have. Every
+one authors list geometry (226x174, 187x139, 155x116 …) and `PLAYLIST`'s own attribute vocabulary:
+`backgroundColor`, `foregroundColor`, `itemPlayingColor`, `backgroundImage`. A separate kind would
+have bought nothing. While it fell to `.unknown` it never became a `WMPWidget`, so W93's routing —
+which correctly stands NullPlayer's own playlist aside whenever the skin declares one — left those
+users with an empty drawer.
+
+`dropdownVisible` (12 of the 13) asks for a playlist *chooser* above the rows. It is unhonoured
+here exactly as it is on `PLAYLIST`, because it needs `player.mediaCollection` — that is W66's
+question, and faking it with playlists this player invented is the thing W66 exists to refuse.
+
+**Recognition for routing is deliberately wider than the modelled kinds.** `WMPSkinSurfaces` matches
+on the authored tag, so any tag ending in `PLAYLIST` counts as a skin-owned playlist even before it
+is a kind here. What decides routing is what the skin *declares*, not how much of it this engine
+hosts today — and keeping the two rules separate is what stops a future spelling from opening a
+second, foreign-looking window on top of a drawer the skin draws itself.
+
+## Methods
+
 The **method** surface is closed. `WMPObjectModel.elementMethodVocabulary` lists the names WMP
 defines as element methods; one of those that this engine does not implement stays `unrecognised`
 rather than falling into the open property surface. Without that, `svPlaylist.moveTo(…)` reads as an
 empty string, dies with a bare `TypeError`, and never appears in the tally that ranks the work.
 
 Implemented today: `moveTo`, `resizeTo`, `alphaBlendTo` (endpoint applied immediately — the tween is
-*not* drawn yet, and its `onEndMove`/`onEndAlphaBlend` completion is W55),
+*not* drawn yet, but the **completion now fires**, see below),
 `appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` and `setColumnWidth` on the
-playlist kinds including the unmodelled `ITEMSPLAYLIST`, and `close`/`minimize` on the view.
+playlist kinds — `ITEMSPLAYLIST` among them, and it is a modelled `.playlist` kind since W97 —
+and `close`/`minimize` on the view.
+
+**A call that lands its endpoint completes in the same transaction (W55).** `WMPObjectModel` records
+`(stableID, event)` on every `moveTo` and `alphaBlendTo`; `WMPScriptContext.raiseCompletionHandlers`
+turns each into the `onEndMove`/`onEndAlphaBlend` the markup authored, before the geometry cascade so
+a chained step's writes still propagate, bounded by `WMPPhase0Limits.expressionPasses` and once per
+`(element, event)` so a handler that moves something again cannot spin. WMP tweens over the call's
+third argument and completes when the tween ends; this engine arrives instantly, so the honest
+completion is now. **`onEndResize` is deliberately absent: zero archives author one**, so it would be
+a dispatch site with nothing to prove it. Measured over 179 archives: `onEndMove` 247 uses / 113
+skins, `onEndAlphaBlend` 50 / 21.
+
+Without this a skin's sequence stopped after step one, and the drawer template Microsoft shipped is
+built out of it: `toggleVidDrawer()` slides the drawer and `onEndMove="checkVidDrawer()"` is the only
+thing that shows or hides its contents. 36 corpus views were drawing a drawer's controls stranded
+outside a drawer that had already slid shut.
+
+**An event handler reads its target's `value` as a bare name.** WMP evaluates a handler against the
+element that raised it. `WMPScriptContext` binds that one identifier for the duration of the event
+and clears it after, rather than scoping the whole element: 111 of the 141 `onDragEnd` sources are
+`player.controls.currentPosition = value`, and a bare *assignment* like `toolTip='Seek'` (6 uses)
+creates a global and costs nothing either way — so only reads were ever blocked, and `with(element)`
+would change name resolution for every handler in the corpus to buy those six. `onDragEnd` itself is
+raised by `WMPMainView.mouseUp` for a captured slider, which is where a seek is actually committed;
+it is authored only on `SLIDER` (125) and `CUSTOMSLIDER` (16).
 
 `WMPObjectModel.implementedElementMethods` is the flat set of those names, and
 `WMPJScriptCompatibility.members["element"]` is derived from it rather than restating it. That

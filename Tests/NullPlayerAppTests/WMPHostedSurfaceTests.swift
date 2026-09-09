@@ -192,6 +192,23 @@ final class WMPHostedSurfaceTests: XCTestCase {
         XCTAssertTrue(WMPSkinSurfaces(skin: loaded).view("main", provides: .playlist))
     }
 
+    /// **Recognising `ITEMSPLAYLIST` for routing is only half of it — it has to become a widget.**
+    /// W93 stood NullPlayer's playlist aside whenever the skin declared one, and `ITEMSPLAYLIST`
+    /// fell to `.unknown`, so `corona` users got an empty drawer instead of a second window: the
+    /// better failure of the two, and still a failure. 13 of the 179 measured archives declare one
+    /// and **not one of them declares a `PLAYLIST` beside it**, so it is the only playlist those
+    /// skins have (W97).
+    func testAnItemsPlaylistIsAPlaylistWidgetAndNotJustASkinOwnedSurface() async throws {
+        let loaded = try await skin("""
+        <THEME><VIEW id="main" width="300" height="200">
+        <ITEMSPLAYLIST id="ipl" left="10" top="10" width="200" height="150"/></VIEW></THEME>
+        """)
+        let node = try XCTUnwrap(loaded.graph.allNodes.first { $0.xmlID == "ipl" })
+        XCTAssertEqual(node.kind, .playlist,
+                       "the authored tag is retained separately, so mapping the kind loses nothing")
+        XCTAssertEqual(node.authoredTagName.uppercased(), "ITEMSPLAYLIST")
+    }
+
     func testDropdownPlaylistCountsAndASkinDeclaringNeitherSurfaceOwnsNothing() async throws {
         let dropdown = try await skin("""
         <THEME><VIEW id="main" width="20" height="10"><DROPDOWNPLAYLIST id="pl"/></VIEW></THEME>

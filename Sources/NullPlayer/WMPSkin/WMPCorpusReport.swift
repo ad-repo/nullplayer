@@ -276,7 +276,7 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
 
     private static let supportedTags: Set<String> = [
         "theme", "view", "subview", "text", "image", "button", "buttongroup", "buttonelement",
-        "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "dropdownplaylist",
+        "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "itemsplaylist", "dropdownplaylist",
         "playelement", "pausebutton", "stopelement", "prevelement", "nextelement", "rewbutton",
         "rewelement", "ffwdbutton", "ffwdelement", "returnbutton", "shufflebutton",
         "equalizersettings", "popup", "wmpeffects", "video", "wmpvideo", "player", "network", "script"
@@ -310,6 +310,12 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         // skin authoring either spelling is dispatched. `value_onchange` is honest here for the
         // user-driven half only; the host-driven half is open work (W51) and is not claimed by
         // anything else in the engine.
-        "openstate_onchange", "playstate_onchange", "value_onchange"
+        "openstate_onchange", "playstate_onchange", "value_onchange",
+        // The completion callbacks (W55), each with its own dispatch site: `onEndMove` and
+        // `onEndAlphaBlend` are raised by `WMPScriptContext.raiseCompletionHandlers` in the
+        // transaction whose `moveTo`/`alphaBlendTo` landed, `onDragEnd` by `WMPMainView.mouseUp`
+        // when a captured slider is released. `onEndResize` is not listed and not implemented:
+        // zero archives author one, so there is nothing to dispatch it for.
+        "onendmove", "onendalphablend", "ondragend"
     ]
 }

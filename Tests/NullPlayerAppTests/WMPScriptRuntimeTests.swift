@@ -58,6 +58,110 @@ final class WMPScriptRuntimeTests: XCTestCase {
                        + "same transaction — 50, never the 110 it was drawn at")
     }
 
+    /// **A `moveTo` completes in the transaction that called it, and the skin chains from there**
+    /// (W55). `corona`'s playlist drawer is the case that named the row: `TogglePlaylist()` only
+    /// slides `svPlaylist`, and the list inside it is revealed solely by
+    /// `onEndMove="ddpl.visible=ipl.visible=g_playlistIsVisible;"`. The endpoint already landed
+    /// immediately (W38), so the honest completion of an instant move is now.
+    func testAMoveToRaisesOnEndMoveInTheSameTransaction() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="drawer" left="200" top="0" width="100" height="100"
+                     onEndMove="list.visible = true;"/>
+            <SUBVIEW id="list" left="0" top="0" width="50" height="50" visible="false"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10"
+                    onClick="drawer.moveTo(0, 0, 400);"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        func stableID(_ id: String) throws -> Int {
+            try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == id }?.stableID)
+        }
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go",
+                                   handlers: ["drawer.moveTo(0, 0, 400);"]))
+        XCTAssertEqual(output.overrides.properties[.init(stableID: try stableID("list"),
+                                                         property: "visible")], .bool(true),
+                       "the drawer's onEndMove must have run, or it opens onto nothing")
+    }
+
+    /// `alphaBlendTo` is the other call with a completion, and the Alienware/ALX family chains its
+    /// artwork fades from it.
+    func testAnAlphaBlendToRaisesOnEndAlphaBlend() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="art" left="0" top="0" width="100" height="100" alphaBlend="0"
+                     onEndAlphaBlend="next.visible = true;"/>
+            <SUBVIEW id="next" left="0" top="0" width="10" height="10" visible="false"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10"
+                    onClick="art.alphaBlendTo(255, 200);"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let next = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "next" }?.stableID)
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go",
+                                   handlers: ["art.alphaBlendTo(255, 200);"]))
+        XCTAssertEqual(output.overrides.properties[.init(stableID: next, property: "visible")],
+                       .bool(true))
+    }
+
+    /// A completion handler may itself call `moveTo`, so the cascade is bounded the same way the
+    /// geometry one is and a pair of panes that move each other cannot spin the transaction.
+    func testCompletionHandlersCannotLoop() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="a" left="0" top="0" width="10" height="10" onEndMove="b.moveTo(1, 1, 10);"/>
+            <SUBVIEW id="b" left="0" top="20" width="10" height="10" onEndMove="a.moveTo(2, 2, 10);"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10" onClick="a.moveTo(3, 3, 10);"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go",
+                                   handlers: ["a.moveTo(3, 3, 10);"]))
+        XCTAssertFalse(output.overrides.geometry.isEmpty, "the transaction must still commit")
+    }
+
+    /// **A control's handler reads its own `value` as a bare name.** 111 of the 141 `onDragEnd`
+    /// sources in the corpus are `player.controls.currentPosition = value` — the seek commit on
+    /// release — and without the binding every one of them throws on its first statement.
+    func testAnEventHandlerReadsItsTargetsValueAsABareName() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SLIDER id="seek" left="0" top="0" width="100" height="10" max="200"
+                    onDragEnd="player.controls.currentPosition = value;"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let seek = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "seek" }?.stableID)
+        // The app's own order: the view is transacted into existence, the pointer then moves the
+        // control, and the release is the transaction that reads it back. Setting the value before
+        // any transaction writes only the committed override — there is no context to hold it yet.
+        _ = await runtime.transact(skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+                                   snapshot: WMPHostSnapshot(), event: nil)
+        await runtime.setWidgetValue(stableID: seek, value: 42)
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "onDragEnd", targetID: "seek",
+                                   handlers: ["player.controls.currentPosition = value;"]))
+        XCTAssertTrue(output.diagnostics.isEmpty,
+                      "a bare `value` must resolve, not throw: \(output.diagnostics)")
+        XCTAssertEqual(output.hostCommands.first?.action, "seekSeconds")
+        XCTAssertEqual(output.hostCommands.first?.value?.number, 42)
+    }
+
     /// The cascade is bounded and each handler fires once, so two panes that position off one
     /// another cannot spin the transaction.
     func testGeometryChangeHandlersCannotLoop() async throws {

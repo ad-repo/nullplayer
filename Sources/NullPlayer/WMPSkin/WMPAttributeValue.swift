@@ -66,7 +66,19 @@ enum WMPAttributeParser {
         // `height_onchange="svTransports.top=svVideo.top+svVideo.height"` off the video panel their
         // mini player collapses. Without it the transport bar chased the panel one frame behind all
         // the way down and the window visibly tore into two pieces (W87).
-        "height_onchange", "width_onchange", "left_onchange", "top_onchange"
+        "height_onchange", "width_onchange", "left_onchange", "top_onchange",
+        // **The completion half of the animation trio, and the commit half of a drag (W55).**
+        // `moveTo`/`alphaBlendTo` land their endpoint immediately (W38), so what a skin was missing
+        // was the callback that starts the next step: `WMPScriptContext.raiseCompletionHandlers`
+        // raises these in the same transaction as the call that completed. Measured over the 179
+        // archives: `onEndMove` 247 uses / 113 skins, `onEndAlphaBlend` 50 / 21, `onDragEnd`
+        // 141 / 88. **`onEndResize` is deliberately absent: zero uses corpus-wide**, so it would be
+        // a name with a dispatch site and no skin to prove it.
+        //
+        // `onDragEnd` is the other kind — a user gesture, raised from `WMPMainView.mouseUp` — and
+        // it is authored only on `SLIDER` (125) and `CUSTOMSLIDER` (16), where it is the seek
+        // commit: 111 of its 141 sources are `player.controls.currentPosition = value`.
+        "onendmove", "onendalphablend", "ondragend"
     ]
 
     static func parse(name: String, value raw: String) -> WMPAttributeValue {

@@ -30,6 +30,11 @@ struct WMPScriptViewPlan: Sendable {
     /// looked up through the element because these are `.handler` attributes, so they are not in
     /// the element's property bag at all.
     let geometryChangeHandlers: [Int: [String: String]]
+    /// `stableID -> completion event -> handler source`, from the `onEndMove`/`onEndAlphaBlend`
+    /// attributes a skin chains an animation sequence from (W55). Same shape and same reason as
+    /// `geometryChangeHandlers`: these are `.handler` attributes, so they are not in the element's
+    /// property bag.
+    let completionHandlers: [Int: [String: String]]
 
     init(skin: WMPLoadedSkin, viewID: String) {
         self.viewID = viewID
@@ -37,7 +42,7 @@ struct WMPScriptViewPlan: Sendable {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
         })?.node else {
             elements = []; expressions = []; expressionAddresses = [:]; idToStableID = [:]
-            geometryChangeHandlers = [:]
+            geometryChangeHandlers = [:]; completionHandlers = [:]
             return
         }
         var included = Set<Int>()
@@ -49,6 +54,7 @@ struct WMPScriptViewPlan: Sendable {
         var addresses: [String: WMPScenePropertyAddress] = [:]
         var ids: [String: Int] = [:]
         var changeHandlers: [Int: [String: String]] = [:]
+        var completions: [Int: [String: String]] = [:]
         for node in skin.graph.allNodes where included.contains(node.stableID) {
             let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
             ids[WMPPath.fold(id)] = node.stableID
@@ -75,6 +81,10 @@ struct WMPScriptViewPlan: Sendable {
                         String(event.lowercased().dropLast("_onchange".count))):
                     changeHandlers[node.stableID, default: [:]][
                         String(event.lowercased().dropLast("_onchange".count))] = source
+                case let .handler(event, source)
+                    where Self.completionEvents.contains(event.lowercased()):
+                    completions[node.stableID, default: [:]][
+                        String(event.lowercased().dropFirst(2))] = source
                 default: break
                 }
             }
@@ -87,7 +97,12 @@ struct WMPScriptViewPlan: Sendable {
         expressionAddresses = addresses
         idToStableID = ids
         geometryChangeHandlers = changeHandlers
+        completionHandlers = completions
     }
+
+    /// Authored spellings of the two completion callbacks that have a dispatch site. `onEndResize`
+    /// is not here because no archive in the corpus authors one.
+    private static let completionEvents: Set<String> = ["onendmove", "onendalphablend"]
 
     private static func scalar(_ raw: String) -> WMPJSONValue {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -331,6 +346,26 @@ final class WMPScriptContext: @unchecked Sendable {
         result.expressionOrder = ordered
 
         if let event {
+            // **A control's event handler reads its own `value` as a bare name.** WMP evaluates a
+            // handler against the element that raised it, and the corpus depends on it in exactly
+            // one place worth paying for: 111 of the 141 `onDragEnd` sources are
+            // `player.controls.currentPosition = value`, the seek commit on release (W55). Binding
+            // the one identifier is deliberate rather than scoping the whole element — a bare
+            // *assignment* like `toolTip='Seek'` (6 uses) creates a global and costs nothing either
+            // way, so only reads were ever blocked, and `with(element)` would change name
+            // resolution for every handler in the corpus to buy those six.
+            var boundEventValue = false
+            if let targetID = event.targetID, let target = model.element(targetID),
+               let value = target.properties["value"] {
+                context.setObject(Self.jsAny(value), forKeyedSubscript: "value" as NSString)
+                boundEventValue = true
+            }
+            defer {
+                // Cleared with the event that defined it: a bare `value` is a control's own
+                // property, and leaving the last drag's number bound as a global would let an
+                // unrelated later handler read a stale one instead of failing honestly.
+                if boundEventValue { context.setObject(nil, forKeyedSubscript: "value" as NSString) }
+            }
             for (index, source) in event.handlers.enumerated() {
                 // Fail closed per handler, never per session. A skin puts its whole startup in one
                 // handler, so one missing member costs many unrelated features — and the demand
@@ -342,6 +377,10 @@ final class WMPScriptContext: @unchecked Sendable {
             }
         }
 
+        // Completions first: a chained step writes geometry, and those writes are what the
+        // geometry cascade below exists to propagate. The other order would make a pane positioned
+        // off a moved one trail it by a transaction, which is W87 again.
+        raiseCompletionHandlers(plan: plan, into: &result)
         raiseGeometryChangeHandlers(plan: plan, into: &result)
 
         result.calls = model.calls
@@ -394,6 +433,44 @@ final class WMPScriptContext: @unchecked Sendable {
                 if let error = invokeHandler(source, label: "\(property)_onchange") {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(property)_onchange: \(error)"))
+                }
+            }
+            if !raised { return }
+        }
+    }
+
+    /// **`moveTo` and `alphaBlendTo` land their endpoint immediately, so their completion is now**
+    /// (W55). WMP tweens over the call's third argument and raises `onEndMove`/`onEndAlphaBlend`
+    /// when the tween finishes; this engine applies the endpoint in the call itself (W38), so the
+    /// honest completion of an instant move is the same transaction. A skin chains its next step
+    /// from these — `corona`'s playlist drawer is the case that named the row: `TogglePlaylist()`
+    /// only calls `svPlaylist.moveTo(0, 33, PANEL_VELOCITY)`, and the list inside it is revealed
+    /// solely by `onEndMove="ddpl.visible=ipl.visible=g_playlistIsVisible;"`. Without this the
+    /// drawer opened onto nothing, which is the half of W97 the element kind could not reach.
+    ///
+    /// Bounded exactly as the geometry cascade is, and for the same reason: a completion handler
+    /// may itself call `moveTo`, so each `(element, event)` fires at most once per transaction and
+    /// the whole loop is capped. An animation that moves the same pane every tick still gets one
+    /// completion per tick, because each tick is its own transaction.
+    private func raiseCompletionHandlers(plan: WMPScriptViewPlan,
+                                         into result: inout WMPScriptRunResult) {
+        guard !plan.completionHandlers.isEmpty else { return }
+        var consumed = 0
+        var fired = Set<String>()
+        for _ in 0..<WMPPhase0Limits.expressionPasses {
+            let fresh = model.completions[consumed...]
+            consumed = model.completions.count
+            guard !fresh.isEmpty else { return }
+            var raised = false
+            for completion in fresh {
+                guard let source = plan.completionHandlers[completion.stableID]?[completion.event]
+                else { continue }
+                let token = "\(completion.stableID).\(completion.event)"
+                guard fired.insert(token).inserted else { continue }
+                raised = true
+                if let error = invokeHandler(source, label: "on\(completion.event)") {
+                    result.diagnostics.append(.init(code: "handler-error",
+                                                    message: "on\(completion.event): \(error)"))
                 }
             }
             if !raised { return }

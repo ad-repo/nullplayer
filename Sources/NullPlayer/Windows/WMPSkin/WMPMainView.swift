@@ -245,6 +245,15 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         onScriptEvent?("mouseup", capturedTarget?.nodeID, capturedTarget?.stableID)
         defer { capturedTarget = nil }
         guard let capturedTarget else { return }
+        // **`onDragEnd` is the seek commit** (W55). It is authored only on `SLIDER` (125 uses) and
+        // `CUSTOMSLIDER` (16), and 111 of those 141 sources are
+        // `player.controls.currentPosition = value` — the skin scrubs the thumb during the drag and
+        // commits the seek once, on release. Raised for a captured slider whether or not the
+        // pointer moved, because a press and release on a slider track is a completed drag in WMP:
+        // `performSlider` already ran on `mouseDown` and moved the value there.
+        if isSlider(capturedTarget) {
+            onScriptEvent?("dragend", capturedTarget.nodeID, capturedTarget.stableID)
+        }
         if case .beginScan = capturedTarget.action { onAction?(.endScan, nil); return }
         guard result.activated == capturedTarget.stableID else { return }
         onScriptEvent?("click", capturedTarget.nodeID, capturedTarget.stableID)
