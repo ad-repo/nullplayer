@@ -280,6 +280,7 @@ final class WMPObjectModel {
         case "player.currentmedia": return readMedia(name)
         case "player.currentplaylist": return readPlaylist(name)
         case "player.network": return readNetwork(name)
+        case "player.dvd": return readDVD(name)
         case "eq": return readEqualizer(name)
         case "theme": return readTheme(name)
         case "mediacenter": return readMediaCenter(name)
@@ -294,6 +295,11 @@ final class WMPObjectModel {
         case "currentmedia": return .object("player.currentmedia")
         case "currentplaylist": return .object("player.currentplaylist")
         case "network": return .object("player.network")
+        // **There is no DVD, and saying so is the answer rather than refusing the question.**
+        // `Corona`'s metadata table opens with `player.dvd.isAvailable('dvd')==false` on all three
+        // of its rows, so an unrecognised `dvd` aborted the handler that reads the track title —
+        // and, further down the same chain, the one that turns its visualization pane on.
+        case "dvd": return .object("player.dvd")
         // WMP reports these as numbers from its own enumerations, and skins compare them against
         // the `ps*`/`os*` globals rather than against strings.
         case "playstate": return .value(.number(Double(WMPScriptConstants.playState(for: snapshot.state))))
@@ -354,12 +360,28 @@ final class WMPObjectModel {
         }
     }
 
+    /// WMP's DVD control. This player has no DVD support at all, so `isAvailable` answers false
+    /// and every other member stays unrecognised and ranks itself.
+    private func readDVD(_ name: String) -> WMPMemberValue {
+        switch name {
+        case "isavailable": return .function
+        case "domain": inert(); return .value(.string(""))
+        default: return .unrecognised("dvd member")
+        }
+    }
+
     private func readNetwork(_ name: String) -> WMPMemberValue {
         switch name {
         case "bufferingprogress": return .value(.number(snapshot.bufferingProgress))
         case "receptionquality": return .value(.number(snapshot.receptionQuality))
         case "bandwidth", "framesskipped", "lostpackets", "receivedpackets":
             inert(); return .value(.number(0))
+        // The transport a stream arrived over — `mms`, `http`, `rtsp` — which is a property of the
+        // network session WMP had and this player does not. `Corona`'s `OnStatusChange` reads it
+        // to decide whether it is showing a live broadcast, and an unrecognised member there aborts
+        // the handler that turns its visualization pane on (W101's Corona case). Local playback has
+        // no source protocol, so the empty string is the true answer and it is counted inert.
+        case "sourceprotocol": inert(); return .value(.string(""))
         default: return .unrecognised("network member")
         }
     }
@@ -412,6 +434,15 @@ final class WMPObjectModel {
     /// the corpus tests `!= "BW"` and `!= "WB"` against.
     private func readMediaCenter(_ name: String) -> WMPMemberValue {
         if name == "getnamedstring" { return .function }
+        // **Two of the nine now have a host behind them.** `effectType` and `effectPreset` are
+        // where 162 archives keep their visualization selection, and the `<EFFECTS>` rect they
+        // select for is hosted (W101), so these answer what is being drawn rather than what was
+        // last written. The other seven are still honestly inert; see the doc comment above.
+        switch name {
+        case "effecttype": return .value(.string(snapshot.effects.type))
+        case "effectpreset": return .value(.number(Double(snapshot.effects.preset)))
+        default: break
+        }
         guard let fallback = Self.mediaCenterDefaults[name] else {
             return .unrecognised("mediacenter member")
         }
@@ -452,6 +483,17 @@ final class WMPObjectModel {
         // same path the renderer lays the line out with, so the comparison is against what is drawn.
         case "textwidth":
             return .value(.number(Double(Self.measuredTextWidth(element))))
+        // The `<EFFECTS>` rect's own view of the same selection `mediacenter` holds: 66 archives
+        // read `currentEffectType`/`currentPreset` off the element, 61 `currentEffectTitle` and 42
+        // `currentPresetTitle` — the strings they draw beside the surface (W101).
+        case "currenteffecttype" where element.kind == .effects:
+            return .value(.string(snapshot.effects.type))
+        case "currenteffecttitle" where element.kind == .effects:
+            return .value(.string(snapshot.effects.title))
+        case "currentpreset" where element.kind == .effects:
+            return .value(.number(Double(snapshot.effects.preset)))
+        case "currentpresettitle" where element.kind == .effects:
+            return .value(.string(snapshot.effects.presetTitle))
         default: break
         }
         if let value = element.properties[name] { return .value(value) }
@@ -501,6 +543,9 @@ final class WMPObjectModel {
     private func elementMethod(_ element: WMPScriptElement, _ name: String) -> String? {
         switch (element.kind, name) {
         case (.popup, "appenditem"), (.popup, "removeallitems"), (.popup, "getitem"): return name
+        // 82 archives call `visEffects.next()` and 74 `visEffects.previous()` — the corpus's own
+        // way of cycling the surface, and the reason the selector never needed a menu (W101).
+        case (.effects, "next"), (.effects, "previous"), (.effects, "nextpreset"): return name
         case (_, "moveto"), (_, "resizeto"), (_, "alphablendto"): return name
         case (.view, "close"), (.view, "minimize"): return name
         default:
@@ -516,7 +561,8 @@ final class WMPObjectModel {
     /// has been implemented since Phase 3, was counted beside it (W38).
     static let implementedElementMethods: Set<String> = [
         "moveto", "resizeto", "alphablendto", "close", "minimize",
-        "appenditem", "removeallitems", "getitem", "setcolumnresizemode", "setcolumnwidth"
+        "appenditem", "removeallitems", "getitem", "setcolumnresizemode", "setcolumnwidth",
+        "next", "previous", "nextpreset"
     ]
 
     /// Names WMP defines as element *methods*. One of these that this engine does not implement
@@ -527,7 +573,7 @@ final class WMPObjectModel {
         "moveto", "resizeto", "alphablendto", "show", "hide", "close", "minimize", "maximize",
         "appenditem", "removeallitems", "removeitem", "deleteitem", "getitem", "selectitem",
         "setcolumnresizemode", "setcolumnwidth", "setfocus", "invoke", "click", "play", "stop",
-        "next", "previous"
+        "next", "previous", "nextpreset", "settings"
     ]
 
     /// `PLAYLIST`, `DROPDOWNPLAYLIST` and the `ITEMSPLAYLIST` the corpus actually ships. The last
@@ -587,6 +633,18 @@ final class WMPObjectModel {
         default: break
         }
         if path == "mediacenter" {
+            // The write half of the two live members. 47 skins post
+            // `mediacenter.effectType=currentEffectType` straight back out of the rect's own
+            // `_onchange`, so this is the round trip the surface is driven by.
+            switch name {
+            case "effecttype":
+                hostCommand("setEffectType", .string(value.string ?? ""))
+                return .value(value)
+            case "effectpreset":
+                hostCommand("setEffectPreset", .number(value.number ?? 0))
+                return .value(value)
+            default: break
+            }
             guard Self.mediaCenterWritableMembers.contains(name) else {
                 return .unrecognised(Self.mediaCenterDefaults[name] == nil
                     ? "mediacenter member" : "mediacenter member is read-only")
@@ -609,6 +667,12 @@ final class WMPObjectModel {
         // animation from it — Corona's compact view collapses its video panel by registering a
         // `TimerEvent` and then writing the interval it wants — so a write that only stored a
         // number would leave the skin frozen in whatever state it was authored in.
+        if element.kind == .effects, name == "currenteffecttype" || name == "currentpreset" {
+            element.properties[name] = value
+            if name == "currenteffecttype" { hostCommand("setEffectType", .string(value.string ?? "")) }
+            else { hostCommand("setEffectPreset", .number(value.number ?? 0)) }
+            return .value(value)
+        }
         if element.kind == .view, name == "timerinterval" {
             element.properties[name] = value
             hostCommand("setViewTimerInterval", .number(max(0, value.number ?? 0)))
@@ -694,6 +758,15 @@ final class WMPObjectModel {
             guard let index = arguments.first?.number.map({ Int($0) }),
                   snapshot.playlistItems.indices.contains(index) else { return .value(.null) }
             return .object("playlistitem:\(index)")
+        case ("player.dvd", "isavailable"):
+            inert()
+            return .value(.bool(false))
+        // Playlist-level attributes — `IconPaths`, `HDCDMode`, the store's own decorations. A
+        // playlist this player made carries none of them, so the empty string is the true answer
+        // and the skin's `parseInt` of it takes the same branch WMP's absent attribute would.
+        case ("player.currentplaylist", "getiteminfo"):
+            inert()
+            return .value(.string(""))
         case ("player.currentplaylist", "attributecount"): return .value(.number(3))
         case ("player.currentplaylist", "getattributename"):
             let index = Int(arguments.first?.number ?? 0)
@@ -772,6 +845,9 @@ final class WMPObjectModel {
             let column = Int(arguments.first?.number ?? 0)
             element.columnResizeModes[column] = arguments.count > 1 ? (arguments[1].string ?? "") : ""
             return .value(.null)
+        case (.effects, "next"): hostCommand("stepEffect", .number(1)); return .value(.null)
+        case (.effects, "previous"): hostCommand("stepEffect", .number(-1)); return .value(.null)
+        case (.effects, "nextpreset"): hostCommand("stepEffectPreset", .number(1)); return .value(.null)
         case (.view, "close"): hostCommand("closeView", nil); return .value(.null)
         case (.view, "minimize"): hostCommand("minimizeWindow", nil); return .value(.null)
         // WMP tweens these over the third argument's milliseconds. The endpoint is applied now and
@@ -898,6 +974,14 @@ enum WMPScriptConstants {
         "osPlaylistOpenNoMedia": 6, "osPlaylistChanged": 7, "osMediaChanging": 8,
         "osMediaLocating": 9, "osMediaConnecting": 10, "osMediaLoading": 11,
         "osMediaOpening": 12, "osMediaOpen": 13,
+        // The rest of `WMPOpenState`. A skin switches over the whole enumeration — `Corona`'s
+        // `OnOpenStateChangeTransport` names `osMediaWaiting` — and a missing global is a
+        // `ReferenceError` that kills the handler, which is the W37 class rather than a gap in a
+        // table nothing reads.
+        "osBeginCodecAcquisition": 14, "osEndCodecAcquisition": 15,
+        "osBeginLicenseAcquisition": 16, "osEndLicenseAcquisition": 17,
+        "osBeginIndividualization": 18, "osEndIndividualization": 19,
+        "osMediaWaiting": 20, "osOpeningUnknownURL": 21,
         // Play state
         "psUndefined": 0, "psStopped": 1, "psPaused": 2, "psPlaying": 3,
         "psScanForward": 4, "psScanReverse": 5, "psBuffering": 6, "psWaiting": 7,

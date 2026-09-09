@@ -123,6 +123,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         for view in widgetViews.values {
             (view as? WMPPlaylistSurfaceView)?.update(snapshot)
             (view as? WMPDropdownPlaylistSurfaceView)?.update(snapshot)
+            (view as? WMPEffectsSurfaceView)?.update(snapshot)
         }
     }
 
@@ -200,6 +201,22 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
                 y: widget.frame.y * yScale, width: widget.frame.width * xScale,
                 height: widget.frame.height * yScale)
         }
+    }
+
+    /// **A right-click on the skin's visualization rect opens the visualization's own menu.**
+    ///
+    /// The surface is click-through by design — 51 corpus skins wire an `onClick` on the
+    /// `<EFFECTS>` node and that handler is the scene's, not the overlay's — so the event arrives
+    /// here and the widget frames are what decide. Anywhere else on a `.wmz` there is no host menu
+    /// to show: the skin draws its own controls and its own menus.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        WMPMainWindowController.traceInput("menu at=\(point) frames=[\(widgetViews.values.compactMap { ($0 as? WMPEffectsSurfaceView)?.frame }.map(String.init(describing:)).joined(separator: ", "))]")
+        for view in widgetViews.values {
+            guard let effects = view as? WMPEffectsSurfaceView, effects.frame.contains(point) else { continue }
+            return effects.buildMenu()
+        }
+        return super.menu(for: event)
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -282,6 +299,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             notify(interaction.focus(targets[next].stableID)); return
         }
         guard let target = targets.first(where: { $0.stableID == interaction.focusedNode }) else {
+            if visualizationHandled(event) { return }
             return super.keyDown(with: event)
         }
         if event.keyCode == 49 || event.keyCode == 36 {
@@ -298,7 +316,16 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             widgetValues[target.stableID] = value
             onElementValueChanged?(target.stableID, target.nodeID, value); return
         }
+        if visualizationHandled(event) { return }
         super.keyDown(with: event)
+    }
+
+    /// The skin has refused the key: offer it to a hosted `<EFFECTS>` surface, which answers the
+    /// same visualization keys as NullPlayer's own window. A skin's focused control always goes
+    /// first — a slider's arrows are the slider's.
+    private func visualizationHandled(_ event: NSEvent) -> Bool {
+        widgetViews.values.compactMap { $0 as? WMPEffectsSurfaceView }
+            .contains { $0.handleKeyDown(event) }
     }
 
     override func accessibilityChildren() -> [Any]? {
@@ -435,9 +462,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // `.equalizer` left it because `EQUALIZERSETTINGS` is no longer a widget at all: the skin's
         // own bound sliders are the equaliser.
         //
-        // **`.effects` is in this list and has almost never been reached**: `WMPElementKind` maps
-        // `wmpeffects` and not `effects`, so 166 of the corpus's 177 archives spell their
-        // visualization surface in a tag that falls to `.unknown` and is never a widget (W101).
+        // **`.effects` reaches the whole corpus now that `<EFFECTS>` is a kind (W101).** It used
+        // to reach five archives: `WMPElementKind` mapped `wmpeffects` and not `effects`, so the
+        // 166 of 177 that spell the tag the other way fell to `.unknown` and were never widgets.
         let native = widgets.filter { [WMPWidgetKind.playlist, .dropdownPlaylist, .popup,
                                        .editBox, .listBox, .effects].contains($0.kind) }
         let wanted = Set(native.map(\.stableID))
@@ -456,7 +483,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             // model can answer `player.mediaCollection` — recorded as W66 rather than faked with
             // rows this player invented.
             case .listBox: view = WMPListBoxSurfaceView()
-            case .effects: view = WMPEffectsSurfaceView()
+            case .effects: view = WMPEffectsSurfaceView(frame: .zero)
             default: continue
             }
             view.toolTip = widget.toolTip
@@ -491,6 +518,11 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             }
             widgetViews[widget.stableID] = view; addSubview(view)
         }
+        // **What the scene handed the window, as opposed to what it drew.** The AppKit overlays are
+        // not in a render dump at all, so a skin can dump a perfect frame and be missing its
+        // playlist or its visualization on screen; this is the live counterpart of the harness's
+        // `WIDGET` line. See `reference/harness.md` § *The one probe that is not in the test binary*.
+        WMPMainWindowController.traceInput("widgets hosted=\(native.count) [\(native.map { "\($0.kind) id=\($0.nodeID ?? "-") frame=\($0.frame)" }.joined(separator: ", "))]")
         onSpectrumDemandChanged?(native.contains { $0.kind == .effects })
         layoutSubtreeIfNeeded()
         refreshHostState(currentSnapshot)
@@ -614,6 +646,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         case .setEQBand: return "Equalizer band"
         case .setEQPreset: return "Equalizer preset"
         case .setPreamp: return "Equalizer preamp"
+        case .setEffectType, .nextEffect, .previousEffect: return "Visualization"
+        case .setEffectPreset, .nextEffectPreset: return "Visualization preset"
         }
     }
 }

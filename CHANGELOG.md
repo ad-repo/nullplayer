@@ -19,6 +19,20 @@
 
 ### Bug Fixes
 
+- **A Media Player skin's visualization screen now shows a visualization** — nearly every `.wmz`
+  draws a panel for one, and until now that panel stayed empty on all but five of them. It now
+  holds NullPlayer's own visuals — ProjectM, Geiss or Tripex, the same engines and the same presets
+  as the Visualizations window — inside the frame the skin drew for it, plus the classic Media
+  Player bars. Right-click it for the same menu the Visualizations window has, and the left and
+  right arrow keys step through presets exactly as they do there. When nothing is playing the panel
+  draws nothing at all, so the skin's own artwork shows through, and a skin that puts its own button
+  over the panel still gets the click. Skins that keep a visualization button or a readout beside
+  the panel follow it, because the skin is told which effect is running.
+- **Media Player skins that react to playing and stopping now do so** — a skin is told when
+  playback starts, stops or changes track, and that message was being dropped whenever a track was
+  already playing, which is nearly always. Skins that reveal a panel, swap artwork or update a
+  readout on play were left in whatever state they loaded in; `corona`'s visualization panel is the
+  clearest case, and it never appeared at all.
 - **A Media Player skin's own playlist drawer shows your tracks** — skins that write their playlist
   in Media Player's `ITEMSPLAYLIST` form had the control recognized as the skin's own, so no second
   NullPlayer playlist opened over it, but nothing was ever drawn inside it either. The drawer was

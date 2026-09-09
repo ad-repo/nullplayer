@@ -125,6 +125,10 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         // draws its buffer bar. Both names appear; WMP scales them 0-100.
         case "player.network.downloadprogress", "player.network.bufferingprogress":
             return .number(snapshot.bufferingProgress)
+        // 68 archives bind their `<EFFECTS>` rect's `currentEffectType` and `currentPreset` to
+        // these two paths — the corpus's own selector for what the surface draws (W101).
+        case "mediacenter.effecttype": return .string(snapshot.effects.type)
+        case "mediacenter.effectpreset": return .number(Double(snapshot.effects.preset))
         default: return nil
         }
     }

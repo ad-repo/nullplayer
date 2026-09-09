@@ -36,7 +36,8 @@ final class WMPAudioEngineHost: WMPHost {
             playlistIndex: engine.currentIndex, playlistCount: engine.playlist.count,
             playlistItems: playlistItems,
             equalizer: WMPEqualizerSnapshot(enabled: engine.isEQEnabled(),
-                preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)))
+                preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
+            effects: WMPEffectSelection.shared.snapshot)
     }
 
     func perform(_ action: WMPTransportAction, value: WMPHostValue?) {
@@ -89,6 +90,14 @@ final class WMPAudioEngineHost: WMPHost {
             let remapped = EQBandRemapper.remap(gains: clamped, from: .classic10,
                                                 to: engine.eqConfiguration)
             for (band, gain) in remapped.enumerated() { engine.setEQBand(band, gain: gain) }
+        // What the skin's `<EFFECTS>` rect draws. The selection is the WMP session's own — see
+        // `WMPEffectSelection` for why cycling it does not write the app's visualization
+        // preference back.
+        case let .setEffectType(name): WMPEffectSelection.shared.select(name)
+        case .nextEffect: WMPEffectSelection.shared.step(by: 1)
+        case .previousEffect: WMPEffectSelection.shared.step(by: -1)
+        case let .setEffectPreset(index): WMPEffectSelection.shared.setPreset(index)
+        case .nextEffectPreset: WMPEffectSelection.shared.stepPreset(by: 1)
         }
     }
 

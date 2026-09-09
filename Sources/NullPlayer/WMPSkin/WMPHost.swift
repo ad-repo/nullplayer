@@ -12,6 +12,13 @@ enum WMPTransportAction: Hashable, Codable {
     /// An index into `EQPreset.allPresets`. Every `<POPUP>` in the corpus is a preset menu, and
     /// `eq.currentPreset` is what its handler writes.
     case setEQPreset(Int)
+    /// What an `<EFFECTS>` rect draws, by `WMPEffectSelection` id. 96 of the 179 corpus archives
+    /// bind `currentEffectType="wmpprop:mediacenter.effectType"`, so the selector is a host
+    /// property the skin reads and writes rather than a menu this engine invents (W101).
+    case setEffectType(String)
+    case nextEffect, previousEffect
+    /// The preset *within* the selected effect: ProjectM's preset, Geiss's and Tripex's effect.
+    case setEffectPreset(Int), nextEffectPreset
 }
 
 enum WMPHostValue: Hashable, Codable {
@@ -40,6 +47,19 @@ struct WMPPlaylistItemSnapshot: Hashable, Codable {
     let duration: TimeInterval
 }
 
+/// What the skin's `<EFFECTS>` rect is drawing, and the four members the corpus reads off it.
+///
+/// `type` and `presetTitle` are the strings a skin puts on screen beside the surface —
+/// `visEffects.currentEffectTitle` is read by 61 archives and `currentPresetTitle` by 42 — so they
+/// answer what is actually being drawn rather than a constant. See `WMPEffectSelection`.
+struct WMPEffectsSnapshot: Hashable, Codable {
+    /// The stable id of the selected effect: `bars`, `projectm`, `geiss`, `tripex`.
+    var type = ""
+    var title = ""
+    var preset = 0
+    var presetTitle = ""
+}
+
 struct WMPEqualizerSnapshot: Hashable, Codable {
     var enabled = false
     var preamp: Double = 0
@@ -63,6 +83,7 @@ struct WMPHostSnapshot: Hashable, Codable {
     var playlistCount = 0
     var playlistItems: [WMPPlaylistItemSnapshot] = []
     var equalizer = WMPEqualizerSnapshot()
+    var effects = WMPEffectsSnapshot()
 
     var elapsedText: String { Self.timeString(currentTime) }
     var durationText: String { Self.timeString(duration) }
@@ -79,7 +100,9 @@ struct WMPHostSnapshot: Hashable, Codable {
         case let .movePlaylistItem(source, destination):
             return playlistItems.indices.contains(source) && playlistItems.indices.contains(destination)
         case .endScan, .volume, .balance, .toggleMute, .toggleShuffle, .toggleRepeat,
-             .setEQEnabled, .setEQBand, .setPreamp, .setEQPreset: return true
+             .setEQEnabled, .setEQBand, .setPreamp, .setEQPreset,
+             .setEffectType, .nextEffect, .previousEffect, .setEffectPreset, .nextEffectPreset:
+            return true
         }
     }
 

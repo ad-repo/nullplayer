@@ -112,6 +112,30 @@ and refusing `hoverFontStyle` on a `TEXT` would abort the handler that sets it, 
 the whole of `InitControls`. An unauthored, undrawn property is stored and answers `inert`, so the
 census can rank "properties skins set that nothing renders" instead of losing them.
 
+### The `<EFFECTS>` element
+
+`EFFECTS` and `WMPEFFECTS` are the same surface and both map to `.effects`. Only the second was ever
+a kind, and 183 uses across 166 of 177 archives spell it the first way, so the visualization surface
+of nearly the whole corpus fell to `.unknown` and was hosted on nothing (W101).
+
+Four members answer live, off `WMPHostSnapshot.effects`, and they are the same selection
+`mediacenter` holds:
+
+| Member | Answers | Reach |
+|---|---|---|
+| `currentEffectType` | the effect's id; writable, and a write commands the host | 66 archives |
+| `currentPreset` | the preset number within that effect; writable | 66 |
+| `currentEffectTitle` | the title a skin draws beside the rect | 61 |
+| `currentPresetTitle` | the running engine's own preset name | 42 |
+
+and three methods cycle it: `next()` (82 archives), `previous()` (74) and `nextPreset()` (4).
+`settings()` (9) is **not** implemented — it opens WMP's own visualizer property sheet, which has no
+counterpart here. A skin's authored type (`spikes`, `ambience`, `random`) names a WMP visualizer this
+player does not have, so it selects nothing and the read-back answers what is really on screen.
+
+Still unhonoured on the element: `windowed` (125 archives), `allowAll` (11), `clippingColor` (44) and
+`clippingImage` (12).
+
 ### Playlist kinds
 
 `WMPElementKind` models three spellings and they are not interchangeable. `PLAYLIST` and
@@ -149,7 +173,7 @@ Implemented today: `moveTo`, `resizeTo`, `alphaBlendTo` (endpoint applied immedi
 *not* drawn yet, but the **completion now fires**, see below),
 `appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` and `setColumnWidth` on the
 playlist kinds — `ITEMSPLAYLIST` among them, and it is a modelled `.playlist` kind since W97 —
-and `close`/`minimize` on the view.
+`next`/`previous`/`nextPreset` on `EFFECTS`, and `close`/`minimize` on the view.
 
 **A call that lands its endpoint completes in the same transaction (W55).** `WMPObjectModel` records
 `(stableID, event)` on every `moveTo` and `alphaBlendTo`; `WMPScriptContext.raiseCompletionHandlers`
@@ -246,10 +270,15 @@ shell's own localised strings. It was the largest single thing stopping a handle
 **159 `ReferenceError: Can't find variable: mediacenter` across 110 of the 179 measured archives**,
 each one killing an `OnLoad` on whichever line first touched it (W37).
 
-**Every member of it is `inert()`, and that is the finding rather than a shortcut.** There is no
-video surface to zoom (`imageSourceWidth`/`Height` already answer 0 for the same reason), the
-engine draws exactly one effect with no type and no presets (`WMPEffectsSurfaceView`), and there is
-no high-contrast mode. Nothing here has a host behind it to be live about.
+**Seven of its nine members are `inert()`, and that is the finding rather than a shortcut.** There
+is no video surface to zoom (`imageSourceWidth`/`Height` already answer 0 for the same reason) and
+no high-contrast mode. Nothing behind those has a host to be live about.
+
+**`effectType` and `effectPreset` are the two that left that class (W101).** The `<EFFECTS>` rect
+they select for is hosted now, so they answer `WMPEffectSelection` — what is actually being drawn —
+and a write posts a `setEffectType`/`setEffectPreset` host command instead of storing session state.
+96 archives bind them straight onto the rect (`currentEffectType="wmpprop:mediacenter.effectType"`),
+so this is the corpus's own selector and not a menu this engine invented.
 
 What it is **not** is a stub that answers a constant. Skins round-trip these — `Plus! Professional`
 writes `mediacenter.effectPreset = visEffects.currentPreset` in one view and reads it back into a
@@ -265,8 +294,8 @@ so the table below is the whole object. A tenth name stays `unrecognised` and ra
 | `videoZoom` | `100` | WMP's own 100%. Nothing is scaled; the number is what a skin's zoom readout prints |
 | `videoStretchToFit` | `false` | nothing is fitted to anything |
 | `videoShrinkToFit` | `false` | as above. Corpus use is write-only |
-| `effectType` | `""` | one effect, and it has no type |
-| `effectPreset` | `0` | one effect, and it has no presets |
+| `effectType` | live | the id of the effect the rect is drawing: `bars`, `projectm`, `geiss`, `tripex`. Writable |
+| `effectPreset` | live | the preset within that effect — ProjectM's preset, Geiss's and Tripex's effect. Writable |
 | `showTitles` | `false` | no titles are drawn over a video that does not exist |
 | `showEffects` | `true` | the effects surface *is* always drawn, so `myeffect.visible = mediacenter.showEffects` is right |
 | `contrastMode` | `""` | no high-contrast mode. The corpus tests it `== "BW"` / `== "WB"` and falls through to its normal path |
@@ -282,10 +311,13 @@ Two things this deliberately does not do:
   because IDispatch allows a property get with parentheses and JavaScriptCore does not. The
   expression fails, costs itself alone, and is tallied as an `expression-error` — visible, on an
   attribute this engine's one effects surface does not read anyway.
-- **It is not a route to the visualization subsystem.** `effectType`/`effectPreset` naming a real
-  NullPlayer visualization would be a capability, not a member: it needs a `<WMPEFFECTS>` that can
-  host one and a host snapshot field to answer from. Neither exists, and inventing a mapping here
-  would make the demand disappear while nothing changed on screen.
+- **It became a route to the visualization subsystem only once there was one to route to.**
+  `effectType`/`effectPreset` naming a real NullPlayer visualization was a capability rather than a
+  member — it needed an `<EFFECTS>` that could host one and a snapshot field to answer from. W101
+  built both: `WMPEffectsSurfaceView` hosts `VisualizationGLView` in the authored rect and
+  `WMPHostSnapshot.effects` is what these two read. Until then the honest answer was a stored
+  string, because a mapping with nothing behind it makes the demand disappear while nothing changes
+  on screen.
 
 ---
 
@@ -298,6 +330,38 @@ host opens the picker and plays the result while the skin's own `player.URL = ne
 nothing. It is not cosmetic: **WMP mode has no other route to a track**, because the auxiliary
 NullPlayer windows stay hidden until they have WMP-owned chrome, and before this the only way to
 start playback was to leave WMP mode and come back.
+
+---
+
+## Event arguments
+
+**A `<PLAYER>` event handler is a statement written against a named argument, and the name has to be
+bound or the handler dies on its first line.** Corona authors
+`playstatechange="OnPlayStateChangeTransport(NewState);OnPlayStateChange();"` and
+`status_onchange="OnStatusChangeTransport(status);"`; with neither name bound both threw
+`ReferenceError` and everything after the first call was lost — including the line that turns its
+`<WMPEFFECTS>` pane on, which is why that skin showed no visualization at all.
+
+`WMPJScriptEvent.Handler` carries the arguments and `WMPScriptContext` binds them as globals for the
+duration of that one handler, then clears them — the same shape a control's bare `value` uses, and
+for the same reason: a stale `NewState` left standing would be read by an unrelated later handler
+instead of failing honestly.
+
+| Event | Argument | Value |
+|---|---|---|
+| `openstatechange` | `NewState` | the `os*` open state, the same number `player.openState` answers |
+| `playstatechange` | `NewState` | the `ps*` play state, the same number `player.playState` answers |
+| `status_onchange` | `status` | `player.status`, which is inert and empty here |
+
+**They belong to the handler and not to the transaction.** One refresh raises `openstatechange` and
+`playstatechange` together and `NewState` is a *different* enumeration in each, so a single binding
+for the whole transaction would be wrong for one of the two. Measured demand is small — 6 of the 180
+installed archives name `NewState` in a handler attribute and 5 name `status` — and the cost of not
+having it was every statement after the first in those skins.
+
+**`WMPScriptConstants` carries the whole enumeration for the same reason.** A skin switches over all
+of `WMPOpenState`, and one missing global (`osMediaWaiting`, in Corona's case) is a `ReferenceError`
+that costs the handler — the W37 class rather than a gap in a table nothing reads.
 
 ---
 

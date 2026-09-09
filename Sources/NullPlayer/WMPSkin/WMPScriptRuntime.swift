@@ -118,9 +118,33 @@ struct WMPJScriptExpressionResult: Hashable, Codable {
 }
 
 struct WMPJScriptEvent: Hashable, Codable, Sendable {
+    /// One authored handler and the arguments WMP raises it with.
+    ///
+    /// **A `<PLAYER>` event handler is a statement written against a named argument.** Corona's
+    /// markup is `playstatechange="OnPlayStateChangeTransport(NewState);OnPlayStateChange();"` and
+    /// `status_onchange="OnStatusChangeTransport(status);"`, and with neither name bound both
+    /// handlers died on their first statement with a `ReferenceError` — which is why its
+    /// `<WMPEFFECTS>` pane, turned on by `OnPlayStateChange`, never appeared. The arguments belong
+    /// to the handler rather than to the transaction because one refresh raises `openstatechange`
+    /// and `playstatechange` together and `NewState` is a *different* enum in each.
+    struct Handler: Hashable, Codable, Sendable {
+        let source: String
+        var arguments: [String: WMPJSONValue] = [:]
+    }
+
     let name: String
     let targetID: String?
-    let handlers: [String]
+    let handlers: [Handler]
+
+    init(name: String, targetID: String?, handlers: [Handler]) {
+        self.name = name; self.targetID = targetID; self.handlers = handlers
+    }
+
+    init(name: String, targetID: String?, handlers: [String],
+         arguments: [String: WMPJSONValue] = [:]) {
+        self.init(name: name, targetID: targetID,
+                  handlers: handlers.map { Handler(source: $0, arguments: arguments) })
+    }
 }
 
 /// One host object-model access: what was touched, whether it was read, written or called, what
@@ -173,6 +197,10 @@ enum WMPJScriptCompatibility {
         // something unimplemented. Both halves are derived from the object model, never restated.
         "element": Set(WMPObjectModel.standardElementProperties)
             .union(WMPObjectModel.implementedElementMethods).union(["id"])
+            // The `<EFFECTS>` rect's own four, which only that kind answers (W101). The set is
+            // flat, so they are listed here rather than derived: a kind-aware table would have to
+            // restate `elementMethod`, which is the authority.
+            .union(["currentEffectType", "currentEffectTitle", "currentPreset", "currentPresetTitle"])
     ]
 
     static func supports(object: String, member: String) -> Bool {

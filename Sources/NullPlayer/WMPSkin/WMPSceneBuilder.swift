@@ -850,7 +850,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
         case .popup: return .popup
         case .editBox: return .editBox
         case .listBox: return .listBox
-        case .wmpEffects: return .effects
+        case .effects: return .effects
         case .video, .wmpVideo: return .video
         default: return nil
         }

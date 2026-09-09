@@ -389,14 +389,17 @@ final class WMPScriptRuntimeTests: XCTestCase {
 
     /// W37: `mediacenter` was the largest single thing stopping a handler in the corpus — 159
     /// `ReferenceError: Can't find variable: mediacenter` across the 179 measured archives, killing
-    /// `OnLoad` on whichever line first touched it. The object exists now and **every member of it
-    /// is inert**, which is the finding and not a shortcut: there is no video surface to zoom, one
-    /// effect with no type and no presets, and no high-contrast mode.
+    /// `OnLoad` on whichever line first touched it. The object exists now, and **seven of its nine
+    /// members are inert**: there is no video surface to zoom and no high-contrast mode.
     ///
-    /// The test pins the part a constant-returning stub would fail: a skin writes the effect
-    /// selection and reads it back out of a second view, so the session must remember the write —
-    /// while still posting no host command and still resolving `inert`, so the census keeps ranking
-    /// the demand instead of losing it.
+    /// The test pins the part a constant-returning stub would fail: a skin writes one of the seven
+    /// and reads it back out of a second view, so the session must remember the write — while still
+    /// posting no host command and still resolving `inert`, so the census keeps ranking the demand
+    /// instead of losing it.
+    ///
+    /// `effectType` and `effectPreset` are the two that left this class in W101: the `<EFFECTS>`
+    /// rect they select for is hosted, so they reach a host and are pinned by
+    /// `testMediaCenterEffectSelectionIsLiveAndCommandsTheHost`.
     func testMediaCenterRoundTripsSessionStateAndStaysInert() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="100" height="60">
@@ -407,9 +410,9 @@ final class WMPScriptRuntimeTests: XCTestCase {
         let write = await session.transact(skin: skin, viewID: "main",
             size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
             event: .init(name: "onClick", targetID: "pane",
-                         handlers: ["mediacenter.effectPreset = 4; mediacenter.videoZoom = 150;"]))
+                         handlers: ["mediacenter.videoZoom = 150; mediacenter.showTitles = true;"]))
         XCTAssertTrue(write.calls.allSatisfy { $0.path.hasPrefix("mediacenter.") ? $0.resolution == .inert : true })
-        XCTAssertTrue(write.hostCommands.isEmpty, "nothing is behind mediacenter to command")
+        XCTAssertTrue(write.hostCommands.isEmpty, "nothing is behind these members to command")
         XCTAssertFalse(write.diagnostics.contains { $0.code == "handler-error" })
 
         // The read-back is a second transaction, the way `Plus! Professional` reads in one view
@@ -417,12 +420,50 @@ final class WMPScriptRuntimeTests: XCTestCase {
         let read = await session.transact(skin: skin, viewID: "main",
             size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
             event: .init(name: "onClick", targetID: "pane",
-                         handlers: ["pane.left = mediacenter.effectPreset; pane.top = mediacenter.videoZoom;"]))
+                         handlers: ["pane.top = mediacenter.videoZoom;"]))
         let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
-        XCTAssertEqual(read.overrides.geometry[.init(stableID: pane.stableID, property: "left")], 4)
         XCTAssertEqual(read.overrides.geometry[.init(stableID: pane.stableID, property: "top")], 150)
-        let preset = try XCTUnwrap(read.calls.first { $0.path == "mediacenter.effectpreset" })
-        XCTAssertEqual(preset.resolution, .inert, "a member with no host behind it must stay counted apart")
+        let zoom = try XCTUnwrap(read.calls.first { $0.path == "mediacenter.videozoom" })
+        XCTAssertEqual(zoom.resolution, .inert, "a member with no host behind it must stay counted apart")
+        await session.teardown()
+    }
+
+    /// W101: the two `mediacenter` members 162 corpus archives keep their visualization selection
+    /// in. The `<EFFECTS>` rect is hosted now, so a write commands the host rather than storing
+    /// session state, and a read answers what the host says is being drawn — a skin that wrote
+    /// `spikes`, which is a WMP visualizer this player does not have, must read back the effect
+    /// that is really on screen and not its own string.
+    func testMediaCenterEffectSelectionIsLiveAndCommandsTheHost() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <EFFECTS id="visEffects" left="0" top="0" width="80" height="40"/>
+          <SUBVIEW id="pane" left="0" top="0" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        var snapshot = WMPHostSnapshot()
+        snapshot.effects = WMPEffectsSnapshot(type: "geiss", title: "Geiss",
+                                              preset: 3, presetTitle: "Rings")
+        let write = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: snapshot,
+            event: .init(name: "onClick", targetID: "pane",
+                         handlers: ["mediacenter.effectType = 'spikes'; visEffects.next();"]))
+        XCTAssertTrue(write.hostCommands.contains { $0.action == "setEffectType" })
+        XCTAssertTrue(write.hostCommands.contains { $0.action == "stepEffect" })
+        XCTAssertTrue(write.calls.contains { $0.path == "mediacenter.effecttype" && $0.resolution == .live })
+
+        let read = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: snapshot,
+            event: .init(name: "onClick", targetID: "pane",
+                         handlers: ["pane.left = mediacenter.effectPreset;"
+                                    + "pane.width = visEffects.currentPreset;"
+                                    + "pane.value = visEffects.currentEffectTitle;"]))
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        XCTAssertEqual(read.overrides.geometry[.init(stableID: pane.stableID, property: "left")], 3)
+        XCTAssertEqual(read.overrides.geometry[.init(stableID: pane.stableID, property: "width")], 3)
+        XCTAssertTrue(read.calls.contains {
+            $0.path == "viseffects.currenteffecttitle" && $0.resolution == .live
+        })
         await session.teardown()
     }
 

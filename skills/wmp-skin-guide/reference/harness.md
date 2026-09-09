@@ -100,6 +100,8 @@ INPUT hover <id>#<sid> -> <id>#<sid>                         a pointer crossing,
 INPUT dispatch <event> target=<id>#<sid> handlers=<n> gated=<bool>
 INPUT present <event> geometry=<n> properties=<n> commands=<n> diagnostics=<n>
 INPUT command <action> value=<v>                             a host command the transaction posted
+INPUT widgets hosted=<n> [<kind> id=<id> frame=<rect>, …]    the AppKit overlays this present built
+INPUT menu at=<point> frames=[<effects rects>]               a right-click, and what decided it
 INPUT animation <view> delay=<s> endsAt=<s|endless> clock=<s>  every startAnimation, and the clock it runs on
 INPUT script-diag [<code>] <message>                         a script diagnostic from a live transaction
 ```
@@ -382,6 +384,15 @@ the app presents (`WMPMainWindowController.renderBackingScale`). Indexing a 2x r
 the top-left quarter and calls it the window; presenting a 1x image into a 2x rep diffs AppKit's
 upscaler against the renderer. Both were made on the way to this line and both look exactly like a
 defect in the app.
+
+**`INPUT widgets hosted=…` is the live counterpart of `WIDGET`, and the two answer different
+questions.** `WIDGET` is what the *harness* resolved from a scene; `widgets hosted=` is what the
+running window actually built, printed on every present. It is the line to read when a skin dumps a
+perfect frame and is missing its playlist or its visualization on screen — the overlays are never in
+a PNG — and it is what settled Corona's "no visualization": `hosted=0` through a whole track said the
+pane was never built, which moved the search into the script that turns it on rather than into the
+drawing. `menu at=` prints the point a right-click landed on and every `<EFFECTS>` frame it was
+tested against, which is what decides whether the visualization's own context menu opens.
 
 `WIDGET` is the only line about the AppKit overlays — playlist, equaliser, popup, effects, video —
 and they are **not in the dumped PNG at all**: the renderer draws the scene, and these are `NSView`s

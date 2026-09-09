@@ -200,3 +200,48 @@ that is closed but still listed reads as open work, so they move here. Audited 2
 |---|---|---|---|
 | W43 | The player goes black while a track plays | corona, live | **Closed during Phase 3 live QA; moved out of the open backlog 2026-09-09, where it had been sitting struck-through and reading as open work.** Root cause was neither of the two suspects recorded here. `WMPEffectsSurfaceView.draw` and `WMPPlaylistSurfaceView.draw` filled `dirtyRect` rather than `bounds`; AppKit hands a view a dirty rect larger than itself (measured: `{{-269, -26}, {596, 468}}` against `bounds` `320x240`) and a layer-backed view does not clip it, so the overlay's translucent wash covered the whole window. Not playback-specific and not `WMPVideoPlaceholderView` — no video widget is ever built for corona. Found by comparing the renderer's own output against a screen capture of the same rect; see `live-ui-testing`. |
 | W44 | Four different buttons in the top cluster all open the file dialog | corona, live | **Closed 2026-09-09 on the row's own nominated test.** `WMP_RENDER_CLICK="vPlayer@366,12;400,12;420,12;444,12"` resolves `bOpenFile`, `bPlaylist`, `bVis` and `bEq` distinctly and dispatches **`handlers=1` for each**, with only `bOpenFile` posting `openFileDialog` — so neither suspect survives. The second one, dispatch fanning a `nil` `targetID` across every `onClick` in the view, is answered by `handlers=1`: `WMPMainWindowController.handlers(in:event:targetStableID:)` matches the exact node ahead of any authored id, and both `WMPMainView.mouseUp` and the harness pass the stable id. Original note follows. `bOpenFile`, `bPlaylist`, `bVis` and `bEq` are `BUTTONELEMENT`s inside one `BUTTONGROUP`, separated only by their `mappingColor` in `player_top_controls_left_map.bmp`. A coordinate scan along `y=12` resolves them correctly and distinctly (`WMP_RENDER_CLICK="vPlayer@366,12;400,12;420,12;444,12"` gives `bOpenFile`, `bPlaylist`, `bVis`, `bEq`), so the mapping table is right at that row — check other rows before assuming the sampler is wrong. The other candidate is dispatch rather than hit testing: `dispatchScriptEvent(name:targetID:)` filters handlers by `xmlID`, and a `nil` `targetID` runs **every** `onClick` in the view, one of which is `OpenMedia()`. Confirm which by clicking each button once with `WMP_RENDER_CLICK` and reading the `handlers=` count. |
+
+
+## Phase 14 — the visualization surface the corpus declares, and the four gaps behind one skin's
+
+Closed 2026-09-09. One row, and four object-model gaps that only became visible once the surface
+existed to be starved.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W101 | `<EFFECTS>` is not an element kind, so the visualization surface of 166 skins is hosted on nothing | **183 uses across 166 of 177 archives**, against `<WMPEFFECTS>`'s **5 / 5**, measured 2026-09-09 with `scripts/wmp_markup_census.sh <outdir> EFFECTS WMPEFFECTS` | **Closed 2026-09-09.** Two halves. The tag: `WMPElementKind(tagName:)` mapped `wmpeffects` and not `effects`, so the whole corpus's spelling fell to `.unknown` and `widgetKind` never made a widget; both spellings now map to `.effects`. What goes in the rect: `WMPEffectsSurfaceView` hosts a `VisualizationGLView` — the same ProjectM / Geiss / Tripex stack NullPlayer's own visualization window runs — with the WMP-style bars this engine drew by hand kept as the fourth entry and the fallback when no pixel format is available. `WMPEffectSelection` is the one place the choice lives, because **96 archives bind `currentEffectType="wmpprop:mediacenter.effectType"`**: `mediacenter.effectType`/`effectPreset` left the inert class and answer it, the element answers `currentEffectType`/`currentPreset`/`currentEffectTitle`/`currentPresetTitle`, and `next()`/`previous()`/`nextPreset()` (82 / 74 / 4 archives) cycle it. **Not W9's mistake**: nothing playing creates no engine and paints nothing, so the skin's own artwork stands; and the surface never takes a click, because 51 archives wire an `onClick` on the node and that handler is the scene's. Right-click gives the same `VisualizationContextMenu` the visualization window and the `.wal` AVS surface have (minus Fullscreen and Close), and the arrow keys step presets there too, offered only after the skin has refused the key. **Measured**: `WMP_RENDER_PROBE` over the 180 archives reports **91 hosted effects widgets across ~78 skins** where 5 archives could ever have had one, and the app's new `INPUT widgets hosted=` line is what proves it on screen. |
+
+**The four gaps behind "I see no evidence of visualization on corona", and none of them is W101.**
+Corona authors its `<WMPEFFECTS>` `visible="false"` and turns it on from `OnPlayStateChange`, so the
+surface was correct and the script never reached it. In order:
+
+* **The state-change event was dropped before it was dispatched.** `refreshHostState` wrote
+  `lastScriptSnapshot` at comparison time and scheduled the dispatch 16 ms out; the next time tick —
+  five a second during playback — then found nothing different and cancelled the pending task with
+  `playstatechange` still inside it. Nothing raised it again. Events now accumulate in
+  `pendingHostEvents` until a dispatch actually runs, in the contract's open/play/status/mode/
+  buffering/reception order.
+* **`NewState` and `status` were unbound**, so `playstatechange="OnPlayStateChangeTransport(NewState);
+  OnPlayStateChange();"` died on statement one. `WMPJScriptEvent.Handler` carries the event's own
+  arguments — per handler, because `NewState` is a different enumeration in the two events that
+  raise it. See `reference/object-model.md` § *Event arguments*.
+* **`osMediaWaiting` and the rest of `WMPOpenState`** (14–21) were missing from
+  `WMPScriptConstants`, and a skin switches over the whole enumeration.
+* **`player.dvd`, `player.network.sourceProtocol` and `player.currentPlaylist.getItemInfo`** were
+  unrecognised. All three now answer the true thing — no DVD, no source protocol, no playlist
+  attributes — and are counted inert.
+
+**What that moved outside Corona, because a script that finally runs is a script that finally hides
+panes.** Probe sweep over the 180 archives, before and after the object-model additions: script
+diagnostics **95 → 89**, and `Plus!`'s `videoView` lost 9 widgets — its `onLoad` now runs past
+`player.dvd` instead of dying at line 16, so it hides the video-settings controls it always meant to
+hide. One new error surfaced behind the fixed ones (`checkForContent`). This is W37's cascade, and
+the rule it wrote stands: re-measure the whole table in the same capture, never read one row falling
+as progress.
+
+**And one defect this row introduced and fixed inside the same day.** The surface's PCM observer
+called `MainActor.assumeIsolated` on the notification thread; `.audioPCMDataUpdated` is posted from
+inside `AudioEngine.processAudioBuffer`, so it is a `dispatch_assert_queue` failure and the process
+traps the moment a hosted surface exists and a track plays. `VisualizationGLView` takes its own lock
+and is written to directly from the posting thread. It reached live QA, where a crashed player reads
+as "the playlist and the open folder are broken" — see `live-ui-testing`.

@@ -301,18 +301,19 @@ that put it somewhere other than the view they open on:
 | Surface | views | skins | own view | Hosted |
 |---|---:|---:|---:|---|
 | `<VIDEO>` / `<WMPVIDEO>` | 268 | 170 | 165 | no (W9 removed the opaque placeholder; W102 is the row) |
-| `<EFFECTS>` / `<WMPEFFECTS>` | 178 | 171 | 144 | 5 skins only — the tag `<EFFECTS>` is not an element kind (W101) |
+| `<EFFECTS>` / `<WMPEFFECTS>` | 178 | 171 | 144 | yes — this player's own visuals in the authored rect (W101) |
 | `<PLAYLIST>` family | 175 | 170 | 162 | yes |
 | `<EQUALIZERSETTINGS>` | 170 | 163 | 147 | yes — the skin's own bound sliders are the equaliser |
 | `<VIDEOSETTINGS>` | 94 | 94 | 93 | no (W103) |
 | `<NETWORK>` | 6 | 4 | 4 | object-only, and correctly so (W104) |
 
-**`WMPSkinSurface` models the middle two, and its doc comment used to claim there was nothing else
-to model.** There is: the visualizer and the video window are surfaces this app has its own window
-for and 170 skins declare themselves, so the menu toggles for those open ours over the skin's own —
-the same defect W93 opened for the playlist. **Adding a routing case before the surface is hosted
-trades a duplicate window for an empty drawer**, which is why the routing row (W105) is ranked
-behind the hosting rows and not with them.
+**`WMPSkinSurface` models the playlist and the equaliser, and its doc comment used to claim there
+was nothing else to model.** There is: the visualizer and the video window are surfaces this app has
+its own window for and 170 skins declare themselves, so the menu toggles for those open ours over
+the skin's own — the same defect W93 opened for the playlist. **Adding a routing case before the
+surface is hosted trades a duplicate window for an empty drawer**, which is why the routing row
+(W105) is ranked behind the hosting rows and not with them. W101 has landed, so `.visualization` is
+the case that may now be added; `.video` still waits on W102.
 
 **A `.wmz` also authors windows this player has no content for at all**, and they are not defects:
 `infoView` (45 `openView` calls across the corpus) is the skin's own about/links/gallery panel,
@@ -539,10 +540,28 @@ of these was invisible to the harness and visible in the first minute of live QA
 ## Drawing the skin's own controls
 
 - **The skin draws its controls; an AppKit overlay is only for what the scene genuinely cannot
-  paint.** What is left hosted is `PLAYLIST`, `DROPDOWNPLAYLIST`, `EFFECTS` and `POPUP`. `VIDEO`
-  is not: its placeholder filled every `<VIDEO>` frame with opaque black over the artwork of 166 of
-  177 archives, and an audio player has nothing to put there instead. Adding an overlay back needs
-  the same argument — name what the renderer cannot draw.
+  paint.** What is left hosted is `PLAYLIST`, `DROPDOWNPLAYLIST`, `EFFECTS`, `EDITBOX`, `LISTBOX`
+  and `POPUP`. `VIDEO` is not: its placeholder filled every `<VIDEO>` frame with opaque black over
+  the artwork of 166 of 177 archives, and an audio player has nothing to put there instead. Adding
+  an overlay back needs the same argument — name what the renderer cannot draw.
+- **The visualization surface is this player's own visuals in the rect the skin authored (W101).**
+  `WMPEffectsSurfaceView` hosts a `VisualizationGLView` — the same ProjectM / Geiss / Tripex stack
+  NullPlayer's own visualization window runs — plus the WMP-style bars this engine drew by hand, and
+  `WMPEffectSelection` is the one place the choice lives, because 96 archives bind the rect's
+  `currentEffectType` to `wmpprop:mediacenter.effectType`. Three rules it is built on:
+  **nothing playing draws nothing at all** (no engine is even created, so the skin's own screen
+  artwork stands — W9's rule, applied before the fact); **the surface never takes a click**, because
+  51 archives wire an `onClick` on the `<EFFECTS>` node and that handler belongs to the scene's hit
+  testing; and **the skin's selector is not the app's preference** — cycling from the rect or from
+  its menu never writes `visualizationEngineType`, which the visualization window and the menu bar
+  share. Right-click gives the same `VisualizationContextMenu` those two have (minus Fullscreen and
+  Close: the rect is a box inside the skin's window), and the arrow keys step presets exactly as
+  they do there, but only after the skin has refused the key.
+- **PCM arrives on the audio thread and an overlay must not hop to the main actor to take it.**
+  `.audioPCMDataUpdated` is posted from inside `AudioEngine.processAudioBuffer`; a
+  `MainActor.assumeIsolated` in that observer is a `dispatch_assert_queue` failure and the process
+  traps the moment a surface exists and a track plays. `VisualizationGLView` takes its own lock, so
+  it is written to directly from the posting thread.
 - **A slider is a track plus a thumb the scene places**, and `WMPSliderMetrics` owns that geometry
   alone so each of its rules is testable: `borderSize` is dead track at *both* ends (171 skins),
   a **vertical** slider's maximum is at the **top** (1,312 of 1,968 `direction` attributes are
@@ -615,8 +634,9 @@ of these was invisible to the harness and visible in the first minute of live QA
   typed host actions; scripts receive plain copied item values, never `Track` objects.
 - WMP exposes ten EQ gains. `WMPAudioEngineHost` uses `EQBandRemapper` at the boundary when the live
   engine is in its 21-band layout; every write remains clamped to ±12 dB.
-- `WMPEFFECTS` hosts the safe WMP bars surface. Its single ref-counted spectrum consumer must be
-  registered only while an effects surface exists in the active view and removed on switch/teardown.
+- `EFFECTS`/`WMPEFFECTS` hosts the visualization surface. Its single ref-counted spectrum consumer
+  must be registered only while an effects surface exists in the active view and removed on
+  switch/teardown.
 - `VIDEO`/`WMPVIDEO` draw nothing — the placeholder that painted them opaque black over the skin's
   own artwork is gone (W9). WMP plug-ins, ActiveX, DLLs, and arbitrary media surfaces remain denied.
 - A view switch cancels capture and outgoing timers, stops continuous commands, clears view-local

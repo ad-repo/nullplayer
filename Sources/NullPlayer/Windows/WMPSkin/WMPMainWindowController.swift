@@ -111,6 +111,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var interactionState = WMPInteractionState()
     private var scriptRuntime: WMPScriptRuntime?
     private var lastScriptSnapshot: WMPHostSnapshot?
+    /// Host events a refresh has *decided* on but not yet dispatched.
+    ///
+    /// **A state change is compared once and dispatched later, and the two used to be able to come
+    /// apart.** `refreshHostState` writes `lastScriptSnapshot` at comparison time and schedules the
+    /// dispatch 16 ms out; the next refresh — a time tick, which arrives about five times a second
+    /// during playback — then compared against the *new* snapshot, found only `status_onchange`,
+    /// and cancelled the pending task with `playstatechange` still inside it. Nothing ever raised
+    /// it again, because by then nothing differed. Corona is what that cost: its `<WMPEFFECTS>`
+    /// pane is authored `visible="false"` and turned on by `OnPlayStateChange`, so the skin's
+    /// visualization never appeared however long it played. Events accumulate here until a
+    /// dispatch actually runs.
+    private var pendingHostEvents: [String] = []
     private var mainView: WMPMainView?
     private var unskinnedView: WMPUnskinnedMainView?
     private var isApplyingSceneSize = false
@@ -526,6 +538,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if let scriptRuntime { Task { await scriptRuntime.teardown() } }
         scriptRuntime = nil
         lastScriptSnapshot = nil
+        pendingHostEvents.removeAll()
         stopAllTimers()
         stopDispatcher()
         lastLoadDiagnostic = message
@@ -636,6 +649,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if let scriptRuntime { Task { await scriptRuntime.teardown() } }
         scriptRuntime = nil
         lastScriptSnapshot = nil
+        pendingHostEvents.removeAll()
         mainView?.prepareForUITeardown()
         mainView = nil
         unskinnedView?.onImport = nil
@@ -829,13 +843,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if previous?.bufferingProgress != snapshot.bufferingProgress { events.append("buffering_onchange") }
         if previous?.receptionQuality != snapshot.receptionQuality { events.append("reception_onchange") }
         guard !events.isEmpty else { return }
+        for name in events where !pendingHostEvents.contains(name) { pendingHostEvents.append(name) }
         scriptTask?.cancel()
         scriptTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 16_000_000)
-            guard !Task.isCancelled else { return }
-            self?.dispatchHostEvents(events)
+            guard !Task.isCancelled, let self else { return }
+            // Open, play, status, mode, buffering, then reception order — the dispatch order the
+            // host contract fixes, whichever refresh each event was decided by.
+            let names = Self.hostEventOrder.filter { self.pendingHostEvents.contains($0) }
+            self.pendingHostEvents.removeAll()
+            self.dispatchHostEvents(names)
         }
     }
+
+    private static let hostEventOrder = ["openstatechange", "playstatechange", "status_onchange",
+                                         "modechange", "buffering_onchange", "reception_onchange"]
 
     private func renderInteraction(state: WMPInteractionState, changed: Set<Int>) {
         guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
@@ -887,11 +909,37 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private func dispatchHostEvents(_ names: [String]) {
         guard let skin = loadedSkin else { return }
-        let handlers = names.flatMap {
-            Self.handlers(in: skin, event: $0, targetID: nil, viewID: activeViewID)
+        let snapshot = host.snapshot
+        let handlers = names.flatMap { name in
+            Self.handlers(in: skin, event: name, targetID: nil, viewID: activeViewID).map {
+                WMPJScriptEvent.Handler(source: $0, arguments: Self.arguments(for: name, snapshot))
+            }
         }
         dispatchScriptTransaction(WMPJScriptEvent(name: names.joined(separator: ","),
                                                    targetID: nil, handlers: handlers))
+    }
+
+    /// The implicit arguments WMP raises a host event with, per event rather than per transaction.
+    ///
+    /// `NewState` is the whole of the measured demand — 6 of the 180 installed archives name it in
+    /// a handler attribute and 5 name `status` — and it is a *different* enumeration in the two
+    /// events that carry it: an open state (`os*`) in `openstatechange` and a play state (`ps*`) in
+    /// `playstatechange`. Both are answered from the same members `player.openState` and
+    /// `player.playState` answer, so the argument and the property can never disagree. `status` is
+    /// `player.status`, which this engine has nothing behind and answers as the empty string.
+    private static func arguments(for event: String,
+                                  _ snapshot: WMPHostSnapshot) -> [String: WMPJSONValue] {
+        switch event {
+        case "openstatechange":
+            return ["NewState": .number(Double(snapshot.playlistCount > 0
+                ? WMPScriptConstants.osMediaOpen : WMPScriptConstants.osUndefined))]
+        case "playstatechange":
+            return ["NewState": .number(Double(WMPScriptConstants.playState(for: snapshot.state)))]
+        case "status_onchange":
+            return ["status": .string("")]
+        default:
+            return [:]
+        }
     }
 
     private func dispatchScriptTransaction(_ event: WMPJScriptEvent) {
@@ -1090,6 +1138,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 if let index = Int(action.dropFirst("setEQBand:".count)) {
                     host.perform(.setEQBand(index), value: command.value.map { .number($0.number ?? 0) })
                 }
+            case "setEffectType": host.perform(.setEffectType(command.value?.string ?? ""), value: nil)
+            case "setEffectPreset": host.perform(.setEffectPreset(Int(number ?? 0)), value: nil)
+            case "stepEffect":
+                host.perform((number ?? 1) < 0 ? .previousEffect : .nextEffect, value: nil)
+            case "stepEffectPreset": host.perform(.nextEffectPreset, value: nil)
             case "setViewTimerInterval": setViewTimer(milliseconds: Int(number ?? 0))
             case "openFileDialog": presentOpenMediaPanel()
             case "closeView":

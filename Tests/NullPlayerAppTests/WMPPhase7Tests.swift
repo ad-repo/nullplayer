@@ -22,7 +22,18 @@ final class WMPPhase7Tests: XCTestCase {
         let oversized = NSRect(x: -frame.origin.x, y: -frame.origin.y,
                                width: window.width, height: window.height)
 
-        for overlay in [WMPEffectsSurfaceView(frame: frame), WMPPlaylistSurfaceView(frame: frame)] as [NSView] {
+        // The effects surface draws nothing at all unless a visualizer is running — that is the
+        // W9 rule the rect is hosted under (W101) — so it is put in the state it paints in before
+        // being asked whether it paints outside itself.
+        let effects = WMPEffectsSurfaceView(frame: frame)
+        // The bars are the one effect this view paints itself; the other three are engines drawing
+        // their own frames into a child view, which is not what this test measures.
+        WMPEffectSelection.shared.select("bars")
+        var playing = WMPHostSnapshot(); playing.state = .playing
+        effects.update(playing)
+        effects.updateSpectrum(Array(repeating: 0.5, count: 32))
+
+        for overlay in [effects, WMPPlaylistSurfaceView(frame: frame)] as [NSView] {
             let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil,
                 pixelsWide: Int(window.width), pixelsHigh: Int(window.height),
                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,

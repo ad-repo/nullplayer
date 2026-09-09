@@ -366,7 +366,19 @@ final class WMPScriptContext: @unchecked Sendable {
                 // unrelated later handler read a stale one instead of failing honestly.
                 if boundEventValue { context.setObject(nil, forKeyedSubscript: "value" as NSString) }
             }
-            for (index, source) in event.handlers.enumerated() {
+            for (index, handler) in event.handlers.enumerated() {
+                // The event's own arguments, bound and then cleared exactly as `value` above is:
+                // a stale `NewState` left standing as a global would be read by an unrelated later
+                // handler instead of failing honestly.
+                for (name, argument) in handler.arguments {
+                    context.setObject(Self.jsAny(argument), forKeyedSubscript: name as NSString)
+                }
+                defer {
+                    for name in handler.arguments.keys {
+                        context.setObject(nil, forKeyedSubscript: name as NSString)
+                    }
+                }
+                let source = handler.source
                 // Fail closed per handler, never per session. A skin puts its whole startup in one
                 // handler, so one missing member costs many unrelated features — and the demand
                 // tally is what makes that visible. A session-wide kill switch made it invisible.

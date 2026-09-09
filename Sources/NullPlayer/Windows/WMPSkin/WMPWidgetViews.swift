@@ -93,30 +93,6 @@ final class WMPDropdownPlaylistSurfaceView: NSPopUpButton {
     }
 }
 
-@MainActor
-final class WMPEffectsSurfaceView: NSView {
-    private var levels: [Float] = []
-    override var isFlipped: Bool { true }
-
-    func updateSpectrum(_ levels: [Float]) { self.levels = levels; needsDisplay = true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
-        // itself — here the whole 596x468 window arrives as {{-269, -26}, {596, 468}} in this
-        // view's coordinates — and a layer-backed view does not clip it (`masksToBounds` is
-        // false). Filling it painted this surface's translucent wash over the entire skin.
-        NSColor(calibratedWhite: 0.04, alpha: 0.9).setFill(); bounds.fill()
-        guard !levels.isEmpty else { return }
-        let count = min(32, levels.count), width = bounds.width / CGFloat(count)
-        NSColor.systemGreen.setFill()
-        for index in 0..<count {
-            let level = CGFloat(max(0, min(1, levels[index])))
-            NSRect(x: CGFloat(index) * width, y: bounds.height * (1 - level),
-                   width: max(1, width - 1), height: bounds.height * level).fill()
-        }
-    }
-}
-
 /// A `<POPUP>`, which in this corpus means one thing: an equaliser preset menu.
 ///
 /// All four archives that author one do the same thing — `popupPreset.appendItem(...)` in an

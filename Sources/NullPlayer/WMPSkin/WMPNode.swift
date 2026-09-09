@@ -5,7 +5,7 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
     case slider, volumeSlider, seekSlider, balanceSlider, customSlider, progressBar
     case playElement, pauseButton, stopElement, prevElement, nextElement
     case rewButton, rewElement, ffwdButton, ffwdElement, returnButton, shuffleButton
-    case playlist, dropdownPlaylist, video, wmpVideo, wmpEffects
+    case playlist, dropdownPlaylist, video, wmpVideo, effects
     case equalizerSettings, popup, editBox, listBox, player, network, script
     case unknown(String)
 
@@ -52,7 +52,13 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case "dropdownplaylist": self = .dropdownPlaylist
         case "video": self = .video
         case "wmpvideo": self = .wmpVideo
-        case "wmpeffects": self = .wmpEffects
+        // **`<EFFECTS>` and `<WMPEFFECTS>` are the same surface, and only the second was ever a
+        // kind.** 183 uses across 166 of the 177 measured archives spell it `<EFFECTS>` against
+        // `<WMPEFFECTS>`'s 5 of 5, so the visualization surface of the whole corpus fell to
+        // `.unknown`, `widgetKind` answered nil, and nothing was ever hosted in a rect the skin had
+        // already sized for it (W101). Reproduce with
+        // `scripts/wmp_markup_census.sh <outdir> EFFECTS WMPEFFECTS`.
+        case "effects", "wmpeffects": self = .effects
         case "equalizersettings": self = .equalizerSettings
         case "popup": self = .popup
         case "editbox": self = .editBox
@@ -95,7 +101,7 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case .dropdownPlaylist: return "dropdownPlaylist"
         case .video: return "video"
         case .wmpVideo: return "wmpVideo"
-        case .wmpEffects: return "wmpEffects"
+        case .effects: return "effects"
         case .equalizerSettings: return "equalizerSettings"
         case .popup: return "popup"
         case .editBox: return "editBox"
