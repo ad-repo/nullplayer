@@ -2663,7 +2663,7 @@ class CastManager {
     /// Sonos S1 fails above 48 kHz PCM; use as conservative safe limit.
     static let sonosMaxSampleRate: Int = 48000
 
-    /// Lossless extensions that require the sample-rate check.
+    /// Lossless extensions whose unknown sample rate is unsafe for remote streams.
     private static let sonosLosslessExtensions: Set<String> = ["flac", "wav"]
 
     /// Map common audio MIME types to their extension equivalent for format checking.
@@ -2688,16 +2688,12 @@ class CastManager {
         return track.contentType.map(contentTypeToExtension) ?? ""
     }
 
-    private static func sonosLosslessExtension(for track: Track) -> String? {
-        let ext = sonosFormatExtension(for: track)
-        return sonosLosslessExtensions.contains(ext) ? ext : nil
-    }
-
-    /// Best-effort Sonos sample rate for a lossless track whose metadata has no rate.
+    /// Best-effort Sonos sample rate when track metadata has no rate.
     /// Plex can resolve it from server metadata; local files are probed directly.
+    /// Do not gate this on the URL extension or MIME type: a known high sample rate
+    /// must never bypass Sonos's 48 kHz ceiling merely because its container is unknown.
     static func resolveSonosSampleRate(for track: Track) async -> Int? {
         if let sampleRate = track.sampleRate { return sampleRate }
-        guard sonosLosslessExtension(for: track) != nil else { return nil }
 
         if let ratingKey = track.plexRatingKey {
             let sampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
@@ -2740,7 +2736,7 @@ class CastManager {
         return Int(sampleRate.rounded())
     }
 
-    /// Returns false if the track format is known to be unsupported by Sonos.
+    /// Returns false if the track format or known sample rate is unsupported by Sonos.
     /// Falls back to `track.contentType` when the URL has no file extension
     /// (e.g. server-streamed tracks from Subsonic/Jellyfin/Emby/Plex).
     static func isSonosCompatible(_ track: Track, sampleRateOverride: Int? = nil,
@@ -2749,11 +2745,16 @@ class CastManager {
 
         if sonosUnsupportedExtensions.contains(ext) { return false }
 
+        // The hardware limit applies regardless of which container or MIME type
+        // identified the audio. Restricting this check to FLAC/WAV let high-rate
+        // tracks with an unfamiliar extension or content type reach the speaker.
+        let effectiveSampleRate = sampleRateOverride ?? track.sampleRate
+        if let sampleRate = effectiveSampleRate, sampleRate > sonosMaxSampleRate {
+            return false
+        }
+
         if sonosLosslessExtensions.contains(ext) {
-            let effectiveSampleRate = sampleRateOverride ?? track.sampleRate
-            if let sr = effectiveSampleRate {
-                if sr > sonosMaxSampleRate { return false }
-            } else if !allowUnknownSampleRate {
+            if effectiveSampleRate == nil && !allowUnknownSampleRate {
                 return false  // nil SR in strict mode → block
             }
             // nil SR + allowUnknownSampleRate → pass through (let caller fetch and verify)

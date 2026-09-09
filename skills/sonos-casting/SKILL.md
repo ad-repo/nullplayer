@@ -439,7 +439,7 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 - **Permissive** (`allowUnknownSampleRate: true`): nil sample rate → pass through. Used in _scan/positioning_ functions that advance the playlist index before casting begins.
 
 Always-incompatible formats (regardless of sample rate): `alac`, `aiff`, `aif`, `wv` (WavPack), `ape` (Monkey's Audio).
-Lossless formats requiring the sample-rate check: `flac`, `wav` — rejected above 48 kHz.
+Every track with a known or resolved sample rate is rejected above 48 kHz, regardless of its URL extension or MIME type. FLAC and WAV additionally require a known rate in strict mode.
 
 Format classification uses the URL extension first, then normalized `Track.contentType` when the URL is extensionless. MIME types are normalized case-insensitively and parameters are ignored, so `Audio/X-FLAC; charset=binary` is treated as FLAC. This matters for Plex, Subsonic/Navidrome, Jellyfin, and Emby stream URLs that may not end in `.flac` or `.wav`.
 
@@ -455,11 +455,11 @@ Functions that advance the playlist index use `allowUnknownSampleRate: true` bec
 ### Cast Functions Are the Final Authority
 
 `castCurrentTrack` and `castNewTrack` in `CastManager.swift` call `resolveSonosSampleRate(for:)`
-for lossless tracks with nil SR. Plex tracks fetch the actual rate from the server; local files
-are probed directly with `AVAudioFile` and asynchronously-loaded `AVAsset` format descriptions.
-The resolution decision must use the same URL-extension-or-content-type classification as
-`isSonosCompatible`; Plex stream URLs are often extensionless, so `Track.contentType` must
-identify FLAC/WAV for the fetch to happen. If a track fails there,
+when metadata has nil SR. Plex tracks fetch the actual rate from the server; local files
+are probed directly with `AVAudioFile` and asynchronously-loaded `AVAsset` format descriptions,
+even when their extension or MIME type is unfamiliar. Plex rate resolution does not depend on
+format classification; classification remains relevant for unsupported codecs and strict unknown
+FLAC/WAV handling. If a track fails there,
 `advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
 
 The final compatibility call remains strict for server tracks. A local file whose sample rate is

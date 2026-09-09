@@ -559,6 +559,17 @@ final class CastingTests: XCTestCase {
         XCTAssertFalse(CastManager.isSonosCompatible(track))
     }
 
+    func testHighResolutionTrackWithUnrecognizedContainerIsNotSonosCompatible() {
+        let track = Track(
+            url: URL(string: "https://server.example.test/audio/stream")!,
+            title: "16/192 Stream",
+            sampleRate: 192_000,
+            contentType: "application/octet-stream"
+        )
+
+        XCTAssertFalse(CastManager.isSonosCompatible(track))
+    }
+
     func testSonosCompatibilityNormalizesContentTypeParameters() {
         let track = Track(
             url: URL(string: "http://server.local/stream/123")!,
@@ -582,6 +593,25 @@ final class CastingTests: XCTestCase {
         let resolvedSampleRate = await CastManager.resolveSonosSampleRate(for: track)
 
         XCTAssertEqual(resolvedSampleRate, 96_000)
+        XCTAssertFalse(CastManager.isSonosCompatible(
+            track,
+            sampleRateOverride: resolvedSampleRate,
+            allowUnknownSampleRate: true
+        ))
+    }
+
+    func testResolveSonosSampleRateProbesLocalFileWithUnrecognizedExtension() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-sonos-\(UUID().uuidString)")
+            .appendingPathExtension("stream")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try makePCM16WAV(sampleRate: 192_000, channels: 2, frames: 256).write(to: url)
+
+        let track = Track(url: url, title: "16/192 Unrecognized Container")
+        let resolvedSampleRate = await CastManager.resolveSonosSampleRate(for: track)
+
+        XCTAssertEqual(resolvedSampleRate, 192_000)
         XCTAssertFalse(CastManager.isSonosCompatible(
             track,
             sampleRateOverride: resolvedSampleRate,
