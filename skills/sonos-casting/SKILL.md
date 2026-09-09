@@ -439,7 +439,7 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 - **Permissive** (`allowUnknownSampleRate: true`): nil sample rate → pass through. Used in _scan/positioning_ functions that advance the playlist index before casting begins.
 
 Always-incompatible formats (regardless of sample rate): `alac`, `aiff`, `aif`, `wv` (WavPack), `ape` (Monkey's Audio).
-Every track with a known or resolved sample rate is rejected above 48 kHz, regardless of its URL extension or MIME type. FLAC and WAV additionally require a known rate in strict mode.
+Every track with a known or resolved sample rate is rejected above 48 kHz, regardless of its URL extension or MIME type. Resolve the rate before the final cast verdict for every Plex or local track whose metadata lacks one; do not restore an extension/MIME gate around that resolution. FLAC and WAV additionally require a known rate in strict mode.
 
 Format classification uses the URL extension first, then normalized `Track.contentType` when the URL is extensionless. MIME types are normalized case-insensitively and parameters are ignored, so `Audio/X-FLAC; charset=binary` is treated as FLAC. This matters for Plex, Subsonic/Navidrome, Jellyfin, and Emby stream URLs that may not end in `.flac` or `.wav`.
 

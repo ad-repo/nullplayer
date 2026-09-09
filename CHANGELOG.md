@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Sonos room volume control
+- **Sonos no longer receives audio above its 48 kHz limit** — the compatibility gate now rejects
+  any track with a known or resolved sample rate above 48 kHz, even when its URL extension or MIME
+  type is unrecognized. Local files with unusual extensions are probed before casting, and Plex
+  tracks with missing rate metadata are resolved from the server (GH #422).
 
 ## 0.30.0
 
