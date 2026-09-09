@@ -1925,7 +1925,7 @@ class WindowManager {
     }
 
     var isLibraryHistoryVisible: Bool {
-        guard isRunningModernUI, isPlexBrowserVisible else { return false }
+        guard isPlexBrowserVisible else { return false }
         return plexBrowserBrowseMode == ModernBrowseMode.history.rawValue
     }
     
@@ -2640,7 +2640,6 @@ class WindowManager {
     // MARK: - Library History
 
     func showLibraryHistory() {
-        guard isRunningModernUI else { return }
         showPlexBrowser()
         plexBrowserBrowseMode = ModernBrowseMode.history.rawValue
         plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
@@ -2650,11 +2649,8 @@ class WindowManager {
     }
 
     func toggleLibraryHistory() {
-        guard isRunningModernUI else { return }
         if isLibraryHistoryVisible {
-            plexBrowserWindowController?.window?.orderOut(nil)
-            postLayoutChangeNotification()
-            updateDockedChildWindows()
+            togglePlexBrowser()
             return
         }
 

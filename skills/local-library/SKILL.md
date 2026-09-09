@@ -14,6 +14,12 @@ Reference for local media library: scanning, persistence, NAS responsiveness, an
 | Waveform (cue-sheet) | `Waveform/BaseWaveformView.swift` |
 | Play history (Data tab) | `Windows/ModernStats/PlayHistoryStore.swift`, `Windows/ModernStats/PlayHistoryAgent.swift`, `Windows/ModernStats/StatsContentView.swift` |
 
+The History tab is intentionally a recent, display-filtered view: its query has a `LIMIT 200`, while
+the default filter is the last 30 days and excludes skipped events. The **Download Play History**
+button exports every row in `play_events` (including skipped entries) without those display limits.
+Keep export queries separate from display queries so an export never silently inherits a UI cap or
+active filter.
+
 ## Database Schema
 
 **Library**: `MediaLibraryStore` (SQLite via the `SQLite.swift` package). Replaced legacy `library.json`.

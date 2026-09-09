@@ -12,11 +12,30 @@ struct StatsContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             StatsHeaderView(agent: agent, title: headerTitle)
-            Picker("", selection: $selectedTab) {
-                Text("Overview").tag(0)
-                Text("History").tag(1)
+            HStack(spacing: 8) {
+                Picker("", selection: $selectedTab) {
+                    Text("Overview").tag(0)
+                    Text("History").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: .infinity)
+
+                Button(action: agent.exportCompleteHistory) {
+                    Group {
+                        if agent.isExporting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Download", systemImage: "arrow.down.to.line")
+                        }
+                    }
+                    .frame(minWidth: 88)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(agent.isExporting)
+                .help("Download Play History")
+                .accessibilityLabel("Download Play History")
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             if selectedTab == 0 {

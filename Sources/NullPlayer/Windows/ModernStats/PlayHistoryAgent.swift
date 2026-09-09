@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 enum StatsDimension: Sendable { case artist, album, genre, source, outputDevice }
 enum StatsGranularity: Sendable { case day, week, month }
@@ -75,6 +76,7 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var genreArtists:   [TopDimensionRow] = []
     @Published var dailyActivity:  [DailyActivityRow] = []
     @Published var isLoading: Bool = false
+    @Published var isExporting: Bool = false
     @Published var error: String? = nil
     @Published var isBackfilling = false
     @Published var backfillCurrent = 0
@@ -284,5 +286,51 @@ final class PlayHistoryAgent: ObservableObject {
         backfillTask?.cancel()
         backfillTask = nil
         isBackfilling = false
+    }
+
+    func exportCompleteHistory() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "csv")!]
+        panel.nameFieldStringValue = "NullPlayer Play History.csv"
+        panel.title = "Download Play History"
+        panel.message = "Exports every recorded play event, including skipped entries."
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        isExporting = true
+        error = nil
+
+        Task {
+            do {
+                try await Task.detached(priority: .userInitiated) { [store] in
+                    let rows = try store.fetchAllEventsForExport()
+                    let csv = Self.makeCSV(rows: rows)
+                    try csv.write(to: destination, atomically: true, encoding: .utf8)
+                }.value
+            } catch {
+                self.error = "Could not export play history: \(error.localizedDescription)"
+            }
+            self.isExporting = false
+        }
+    }
+
+    nonisolated static func makeCSV(rows: [PlayHistoryExportRow]) -> String {
+        let formatter = ISO8601DateFormatter()
+        let header = [
+            "Event ID", "Track ID", "Track URL", "Title", "Artist", "Album", "Genre",
+            "Played At", "Duration Seconds", "Source", "Skipped", "Content Type", "Output Device"
+        ]
+        let lines = rows.map { row in
+            csvLine([
+                String(row.id), row.trackID, row.trackURL, row.title, row.artist, row.album, row.genre,
+                formatter.string(from: row.playedAt), String(row.durationListened), row.source,
+                row.skipped ? "true" : "false", row.contentType, row.outputDevice
+            ])
+        }
+        return ([csvLine(header)] + lines).joined(separator: "\n") + "\n"
+    }
+
+    nonisolated private static func csvLine(_ values: [String]) -> String {
+        values.map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+            .joined(separator: ",")
     }
 }
