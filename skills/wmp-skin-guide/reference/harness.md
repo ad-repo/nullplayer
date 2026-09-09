@@ -172,6 +172,44 @@ switch never loaded the view (W46); `setViewTimerInterval value=50` immediately 
 staying silent through all of it said no handler ever threw, which is what moved the search out of
 the script and into the engine's own semantics.
 
+### Number the transactions before theorising about one
+
+W88 was diagnosed wrong twice from the trace above, and the second fix was a no-op that produced a
+byte-identical run. The line that misled was two `dispatch timer` entries with no `present` between
+them, which reads as *the second tick cancelled the first before it ran*. It had not: the first tick
+ran and presented normally, and the transaction that died was a later one that got as far as
+`render` and was then cancelled at a **second** `guard !Task.isCancelled` — a different line, in a
+different half of the function, losing a different thing.
+
+Numbering settled it in one launch. A temporary counter in `dispatchScriptTransaction`, printing a
+pair per transaction:
+
+```
+INPUT txn 207 begin timer handlers=1
+INPUT txn 207 ran superseded=false hostCommands=["setViewTimerInterval=0"] diagnostics=0
+INPUT txn 208 begin timer handlers=1          ← 207 never presented, never applied its command
+```
+
+`ran superseded=false` with no `command` line after it is the whole diagnosis: the handler ran, was
+*not* superseded when it returned, and its output still went nowhere — which points at the code
+between `transact` and the present, and nowhere else. `dispatch`/`present`/`command` lines carry no
+identity, so any interleaving of them is inferred; a sequence number makes it read.
+
+**Add the counter, take the answer, remove it.** It is not a documented flag, because a permanent
+one would have to be — and the thing worth keeping is the technique, not the instrument. When a
+transaction-level defect resists two readings of the trace, number them rather than reason harder.
+
+**Shorten a long intro with the skin's own preference rather than waiting it out.** `Alienware
+Invader` plays 568 frames before it reveals anything, which is minutes per launch in a debug build.
+Its own script skips to frame 362 when `theme.loadPreference('soundFX')` is `"false"`, and skin
+preferences are plain `UserDefaults` under `wmp.preferences.<sha256 of the .wmz>` in the `NullPlayer`
+domain, so `defaults write NullPlayer "wmp.preferences.$SHA" -dict-add soundFX false` cuts the loop
+to about a minute. Read the skin's script for the shortcut it already has; do not add an engine flag
+for one. **Restore what you changed** — `defaults delete NullPlayer "wmp.preferences.$SHA"` resets
+that skin's preferences — and remember the preference dictionary is *evidence* as well as state:
+`Alienware Invader`'s held `remoteCallPl/Eq/Vis/Meta = true`, four flags written by buttons and read
+by nothing, which is W89 recorded in the user's own defaults.
+
 ### Reducing a skin's script to a standalone repro
 
 W86 was a JScript-versus-JavaScriptCore difference inside 200 lines of the skin's own code, and

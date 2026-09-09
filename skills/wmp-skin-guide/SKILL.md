@@ -220,6 +220,10 @@ report while moving images elsewhere in the corpus is the wrong fix.
 
 The ones that cost the most, in WMP terms:
 
+- **Number the transactions before theorising about one.** Two rounds of inference off the raw
+  `INPUT` trace named the wrong cancellation check for W88 and produced a fix that was a no-op; one
+  temporary `txn <n>` pair named the right one in a single launch. `reference/harness.md`
+  § *Driving the app*.
 - **A green corpus sweep used to say nothing about AppKit; now it says one thing.**
   `WMP_RENDER_APPKIT=1` runs the real `NSView.draw` of the view and every overlay over it and diffs
   it against a second pass with the overlays hidden. **Start a live report here**: if the view diffs
@@ -354,6 +358,20 @@ of these was invisible to the harness and visible in the first minute of live QA
   re-measuring the whole table in the same capture, and never read lost pixels as a regression
   before finding the statement that hid them — a script that finally runs is a script that finally
   hides panes. `reference/harness.md` § *After W37*.
+- **A host command is the script's output, not the drawing's, and it is applied when the
+  transaction returns rather than after the scene is presented (W88).** The build and the render are
+  the slow half of a transaction, so a view timer that fires during them cancels the task — right
+  for the drawing, because a newer transaction is already building a newer scene, and it used to
+  discard the commands with it. `Alienware Invader` is what that cost: its 568-frame intro ends on
+  the heaviest tick in the skin — `toggleShutter()` swaps `mainBack` to `main_back.png`, turns
+  `mainBackGroup1` on and posts `view.timerInterval = 0` — and building that one frame decodes the
+  whole player's artwork, overrunning the 50 ms period. The reveal was never presented and the `0`
+  never applied, so the timer kept firing with the skin's own `introStatus` now true and the very
+  next tick took the *other* branch of `toggleShutter()`, closing the shutter it had just opened.
+  Reported live as "it opens to reveal the controls and then closes and stops responding".
+  **A transaction that has returned from `transact` has already committed its writes to the runtime,
+  so anything downstream of it is not optional.** A command that switches views owns everything
+  after it, so this transaction's scene is abandoned rather than drawn over the new view's.
 - Authored handlers are selected **per view**. A `.wmz` declares every view in one file, so an
   unscoped scan runs another view's `onLoad` against elements that do not exist in this one.
 - Expression reads form a per-view dependency graph. Resolve in stable topological order and commit

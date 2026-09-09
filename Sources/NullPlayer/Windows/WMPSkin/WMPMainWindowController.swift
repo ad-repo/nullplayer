@@ -784,7 +784,31 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                 size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
                 geometry: activeScene.scriptGeometry)
-            guard !Task.isCancelled else { return }
+            // **A host command is the script's output, not the drawing's, so it is applied the
+            // moment the transaction returns — before the scene is built rather than after it is
+            // presented.**
+            //
+            // Everything below this line can be superseded: the scene build and the render are the
+            // slow half of a transaction, and a view timer that fires during them cancels this
+            // task. That is correct for the *drawing* — a newer transaction is already building a
+            // newer scene — and it silently discarded the commands with it.
+            //
+            // `Alienware Invader` is the case. Its 568-frame intro ends on the heaviest tick in the
+            // skin: `toggleShutter()` swaps `mainBack` to `main_back.png`, turns `mainBackGroup1`
+            // on, and posts `view.timerInterval = 0` to stop its own animation. Building that frame
+            // decodes the whole player's artwork and takes longer than the 50 ms period, so the
+            // next tick cancelled it after `render` and before `guard !Task.isCancelled`. The
+            // reveal was never presented and the `0` was never applied — and the timer that should
+            // have stopped kept firing with the skin's own `introStatus` now true, so the next tick
+            // took the *other* branch of `toggleShutter()` and closed the shutter it had just
+            // opened, 82 frames down to the closed state. Reported as "it opens and then closes".
+            //
+            // A command that switches views owns everything after it, exactly as on initial load,
+            // so this transaction's scene is abandoned rather than drawn over the new view's.
+            let switchedView = applyHostCommands(output.hostCommands)
+            if !switchedView { scheduleTimers(output.timerRequests) }
+            recordScriptDiagnostics(output.diagnostics)
+            guard !switchedView, !Task.isCancelled else { return }
             do {
                 // No `dirtyNodeIDs`: a script transaction repaints in full.
                 //
@@ -808,9 +832,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 Self.traceInput("present \(event.name) geometry=\(output.overrides.geometry.count) "
                     + "properties=\(output.overrides.properties.count) commands=\(scene.commands.count) "
                     + "diagnostics=\(output.diagnostics.count)")
-                let switchedView = applyHostCommands(output.hostCommands)
-                if !switchedView { scheduleTimers(output.timerRequests) }
-                recordScriptDiagnostics(output.diagnostics)
             } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }
         }
     }
@@ -1011,7 +1032,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                 size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
                 geometry: activeScene.scriptGeometry)
-            guard !Task.isCancelled else { return }
+            // Commands before drawing, and for the reason in `dispatchScriptTransaction`: the
+            // build and the render are what a later tick cancels, and the commands are not theirs.
+            let switchedView = self.applyHostCommands(output.hostCommands)
+            self.recordScriptDiagnostics(output.diagnostics)
+            guard !switchedView, !Task.isCancelled else { return }
             do {
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize, overrides: output.overrides)
@@ -1022,7 +1047,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self.startAnimation(for: scene)
                 self.mainView?.updateListItems(output.listItems)
                 self.mainView?.present(rendered.image, scene: scene)
-                self.applyHostCommands(output.hostCommands); self.recordScriptDiagnostics(output.diagnostics)
             } catch { self.recordScriptDiagnostics([.init(code: "timer-transaction", message: error.localizedDescription)]) }
         }
     }
