@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Sonos room volume control
+
 ## 0.30.0
 
 ### New Features
