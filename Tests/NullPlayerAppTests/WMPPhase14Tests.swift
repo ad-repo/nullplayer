@@ -549,6 +549,138 @@ final class WMPPhase14Tests: XCTestCase {
                        .string("http://example.test/stream.flac|970000"))
     }
 
+    // MARK: - W117: the equaliser a skin declares on
+
+    /// **148 of the 180 archives author `<equalizerSettings enable="true">` and not one authors
+    /// `"false"`.** `<EQUALIZERSETTINGS>` is not a control, so the scene builder skips it and
+    /// nothing had ever read its attributes — the equaliser node stayed bypassed under every skin
+    /// in the corpus while a band drag wrote its gain straight through it.
+    func testASkinDeclaresWhetherItsEqualiserIsOn() async throws {
+        let on = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <equalizerSettings id="eq" enable="true"/>
+        </VIEW></THEME>
+        """)
+        XCTAssertEqual(WMPDeclaredHostState.equalizerEnabled(in: on), true,
+                       "`enable` is the spelling 88 corpus skins use")
+
+        let spelled = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <equalizerSettings id="eq" enabled="true"/>
+        </VIEW></THEME>
+        """)
+        XCTAssertEqual(WMPDeclaredHostState.equalizerEnabled(in: spelled), true,
+                       "and `enabled` is the spelling the other 57 use")
+
+        let off = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <equalizerSettings id="eq" enable="false"/>
+        </VIEW></THEME>
+        """)
+        XCTAssertEqual(WMPDeclaredHostState.equalizerEnabled(in: off), false)
+    }
+
+    /// A skin that says nothing gets **no** answer rather than a default one: the user's own
+    /// persisted setting stands, which is what WMP does with an unstated `enable`. A binding is not
+    /// an answer either — it asks the host what the host is about to be told.
+    func testAnUnstatedEqualiserLeavesTheUsersOwnSettingStanding() async throws {
+        let silent = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <equalizerSettings id="eq"/>
+        </VIEW></THEME>
+        """)
+        XCTAssertNil(WMPDeclaredHostState.equalizerEnabled(in: silent))
+
+        let bound = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <equalizerSettings id="eq" enabled="wmpprop:eq.enabled"/>
+        </VIEW></THEME>
+        """)
+        XCTAssertNil(WMPDeclaredHostState.equalizerEnabled(in: bound))
+    }
+
+    // MARK: - W118: a semantic slider tag is itself a binding
+
+    /// `<SLIDER value="wmpprop:player.settings.balance">` says where the control reads;
+    /// `<BALANCESLIDER>` says the same thing by being one, so a skin using the tag authors no
+    /// `value` and no `min`. **`BALANCESLIDER` is 16 uses across 16 archives and one authors a
+    /// value; `VOLUMESLIDER` is 31 / 23 and `SEEKSLIDER` 18 / 15, and none of those do.** With no
+    /// binding to resolve they fell to `sliderMetrics`'s last resort — the value of a slider nobody
+    /// has told anything is its own minimum — on a range that defaulted to 0-100.
+    func testASemanticSliderBindsItselfAndCentresOnItsOwnRange() async throws {
+        let thumb = try sheet(9, 9)
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="100">
+            <BALANCESLIDER id="balance" left="10" top="10" width="100" height="10"
+                           thumbImage="t.png" borderSize="0"/>
+        </VIEW></THEME>
+        """, resources: ["t.png": thumb])
+        let id = try stableID(skin, "balance")
+
+        var registry = WMPObservablePropertyRegistry(graph: skin.graph)
+        let changes = registry.changes(for: WMPHostSnapshot())
+        XCTAssertEqual(changes.first { $0.address == .init(stableID: id, property: "value") }?.value,
+                       .number(0), "the tag is the binding: centred balance answers 0")
+
+        var overrides = WMPSceneOverrides.empty
+        for change in changes { overrides.properties[change.address] = change.value }
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main",
+                                                                     overrides: overrides)
+        let widget = try XCTUnwrap(scene.widgets.first { $0.stableID == id })
+        XCTAssertEqual(widget.minimumValue, -100, "balance runs -100 to 100 with silence at zero")
+        XCTAssertEqual(widget.maximumValue, 100)
+        let metrics = WMPSliderMetrics(direction: try XCTUnwrap(widget.direction),
+                                       minimum: try XCTUnwrap(widget.minimumValue),
+                                       maximum: try XCTUnwrap(widget.maximumValue),
+                                       value: try XCTUnwrap(widget.value),
+                                       borderSize: widget.borderSize)
+        XCTAssertEqual(metrics.fraction, 0.5, accuracy: 0.0001,
+                       "a centred pan draws its thumb in the middle of the track, not hard left")
+    }
+
+    /// An authored attribute always wins — one corpus `<BALANCESLIDER>` states its own `value`, and
+    /// a skin that has said something has not asked for WMP's default.
+    func testAnAuthoredValueOutranksTheImplicitBinding() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="100">
+            <BALANCESLIDER id="balance" left="10" top="10" width="100" height="10"
+                           min="0" max="10" value="7"/>
+        </VIEW></THEME>
+        """)
+        let id = try stableID(skin, "balance")
+        var registry = WMPObservablePropertyRegistry(graph: skin.graph)
+        XCTAssertNil(registry.changes(for: WMPHostSnapshot())
+            .first { $0.address == .init(stableID: id, property: "value") })
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let widget = try XCTUnwrap(scene.widgets.first { $0.stableID == id })
+        XCTAssertEqual(widget.minimumValue, 0)
+        XCTAssertEqual(widget.maximumValue, 10)
+        XCTAssertEqual(widget.value, 7)
+    }
+
+    /// The seek slider needs **both** halves synthesized: WMP puts the position on it in seconds,
+    /// so the far end of the track is the length of the track. Nothing playing is a degenerate
+    /// range, which `WMPSliderMetrics` answers as zero rather than dividing by.
+    func testASeekSliderTakesItsTopEndFromTheTrackLength() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="100">
+            <SEEKSLIDER id="seek" left="10" top="10" width="100" height="10"/>
+        </VIEW></THEME>
+        """)
+        let id = try stableID(skin, "seek")
+        var snapshot = WMPHostSnapshot()
+        snapshot.duration = 240
+        snapshot.currentTime = 60
+        var registry = WMPObservablePropertyRegistry(graph: skin.graph)
+        var overrides = WMPSceneOverrides.empty
+        for change in registry.changes(for: snapshot) { overrides.properties[change.address] = change.value }
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main",
+                                                                     overrides: overrides)
+        let widget = try XCTUnwrap(scene.widgets.first { $0.stableID == id })
+        XCTAssertEqual(widget.maximumValue, 240, "the top of the track is the track's own duration")
+        XCTAssertEqual(widget.value, 60, "and the position WMP puts on it is in seconds")
+    }
+
     /// The static demand tally is derived from the object model rather than restated, so a member
     /// the runtime answers must never still be counted as unimplemented demand.
     func testTheDemandTallyAgreesWithTheObjectModel() {

@@ -20,14 +20,51 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
     private var lastAppliedOrigin: WMPPropertyTransactionOrigin?
 
     init(graph: WMPObjectGraph) {
-        bindings = graph.allNodes.flatMap { node in
-            node.attributes.compactMap { attribute in
+        bindings = graph.allNodes.flatMap { node -> [Binding] in
+            let authored = node.attributes.compactMap { attribute -> Binding? in
                 guard case let .binding(kind, path) = attribute.value else { return nil }
                 return Binding(address: .init(stableID: node.stableID,
                     property: attribute.name.lowercased()), kind: kind, path: path)
             }
+            return authored + Self.implicit(for: node, authored: authored)
         }
     }
+
+    /// **A semantic slider tag is itself a binding, and this is where it becomes one.**
+    ///
+    /// `<SLIDER value="wmpprop:player.settings.balance">` says where the control reads; a
+    /// `<BALANCESLIDER>` says the same thing by being one, which is why a skin that uses the tag
+    /// authors no `value` at all. Measured over the 180-archive corpus: **`BALANCESLIDER` is 16
+    /// uses across 16 skins and exactly one of them authors a `value`; `VOLUMESLIDER` is 31 / 23
+    /// and none do; `SEEKSLIDER` is 18 / 15 and none do.** With no binding to resolve, every one of
+    /// them fell to `WMPSceneBuilder.sliderMetrics`'s last resort — *the value of a slider nobody
+    /// has told anything is its own minimum* — so 15 of the 16 balance sliders in the corpus drew
+    /// their thumb hard left and stayed there, reported as "balance is fully to the left by default
+    /// on all skins". Volume drew empty and seek drew at zero for the same reason; balance is the
+    /// one where the wrong end of the track *means* something.
+    ///
+    /// Both halves of the seek slider are synthesized, because the position WMP puts on it is in
+    /// seconds and the length of the track is what the far end of it stands for. The ranges are the
+    /// other half of the same statement and live in `sliderMetrics`, where a slider's other WMP
+    /// defaults already are.
+    private static func implicit(for node: WMPNode, authored: [Binding]) -> [Binding] {
+        guard let paths = implicitPaths[node.kind] else { return [] }
+        return paths.compactMap { property, path in
+            // An authored attribute always wins — one corpus `<BALANCESLIDER>` does author its
+            // own `value`, and a skin that states something has not asked for WMP's default.
+            guard node.attribute(named: property) == nil,
+                  !authored.contains(where: { $0.address.property == property }) else { return nil }
+            return Binding(address: .init(stableID: node.stableID, property: property),
+                           kind: .property, path: path)
+        }
+    }
+
+    private static let implicitPaths: [WMPElementKind: [(String, String)]] = [
+        .volumeSlider: [("value", "player.settings.volume")],
+        .balanceSlider: [("value", "player.settings.balance")],
+        .seekSlider: [("value", "player.controls.currentPosition"),
+                      ("max", "player.currentMedia.duration")]
+    ]
 
     mutating func changes(for snapshot: WMPHostSnapshot, origin: WMPPropertyTransactionOrigin? = nil)
         -> [WMPBoundPropertyChange] {

@@ -78,9 +78,11 @@ final class WMPAudioEngineHost: WMPHost {
             let target = engine.eqConfiguration
             let remapped = EQBandRemapper.remap(gains: classic, from: .classic10, to: target)
             for (band, remappedGain) in remapped.enumerated() { engine.setEQBand(band, gain: remappedGain) }
+            engageEqualizer()
         case .setPreamp:
             guard let gain = value?.finiteNumber else { return }
             engine.setPreamp(Float(max(-12, min(12, gain))))
+            engageEqualizer()
         case let .setEQPreset(index):
             // WMP tracks a "current preset" and the engine does not, so a selection is applied as
             // the ten band gains and the preamp it stands for — the same thing the object model
@@ -92,6 +94,7 @@ final class WMPAudioEngineHost: WMPHost {
             let remapped = EQBandRemapper.remap(gains: clamped, from: .classic10,
                                                 to: engine.eqConfiguration)
             for (band, gain) in remapped.enumerated() { engine.setEQBand(band, gain: gain) }
+            engageEqualizer()
         // What the skin's `<EFFECTS>` rect draws. The selection is the WMP session's own — see
         // `WMPEffectSelection` for why cycling it does not write the app's visualization
         // preference back.
@@ -101,6 +104,20 @@ final class WMPAudioEngineHost: WMPHost {
         case let .setEffectPreset(index): WMPEffectSelection.shared.setPreset(index)
         case .nextEffectPreset: WMPEffectSelection.shared.stepPreset(by: 1)
         }
+    }
+
+    /// Moving a band, the preamp or a preset turns the equaliser on if it was off.
+    ///
+    /// Every other skin engine in this app already does it where it can — `EQView`, `ModernEQView`
+    /// and `WinampModernComponentBridge` all enable the equaliser when they apply a preset — and a
+    /// `.wmz` needs it more, because it has nowhere to say so: only `gnome` writes `eq.enabled`
+    /// from script anywhere in the corpus, and the 19 skins with band sliders that author no
+    /// `<EQUALIZERSETTINGS enable="true">` (`Cablemusic`, `Windows XP`, the five `Plus!` skins,
+    /// both `Revert` releases…) would otherwise drag a slider into a bypassed equaliser forever.
+    /// A skin that authored `enable="false"` would be overridden here — none does, corpus-wide.
+    private func engageEqualizer() {
+        guard !engine.isEQEnabled() else { return }
+        engine.setEQEnabled(true)
     }
 
     func setSpectrumConsumerActive(_ active: Bool) {

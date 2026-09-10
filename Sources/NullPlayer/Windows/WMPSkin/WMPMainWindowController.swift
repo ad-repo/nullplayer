@@ -201,6 +201,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
                 let skin = try await importer.loader.load(from: url)
                 try Task.checkCancellation()
+                // The skin's markup is where its equaliser is switched on, and it is stated once
+                // per skin rather than once per view: applying it in `apply(skin:…)` would re-run
+                // on every `switchView` and undo a user who had turned the equaliser off.
+                if let equalizerEnabled = WMPDeclaredHostState.equalizerEnabled(in: skin) {
+                    host.perform(.setEQEnabled, value: .number(equalizerEnabled ? 1 : 0))
+                }
                 // A `.wmz` names views that are never windows. 25 corpus skins author a
                 // `controlView` holding only `<player>` and a hidden `<video>`, and `pharaoh`
                 // writes two explicit 0x0 `vGhost` views: each exists so that an `onLoad` can run

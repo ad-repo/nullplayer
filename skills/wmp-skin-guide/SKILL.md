@@ -585,6 +585,24 @@ of these was invisible to the harness and visible in the first minute of live QA
   literal transport statements.
 - Both the skinned and app-authored unskinned WMP players use this same host. Custom-drawn controls
   publish accessibility children with stable `wmp.*` identifiers.
+- **A skin switches the equaliser on in its markup, and it is the only place it ever does (W117).**
+  `<equalizerSettings id="eq" enable="true"/>` is authored by **148 of the 180 archives**; exactly
+  **one** skin (`gnome`) ever writes `eq.enabled` from script, and **no archive anywhere authors
+  `"false"`**. `EQUALIZERSETTINGS` has been a non-layout element since W65 — correctly, it has no
+  geometry — so nothing read its attributes at all, and the engine's equaliser node stayed bypassed
+  under every skin in the corpus: a band bound to `wmpprop:eq.gainLevelN` dragged, wrote, reached
+  `AudioEngine.setEQBand`, and was inaudible. `WMPDeclaredHostState.equalizerEnabled` reads it; both
+  spellings count (`enable` 88 skins, `enabled` 57) and only a **literal** decides, because a
+  `wmpprop:` binding asks the host what the host is about to be told. **Apply it once per skin load,
+  not in `apply(skin:…)`** — that re-runs on every `switchView` and would undo a user who turned the
+  equaliser off. The 19 skins with band sliders and no declaration are covered by
+  `WMPAudioEngineHost.engageEqualizer`: a band, preamp or preset write engages a bypassed equaliser,
+  which is what `EQView`, `ModernEQView` and `WinampModernComponentBridge` already do on a preset and
+  the only route a `.wmz` with no toggle of its own has. The enable state is global and persisted, so
+  a `.wmz` turning it on carries into the other skin modes exactly as the equalizer window does.
+  **Before ranking a "the control moves and nothing happens" defect, ask whether the markup declared
+  a host state nothing reads** — this class is invisible to every image sweep and to the call trace
+  alike: there is no script call to trace.
 
 ## Script, expression, and binding contracts
 
@@ -672,6 +690,26 @@ of these was invisible to the harness and visible in the first minute of live QA
   `MainActor.assumeIsolated` in that observer is a `dispatch_assert_queue` failure and the process
   traps the moment a surface exists and a track plays. `VisualizationGLView` takes its own lock, so
   it is written to directly from the posting thread.
+- **A semantic slider tag is itself a binding, and its range is part of what the tag says (W118).**
+  `<SLIDER value="wmpprop:player.settings.balance">` states where a control reads; `<BALANCESLIDER>`
+  states the same thing by *being* one, so a skin that uses the tag authors no `value` and usually no
+  `min`. Two defaults then collided: `sliderMetrics` falls back to *the value of a slider nobody has
+  told anything is its own minimum*, on a range defaulting to 0-100 — so **15 of the corpus's 16
+  balance sliders drew their thumb at the bottom of the track, which on balance is hard left**,
+  reported live as "balance is fully to the left by default on all skins". `VOLUMESLIDER` (31 uses /
+  23 skins) drew empty and `SEEKSLIDER` (18 / 15) stuck at the track start for exactly the same
+  reason; balance is the one where the wrong end of the track *means* something, which is why it is
+  the one that got reported. `WMPObservablePropertyRegistry.implicit` synthesizes the binding the tag
+  stands for, so the value arrives through the same coalesced, echo-guarded path an authored
+  `wmpprop:` does and follows the host live. **The seek slider needs both halves**: WMP puts its
+  position on the track in *seconds*, so `max` is synthesized onto `player.currentMedia.duration` and
+  `value` onto `player.controls.currentPosition` — two paths the registry already answers, rather
+  than a new percent path it does not. Ranges stay in `sliderMetrics.defaultRange(for:)`, which is
+  `-100…100` for `.balanceSlider` and 0-100 for every other kind. An authored attribute always wins:
+  one corpus balance slider states its own `value` and keeps it. **The audio was never wrong** here —
+  `AudioEngine.balance` defaults to centre and `performSlider` already wrote `fraction × 2 − 1` — so
+  the whole defect was a drawn thumb lying about a centred pan, and no sweep of default-state images
+  could have called it one.
 - **A slider is a track plus a thumb the scene places**, and `WMPSliderMetrics` owns that geometry
   alone so each of its rules is testable: `borderSize` is dead track at *both* ends (171 skins),
   a **vertical** slider's maximum is at the **top** (1,312 of 1,968 `direction` attributes are

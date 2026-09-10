@@ -19,6 +19,18 @@
 
 ### Bug Fixes
 
+- **A Media Player skin's equalizer now changes the sound** — nearly every `.wmz` skin switches the
+  equalizer on as part of its own design, and that was being ignored, so the ten sliders a skin draws
+  moved, showed their new gains, and were inaudible. They work now, and on the handful of skins that
+  never say one way or the other, moving a band, the preamp or picking a preset turns the equalizer on
+  the way it does everywhere else in NullPlayer.
+
+- **Balance no longer starts hard left on a Media Player skin** — a skin that draws a balance control
+  leaves its range and starting point to the player, and NullPlayer was reading that as "silent, fully
+  left" instead of centred. The thumb now sits in the middle of its track where the sound actually is,
+  and drags from there. Volume and seek controls drawn the same way were also stuck at zero and now
+  follow what is playing.
+
 - **A Media Player skin's visualization screen now shows a visualization** — nearly every `.wmz`
   draws a panel for one, and until now that panel stayed empty on all but five of them. It now
   holds NullPlayer's own visuals — ProjectM, Geiss or Tripex, the same engines and the same presets

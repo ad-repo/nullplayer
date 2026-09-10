@@ -240,8 +240,14 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 }
                 return nil
             }
-            let minimum = number(["min", "minValue"]) ?? 0
-            let maximum = number(["max", "maxValue"]) ?? 100
+            // **WMP's default range is 0-100, and a `<BALANCESLIDER>`'s is not.** The tag states
+            // its own scale — balance runs -100 (full left) to 100 (full right) with silence at
+            // the centre — so 15 of the corpus's 16 balance sliders, which author no `min` at all,
+            // were being laid out on a 0-100 track with their value at the bottom of it. The
+            // matching implicit `value` binding is `WMPObservablePropertyRegistry.implicit`.
+            let defaults = Self.defaultRange(for: node.kind)
+            let minimum = number(["min", "minValue"]) ?? defaults.minimum
+            let maximum = number(["max", "maxValue"]) ?? defaults.maximum
             return WMPSliderMetrics(direction: WMPSliderDirection(authored: literalString(node, "direction")),
                 minimum: minimum, maximum: maximum,
                 value: number(["value"]) ?? minimum,
@@ -1031,6 +1037,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
         case .theme, .player, .network, .script, .buttonElement, .equalizerSettings: return true
         default: return false
         }
+    }
+
+    /// The range a slider has when the skin states none, which is WMP's answer and not a generic
+    /// one: only the semantic tags carry a scale of their own. `<SEEKSLIDER>` keeps 0-100 here and
+    /// takes its real top end from the implicit `max` binding on the track's duration.
+    private static func defaultRange(for kind: WMPElementKind) -> (minimum: Double, maximum: Double) {
+        kind == .balanceSlider ? (-100, 100) : (0, 100)
     }
 
     private func nodeOrder(_ lhs: WMPNode, _ rhs: WMPNode) -> Bool {
