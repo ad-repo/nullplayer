@@ -3099,6 +3099,10 @@ class WindowManager {
     /// Called when a video track from the playlist finishes playing
     private func videoTrackDidFinish() {
         NSLog("WindowManager: Video track finished, advancing playlist")
+        if uiMode.controllerFamily == .wmp {
+            audioEngine.wmpVideoTrackDidFinish()
+            return
+        }
         audioEngine.next()
     }
     

@@ -5004,7 +5004,17 @@ class AudioEngine {
             NSLog("Streaming gapless transition to: %@", currentTrack?.title ?? "Unknown")
             return
         }
-        
+
+        advanceAfterNaturalTrackEnd()
+    }
+
+    /// WMP video completion follows natural queue rules without audio reporters or gapless state.
+    func wmpVideoTrackDidFinish() {
+        guard currentTrack?.mediaType == .video else { return }
+        advanceAfterNaturalTrackEnd()
+    }
+
+    private func advanceAfterNaturalTrackEnd() {
         if repeatEnabled {
             if shuffleEnabled {
                 // Repeat mode + shuffle: follow the shuffled cycle, reshuffling only after a full pass

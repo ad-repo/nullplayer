@@ -219,6 +219,13 @@ queue, with the object model as the security boundary — see Amendment 2 in
   latched event state back through `video` kept the child window over the skin and made buttons look
   globally dead when the track panel had pointer capture. Test the split state: output teardown
   produces no `videoend`, the surface detaches, and a genuine media end still produces exactly one.
+- **A video's natural end is not a manual Next press.** `WindowManager.videoTrackDidFinish`
+  routes WMP completion to `AudioEngine.wmpVideoTrackDidFinish`, which shares the audio engine's
+  natural-end repeat/shuffle/queue-exhaustion rules without running audio reporters or gapless
+  promotion. Manual `next()` wraps unconditionally; using it at EOF looped a one-video playlist
+  forever with repeat off. Keep the new callback gated to `.wmp`. Verified live on 2026-09-10 with
+  Corona and a 6.29-second local video: EOF stopped playback, and a subsequent Play click replayed
+  it and stopped again.
 - **A paused film reports no time, and in `.wmz` mode that was the only thing refreshing the host
   (W102).** `videoDidUpdateTime` is driven by VLC's time-changed callback, so a pause silenced the
   whole host tick and the skin went on drawing *and hit-testing* a pause button. What that costs is
