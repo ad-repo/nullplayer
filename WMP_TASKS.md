@@ -4,6 +4,12 @@ This is the only live backlog for the WMP skin subsystem. It is the `.wmz` count
 [`WINAMP5_TASKS.md`](WINAMP5_TASKS.md), and the two never share entries: a `.wmz` item goes here, a
 `.wal` item goes there. Read `skills/wmp-skin-guide/SKILL.md` before picking anything up.
 
+A defect in the **shared video path** belongs to neither and goes in
+[`docs/video-playback/backlog.md`](docs/video-playback/backlog.md) — opened 2026-09-10 because
+hosting `<VIDEO>` (W102) surfaced one that had nowhere to go. **V1 there is worth reading before any
+`.wmz` video work**: a playing film is silently re-opened from the start and the reload hangs, and
+because the picture simply stops it reads as a skin or decoder defect when it is neither.
+
 A skin is a test case, not a milestone: take measured capability work from the top down. Closed
 entries move to [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) in the
 same change that closes them, so this file stays a list of work that is still open.

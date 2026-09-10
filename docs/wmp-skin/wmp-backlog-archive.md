@@ -413,6 +413,13 @@ withdrawn the same day when the reporter used the feature successfully. See
 **What it left open is W124** in `WMP_TASKS.md`: a `videoend` with no matching `videostart` leaves
 the skin in its ended state. It is not claimed as fixed.
 
+**And one defect that is not a skin defect at all: V1** in
+[`docs/video-playback/backlog.md`](../video-playback/backlog.md), which this work surfaced and which
+had nowhere to be filed. A playing film is silently re-opened from the start and the reload hangs;
+because the picture just stops, it presents as a skin or decoder fault. It was misread here first as
+VLC buffering, and the reporter's own account — *no visible reload, the video is just hung* — is what
+corrected it. **Suspect it before suspecting the skin when a picture stops.**
+
 2,165 tests green.
 
 | ID | Item | Reach | Notes |
