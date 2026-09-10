@@ -125,6 +125,14 @@ sleep 5; taskpolicy -B -p "$(pgrep -f 'debug/NullPlayer' | head -1)"
   `osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $P) to true"`
 - **A CGEvent click goes to the screen, not the app.** If the app is not frontmost the click lands in
   whatever window is there; one went into a browser and produced a silent null result.
+- **Set `mouseEventClickState` or it is not a click.** A `.leftMouseDown`/`.leftMouseUp` pair posted
+  without `e.setIntegerValueField(.mouseEventClickState, value: 1)` arrives with `clickCount == 0`:
+  the pointer moves, hover traces update, the app may even dispatch `mouseDown` — and **no click is
+  ever synthesised**. This produced two confident wrong conclusions in one session ("the skin's play
+  button is dead", then "right-clicking the video opens no menu"), and a fix was designed on the
+  second before the tool was checked. A double-click needs `clickState` 1 then 2 on consecutive
+  down/up pairs; a right-click needs it too. **Prove the click lands** by first clicking a control
+  whose trace you know, and watching the line appear.
 - **Clicking a submenu name does not switch skin system** — that needs its "Switch to …" item, which
   `menu.applescript mode` finds. See `skin-screenshots` rule 1.
 - **Confirm the target before clicking it** with the subsystem's headless click probe (for `.wmz`,
@@ -149,8 +157,22 @@ different view" (it was not) and "the window is oversized" (it was exactly right
 
 ```bash
 ./winhelper windows | awk -F'\t' '$2==0 && $7>0 {print $3,$4,$5,$6; exit}'
-screencapture -x -R $X,$Y,$W,$H /tmp/win.png     # the window only
+screencapture -x -R $X,$Y,$W,$H /tmp/win.png     # the screen there — WHATEVER is on top
+screencapture -x -o -l $WINDOWID /tmp/win.png    # that window's OWN content, occlusion ignored
 ```
+
+**`-R` photographs the screen, not the window.** During agent-driven QA the thing on top is routinely
+your own terminal, and the capture then shows the terminal while you reason about the app. `-l
+<windowid>` (id from `CGWindowListCopyWindowInfo`) captures the window's own content regardless of
+what covers it, and **the difference between the two is itself the measurement**: window content
+correct + screen wrong ⇒ nothing is wrong with drawing or sizing, and the whole question is
+compositing. That is what settled a "the video goes black" defect in one step — the window was full
+of playing movie the entire time; it had simply fallen behind its own parent window.
+
+**For z-order, pass `.optionOnScreenOnly`.** `CGWindowListCopyWindowInfo([.optionOnScreenOnly,
+.excludeDesktopElements], kCGNullWindowID)` returns front-to-back. `.optionAll` includes offscreen
+windows and its ordering means nothing — reading order out of an `.optionAll` list reported a window
+as frontmost when it was behind, and cost a wrong diagnosis.
 
 **The measurement that ends renderer-versus-AppKit arguments:** dump the image the renderer produced
 and compare it to a screen capture of the same rect. Same size, so points correspond.
