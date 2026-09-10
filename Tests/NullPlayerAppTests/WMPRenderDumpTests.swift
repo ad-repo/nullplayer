@@ -173,6 +173,79 @@ struct WMPProbe {
         return points.isEmpty ? nil : (halves[0], points)
     }
 
+    /// The host state the render pass measures against, from `WMP_RENDER_HOST`.
+    ///
+    /// **Every other flag in this harness measures a stopped player with an empty playlist**, and
+    /// that is the one state a `.wmz`'s transport readouts never show a user: the elapsed and
+    /// duration readouts of 108 archives are `<TEXT value="wmpprop:player.controls.\
+    /// currentPositionString">`, and 89 hang a seek slider off `value="wmpprop:player.controls.\
+    /// currentPosition"` with `max="wmpprop:player.currentMedia.duration"`. Against the default
+    /// snapshot every one of those resolves to `0:00` on a zero-length track — which is what an
+    /// engine that never answers those paths at all also draws. A whole class of defect was
+    /// therefore unfalsifiable from any capture: the clock and the progress bar.
+    ///
+    /// `WMP_RENDER_HOST=playing` seeds a plausible mid-track player; a `key=value` list overrides
+    /// any field of it (`WMP_RENDER_HOST='t=63,dur=213,state=paused,vol=0.8'`). Every probe line
+    /// and every dumped PNG in that run is measured against it, so a `HOST` line is printed
+    /// per skin whenever it is seeded — a capture read as a default-state one would be wrong about
+    /// everything.
+    var hostSnapshot: WMPHostSnapshot { Self.hostSnapshot(from: env["WMP_RENDER_HOST"]) }
+
+    /// True when the run is measuring a seeded player rather than a stopped one.
+    var seedsHost: Bool { env["WMP_RENDER_HOST"] != nil }
+
+    static func hostSnapshot(from spec: String?) -> WMPHostSnapshot {
+        guard let spec, !spec.isEmpty else { return WMPHostSnapshot() }
+        // The seeded default: a track a third of the way through a 3:33 album cut, one of three in
+        // the playlist, at half volume and centred. Nothing here is arbitrary in a way that matters
+        // except that no field is left at the value a stopped player already has — a seeded run
+        // whose clock reads `0:00` measures nothing this flag exists to measure.
+        var snapshot = WMPHostSnapshot()
+        snapshot.state = .playing
+        snapshot.currentTime = 63
+        snapshot.duration = 213
+        snapshot.volume = 0.5
+        snapshot.balance = 0
+        snapshot.bufferingProgress = 100
+        snapshot.bitrate = 192_000
+        snapshot.metadata = WMPMediaMetadata(title: "Harness Track", artist: "Harness Artist",
+                                             album: "Harness Album", sourceURL: "file:///harness.mp3")
+        snapshot.playlistIndex = 0
+        snapshot.playlistCount = 3
+        snapshot.playlistItems = (1...3).map {
+            WMPPlaylistItemSnapshot(title: "Harness Track \($0)", artist: "Harness Artist",
+                                    duration: 213)
+        }
+        for pair in spec.split(whereSeparator: { $0 == "," || $0 == ";" }) {
+            let halves = pair.split(separator: "=", maxSplits: 1).map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }
+            guard halves.count == 2 else { continue }
+            let number = Double(halves[1])
+            let truth = halves[1].caseInsensitiveCompare("true") == .orderedSame || halves[1] == "1"
+            switch halves[0].lowercased() {
+            case "state": snapshot.state = WMPHostSnapshot.State(rawValue: halves[1].lowercased()) ?? .playing
+            case "t", "time", "position": snapshot.currentTime = number ?? snapshot.currentTime
+            case "dur", "duration": snapshot.duration = number ?? snapshot.duration
+            case "vol", "volume": snapshot.volume = number ?? snapshot.volume
+            case "bal", "balance": snapshot.balance = number ?? snapshot.balance
+            case "mute", "muted": snapshot.muted = truth
+            case "shuffle": snapshot.shuffle = truth
+            case "repeat": snapshot.repeatMode = truth
+            case "buffering": snapshot.bufferingProgress = number ?? snapshot.bufferingProgress
+            case "bitrate": snapshot.bitrate = number ?? snapshot.bitrate
+            case "title": snapshot.metadata.title = halves[1]
+            case "artist": snapshot.metadata.artist = halves[1]
+            case "album": snapshot.metadata.album = halves[1]
+            case "tracks", "count": snapshot.playlistCount = Int(number ?? 0)
+            case "index": snapshot.playlistIndex = Int(number ?? 0)
+            case "eq": snapshot.equalizer.enabled = truth
+            default: continue
+            }
+        }
+        return snapshot
+    }
+
     func probes(_ viewID: String) -> Bool {
         guard let spec = env["WMP_RENDER_PROBE"] else { return false }
         return spec.isEmpty || spec == "1" || spec.caseInsensitiveCompare("all") == .orderedSame
@@ -664,6 +737,18 @@ enum WMPHarness {
             + "entries=\(skin.archive.entries.count) bytes=\(bytes) views=\(skin.views.count) "
             + "nodes=\(skin.graph.allNodes.count) scripts=\(skin.scripts.count) "
             + "resources=\(skin.resources.count) loadms=\(String(format: "%.1f", loadMilliseconds))")
+        if probe.seedsHost {
+            // Printed per skin rather than once per run: these lines are read out of a per-skin
+            // block by `wmp_render_sweep.sh`, and a capture measured against a playing player that
+            // looks like a default-state one is wrong about every readout in it.
+            let seeded = probe.hostSnapshot
+            WMPHarnessOutput.emit("HOST state=\(seeded.state.rawValue) "
+                + "position=\(WMPNumber.format(CGFloat(seeded.currentTime)))(\(seeded.elapsedText)) "
+                + "duration=\(WMPNumber.format(CGFloat(seeded.duration)))(\(seeded.durationText)) "
+                + "volume=\(WMPNumber.format(CGFloat(seeded.volume))) "
+                + "balance=\(WMPNumber.format(CGFloat(seeded.balance))) "
+                + "tracks=\(seeded.playlistCount) title=\(seeded.metadata.title)")
+        }
         for line in findingLines(skin.diagnostics) { WMPHarnessOutput.emit(line) }
         for line in compatibilityLines(skin) { WMPHarnessOutput.emit(line) }
 
@@ -705,7 +790,7 @@ enum WMPHarness {
             // transaction does. Driving `onLoad` here is not optional detail: it is where a skin
             // sets up its panes, and a harness that skipped it measured a skin nobody sees.
             output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
-                                            snapshot: WMPHostSnapshot(),
+                                            snapshot: probe.hostSnapshot,
                                             event: eventFor(name: "onLoad", skin: skin, viewID: viewID),
                                             geometry: scene.scriptGeometry)
             if let requested = probe.requestedSize {
@@ -727,7 +812,7 @@ enum WMPHarness {
                     + ", handlers=\(event?.handlers.count ?? 0)")
                 output = await session.transact(skin: skin, viewID: viewID,
                                                 size: resized.canvasSize,
-                                                snapshot: WMPHostSnapshot(), event: event,
+                                                snapshot: probe.hostSnapshot, event: event,
                                                 geometry: resized.scriptGeometry)
                 scene = resized
             }
@@ -756,7 +841,7 @@ enum WMPHarness {
                     // limit and measured nothing.
                     try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
                     output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
-                                                    snapshot: WMPHostSnapshot(), event: timer,
+                                                    snapshot: probe.hostSnapshot, event: timer,
                                                     geometry: scene.scriptGeometry)
                     // Rebuild between ticks: an animation reads the geometry it is drawn at, and a
                     // loop that fed it the same starting frame every time would freeze on the first
@@ -774,7 +859,7 @@ enum WMPHarness {
                 }
                 if interval == 0, output == nil {
                     output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
-                                                    snapshot: WMPHostSnapshot(), event: timer,
+                                                    snapshot: probe.hostSnapshot, event: timer,
                                                     geometry: scene.scriptGeometry)
                 }
             }
@@ -1153,7 +1238,7 @@ enum WMPHarness {
                 + "sticky=\(target.sticky) handlers=\(handlers.count)")
             guard let session = pass.session, !handlers.isEmpty else { continue }
             let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
-                snapshot: WMPHostSnapshot(),
+                snapshot: probe.hostSnapshot,
                 event: WMPJScriptEvent(name: "onClick", targetID: target.nodeID, handlers: handlers),
                 geometry: scene.scriptGeometry)
             // Every attribute changed anywhere in the graph, not only on the object that was hit:
@@ -1239,7 +1324,7 @@ enum WMPHarness {
                     + "kind=\(edge.kind) handlers=\(handlers.count)")
                 guard let session = pass.session, !handlers.isEmpty else { continue }
                 let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
-                    snapshot: WMPHostSnapshot(),
+                    snapshot: probe.hostSnapshot,
                     event: WMPJScriptEvent(name: event, targetID: edge.nodeID, handlers: handlers),
                     geometry: scene.scriptGeometry)
                 for line in changeLines(from: previous, to: output.overrides, nodes: nodesByID) {
@@ -1540,7 +1625,7 @@ enum WMPHarness {
                                                      targetStableID: target.stableID, viewID: viewID)
                 }
                 let output = await session.transact(skin: skin, viewID: viewID,
-                    size: scene.canvasSize, snapshot: WMPHostSnapshot(),
+                    size: scene.canvasSize, snapshot: probe.hostSnapshot,
                     event: handlers.isEmpty ? nil
                         : WMPJScriptEvent(name: "onChange", targetID: target.nodeID, handlers: handlers),
                     geometry: scene.scriptGeometry)
@@ -1576,7 +1661,7 @@ enum WMPHarness {
             }
             if !handlers.isEmpty {
                 let output = await session.transact(skin: skin, viewID: viewID,
-                    size: scene.canvasSize, snapshot: WMPHostSnapshot(),
+                    size: scene.canvasSize, snapshot: probe.hostSnapshot,
                     event: WMPJScriptEvent(name: "onDragEnd", targetID: target.nodeID,
                                            handlers: handlers),
                     geometry: scene.scriptGeometry)

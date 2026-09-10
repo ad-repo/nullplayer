@@ -681,6 +681,76 @@ final class WMPPhase14Tests: XCTestCase {
         XCTAssertEqual(widget.value, 60, "and the position WMP puts on it is in seconds")
     }
 
+    /// **A slider whose maximum is the media's duration is a position control (W120).** 73 of them
+    /// across 61 of the 177 measurable archives are authored exactly like this — the range states
+    /// what the control is, no `value` anywhere, and no script writes one either — so before this
+    /// every one of them drew frame 0 of its filmstrip for the whole track.
+    func testASliderWhoseTopEndIsTheTrackLengthReadsThePosition() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="100">
+            <CUSTOMSLIDER id="seek" left="10" top="10" min="0"
+                          max="wmpprop:player.currentMedia.duration"/>
+        </VIEW></THEME>
+        """)
+        let id = try stableID(skin, "seek")
+        var snapshot = WMPHostSnapshot()
+        snapshot.duration = 137
+        snapshot.currentTime = 42
+        var registry = WMPObservablePropertyRegistry(graph: skin.graph)
+        let changes = registry.changes(for: snapshot)
+        XCTAssertEqual(changes.first { $0.address == .init(stableID: id, property: "value") }?.value,
+                       .number(42), "the declared range says this is a position control")
+        XCTAssertEqual(changes.first { $0.address == .init(stableID: id, property: "max") }?.value,
+                       .number(137), "and the skin authored the top of the track itself")
+    }
+
+    /// The range is the evidence, not the tag — and a slider whose maximum is something else is
+    /// left alone. A volume control keeps WMP's own 0-100 and its own binding.
+    func testASliderWithItsOwnMaximumIsNotAPositionControl() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="100">
+            <CUSTOMSLIDER id="volume" left="10" top="10" min="0" max="100"
+                          value="wmpprop:player.settings.volume"/>
+        </VIEW></THEME>
+        """)
+        let id = try stableID(skin, "volume")
+        var snapshot = WMPHostSnapshot()
+        snapshot.duration = 137
+        snapshot.currentTime = 42
+        snapshot.volume = 0.5
+        var registry = WMPObservablePropertyRegistry(graph: skin.graph)
+        XCTAssertEqual(registry.changes(for: snapshot)
+            .first { $0.address == .init(stableID: id, property: "value") }?.value, .number(50),
+            "the authored binding is what this control reads, and nothing synthesizes over it")
+    }
+
+    /// **A slider is bound both ways: the host moving it raises `value_onchange` too (W51).**
+    /// The user-driven half closed with W52; this is how a seek bar's readout follows playback.
+    /// `Catwoman` draws its clock as digit strips positioned by `drawSeekDigits(value)`, so with
+    /// nothing raising the handler the slider tracked the song and the clock stayed at zero.
+    func testTheHostMovingAControlRaisesItsOwnChangeHandler() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="100">
+            <CUSTOMSLIDER id="seek" left="10" top="10" min="0"
+                          max="wmpprop:player.currentMedia.duration"
+                          value_onchange="readout.left = 0 - value;"/>
+            <BUTTON id="readout" left="0" top="50" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanUp) = try runtime()
+        defer { cleanUp() }
+        var snapshot = WMPHostSnapshot()
+        snapshot.duration = 137
+        snapshot.currentTime = 42
+        let output = await runtime.transact(skin: skin, viewID: "main",
+                                            size: WMPSize(width: 200, height: 100),
+                                            snapshot: snapshot, event: nil)
+        let readout = try stableID(skin, "readout")
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: readout, property: "left")], -42,
+                       "the handler ran with the value the host just gave the control")
+        await runtime.teardown()
+    }
+
     /// The static demand tally is derived from the object model rather than restated, so a member
     /// the runtime answers must never still be counted as unimplemented demand.
     func testTheDemandTallyAgreesWithTheObjectModel() {

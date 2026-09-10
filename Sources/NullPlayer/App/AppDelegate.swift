@@ -57,6 +57,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let skinURL = URL(fileURLWithPath: skinPath)
             windowManager.loadSkin(from: skinURL)
         }
+        // **Live QA needs playback**, and every readout a skin binds to the host — the clock, the
+        // seek thumb, the duration, the title — reads its resting value with an empty playlist. A
+        // pass with nothing playing is a different test, and driving a file in through the GUI
+        // costs a Local Library window and a CGEvent double-click per launch. This is the same
+        // path a Finder open takes (`application(_:openFiles:)`), so it enqueues and plays exactly
+        // as a dropped file does.
+        if let play = ProcessInfo.processInfo.environment["NULLPLAYER_PLAY"] {
+            application(NSApp, openFiles: [play])
+        }
         #endif
         
         // Classic mode: spectrum transparent backgrounds always start off.

@@ -35,6 +35,9 @@ struct WMPScriptViewPlan: Sendable {
     /// `geometryChangeHandlers`: these are `.handler` attributes, so they are not in the element's
     /// property bag.
     let completionHandlers: [Int: [String: String]]
+    /// `stableID -> handler source`, from the `value_onchange`/`onChange` attribute a control uses
+    /// to repaint whatever it drives. Same shape and reason as the two maps above (W51).
+    let valueChangeHandlers: [Int: String]
 
     init(skin: WMPLoadedSkin, viewID: String) {
         self.viewID = viewID
@@ -42,7 +45,7 @@ struct WMPScriptViewPlan: Sendable {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
         })?.node else {
             elements = []; expressions = []; expressionAddresses = [:]; idToStableID = [:]
-            geometryChangeHandlers = [:]; completionHandlers = [:]
+            geometryChangeHandlers = [:]; completionHandlers = [:]; valueChangeHandlers = [:]
             return
         }
         var included = Set<Int>()
@@ -55,6 +58,7 @@ struct WMPScriptViewPlan: Sendable {
         var ids: [String: Int] = [:]
         var changeHandlers: [Int: [String: String]] = [:]
         var completions: [Int: [String: String]] = [:]
+        var valueChanges: [Int: String] = [:]
         for node in skin.graph.allNodes where included.contains(node.stableID) {
             let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
             ids[WMPPath.fold(id)] = node.stableID
@@ -81,6 +85,12 @@ struct WMPScriptViewPlan: Sendable {
                         String(event.lowercased().dropLast("_onchange".count))):
                     changeHandlers[node.stableID, default: [:]][
                         String(event.lowercased().dropLast("_onchange".count))] = source
+                // `value_onchange` is the spelling 175 of 179 archives use and `onChange` is the
+                // other; the app's own matcher accepts both for `change`, so both are collected
+                // here rather than a second rule being invented (W51).
+                case let .handler(event, source)
+                    where ["value_onchange", "onchange", "change"].contains(event.lowercased()):
+                    valueChanges[node.stableID] = source
                 case let .handler(event, source)
                     where Self.completionEvents.contains(event.lowercased()):
                     completions[node.stableID, default: [:]][
@@ -98,6 +108,7 @@ struct WMPScriptViewPlan: Sendable {
         idToStableID = ids
         geometryChangeHandlers = changeHandlers
         completionHandlers = completions
+        valueChangeHandlers = valueChanges
     }
 
     /// Authored spellings of the two completion callbacks that have a dispatch site. `onEndResize`
@@ -130,6 +141,13 @@ struct WMPScriptRunResult: Sendable {
     var expressions: [WMPJScriptExpressionResult] = []
     var expressionOrder: [String] = []
     var timers: [WMPJScriptTimerRequest] = []
+    /// The tokens this transaction's script called `clearTimeout`/`clearInterval` on.
+    ///
+    /// **`timers` is what this one transaction registered, so the two are a delta and neither is
+    /// the live set** (W119). A transaction that touched no timer at all reports both empty, which
+    /// has to mean "nothing changed" rather than "there are none" — see
+    /// `WMPMainWindowController.applyTimerDelta`.
+    var clearedTimers: [Int] = []
 }
 
 /// The skin's JavaScript context: one per skin session, on one dedicated serial queue.
@@ -148,6 +166,7 @@ final class WMPScriptContext: @unchecked Sendable {
     private let executionSeconds: TimeInterval
     private var timerFunctions: [Int: JSValue] = [:]
     private var pendingTimers: [WMPJScriptTimerRequest] = []
+    private var pendingClearedTimers: [Int] = []
     private var nextTimerToken = 0
     private var lastException: String?
     /// The live elements of every view this session has installed, and which one is installed now.
@@ -263,6 +282,7 @@ final class WMPScriptContext: @unchecked Sendable {
         queue.sync {
             timerFunctions.removeAll()
             pendingTimers.removeAll()
+            pendingClearedTimers.removeAll()
             viewRegistries.removeAll()
             installedViewID = nil
             model.resetElements([])
@@ -273,12 +293,13 @@ final class WMPScriptContext: @unchecked Sendable {
 
     func run(plan: WMPScriptViewPlan, size: WMPSize, snapshot: WMPHostSnapshot,
              preferences: [String: String], event: WMPJScriptEvent?,
-             geometry: [Int: WMPRect]) async -> WMPScriptRunResult {
+             geometry: [Int: WMPRect],
+             boundValues: [Int: WMPJSONValue] = [:]) async -> WMPScriptRunResult {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(returning: perform(plan: plan, size: size, snapshot: snapshot,
                                                        preferences: preferences, event: event,
-                                                       geometry: geometry))
+                                                       geometry: geometry, boundValues: boundValues))
             }
         }
     }
@@ -318,10 +339,12 @@ final class WMPScriptContext: @unchecked Sendable {
 
     private func perform(plan: WMPScriptViewPlan, size: WMPSize, snapshot: WMPHostSnapshot,
                          preferences: [String: String], event: WMPJScriptEvent?,
-                         geometry: [Int: WMPRect], currentViewID: String? = nil) -> WMPScriptRunResult {
+                         geometry: [Int: WMPRect], currentViewID: String? = nil,
+                         boundValues: [Int: WMPJSONValue] = [:]) -> WMPScriptRunResult {
         model.beginTransaction(snapshot: snapshot, preferences: preferences,
                                viewID: currentViewID ?? plan.viewID)
         pendingTimers.removeAll()
+        pendingClearedTimers.removeAll()
         // Sync the element state to the layout the skin is drawn at. The scene was built with the
         // previous transaction's overrides, so this is the skin's own values where it set them and
         // the resolved truth — artwork size, alignment stretch — everywhere else.
@@ -333,6 +356,16 @@ final class WMPScriptContext: @unchecked Sendable {
                 element.properties["width"] = .number(Double(frame.width))
                 element.properties["height"] = .number(Double(frame.height))
             }
+        }
+        // **A control the host moved has to *read* as moved before any handler runs (W51).** The
+        // value of a `wmpprop:`-bound slider lives in the scene's overrides, so the element model
+        // never had it: `seek.value` answered the markup's, which for the corpus's seek bars is
+        // nothing at all. This is the same sync the geometry block above is, for the same reason —
+        // the transaction's starting state is what the skin is currently drawn at.
+        for (stableID, value) in boundValues {
+            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            else { continue }
+            element.properties["value"] = value
         }
         if let view = model.element("view") {
             view.properties["width"] = .number(Double(size.width))
@@ -395,6 +428,7 @@ final class WMPScriptContext: @unchecked Sendable {
         // Completions first: a chained step writes geometry, and those writes are what the
         // geometry cascade below exists to propagate. The other order would make a pane positioned
         // off a moved one trail it by a transaction, which is W87 again.
+        raiseValueChangeHandlers(plan: plan, changes: boundValues, into: &result)
         raiseCompletionHandlers(plan: plan, into: &result)
         raiseGeometryChangeHandlers(plan: plan, into: &result)
 
@@ -405,7 +439,43 @@ final class WMPScriptContext: @unchecked Sendable {
         result.repaintHints = model.repaintHints
         result.diagnostics += model.diagnostics
         result.timers = pendingTimers
+        result.clearedTimers = pendingClearedTimers
         return result
+    }
+
+    /// **A slider is bound both ways, so the *host* moving it raises `value_onchange` too (W51).**
+    ///
+    /// The user-driven half closed with W52 and this is the other direction, which is how a seek
+    /// bar's readout follows playback and how a preset changing ten gains re-runs each band's
+    /// handler. `Catwoman` is the case that named it: its clock is four digit filmstrips positioned
+    /// by `value_onchange="drawSeekDigits(value)"` on a seek slider whose value the host owns, so
+    /// with nothing raising the handler the slider tracked the song (W120) and the clock stayed on
+    /// `00:00`. Measured over the corpus, **every one of the 19 handlers on a position-bound slider
+    /// is a readout painter** — `drawSeekDigits(value)` ×17, `DrawTimeNormalView(value)`,
+    /// `seek2.value=seek.value` — and none writes the position back, so this direction cannot
+    /// re-seek. The write-backs elsewhere (`eq.gainLevel1=value`, `player.settings.volume = value`)
+    /// are WMP's own idiom and settle: the registry only reports values that actually *moved*, so
+    /// a handler writing back the number it was just given produces an identical snapshot and no
+    /// further change.
+    ///
+    /// Bounded like both cascades beside it — only what the markup authored, only `value`, once per
+    /// element per transaction — and it runs *before* them so a repaint that writes geometry still
+    /// propagates through the W87 cascade in the same frame.
+    private func raiseValueChangeHandlers(plan: WMPScriptViewPlan, changes: [Int: WMPJSONValue],
+                                          into result: inout WMPScriptRunResult) {
+        guard !changes.isEmpty, !plan.valueChangeHandlers.isEmpty else { return }
+        for stableID in changes.keys.sorted() {
+            guard let source = plan.valueChangeHandlers[stableID],
+                  let value = changes[stableID] else { continue }
+            // The bare `value` a control's handler reads, bound and cleared exactly as the event
+            // path binds it: `drawSeekDigits(value)` is the whole of what these handlers are.
+            context.setObject(Self.jsAny(value), forKeyedSubscript: "value" as NSString)
+            defer { context.setObject(nil, forKeyedSubscript: "value" as NSString) }
+            if let error = invokeHandler(source, label: "value_onchange") {
+                result.diagnostics.append(.init(code: "handler-error",
+                                                message: "value_onchange: \(error)"))
+            }
+        }
     }
 
     /// **A `<property>_onchange` fires in the same transaction as the write that triggered it.**
@@ -639,6 +709,10 @@ final class WMPScriptContext: @unchecked Sendable {
         let clearTimer: @convention(block) (Int) -> Void = { [weak self] token in
             self?.timerFunctions.removeValue(forKey: token)
             self?.pendingTimers.removeAll { $0.token == token }
+            // Recorded as well as removed: the token may belong to a timer an *earlier*
+            // transaction registered, which this one cannot see in `pendingTimers` and which is
+            // running as a task in the controller.
+            self?.pendingClearedTimers.append(token)
         }
         context.setObject(get, forKeyedSubscript: "__wmpGet" as NSString)
         context.setObject(set, forKeyedSubscript: "__wmpSet" as NSString)

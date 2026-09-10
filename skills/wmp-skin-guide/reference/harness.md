@@ -80,9 +80,22 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_RENDER_APPKIT` | `1` | `APPKIT` — host the scene in the **real `NSView` stack** and report what the AppKit layer adds over the artwork. `outside=` is the number that ranks: an overlay drawing inside its own widget frame is the hosting working, and one drawing anywhere else is the W43 class. `blit=`/`blit-max-delta=` is a second, separate comparison of the renderer's own image against the view's blit of it. Set `WMP_RENDER_APPKIT_DUMP=<dir>` alongside it to write both bitmaps as `<view>-scene.png` and `<view>-hosted.png` when isolating one view |
 | `WMP_RENDER_SETTLE` | seconds | run the **view's own timer loop** for that long before measuring — at the period the skin asks for, honouring every `setViewTimerInterval` its handlers post back, rebuilding the scene between ticks |
 | `WMP_RENDER_CLOCK` | `<s>[;<s>…]` | seconds into an animation to draw, one PNG per value (suffixed `@t<s>`; a zero clock keeps the original filename). **A render dump is a still, so this flag is the only way an animation is falsifiable** — frame zero is indistinguishable from an engine that never animates. Two pinned values, diffed, are the proof. `ANIMATION <view>: shortestDelay=… bounds=…` reports what the scene actually animates |
+| `WMP_RENDER_HOST` | `playing`, or a `key=value` list | seed a **playing** host for the whole run instead of the default stopped one, and print `HOST` per skin saying what was seeded. Everything else in the harness measures a stopped player with an empty playlist, which is the one state a `.wmz`'s transport readouts never show a user: the elapsed readout of **108 archives** is `<TEXT value="wmpprop:player.controls.currentPositionString">` and **89** hang a seek slider off `player.controls.currentPosition` with `max="wmpprop:player.currentMedia.duration"`, and against the default snapshot every one of those resolves to `0:00` on a zero-length track — indistinguishable from an engine that never answers the path at all. Defaults are a track 1:03 into 3:33, one of three in the playlist, half volume, centred, with a title/artist/album; `WMP_RENDER_HOST='t=42,dur=137,state=paused,vol=0.8,title=X'` overrides any field (`state`, `t`/`time`/`position`, `dur`, `vol`, `bal`, `mute`, `shuffle`, `repeat`, `buffering`, `bitrate`, `title`, `artist`, `album`, `tracks`, `index`, `eq`). **Read the `HOST` line before reading anything else in such a capture** — a seeded run misread as a default-state one is wrong about every readout in it |
 | `WMP_RENDER_SIZE` | `<W>x<H>` | `RESIZE` — lay the view out at its **own** size first, run `onLoad` there, then resize to this and re-drive `onResize`, which is the order a user produces. An expression-driven layout is a *different* layout, not the same one scaled. The transaction runs whether or not the view declares an `onResize`, because an expression re-reads `view.width` either way; `handlers=` is how many the changed-object set actually raised, and `handlers=0` with a skin you know authors one means nothing moved |
 
-### The one probe that is not in the test binary
+### The two probes that are not in the test binary
+
+`NULLPLAYER_PLAY=<audio file>` is read by **the app** (`AppDelegate`, `#if DEBUG`) and enqueues and
+plays that file at launch through the same `application(_:openFiles:)` a Finder open takes. **Live QA
+needs playback**, and every readout a skin binds to the host — the clock, the seek thumb, the
+duration, the title — reads its resting value with an empty playlist; without this, getting a track
+into a launched debug build costs a Local Library window and a CGEvent double-click per launch, and
+WMP mode's own route to a track is a file dialog. It is the live counterpart of `WMP_RENDER_HOST`:
+
+```bash
+WMP_TRACE_INPUT=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
+  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+```
 
 `WMP_TRACE_INPUT=1` is read by **the app**, not by the harness (`WMPMainWindowController.tracesInput`,
 `#if DEBUG`). It writes one line per input the window turns into a script transaction and one per
@@ -223,6 +236,34 @@ identity, so any interleaving of them is inferred; a sequence number makes it re
 **Add the counter, take the answer, remove it.** It is not a documented flag, because a permanent
 one would have to be — and the thing worth keeping is the technique, not the instrument. When a
 transaction-level defect resists two readings of the trace, number them rather than reason harder.
+
+### Measure the mechanism's reach before you fix it
+
+"The timer display and seek/progress are broken in wmp for all skins" was diagnosed three times
+before it was diagnosed right, and each wrong answer was a real defect with a reach too small to be
+the report. The trace showed 1,352 `status_onchange` transactions in two minutes and a script-timer
+set being replaced by every one of them, which is W119 and is genuinely wrong — but the corpus drives
+its readouts with `timerInterval`/`onTimer` (**442 uses / 91 skins**), not with `setTimeout`
+(**9 / 2**), so "every script timer dies when you press play" could never have been what all skins
+had in common. One `python3` pass over the archives' `.js` and `.wms` said so in a minute; without
+it, the next hour goes into hardening a path two skins use.
+
+**The reach number is also what makes the fix defensible in the other direction.** W120 landed
+because 73 sliders across 61 archives author `max="wmpprop:player.currentMedia.duration"` and no
+`value`, and W51 landed because every one of the 19 handlers on a position-bound slider is a readout
+painter and none writes the position back — that second measurement is the whole argument that
+raising 2,141 write-back handlers cannot loop. Both took one scan of the flattened markup.
+
+### A named skin outranks a corpus sweep
+
+The same report was unfalsifiable until the reporter named one: *"catwoman skin is not fixed"*. A
+seeded corpus sweep had already said **88 of the 89 archives that author the elapsed binding draw the
+right string**, which is a true measurement and was the wrong question — Catwoman authors no
+`currentPositionString` anywhere. Its clock is four digit filmstrips positioned by
+`value_onchange="drawSeekDigits(value)"` off a `<CUSTOMSLIDER>` whose value nothing bound, so the
+whole readout lived in two mechanisms the sweep was not looking at. **Ask for a skin name before
+sweeping**, then read that skin's `.wms` — the markup says what the readout is made of, and the two
+defects behind it (W120, W51) were both visible in a single 200-character tag.
 
 ### Read the probe for what is *absent*
 

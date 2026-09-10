@@ -291,7 +291,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     apply(skin: skin, store: store, scene: resolved, image: rendered.image,
                           runtime: runtime, overrides: output.overrides)
                     let switchedView = applyHostCommands(output.hostCommands)
-                    if !switchedView { scheduleTimers(output.timerRequests) }
+                    if !switchedView {
+                        applyTimerDelta(registered: output.timerRequests,
+                                        cleared: output.clearedTimerTokens)
+                    }
                     recordScriptDiagnostics(output.diagnostics)
                     await adoptDispatcher(in: skin, store: store, presenting: registration.id)
                     presented = true
@@ -652,7 +655,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self?.mainView?.refreshHostState(self?.host.snapshot ?? WMPHostSnapshot())
                 if let scriptOutput {
                     let switchedView = self?.applyHostCommands(scriptOutput.hostCommands) ?? false
-                    if !switchedView { self?.scheduleTimers(scriptOutput.timerRequests) }
+                    if !switchedView { self?.applyTimerDelta(registered: scriptOutput.timerRequests,
+                                                             cleared: scriptOutput.clearedTimerTokens) }
                     self?.recordScriptDiagnostics(scriptOutput.diagnostics)
                 }
             } catch is CancellationError {} catch {
@@ -779,7 +783,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let switchedAgain = applyHostCommands(output.hostCommands)
                 recordScriptDiagnostics(output.diagnostics)
                 guard !switchedAgain else { return }
-                scheduleTimers(output.timerRequests)
+                applyTimerDelta(registered: output.timerRequests,
+                                cleared: output.clearedTimerTokens)
                 // Gated on an authored handler, like hover, and for the timers rather than the
                 // cost: a transaction's `timerRequests` are what *that* transaction registered, so
                 // an unconditional binding-only `viewchange` immediately posted an empty set and
@@ -857,8 +862,28 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         lastScriptSnapshot = snapshot
         var events: [String] = []
         if previous?.state != snapshot.state { events += ["openstatechange", "playstatechange"] }
-        if previous?.currentTime != snapshot.currentTime || previous?.duration != snapshot.duration
-            || previous?.metadata != snapshot.metadata { events.append("status_onchange") }
+        // **`status_onchange` is WMP's "the status string changed", and a clock tick is not that
+        // (W119).** The bindings do have to settle ten times a second — the elapsed readout of 108
+        // archives is `<TEXT value="wmpprop:player.controls.currentPositionString">` and 89 hang a
+        // seek slider off `player.controls.currentPosition` — so a position tick still runs a
+        // transaction. What it must not do is raise the skin's *authored* handler: `status_onchange`
+        // is authored by **70 of the 177 measurable archives and every one of its 75 sources is a
+        // metadata updater**, 35 of them `updateMetadata()`, whose whole body is
+        // `metadata.value = player.status`. `player.status` is inert and empty here (there is no
+        // status string behind it), so raising it on every tick overwrote the track readout with ""
+        // ten times a second: `9SeriesDefault` runs `ShowStatus(player.status)` and drew an empty
+        // metadata line beside a correct clock, reported as no track information. It also ran a
+        // whole script transaction, scene rebuild and render at 10 Hz in every skin, cancelling
+        // whatever click or `onTimer` transaction was still in flight.
+        //
+        // `positionchange` is a name **no corpus archive authors** (measured: 0 uses), which is the
+        // point — it resolves to no handler anywhere, so the transaction it raises is the
+        // binding-only one `dispatchScriptTransaction` already documents. A duration that changes
+        // is a media that opened rather than a clock that ticked, so that keeps the status raise.
+        if previous?.metadata != snapshot.metadata || previous?.duration != snapshot.duration {
+            events.append("status_onchange")
+        }
+        if previous?.currentTime != snapshot.currentTime { events.append("positionchange") }
         if previous?.shuffle != snapshot.shuffle || previous?.repeatMode != snapshot.repeatMode {
             events.append("modechange")
         }
@@ -879,7 +904,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     private static let hostEventOrder = ["openstatechange", "playstatechange", "status_onchange",
-                                         "modechange", "buffering_onchange", "reception_onchange"]
+                                         "positionchange", "modechange", "buffering_onchange",
+                                         "reception_onchange"]
 
     private func renderInteraction(state: WMPInteractionState, changed: Set<Int>) {
         guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
@@ -1000,7 +1026,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 scriptViewSize = assigned
                 setWindowSize(NSSize(width: assigned.width, height: assigned.height))
             }
-            if !switchedView { scheduleTimers(output.timerRequests) }
+            if !switchedView {
+                applyTimerDelta(registered: output.timerRequests,
+                                cleared: output.clearedTimerTokens)
+            }
             recordScriptDiagnostics(output.diagnostics)
             guard !switchedView, !Task.isCancelled else { return }
             do {
@@ -1217,18 +1246,41 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         return switchedView
     }
 
-    private func scheduleTimers(_ requests: [WMPJScriptTimerRequest]) {
-        cancelScriptTimers()
-        for request in requests.prefix(WMPPhase0Limits.activeTimers) {
+    /// **A transaction's timers are a delta, not the live set (W119).** `setTimeout` is what a
+    /// skin's own clock loop is built out of, and this used to cancel every running one and start
+    /// the survivors' sleeps again from zero — so a transaction that registered none, which is
+    /// nearly all of them, stopped the skin's timers outright. That is invisible until something
+    /// else is running transactions: with a track playing, the host's position tick reaches this
+    /// controller ten times a second, so every script timer in the skin died within 100 ms of the
+    /// user pressing play, and any timer with a period longer than that could never have fired at
+    /// all. Registering is additive, `clearTimeout` is what removes one, and a token already
+    /// running is left alone rather than restarted.
+    ///
+    /// The Phase 0 active-timer limit is enforced on the **resulting** set, which is the quantity
+    /// the limit is about; a per-transaction cap could never see the total.
+    private func applyTimerDelta(registered: [WMPJScriptTimerRequest], cleared: [Int]) {
+        for token in cleared {
+            scriptTimerTasks.removeValue(forKey: token)?.cancel()
+        }
+        for request in registered {
+            guard scriptTimerTasks[request.token] == nil,
+                  scriptTimerTasks.count < WMPPhase0Limits.activeTimers else { continue }
             let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, request.periodMilliseconds)
             scriptTimerTasks[request.token] = Task { [weak self] in
                 repeat {
                     try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
                     guard !Task.isCancelled else { return }
+                    // A one-shot retires itself: the context reported it once, and nothing else
+                    // would ever take it out of the running set.
+                    if !request.repeats { self?.retireScriptTimer(request.token) }
                     self?.dispatchTimer(request)
                 } while request.repeats && !Task.isCancelled
             }
         }
+    }
+
+    private func retireScriptTimer(_ token: Int) {
+        scriptTimerTasks.removeValue(forKey: token)
     }
 
     private func dispatchTimer(_ request: WMPJScriptTimerRequest) {
@@ -1244,6 +1296,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // Commands before drawing, and for the reason in `dispatchScriptTransaction`: the
             // build and the render are what a later tick cancels, and the commands are not theirs.
             let switchedView = self.applyHostCommands(output.hostCommands)
+            // **A timer handler is where the next timer is registered.** The WMP idiom is a chain:
+            // the callback does its step and calls `setTimeout` again for the next one. This path
+            // used to drop what the tick asked for, so a chain fired exactly once and stopped —
+            // and it is the only transaction site that could ever see a chained request (W119).
+            if !switchedView {
+                self.applyTimerDelta(registered: output.timerRequests,
+                                     cleared: output.clearedTimerTokens)
+            }
             self.recordScriptDiagnostics(output.diagnostics)
             guard !switchedView, !Task.isCancelled else { return }
             do {
@@ -1264,9 +1324,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// nothing else.
     ///
     /// It used to stop the view's own `timerInterval` and the animation loop as well, and
-    /// `scheduleTimers` calls it on every transaction to replace the previous set. So a load
-    /// transaction that requested no script timers — the common case — cancelled the view timer
-    /// `apply` had just started, one line earlier. **No `.wmz` view timer in the corpus had ever
+    /// `applyTimerDelta` is what maintains that set, and it used to be a wholesale replace called
+    /// on every transaction. So a load transaction that requested no script timers — the common
+    /// case — cancelled the view timer `apply` had just started, one line earlier. **No `.wmz` view timer in the corpus had ever
     /// fired**: `Halo 2`'s `introStart()` never opened its shutter (reported 2026-09-08), and every
     /// other authored `onTimer` — clocks, seek readouts, `checkRemoteViewStatus`, ALXMorph's
     /// animations — was dead the same way. Teardown wants all three stopped and says so with
@@ -1478,7 +1538,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                                   currentViewID: currentViewID,
                                                   snapshot: host.snapshot, event: event)
         guard !Task.isCancelled, dispatcherViewID == viewID else { return }
-        // `timerRequests` are deliberately dropped rather than scheduled. `scheduleTimers` replaces
+        // `timerRequests` are deliberately dropped rather than scheduled. `applyTimerDelta` owns
         // the *presented* view's set, and `dispatchTimer` runs what it schedules against the
         // presented view — so honouring a dispatcher's `setTimeout` here would cancel the timers of
         // the view on screen and then run the callback in the wrong view. No corpus dispatcher asks

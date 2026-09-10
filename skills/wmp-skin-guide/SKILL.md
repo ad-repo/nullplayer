@@ -652,9 +652,31 @@ of these was invisible to the harness and visible in the first minute of live QA
   retain committed values across batches, and tag origins so script echoes cannot create feedback.
 - Host timers enforce the Phase 0 count and period limits. Preferences are bounded and namespaced by
   the SHA-256 of skin archive contents; reset only the active skin namespace.
-- Dispatch authored handlers in document order. Host changes use open, play, status, mode,
+- Dispatch authored handlers in document order. Host changes use open, play, status, position, mode,
   buffering, then reception order; input uses mouse-down, mouse-up, click/change semantics from the
   Phase 4 capture model.
+- **A clock tick is not `status_onchange`, and a transaction's timers are a delta rather than the
+  live set (W119).** Both were one path — `refreshHostState` — and both only bite while a track is
+  playing, which is why no capture in this harness could see either: every probe ran against a
+  stopped, empty-playlist `WMPHostSnapshot()` until `WMP_RENDER_HOST` existed. **`status_onchange`
+  means the status *string* changed**, and `player.status` is inert and empty here; raising it on
+  every 100 ms position tick made **70 of the 177 measurable archives** re-run their metadata
+  handler ten times a second, and since **all 75 authored sources are metadata updaters** — 35 of
+  them `updateMetadata()`, whose body is `metadata.value = player.status` — the track readout was
+  blanked continuously. Reported as no track information under `9SeriesDefault`, whose
+  `ShowStatus(player.status)` drew an empty metadata line beside a correct clock. A tick now raises
+  `positionchange`, **a name no archive authors** (0 uses), so it resolves to no handler and is the
+  binding-only transaction that lets the 108 archives' elapsed readout and the 89 archives' seek
+  slider settle; a `duration` change is a media opening rather than a clock ticking and keeps the
+  status raise. And **a transaction that registered no `setTimeout` must not cancel the ones already
+  running**: `timerRequests` is what *that* transaction asked for, so replacing the set wholesale
+  killed every script timer in the skin within 100 ms of pressing play, and restarted the survivors'
+  sleeps from zero. `applyTimerDelta` adds, honours `clearTimeout` (the context reports cleared
+  tokens too, because a cleared token can belong to a transaction long past), leaves a running token
+  alone, retires a one-shot when it fires, and bounds the *resulting* set. `dispatchTimer` applies
+  the delta as well — the WMP idiom is a callback that ends by registering the next step, and
+  dropping that made a chain fire once. **Before ranking a "it works until you press play" defect,
+  ask what the host refresh is dispatching ten times a second.**
 - **Hover is two events and a gate.** Crossing from one control to another raises `onMouseOut` on
   the node left *before* `onMouseOver` on the node reached — a skin that fades a readout in on entry
   never fades it back out otherwise — and nothing is raised while the pointer stays inside the same
@@ -706,7 +728,31 @@ of these was invisible to the harness and visible in the first minute of live QA
   `value` onto `player.controls.currentPosition` — two paths the registry already answers, rather
   than a new percent path it does not. Ranges stay in `sliderMetrics.defaultRange(for:)`, which is
   `-100…100` for `.balanceSlider` and 0-100 for every other kind. An authored attribute always wins:
-  one corpus balance slider states its own `value` and keeps it. **The audio was never wrong** here —
+  one corpus balance slider states its own `value` and keeps it. **And a skin says the same thing a
+  second way, by the range it declares (W120): 73 sliders across 61 of the 177 measurable archives
+  author `max="wmpprop:player.currentMedia.duration"` and no `value` at all** — 58 as
+  `<CUSTOMSLIDER>`, 15 as `<SLIDER>`, and no script in any of them ever writes one. That is the
+  corpus's own seek bar, the way the Plus!, Xbox, Alienware, BlueCrush, Halo and Catwoman families
+  all write it, and `positionSliderPaths` reads it: a control whose far end is the end of the track
+  *is* a position control. Without it the filmstrip sat on frame 0 for the length of the track and
+  the digit strips a skin positions from `value_onchange` sat with it — reported as "the clock does
+  not work and seek does not work" and measured, seeded, as 68 rows across 52 skins moving off
+  frame 0. **The other half of that report is the same slider read from the other direction (W51): a
+  control is bound both ways, so the *host* moving it raises `value_onchange` too.** The user-driven
+  half closed with W52; this is how a seek bar's readout follows playback and how a preset moving
+  ten gains re-runs each band's handler. `Catwoman` draws its clock as four digit filmstrips
+  positioned by `value_onchange="drawSeekDigits(value)"`, so until the handler was raised the slider
+  tracked the song and the clock sat at zero. Two things make it safe rather than a feedback loop,
+  and both were measured before it was written: **the registry only reports values that actually
+  moved**, so a write-back handler (`eq.gainLevel1=value`, 2,141 of the 2,488 host-bound sliders
+  carry one) hands the host the number it just gave and produces an identical snapshot; and **every
+  one of the 19 handlers on a position-bound slider is a readout painter** — `drawSeekDigits(value)`
+  ×17, `DrawTimeNormalView(value)`, `seek2.value=seek.value` — so nothing re-seeks. It is bounded
+  like the two cascades beside it: only what the markup authored, only `value`, once per element per
+  transaction, raised *before* the completion and geometry cascades so a repaint that writes
+  geometry still propagates in the same frame. Its side effect is honest new demand rather than
+  regression: 42 handlers that never ran now run and 30 of them abort on `event.shiftKey`, an
+  **`event` object in a handler** that nothing binds on either direction of `change`. **The audio was never wrong** here —
   `AudioEngine.balance` defaults to centre and `performSlider` already wrote `fraction × 2 − 1` — so
   the whole defect was a drawn thumb lying about a centred pan, and no sweep of default-state images
   could have called it one.

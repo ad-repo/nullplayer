@@ -218,7 +218,12 @@ struct WMPScriptOutput: Sendable {
     let hostCommands: [WMPJScriptHostCommand]
     let diagnostics: [WMPJScriptDiagnostic]
     let repaintNodeIDs: Set<Int>
+    /// The timers this transaction **registered**, which is a delta and not the live set: the
+    /// script's `setTimeout`/`setInterval` calls from this one transaction, paired with
+    /// `clearedTimerTokens`. See `WMPMainWindowController.applyTimerDelta` (W119).
     let timerRequests: [WMPJScriptTimerRequest]
+    /// The tokens this transaction called `clearTimeout`/`clearInterval` on.
+    let clearedTimerTokens: [Int]
     /// Every host object-model access the transaction made, in order. Carried for `WMP_CALL_TRACE`;
     /// no production path reads it.
     let calls: [WMPJScriptCall]
@@ -241,7 +246,8 @@ struct WMPScriptOutput: Sendable {
 
     init(overrides: WMPSceneOverrides, hostCommands: [WMPJScriptHostCommand] = [],
          diagnostics: [WMPJScriptDiagnostic] = [], repaintNodeIDs: Set<Int> = [],
-         timerRequests: [WMPJScriptTimerRequest] = [], calls: [WMPJScriptCall] = [],
+         timerRequests: [WMPJScriptTimerRequest] = [], clearedTimerTokens: [Int] = [],
+         calls: [WMPJScriptCall] = [],
          expressions: [WMPJScriptExpressionResult] = [], expressionOrder: [String] = [],
          listItems: [Int: [String]] = [:], viewSize: WMPSize? = nil) {
         self.listItems = listItems
@@ -251,6 +257,7 @@ struct WMPScriptOutput: Sendable {
         self.diagnostics = diagnostics
         self.repaintNodeIDs = repaintNodeIDs
         self.timerRequests = timerRequests
+        self.clearedTimerTokens = clearedTimerTokens
         self.calls = calls
         self.expressions = expressions
         self.expressionOrder = expressionOrder
@@ -377,14 +384,24 @@ actor WMPScriptRuntime {
             startupDiagnostics = context.load(scripts: skin.scriptSources, order: skin.scripts)
         }
 
+        // **The host's own changes are resolved before the handlers, not after (W51).** They used
+        // to be folded into the overrides once the transaction had run, which is fine for what the
+        // scene *draws* and wrong for what the skin can *react to*: a control the host moved read
+        // as unmoved for the whole handler pass, and nothing raised its `value_onchange` at all.
+        // Committing them afterwards is unchanged — this only decides what the transaction knew.
+        let boundChanges = propertyRegistry?.changes(for: snapshot) ?? []
+        var boundValues: [Int: WMPJSONValue] = [:]
+        for change in boundChanges where change.address.property == "value" {
+            boundValues[change.address.stableID] = change.value
+        }
         let result = await context.run(plan: plan, size: size, snapshot: snapshot,
                                        preferences: preferences.values(), event: event,
-                                       geometry: geometry)
+                                       geometry: geometry, boundValues: boundValues)
 
         var diagnostics = startupDiagnostics + result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
         var overrides = committedOverrides
-        for change in propertyRegistry?.changes(for: snapshot) ?? [] {
+        for change in boundChanges {
             overrides.properties[change.address] = change.value
         }
         for expression in result.expressions {
@@ -418,7 +435,8 @@ actor WMPScriptRuntime {
         committedOverrides = overrides
         return WMPScriptOutput(overrides: overrides, hostCommands: result.hostCommands,
                                diagnostics: diagnostics, repaintNodeIDs: repaint,
-                               timerRequests: result.timers, calls: result.calls,
+                               timerRequests: result.timers, clearedTimerTokens: result.clearedTimers,
+                               calls: result.calls,
                                expressions: result.expressions, expressionOrder: result.expressionOrder,
                                listItems: context.listItems(),
                                viewSize: Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
@@ -491,6 +509,7 @@ actor WMPScriptRuntime {
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
         return WMPScriptOutput(overrides: .empty, hostCommands: result.hostCommands,
                                diagnostics: diagnostics, timerRequests: result.timers,
+                               clearedTimerTokens: result.clearedTimers,
                                calls: result.calls)
     }
 

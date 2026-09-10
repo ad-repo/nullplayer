@@ -48,7 +48,7 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
     /// other half of the same statement and live in `sliderMetrics`, where a slider's other WMP
     /// defaults already are.
     private static func implicit(for node: WMPNode, authored: [Binding]) -> [Binding] {
-        guard let paths = implicitPaths[node.kind] else { return [] }
+        guard let paths = implicitPaths[node.kind] ?? positionSliderPaths(for: node) else { return [] }
         return paths.compactMap { property, path in
             // An authored attribute always wins — one corpus `<BALANCESLIDER>` does author its
             // own `value`, and a skin that states something has not asked for WMP's default.
@@ -56,6 +56,43 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
                   !authored.contains(where: { $0.address.property == property }) else { return nil }
             return Binding(address: .init(stableID: node.stableID, property: property),
                            kind: .property, path: path)
+        }
+    }
+
+    /// **A slider whose maximum is the media's duration is a position control, and WMP does not
+    /// make a skin say so twice (W120).** `<CUSTOMSLIDER id="seek" min="0"
+    /// max="wmpprop:player.currentMedia.duration" image="seek.png" positionImage="seek_map.png">`
+    /// is the corpus's own seek bar — **73 of them across 61 of the 177 measurable archives author
+    /// exactly that and no `value` at all**, 58 as `<CUSTOMSLIDER>` and 15 as `<SLIDER>`, and
+    /// nothing in any of those skins' scripts ever writes the value either. W118 synthesized the
+    /// binding for the `<SEEKSLIDER>` *tag*; this is the same statement made by the declared
+    /// **range** instead, which is how the Plus!, Xbox, Alienware, BlueCrush, Halo and Catwoman
+    /// families all write it. Without it the filmstrip stayed on frame 0 for the length of the
+    /// track — `Catwoman/mainView` drew `seek.png crop=0,0` at 42 seconds into 137 — and every
+    /// readout the skin chains off that value went with it: Catwoman's clock is four digit strips
+    /// positioned by `value_onchange="drawSeekDigits(value)"`, so a value that never moves is a
+    /// clock that never moves. Reported as "the clock does not work and seek does not work".
+    ///
+    /// The range is the evidence and the tag is not, so this applies to any slider kind: a skin
+    /// that has told the control its far end is the end of the track has said what the control is.
+    /// An authored `value` still wins, which is what the 112 sliders that state their own rely on.
+    private static func positionSliderPaths(for node: WMPNode) -> [(String, String)]? {
+        guard isSlider(node.kind), boundsMaximumToDuration(node) else { return nil }
+        return [("value", "player.controls.currentPosition")]
+    }
+
+    private static func isSlider(_ kind: WMPElementKind) -> Bool {
+        switch kind {
+        case .slider, .seekSlider, .customSlider, .progressBar: return true
+        default: return false
+        }
+    }
+
+    private static func boundsMaximumToDuration(_ node: WMPNode) -> Bool {
+        ["max", "maxValue"].contains {
+            guard let attribute = node.attribute(named: $0),
+                  case let .binding(kind, path) = attribute.value, kind == .property else { return false }
+            return path.trimmingCharacters(in: .whitespaces).lowercased() == "player.currentmedia.duration"
         }
     }
 

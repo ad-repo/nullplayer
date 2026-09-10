@@ -161,6 +161,25 @@ three are in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-
 "launching a track from library does not play it" did not reproduce — playback started every time
 from the Plex browser, and the queue reached the engine; what was missing was any way to *see* it.
 
+**Two more closed on 2026-09-09, and the reason neither had ever been captured is that no probe
+here could render a playing player.** "The timer display and seek/progress are broken in wmp for all
+skins" was **W119** — a 100 ms position tick dispatched as `status_onchange`, which is WMP's *status
+string changed* event, so 70 of the 177 measurable archives re-ran their metadata handler ten times
+a second (all 75 authored sources are metadata updaters; 35 of them blank the readout with the inert
+`player.status`) and every script timer in the skin was cancelled inside 100 ms of pressing play —
+and **W120**, a seek slider whose `max` is the media duration and whose `value` no skin states,
+which is 73 sliders across 61 archives sitting on frame 0 for the length of the track. Both are in
+[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 14 (fifth
+pass)*. **The instruments came first and they are the transferable part**: `WMP_RENDER_HOST` seeds a
+playing host for a whole sweep and `NULLPLAYER_PLAY` starts a debug launch on a track, so the
+playback half of W73 is now measurable rather than argued about. With the first of them seeded, 88 of
+the 89 measurable archives that author the elapsed binding draw the right string, which is what moved
+the search out of the scene and into the app's event dispatch. **The clock half of the same report closed the same
+day as W51** — a control is bound both ways, so the host moving it raises `value_onchange` too, and
+`Catwoman`'s digit strips now count the track down. That one carries new measured demand with it: 42
+handlers that had never run now run, and 30 abort on an **`event` object in a handler** that nothing
+binds on either direction of `change`.
+
 **What the reporter did report, 2026-09-08.** Three skins, three different classes. `corona` is the
 control: it "works well, has all its sliders and buttons for the most part", which is the reference
 result and the reason the other two are legible as defects rather than as the engine being broken.
@@ -197,7 +216,7 @@ What is left of that gap is one row.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W73 | A clean sweep still proves only the default state | every skin | Narrowed by W71 and W72, not closed by them. The AppKit *overlay* class is now measured — 545 hosted views, two defects, both in W74 — and every slider in the corpus is drivable. What no sweep here still says anything about: a tab, a setting, a **hover**, a drawer, the window's shape and its shadow (those live in the window server and stay a short, genuinely manual list), and anything driven by live playback. W69's flicker is in that remainder, which is why it needs its own instrumentation rather than another sweep. |
+| W73 | A clean sweep still proves only the default state | every skin | **The playback half is now instrumented, 2026-09-09**: `WMP_RENDER_HOST` seeds a playing host for a whole sweep (and `NULLPLAYER_PLAY` starts a live debug launch on a track), which is what found W119 and W120 — two defects in the one state every transport readout in the corpus is authored for and no capture here had ever entered. Read the `HOST` line of such a capture before anything else in it. Narrowed by W71 and W72, not closed by them. The AppKit *overlay* class is now measured — 545 hosted views, two defects, both in W74 — and every slider in the corpus is drivable. What no sweep here still says anything about: a tab, a setting, a **hover**, a drawer, the window's shape and its shadow (those live in the window server and stay a short, genuinely manual list), and anything driven by live playback. W69's flicker is in that remainder, which is why it needs its own instrumentation rather than another sweep. |
 
 ## Tier 1f — the residue of the starvation classes
 
@@ -335,8 +354,8 @@ table while still doing nothing, which is exactly the state `onResize` was in.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W51 | Nothing raises `value_onchange` when the **host** moves a control | **the remainder of 2,170 uses across 175 of 179 archives**; the user-driven half closed 2026-09-08 | Half of this closed with W52: `value_onchange` is the `change` event's other spelling, accepted by `WMPMainWindowController.handlers(in:event:…)`, so a skin's handler now runs when the user moves the slider. **What is left is the other direction.** A `<SLIDER value="wmpprop:eq.gainLevel1" value_onchange="…">` is bound both ways in WMP: the handler also runs when the *host* property moves, which is how a seek bar's readout follows playback and how a preset changing the ten equaliser gains re-runs each band's handler. This engine has no per-property observation path, so nothing raises it. That is a real gap and it is recorded here rather than left to look implemented — the trap `INERT` exists for. The `_onchange` family is confirmed **general** rather than 140 separate events (the corpus also writes `width_onchange`, `left_onchange`, `height_onchange`, `visible_onchange`, `enabled_onchange`, `down_onchange`), so whatever answers this answers `currentposition_onchange` (103/80) and `selecteditem_onchange` (20) too. Rank it with `WMPObservablePropertyRegistry`, which already knows which paths a scene depends on. |
 | W53 | Keyboard events (now reachable: the window could not take the keyboard at all until W79) | `onkeydown` 501/78, `onkeypress` 409/72, `onkeyup` 94/30 | `WMPMainView.keyDown` handles focus traversal and activation and raises no authored handler. Needs a key-code/character contract at the object-model boundary — decide what a skin may see of a keystroke before implementing. |
+| W121 | A handler that reads the `event` object | **30 handlers across the Skins Factory equaliser family**, measured 2026-09-09 as `value_onchange: ReferenceError: Can't find variable: event`; unmeasured for the other event kinds | Surfaced by W51 rather than caused by it: those handlers had never run at all before the host-driven direction was raised. `value_onchange="toolTip = Math.round(value); if (!event.shiftKey) eq.gainLevel9 = value;"` is the shape — an equaliser band that skips its write while shift is held, which is how that family links its ten bands — and the same gap applies to the user-driven direction and to `onkeydown`/`onkeypress`, where W53 already needs a key. WMP binds one `event` object per handler with the modifier and key state on it. Bind it the way `WMPScriptContext` already binds the bare `value` and an event's named arguments: for the duration of that one handler, then cleared, so a stale one cannot be read by an unrelated later handler. Count the whole class first — sweep the corpus's handler attributes for `event.` and split by event kind, since the modifier state a mouse handler wants and the `keyCode` a key handler wants come from different places. |
 | W56 | Video and playback-position events | `onvideostart` 190/140, `onvideoend` 132/130, `onpositionchange` 147/41, `currentposition_onchange` 103/80 | `onvideostart`/`onvideoend` reach 140 and 130 skins because the standard WMP template wires them; both need the hosted video surface (Phase 5, W9) before they can be honest. The position pair may fall out of W51 if `_onchange` is general. |
 
 ### 2b. Recognised, answered, and nothing behind them (`INERT`)
