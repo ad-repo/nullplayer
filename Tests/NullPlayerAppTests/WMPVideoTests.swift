@@ -66,6 +66,41 @@ final class WMPVideoTests: XCTestCase {
         XCTAssertFalse(WMPVideoSnapshot(width: .infinity, height: 360).hasVideo)
     }
 
+    func testVideoEventLatchSurvivesOutputTeardownButClearsAtMediaEnd() {
+        let absent = WMPVideoSnapshot()
+        let present = WMPVideoSnapshot(width: 640, height: 360)
+        var latch = WMPVideoEventLatch()
+
+        let started = latch.update(mediaIdentity: "movie-a", current: present, didReachEnd: false)
+        XCTAssertEqual(started, present)
+
+        let duringOutputRebuild = latch.update(mediaIdentity: "movie-a", current: absent,
+                                               didReachEnd: false)
+        XCTAssertFalse(absent.hasVideo, "the live surface must see the output teardown")
+        XCTAssertEqual(duringOutputRebuild, present,
+                       "event state must stay present for the same open media")
+        XCTAssertEqual(WMPVideoPresentation.events(previous: started,
+                                                   current: duringOutputRebuild), [])
+
+        let ended = latch.update(mediaIdentity: "movie-a", current: absent, didReachEnd: true)
+        XCTAssertEqual(ended, absent)
+        XCTAssertEqual(WMPVideoPresentation.events(previous: duringOutputRebuild, current: ended),
+                       ["videoend"])
+
+        let replayed = latch.update(mediaIdentity: "movie-a", current: present, didReachEnd: false)
+        XCTAssertEqual(WMPVideoPresentation.events(previous: ended, current: replayed), ["videostart"])
+    }
+
+    func testVideoEventLatchClearsWhenMediaIdentityChanges() {
+        let present = WMPVideoSnapshot(width: 640, height: 360)
+        var latch = WMPVideoEventLatch()
+        _ = latch.update(mediaIdentity: "movie-a", current: present, didReachEnd: false)
+
+        let newMediaWithoutOutput = latch.update(mediaIdentity: "movie-b", current: .init(),
+                                                 didReachEnd: false)
+        XCTAssertFalse(newMediaWithoutOutput.hasVideo)
+    }
+
     func testRoutingIgnoresEventOnlyVideosAndUsesEitherAuthoredVideoSpelling() async throws {
         let skin = try await load("""
         <THEME>

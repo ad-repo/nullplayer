@@ -425,3 +425,11 @@ corrected it. **Suspect it before suspecting the skin when a picture stops.**
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | W102 | `<VIDEO>` is hosted on nothing, and this player has a video window | **268 views across 170 of 179 archives**, 165 of them in a view of their own; `<WMPVIDEO>` a further 16 / 16 | W9 removed the opaque `WMPVideoPlaceholderView` for the right reason — it filled its frame with black over the artwork of 166 skins and an audio player had nothing to put there — and the note it left (`WMPMainView.swift:431`) says "an audio player has no video to put there instead", which **is no longer true**: `Windows/VideoPlayer/VideoPlayerView.swift` exists and plays. The row is therefore conditional hosting, not a placeholder: host the video layer in the authored frame **only while the current track actually has a video track**, and keep standing aside otherwise. Two things fall out of it rather than being separate work — W56's `onVideoStart`/`onVideoEnd` (114 and 105 skins) become raisable off a real surface, and `fullscreen` (80 skins), `shrinkToFit` (87) and `stretchToFit` (83) become answerable. Settle what a `.wmz` may see of the video path before writing any of it, the way W66 is held on the media-collection question. |
+
+## Phase 14 (eighth pass) — video events through an output rebuild
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W124 | A skin is told the video ended and never told it came back, so it stays in its `onVideoEnd` state | `onVideoStart` **105 uses / 91 skins**, `onVideoEnd` **77 / 70**, measured 2026-09-10 over the 180 archives | **Closed 2026-09-10.** VLC can briefly report no `hasVideoOut` and no usable `videoSize` while rebuilding the output for the same open media. `WMPAudioEngineHost` now latches a separate `videoEvent` snapshot by media identity and clears it on a media change or `didReachEndOfMedia`; `video` remains live. That distinction is required because `WMPVideoSurface` must detach during the gap, otherwise its child window can remain over the skin and intercept buttons. The pure latch test covers teardown, a genuine `videoend`, and replayed `videostart`; the accepted fix compiles and preserves the real end event. |
+
+2,167 tests green.

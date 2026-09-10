@@ -211,6 +211,14 @@ queue, with the object model as the security boundary — see Amendment 2 in
   `video reordered above parent` — **if those fire continuously rather than once per incident, the
   repair is masking a call site that keeps breaking the link, and that is the thing to fix.** Suspect
   anything that orders the parked window out: on macOS that drops its parent relationship.
+- **Video readiness has two consumers and they need different truths (W124).** `WMPHostSnapshot.video`
+  is the live drawable state: when VLC drops `hasVideoOut` or `videoSize` during a same-media vout
+  rebuild, it must become empty so `WMPVideoSurface` detaches the child window and releases mouse
+  capture. `WMPHostSnapshot.videoEvent` is the last valid state for `videostart`/`videoend` edges,
+  latched by media identity and cleared by a media change or `didReachEndOfMedia`. Feeding the
+  latched event state back through `video` kept the child window over the skin and made buttons look
+  globally dead when the track panel had pointer capture. Test the split state: output teardown
+  produces no `videoend`, the surface detaches, and a genuine media end still produces exactly one.
 - **A paused film reports no time, and in `.wmz` mode that was the only thing refreshing the host
   (W102).** `videoDidUpdateTime` is driven by VLC's time-changed callback, so a pause silenced the
   whole host tick and the skin went on drawing *and hit-testing* a pause button. What that costs is

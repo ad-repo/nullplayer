@@ -8,6 +8,33 @@ struct WMPVideoSnapshot: Hashable, Codable {
     var hasVideo: Bool { width.isFinite && height.isFinite && width > 0 && height > 0 }
 }
 
+/// Keeps WMP's media edge state stable while VLC briefly drops its drawable output during a
+/// same-media vout rebuild. The live snapshot remains separate so a hosted child window can still
+/// detach and release mouse capture during that gap.
+struct WMPVideoEventLatch {
+    private var mediaIdentity: String?
+    private var lastValidSnapshot = WMPVideoSnapshot()
+
+    mutating func reset() {
+        mediaIdentity = nil
+        lastValidSnapshot = WMPVideoSnapshot()
+    }
+
+    mutating func update(mediaIdentity: String, current: WMPVideoSnapshot,
+                         didReachEnd: Bool) -> WMPVideoSnapshot {
+        if self.mediaIdentity != mediaIdentity {
+            self.mediaIdentity = mediaIdentity
+            lastValidSnapshot = WMPVideoSnapshot()
+        }
+        if didReachEnd {
+            lastValidSnapshot = WMPVideoSnapshot()
+        } else if current.hasVideo {
+            lastValidSnapshot = current
+        }
+        return lastValidSnapshot
+    }
+}
+
 /// VIDEO's fit flags apply independently to shrinking and enlarging. They do not mean crop/fill.
 ///
 /// **`shrinkToFit` defaults to true and `stretchToFit` to false**, which is the asymmetry the

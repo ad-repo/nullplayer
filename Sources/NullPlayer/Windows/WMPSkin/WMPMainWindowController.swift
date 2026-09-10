@@ -423,6 +423,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         scriptRuntime = runtime
         lastScriptSnapshot = host.snapshot
         // A newly loaded view must receive video readiness even when decoding preceded its load.
+        lastScriptSnapshot?.videoEvent = WMPVideoSnapshot()
         lastScriptSnapshot?.video = WMPVideoSnapshot()
         sceneOverrides = overrides
         lastLoadDiagnostic = nil
@@ -876,7 +877,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let previous = lastScriptSnapshot
         lastScriptSnapshot = snapshot
         var events: [String] = []
-        events += WMPVideoPresentation.events(previous: previous?.video, current: snapshot.video)
+        events += WMPVideoPresentation.events(previous: previous?.videoEvent, current: snapshot.videoEvent)
         if previous?.state != snapshot.state { events += ["openstatechange", "playstatechange"] }
         // **`status_onchange` is WMP's "the status string changed", and a clock tick is not that
         // (W119).** The bindings do have to settle ten times a second — the elapsed readout of 108
@@ -1561,8 +1562,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         guard let skin = loadedSkin, let scriptRuntime, let viewID = dispatcherViewID,
               let currentViewID = activeViewID, !dispatcherHandlers.isEmpty else { return }
         let snapshot = host.snapshot
-        let videoEvents = WMPVideoPresentation.events(previous: dispatcherVideoSnapshot, current: snapshot.video)
-        dispatcherVideoSnapshot = snapshot.video
+        let videoEvents = WMPVideoPresentation.events(previous: dispatcherVideoSnapshot, current: snapshot.videoEvent)
+        dispatcherVideoSnapshot = snapshot.videoEvent
         let videoHandlers = videoEvents.flatMap {
             Self.handlers(in: skin, event: $0, targetID: nil, viewID: viewID)
         }

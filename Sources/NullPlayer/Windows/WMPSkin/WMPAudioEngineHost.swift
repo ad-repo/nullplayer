@@ -9,15 +9,40 @@ final class WMPAudioEngineHost: WMPHost {
     private var preMuteVolume: Float = 0.2
     private var spectrumConsumerActive = false
     private let spectrumConsumerID = "wmp.main.effects"
+    /// VLC drops both `hasVideoOut` and `videoSize` while it rebuilds the output for a media that
+    /// is still open. Keep only the event snapshot through that gap; the live video snapshot must
+    /// still fall empty so the hosted child window detaches and releases mouse capture.
+    private var videoEventLatch = WMPVideoEventLatch()
 
     init(audioEngine: AudioEngine) { engine = audioEngine }
 
-    static var localVideoController: VideoPlayerWindowController? {
+    private static var localVideoSessionController: VideoPlayerWindowController? {
         let manager = WindowManager.shared
         guard manager.uiMode.controllerFamily == .wmp, !manager.isVideoCastingActive,
               let video = manager.currentVideoPlayerController,
-              video.currentTitle != nil, !video.didReachEndOfMedia else { return nil }
+              video.currentTitle != nil else { return nil }
         return video
+    }
+
+    static var localVideoController: VideoPlayerWindowController? {
+        guard let video = localVideoSessionController, !video.didReachEndOfMedia else { return nil }
+        return video
+    }
+
+    private static func videoIdentity(_ video: VideoPlayerWindowController) -> String? {
+        guard let track = video.currentArtworkTrack else {
+            return video.currentTitle.map { "title:\($0)" }
+        }
+        if let key = track.plexRatingKey {
+            return "plex:\(track.plexServerId ?? ""):\(key)"
+        }
+        if let key = track.jellyfinId {
+            return "jellyfin:\(track.jellyfinServerId ?? ""):\(key)"
+        }
+        if let key = track.embyId {
+            return "emby:\(track.embyServerId ?? ""):\(key)"
+        }
+        return "url:\(track.url.absoluteString)"
     }
 
     var snapshot: WMPHostSnapshot {
@@ -48,20 +73,33 @@ final class WMPAudioEngineHost: WMPHost {
             equalizer: WMPEqualizerSnapshot(enabled: engine.isEQEnabled(),
                 preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
             effects: WMPEffectSelection.shared.snapshot)
-        if let video = Self.localVideoController {
-            result.state = video.isPlaying ? .playing : .paused
-            result.currentTime = Self.finite(video.currentTime)
-            result.duration = Self.finite(video.duration)
-            result.metadata = WMPMediaMetadata(title: video.currentTitle ?? "")
-            result.volume = Double(video.volume)
-            result.muted = video.volume == 0
-            result.playlistCount = max(1, result.playlistCount)
-            if video.hasVideoOutput {
-                result.video = WMPVideoSnapshot(width: Self.finite(video.presentationSize.width),
-                    height: Self.finite(video.presentationSize.height),
-                    fullScreen: video.window?.styleMask.contains(.fullScreen) == true)
-            }
+        guard let video = Self.localVideoSessionController,
+              let identity = Self.videoIdentity(video) else {
+            videoEventLatch.reset()
+            return result
         }
+        guard !video.didReachEndOfMedia else {
+            // A genuine end must clear the latch so `WMPVideoPresentation` raises `videoend`.
+            videoEventLatch.reset()
+            return result
+        }
+
+        result.state = video.isPlaying ? .playing : .paused
+        result.currentTime = Self.finite(video.currentTime)
+        result.duration = Self.finite(video.duration)
+        result.metadata = WMPMediaMetadata(title: video.currentTitle ?? "")
+        result.volume = Double(video.volume)
+        result.muted = video.volume == 0
+        result.playlistCount = max(1, result.playlistCount)
+        var currentVideo = WMPVideoSnapshot()
+        if video.hasVideoOutput {
+            currentVideo = WMPVideoSnapshot(width: Self.finite(video.presentationSize.width),
+                height: Self.finite(video.presentationSize.height),
+                fullScreen: video.window?.styleMask.contains(.fullScreen) == true)
+            result.video = currentVideo
+        }
+        result.videoEvent = videoEventLatch.update(mediaIdentity: identity, current: currentVideo,
+                                                   didReachEnd: false)
         return result
     }
 

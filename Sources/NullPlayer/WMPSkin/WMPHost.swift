@@ -93,6 +93,10 @@ struct WMPHostSnapshot: Hashable, Codable {
     var playlistItems: [WMPPlaylistItemSnapshot] = []
     var equalizer = WMPEqualizerSnapshot()
     var effects = WMPEffectsSnapshot()
+    /// The last valid video state for WMP's `videostart`/`videoend` edge detection. This stays
+    /// latched through a decoder output rebuild; `video` remains live so the hosted surface can
+    /// detach and release mouse capture when VLC has no drawable output.
+    var videoEvent = WMPVideoSnapshot()
     var video = WMPVideoSnapshot()
 
     var elapsedText: String { Self.timeString(currentTime) }
