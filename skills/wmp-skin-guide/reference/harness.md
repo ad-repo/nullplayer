@@ -715,12 +715,18 @@ Both cost a stated, confident, wrong answer during W102's live QA. Neither is ab
 **A synthetic click must set `mouseEventClickState`, or it is not a click.** A `CGEvent` pair of
 `.leftMouseDown`/`.leftMouseUp` posted without `e.setIntegerValueField(.mouseEventClickState, 1)`
 arrives with `clickCount == 0`. The pointer moves, `INPUT hover` updates, `mouseDown` may even
-dispatch — and no click is ever synthesised. This was read as *"the skin's play button is dead"* and
-then as *"a right-click on the video box opens no menu"*, and a fix was designed on the second one
-before the tool was checked. **Prove the input arrives before concluding the app ignored it**: click
+dispatch — and no click is ever synthesised. This was read as *"the skin's play button is dead"*
+when it was the tool. **Prove the input arrives before concluding the app ignored it**: click
 something with a known trace (`INPUT action <transport>` on any transport button) and see the line
 appear. Same rule as every other instrument on this page. A double-click additionally needs
 `clickState` 1 then 2 on consecutive down/up pairs.
+
+**A synthetic right-click does not open a contextual menu at all, `clickState` or not.** It produced
+no menu and no `INPUT menu` line against `WMPMainView.menu(for:)` — a method a *real* right-click
+drives correctly, as the reporter confirmed the same day by using the subtitle menu it serves. That
+absence was written up as W125, "no right-click on a `.wmz` reaches `menu(for:)`", and withdrawn:
+**the engine defect did not exist.** `INPUT menu` is a fine instrument for a real pointer and worth
+nothing under a posted event. Verify menus by hand, or by asking the reporter.
 
 **`screencapture -R <region>` photographs the screen, not the window** — including whatever is on
 top of it, which during agent-driven QA is routinely your own terminal. Use `screencapture -l

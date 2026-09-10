@@ -398,10 +398,20 @@ skin moved it by (-192, -95) and moved the picture by (-192, -95), landing at of
   `player.currentMedia.imageSourceWidth`/`Height` answer the decoder instead of a hard zero, and
   `setVideoFullScreen` is a host command.
 
-**What it left open: W124 and W125**, both in `WMP_TASKS.md`. A `videoend` with no matching
-`videostart` leaves the skin in its ended state, and no right-click on a `.wmz` reaches
-`menu(for:)` at all — which strands the subtitle and audio-track menus, and may mean the
-visualization menu that predates them never worked either. Neither is claimed as fixed.
+**Subtitles and audio-track selection reach the parked picture** through
+`WMPMainView.menu(for:)`, which already served the `<EFFECTS>` rect and now answers for the
+`<VIDEO>` rect too: the picture itself stays click-through, so the skin's own `<VIDEO>` `onClick`
+(21 uses) keeps working, and the right-click that lands on the skin returns the video view's menu.
+Confirmed working by the reporter on 2026-09-10.
+
+**A caution recorded because it briefly became a filed defect:** a *synthetic* `CGEvent` right-click
+does not open this menu and leaves no `INPUT menu` line, while a real one does. That was written up
+as "no right-click on a `.wmz` reaches `menu(for:)`" — an engine defect that does not exist — and
+withdrawn the same day when the reporter used the feature successfully. See
+`skills/live-ui-testing/SKILL.md`; **never conclude a menu is missing from a synthetic right-click.**
+
+**What it left open is W124** in `WMP_TASKS.md`: a `videoend` with no matching `videostart` leaves
+the skin in its ended state. It is not claimed as fixed.
 
 2,165 tests green.
 

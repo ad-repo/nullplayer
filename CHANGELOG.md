@@ -9,7 +9,9 @@
   to the size the skin asked for and letterboxed to keep its shape, and steps aside again when the
   film ends so the skin's own artwork is never covered. The skin's transport, its clock and its seek
   bar drive the film, and the Video Player item in the Windows menu takes you to the skin's own video
-  screen instead of opening a second window over it.
+  screen instead of opening a second window over it. **Right-click the skin's video panel** for
+  subtitles, audio tracks and track settings — the panel itself stays click-through, so a skin that
+  wires its own action to the video area keeps working.
 
 
 - **NullPlayer's own windows now open beside a Media Player skin, in that skin's colours** — the
