@@ -751,6 +751,68 @@ final class WMPPhase14Tests: XCTestCase {
         await runtime.teardown()
     }
 
+    // MARK: - W122: an element's own artwork is drawn at its own size
+
+    /// **The ALX/Alienware time readout is four buttons authored the width of a ten-digit strip.**
+    /// `time1.png` is 250x23, the parent `<SUBVIEW>` is 25 px wide and clips it to the first cell,
+    /// and `drawSeekDigits()` then assigns a single 25x23 `time1_<n>.gif` per tick. Scaling the
+    /// artwork to the authored frame drew one tenth of one digit blown up ten times — reported as
+    /// "in all the alien type skins the numeric display is illegible", and true of `ALXVortex`,
+    /// `ALXMorph`, `AlienMorph`, `AlienwareTeleport` and `Alienware Invader` alike.
+    ///
+    /// The default state cannot see this: the strip *is* the frame until a script swaps it, and
+    /// `drawSeekDigits()` returns early on an empty playlist. It takes a playing host.
+    func testAnElementDrawsItsArtworkAtItsOwnSizeRatherThanStretchedToItsFrame() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="100">
+            <SUBVIEW id="cell" left="10" top="10" width="25" height="23">
+                <BUTTON id="time1" width="250" height="23" image="strip.png"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, resources: ["strip.png": try sheet(250, 23), "digit.png": try sheet(25, 23)])
+        let builder = WMPSceneBuilder(loadedSkin: skin,
+                                      imageStore: WMPImageStore(provider: skin.archive))
+        let id = try stableID(skin, "time1")
+
+        func drawn(_ overrides: WMPSceneOverrides) async throws -> WMPRect {
+            let scene = try await builder.build(viewID: "main", overrides: overrides)
+            return try XCTUnwrap(scene.commands.first { $0.stableID == id }?.frame,
+                                 "the button paints its artwork")
+        }
+
+        let markup = try await drawn(.empty)
+        XCTAssertEqual(markup.width, 250, "the ten-digit strip fills the frame the markup authored")
+        XCTAssertEqual(markup.height, 23)
+
+        var swapped = WMPSceneOverrides.empty
+        swapped.properties[WMPScenePropertyAddress(stableID: id, property: "image")] =
+            .string("digit.png")
+        let digit = try await drawn(swapped)
+        XCTAssertEqual(digit.width, 25,
+                       "a 25 px digit is drawn 25 px wide, not stretched across the 250 px box")
+        XCTAssertEqual(digit.height, 23)
+        XCTAssertEqual(digit.x, markup.x, "anchored at the same origin, so it lands in the clip")
+        XCTAssertEqual(digit.y, markup.y)
+    }
+
+    /// Only the *foreground* image takes the rule. `backgroundImage` still fills its frame, because
+    /// a `stretch`-aligned subview grows with a resizable window and its background is what covers
+    /// the delta — `LostPlanet`'s frame tiles are 61 px of exactly that.
+    func testABackgroundImageStillFillsTheFrameItWasGiven() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="100">
+            <SUBVIEW id="panel" left="0" top="0" width="180" height="60"
+                     backgroundImage="tile.png"/>
+        </VIEW></THEME>
+        """, resources: ["tile.png": try sheet(20, 10)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin,
+            imageStore: WMPImageStore(provider: skin.archive)).build(viewID: "main")
+        let frame = try XCTUnwrap(scene.commands
+            .first { $0.stableID == (try? stableID(skin, "panel")) }?.frame)
+        XCTAssertEqual(frame.width, 180, "a background is not clamped to its bitmap")
+        XCTAssertEqual(frame.height, 60)
+    }
+
     /// The static demand tally is derived from the object model rather than restated, so a member
     /// the runtime answers must never still be counted as unimplemented demand.
     func testTheDemandTallyAgreesWithTheObjectModel() {

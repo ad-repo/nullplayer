@@ -521,7 +521,27 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // whole multiple of the map, and then this is an ordinary image again.
                     let artwork = try imageStore.image(for: path).size
                     let strip = slider.flatMap { positionMap?.frame(for: $0.fraction, in: artwork) }
-                    commands.append(imageCommand(node: node, path: path, frame: frame,
+                    // **An element's own artwork is drawn at its own size, anchored top-left, and
+                    // the box it does not fill is left to whatever is under it.** WMP never scales
+                    // a `<BUTTON>`'s `image` to the authored frame, and a skin that swaps the image
+                    // from script is written against exactly that: the Alienware/ALX family's time
+                    // readout is four buttons authored the width of a *ten-digit strip*
+                    // (`time1.png`, 250x23), each inside a 25 px subview that clips it to the first
+                    // cell, and `drawSeekDigits()` then assigns a single 25x23 `time1_<n>.gif` per
+                    // tick. Scaling that to the 250 px frame drew one tenth of a digit blown up ten
+                    // times — reported as "in all the alien type skins the numeric display is
+                    // illegible". The clip is already the parent's, so the smaller artwork lands
+                    // exactly where the strip's first cell did.
+                    //
+                    // Only the *foreground* image takes this. `backgroundImage` still fills its
+                    // frame, because a `stretch`-aligned subview grows with a resizable window and
+                    // its background tile is what covers the delta.
+                    let drawn = strip == nil
+                        ? WMPRect(x: frame.x, y: frame.y,
+                                  width: min(frame.width, artwork.width),
+                                  height: min(frame.height, artwork.height))
+                        : frame
+                    commands.append(imageCommand(node: node, path: path, frame: drawn,
                         clip: inheritedClip, z: z, background: false, alpha: alpha,
                         sourceOverride: strip, clippingPath: clippingPath))
                 }

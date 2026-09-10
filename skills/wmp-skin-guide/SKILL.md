@@ -161,6 +161,28 @@ queue, with the object model as the security boundary — see Amendment 2 in
   The object-model half is the same rule: `justification`, `fontFace`, `fontStyle` and `fontSize`
   are **rendered**, so a write to one has to commit as a mutation rather than be stored inert, and
   each was only reaching the scene when the markup happened to author the same attribute.
+- **An element's own artwork is drawn at its own size, and the box it does not fill is left to
+  whatever is under it (W122).** WMP never scales a `<BUTTON>`'s `image` to the authored frame, and
+  a skin that swaps that image from script is written against exactly that: **563 script `.image`
+  assignments across 51 of the 180 archives**, of which **23 paint a clock out of digit strips**
+  (`drawSeekDigits` / `DrawTimeNormalView`) and **6 give the digit a frame wider than the digit**.
+  The ALX/Alienware readout is four `<BUTTON>`s authored the width of a *ten-digit strip* —
+  `time1.png` is 250x23 — each inside a 25 px `<SUBVIEW>` that clips it to the first cell, and
+  `drawSeekDigits()` then assigns a single 25x23 `time1_<n>.gif` per tick. Scaling that to the 250 px
+  frame drew one tenth of one digit blown up ten times: reported as "in all the alien type skins the
+  numeric display is illegible". `WMPSceneBuilder` clamps the foreground image command to the
+  artwork's natural size, anchored at the frame's top-left, so the smaller bitmap lands where the
+  strip's first cell did and the parent's clip is unchanged. **Only the foreground image takes the
+  rule** — `backgroundImage` still fills its frame, because a `stretch`-aligned subview grows with a
+  resizable window and its background is what covers the delta (`LostPlanet`, in the counter-evidence
+  table). **A default-state sweep cannot see the defect and can see the collateral**, which is what
+  makes it worth running: the strip *is* the frame until a script swaps it, and `drawSeekDigits()`
+  returns early on an empty playlist, so the 545-image corpus capture moved **16 images, none of them
+  a clock** — every one an oversized bitmap that had been upscaled and is now crisp (`portals/mode2`,
+  the five `US …` `videoUSM` logos, `tubeframe`, `Ice/mainView`), one nondeterministic
+  (`Scooby-Doo_2`), and one that is now half-right and is the open row: `Ice/videoView` draws
+  `Pl-xp.bmp` as a 196x44 button inside a subview that still stretches the *same* bitmap to 313x144,
+  so the two no longer meet.
 - **A text baseline may never sit higher than the face's own ascent (W114).** The rule was
   `max(fontSize, (height + fontSize) / 2)` measured from the box's bottom — fine while every
   `<TEXT>` had a generously tall authored box, and four pixels *above* the box once a text is sized

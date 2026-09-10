@@ -54,4 +54,5 @@ that looked right. Check them by name when you touch the rule beside them.
 | `Xbox Live Skin`, `Rave-MP` | Their `remoteView`/`eqView` ask for their own canvas in script. Before the view root read its size overrides, all four of `Xbox Live Skin`'s views drew at one shared 423x343 |
 | `Thomas` | Its `0 kbps` / `0%` readouts are the corpus's visible proof that `player.network.bitRate` reaches a handler |
 | `Scooby-Doo_2` | Its `infoView` picks a character in its own `onLoad`, so that image differs between captures for a reason that is not a defect |
+| `Ice` | Its `videoView` authors a `<BUTTON height="144">` over a `Pl-xp.bmp` that is 196x**44**, inside a subview that draws the same bitmap as a stretched `backgroundImage` at 313x144. It is the corpus's evidence that the natural-size rule (W122) cannot be extended to background images without deciding what a stretched background does |
 | `corona` | The control. Live QA has called it "works well, has all its sliders and buttons for the most part" since Phase 3, and it is the reference result every other skin is legible against |
