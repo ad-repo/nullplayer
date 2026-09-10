@@ -122,6 +122,34 @@ final class WMPPhase9Tests: XCTestCase {
         controller.window?.close()
     }
 
+    /// A surface opened from NullPlayer's Window menu takes the same `openView` route as the
+    /// skin's own button. Otherwise its `view.close()` has no covered player to restore and
+    /// orders out the only WMP window.
+    func testAMenuOpenedSkinPlaylistReturnsToItsCoveredPlayerWhenClosed() async throws {
+        let (controller, _, cleanup) = try await controller(wms: """
+        <THEME>
+          <VIEW id="main" width="120" height="80">
+            <SUBVIEW left="0" top="0" width="120" height="80" backgroundColor="#224466"/>
+          </VIEW>
+          <VIEW id="playlist" width="140" height="90">
+            <PLAYLIST id="rows" left="0" top="0" width="140" height="70"/>
+            <BUTTON id="close" left="0" top="70" width="20" height="20"
+                    onClick="JScript:view.close();"/>
+          </VIEW>
+        </THEME>
+        """, filename: "Phase9MenuPlaylist.wmz")
+        defer { cleanup() }
+        try await waitUntil { controller.selectedViewID == "main" }
+
+        XCTAssertTrue(controller.revealSkinSurface(.playlist, switchingViews: true))
+        try await waitUntil { controller.selectedViewID == "playlist" }
+        let playlist = try XCTUnwrap(controller.window?.contentView as? WMPMainView)
+        playlist.onScriptEvent?("click", "close", nil)
+        try await waitUntil { controller.selectedViewID == "main" }
+        controller.prepareForUITeardown()
+        controller.window?.close()
+    }
+
     /// A view that blanks itself in the `onLoad` this path now runs must not become the window.
     /// `Halo 2` opens on a store-thumbnail `previewView` whose handler sets `view.width = 0` and
     /// redirects; presenting it leaves an empty window the size of a thumbnail. Initial load already
@@ -188,6 +216,7 @@ final class WMPPhase9Tests: XCTestCase {
         function tick() {
             ticks = ticks + 1;
             theme.savePreference('ticks', '' + ticks);
+            theme.playSound('intro.wav');
             view.timerInterval = 0;
         }
         """)

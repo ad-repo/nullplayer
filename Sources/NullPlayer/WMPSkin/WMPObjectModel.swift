@@ -426,7 +426,7 @@ final class WMPObjectModel {
     private func readTheme(_ name: String) -> WMPMemberValue {
         switch name {
         case "currentviewid": return .value(.string(currentViewID))
-        case "loadpreference", "savepreference", "loadstring", "opendialog", "openview":
+        case "loadpreference", "savepreference", "loadstring", "opendialog", "openview", "playsound":
             return .function
         default: return .unrecognised("theme member")
         }
@@ -856,6 +856,14 @@ final class WMPObjectModel {
             // counted as inert so the skins asking for it stay visible in the census.
             inert()
             return .value(.string(""))
+        case ("theme", "playsound"):
+            // Sound effects are authored as part of state transitions.  NullPlayer does not play
+            // a skin's bundled WAVs, but refusing the call aborts the rest of that handler:
+            // AlienMorph opens its shutter, calls `theme.playSound('intro.wav')`, then stops its
+            // one-second intro timer.  An unrecognised sound call skipped that final line, so the
+            // timer repeatedly opened and closed the centre shutter.
+            inert()
+            return .value(.null)
         default: return .unrecognised("unknown host member")
         }
     }

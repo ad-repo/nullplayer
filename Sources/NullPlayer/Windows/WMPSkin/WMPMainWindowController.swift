@@ -89,6 +89,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let viewID: String
         let overrides: WMPSceneOverrides
         let viewTimerMilliseconds: Int
+        /// The covered WMP window keeps animating while an auxiliary window is open. Restoring it
+        /// must therefore use its original clock rather than replay its intro from frame zero.
+        let animationEpoch: Date?
     }
     /// The period the view timer is currently running at, so a covered view can be given it back.
     private var viewTimerMilliseconds = 0
@@ -533,11 +536,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // Already on screen as part of the skin: nothing to open, and nothing of ours to add.
         if skinSurfaces.view(activeViewID, provides: surface) { return true }
         if switchingViews, let target = skinSurfaces.viewIDs(for: surface).first {
-            if surface == .video {
-                _ = applyHostCommands([.init(action: "openView", value: .string(target))])
-            } else {
-                switchView(to: target)
-            }
+            // A menu-selected WMP surface is an auxiliary window just as surely as one opened
+            // by the skin's own button. `switchView` bypasses the covered-view stack, leaving a
+            // panel's `view.close()` with no return target and ordering out the player itself.
+            // Route every surface through `openView` so closing it restores the player state.
+            _ = applyHostCommands([.init(action: "openView", value: .string(target))])
         }
         return true
     }
@@ -719,6 +722,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
               }), registration.id.caseInsensitiveCompare(activeViewID ?? "") != .orderedSame,
               let scriptRuntime else { return }
         loadTask?.cancel(); scriptTask?.cancel(); stopAllTimers()
+        // A covered WMP view remained alive in the real player while its child window was open.
+        // Keep its animation clock alive too: AlienMorph's shutter has already finished opening
+        // when its playlist closes, so starting it again at zero makes the returned player look
+        // closed until the whole intro plays a second time.
+        if let covered, let epoch = covered.animationEpoch {
+            animationEpoch = epoch
+            animationEpochViewID = covered.viewID
+        }
         mainView?.cancelInputCapture(); host.stopContinuousCommands()
         let oldTopLeft = window.map { NSPoint(x: $0.frame.minX, y: $0.frame.maxY) }
         let savedSize = WMPViewFrameStore(defaults: importer.defaults).size(
@@ -778,7 +789,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     .build(viewID: registration.id, requestedSize: base.canvasSize,
                            overrides: output.overrides)
                 let rendered = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: renderScale(for: scene.canvasSize))
+                    scene: scene, backingScale: renderScale(for: scene.canvasSize),
+                    clock: animationClock(for: scene.viewID))
                 try Task.checkCancellation()
                 apply(skin: skin, store: store, scene: scene, image: rendered.image,
                       runtime: scriptRuntime, overrides: output.overrides)
@@ -1255,8 +1267,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                        !openedViewStack.contains(where: {
                            $0.viewID.caseInsensitiveCompare(covered) == .orderedSame
                        }) {
-                        openedViewStack.append(.init(viewID: covered, overrides: sceneOverrides,
-                                                     viewTimerMilliseconds: viewTimerMilliseconds))
+                        openedViewStack.append(.init(
+                            viewID: covered,
+                            overrides: sceneOverrides,
+                            viewTimerMilliseconds: viewTimerMilliseconds,
+                            animationEpoch: animationEpochViewID == covered ? animationEpoch : nil))
                         if openedViewStack.count > 8 { openedViewStack.removeFirst() }
                     }
                     switchedView = true; switchView(to: id)
