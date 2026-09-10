@@ -183,6 +183,45 @@ queue, with the object model as the security boundary — see Amendment 2 in
   (`Scooby-Doo_2`), and one that is now half-right and is the open row: `Ice/videoView` draws
   `Pl-xp.bmp` as a 196x44 button inside a subview that still stretches the *same* bitmap to 313x144,
   so the two no longer meet.
+- **A `<VIDEO>` box shrinks the picture to fit by default and never enlarges it (W102).** The two
+  fit flags are independent and neither means crop or fill: `shrinkToFit` governs the picture being
+  *reduced*, `stretchToFit` its being *enlarged*, and `maintainAspectRatio` (default true) decides
+  whether the two axes scale together. **`shrinkToFit` defaults to true and `stretchToFit` to
+  false**, which is not symmetry for its own sake — it is what the corpus is authored against.
+  **77 of the 97 sized `<VIDEO>` elements declare no `shrinkToFit` at all and 73 of those are boxes
+  under 640x480** (`Heart_Butterfly` is 89x130, `Creed` 131x88, `Cablemusic` 341x215), and **not one
+  archive anywhere authors `shrinkToFit="false"`** while 19 author `stretchToFit="true"` and one
+  `"false"`. Defaulting the shrink flag off therefore drew every unattributed box at the stream's
+  native pixel size, centred and clipped to the middle sliver of a 1080p frame — reported as "the
+  video opens at full resolution instead of scaled to the window". The corresponding read defaults
+  in `WMPObjectModel` are the same three values, because a skin that reads back a flag it never
+  authored must be told what is actually on screen. **This is not `mediacenter.videoShrinkToFit`**,
+  which is a different object with its own defaults in `reference/object-model.md`.
+- **The picture is lent to the skin as a *child window*, and `isVideoOutputHosted` is our flag while
+  being a child is AppKit's fact — they drift apart (W102).** A child window is the isolation that
+  makes hosting work at all: VLCKit installs its own output view and sizes that view's *ancestors*,
+  so moving `videoPlayerView` into the skin's tree runs the skin's content view away by tens of
+  thousands of pixels, while `addChildWindow` keeps a separate layout tree glued to the skin. The
+  trap is that the link can go without the flag changing, and `hostOutputWindow` re-parents only when
+  `!isVideoOutputHosted`, so nothing puts it back. **Three symptoms that read as three bugs are this
+  one cause**: the picture goes black while the audio plays and seeking still works (it fell *behind*
+  the skin — a real child window cannot); it lags out of the window frame on a drag (the 10 Hz
+  reposition trailing a tick behind); and switching apps fixes it (activation re-collects children).
+  `WMPVideoSurface.update` re-asserts the relationship every tick and traces `video reparented` /
+  `video reordered above parent` — **if those fire continuously rather than once per incident, the
+  repair is masking a call site that keeps breaking the link, and that is the thing to fix.** Suspect
+  anything that orders the parked window out: on macOS that drops its parent relationship.
+- **A paused film reports no time, and in `.wmz` mode that was the only thing refreshing the host
+  (W102).** `videoDidUpdateTime` is driven by VLC's time-changed callback, so a pause silenced the
+  whole host tick and the skin went on drawing *and hit-testing* a pause button. What that costs is
+  not a stale glyph: the next click's `mousedown` triggers the rebuild that finally sees `paused`,
+  the button under the pointer is swapped mid-gesture, and `WMPMainView.mouseUp`'s
+  `result.activated == capturedTarget.stableID` guard drops the click — **the click is destroyed by
+  the state change it triggered**, reported as "play then pause then play just breaks it".
+  `videoDidChangePlaybackState` closes it, gated to the WMP family. **The general rule this leaves:
+  any state a skin hit-tests against must be pushed when it changes, never sampled on the next
+  rebuild** — a rebuild driven by the very gesture that needs the old geometry will always eat that
+  gesture.
 - **A text baseline may never sit higher than the face's own ascent (W114).** The rule was
   `max(fontSize, (height + fontSize) / 2)` measured from the box's bottom — fine while every
   `<TEXT>` had a generously tall authored box, and four pixels *above* the box once a text is sized

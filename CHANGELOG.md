@@ -4,6 +4,14 @@
 
 ### New Features
 
+- **Video now plays inside a Media Player skin's own screen.** Nearly every `.wmz` skin draws a
+  video panel, and until now nothing was ever shown in it. A film now appears in that panel, scaled
+  to the size the skin asked for and letterboxed to keep its shape, and steps aside again when the
+  film ends so the skin's own artwork is never covered. The skin's transport, its clock and its seek
+  bar drive the film, and the Video Player item in the Windows menu takes you to the skin's own video
+  screen instead of opening a second window over it.
+
+
 - **NullPlayer's own windows now open beside a Media Player skin, in that skin's colours** — the
   playlist, equalizer, library browser, spectrum analyzer, audio analyzer, PeppyMeter, Flow, Cava,
   waveform and visualizer are all available in Media Player mode, where they were previously hidden.

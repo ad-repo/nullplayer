@@ -12,6 +12,14 @@ final class WMPAudioEngineHost: WMPHost {
 
     init(audioEngine: AudioEngine) { engine = audioEngine }
 
+    static var localVideoController: VideoPlayerWindowController? {
+        let manager = WindowManager.shared
+        guard manager.uiMode.controllerFamily == .wmp, !manager.isVideoCastingActive,
+              let video = manager.currentVideoPlayerController,
+              video.currentTitle != nil, !video.didReachEndOfMedia else { return nil }
+        return video
+    }
+
     var snapshot: WMPHostSnapshot {
         let state: WMPHostSnapshot.State
         switch engine.state {
@@ -27,7 +35,7 @@ final class WMPAudioEngineHost: WMPHost {
         let sourceLayout = engine.eqConfiguration
         let sourceGains = (0..<sourceLayout.bandCount).map { engine.getEQBand($0) }
         let classicGains = EQBandRemapper.remap(gains: sourceGains, from: sourceLayout, to: .classic10)
-        return WMPHostSnapshot(state: state, currentTime: Self.finite(engine.currentTime),
+        var result = WMPHostSnapshot(state: state, currentTime: Self.finite(engine.currentTime),
             duration: Self.finite(engine.duration), volume: Double(max(0, min(1, engine.volume))),
             balance: Double(max(-1, min(1, engine.balance))), muted: engine.volume == 0,
             shuffle: engine.shuffleEnabled, repeatMode: engine.repeatEnabled,
@@ -40,9 +48,46 @@ final class WMPAudioEngineHost: WMPHost {
             equalizer: WMPEqualizerSnapshot(enabled: engine.isEQEnabled(),
                 preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
             effects: WMPEffectSelection.shared.snapshot)
+        if let video = Self.localVideoController {
+            result.state = video.isPlaying ? .playing : .paused
+            result.currentTime = Self.finite(video.currentTime)
+            result.duration = Self.finite(video.duration)
+            result.metadata = WMPMediaMetadata(title: video.currentTitle ?? "")
+            result.volume = Double(video.volume)
+            result.muted = video.volume == 0
+            result.playlistCount = max(1, result.playlistCount)
+            if video.hasVideoOutput {
+                result.video = WMPVideoSnapshot(width: Self.finite(video.presentationSize.width),
+                    height: Self.finite(video.presentationSize.height),
+                    fullScreen: video.window?.styleMask.contains(.fullScreen) == true)
+            }
+        }
+        return result
     }
 
     func perform(_ action: WMPTransportAction, value: WMPHostValue?) {
+        if let video = Self.localVideoController {
+            switch action {
+            case .play:
+                if !video.isPlaying { video.togglePlayPause() }
+                return
+            case .pause:
+                if video.isPlaying { video.togglePlayPause() }
+                return
+            case .stop: video.stop(); return
+            case .seek:
+                if let fraction = value?.finiteNumber { video.seek(to: max(0, min(1, fraction)) * video.duration) }
+                return
+            case .volume:
+                if let volume = value?.finiteNumber { video.volume = Float(max(0, min(1, volume))) }
+                return
+            case .toggleMute:
+                if video.volume > 0 { preMuteVolume = video.volume; video.volume = 0 }
+                else { video.volume = max(0.01, min(1, preMuteVolume)) }
+                return
+            default: break
+            }
+        }
         switch action {
         case .play: engine.play()
         case .pause: engine.pause()
@@ -149,6 +194,11 @@ final class WMPAudioEngineHost: WMPHost {
 
     private func scanStep() {
         guard let scanDirection else { return }
+        if let video = Self.localVideoController {
+            video.seek(to: max(0, min(video.duration,
+                                     video.currentTime + (scanDirection == .forward ? 5 : -5))))
+            return
+        }
         engine.seekBy(seconds: scanDirection == .forward ? 5 : -5)
     }
 

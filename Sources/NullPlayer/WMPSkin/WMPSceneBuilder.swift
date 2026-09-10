@@ -441,7 +441,12 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     value: slider?.value, direction: slider?.direction,
                     borderSize: slider?.borderSize ?? 0,
                     thumbSize: try slider == nil ? nil : thumbSize(node),
-                    valueBindingPath: valueBindingPath(node)))
+                    valueBindingPath: valueBindingPath(node),
+                    videoPresentation: kind == .video ? WMPVideoPresentation(
+                        shrinkToFit: literalString(node, "shrinkToFit")?.lowercased() != "false",
+                        stretchToFit: literalString(node, "stretchToFit")?.lowercased() == "true",
+                        maintainAspectRatio: literalString(node, "maintainAspectRatio")?.lowercased() != "false",
+                        alpha: Double(alpha)) : nil))
             }
 
             // `clippingImage` shapes an element by a bitmap the way `clippingColor` shapes it by a

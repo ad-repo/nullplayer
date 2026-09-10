@@ -344,3 +344,67 @@ and by comparing each `time<N>` button's authored `width` against the natural wi
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | W122 | An element's artwork is scaled to its authored frame, so a script-swapped bitmap is drawn at the wrong size | **563 script `.image` assignments across 51 of 180 archives**; **23** paint a clock out of digit strips; **6** give the digit a frame wider than the digit — `ALXVortex`, `ALXMorph`, `AlienMorph`, `AlienwareTeleport`, `Alienware Invader`, `Crimson_Skies` | **Closed 2026-09-09.** The readout is not text: it is four `<BUTTON>`s authored the width of a ten-digit strip (`<button id="time1" width="250" height="23" image="time1.png">`, and `time1.png` is 250x23), each inside a 25 px `<SUBVIEW>` that clips it to the first cell, with `drawSeekDigits()` assigning a single 25x23 `time1_<n>.gif` per tick. `WMPRenderer` drew every image scaled to the node's frame, so the 25 px digit was blown up 10x into the 250 px frame and then clipped back to 25 px — one tenth of one digit, magnified. `WMPSceneBuilder` now clamps the **foreground** image command to the artwork's own size, anchored at the frame's top-left, so the smaller bitmap lands exactly where the strip's first cell did; the parent's clip is untouched. `PROBE mainView/46 button id=time1 frame=114,131 250x23` becomes `25x23`, and under `WMP_RENDER_HOST=playing` the four digits resolve to `0 1 : 0 3`. **`backgroundImage` is deliberately exempt** — a `stretch`-aligned subview grows with a resizable window and its background covers the delta (`LostPlanet`) — as are position-map slider strips, which already crop rather than scale. **Corpus sweep, 179 archives / 545 images: invariants byte-identical (no `RENDER-DUMP`, `COMPAT`, `FINDING`, `BITMAPS` or `PNG` line moved), 529 images identical, 16 differing, and none of the 16 is a clock.** All sixteen were opened: `portals/mode2` loses a black smear scaled over its top-left and stops drawing its artwork zoomed; the five `US …` `videoUSM` logos, `tubeframe`'s button bank (whose status line was also clipped), `Ice/mainView`, `Charlies_Angels/viewEQ` and both `QuickSilver` `plView`s go from upscaled and blurry to crisp; `9SeriesDefault/viewTiny`, `Nautical/view-2` and `portals/mode1` are neutral; `Scooby-Doo_2/infoView` is the known `Math.random()` case in the counter-evidence table. **One is half-right and is W123**: `Ice/videoView`'s `Pl-xp.bmp` button is authored `height="144"` over a 196x44 bitmap and is now correct, but its parent subview still stretches the same bitmap to 313x144, so a seam appears where the two used to agree by both being wrong. 2,157 tests green. |
+
+## Phase 14 (seventh pass) — the video the corpus declares, drawn at the size the skin asked for
+
+**W102 and W105's `.video` case, closed 2026-09-10.** `<VIDEO>` is the largest surface the corpus
+declares and this engine hosted nothing in it. It is hosted now: the existing `VideoPlayerWindowController`
+lends its output window to the skin as a **child window** parked over the authored rect — not a
+reparent of the video view, which is the shape that does not survive contact with VLCKit — and gives
+it back when the film ends.
+
+**The defect that made the row worth reopening after the first implementation was a default.**
+`WMPVideoPresentation.shrinkToFit` shipped `false`, so `imageRect` clamped every scale below 1 back
+to 1 and drew the stream at its native pixel size, centre-cropped inside the box. The corpus settles
+the direction and it is not close: of the **97 sized `<VIDEO>` elements across the 180 archives, 77
+author no `shrinkToFit` at all and 73 of those are boxes under 640x480** — `Heart_Butterfly` is
+89x130, `Creed` 131x88, `Cablemusic` 341x215 — and **not one archive anywhere authors
+`shrinkToFit="false"`**, while 19 author `stretchToFit="true"` and one `"false"`. A flag no skin
+ever turns off, in front of boxes no 2000s stream was ever smaller than, is a flag that defaults on.
+`shrinkToFit` now defaults true, `stretchToFit` false, `maintainAspectRatio` true, in all three
+places that state it (the struct, `WMPSceneBuilder`'s parse, and `WMPObjectModel`'s read-back, so a
+skin reading a flag it never authored is told what is actually drawn).
+
+**Verified live, not only headlessly** — this is a screen-only class and a corpus sweep cannot see it,
+because the render dump does not draw the picture at all. Against `Cablemusic` playing a 1920x1080
+film: `INPUT video hosted id=VidScreen frame=(18.0, 105.0, 341.0, 215.0) source=1920.0x1080.0`, the
+output window reports 341x215 — exactly `<VIDEO id="VidScreen" width="341" height="215">` — and the
+picture is letterboxed inside it instead of showing the centre sliver of a 1080p frame. Dragging the
+skin moved it by (-192, -95) and moved the picture by (-192, -95), landing at offset (18, 105).
+
+**Three defects found by driving it that were not in the original row**, all closed here:
+
+- **The parked window stops being a child.** `isVideoOutputHosted` is our flag; being a child window
+  is AppKit's fact, and they drift. Reported as three separate symptoms that are one cause: the
+  picture went black while audio played and seeking still worked (it had fallen *behind* the skin,
+  which a real child window cannot do); it lagged out of the window frame on a drag (what was left
+  was the 10 Hz reposition trailing a tick behind); and switching apps put it right (activation makes
+  AppKit re-collect child windows). `hostOutputWindow` re-parents only when `!isVideoOutputHosted`,
+  so once the link went nothing restored it. `WMPVideoSurface.update` now re-asserts the
+  *relationship* every tick, not just the ordering, and traces which case it hit.
+- **A paused film stops reporting time, and that was the only thing refreshing the host.**
+  `VideoPlayerWindowController.updatePlayingState` set `isPlaying` and told nobody; in `.wmz` mode
+  the host tick came from `videoDidUpdateTime`, driven by VLC's time-changed callback. Pausing
+  silenced it, so the skin went on drawing *and hit-testing* a pause button. The next click then died
+  in `WMPMainView.mouseUp`: its `mousedown` triggered the rebuild that finally saw `paused` and
+  swapped the button, leaving `mouseup` over a different element than the one captured, and the
+  `result.activated == capturedTarget.stableID` guard dropped it. **The click was destroyed by the
+  state change it triggered.** Reported as "play then pause then play just breaks it". Verified by
+  six consecutive toggles, all honoured, where the second press had previously been dead. The new
+  `videoDidChangePlaybackState` hook is **gated to the WMP family** — the other three drive their
+  transports from their own sources and none was measured against it.
+- **`<VIDEO>`'s fit flags were unreadable and `fullScreen` unwritable.** `shrinkToFit`,
+  `stretchToFit`, `maintainAspectRatio` and `fullScreen` now read and write through the object model,
+  `player.currentMedia.imageSourceWidth`/`Height` answer the decoder instead of a hard zero, and
+  `setVideoFullScreen` is a host command.
+
+**What it left open: W124 and W125**, both in `WMP_TASKS.md`. A `videoend` with no matching
+`videostart` leaves the skin in its ended state, and no right-click on a `.wmz` reaches
+`menu(for:)` at all — which strands the subtitle and audio-track menus, and may mean the
+visualization menu that predates them never worked either. Neither is claimed as fixed.
+
+2,165 tests green.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W102 | `<VIDEO>` is hosted on nothing, and this player has a video window | **268 views across 170 of 179 archives**, 165 of them in a view of their own; `<WMPVIDEO>` a further 16 / 16 | W9 removed the opaque `WMPVideoPlaceholderView` for the right reason — it filled its frame with black over the artwork of 166 skins and an audio player had nothing to put there — and the note it left (`WMPMainView.swift:431`) says "an audio player has no video to put there instead", which **is no longer true**: `Windows/VideoPlayer/VideoPlayerView.swift` exists and plays. The row is therefore conditional hosting, not a placeholder: host the video layer in the authored frame **only while the current track actually has a video track**, and keep standing aside otherwise. Two things fall out of it rather than being separate work — W56's `onVideoStart`/`onVideoEnd` (114 and 105 skins) become raisable off a real surface, and `fullscreen` (80 skins), `shrinkToFit` (87) and `stretchToFit` (83) become answerable. Settle what a `.wmz` may see of the video path before writing any of it, the way W66 is held on the media-collection question. |

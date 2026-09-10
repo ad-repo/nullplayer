@@ -324,6 +324,6 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         // transaction whose `moveTo`/`alphaBlendTo` landed, `onDragEnd` by `WMPMainView.mouseUp`
         // when a captured slider is released. `onEndResize` is not listed and not implemented:
         // zero archives author one, so there is nothing to dispatch it for.
-        "onendmove", "onendalphablend", "ondragend"
+        "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend"
     ]
 }

@@ -240,6 +240,11 @@ struct WMPProbe {
             case "tracks", "count": snapshot.playlistCount = Int(number ?? 0)
             case "index": snapshot.playlistIndex = Int(number ?? 0)
             case "eq": snapshot.equalizer.enabled = truth
+            case "video":
+                let dimensions = halves[1].split(separator: "x").compactMap { Double($0) }
+                if dimensions.count == 2, dimensions.allSatisfy({ $0.isFinite && $0 > 0 }) {
+                    snapshot.video = WMPVideoSnapshot(width: dimensions[0], height: dimensions[1])
+                }
             default: continue
             }
         }
@@ -747,7 +752,8 @@ enum WMPHarness {
                 + "duration=\(WMPNumber.format(CGFloat(seeded.duration)))(\(seeded.durationText)) "
                 + "volume=\(WMPNumber.format(CGFloat(seeded.volume))) "
                 + "balance=\(WMPNumber.format(CGFloat(seeded.balance))) "
-                + "tracks=\(seeded.playlistCount) title=\(seeded.metadata.title)")
+                + "tracks=\(seeded.playlistCount) title=\(seeded.metadata.title) "
+                + "video=\(seeded.video.width)x\(seeded.video.height)")
         }
         for line in findingLines(skin.diagnostics) { WMPHarnessOutput.emit(line) }
         for line in compatibilityLines(skin) { WMPHarnessOutput.emit(line) }
@@ -793,6 +799,16 @@ enum WMPHarness {
                                             snapshot: probe.hostSnapshot,
                                             event: eventFor(name: "onLoad", skin: skin, viewID: viewID),
                                             geometry: scene.scriptGeometry)
+            if probe.hostSnapshot.video.hasVideo {
+                let readyScene = try await builder.build(viewID: viewID, requestedSize: scene.canvasSize,
+                                                         overrides: output?.overrides ?? .empty)
+                output = await session.transact(skin: skin, viewID: viewID, size: readyScene.canvasSize,
+                    snapshot: probe.hostSnapshot,
+                    event: eventFor(name: "onVideoStart", skin: skin, viewID: viewID),
+                    geometry: readyScene.scriptGeometry)
+                scene = readyScene
+                WMPHarnessOutput.emit("VIDEO \(viewID): ready \(probe.hostSnapshot.video.width)x\(probe.hostSnapshot.video.height)")
+            }
             if let requested = probe.requestedSize {
                 // A resize is a second layout pass, not a re-scale: the expressions run again
                 // against the new `view.width`/`view.height`, and then the skin's own `onResize`

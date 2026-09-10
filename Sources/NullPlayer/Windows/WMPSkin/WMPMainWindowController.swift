@@ -56,6 +56,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// the 100 ms this idiom is authored at that is ten walks a second for an answer the markup
     /// fixed before the skin loaded.
     private var dispatcherHandlers: [String] = []
+    private var dispatcherVideoSnapshot: WMPVideoSnapshot?
     /// The animation repaint loop and the instant its clock is measured from. Separate from
     /// `viewTimerTask`: that one dispatches the skin's own `onTimer` and rebuilds the scene, and an
     /// animation must not do either — it re-renders the scene that already exists.
@@ -421,6 +422,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         activeScene = scene
         scriptRuntime = runtime
         lastScriptSnapshot = host.snapshot
+        // A newly loaded view must receive video readiness even when decoding preceded its load.
+        lastScriptSnapshot?.video = WMPVideoSnapshot()
         sceneOverrides = overrides
         lastLoadDiagnostic = nil
         // A `.wmz` window is genuinely shaped — Corona is transparent across the 250 px its
@@ -447,8 +450,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
         let view = mainView ?? WMPMainView(frame: .zero)
         mainView = view
+        if view.videoSurface == nil { view.videoSurface = WMPVideoSurface() }
+        view.videoController = { WMPAudioEngineHost.localVideoController }
         view.onAction = { [weak self] action, value in
             guard let self else { return }
+            // **A direct button press is the one input that reached the host untraced.** `INPUT
+            // command` covers only script-issued commands, so a skin that commits through JScript
+            // (Cablemusic's seek slider posts `seekSeconds`) was visible while a plain transport
+            // button was not — and "no play in the log" then reads as "play was never pressed",
+            // which it does not mean. Traced here, at the one place every widget action passes.
+            Self.traceInput("action \(action) value=\(value.map(String.init(describing:)) ?? "-")")
             self.host.perform(action, value: value)
             self.refreshHostState()
         }
@@ -521,7 +532,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // Already on screen as part of the skin: nothing to open, and nothing of ours to add.
         if skinSurfaces.view(activeViewID, provides: surface) { return true }
         if switchingViews, let target = skinSurfaces.viewIDs(for: surface).first {
-            switchView(to: target)
+            if surface == .video {
+                _ = applyHostCommands([.init(action: "openView", value: .string(target))])
+            } else {
+                switchView(to: target)
+            }
         }
         return true
     }
@@ -844,8 +859,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     func updateTrackInfo(_ track: Track?) { refreshHostState() }
-    func updateVideoTrackInfo(title: String, artworkTrack: Track?) {}
-    func clearVideoTrackInfo() {}
+    func updateVideoTrackInfo(title: String, artworkTrack: Track?) { refreshHostState() }
+    func clearVideoTrackInfo() { refreshHostState() }
     func updateTime(current: TimeInterval, duration: TimeInterval) { refreshHostState() }
     func updatePlaybackState() { refreshHostState() }
     func updateSpectrum(_ levels: [Float]) { mainView?.updateSpectrum(levels) }
@@ -861,6 +876,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let previous = lastScriptSnapshot
         lastScriptSnapshot = snapshot
         var events: [String] = []
+        events += WMPVideoPresentation.events(previous: previous?.video, current: snapshot.video)
         if previous?.state != snapshot.state { events += ["openstatechange", "playstatechange"] }
         // **`status_onchange` is WMP's "the status string changed", and a clock tick is not that
         // (W119).** The bindings do have to settle ten times a second — the elapsed readout of 108
@@ -903,7 +919,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
-    private static let hostEventOrder = ["openstatechange", "playstatechange", "status_onchange",
+    private static let hostEventOrder = ["openstatechange", "playstatechange", "videostart", "videoend", "status_onchange",
                                          "positionchange", "modechange", "buffering_onchange",
                                          "reception_onchange"]
 
@@ -1200,6 +1216,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     host.perform(.setEQBand(index), value: command.value.map { .number($0.number ?? 0) })
                 }
             case "setEffectType": host.perform(.setEffectType(command.value?.string ?? ""), value: nil)
+            case "setVideoFullScreen":
+                guard let video = WMPAudioEngineHost.localVideoController, video.hasVideoOutput else { break }
+                let requested = command.value?.truth == true
+                let current = video.window?.styleMask.contains(.fullScreen) == true
+                if requested && !current && !video.isVideoFullScreenTransition {
+                    video.enterFullScreenReclaimingOutput()
+                    mainView?.videoSurface?.detach(reveal: true)
+                } else if !requested && current {
+                    video.window?.toggleFullScreen(nil)
+                }
             case "setEffectPreset": host.perform(.setEffectPreset(Int(number ?? 0)), value: nil)
             case "stepEffect":
                 host.perform((number ?? 1) < 0 ? .previousEffect : .nextEffect, value: nil)
@@ -1378,7 +1404,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.message = "Open media"
-        panel.allowedContentTypes = ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac", "cue"]
+        panel.allowedContentTypes = AudioFileValidator.supportedExtensions
+            .union(AudioFileValidator.supportedVideoExtensions).union(["cue"]).sorted()
             .compactMap { UTType(filenameExtension: $0) }
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
         var tracks: [Track] = []
@@ -1533,10 +1560,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private func dispatchDispatcherTick() async {
         guard let skin = loadedSkin, let scriptRuntime, let viewID = dispatcherViewID,
               let currentViewID = activeViewID, !dispatcherHandlers.isEmpty else { return }
-        let event = WMPJScriptEvent(name: "timer", targetID: viewID, handlers: dispatcherHandlers)
+        let snapshot = host.snapshot
+        let videoEvents = WMPVideoPresentation.events(previous: dispatcherVideoSnapshot, current: snapshot.video)
+        dispatcherVideoSnapshot = snapshot.video
+        let videoHandlers = videoEvents.flatMap {
+            Self.handlers(in: skin, event: $0, targetID: nil, viewID: viewID)
+        }
+        let event = WMPJScriptEvent(name: (["timer"] + videoEvents).joined(separator: ","),
+                                   targetID: viewID, handlers: videoHandlers + dispatcherHandlers)
         let output = await scriptRuntime.dispatch(skin: skin, viewID: viewID,
                                                   currentViewID: currentViewID,
-                                                  snapshot: host.snapshot, event: event)
+                                                  snapshot: snapshot, event: event)
         guard !Task.isCancelled, dispatcherViewID == viewID else { return }
         // `timerRequests` are deliberately dropped rather than scheduled. `applyTimerDelta` owns
         // the *presented* view's set, and `dispatchTimer` runs what it schedules against the
@@ -1555,6 +1589,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         dispatcherTimerTask = nil
         dispatcherViewID = nil
         dispatcherHandlers = []
+        dispatcherVideoSnapshot = nil
     }
 
     private func recordScriptDiagnostics(_ diagnostics: [WMPJScriptDiagnostic]) {

@@ -3103,7 +3103,11 @@ class WindowManager {
     }
     
     var isVideoPlayerVisible: Bool {
-        videoPlayerWindowController?.isVideoOutputVisible == true
+        // Same shape as `isPlaylistVisible`: a `.wmz` that declares its own video box is showing
+        // the picture whenever that view is the one on screen, and there is no window of ours to
+        // ask about — the output is parked inside the skin's own window as a child (W102/W105).
+        if wmpSkinProvides(.video) { return wmpSkinShowsInActiveView(.video) }
+        return videoPlayerWindowController?.isVideoOutputVisible == true
     }
     
     /// Whether video is currently playing
@@ -3128,6 +3132,7 @@ class WindowManager {
     }
     
     func toggleVideoPlayer() {
+        if routeWMPSkinSurface(.video, switchingViews: true) { return }
         guard let controller = videoPlayerWindowController else { return }
         // A hosted picture lives in the skin's own video window, so that is the window this shows and
         // hides — ordering out this controller's own would do nothing visible at all (B20).
@@ -3342,6 +3347,25 @@ class WindowManager {
         }
         mainWindowController?.clearVideoTrackInfo()
         mainWindowController?.updateTime(current: 0, duration: 0)
+        mainWindowController?.updatePlaybackState()
+    }
+
+    /// Called by the video player when it starts or stops playing.
+    ///
+    /// **A paused film stops reporting time, and in `.wmz` mode that was the only thing refreshing
+    /// the host.** `videoDidUpdateTime` below is driven by VLC's time-changed callback, so pausing
+    /// silenced it and the skin was never told playback had stopped: it went on drawing — and
+    /// hit-testing — a pause button. The click after that then died in `WMPMainView.mouseUp`,
+    /// because its `mousedown` triggered the rebuild that finally saw `paused` and swapped the
+    /// button, leaving `mouseup` over a different element than the one captured. Reported as
+    /// "play then pause then play just breaks it".
+    ///
+    /// **Gated to the WMP family deliberately.** Classic, Original and `.wal` drive their transport
+    /// from their own sources and none of them was measured against this call; CLAUDE.md's rule is
+    /// that a shared change is gated on the mode rather than justified as a no-op. If the same
+    /// staleness is ever shown in another family, widen it on that measurement.
+    func videoDidChangePlaybackState(_ playing: Bool) {
+        guard uiMode.controllerFamily == .wmp else { return }
         mainWindowController?.updatePlaybackState()
     }
 

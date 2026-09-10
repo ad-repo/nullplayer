@@ -1365,6 +1365,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         } else if isParkedAtEndOfMedia {
             markReachedEndOfMedia()
         }
+        WindowManager.shared.videoDidChangePlaybackState(playing)
     }
     
     // MARK: - Video Casting
@@ -1699,6 +1700,28 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// The stream's own pixel size, or `.zero` before the decoder knows it.
     var presentationSize: CGSize { videoPlayerView?.presentationSize ?? .zero }
 
+    var hasVideoOutput: Bool { videoPlayerView?.hasVideoOutput == true }
+
+    /// The picture's own context menu — Play/Pause, Audio, **Subtitles**, Track Settings, fullscreen.
+    ///
+    /// A `.wmz` holder shows this from the skin's video rect rather than from the picture, because
+    /// the parked window takes no mouse events of its own (see `WMPVideoSurface`). It is the only
+    /// route to subtitles while the picture is in a skin: the command bar is switched off there.
+    var videoOutputMenu: NSMenu? { videoPlayerView?.menu }
+
+    /// Whether the slide-out track panel — the only place carrying the subtitle *delay* — is up.
+    var isTrackSelectionPanelVisible: Bool { videoPlayerView?.trackSelectionPanelVisible ?? false }
+
+    /// WMP-only presentation state is restored before the output returns to any other family.
+    func configureWMPVideoOutput(imageRect: CGRect?, maintainAspectRatio: Bool = true) {
+        videoPlayerView?.wmpVideoRect = imageRect
+        videoPlayerView?.setWMPVideoAspectRatio(maintainAspectRatio ? nil : imageRect?.size)
+        videoPlayerView?.layer?.masksToBounds = imageRect != nil
+        videoPlayerView?.layoutSubtreeIfNeeded()
+    }
+
+    var isVideoFullScreenTransition: Bool { shouldReturnOutputToSkinAfterFullScreen }
+
     /// Winamp's command bar over the picture, which a skin's holder can switch off.
     var showsVideoControlBar: Bool {
         get { videoPlayerView?.showsControlBar ?? true }
@@ -1795,12 +1818,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         shouldReturnOutputToSkinAfterFullScreen = false
         // One turn later: AppKit is still restoring this window's own frame and style as the
         // notification lands, and re-parenting inside that leaves it parked at the fullscreen size.
-        DispatchQueue.main.async { WindowManager.shared.hostVideoOutputInWinampModernSkin() }
+        DispatchQueue.main.async {
+            let manager = WindowManager.shared
+            if manager.uiMode.controllerFamily == .wmp {
+                manager.mainWindowController?.updatePlaybackState()
+            } else {
+                manager.hostVideoOutputInWinampModernSkin()
+            }
+        }
     }
 
     /// Where a play call reveals the picture. Parked, that is the skin's own video window (the
     /// `autoopen="1"` every measured holder declares); otherwise this window, exactly as before.
     private func revealVideoOutput() {
+        let manager = WindowManager.shared
+        if manager.uiMode.controllerFamily == .wmp,
+           (manager.mainWindowController as? WMPMainWindowController)?
+            .revealSkinSurface(.video, switchingViews: true) == true { return }
         if WindowManager.shared.hostVideoOutputInWinampModernSkin() { return }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)

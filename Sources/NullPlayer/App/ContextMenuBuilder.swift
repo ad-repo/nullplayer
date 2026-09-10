@@ -189,9 +189,10 @@ class ContextMenuBuilder {
                                          action: #selector(MenuActions.toggleLibraryHistory)))
         }
         menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("Video Player", visible: wm.isVideoPlayerVisible,
-                                     action: #selector(MenuActions.toggleVideoPlayer),
-                                     enabled: wm.currentVideoPlayerController != nil))
+        menu.addItem(buildSkinOwnableWindowItem("Video Player", surface: .video,
+                                                visible: wm.isVideoPlayerVisible,
+                                                action: #selector(MenuActions.toggleVideoPlayer),
+                                                enabled: wm.currentVideoPlayerController != nil))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
         #if DEBUG
@@ -710,11 +711,11 @@ class ContextMenuBuilder {
 
     // MARK: - Window Toggle Items
     
-    /// The Equalizer / Playlist item, which in `.wmz` mode may be describing the *skin's* surface
-    /// rather than a NullPlayer window.
+    /// The Equalizer / Playlist / Video Player item, which in `.wmz` mode may be describing the
+    /// *skin's* surface rather than a NullPlayer window.
     ///
     /// A skin that declares one of these (171 of the 180 corpus skins declare a playlist, 164 an
-    /// equaliser) owns it, so there is no window of ours to toggle. When the skin keeps it in
+    /// equaliser, 170 a video box) owns it, so there is no window of ours to toggle. When the skin keeps it in
     /// another view the item still acts — it opens that view, the way the skin's own button does —
     /// and when it is part of the view already on screen the item is checked and inert, because the
     /// thing it names is right there.

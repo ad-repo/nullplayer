@@ -354,7 +354,8 @@ final class WMPObjectModel {
         case "getiteminfo", "getiteminfobyatom", "setiteminfo", "isreadonly": return .function
         // No video surface exists yet, so there is genuinely no image source. Zero is the true
         // answer rather than a placeholder, and it is what makes Corona take its audio path.
-        case "imagesourcewidth", "imagesourceheight": return .value(.number(0))
+        case "imagesourcewidth": return .value(.number(snapshot.video.width))
+        case "imagesourceheight": return .value(.number(snapshot.video.height))
         case "attributecount": return .value(.number(3))
         default: return .unrecognised("media member")
         }
@@ -488,6 +489,14 @@ final class WMPObjectModel {
 
     private func readElement(_ element: WMPScriptElement, _ name: String) -> WMPMemberValue {
         if let method = elementMethod(element, name) { _ = method; return .function }
+        if element.kind == .video || element.kind == .wmpVideo {
+            if name == "fullscreen" { return .value(.bool(snapshot.video.fullScreen)) }
+            if ["shrinktofit", "stretchtofit", "maintainaspectratio"].contains(name) {
+                // The same defaults `WMPVideoPresentation` draws with, and for the same reason: a
+                // skin that reads back a flag it never authored must be told what is on screen.
+                return .value(element.properties[name] ?? .bool(name != "stretchtofit"))
+            }
+        }
         switch name {
         case "id": return .value(.string(element.id))
         case "itemcount" where element.kind == .popup:
@@ -680,6 +689,12 @@ final class WMPObjectModel {
 
     private func writeElement(_ element: WMPScriptElement, _ name: String,
                               _ value: WMPJSONValue) -> WMPMemberValue {
+        let videoProperty = (element.kind == .video || element.kind == .wmpVideo)
+            && ["shrinktofit", "stretchtofit", "maintainaspectratio"].contains(name)
+        if (element.kind == .video || element.kind == .wmpVideo), name == "fullscreen" {
+            hostCommand("setVideoFullScreen", .bool(value.truth))
+            return .value(value)
+        }
         // The view's own timer, which is a host timer and not a scene property. A skin drives its
         // animation from it — Corona's compact view collapses its video panel by registering a
         // `TimerEvent` and then writing the interval it wants — so a write that only stored a
@@ -695,7 +710,7 @@ final class WMPObjectModel {
             hostCommand("setViewTimerInterval", .number(max(0, value.number ?? 0)))
             return .value(value)
         }
-        let rendered = element.authored.contains(name) || Self.standardElementProperties.contains(name)
+        let rendered = videoProperty || element.authored.contains(name) || Self.standardElementProperties.contains(name)
             || element.properties[name] != nil
         // Same contract as the read side: the property surface is open, and one nothing draws is
         // stored and counted as inert rather than refused.

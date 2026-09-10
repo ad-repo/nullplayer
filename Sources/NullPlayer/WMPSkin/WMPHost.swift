@@ -93,6 +93,7 @@ struct WMPHostSnapshot: Hashable, Codable {
     var playlistItems: [WMPPlaylistItemSnapshot] = []
     var equalizer = WMPEqualizerSnapshot()
     var effects = WMPEffectsSnapshot()
+    var video = WMPVideoSnapshot()
 
     var elapsedText: String { Self.timeString(currentTime) }
     var durationText: String { Self.timeString(duration) }

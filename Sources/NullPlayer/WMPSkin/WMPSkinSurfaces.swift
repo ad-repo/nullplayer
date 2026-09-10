@@ -17,6 +17,7 @@ import Foundation
 enum WMPSkinSurface: String, CaseIterable {
     case playlist
     case equalizer
+    case video
 }
 
 /// Which of its own surfaces the loaded skin declares, and in which views.
@@ -81,6 +82,14 @@ struct WMPSkinSurfaces: Equatable, Sendable {
             return tag.hasSuffix("PLAYLIST")
         case .equalizer:
             return node.kind == .equalizerSettings || tag == "EQUALIZERSETTINGS"
+        case .video:
+            guard tag == "VIDEO" || tag == "WMPVIDEO" else { return false }
+            // The corpus's windowless dispatchers carry an anonymous, unsized VIDEO solely for
+            // onVideoStart. A zero-width compact-view listener is likewise not a video window.
+            if WMPNumber.literal(node.attribute(named: "width")) == 0
+                || WMPNumber.literal(node.attribute(named: "height")) == 0 { return false }
+            return node.xmlID != nil || (node.attribute(named: "width") != nil
+                                          && node.attribute(named: "height") != nil)
         }
     }
 }

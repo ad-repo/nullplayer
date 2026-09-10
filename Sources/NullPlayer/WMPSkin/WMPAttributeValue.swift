@@ -78,7 +78,7 @@ enum WMPAttributeParser {
         // `onDragEnd` is the other kind — a user gesture, raised from `WMPMainView.mouseUp` — and
         // it is authored only on `SLIDER` (125) and `CUSTOMSLIDER` (16), where it is the seek
         // commit: 111 of its 141 sources are `player.controls.currentPosition = value`.
-        "onendmove", "onendalphablend", "ondragend"
+        "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend"
     ]
 
     static func parse(name: String, value raw: String) -> WMPAttributeValue {

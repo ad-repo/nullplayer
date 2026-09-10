@@ -113,12 +113,25 @@ INPUT view-timer <n>ms                                       the view's own time
 INPUT hover <id>#<sid> -> <id>#<sid>                         a pointer crossing, before dispatch
 INPUT dispatch <event> target=<id>#<sid> handlers=<n> gated=<bool>
 INPUT present <event> geometry=<n> properties=<n> commands=<n> diagnostics=<n>
+INPUT action <action> value=<v|->                            a widget press reaching the host directly
 INPUT command <action> value=<v>                             a host command the transaction posted
 INPUT widgets hosted=<n> [<kind> id=<id> frame=<rect>, …]    the AppKit overlays this present built
 INPUT menu at=<point> frames=[<effects rects>]               a right-click, and what decided it
 INPUT animation <view> delay=<s> endsAt=<s|endless> clock=<s>  every startAnimation, and the clock it runs on
 INPUT script-diag [<code>] <message>                         a script diagnostic from a live transaction
+INPUT video hosted id=<id> frame=<rect> source=<w>x<h>       the picture parked in the skin's video box
+INPUT video detached reveal=<bool>                           the loan given back, and whether it was shown
+INPUT video reparented (was orphaned|elsewhere)              the parked window had stopped being a child
+INPUT video reordered above parent                           the parked window had fallen behind the skin
 ```
+
+**`action` and `command` are two different inputs and only one of them was ever traced.** `command`
+is a host command a *script transaction* posted, so a skin that commits through JScript is visible —
+Cablemusic's seek slider posts `seekSeconds` from an `onDragEnd`. A plain transport button goes
+`WMPMainView.onAction` → `host.perform` and posted nothing, so it left no line at all. Reading an
+absent `command play` as "play was never pressed" is therefore wrong for every skin that binds its
+buttons directly, which is most of them. `action` closes that gap; **check both before concluding an
+input never arrived.**
 
 `script-diag` is the headless `SCRIPT-DIAG` line, in the app. Without it a handler that throws in
 the running app is indistinguishable from one that ran and did nothing — which is the first fork to
@@ -694,6 +707,35 @@ done
   list was one skin long — which is the list worth opening.
 
 ---
+
+## Driving the GUI yourself: two traps that produced wrong conclusions (2026-09-10)
+
+Both cost a stated, confident, wrong answer during W102's live QA. Neither is about the app.
+
+**A synthetic click must set `mouseEventClickState`, or it is not a click.** A `CGEvent` pair of
+`.leftMouseDown`/`.leftMouseUp` posted without `e.setIntegerValueField(.mouseEventClickState, 1)`
+arrives with `clickCount == 0`. The pointer moves, `INPUT hover` updates, `mouseDown` may even
+dispatch — and no click is ever synthesised. This was read as *"the skin's play button is dead"* and
+then as *"a right-click on the video box opens no menu"*, and a fix was designed on the second one
+before the tool was checked. **Prove the input arrives before concluding the app ignored it**: click
+something with a known trace (`INPUT action <transport>` on any transport button) and see the line
+appear. Same rule as every other instrument on this page. A double-click additionally needs
+`clickState` 1 then 2 on consecutive down/up pairs.
+
+**`screencapture -R <region>` photographs the screen, not the window** — including whatever is on
+top of it, which during agent-driven QA is routinely your own terminal. Use `screencapture -l
+<windowid>` (id from `CGWindowListCopyWindowInfo`) to capture a window's **own** content regardless
+of occlusion. That single distinction is what settled the "video goes black" defect: the window's own
+content was the movie, playing, so nothing was wrong with decoding or sizing and the whole question
+became compositing. Pair it with the front-to-back order from
+`CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements])` — **pass
+`.optionOnScreenOnly`**, because `.optionAll` includes offscreen windows and its ordering means
+nothing; reading order out of an `.optionAll` list said the video was in front when it was behind.
+
+**A parked video window is a child window, so two invariants are free and worth asserting**: a child
+is always drawn above its parent, and it moves with its parent atomically. If the picture is behind
+the skin, or trails a drag, the parent-child link is gone — do not go looking at VLC. See
+`SKILL.md` § the `.wmz` video loan.
 
 ## Proving the instrument
 

@@ -188,6 +188,8 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         case "player.controls.currentposition": return .number(snapshot.currentTime)
         case "player.controls.currentpositionstring": return .string(snapshot.elapsedText)
         case "player.currentmedia.duration": return .number(snapshot.duration)
+        case "player.currentmedia.imagesourcewidth": return .number(snapshot.video.width)
+        case "player.currentmedia.imagesourceheight": return .number(snapshot.video.height)
         case "player.currentmedia.durationstring": return .string(snapshot.durationText)
         case "player.currentmedia.name", "player.currentmedia.getiteminfo('title')": return .string(snapshot.metadata.title)
         case "player.settings.volume": return .number(snapshot.volume * 100)

@@ -52,6 +52,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     private var widgetViews: [Int: NSView] = [:]
     private var widgetValues: [Int: Double] = [:]
     private var currentSnapshot = WMPHostSnapshot()
+    var videoSurface: WMPVideoSurface?
+    var videoController: (() -> VideoPlayerWindowController?)?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -105,6 +107,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     func refreshHostState(_ snapshot: WMPHostSnapshot) {
         currentSnapshot = snapshot
         guard let scene else { return }
+        videoSurface?.update(in: self, scene: scene, video: snapshot.video,
+                             controller: videoController?())
         var changed = Set<Int>()
         for hit in scene.hits {
             if let action = hit.action {
@@ -144,6 +148,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
     func prepareForUITeardown() {
+        videoSurface?.detach(reveal: currentSnapshot.video.hasVideo)
+        videoSurface = nil; videoController = nil
         cancelInputCapture()
         onSpectrumDemandChanged?(false)
         widgetViews.values.forEach { $0.removeFromSuperview() }; widgetViews.removeAll(); widgetValues.removeAll()
@@ -201,16 +207,22 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
                 y: widget.frame.y * yScale, width: widget.frame.width * xScale,
                 height: widget.frame.height * yScale)
         }
+        videoSurface?.update(in: self, scene: scene, video: currentSnapshot.video,
+                             controller: videoController?())
     }
 
-    /// **A right-click on the skin's visualization rect opens the visualization's own menu.**
+    /// **A right-click on the skin's visualization or video rect opens that surface's own menu.**
     ///
-    /// The surface is click-through by design — 51 corpus skins wire an `onClick` on the
-    /// `<EFFECTS>` node and that handler is the scene's, not the overlay's — so the event arrives
-    /// here and the widget frames are what decide. Anywhere else on a `.wmz` there is no host menu
-    /// to show: the skin draws its own controls and its own menus.
+    /// Both surfaces are click-through by design — 51 corpus skins wire an `onClick` on the
+    /// `<EFFECTS>` node and 21 on `<VIDEO>`, and those handlers are the scene's, not the overlay's
+    /// — so the event arrives here and the widget frames are what decide. **For video this is the
+    /// only route to subtitles and audio-track selection**: the picture is parked in a window that
+    /// takes no mouse events, and the command bar carrying those controls is switched off in a
+    /// skin, so without this there is no way to turn a subtitle on. Anywhere else on a `.wmz` there
+    /// is no host menu to show: the skin draws its own controls and its own menus.
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
+        if let video = videoSurface?.menu(at: point) { return video }
         WMPMainWindowController.traceInput("menu at=\(point) frames=[\(widgetViews.values.compactMap { ($0 as? WMPEffectsSurfaceView)?.frame }.map(String.init(describing:)).joined(separator: ", "))]")
         for view in widgetViews.values {
             guard let effects = view as? WMPEffectsSurfaceView, effects.frame.contains(point) else { continue }

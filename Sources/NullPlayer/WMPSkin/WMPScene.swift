@@ -100,11 +100,13 @@ struct WMPWidget: Hashable, Codable {
     /// The `wmpprop:` path this control's `value` is bound to, lower-cased. A skin that declares
     /// one has said where its slider writes; see `WMPTransportAction.boundAction`.
     let valueBindingPath: String?
+    let videoPresentation: WMPVideoPresentation?
 
     init(stableID: Int, nodeID: String?, kind: WMPWidgetKind, frame: WMPRect, clipRect: WMPRect?,
          label: String, toolTip: String?, minimumValue: Double? = nil, maximumValue: Double? = nil,
          value: Double? = nil, direction: WMPSliderDirection? = nil, borderSize: CGFloat = 0,
-         thumbSize: WMPSize? = nil, valueBindingPath: String? = nil) {
+         thumbSize: WMPSize? = nil, valueBindingPath: String? = nil,
+         videoPresentation: WMPVideoPresentation? = nil) {
         self.stableID = stableID
         self.nodeID = nodeID
         self.kind = kind
@@ -119,6 +121,7 @@ struct WMPWidget: Hashable, Codable {
         self.borderSize = borderSize
         self.thumbSize = thumbSize
         self.valueBindingPath = valueBindingPath
+        self.videoPresentation = videoPresentation
     }
 }
 
