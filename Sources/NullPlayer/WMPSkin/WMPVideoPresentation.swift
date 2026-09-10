@@ -69,4 +69,33 @@ struct WMPVideoPresentation: Hashable, Codable {
         guard hadVideo != current.hasVideo else { return [] }
         return [current.hasVideo ? "videostart" : "videoend"]
     }
+
+    /// Returns whether a script assigned the view the size obtained by adding the decoder's
+    /// dimensions to the authored shell and subtracting the authored video box. A few legacy WMP
+    /// skins use that formula in `StartVideo()` (Corona and Classic are the two corpus examples),
+    /// but NullPlayer hosts video in the authored box and fits the image there. Letting the
+    /// assignment reach the scene makes stretch-aligned parents grow while the computed
+    /// `<WMPVIDEO>`/`<EFFECTS>` expressions still carry the previous box size, producing a tall
+    /// narrow surface and oversized drawers.
+    static func isMediaDrivenViewSize(_ assigned: WMPSize,
+                                      authoredViewSize: WMPSize,
+                                      authoredVideoSize: WMPSize,
+                                      source: WMPVideoSnapshot) -> Bool {
+        guard source.hasVideo,
+              assigned.width.isFinite, assigned.height.isFinite,
+              authoredViewSize.width.isFinite, authoredViewSize.height.isFinite,
+              authoredVideoSize.width.isFinite, authoredVideoSize.height.isFinite,
+              authoredViewSize.width > 0, authoredViewSize.height > 0,
+              authoredVideoSize.width > 0, authoredVideoSize.height > 0 else { return false }
+
+        let expected = WMPSize(
+            width: authoredViewSize.width + CGFloat(source.width) - authoredVideoSize.width,
+            height: authoredViewSize.height + CGFloat(source.height) - authoredVideoSize.height)
+        guard expected.width > authoredViewSize.width, expected.height > authoredViewSize.height else {
+            return false
+        }
+        let tolerance: CGFloat = 1
+        return abs(assigned.width - expected.width) <= tolerance
+            && abs(assigned.height - expected.height) <= tolerance
+    }
 }

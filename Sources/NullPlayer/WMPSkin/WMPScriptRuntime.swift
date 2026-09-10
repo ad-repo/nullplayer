@@ -431,6 +431,27 @@ actor WMPScriptRuntime {
                 overrides.properties[address] = mutation.value
             }
         }
+        let assigned = Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
+                                             mutations: result.mutations, overrides: overrides)
+        let mediaDrivenResize = assigned.map {
+            Self.isMediaDrivenViewResize(in: skin, viewID: viewID, assigned: $0,
+                                         source: snapshot.video)
+        } ?? false
+        if mediaDrivenResize, let root = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node {
+            // Do not retain a decoder-sized root assignment either. Otherwise the next binding-only
+            // transaction would treat it as the view's default even though this transaction kept
+            // the authored window size. Restore any pre-existing scripted size, if there was one.
+            for property in ["width", "height"] {
+                let address = WMPScenePropertyAddress(stableID: root.stableID, property: property)
+                if let previous = committedOverrides.geometry[address] {
+                    overrides.geometry[address] = previous
+                } else {
+                    overrides.geometry.removeValue(forKey: address)
+                }
+            }
+        }
         let repaint = Set(result.repaintHints.compactMap { plan.idToStableID[WMPPath.fold($0)] })
         committedOverrides = overrides
         return WMPScriptOutput(overrides: overrides, hostCommands: result.hostCommands,
@@ -439,9 +460,7 @@ actor WMPScriptRuntime {
                                calls: result.calls,
                                expressions: result.expressions, expressionOrder: result.expressionOrder,
                                listItems: context.listItems(),
-                               viewSize: Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
-                                                               mutations: result.mutations,
-                                                               overrides: overrides))
+                               viewSize: mediaDrivenResize ? nil : assigned)
     }
 
     /// The size a transaction's script gave the view, or nil when it gave it none.
@@ -468,6 +487,62 @@ actor WMPScriptRuntime {
                                                                      property: "width")],
               let height = overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
                                                                       property: "height")],
+              width > 0, height > 0 else { return nil }
+        return WMPSize(width: width, height: height)
+    }
+
+    nonisolated static func isMediaDrivenViewResize(in skin: WMPLoadedSkin, viewID: String,
+                                                    assigned: WMPSize,
+                                                    source: WMPVideoSnapshot) -> Bool {
+        guard let root = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node,
+        let authoredViewSize = authoredSize(of: root),
+        let video = descendant(of: root, matching: { node in
+            node.kind == .video || node.kind == .wmpVideo
+        }),
+        let authoredVideoSize = authoredVideoSize(of: video, authoredViewSize: authoredViewSize) else {
+            return false
+        }
+        return WMPVideoPresentation.isMediaDrivenViewSize(assigned,
+            authoredViewSize: authoredViewSize, authoredVideoSize: authoredVideoSize, source: source)
+    }
+
+    private nonisolated static func authoredSize(of node: WMPNode) -> WMPSize? {
+        guard let width = WMPNumber.literal(node.attribute(named: "width")),
+              let height = WMPNumber.literal(node.attribute(named: "height")),
+              width > 0, height > 0 else { return nil }
+        return WMPSize(width: width, height: height)
+    }
+
+    private nonisolated static func descendant(of root: WMPNode,
+                                               matching predicate: (WMPNode) -> Bool) -> WMPNode? {
+        for child in root.children {
+            if predicate(child) { return child }
+            if let match = descendant(of: child, matching: predicate) { return match }
+        }
+        return nil
+    }
+
+    private nonisolated static func authoredVideoSize(of video: WMPNode,
+                                                      authoredViewSize: WMPSize) -> WMPSize? {
+        let container = video.parent?.kind == .view ? video : (video.parent ?? video)
+        return authoredSize(of: container, authoredViewSize: authoredViewSize)
+            ?? authoredSize(of: video, authoredViewSize: authoredViewSize)
+    }
+
+    private nonisolated static func authoredSize(of node: WMPNode,
+                                                 authoredViewSize: WMPSize) -> WMPSize? {
+        func dimension(_ name: String, _ fallback: CGFloat) -> CGFloat? {
+            guard let attribute = node.attribute(named: name) else { return nil }
+            if let literal = WMPNumber.literal(attribute) { return literal }
+            let expression = attribute.rawValue.lowercased()
+                .replacingOccurrences(of: " ", with: "")
+            guard expression.contains("view.\(name.lowercased())") else { return nil }
+            return fallback
+        }
+        guard let width = dimension("width", authoredViewSize.width),
+              let height = dimension("height", authoredViewSize.height),
               width > 0, height > 0 else { return nil }
         return WMPSize(width: width, height: height)
     }

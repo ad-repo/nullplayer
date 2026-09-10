@@ -101,6 +101,52 @@ final class WMPVideoTests: XCTestCase {
         XCTAssertFalse(newMediaWithoutOutput.hasVideo)
     }
 
+    func testMediaDrivenViewResizeIsRecognizedOnlyForLegacySourceSizeFormula() {
+        let source = WMPVideoSnapshot(width: 1920, height: 1080)
+        XCTAssertTrue(WMPVideoPresentation.isMediaDrivenViewSize(
+            WMPSize(width: 2196, height: 1308),
+            authoredViewSize: WMPSize(width: 596, height: 468),
+            authoredVideoSize: WMPSize(width: 320, height: 240), source: source))
+        XCTAssertTrue(WMPVideoPresentation.isMediaDrivenViewSize(
+            WMPSize(width: 1920, height: 1256),
+            authoredViewSize: WMPSize(width: 285, height: 359),
+            authoredVideoSize: WMPSize(width: 285, height: 183), source: source))
+        XCTAssertFalse(WMPVideoPresentation.isMediaDrivenViewSize(
+            WMPSize(width: 475, height: 373),
+            authoredViewSize: WMPSize(width: 593, height: 600),
+            authoredVideoSize: WMPSize(width: 320, height: 240), source: source))
+    }
+
+    func testRuntimeDropsLegacySourceSizeRootResizeFromSceneOutput() async throws {
+        let skin = try await load("""
+        <THEME><VIEW id="main" width="596" height="468">
+          <SUBVIEW id="videoBox" width="320" height="240">
+            <WMPVIDEO id="video" width="jscript:videoBox.width" height="jscript:videoBox.height"/>
+          </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let suite = "WMPVideoTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let runtime = WMPScriptRuntime(preferences: WMPPreferenceStore(
+            skinData: Data(suite.utf8), defaults: defaults))
+        var snapshot = WMPHostSnapshot()
+        snapshot.video = WMPVideoSnapshot(width: 1920, height: 1080)
+        let output = await runtime.transact(skin: skin, viewID: "main",
+            size: WMPSize(width: 596, height: 468), snapshot: snapshot,
+            event: .init(name: "videostart", targetID: nil, handlers: [
+                "view.width = player.currentMedia.imageSourceWidth + 276;"
+                    + "view.height = player.currentMedia.imageSourceHeight + 228;"
+            ]))
+        XCTAssertNil(output.viewSize)
+        let root = try XCTUnwrap(skin.views.first?.node)
+        XCTAssertNil(output.overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
+                                                                       property: "width")])
+        XCTAssertNil(output.overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
+                                                                       property: "height")])
+        await runtime.teardown()
+    }
+
     func testRoutingIgnoresEventOnlyVideosAndUsesEitherAuthoredVideoSpelling() async throws {
         let skin = try await load("""
         <THEME>
