@@ -779,23 +779,27 @@ of these was invisible to the harness and visible in the first minute of live QA
   that value only for an unauthored, unoverridden height. The scene builder remains off-main and
   does not construct AppKit controls; an authored or scripted height wins.
 - **The visualization surface is this player's own visuals in the rect the skin authored (W101).**
-  `WMPEffectsSurfaceView` hosts a `VisualizationGLView` — the same ProjectM / Geiss / Tripex stack
-  NullPlayer's own visualization window runs — plus the WMP-style bars this engine drew by hand, and
-  `WMPEffectSelection` is the one place the choice lives, because 96 archives bind the rect's
-  `currentEffectType` to `wmpprop:mediacenter.effectType`. Three rules it is built on:
-  **nothing playing draws nothing at all** (no engine is even created, so the skin's own screen
-  artwork stands — W9's rule, applied before the fact); **the surface never takes a click**, because
-  51 archives wire an `onClick` on the `<EFFECTS>` node and that handler belongs to the scene's hit
-  testing; and **the skin's selector is not the app's preference** — cycling from the rect or from
-  its menu never writes `visualizationEngineType`, which the visualization window and the menu bar
-  share. Right-click gives the same `VisualizationContextMenu` those two have (minus Fullscreen and
-  Close: the rect is a box inside the skin's window), and the arrow keys step presets exactly as
-  they do there, but only after the skin has refused the key.
+  `WMPEffectsSurfaceView` draws compact WMP-native **Spikes**, **Bars**, and **Ambience** directly;
+  it must never host ProjectM, Geiss, Tripex, or any other standalone visualization window in that
+  slot. Asimov Radio and Cerulean make the reason visible: their artwork frames a small legacy WMP
+  effect, while a full-window renderer becomes an incongruous black rectangle. `WMPEffectSelection`
+  is the one place the choice lives, because 96 archives bind `currentEffectType` to
+  `wmpprop:mediacenter.effectType`. Three rules it is built on: **nothing playing draws nothing at
+  all** (the skin's own screen artwork stands); **the surface never takes a click**, because 51
+  archives wire an `onClick` on `<EFFECTS>` and that handler belongs to scene hit testing; and **the
+  skin's selector is not the app's preference** — cycling from the rect, its menu, or the left/right
+  keys never writes `visualizationEngineType`, which the visualization window and menu bar share.
+  **Do not fill the widget's rectangle.** The effect is composited over the scene, and its untouched
+  pixels must stay transparent: Cerulean's 103×75 effect is centred on the skin's 81×82 circular
+  `vis_area_default.bmp`, while other corpus skins use the same pattern for a bezel, mask, or LCD
+  detail. A black backing layer makes each of those details disappear and reads as a misplaced
+  window. Test the effect with a real skin at playback and inspect the AppKit-hosted frame; a static
+  render dump cannot show its pixels.
 - **PCM arrives on the audio thread and an overlay must not hop to the main actor to take it.**
   `.audioPCMDataUpdated` is posted from inside `AudioEngine.processAudioBuffer`; a
   `MainActor.assumeIsolated` in that observer is a `dispatch_assert_queue` failure and the process
-  traps the moment a surface exists and a track plays. `VisualizationGLView` takes its own lock, so
-  it is written to directly from the posting thread.
+  traps the moment a surface exists and a track plays. The WMP effect surface retains the latest
+  spectrum snapshot and schedules its AppKit redraw on the main actor.
 - **A semantic slider tag is itself a binding, and its range is part of what the tag says (W118).**
   `<SLIDER value="wmpprop:player.settings.balance">` states where a control reads; `<BALANCESLIDER>`
   states the same thing by *being* one, so a skin that uses the tag authors no `value` and usually no

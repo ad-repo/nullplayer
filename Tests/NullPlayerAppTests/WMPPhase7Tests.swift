@@ -6,6 +6,23 @@ import XCTest
 
 final class WMPPhase7Tests: XCTestCase {
 
+    @MainActor
+    func testWMPEffectsUseTheNativeCompactCatalogue() {
+        let selection = WMPEffectSelection.shared
+        XCTAssertTrue(selection.select("spikes"))
+        XCTAssertEqual(selection.snapshot.type, "spikes")
+        XCTAssertEqual(selection.snapshot.title, "Spikes")
+        XCTAssertNil(selection.current.engine, "WMP effect slots must not host a standalone visualization engine")
+
+        selection.step(by: 1)
+        XCTAssertEqual(selection.snapshot.type, "bars")
+        selection.step(by: 1)
+        XCTAssertEqual(selection.snapshot.type, "ambience")
+        XCTAssertFalse(selection.select("projectm"), "ProjectM belongs in its own visualization window")
+        XCTAssertEqual(selection.snapshot.type, "ambience")
+        _ = selection.select("spikes")
+    }
+
     /// The overlays paint their own `bounds`, never the `dirtyRect` handed to them.
     ///
     /// AppKit is free to pass a dirty rect larger than the view, and was measured doing exactly
@@ -62,8 +79,15 @@ final class WMPPhase7Tests: XCTestCase {
                                "\(type(of: overlay)) painted \(name) — outside its own bounds")
             }
             // ...and it still paints itself, or the assertions above pass for the wrong reason.
-            let inside = rep.colorAt(x: Int(frame.midX), y: Int(frame.midY))?.alphaComponent ?? 0
-            XCTAssertGreaterThan(inside, 0.5, "\(type(of: overlay)) did not paint its own bounds")
+            // A WMP Spikes effect deliberately leaves its center and corners transparent so a
+            // skin's own circular overlay can show through; look for paint anywhere in the slot,
+            // not at one arbitrary pixel.
+            let didPaintInside = stride(from: Int(frame.minY), to: Int(frame.maxY), by: 2).contains { y in
+                stride(from: Int(frame.minX), to: Int(frame.maxX), by: 2).contains { x in
+                    (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5
+                }
+            }
+            XCTAssertTrue(didPaintInside, "\(type(of: overlay)) did not paint its own bounds")
         }
     }
 

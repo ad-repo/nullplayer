@@ -6,9 +6,8 @@ import AppKit
 /// measured in the corpus carries `width` and `height`, most of them expressions off the frame the
 /// skin drew around it (`WoW`: `<effects id="visEffects" width="jscript:visFrame.width" …>`), and
 /// 183 of them across 166 of 177 archives were hosted on nothing at all until `<EFFECTS>` became an
-/// element kind (W101). What goes *in* the rect is `WMPEffectSelection`: the bars this engine drew
-/// by hand for the five `<WMPEFFECTS>` skins, or one of the three engines NullPlayer's own
-/// visualization window runs.
+/// element kind (W101). What goes in the rect is `WMPEffectSelection`'s compact WMP-native effect,
+/// rendered in this view rather than borrowed from NullPlayer's standalone visualization window.
 ///
 /// **Nothing playing draws nothing at all.** W9 removed the video placeholder because an opaque
 /// surface with nothing to show is worse than no surface: it filled its frame with black over the
@@ -86,8 +85,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     func updateSpectrum(_ levels: [Float]) {
         self.levels = levels
-        engineView?.updateSpectrum(levels)
-        if effect.engine == nil, isActive { needsDisplay = true }
+        if isActive { needsDisplay = true }
     }
 
     override func layout() {
@@ -98,24 +96,11 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func applySelection() {
         guard !isTornDown else { return }
         effect = WMPEffectSelection.shared.current
-        guard isActive, let engine = effect.engine else {
-            releaseEngine()
-            levels = []
-            needsDisplay = true
-            return
-        }
-        let view = engineView ?? makeEngineView()
-        guard let view else {
-            // No usable pixel format: the bars are what this rect can still draw, which is exactly
-            // what the `.wal` surface's "nil when unavailable" fallback answers with.
-            needsDisplay = true
-            return
-        }
-        if view.currentEngineType != engine { view.switchEngine(to: engine) }
-        view.setAudioActive(true)
-        applyPreset(to: view, engine: engine)
-        // Each engine cycles on its own terms, so the timer is re-armed for the one now running.
-        applyPresetCycleMode()
+        // A WMP effect is part of the skin's composition. Do not mount a second, full-window
+        // renderer into this small rect; it is the source of the black ProjectM panels reported
+        // in Asimov Radio and Cerulean.
+        releaseEngine()
+        if !isActive { levels = [] }
         needsDisplay = true
     }
 
@@ -182,20 +167,110 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        // Nothing is playing, or an engine is drawing its own frames into its own subview: either
-        // way this view paints nothing and the skin's artwork stands.
-        guard isActive, effect.engine == nil, !levels.isEmpty else { return }
+        // A stopped player leaves the skin's own artwork visible.
+        guard isActive, !levels.isEmpty else { return }
         // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
         // itself — here the whole 596x468 window arrived as {{-269, -26}, {596, 468}} in this
         // view's coordinates — and a layer-backed view does not clip it (`masksToBounds` is
         // false). Filling it painted this surface's wash over the entire skin.
-        NSColor(calibratedWhite: 0.04, alpha: 0.9).setFill(); bounds.fill()
-        let count = min(32, levels.count), width = bounds.width / CGFloat(count)
-        NSColor.systemGreen.setFill()
-        for index in 0..<count {
-            let level = CGFloat(max(0, min(1, levels[index])))
-            NSRect(x: CGFloat(index) * width, y: bounds.height * (1 - level),
-                   width: max(1, width - 1), height: bounds.height * level).fill()
+        switch effect.style {
+        case .bars: drawBars()
+        case .spikes: drawSpikes()
+        case .ambience: drawAmbience()
+        }
+    }
+
+    private func normalizedLevels(count: Int) -> [CGFloat] {
+        guard count > 0, !levels.isEmpty else { return [] }
+        return (0..<count).map { index in
+            let source = min(levels.count - 1, index * levels.count / count)
+            return CGFloat(max(0.035, min(1, levels[source])))
+        }
+    }
+
+    private func drawBars() {
+        let bands = normalizedLevels(count: min(32, max(16, Int(min(bounds.width, bounds.height) / 4))))
+        guard !bands.isEmpty else { return }
+        let context = NSGraphicsContext.current?.cgContext
+        let center = NSPoint(x: bounds.midX, y: bounds.midY)
+        let maximum = min(bounds.width, bounds.height) * 0.46
+        let inner = maximum * 0.30
+        let cellWidth = max(1, (maximum * .pi * 2 / CGFloat(bands.count)) * 0.60)
+        for (index, level) in bands.enumerated() {
+            let angle = (CGFloat(index) / CGFloat(bands.count)) * (.pi * 2) - (.pi / 2)
+            let height = max(maximum * 0.09, (maximum - inner) * level)
+            context?.saveGState()
+            context?.translateBy(x: center.x, y: center.y)
+            context?.rotate(by: angle)
+            NSColor(calibratedRed: 0.18 + level * 0.25, green: 0.72 + level * 0.22,
+                    blue: 0.30 + level * 0.22, alpha: 0.95).setFill()
+            NSRect(x: inner, y: -cellWidth / 2, width: height, height: cellWidth).fill()
+            context?.restoreGState()
+        }
+        let core = NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner,
+                                               width: inner * 2, height: inner * 2))
+        core.lineWidth = max(1, maximum / 55)
+        NSColor(calibratedRed: 0.35, green: 0.92, blue: 0.45, alpha: 0.65).setStroke()
+        core.stroke()
+    }
+
+    private func drawSpikes() {
+        let bands = normalizedLevels(count: min(48, max(20, Int(min(bounds.width, bounds.height) / 3))))
+        guard !bands.isEmpty else { return }
+        let center = NSPoint(x: bounds.midX, y: bounds.midY)
+        let maximum = min(bounds.width, bounds.height) * 0.46
+        let inner = maximum * 0.28
+
+        // The legacy effect sits *in* the skin's display rather than replacing it. Keeping the
+        // surrounding pixels transparent is what lets round frames such as Asimov Radio's remain
+        // round instead of becoming a black square.
+        let outline = NSBezierPath(ovalIn: NSRect(x: center.x - maximum, y: center.y - maximum,
+                                                  width: maximum * 2, height: maximum * 2))
+        outline.lineWidth = max(1, maximum / 42)
+        NSColor(calibratedRed: 0.25, green: 0.88, blue: 1, alpha: 0.82).setStroke()
+        outline.stroke()
+        let core = NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner,
+                                               width: inner * 2, height: inner * 2))
+        core.lineWidth = max(1, maximum / 70)
+        NSColor(calibratedRed: 0.60, green: 0.96, blue: 1, alpha: 0.68).setStroke()
+        core.stroke()
+        for (index, level) in bands.enumerated() {
+            let angle = (CGFloat(index) / CGFloat(bands.count)) * (.pi * 2) - (.pi / 2)
+            let extent = inner + (maximum - inner) * level
+            let start = NSPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner)
+            let end = NSPoint(x: center.x + cos(angle) * extent, y: center.y + sin(angle) * extent)
+            let outer = NSBezierPath()
+            outer.move(to: start)
+            outer.line(to: end)
+            NSColor(calibratedRed: 0.04, green: 0.44 + level * 0.28,
+                    blue: 0.76 + level * 0.22, alpha: 0.75).setStroke()
+            outer.lineWidth = max(1, maximum / 34)
+            outer.stroke()
+            let core = NSBezierPath()
+            core.move(to: start)
+            core.line(to: NSPoint(x: center.x + cos(angle) * (extent * 0.94),
+                                  y: center.y + sin(angle) * (extent * 0.94)))
+            NSColor(calibratedRed: 0.64, green: 0.96, blue: 1, alpha: 0.95).setStroke()
+            core.lineWidth = 1
+            core.stroke()
+        }
+    }
+
+    private func drawAmbience() {
+        let bands = normalizedLevels(count: 12)
+        guard !bands.isEmpty else { return }
+        let center = NSPoint(x: bounds.midX, y: bounds.midY)
+        let maximum = min(bounds.width, bounds.height) * 0.47
+        for (index, level) in bands.enumerated().reversed() {
+            let fraction = CGFloat(index + 1) / CGFloat(bands.count)
+            let radius = maximum * fraction * (0.45 + level * 0.55)
+            let rect = NSRect(x: center.x - radius, y: center.y - radius,
+                              width: radius * 2, height: radius * 2)
+            let ring = NSBezierPath(ovalIn: rect)
+            NSColor(calibratedRed: 0.14 + fraction * 0.30, green: 0.35 + level * 0.45,
+                    blue: 0.72 + fraction * 0.22, alpha: 0.18 + level * 0.38).setStroke()
+            ring.lineWidth = max(1, bounds.width / 100)
+            ring.stroke()
         }
     }
 
@@ -210,21 +285,10 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// is a box inside the skin's window and has no screen of its own to take.
     @discardableResult
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        guard !isTornDown, let engineView else { return false }
-        let hard = event.modifierFlags.contains(.shift)
+        guard !isTornDown else { return false }
         switch event.keyCode {
-        case 124: stepPreset(by: 1, hardCut: hard); return true
-        case 123: stepPreset(by: -1, hardCut: hard); return true
-        case 15: engineView.randomPreset(); return true
-        case 35: engineView.toggleLowPowerMode(); return true
-        case 8:
-            guard engineView.currentEngineType == .projectM else { return false }
-            switch presetCycleMode {
-            case .off: setPresetCycleMode(.cycle)
-            case .cycle: setPresetCycleMode(.random)
-            case .random: setPresetCycleMode(.off)
-            }
-            return true
+        case 124: WMPEffectSelection.shared.step(by: 1); return true
+        case 123: WMPEffectSelection.shared.step(by: -1); return true
         default: return false
         }
     }
@@ -246,22 +310,23 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     // MARK: - The visualization's own menu
 
-    /// **The same menu NullPlayer's own visualization window has**, on the rect the skin authored
-    /// for it. `VisualizationContextMenu` is the one builder all three callers use — the
-    /// visualization window, the `.wal` AVS surface and this — so a preset list, ratings,
-    /// favourites, auto-cycle and the Geiss and Tripex panels are not restated here.
-    ///
-    /// Fullscreen and Close are the two items this surface does not offer: its "window" is a box
-    /// inside the skin's own, `effectCanGoFullScreen="false"` is what 12 corpus skins author on it,
-    /// and there is no window of its own to close — the skin decides whether its pane is visible.
+    /// WMP effects have their own small catalogue; this surface is not a second instance of
+    /// NullPlayer's Visualizations window.
     func buildMenu() -> NSMenu {
-        VisualizationContextMenu.build(target: self, options: .init(
-            cycleMode: presetCycleMode,
-            cycleInterval: presetCycleInterval,
-            tripexCycleMode: tripexCycleMode,
-            tripexCycleInterval: tripexCycleInterval,
-            showsFullscreen: false,
-            showsClose: false))
+        let menu = NSMenu(title: "Visual Effects")
+        for candidate in WMPEffectSelection.catalogue {
+            let item = NSMenuItem(title: candidate.title, action: #selector(selectNativeEffect(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = candidate.id
+            item.state = candidate.id == effect.id ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func selectNativeEffect(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        WMPEffectSelection.shared.select(id)
     }
 
     /// `VisualizationMenuTarget` / `GeissMenuTarget`: the engine the shared menu acts on. It is nil
