@@ -80,6 +80,16 @@ enum WMPWidgetKind: String, Hashable, Codable {
     case text, slider, playlist, dropdownPlaylist, popup, editBox, listBox, effects, video
 }
 
+extension WMPWidgetKind {
+    /// The platform host measures its popup controls at 24 points high.
+    var intrinsicHeight: CGFloat? {
+        switch self {
+        case .dropdownPlaylist, .popup: return 24
+        default: return nil
+        }
+    }
+}
+
 struct WMPWidget: Hashable, Codable {
     let stableID: Int
     let nodeID: String?

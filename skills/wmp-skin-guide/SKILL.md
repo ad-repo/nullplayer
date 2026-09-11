@@ -772,6 +772,12 @@ of these was invisible to the harness and visible in the first minute of live QA
   and `POPUP`. `VIDEO` is not: its placeholder filled every `<VIDEO>` frame with opaque black over
   the artwork of 166 of 177 archives, and an audio player has nothing to put there instead. Adding
   an overlay back needs the same argument — name what the renderer cannot draw.
+- **A popup's height is a host metric when the markup omits it.** Measured 2026-09-10 over 177
+  readable archives, both `DROPDOWNPLAYLIST`s (Corona and 9SeriesDefault) and all four `POPUP`s
+  omit `height`; they have no artwork from which the generic geometry path can infer one. Their
+  `NSPopUpButton` host measures 24 points high, so `WMPWidgetKind.intrinsicHeight` supplies exactly
+  that value only for an unauthored, unoverridden height. The scene builder remains off-main and
+  does not construct AppKit controls; an authored or scripted height wins.
 - **The visualization surface is this player's own visuals in the rect the skin authored (W101).**
   `WMPEffectsSurfaceView` hosts a `VisualizationGLView` — the same ProjectM / Geiss / Tripex stack
   NullPlayer's own visualization window runs — plus the WMP-style bars this engine drew by hand, and

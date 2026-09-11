@@ -130,6 +130,29 @@ final class WMPGeometryTests: XCTestCase {
         XCTAssertEqual(WMPHitTester(hits: scene.hits).hitTest(WMPPoint(x: 80, y: 16))?.action, .seek)
     }
 
+    func testPopupWidgetsUseTheirIntrinsicHeightWhenMarkupOmitsIt() async throws {
+        let xml = """
+        <THEME><VIEW id="main" width="240" height="80">
+          <DROPDOWNPLAYLIST id="dropdown" left="10" top="10" width="120"/>
+          <POPUP id="popup" left="10" top="40" width="120"/>
+          <POPUP id="authored" left="140" top="40" width="80" height="18"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        let widgets = Dictionary(uniqueKeysWithValues: scene.widgets.compactMap { widget in
+            widget.nodeID.map { ($0, widget) }
+        })
+        XCTAssertEqual(widgets["dropdown"]?.frame.height, 24)
+        XCTAssertEqual(widgets["popup"]?.frame.height, 24)
+        XCTAssertEqual(widgets["authored"]?.frame.height, 18)
+        XCTAssertFalse(scene.unresolved.contains { ["dropdown", "popup", "authored"].contains($0.nodeID) })
+    }
+
     /// W7. `image=""` is an omission, not an escape, and it must cost that one image and nothing
     /// else. It used to throw out of the scene walk and take the whole view with it: 39 views across
     /// 36 corpus skins, six of which (`Beck`, `Melvin`, `MSN`, `Spider-man`, `springflower`,

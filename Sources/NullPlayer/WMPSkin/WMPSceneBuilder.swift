@@ -359,6 +359,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     if node.attribute(named: "width") == nil, width == nil { width = glyphs.width }
                     if node.attribute(named: "height") == nil, height == nil { height = glyphs.height }
                 }
+                if node.attribute(named: "height") == nil, height == nil,
+                   let intrinsicHeight = widgetKind(node.kind)?.intrinsicHeight {
+                    height = intrinsicHeight
+                }
                 guard let left, let top else {
                     if !unresolvedNodes.contains(node.stableID) {
                         recordUnresolved(node, attribute: "position", value: "missing literal geometry")
