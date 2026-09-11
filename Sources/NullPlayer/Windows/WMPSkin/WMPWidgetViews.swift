@@ -7,6 +7,7 @@ final class WMPPlaylistSurfaceView: NSView {
     private var selectedIndex = -1
     private var firstVisibleIndex = 0
     private let rowHeight: CGFloat = 18
+    private var style = WMPSurfacePalette(viewID: "").surfaceStyle
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -19,25 +20,35 @@ final class WMPPlaylistSurfaceView: NSView {
         setAccessibilityValue(selectedIndex >= 0 ? selectedIndex + 1 : 0)
     }
 
+    /// The playlist is a native surface, but its colours are authored by the WMP skin.  Keeping
+    /// that palette here avoids the generic black AppKit list appearing inside a coloured skin.
+    func apply(style: SkinnedSurfaceStyle) {
+        guard self.style != style else { return }
+        self.style = style
+        needsDisplay = true
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
         // itself — here the whole 596x468 window arrives as {{-269, -26}, {596, 468}} in this
         // view's coordinates — and a layer-backed view does not clip it (`masksToBounds` is
         // false). Filling it painted this surface's translucent wash over the entire skin.
-        NSColor(calibratedWhite: 0.08, alpha: 0.9).setFill(); bounds.fill()
+        style.background.setFill(); bounds.fill()
         let visibleRows = max(1, Int(bounds.height / rowHeight))
         for index in firstVisibleIndex..<min(snapshot.playlistItems.count, firstVisibleIndex + visibleRows) {
             let rect = NSRect(x: 0, y: CGFloat(index - firstVisibleIndex) * rowHeight,
                               width: bounds.width, height: rowHeight)
             if index == selectedIndex || index == snapshot.playlistIndex {
-                (index == selectedIndex ? NSColor.controlAccentColor : NSColor.darkGray).setFill()
+                (index == selectedIndex ? style.selectionBackground : style.background).setFill()
                 rect.fill()
             }
             let item = snapshot.playlistItems[index]
             let prefix = index == snapshot.playlistIndex ? "▶ " : ""
             let artist = item.artist.isEmpty ? "" : " — \(item.artist)"
             (prefix + item.title + artist).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: [
-                .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.white])
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: index == selectedIndex ? style.selectionText :
+                    (index == snapshot.playlistIndex ? style.currentText : style.text)])
         }
     }
 

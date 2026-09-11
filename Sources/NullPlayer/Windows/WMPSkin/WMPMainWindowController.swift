@@ -454,6 +454,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
         let view = mainView ?? WMPMainView(frame: .zero)
         mainView = view
+        // Native playlist rows are the one WMP-owned surface the scene cannot paint.  Feed them
+        // this skin's palette before they are installed, never a palette from another UI mode.
+        view.surfaceStyle = WMPSurfacePalette(skin: skin, viewID: scene.viewID).surfaceStyle
         if view.videoSurface == nil { view.videoSurface = WMPVideoSurface() }
         view.videoController = { WMPAudioEngineHost.localVideoController }
         view.onAction = { [weak self] action, value in

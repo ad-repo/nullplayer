@@ -100,7 +100,10 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         .volumeSlider: [("value", "player.settings.volume")],
         .balanceSlider: [("value", "player.settings.balance")],
         .seekSlider: [("value", "player.controls.currentPosition"),
-                      ("max", "player.currentMedia.duration")]
+                      ("max", "player.currentMedia.duration")],
+        // These are text widgets, but WMP supplies their values rather than requiring a `value=`
+        // binding in the markup.  Cerulean's elapsed-time cell is one of them.
+        .currentPositionText: [("value", "player.controls.currentPositionString")]
     ]
 
     mutating func changes(for snapshot: WMPHostSnapshot, origin: WMPPropertyTransactionOrigin? = nil)

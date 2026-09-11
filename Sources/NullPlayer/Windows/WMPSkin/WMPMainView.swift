@@ -52,6 +52,15 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     private var widgetViews: [Int: NSView] = [:]
     private var widgetValues: [Int: Double] = [:]
     private var currentSnapshot = WMPHostSnapshot()
+    /// Colours for native WMP-owned surfaces, derived from the active skin's own declarations.
+    /// This is WMP-only state: no other skin mode reaches these overlays.
+    var surfaceStyle: SkinnedSurfaceStyle? {
+        didSet {
+            guard let surfaceStyle else { return }
+            widgetViews.values.compactMap { $0 as? WMPPlaylistSurfaceView }
+                .forEach { $0.apply(style: surfaceStyle) }
+        }
+    }
     var videoSurface: WMPVideoSurface?
     var videoController: (() -> VideoPlayerWindowController?)?
 
@@ -502,6 +511,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             view.setAccessibilityIdentifier("wmp.\(widget.nodeID ?? String(widget.stableID))")
             view.setAccessibilityLabel(widget.label)
             if let actionable = view as? WMPPlaylistSurfaceView { actionable.onAction = onAction }
+            if let playlist = view as? WMPPlaylistSurfaceView, let surfaceStyle {
+                playlist.apply(style: surfaceStyle)
+            }
             if let actionable = view as? WMPDropdownPlaylistSurfaceView { actionable.onAction = onAction }
             if let popup = view as? WMPPopupSurfaceView {
                 let stableID = widget.stableID, nodeID = widget.nodeID

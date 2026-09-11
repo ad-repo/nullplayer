@@ -353,7 +353,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     if node.attribute(named: "width") == nil, width == nil { width = intrinsic.width }
                     if node.attribute(named: "height") == nil, height == nil { height = intrinsic.height }
                 }
-                if node.kind == .text, width == nil || height == nil,
+                if isText(node.kind), width == nil || height == nil,
                    let glyphs = intrinsicTextSize(node, literal: literalNumber,
                                                   literalString: literalString) {
                     if node.attribute(named: "width") == nil, width == nil { width = glyphs.width }
@@ -457,12 +457,23 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // colour — 25 corpus skins author a non-empty one, and every one of them declares a
             // `clippingColor` beside it, which is what the mask keys out.
             let clippingPath = try resource(node, names: ["clippingImage"])?.1
-            if let background = color(node, names: ["backgroundColor"]), !frame.isEmpty {
+            let backgroundPath = try resource(node, names: ["backgroundImage", "background"])?.1
+            // Cerulean's face art keys away both magenta and red. Its matching blue
+            // `backgroundColor` is an authored export artefact: WMP's rectangular fill is visible
+            // behind the transparent head. Restrict the compatibility correction to this exact
+            // shipped definition and element; the corpus confirms that the same general pattern is
+            // intentional in skins such as Claw, Gadget, and Pharaoh.
+            let isCeruleanFace = loadedSkin.definitionPath.caseInsensitiveCompare("cerulean.wms") == .orderedSame
+                && backgroundPath?.caseInsensitiveCompare("face.bmp") == .orderedSame
+                && node.kind == .subview
+                && color(node, names: ["backgroundColor"]) == WMPColor(red: 154, green: 172, blue: 219)
+                && colors(node, names: ["transparencyColor", "clippingColor"]).count == 2
+            if let background = color(node, names: ["backgroundColor"]), !frame.isEmpty, !isCeruleanFace {
                 commands.append(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .fill(background), alpha: alpha))
             }
-            if let (_, path) = try resource(node, names: ["backgroundImage", "background"]), !frame.isEmpty {
+            if let path = backgroundPath, !frame.isEmpty {
                 commands.append(imageCommand(node: node, path: path, frame: frame,
                     clip: inheritedClip, z: z, background: true, alpha: alpha,
                     clippingPath: clippingPath))
@@ -594,13 +605,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     }
                 }
             }
-            if node.kind == .text, !frame.isEmpty,
+            if isText(node.kind), !frame.isEmpty,
                let value = literalString(node, "value") {
                 let alignment: WMPTextAlignment
                 switch literalString(node, "justification")?.lowercased() {
                 case "center": alignment = .center
                 case "right": alignment = .right
-                default: alignment = .left
+                // `CURRENTPOSITIONTEXT` reserves the trailing cell of a composite readout.
+                // WMP right-aligns that clock by default; treating it as ordinary left-aligned
+                // TEXT put `0:08` directly against Cerulean's scrolling metadata.
+                default: alignment = node.kind == .currentPositionText ? .right : .left
                 }
                 // **`fontFace` is the attribute the corpus authors, not `fontType`**: 110 skins
                 // against 21. Reading only `fontType` rendered every one of those in Arial, which
@@ -833,6 +847,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
         switch kind {
         case .slider, .volumeSlider, .seekSlider, .balanceSlider, .customSlider, .progressBar:
             return true
+        default: return false
+        }
+    }
+
+    private func isText(_ kind: WMPElementKind) -> Bool {
+        switch kind {
+        case .text, .statusText, .currentPositionText: return true
         default: return false
         }
     }

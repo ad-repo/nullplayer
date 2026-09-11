@@ -274,6 +274,12 @@ queue, with the object model as the security boundary — see Amendment 2 in
   artwork beneath still drew the buttons. `Cablemusic`'s presets, stop, close, minimize, next and
   previous effect, shrink, bandwidth and all three drawer tabs are one such group each: "most
   buttons don't work". The mapping image is definitionally the group's own pixel grid.
+- **`STATUSTEXT` and `CURRENTPOSITIONTEXT` are text controls with native WMP values, not unknown
+  tags.** Model them as text for intrinsic sizing and paint; synthesize the latter's value from
+  `player.controls.currentPositionString`. WMP right-aligns an otherwise-unqualified
+  `CURRENTPOSITIONTEXT`, because it is normally the trailing cell beside a scrolling title.
+  Cerulean exposed both requirements: omitting the tag removed its clock, and left alignment made
+  the clock touch the title.
 - **An origin the markup never stated can still have been written by script, and asking the markup
   first meant it never was.** `left`/`top` default to 0 when unauthored — but the check was
   `attribute == nil ? 0 : resolve`, which short-circuited *before* `parseDimension` could look in
@@ -396,6 +402,12 @@ queue, with the object model as the security boundary — see Amendment 2 in
   therefore a list, in authored order, and the image-store cache key contains all of it. Color keys
   compare exact un-premultiplied RGB and clear only matching pixels. Preserve the source alpha of
   every non-matching pixel.
+- **Do not generalize Cerulean's keyed-head correction.** Its `face.bmp` in the exact
+  `cerulean.wms` definition carries a blue `backgroundColor` that creates a visible rectangular
+  fill behind two keyed colours; the compatibility exception suppresses that one fill only. A
+  corpus sweep showed that applying the rule to every keyed background erased intentional interiors
+  in Claw, Gadget, and Pharaoh. The archive stays byte-for-byte untouched; the narrow renderer
+  exception is the compatibility boundary.
 - **A node that declares no key at all still gets one: magenta, whatever alpha the sprite carries.**
   WMP's implicit transparency colour (W78, W78a). The corpus is authored against it — 4,979 of its
   6,076 `transparencyColor` declarations (82%, 142 skins) are `#ff00ff`, `Halo 2` keys three
@@ -468,6 +480,12 @@ found by looking at the screen rather than by reasoning.
   row's text sits on the window background until the row is *also* selected, the selection's text on
   the highlight. Guarding both against one background leaves an unreadable current track, which is
   what the reporter saw.
+- **A skin-owned `PLAYLIST` is an AppKit overlay, so it needs the WMP palette directly.**
+  `WMPMainWindowController` sets `WMPMainView.surfaceStyle` before installing native widgets and
+  `WMPPlaylistSurfaceView` uses it for its ground, selected row, current row, and all three text
+  roles. Leaving its historical hard-coded black/white colours produced a foreign black rectangle
+  in Cerulean even though `ITEMSPLAYLIST backgroundColor="#9AACDB"` was declared. Do not route this
+  through Classic or Winamp Modern state; it is WMP-owned surface state.
 - **A `.wmz` main window's width is not a zoom.** `playlistChromeScale` is
   `mainWindow.width / Skin.baseMainSize.width` — true of a *classic* player, whose 275px grid means
   its width is the size the user chose. A `.wmz` main window is the skin's own canvas: Corona's is

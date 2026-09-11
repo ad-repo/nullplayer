@@ -275,7 +275,7 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
     }
 
     private static let supportedTags: Set<String> = [
-        "theme", "view", "subview", "text", "image", "button", "buttongroup", "buttonelement",
+        "theme", "view", "subview", "text", "statustext", "currentpositiontext", "image", "button", "buttongroup", "buttonelement",
         "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "itemsplaylist", "dropdownplaylist",
         "customslider", "progressbar",
         "playelement", "pauseelement", "stopelement", "prevelement", "nextelement",
