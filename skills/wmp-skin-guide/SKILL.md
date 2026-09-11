@@ -796,8 +796,11 @@ of these was invisible to the harness and visible in the first minute of live QA
   pixels must stay transparent: Cerulean's 103×75 effect is centred on the skin's 81×82 circular
   `vis_area_default.bmp`, while other corpus skins use the same pattern for a bezel, mask, or LCD
   detail. A black backing layer makes each of those details disappear and reads as a misplaced
-  window. Test the effect with a real skin at playback and inspect the AppKit-hosted frame; a static
-  render dump cannot show its pixels.
+  window. **A suite renderer needs two extra conversions:** vis_classic emits top-row-first BGRA,
+  so an AppKit-flipped WMP view must draw it through a local y-flip; and both Cava and vis_classic
+  must be clipped to the centred inscribed circular lens, not their raw rectangular canvas. Test the
+  effect with a real skin at playback and inspect the AppKit-hosted frame; a static render dump
+  cannot show its pixels.
 - **PCM arrives on the audio thread and an overlay must not hop to the main actor to take it.**
   `.audioPCMDataUpdated` is posted from inside `AudioEngine.processAudioBuffer`; a
   `MainActor.assumeIsolated` in that observer is a `dispatch_assert_queue` failure and the process
