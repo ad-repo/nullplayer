@@ -38,6 +38,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private let importer: WMPSkinImporter
     private let host: any WMPHost
+    /// **The effect selection is the one host property nothing else refreshes for.** Every other
+    /// path into `refreshHostState` is a track, a clock tick, a transport action or a file open;
+    /// choosing a visualization from NullPlayer's own menu goes through `WMPEffectSelection` and
+    /// touches none of them. With a track playing the 10 Hz position tick hides that — the event
+    /// lands within 100 ms and looks immediate — and with the player stopped the skin's
+    /// `currentEffectType_onchange` would never be raised at all (W129).
+    private var effectSelectionObserver: NSObjectProtocol?
     private var loadTask: Task<Void, Never>?
     private var scriptTask: Task<Void, Never>?
     private var scriptTimerTasks: [Int: Task<Void, Never>] = [:]
@@ -172,12 +179,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                    styleMask: [.borderless, .resizable, .miniaturizable],
                                    backing: .buffered, defer: false)
         super.init(window: window)
+        effectSelectionObserver = NotificationCenter.default.addObserver(
+            forName: WMPEffectSelection.didChange, object: nil, queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
         configureWindow()
         presentUnskinned(message: nil)
         reloadSelectedSkin()
     }
 
     required init?(coder: NSCoder) { nil }
+
+    deinit {
+        if let effectSelectionObserver {
+            NotificationCenter.default.removeObserver(effectSelectionObserver)
+        }
+    }
 
     private func configureWindow() {
         guard let window else { return }
@@ -946,6 +962,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if previous?.metadata != snapshot.metadata { events.append("currentmedia_onchange") }
         if previous?.playlistItems != snapshot.playlistItems { events.append("currentplaylist_onchange") }
         if previous?.effects.type != snapshot.effects.type { events.append("currenteffecttype_onchange") }
+        // `currentPreset_onchange` is the same element, the same idiom and the same write-back: all
+        // 40 corpus uses are `mediacenter.effectPreset=currentPreset`. It is safe because
+        // `WMPEffectSelection.setPreset` early-returns on an unchanged value, so the handler
+        // handing the host back the number it was just given cannot loop or restart the visualizer
+        // — the same settling argument W51's write-backs rest on.
+        if previous?.effects.preset != snapshot.effects.preset {
+            events.append("currentpreset_onchange")
+        }
         if previous?.shuffle != snapshot.shuffle || previous?.repeatMode != snapshot.repeatMode {
             events.append("modechange")
         }
@@ -967,7 +991,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private static let hostEventOrder = ["openstatechange", "playstatechange", "videostart", "videoend", "status_onchange",
                                          "currentmedia_onchange", "currentplaylist_onchange",
-                                         "currenteffecttype_onchange",
+                                         "currenteffecttype_onchange", "currentpreset_onchange",
                                          "positionchange", "currentposition_onchange", "modechange",
                                          "buffering_onchange", "reception_onchange"]
 
@@ -1064,6 +1088,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             return ["currentEffectType": .string(snapshot.effects.type)]
         case "currentposition_onchange":
             return ["currentPosition": .number(snapshot.currentTime)]
+        case "currentpreset_onchange":
+            return ["currentPreset": .number(Double(snapshot.effects.preset))]
         default:
             return [:]
         }

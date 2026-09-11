@@ -325,15 +325,15 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         // when a captured slider is released. `onEndResize` is not listed and not implemented:
         // zero archives author one, so there is nothing to dispatch it for.
         "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend",
-        // The four host-driven ambient attribute handlers (W129), raised by
+        // The five host-driven ambient attribute handlers (W129), raised by
         // `WMPMainWindowController.refreshHostState` off the snapshot diff. **The rest of the
         // `<attribute>_onchange` family is deliberately not listed**: the element-side cascade
         // raises any attribute a script writes, but a name whose attribute nothing in this engine
-        // ever moves — `textWidth_onchange`, `selectedItem_onchange`, `currentPreset_onchange` —
-        // has no dispatch site of its own and must keep ranking as measured demand. Listing it
+        // ever moves — `textWidth_onchange`, `selectedItem_onchange` — has no dispatch site of its
+        // own and must keep ranking as measured demand. Listing it
         // would drop it out of this tally while still doing nothing, which is the state `onResize`
         // sat in for three phases.
         "currentposition_onchange", "currentmedia_onchange", "currentplaylist_onchange",
-        "currenteffecttype_onchange"
+        "currenteffecttype_onchange", "currentpreset_onchange"
     ]
 }

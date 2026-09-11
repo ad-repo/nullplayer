@@ -489,7 +489,7 @@ W129–W135, the rest of the audit, are open and ranked in `WMP_TASKS.md`.
 
 ## Phase 17 (second pass) — the ambient event mechanism, and what its reach did not say
 
-| W129 | `<attribute>_onchange` is a five-property whitelist against a general SDK mechanism | **387 authored handlers across 104 of the 177 measured archives**, 20 distinct properties: `currentPosition_onchange` 77 skins, `currentEffectType_onchange` 57, `currentPlaylist_onchange` 48, `currentPreset_onchange` 30, `textWidth_onchange` 17, `selectedItem_onchange` 12, `playlist_onchange` 9, `currentMedia_onchange` 9 | **Closed 2026-09-11.** Largest row of the SDK conformance audit. Three pieces, each a separate place a name could go missing: **classification** — `WMPAttributeParser.parse` now makes any `*_onchange` attribute a `.handler`, where the closed list left 387 handlers across 104 archives sitting in the graph as literals; **collection** — `WMPScriptViewPlan.attributeChangeHandlers`, keyed by folded attribute and carrying the **authored** spelling, with `value` deliberately excluded so W51/W52's own path cannot fire twice; **dispatch** — `WMPScriptContext.raiseAttributeChangeHandlers` for element writes (W87's bound, now over every attribute instead of the four geometry ones) and `WMPMainWindowController.refreshHostState` for the four player attributes off the snapshot diff. **The bare-name binding is what decides whether any of it runs**: 68 of the 77 `currentEffectType_onchange` uses are `mediacenter.effectType=currentEffectType`, a `ReferenceError` on the first statement without it, so the attribute is bound under its authored spelling for the duration of its own handler and cleared after — the same shape `value` and `NewState` use. `currentMedia`/`currentPlaylist` are **not** bound: WMP's are objects, and all 77 of their sources call a skin function rather than reading the name. Evidence below. |
+| W129 | `<attribute>_onchange` is a five-property whitelist against a general SDK mechanism | **387 authored handlers across 104 of the 177 measured archives**, 20 distinct properties: `currentPosition_onchange` 77 skins, `currentEffectType_onchange` 57, `currentPlaylist_onchange` 48, `currentPreset_onchange` 30, `textWidth_onchange` 17, `selectedItem_onchange` 12, `playlist_onchange` 9, `currentMedia_onchange` 9 | **Closed 2026-09-11.** Largest row of the SDK conformance audit. Three pieces, each a separate place a name could go missing: **classification** — `WMPAttributeParser.parse` now makes any `*_onchange` attribute a `.handler`, where the closed list left 387 handlers across 104 archives sitting in the graph as literals; **collection** — `WMPScriptViewPlan.attributeChangeHandlers`, keyed by folded attribute and carrying the **authored** spelling, with `value` deliberately excluded so W51/W52's own path cannot fire twice; **dispatch** — `WMPScriptContext.raiseAttributeChangeHandlers` for element writes (W87's bound, now over every attribute instead of the four geometry ones) and `WMPMainWindowController.refreshHostState` for the player attributes off the snapshot diff. **The bare-name binding is what decides whether any of it runs**: 68 of the 77 `currentEffectType_onchange` uses are `mediacenter.effectType=currentEffectType`, a `ReferenceError` on the first statement without it, so the attribute is bound under its authored spelling for the duration of its own handler and cleared after — the same shape `value` and `NewState` use. `currentMedia`/`currentPlaylist` are **not** bound: WMP's are objects, and all 77 of their sources call a skin function rather than reading the name. Evidence below. |
 
 Census pair, `git worktree add ../nullplayer-base HEAD` vs the change, 179 archives / 535 views:
 
@@ -526,6 +526,24 @@ repaints the label, which previously kept its load-time value forever and threw 
 confirmed unmoved — it authors 10 `enabled_onchange`, newly live, each
 `cursor=enabled?'hand':'system'`, an unqualified write that lands on a JS global rather than the
 element because this engine deliberately has no `with(element)`.
+
+**`currentPreset_onchange` landed with it after the breadth question was put properly.** It was held
+out of the first pass as "outside the decided four", which is a process answer and not an
+engineering one. The engineering answer is that it is the same `<EFFECTS>` element, the same
+write-back idiom (all 40 uses are `mediacenter.effectPreset=currentPreset`) and safe for a reason
+that had to be checked rather than assumed: `WMPEffectSelection.setPreset` early-returns on an
+unchanged value, so the handler cannot loop or restart the visualizer. A setter that re-applied
+would have made it the wrong call.
+
+**The same pass found the hole underneath all five: nothing refreshed the snapshot on an effect
+change.** Every other path into `refreshHostState` is a track, a 10 Hz clock tick, a transport
+action or a file open, and choosing a visualization from NullPlayer's own menu is none of them —
+`WMPEffectSelection` posts its own notification and the controller did not observe it. With a track
+playing the position tick hid it completely (the event lands inside 100 ms, which is how the live
+verification passed); with the player **stopped**, `currentEffectType_onchange` would never have
+been raised at all. The controller now observes `WMPEffectSelection.didChange`. **A host-side
+`_onchange` is only as live as whatever refreshes the snapshot** — check that before counting the
+diff as a dispatch site.
 
 **The rule this row leaves behind: reading a handler's reach is not reading its result.** Three of
 the four host attributes were described as visible and are not. 96 of the 105

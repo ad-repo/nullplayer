@@ -1192,14 +1192,20 @@ final class WMPScriptRuntimeTests: XCTestCase {
                                                             viewID: "main"),
                            [source], "\(event) must reach its authored handler")
         }
-        // `currentPreset_onchange` is authored on the same element by the same idiom and is
-        // deliberately not raised: W129's breadth is the four above. It must stay visible as demand.
-        XCTAssertTrue(WMPMainWindowController.handlers(in: skin, event: "currentpreset_onchange",
-                                                        targetID: nil, viewID: "main").isEmpty
-                       == false,
-                      "the matcher finds it; what must not exist is a dispatch site raising it")
-        XCTAssertFalse(WMPCorpusReportHarness.supportedEvents.contains("currentpreset_onchange"),
-                       "an event with no dispatch site must keep ranking as measured demand")
+        // `currentPreset_onchange` is the fifth: the same element, the same write-back idiom, and
+        // safe because `WMPEffectSelection.setPreset` early-returns on an unchanged value.
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "currentpreset_onchange",
+                                                        targetID: nil, viewID: "main"),
+                       ["mediacenter.effectPreset=currentPreset;"])
+        for event in ["currentposition_onchange", "currentmedia_onchange", "currentplaylist_onchange",
+                      "currenteffecttype_onchange", "currentpreset_onchange"] {
+            XCTAssertTrue(WMPCorpusReportHarness.supportedEvents.contains(event),
+                          "\(event) has a dispatch site and must not rank as demand")
+        }
+        // The negative half still binds: an ambient name with no dispatch site must stay off the
+        // list, or it drops out of the tally while still doing nothing.
+        XCTAssertFalse(WMPCorpusReportHarness.supportedEvents.contains("textwidth_onchange"))
+        XCTAssertFalse(WMPCorpusReportHarness.supportedEvents.contains("selecteditem_onchange"))
     }
 
     private func fixtureScript(_ name: String) throws -> String {

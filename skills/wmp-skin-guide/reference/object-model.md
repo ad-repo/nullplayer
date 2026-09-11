@@ -409,6 +409,7 @@ instead of failing honestly.
 | `status_onchange` | `status` | `player.status`, which is inert and empty here |
 | `currenteffecttype_onchange` | `currentEffectType` | the selected effect's stable id, the same string `<EFFECTS>.currentEffectType` answers |
 | `currentposition_onchange` | `currentPosition` | the playback position in seconds, the same number `player.controls.currentPosition` answers |
+| `currentpreset_onchange` | `currentPreset` | the selected effect preset's index, the same number `<EFFECTS>.currentPreset` answers |
 
 **They belong to the handler and not to the transaction.** One refresh raises `openstatechange` and
 `playstatechange` together and `NewState` is a *different* enumeration in each, so a single binding
@@ -453,7 +454,16 @@ each one is a separate place a name can go missing:
    * *Host side* — `WMPMainWindowController.refreshHostState`, off the snapshot diff, for the four
      attributes of the *player* that no script writes and that move underneath the skin:
      `currentPosition` (105 uses / 81 skins), `currentEffectType` (77 / 65), `currentPlaylist`
-     (65 / 48), `currentMedia` (12 / 9).
+     (65 / 48), `currentPreset` (40 / 30), `currentMedia` (12 / 9).
+
+**A host attribute needs something to call `refreshHostState` before any of this fires.** Every
+other path into it is a track, a 10 Hz clock tick, a transport action or a file open, and the
+effect selection is none of them: choosing a visualization from NullPlayer's own menu goes through
+`WMPEffectSelection`, so the controller observes `WMPEffectSelection.didChange` explicitly. With a
+track playing the position tick hides the gap — the event lands inside 100 ms and looks immediate —
+and with the player stopped nothing would have been raised at all. **Check what refreshes the
+snapshot before adding a host-side `_onchange`**; a diff nothing runs is a dispatch site that is not
+one.
 
 **The failure mode of all three is silence.** Nothing throws, so no diagnostic appears anywhere: the
 readout simply keeps the value it loaded with. A headless capture cannot see it either — no
@@ -461,9 +471,16 @@ attribute changes in a still — so this class is verified through the live loop
 § *Driving the app*.
 
 **An attribute with no dispatch site stays off `WMPCorpusReportHarness.supportedEvents`**, whatever
-its reach. `currentPreset_onchange` (40 uses) is authored on the same `<EFFECTS>` element by the same
-idiom as `currentEffectType_onchange` and is *not* implemented; listing it would drop it out of the
-tally while still doing nothing, which is where `onResize` sat for three phases.
+its reach — listing one would drop it out of the tally while it still does nothing, which is where
+`onResize` sat for three phases. `textWidth_onchange` (21 skins) and `selectedItem_onchange` (12) are
+the current examples: this engine moves neither attribute, so neither has anywhere to be raised from.
+
+**A write-back is safe when the host setter is idempotent, and that is a thing to check rather than
+assume.** All 40 `currentPreset_onchange` uses are `mediacenter.effectPreset=currentPreset` — the
+handler handing the host back the number it was just given — which settles only because
+`WMPEffectSelection.setPreset` early-returns on an unchanged value. A setter that re-applied would
+have restarted the visualizer on every preset change instead. Same argument as W51's write-backs,
+made at the host rather than at the registry.
 
 **Reading a handler's reach is not reading its result, and W129 is the case that proves it.** Of the
 four host attributes, only `currentEffectType_onchange` moves a pixel today: `setVisEffectsText()`
