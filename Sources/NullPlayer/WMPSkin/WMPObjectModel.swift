@@ -426,7 +426,8 @@ final class WMPObjectModel {
     private func readTheme(_ name: String) -> WMPMemberValue {
         switch name {
         case "currentviewid": return .value(.string(currentViewID))
-        case "loadpreference", "savepreference", "loadstring", "opendialog", "openview", "playsound":
+        case "loadpreference", "savepreference", "loadstring", "opendialog", "openview", "playsound",
+             "closeview", "openviewrelative":
             return .function
         default: return .unrecognised("theme member")
         }
@@ -853,15 +854,43 @@ final class WMPObjectModel {
             for band in 0..<10 { hostCommand("setEQBand:\(band)", .number(0)) }
             return .value(.null)
         case ("theme", "openview"):
-            // WMP opens the named view as an *additional* window. This app has exactly one WMP
-            // window, so the honest reduction is to present the view: that is precisely right for
-            // the dominant corpus use — a windowless `controlView` whose `onLoad` opens the real
-            // player — and for an auxiliary panel it is a view switch the host can return from,
-            // which `closeView` does. It is live, not inert: something is drawn as a result.
+            // WMP opens the named view as an *additional* window beside the player and leaves the
+            // opener alone; only `theme.currentViewID` replaces a view. That is now what this does:
+            // the controller materializes a window for the named view and the calling window is
+            // untouched. 90 of the 180 archives ask for a panel this way, 579 times.
             guard let id = arguments.first?.string, !id.isEmpty else {
                 return .unrecognised("openView needs a view id")
             }
             hostCommand("openView", .string(id))
+            return .value(.null)
+        case ("theme", "openviewrelative"):
+            // **The placing variant, and its offset is no longer meaningless (W50).** It was
+            // deliberately left unimplemented while this engine had one window, because aliasing it
+            // to `openView` would have dropped the displacement silently and taken the member out of
+            // the demand tally — the trap `INERT` exists for. `Revert` hangs its EQ under the player
+            // with `theme.openViewRelative('vwEQ', 0, 130)` and its playlist beside it, in the
+            // skin's own pixels from the opener's top-left.
+            guard let id = arguments.first?.string, !id.isEmpty else {
+                return .unrecognised("openViewRelative needs a view id")
+            }
+            // The offset rides the action, the way `setEQBand:<n>` and `playPlaylistItem:<n>`
+            // already do — a host command carries one value and the view id is it.
+            let dx = arguments.count > 1 ? (arguments[1].number ?? 0) : 0
+            let dy = arguments.count > 2 ? (arguments[2].number ?? 0) : 0
+            guard dx.isFinite, dy.isFinite else {
+                hostCommand("openView", .string(id))
+                return .value(.null)
+            }
+            hostCommand("openViewRelative:\(dx),\(dy)", .string(id))
+            return .value(.null)
+        case ("theme", "closeview"):
+            // **Live, not inert, and by name.** 84 of the 180 archives call this and every one of
+            // them has been aborting the handler that does: `Halo 2`'s `checkRemoteViewStatus()`
+            // dies on `theme.closeView('vidRemoteView')` and never reaches the four statements after
+            // it. With no argument it keeps the meaning `view.close()` already posts — close the
+            // window the handler is running in.
+            let id = arguments.first?.string ?? ""
+            hostCommand("closeView", id.isEmpty ? nil : .string(id))
             return .value(.null)
         case ("theme", "loadpreference"):
             // WMP skins use "--" as the absent-preference sentinel. Returning an empty string

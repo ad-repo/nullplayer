@@ -15,6 +15,18 @@ struct WMPWindowEdges: OptionSet {
 /// `view(_:stringForToolTip:point:userData:)` on the owner and falls back to its `description`: the
 /// tooltip over every pixel of every skin read `<NullPlayer.WMPMainView: 0x…>`, reported on
 /// 2026-09-08. The method below was written and correct all along — nothing was calling it.
+/// The skin artwork that composites **over** the effects surface: everything the scene's walk
+/// emitted from the `<EFFECTS>` node onwards. It is a subview rather than a second blit in
+/// `draw(_:)` because `draw(_:)` runs before AppKit composites subviews, so a blit there would sit
+/// *below* the visualizer and defeat the whole point.
+///
+/// It takes no mouse events: the artwork over a visualizer is decoration, and the clicks belong to
+/// whatever is underneath — 51 corpus skins wire an `onClick` on the `<EFFECTS>` node itself.
+private final class WMPSkinOverlayView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var acceptsFirstResponder: Bool { false }
+}
+
 final class WMPMainView: NSView, NSViewToolTipOwner {
     var onInteractionChanged: ((WMPInteractionState, Set<Int>) -> Void)?
     var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
@@ -28,6 +40,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     var onElementTextChanged: ((Int, String?, String) -> Void)?
     var onSpectrumDemandChanged: ((Bool) -> Void)?
     private var image: NSImage?
+    /// Persistent, created once, never in `widgetViews` — it is not a widget. Everything hosted in
+    /// the scene is ordered against it: effects surfaces below, interactive widgets above.
+    private let overlayView = WMPSkinOverlayView(frame: .zero)
     private var scene: WMPScene?
     private var hitTester: WMPHitTester?
     private var interaction = WMPInteractionState()
@@ -67,10 +82,48 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        installOverlayView()
+    }
 
-    func present(_ cgImage: CGImage, scene: WMPScene, dirtyBounds: WMPRect? = nil) {
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        installOverlayView()
+    }
+
+    private func installOverlayView() {
+        overlayView.imageScaling = .scaleAxesIndependently
+        overlayView.imageAlignment = .alignCenter
+        overlayView.isEditable = false
+        overlayView.autoresizingMask = [.width, .height]
+        overlayView.frame = bounds
+        addSubview(overlayView)
+    }
+
+    /// The AppKit surfaces hosted for widgets, and nothing else — the artwork overlay is not one
+    /// of them. `WMP_RENDER_APPKIT` hides exactly these for its baseline pass: what a widget
+    /// surface adds over the artwork is the question that probe asks, and the overlay *is* artwork.
+    var hostedWidgetViews: [NSView] { Array(widgetViews.values) }
+
+    /// The three layers, re-enforced on every pass. A plain `addSubview` always goes to absolute
+    /// top, so a playlist that appears after the overlay would otherwise land on the wrong side of
+    /// it and cover the artwork it is meant to sit under.
+    private func enforceLayerOrder() {
+        for (_, view) in widgetViews where view is WMPEffectsSurfaceView {
+            addSubview(view, positioned: .below, relativeTo: overlayView)
+        }
+        for (_, view) in widgetViews where !(view is WMPEffectsSurfaceView) {
+            addSubview(view, positioned: .above, relativeTo: overlayView)
+        }
+    }
+
+
+    func present(_ cgImage: CGImage, overlay: CGImage? = nil, scene: WMPScene,
+                 dirtyBounds: WMPRect? = nil) {
         let previous = self.scene
         image = NSImage(cgImage: cgImage, size: bounds.size)
+        overlayView.image = overlay.map { NSImage(cgImage: $0, size: bounds.size) }
         self.scene = scene
         hitTester = WMPHitTester(hits: scene.hits)
         synchronizeWidgetViews(scene.widgets)
@@ -162,7 +215,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         cancelInputCapture()
         onSpectrumDemandChanged?(false)
         widgetViews.values.forEach { $0.removeFromSuperview() }; widgetViews.removeAll(); widgetValues.removeAll()
-        image = nil; scene = nil; hitTester = nil; capturedTarget = nil; hoveredTarget = nil
+        image = nil; overlayView.image = nil; scene = nil; hitTester = nil; capturedTarget = nil; hoveredTarget = nil
         isDraggingWindow = false
         onInteractionChanged = nil; onAction = nil; onScriptEvent = nil
         onElementValueChanged = nil; onElementTextChanged = nil; onSpectrumDemandChanged = nil
@@ -208,6 +261,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
 
     override func layout() {
         super.layout()
+        overlayView.frame = bounds
         guard let scene else { return }
         let xScale = bounds.width / max(1, scene.canvasSize.width)
         let yScale = bounds.height / max(1, scene.canvasSize.height)
@@ -232,7 +286,6 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         if let video = videoSurface?.menu(at: point) { return video }
-        WMPMainWindowController.traceInput("menu at=\(point) frames=[\(widgetViews.values.compactMap { ($0 as? WMPEffectsSurfaceView)?.frame }.map(String.init(describing:)).joined(separator: ", "))]")
         for view in widgetViews.values {
             guard let effects = view as? WMPEffectsSurfaceView, effects.frame.contains(point) else { continue }
             return effects.buildMenu()
@@ -423,8 +476,6 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         let previous = hoveredTarget
         hoveredTarget = target
         notify(interaction.move(over: target))
-        WMPMainWindowController.traceInput("hover \(previous?.nodeID ?? "-")#\(previous.map { String($0.stableID) } ?? "-")"
-            + " -> \(target?.nodeID ?? "-")#\(target.map { String($0.stableID) } ?? "-")")
         if let previous { onScriptEvent?("mouseout", previous.nodeID, previous.stableID) }
         if let target { onScriptEvent?("mouseover", target.nodeID, target.stableID) }
     }
@@ -542,11 +593,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             }
             widgetViews[widget.stableID] = view; addSubview(view)
         }
-        // **What the scene handed the window, as opposed to what it drew.** The AppKit overlays are
-        // not in a render dump at all, so a skin can dump a perfect frame and be missing its
-        // playlist or its visualization on screen; this is the live counterpart of the harness's
-        // `WIDGET` line. See `reference/harness.md` § *The one probe that is not in the test binary*.
-        WMPMainWindowController.traceInput("widgets hosted=\(native.count) [\(native.map { "\($0.kind) id=\($0.nodeID ?? "-") frame=\($0.frame)" }.joined(separator: ", "))]")
+        overlayView.frame = bounds
+        enforceLayerOrder()
         onSpectrumDemandChanged?(native.contains { $0.kind == .effects })
         layoutSubtreeIfNeeded()
         refreshHostState(currentSnapshot)

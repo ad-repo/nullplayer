@@ -118,11 +118,11 @@ queue, with the object model as the security boundary — see Amendment 2 in
   until a view has a canvas, and `switchView` runs a windowless view's script, honours its host
   commands, and stays where it is. `WMPRenderer` still refuses a non-positive canvas; a zero-area
   scene must never reach it.
-- **`theme.openView` opens a view; `theme.currentViewID` replaces one; this app has one window, so the difference is a return path rather than a second window.** 57 of 180 archives ask for a panel by name this way. `openView` is its own host command: the controller presents the view and remembers the one it covered, and `closeView` pops back to it instead of ordering the window out — without that, opening a settings panel is the W46 trap with no way home. `openViewRelative` is deliberately still unimplemented (W50): its offset is meaningless with one window, and aliasing it would drop the offset silently. See `reference/object-model.md`.
-- **The app menu must open a skin-owned auxiliary surface through `openView`, never `switchView`.** The skin's `view.close()` has only the covered-view stack as its return target. Opening AlienMorph's Playlist or EQ from NullPlayer's menu with `switchView(to:)` bypassed that stack, so the panel close ordered out the only WMP window. `revealSkinSurface` therefore routes every off-screen WMP surface through the `openView` host command; this is also what preserves the covered view's overrides, stopped timer, and animation clock.
-- **Do not mistake an in-place mode for an auxiliary view.** NVIDIA is the counterexample: its playlist and video layouts live inside `mainView`, while its top-right control still calls `view.close()`. There is no covered-view stack to pop, so treating that command like an EQ close hides the only WMP window and leaves its last embedded mode as the apparent main window. NVIDIA's close route instead runs its authored audio transition, first clearing its `videoItem` preference because `audioModeToggle()` otherwise redirects back into video mode. The installed-skin key is `NVIDIA` — `WMPSkinImporter` removes `.wmz` — so a compatibility guard must compare the installed name, not the archive filename. `WMPPhase9Tests.testNVIDIAEmbeddedPlaylistCloseReturnsToAudioMode` holds the route down.
+- **`theme.openView` opens an additional window beside the opener; `theme.currentViewID` replaces the calling window's view. A skin's extra views are real windows.** 90 of the 180 archives call `openView`, 579 times. For four phases this engine had exactly one WMP window and the call was reduced to "present the view here and remember the one it covered" (`openedViewStack` / `CoveredView`) — and **that reduction was itself the cause of three reported defects**, not merely a deviation: W90 ("closing an interior window closes the whole UI"), W96 ("the skin is empty and shows no player") and W127 (the macOS close control stranding the user) each existed only because a covered view had to be *simulated*. `WMPViewWindowMaterializer` builds one borderless window per open view, all against **one shared script runtime**, modelled directly on `WinampModernHostedWindowMaterializer` — the only one of the three other families whose recipe transfers, because a `.wmz` view is an arbitrary authored canvas with no stack to join (Halo 2's panels are 406x209 against a 327x294 player). The first view presented binds the app's own window and is **the player**: the `MainWindowProviding` anchor, the restore anchor, the tiler's anchor, and the only presentation that writes `wmpSkinViewID` or is sampled for `WMPSurfacePalette`. **That window is the app's, not the skin's, and ordering it out is what a *close* means and nothing else** — a skin reload and a mode teardown drop its presentation without touching the window, because the caller is about to put a new skin (or the unskinned view) into it. Sharing one `remove` between close and teardown cost exactly that: `AppStateManager.restoreWindowFrames` calls `restoreFrame`, which reloads the skin when one is already loaded, so **every launch with a persisted `.wmz` and a saved frame ordered the main window off screen** with nothing anywhere to put it back. Reported as "main windows launch minimized". An *auxiliary* window is ordered out either way — it belongs to the skin, and a skin going away must not leave its panels behind. `theme.closeView(name)` closes the named window (84 skins, and every one of them had been aborting the handler that called it) and `openViewRelative` places the new window at its authored offset from the opener's top-left (W50 closed). **The drawer exception is what this does not touch**: Corona's sliding playlist and equaliser and NVIDIA's embedded modes are `<SUBVIEW>`s of the presented view's own canvas, never reach `openView`, and behave exactly as they did. See `reference/object-model.md`.
+- **The app menu must open a skin-owned auxiliary surface through `openView`, never `switchView`.** The reason has changed and the rule has not: `openView` is the call the skin's *own* button makes, so routing a menu toggle through it means the panel behaves identically however it was opened — its own window, its own close. `switchView` would instead replace the player's view with the panel, which is what it means, and it is not what a menu item asking for a playlist means. `revealSkinSurface` routes every off-screen WMP surface through the `openView` host command. `WindowManager.wmpSkinShowsInActiveView` asks about **any open WMP window**, not the one presented view, so a toggle for a playlist already up reports checked-and-inert rather than opening it twice.
+- **Do not mistake an in-place mode for an auxiliary view.** NVIDIA is the counterexample: its playlist and video layouts live inside `mainView`, while its top-right control still calls `view.close()`. There is no window of its own to close, so treating that command like an EQ close hides the player and leaves its last embedded mode as the apparent main window. The guard used to read "nothing has been opened over the player" and now reads "this is the player and it is the only window open" — the same statement in the new vocabulary. NVIDIA's close route instead runs its authored audio transition, first clearing its `videoItem` preference because `audioModeToggle()` otherwise redirects back into video mode. The installed-skin key is `NVIDIA` — `WMPSkinImporter` removes `.wmz` — so a compatibility guard must compare the installed name, not the archive filename. `WMPPhase9Tests.testNVIDIAEmbeddedPlaylistCloseReturnsToAudioMode` holds the route down.
 - **A skin sound effect must not abort its state transition.** NullPlayer does not play bundled WMP skin sounds, but `theme.playSound(...)` is an inert host call rather than an unrecognised member: AlienMorph opens its shutter, plays `intro.wav`, then stops its intro timer. Throwing on the sound call skipped the stop and re-toggled the shutter every second.
-- **A view the skin never shows can still have to keep running, and a view it only covered has to come back as it was left.** Two different things this engine used to treat the same way — "not the presented view, therefore gone" — and each is a whole class of dead controls. **A windowless view that declares `timerInterval` + `onTimer` is a *dispatcher*** (W89): 24 of the 180 archives author `<view id="controlView" timerInterval="100" onTimer="checkRemoteViewStatus()">` and route their panel, minimize and close buttons through it — the button does not call the host at all, it writes `theme.savePreference('remoteCallPl','true')` and that handler reads it back. Real WMP keeps it open beside the player. `WMPMainWindowController.adoptDispatcher` **scans** for it after presenting; keying it off the candidate walk works only on a profile with no persisted view, because `wmpSkinViewID` is written on every present and the walk then stops at the player. It runs through `WMPScriptRuntime.dispatch`, which commits no overrides and does not consume the observable-property changes — a dispatcher has no window, so it has no scene — and its elements are swapped in and the presented view's swapped back, objects and all, because every view root is called `view`. **And `theme.openView` opens a *second window*: the covered view is never touched** (W90), so a `closeView` return is a restore and not a `switchView` load. Rebuilding it discards the overrides its script accumulated and reinstates the markup `timerInterval` the script had overridden — on `Alienware Invader` that returned to `commands=0` and let the markup's 500 ms re-fire `toggleShutter()` with `introStatus` already true, shuttering the whole player. Reported as "closing an interior window closes the whole UI". `restoring` is nil on every other path, so a genuine view change still loads exactly like a launch (W46).
+- **A view the skin never shows can still have to keep running, and a view it only covered has to come back as it was left.** Two different things this engine used to treat the same way — "not the presented view, therefore gone" — and each is a whole class of dead controls. **A windowless view that declares `timerInterval` + `onTimer` is a *dispatcher*** (W89): 24 of the 180 archives author `<view id="controlView" timerInterval="100" onTimer="checkRemoteViewStatus()">` and route their panel, minimize and close buttons through it — the button does not call the host at all, it writes `theme.savePreference('remoteCallPl','true')` and that handler reads it back. Real WMP keeps it open beside the player. `WMPMainWindowController.adoptDispatcher` **scans** for it after presenting; keying it off the candidate walk works only on a profile with no persisted view, because `wmpSkinViewID` is written on every present and the walk then stops at the player. It runs through `WMPScriptRuntime.dispatch`, which commits no overrides and does not consume the observable-property changes — a dispatcher has no window, so it has no scene — and its elements are swapped in and the presented view's swapped back, objects and all, because every view root is called `view`. **And `theme.openView` opens a *second window*: the opener is never touched** (W90). That used to be simulated — the covered view's overrides, its timer period and its animation clock were stashed and a `closeView` return was a *restore* rather than a load, because rebuilding it discarded the overrides its script had accumulated and reinstated the markup `timerInterval` the script had overridden. On `Alienware Invader` that returned to `commands=0` and let the markup's 500 ms re-fire `toggleShutter()` with `introStatus` already true, shuttering the whole player; reported as "closing an interior window closes the whole UI". **The simulation is gone and so is everything built on it** — `CoveredView`, `openedViewStack`, `switchView(to:restoring:)` and `WMPScriptRuntime.prepareForRestore` — because the opener is now genuinely still running in its own window, which is what the restore was imitating. What survives is the primitive underneath: `WMPScriptContext.restoreElements(for:)` swaps each window's live elements in for the length of its own transaction, since one `JSContext` serves them all and every view root is called `view`. A genuine view change still loads exactly like a launch (W46).
 - **A view arrived at by a switch loads exactly like one arrived at by launch, and a `.wmz` compact mode is built entirely out of that.** `switchView(to:)` raises `load` on the new view, applies the host commands the handler posts — *after* `apply`, which sets the view timer from markup, so the script's `setViewTimerInterval` is the override and not the other way round — and schedules its `timerRequests`. It did none of the three for a long time (W46), and Corona's `viewTiny` is authored `timerInterval="0"` and animates itself into the mini player from `OnTinyLoad` alone: the switch happened, nothing ran, and the compact view drew **the same artwork at the same size as the player**. The only visible symptom was the playlist and equaliser drawers going away, because `viewTiny`'s markup does not have them. Two consequences bind: the initial-load `collapsed` guard applies here too, since a view can now blank itself in an `onLoad` this path finally runs; and `viewchange` is dispatched only when the markup authors a handler, because a transaction's `timerRequests` are what *that* transaction registered and an unconditional binding-only one posts an empty set that cancels what `load` just scheduled.
 - **The skin's own JScript is ES3, and `JSContext` is not — `WMPJScriptDialect` is where that is reconciled (W86).** WMP9's `corona_tiny.js` chains its compact-mode animation by appending a timer event to the array its `TimerDispatch` is enumerating with `for-in`. JScript visits the appended index; JavaScriptCore snapshots and does not, so the chained event was dropped on the tick it was registered and the whole WMP9 family could neither collapse its video panel nor get back to `vPlayer`. Corona's 2002 script splices the array instead and is unaffected, which is what made `corona` the control and `9SeriesDefault` the case. The rewrite is bounded, skips strings/comments/regex literals, and leaves a program with no `for-in` byte-identical; **3 of 180 archives use `for-in` at all and one depends on the live semantic**, so the corpus sweep is the proof it changed nothing else. **Before ranking a "the script runs and nothing happens" defect, ask whether the handler depends on an ES3 semantic** — no headless probe here can see that class, and the live `INPUT script-diag` line stays silent because nothing throws. And when you add to this file's scanner: **test a CRLF fixture.** Swift folds `"\r\n"` into one `Character` that is not `"\n"`, and the first version of the rewrite silently did nothing to the entire corpus for that reason while every LF-only unit test passed.
 - **A `<property>_onchange` fires in the same transaction as the write that triggered it, and the view's `JScript:` geometry expressions are *not* re-run to achieve the same thing.** A `.wmz` animates by writing geometry once per timer tick, so a pane positioned off a moving one has to move in the same frame; letting it catch up on the next transaction tore the compact view into two visible halves that closed four seconds later (W87). Only what the skin declared is raised — 16 geometry `_onchange` attributes across 6 archives — bounded and once per property per transaction, so two panes positioned off each other cannot loop. **Re-resolving the expression set after the handlers is the tempting general form and it is wrong**: those attributes are an initial layout rather than a live binding, and several read the property they write (`left="JScript:svBottomLeft.width-left"`), so re-running them moved 175 of 545 corpus images and shattered `Back to the Future Trilogy`'s `videoView` and `ALXMorph`'s frame. That is what a sweep is for; it was reverted on the measurement, not on taste.
@@ -353,15 +353,52 @@ queue, with the object model as the security boundary — see Amendment 2 in
   honest answer, and `wmpenabled:` still disables.
 - **A panel opened with `theme.openView` is not the session's view (W96).** `apply` persisted
   `wmpSkinViewID` on every present, so quitting with a playlist open recorded the playlist; the
-  covered view is not persisted, so the next launch restored a panel with no player and no route
-  back to one. Reported as "the skin is empty and shows no player or skin windows", and it strands
-  any skin whose panels are `openView` rather than `currentViewID`. Only a present with an empty
-  `openedViewStack` writes the key.
-- **Microsoft's WMP SDK describes an `EFFECTS` element as stretching its visualization when the
-  player resizes, but it does not specify deriving a display mask from nearby skin artwork.**
-  `clippingColor` applies to a `clippingImage`, not to an arbitrary sibling or parent bitmap. Do not
-  turn image overlap, z-order, alpha, or an artwork's transparent bounds into effects geometry unless
-  WMP markup declares an actual clipping image; Cerulean and Plus! Professional are counter-evidence.
+  covered view was not persisted, so the next launch restored a panel with no player and no route
+  back to one. Reported as "the skin is empty and shows no player or skin windows", and it stranded
+  any skin whose panels are `openView` rather than `currentViewID`. Only **the player's own
+  presentation** writes the key — a simpler statement of the same rule the `openedViewStack.isEmpty`
+  test was making, and one that stops being a special case once the panel has a window of its own.
+  The panels themselves are persisted separately (`WMPViewFrameStore.openViews`, plus a per-view
+  origin) and restored *before* the load transaction's host commands, so a dispatcher skin that
+  re-opens its own panels from `theme.loadPreference` raises the restored window rather than opening
+  a second one.
+- **An `<EFFECTS>` rect is never shaped by this engine. The skin's own artwork occludes it, through
+  plain z-order (W139).** The earlier form of this rule forbade turning "image overlap, z-order,
+  alpha, or an artwork's transparent bounds into effects geometry" and named Cerulean and
+  Plus! Professional as counter-evidence. **They are the clearest evidence for it, and the rule was
+  backwards** — it is why an inscribed-circle clip was invented in place of the occlusion the markup
+  already declares. What is still true is the half it was built on: do not *derive a mask* from a
+  sibling bitmap, and `clippingColor` applies to a `clippingImage` and not to arbitrary nearby art.
+  What was wrong is that z-order is not a derivation at all; it is what the markup says.
+
+  Cerulean, measured from the archive: `face.bmp` has a magenta (`#FF00FF`) hole of 4,264 px over
+  x 133..205, y 35..107 — a 73px circle against an ideal 4,185 — and the subview that draws it keys
+  that colour out. Inside it, `<effects zIndex="-1" width="103" height="75">` and
+  `<button id="bEye" zIndex="-2">`. **A negative `zIndex` means behind the subview's own
+  `backgroundImage`.** Back to front: the eye disc, the visualizer filling its full 103×75 rect, then
+  `face.bmp` with a hole in it — which is why the brass bezel and all eight rivets survive.
+  Plus! Professional is the same mechanism with a tilted oval (`vis_mask_w.png` inside
+  `<subview id="visMask" clippingColor="#ff00ff">`). **32 `<EFFECTS>` across 30 skins author a
+  negative zIndex**, and no per-skin code renders any of them.
+
+  How it is hosted: **a node's negative-`zIndex` children are walked before it emits its own paints**
+  — DFS order cannot express "behind the parent's background" on its own, and getting this wrong is
+  what drew Cerulean's bars across the whole face on the first attempt. `WMPWidget.commandSplitIndex`
+  then records the index into `WMPScene.commands` the walk had reached when the widget's node was
+  visited, `WMPRenderer` rasterizes the scene as two images
+  either side of it, and `WMPMainView` hosts the effects surface between them —
+  `WMPEffectsSurfaceView` → the "above" overlay `NSImageView` → the interactive widgets, re-enforced
+  on every `synchronizeWidgetViews` pass because a plain `addSubview` goes to absolute top. **The
+  split is an index and not a zIndex threshold**: `WMPSceneBuilder.walk` sorts only siblings, so
+  `commands` is DFS order and a `zIndex = -5` node in one subtree can legitimately follow a
+  `zIndex = 10` node in another. `WMPImageStore.clippingMask(for:keyedOut:)` and `WMPColorKey` then
+  apply to the overlay for free — no new masking code exists anywhere for this.
+
+  **A skin with no occluding artwork fills its authored rect exactly**: full `width × height`, a
+  transparent background, no shape fitting and no aspect letterboxing. Of the 107 `<EFFECTS>` rects
+  with numeric dimensions **19 are square, 83 wider than tall and 5 taller**, so a centred `min(w,h)`
+  square covered a median 75% of the authored rect and as little as 17% (`Alpine7618_v09`, 150×26),
+  and the inscribed circle took ~21% more again.
 - **A zero geometry override is a value, not an absence.** Every skin with a store-thumbnail
   `previewView` collapses it in `onLoad` — `view.width = 0; view.height = 0; view.backgroundImage =
   ""; theme.currentViewID = "controlView"` — and Microsoft's own `auto.js` in `Official_Xbox_XP`
@@ -562,8 +599,9 @@ process section it points at — `winamp-modern-skin-guide/reference/harness.md`
 session that produced the fixes below spent hours rediscovering five rules already written there.
 
 **The reproduction loop itself is `reference/harness.md` § *Driving the app*** — select the skin,
-launch the debug build with `WMP_TRACE_INPUT=1`, ask `WMP_RENDER_PROBE` where the control is and
-click that frame with a `CGEvent`, then read the trace and capture the window. Three of the four
+launch the debug build, ask `WMP_RENDER_PROBE` where the control is and click that frame with a
+`CGEvent`, then capture the window and look at it. (The `INPUT` trace this loop used to read was
+removed on 2026-09-11 for being unreadable live — see `reference/harness.md`.) Three of the four
 defects in the compact-mode report were app-path defects a render sweep can never see, and each took
 one launch once the loop existed. The same section carries the two things that decided those fixes:
 how to reduce a skin's own script to a standalone `JSContext` repro, and why a fix that closes the
@@ -806,27 +844,53 @@ of these was invisible to the harness and visible in the first minute of live QA
   does not construct AppKit controls; an authored or scripted height wins.
 - **The visualization surface is this player's own visuals in the rect the skin authored (W101).**
   `WMPEffectsSurfaceView` draws compact WMP-native **Spikes**, **Bars**, **Ambience**, **Cava**, and
-  **vis_classic** directly; it must never host ProjectM, Geiss, Tripex, or any other standalone
-  visualization window in that slot. Cava uses its actual presenter/full-stereo tap and vis_classic
-  uses its actual waveform/profile core, each with a WMP-only preference scope. Their right-click
-  controls are therefore the real Cava tuning menu and vis_classic profile menu, not inert replicas.
-  Asimov Radio and Cerulean make the reason visible: their artwork frames a small legacy WMP
-  effect, while a full-window renderer becomes an incongruous black rectangle. `WMPEffectSelection`
-  is the one place the choice lives, because 96 archives bind `currentEffectType` to
-  `wmpprop:mediacenter.effectType`. Three rules it is built on: **nothing playing draws nothing at
-  all** (the skin's own screen artwork stands); **the surface never takes a click**, because 51
-  archives wire an `onClick` on `<EFFECTS>` and that handler belongs to scene hit testing; and **the
-  skin's selector is not the app's preference** — cycling from the rect, its menu, or the left/right
-  keys never writes `visualizationEngineType`, which the visualization window and menu bar share.
+  **vis_classic** directly. Cava uses its actual presenter/full-stereo tap and vis_classic uses its
+  actual waveform/profile core, each with a WMP-only preference scope. Their right-click controls are
+  therefore the real Cava tuning menu and vis_classic profile menu, not inert replicas.
+  `WMPEffectSelection` is the one place the choice lives, because 96 archives bind
+  `currentEffectType` to `wmpprop:mediacenter.effectType`. Three rules it is built on: **nothing
+  playing draws nothing at all** (the skin's own screen artwork stands); **the surface never takes a
+  click**, because 51 archives wire an `onClick` on `<EFFECTS>` and that handler belongs to scene hit
+  testing; and **the skin's selector is not the app's preference** — cycling from the rect, its menu,
+  or the left/right keys never writes `visualizationEngineType`, which the visualization window and
+  menu bar share.
   **Do not fill the widget's rectangle.** The effect is composited over the scene, and its untouched
-  pixels must stay transparent: Cerulean's 103×75 effect is centred on the skin's 81×82 circular
-  `vis_area_default.bmp`, while other corpus skins use the same pattern for a bezel, mask, or LCD
-  detail. A black backing layer makes each of those details disappear and reads as a misplaced
-  window. **A suite renderer needs two extra conversions:** Cava's shared drawer assumes a y-up
-  AppKit host and vis_classic emits top-row-first BGRA, so both require a local y-flip inside the
-  flipped WMP view; both must also be clipped to the centred inscribed circular lens, not their raw
-  rectangular canvas. Test the effect with a real skin at playback and inspect the AppKit-hosted
-  frame; a static render dump cannot show its pixels.
+  pixels must stay transparent: every renderer draws into the full authored rect and the skin's own
+  artwork is what shapes it, through the z-order split above. **A suite renderer needs two extra
+  conversions:** Cava's shared drawer assumes a y-up AppKit host and vis_classic emits top-row-first
+  BGRA, so both require a local y-flip inside the flipped WMP view. Test the effect with a real skin
+  at playback and inspect the AppKit-hosted frame; a static render dump cannot show its pixels.
+- **The ban on hosting ProjectM / Geiss / Tripex in the slot is reversed, and this records why
+  (W140).** The rule read: *it must never host ProjectM, Geiss, Tripex, or any other standalone
+  visualization window in that slot*, with the black panels reported in Asimov Radio and Cerulean as
+  its evidence, and `WMPEffectsSurfaceView.makeEngineView()` / `applyPreset(to:engine:)` were left in
+  the file as dead code with zero call sites.
+
+  **Those black panels were the occlusion defect, not the engines.** `WMPMainView` blitted the whole
+  scene as one flattened image and hosted every widget above it with a plain `addSubview`, so nothing
+  a skin drew could ever cover the surface. An opaque renderer that nothing can occlude *is* a black
+  rectangle over the artwork — it would have been one whatever was drawing in it. With the split
+  above, the artwork composites over the rect and opacity stops mattering; WMP's own visualizers were
+  opaque too.
+
+  What does not change: **the selection stays WMP-session-scoped** — a skin cycling `visEffects`
+  never writes `visualizationEngineType`, which is why `switchEngine(to:forceReload:)` grew a
+  `persistPreference` parameter rather than the surface calling it as the visualization window does
+  — and **`VisualizationGLView` is not mounted live between the two raster layers**. A legacy CGL
+  drawable's ordering against sibling `CALayer`s is not guaranteed the way normal layer z-order is,
+  and its own `CVDisplayLink` clock tears against the overlay's alpha-blended edge. Do not mount it
+  live "just to try"; that is what produced the black panels the first time.
+
+  **How the three are hosted.** `WMPEffectsSurfaceView` builds a `VisualizationGLView` and never adds
+  it to the hierarchy: its display link never starts, and a 30fps timer pulls one frame at a time
+  through `renderOffscreenImage(pixelWidth:pixelHeight:)` — an FBO render plus `glReadPixels` — which
+  `draw(_:)` presents like any other picture. **The GL path takes no y-flip**, where vis_classic
+  does: `glReadPixels` returns rows bottom-first, a `CGImage` calls row 0 its top, and this view is
+  flipped, so the two reversals cancel. The view's frame is set in **points** before each pull, not
+  pixels — `initializeEngineOnRenderThread` sizes the engine from `convertToBacking(bounds)`, so a
+  frame in pixels creates the engine at twice the surface it renders into. The readback is verified
+  headlessly by `WMPPhase7Tests.testOffscreenEngineReadbackProducesAnImage`, which is the only thing
+  in the suite that drives an `NSOpenGLView` outside a window.
 - **PCM arrives on the audio thread and an overlay must not hop to the main actor to take it.**
   `.audioPCMDataUpdated` is posted from inside `AudioEngine.processAudioBuffer`; a
   `MainActor.assumeIsolated` in that observer is a `dispatch_assert_queue` failure and the process

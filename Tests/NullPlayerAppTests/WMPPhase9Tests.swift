@@ -87,15 +87,16 @@ final class WMPPhase9Tests: XCTestCase {
         controller.window?.close()
     }
 
-    /// **A panel opened over the player is not the session's view.**
+    /// **`theme.openView` opens a second window and the opener is untouched.**
     ///
-    /// `theme.openView` opens a *second* window in WMP; this app presents it in the one window it
-    /// has and remembers the view it covered. `apply` persisted the presented view on every
-    /// present, so quitting with a panel open recorded the panel — and the covered view is not
-    /// persisted, so the next launch restored a playlist with no player and no route to one.
-    /// `WoW` opens its playlist exactly this way, and it was reported as "the skin is empty and
-    /// shows no player or skin windows".
-    func testAViewOpenedOverThePlayerIsNotPersistedAsTheSessionView() async throws {
+    /// It used to present the panel in the one window there was and remember the view it covered,
+    /// which is what W90 ("closing an interior window closes the whole UI"), W96 ("the skin is empty
+    /// and shows no player") and W127 (the macOS close control stranding the user) were each made
+    /// of. Three things hold here and they are the whole contract: the player keeps its view, the
+    /// panel gets a window of its own, and the session's persisted view is still the player's —
+    /// `WoW` opens its playlist exactly this way, and quitting with it open used to restore a
+    /// playlist with no player behind it.
+    func testOpenViewOpensASecondWindowAndLeavesTheOpenerAlone() async throws {
         let (controller, defaults, cleanup) = try await controller(wms: """
         <THEME>
           <VIEW id="main" width="120" height="80">
@@ -114,18 +115,65 @@ final class WMPPhase9Tests: XCTestCase {
         // Through the view's own callback, which is the path a real click takes.
         let view = try XCTUnwrap(controller.window?.contentView as? WMPMainView)
         view.onScriptEvent?("click", "btn", nil)
-        try await waitUntil { controller.selectedViewID == "panel" }
+        try await waitUntil { controller.openViewIDs.count == 2 }
+
+        XCTAssertEqual(controller.selectedViewID, "main",
+                       "the opener keeps its view: openView is not a view switch")
+        XCTAssertEqual(controller.openViewIDs, ["main", "panel"])
+        XCTAssertEqual(controller.window?.frame.size, NSSize(width: 120, height: 80),
+                       "the player still draws its own scene at its own size")
+        XCTAssertEqual(controller.materializedAuxiliaryWindows.count, 1)
+        XCTAssertEqual(controller.materializedAuxiliaryWindows.first?.frame.size,
+                       NSSize(width: 100, height: 60))
         XCTAssertEqual(defaults.string(forKey: WMPSkinImporter.selectedViewIDKey), "main",
-                       "the covering view is presented and not recorded, so the next launch still "
-                       + "opens on the player")
+                       "a panel in its own window is not the session's view (W96)")
         controller.prepareForUITeardown()
         controller.window?.close()
     }
 
-    /// A surface opened from NullPlayer's Window menu takes the same `openView` route as the
-    /// skin's own button. Otherwise its `view.close()` has no covered player to restore and
-    /// orders out the only WMP window.
-    func testAMenuOpenedSkinPlaylistReturnsToItsCoveredPlayerWhenClosed() async throws {
+    /// **`theme.closeView('name')` closes that window and only that one.**
+    ///
+    /// 84 of the 180 archives call it and every one of them has been aborting the handler that
+    /// does: the member was unrecognised, so `Halo 2`'s `checkRemoteViewStatus()` died on
+    /// `theme.closeView('vidRemoteView')` and never reached the statements after it. The second
+    /// assertion is that half — the statement following the call still runs.
+    func testCloseViewByNameClosesThatWindowAndKeepsTheHandlerRunning() async throws {
+        let (controller, defaults, cleanup) = try await controller(wms: """
+        <THEME>
+          <VIEW id="main" width="120" height="80">
+            <SUBVIEW id="open" left="0" top="0" width="60" height="80" backgroundColor="#224466"
+                     onClick="JScript:theme.openView('one');theme.openView('two');"/>
+            <SUBVIEW id="shut" left="60" top="0" width="60" height="80" backgroundColor="#442266"
+                     onClick="JScript:theme.closeView('one');theme.savePreference('after','yes');"/>
+          </VIEW>
+          <VIEW id="one" width="100" height="60">
+            <SUBVIEW left="0" top="0" width="100" height="60" backgroundColor="#112233"/>
+          </VIEW>
+          <VIEW id="two" width="90" height="50">
+            <SUBVIEW left="0" top="0" width="90" height="50" backgroundColor="#332211"/>
+          </VIEW>
+        </THEME>
+        """, filename: "Phase9CloseByName.wmz")
+        defer { cleanup() }
+        try await waitUntil { controller.window?.contentView is WMPMainView }
+        let view = try XCTUnwrap(controller.window?.contentView as? WMPMainView)
+        view.onScriptEvent?("click", "open", nil)
+        try await waitUntil { controller.openViewIDs.count == 3 }
+
+        view.onScriptEvent?("click", "shut", nil)
+        try await waitUntil { controller.openViewIDs == ["main", "two"] }
+        XCTAssertEqual(controller.selectedViewID, "main")
+        XCTAssertEqual(controller.window?.frame.size, NSSize(width: 120, height: 80),
+                       "closing a named panel must not touch the player")
+        try await waitUntil { self.preference("after", in: defaults) == "yes" }
+        controller.prepareForUITeardown()
+        controller.window?.close()
+    }
+
+    /// A panel's own `view.close()` closes **its** window and leaves the player up. That is the
+    /// whole of what `openedViewStack` used to simulate, and the simulation is what let a close
+    /// order out the only WMP window there was.
+    func testAPanelClosingItselfLeavesThePlayerUp() async throws {
         let (controller, _, cleanup) = try await controller(wms: """
         <THEME>
           <VIEW id="main" width="120" height="80">
@@ -141,13 +189,113 @@ final class WMPPhase9Tests: XCTestCase {
         defer { cleanup() }
         try await waitUntil { controller.selectedViewID == "main" }
 
+        // A menu-selected surface takes the same `openView` route the skin's own button takes.
         XCTAssertTrue(controller.revealSkinSurface(.playlist, switchingViews: true))
-        try await waitUntil { controller.selectedViewID == "playlist" }
-        let playlist = try XCTUnwrap(controller.window?.contentView as? WMPMainView)
-        playlist.onScriptEvent?("click", "close", nil)
-        try await waitUntil { controller.selectedViewID == "main" }
+        try await waitUntil { controller.openViewIDs == ["main", "playlist"] }
+        let panel = try XCTUnwrap(controller.materializedAuxiliaryWindows.first?.contentView
+                                    as? WMPMainView)
+        panel.onScriptEvent?("click", "close", nil)
+        try await waitUntil { controller.openViewIDs == ["main"] }
+        XCTAssertEqual(controller.selectedViewID, "main")
+        XCTAssertTrue(controller.materializedAuxiliaryWindows.isEmpty)
         controller.prepareForUITeardown()
         controller.window?.close()
+    }
+
+    /// **Two open windows keep separate script scopes.** The runtime's overrides and its
+    /// observable-property registry are per view, not per session: a registry only reports values
+    /// that moved *since it last looked*, so two windows sharing one would each see half the
+    /// changes. Here each panel's `onLoad` resizes only itself, and neither size may leak.
+    func testTwoOpenViewsKeepSeparateOverrides() async throws {
+        let (controller, _, cleanup) = try await controller(wms: """
+        <THEME>
+          <VIEW id="main" width="120" height="80"
+                onLoad="JScript:theme.openView('one');theme.openView('two');">
+            <SUBVIEW left="0" top="0" width="120" height="80" backgroundColor="#224466"/>
+          </VIEW>
+          <VIEW id="one" width="100" height="60" onLoad="JScript:panelOne.left = 7;">
+            <SUBVIEW id="panelOne" left="0" top="0" width="40" height="40" backgroundColor="#112233"/>
+          </VIEW>
+          <VIEW id="two" width="90" height="50" onLoad="JScript:panelTwo.left = 21;">
+            <SUBVIEW id="panelTwo" left="0" top="0" width="30" height="30" backgroundColor="#332211"/>
+          </VIEW>
+        </THEME>
+        """, filename: "Phase9TwoViews.wmz")
+        defer { cleanup() }
+        try await waitUntil { controller.openViewIDs.count == 3 }
+        // Each window drew its own view at its own authored canvas; a shared override table would
+        // have applied one panel's geometry inside the other.
+        XCTAssertEqual(controller.window?.frame.size, NSSize(width: 120, height: 80))
+        let sizes = Set(controller.materializedAuxiliaryWindows.map(\.frame.size.width))
+        XCTAssertEqual(sizes, [100, 90])
+        XCTAssertNil(controller.lastLoadDiagnostic)
+        controller.prepareForUITeardown()
+        controller.window?.close()
+    }
+
+    /// **Closing the player closes the whole skin UI.** The macOS close control used to mean
+    /// `closeView` whenever anything had been opened over the player, because the one window was
+    /// standing in for two and letting AppKit order it out stranded the user on a playlist with no
+    /// route back (Plus! Professional, W127). With the panel in its own window that compensation has
+    /// no job — but the panels must not outlive the player either, which is the W96 shape.
+    func testClosingThePlayerTakesItsPanelsWithIt() async throws {
+        let (controller, _, cleanup) = try await controller(wms: """
+        <THEME>
+          <VIEW id="main" width="120" height="80">
+            <SUBVIEW left="0" top="0" width="120" height="80" backgroundColor="#224466"/>
+          </VIEW>
+          <VIEW id="playlist" width="140" height="90">
+            <PLAYLIST id="rows" left="0" top="0" width="140" height="70"/>
+          </VIEW>
+        </THEME>
+        """, filename: "Phase9WindowClose.wmz")
+        defer { cleanup() }
+        try await waitUntil { controller.selectedViewID == "main" }
+        XCTAssertTrue(controller.revealSkinSurface(.playlist, switchingViews: true))
+        try await waitUntil { controller.openViewIDs == ["main", "playlist"] }
+        let panel = try XCTUnwrap(controller.materializedAuxiliaryWindows.first)
+
+        let window = try XCTUnwrap(controller.window)
+        XCTAssertTrue(controller.windowShouldClose(window))
+        XCTAssertTrue(controller.openViewIDs.isEmpty)
+        XCTAssertFalse(panel.isVisible, "a panel must never outlive the player it was opened from")
+        XCTAssertFalse(window.isMiniaturized, "closing the player must not minimize the app window")
+        controller.prepareForUITeardown()
+        window.close()
+    }
+
+    /// **A skin reload must not take the player window off screen.**
+    ///
+    /// Ordering the player out is what `view.close()` and the macOS close control mean, and nothing
+    /// else. `WMPViewWindowMaterializer.teardown()` reuses the same `remove` a close does, and a
+    /// reload tears the materializer down first — so the window went out and nothing ever put it
+    /// back. The launch path is what made that visible rather than theoretical:
+    /// `AppStateManager.restoreWindowFrames` calls `restoreFrame`, which reloads the skin when one
+    /// is already loaded, so **every launch with a persisted `.wmz` and a saved frame** lost its
+    /// main window. Reported as "main windows launch minimized".
+    func testReloadingTheSkinLeavesThePlayerWindowOnScreen() async throws {
+        let (controller, _, cleanup) = try await controller(wms: """
+        <THEME>
+          <VIEW id="main" width="120" height="80">
+            <SUBVIEW left="0" top="0" width="120" height="80" backgroundColor="#224466"/>
+          </VIEW>
+        </THEME>
+        """, filename: "Phase9Reload.wmz")
+        defer { cleanup() }
+        try await waitUntil { controller.selectedViewID == "main" }
+        controller.showWindow(nil)
+        let window = try XCTUnwrap(controller.window)
+        XCTAssertTrue(window.isVisible)
+
+        // The launch path: a saved frame for the skin that is already loaded.
+        controller.restoreFrame(NSRect(x: 120, y: 120, width: 120, height: 80),
+                                skinName: "Phase9Reload", viewID: "main")
+        try await waitUntil { controller.selectedViewID == "main" }
+        XCTAssertTrue(window.isVisible,
+                      "a reload is not a close: only view.close() orders the player out")
+        XCTAssertFalse(window.isMiniaturized)
+        controller.prepareForUITeardown()
+        window.close()
     }
 
     /// NVIDIA keeps its playlist inside `mainView`; unlike an EQ panel there is no view stack for
@@ -198,31 +346,6 @@ final class WMPPhase9Tests: XCTestCase {
         XCTAssertTrue(controller.window?.isVisible == true)
         controller.prepareForUITeardown()
         controller.window?.close()
-    }
-
-    func testWindowCloseRestoresAPlayerCoveredByAnOpenedView() async throws {
-        let (controller, _, cleanup) = try await controller(wms: """
-        <THEME>
-          <VIEW id="main" width="120" height="80">
-            <SUBVIEW left="0" top="0" width="120" height="80" backgroundColor="#224466"/>
-          </VIEW>
-          <VIEW id="playlist" width="140" height="90">
-            <PLAYLIST id="rows" left="0" top="0" width="140" height="70"/>
-          </VIEW>
-        </THEME>
-        """, filename: "Phase9WindowClose.wmz")
-        defer { cleanup() }
-        try await waitUntil { controller.selectedViewID == "main" }
-        XCTAssertTrue(controller.revealSkinSurface(.playlist, switchingViews: true))
-        try await waitUntil { controller.selectedViewID == "playlist" }
-
-        let window = try XCTUnwrap(controller.window)
-        XCTAssertFalse(controller.windowShouldClose(window),
-                       "the one app window represents the auxiliary view only while it covers a player")
-        try await waitUntil { controller.selectedViewID == "main" }
-        XCTAssertFalse(window.isMiniaturized, "restoring the player must not minimize the app window")
-        controller.prepareForUITeardown()
-        window.close()
     }
 
     /// A view that blanks itself in the `onLoad` this path now runs must not become the window.

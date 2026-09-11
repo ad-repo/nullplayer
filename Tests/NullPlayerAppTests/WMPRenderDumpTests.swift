@@ -790,7 +790,7 @@ enum WMPHarness {
 
         var output: WMPScriptOutput?
         if let session = pass.session {
-            await session.prepareForViewSwitch()
+            await session.discardView(viewID)
             // The load pass: the skin's programs evaluate, every `JScript:` geometry expression
             // resolves, and the view's own `onLoad` handlers run — exactly what the app's first
             // transaction does. Driving `onLoad` here is not optional detail: it is where a skin
@@ -1387,6 +1387,21 @@ enum WMPHarness {
     ///
     /// Window shape and shadow stay outside this: they live in the window server, and remain a
     /// short genuinely manual list.
+    /// The renderer's two layers composited back into one image — what a scene with no
+    /// `<EFFECTS>` produces directly, and the only fair baseline for the `blit=` comparison.
+    static func flatten(_ result: WMPRenderResult, pixelWidth: Int, pixelHeight: Int) -> CGImage? {
+        guard let overlay = result.overlayImage else { return result.image }
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight,
+            bitsPerComponent: 8, bytesPerRow: pixelWidth * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: bitmapInfo) else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)
+        context.draw(result.image, in: rect)
+        context.draw(overlay, in: rect)
+        return context.makeImage()
+    }
+
     @MainActor
     static func appKitLines(scene: WMPScene, viewID: String, imageStore: WMPImageStore) async -> [String] {
         let width = Int(scene.canvasSize.width.rounded()), height = Int(scene.canvasSize.height.rounded())
@@ -1405,13 +1420,19 @@ enum WMPHarness {
         // against the renderer (47%). Neither is a defect in the app; both look exactly like one.
         let scale = max(1, rep.pixelsWide / max(1, width))
         let pixelWidth = rep.pixelsWide, pixelHeight = rep.pixelsHigh
-        guard let rendered = try? await WMPRenderer(imageStore: imageStore)
-                .render(scene: scene, backingScale: CGFloat(scale)).image,
+        // **A scene with an `<EFFECTS>` comes back as two layers**, either side of the index the
+        // walk had reached at the effects node (W139): the artwork below the surface and the
+        // artwork above it. Presenting only the first would host half a skin and measure the
+        // harness, so both go in — and `rendered` below, the blit baseline, is the two flattened
+        // back together, which is the single image a split-free scene produces on its own.
+        guard let result = try? await WMPRenderer(imageStore: imageStore)
+                .render(scene: scene, backingScale: CGFloat(scale)),
+              let rendered = flatten(result, pixelWidth: pixelWidth, pixelHeight: pixelHeight),
               let renderedPixels = pixels(of: rendered, width: pixelWidth, height: pixelHeight) else {
             return ["APPKIT \(viewID): SKIPPED renderer produced no image at \(scale)x"]
         }
 
-        view.present(rendered, scene: scene)
+        view.present(result.image, overlay: result.overlayImage, scene: scene)
         // AppKit runs neither of these on its own for a view that is in no window, and the overlay
         // frames come from `layout()`. Without it every overlay sits at `.zero` and the diff below
         // measures the harness rather than the app.
@@ -1426,7 +1447,10 @@ enum WMPHarness {
         // readings are the instrument, not the app. Two passes through the *same* path cancel that
         // exactly — what is left between them is precisely what the AppKit layer adds over the
         // artwork, which is the question W71 asks.
-        let overlays = view.subviews
+        // **Only the widget surfaces are hidden.** The artwork overlay is part of the skin's own
+        // picture, not something AppKit adds over it; hiding it here would report every pixel a
+        // skin draws above its visualizer as an overlay defect.
+        let overlays = view.hostedWidgetViews
         overlays.forEach { $0.isHidden = true }
         view.cacheDisplay(in: view.bounds, to: rep)
         guard let bareImage = rep.cgImage,
@@ -1630,7 +1654,7 @@ enum WMPHarness {
             values.append(value)
 
             if let session = pass.session {
-                await session.setWidgetValue(stableID: target.stableID, value: value)
+                await session.setWidgetValue(stableID: target.stableID, value: value, viewID: viewID)
                 // **The app's own matcher, not a second one.** A harness that looks up handlers by
                 // its own rule measures a different engine: `value_onchange` is authored by 175 of
                 // 179 archives and is accepted for `change` by

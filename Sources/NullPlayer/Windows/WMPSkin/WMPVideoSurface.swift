@@ -71,18 +71,15 @@ final class WMPVideoSurface {
                 if output.parent !== parent {
                     output.parent?.removeChildWindow(output)
                     parent.addChildWindow(output, ordered: .above)
-                    WMPMainWindowController.traceInput("video reparented (was \(output.parent == nil ? "orphaned" : "elsewhere"))")
                 } else if output.orderedIndex > parent.orderedIndex {
                     // Parented and still behind: order counts from the front, so a larger index is
                     // the defect. Belt and braces for a case the reparent above cannot reach.
                     output.order(.above, relativeTo: parent.windowNumber)
-                    WMPMainWindowController.traceInput("video reordered above parent")
                 }
             }
             controller.updateHostedOutputFrame(over: anchor)
         } else {
             controller.hostOutputWindow(over: anchor)
-            WMPMainWindowController.traceInput("video hosted id=\(widget.nodeID ?? "-") frame=\(visible) source=\(video.width)x\(video.height)")
         }
     }
 
@@ -105,6 +102,5 @@ final class WMPVideoSurface {
         output.window?.alphaValue = savedAlpha
         self.output = nil
         anchor.removeFromSuperview()
-        WMPMainWindowController.traceInput("video detached reveal=\(reveal)")
     }
 }

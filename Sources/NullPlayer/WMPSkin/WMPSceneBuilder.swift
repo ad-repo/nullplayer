@@ -120,6 +120,15 @@ struct WMPSceneBuilder: @unchecked Sendable {
         var commands: [WMPPaintCommand] = []
         var hits: [WMPHitMetadata] = []
         var widgets: [WMPWidget] = []
+        // A fully transparent node still lays out — its geometry is readable, and a script fades
+        // it in by writing `alphaBlend` — but it draws nothing, so it must not reach the command
+        // list at all. Leaving it there put invisible artwork inside `visibleBounds` and every
+        // dirty rect derived from it. Filtering here rather than after the walk is what keeps an
+        // index into `commands` captured *during* the walk (`WMPWidget.commandSplitIndex`) exact.
+        func emit(_ command: WMPPaintCommand) {
+            guard command.alpha > 0 else { return }
+            commands.append(command)
+        }
         var geometries: [Int: WMPResolvedGeometry] = [:]
         var unresolved: [WMPUnresolvedGeometry] = []
         var unresolvedNodes = Set<Int>()
@@ -450,7 +459,25 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         shrinkToFit: literalString(node, "shrinkToFit")?.lowercased() != "false",
                         stretchToFit: literalString(node, "stretchToFit")?.lowercased() == "true",
                         maintainAspectRatio: literalString(node, "maintainAspectRatio")?.lowercased() != "false",
-                        alpha: Double(alpha)) : nil))
+                        alpha: Double(alpha)) : nil,
+                    commandSplitIndex: commands.count))
+            }
+
+            // **A negative `zIndex` means behind the parent's own artwork, so those children are
+            // walked before this node paints anything.**
+            //
+            // DFS order alone cannot express it: a parent always paints before its children, so a
+            // `zIndex="-1"` child emitted in tree order lands *over* the background it is declared
+            // to sit behind. Cerulean is the worked case — `face.bmp` with a 73px magenta hole
+            // keyed out of it, over `<effects zIndex="-1">` and `<button id="bEye" zIndex="-2">` —
+            // and 32 `<EFFECTS>` across 30 skins use the same mechanism. Siblings are already
+            // sorted by zIndex, so the eye still lands under the visualizer.
+            let orderedChildren = node.children.sorted(by: nodeOrder)
+            let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
+            let behindOwnArtwork = orderedChildren.prefix { Int(literal($0, "zIndex") ?? 0) < 0 }
+            for child in behindOwnArtwork {
+                try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
+                         inheritedClip: childClip, parentAlpha: alpha)
             }
 
             // `clippingImage` shapes an element by a bitmap the way `clippingColor` shapes it by a
@@ -469,12 +496,12 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 && color(node, names: ["backgroundColor"]) == WMPColor(red: 154, green: 172, blue: 219)
                 && colors(node, names: ["transparencyColor", "clippingColor"]).count == 2
             if let background = color(node, names: ["backgroundColor"]), !frame.isEmpty, !isCeruleanFace {
-                commands.append(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
+                emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .fill(background), alpha: alpha))
             }
             if let path = backgroundPath, !frame.isEmpty {
-                commands.append(imageCommand(node: node, path: path, frame: frame,
+                emit(imageCommand(node: node, path: path, frame: frame,
                     clip: inheritedClip, z: z, background: true, alpha: alpha,
                     clippingPath: clippingPath))
             }
@@ -519,11 +546,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     if !colors.isEmpty, !activeIDs.isEmpty {
                         let mapping = try imageStore.mappingImage(for: mappingPath, nodeByColor: colors)
                         if let normalPath {
-                            commands.append(imageCommand(node: node, path: normalPath, frame: frame,
+                            emit(imageCommand(node: node, path: normalPath, frame: frame,
                                 clip: inheritedClip, z: z, background: false, alpha: alpha,
                                 clippingPath: clippingPath))
                         }
-                        commands.append(imageCommand(node: node, path: statePath, frame: frame,
+                        emit(imageCommand(node: node, path: statePath, frame: frame,
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
                             mappingMask: WMPSceneMappingMask(mapping: mapping, nodeIDs: activeIDs),
                             clippingPath: clippingPath))
@@ -531,7 +558,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         // A group whose own artwork *is* the sheet swaps it wholesale, the way a
                         // `<BUTTON>` does. One with no artwork of its own and nothing lit draws
                         // nothing, which is its normal state.
-                        commands.append(imageCommand(node: node, path: statePath, frame: frame,
+                        emit(imageCommand(node: node, path: statePath, frame: frame,
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
                             clippingPath: clippingPath))
                     }
@@ -561,7 +588,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                   width: min(frame.width, artwork.width),
                                   height: min(frame.height, artwork.height))
                         : frame
-                    commands.append(imageCommand(node: node, path: path, frame: drawn,
+                    emit(imageCommand(node: node, path: path, frame: drawn,
                         clip: inheritedClip, z: z, background: false, alpha: alpha,
                         sourceOverride: strip, clippingPath: clippingPath))
                 }
@@ -584,7 +611,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     if !filled.isEmpty {
                         let source = WMPRect(x: filled.x - frame.x, y: filled.y - frame.y,
                                              width: filled.width, height: filled.height)
-                        commands.append(imageCommand(node: node, path: path, frame: filled,
+                        emit(imageCommand(node: node, path: path, frame: filled,
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
                             sourceOverride: source))
                     }
@@ -600,7 +627,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     let size = try imageStore.image(for: path).size
                     let thumb = slider.thumbFrame(in: frame, thumbSize: size)
                     if !thumb.isEmpty {
-                        commands.append(imageCommand(node: node, path: path, frame: thumb,
+                        emit(imageCommand(node: node, path: path, frame: thumb,
                             clip: inheritedClip, z: z, background: false, alpha: alpha))
                     }
                 }
@@ -634,7 +661,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         == .orderedSame,
                     scrollDelayMilliseconds: Double(literalNumber(node, "scrollingDelay") ?? 100),
                     scrollAmount: max(1, literalNumber(node, "scrollingAmount") ?? 1))
-                commands.append(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
+                emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .text(text), alpha: alpha))
             }
@@ -686,8 +713,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     toolTip: toolTip(node, state: visualState, literal: literalString)))
             }
 
-            let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
-            for child in node.children.sorted(by: nodeOrder) {
+            for child in orderedChildren.dropFirst(behindOwnArtwork.count) {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip, parentAlpha: alpha)
             }
@@ -696,11 +722,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
         try walk(view, parentFrame: canvasRect,
                  parentAuthoredSize: WMPSize(width: width, height: height),
                  inheritedClip: canvasRect, parentAlpha: 1, isRoot: true)
-        // A fully transparent node still lays out — its geometry is readable, and a script fades it
-        // in by writing `alphaBlend` — but it draws nothing, so it must not reach the command list
-        // at all. Leaving it there put invisible artwork inside `visibleBounds` and every dirty
-        // rect derived from it.
-        commands.removeAll { $0.alpha <= 0 }
         hits.sort { ($0.zIndex, $0.stableID) < ($1.zIndex, $1.stableID) }
         let allDirty = commands.compactMap { command in
             command.clipRect.flatMap { command.frame.intersection($0) } ?? command.frame

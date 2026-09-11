@@ -700,6 +700,19 @@ class WindowManager {
         add(projectMWindowController?.window, snapTarget: true)
         add(videoPlayerWindowController?.window, modeDependent: false)
 
+        if uiMode.controllerFamily == .wmp,
+           let controller = mainWindowController as? WMPMainWindowController {
+            // `.wmz`-only, and gated on the WMP controller exactly as the `.wal` branch below is
+            // gated on its own. A skin's `theme.openView` panel is a real top-level window now, so
+            // it joins the app's magnetic docking — as a **snap target only**. It is never a
+            // centre-stack member: a `.wmz` view is an arbitrary authored canvas (Halo 2's panels
+            // are 406x209 against a 327x294 player), so there is no column for it to join, which is
+            // the same reasoning the `.wal` containers are admitted under.
+            for window in controller.materializedAuxiliaryWindows {
+                add(window, snapTarget: true)
+            }
+        }
+
         if let controller = winampModernHostedController {
             // `.wal`-only: this whole branch is gated on the Winamp Modern controller existing, so no
             // other UI mode reaches it. A `newDynamicContainer` copy (B110) is still managed — levels,
@@ -951,13 +964,11 @@ class WindowManager {
             exitCompactWindow()
             return
         }
-        (mainWindowController as? WMPMainWindowController)?.traceNavigationState("menu-toggle-main-before")
         if let controller = mainWindowController, controller.window?.isVisible == true {
             controller.window?.orderOut(nil)
         } else {
             showMainWindow()
         }
-        (mainWindowController as? WMPMainWindowController)?.traceNavigationState("menu-toggle-main-after")
         mainWindowController?.windowVisibilityDidChange()
     }
     
@@ -1245,23 +1256,24 @@ class WindowManager {
     private func routeWMPSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool) -> Bool {
         guard uiMode.controllerFamily == .wmp,
               let controller = mainWindowController as? WMPMainWindowController else { return false }
-        controller.traceNavigationState("menu-route-\(surface.rawValue)-before switchingViews=\(switchingViews)")
         guard controller.revealSkinSurface(surface, switchingViews: switchingViews) else {
-            controller.traceNavigationState("menu-route-\(surface.rawValue)-unhandled")
             return false
         }
-        controller.traceNavigationState("menu-route-\(surface.rawValue)-after")
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
         return true
     }
 
-    /// Whether the skin's own copy of this surface is part of the view currently on screen — the
+    /// Whether the skin's own copy of this surface is on screen in **any** open WMP window — the
     /// case where there is nothing for a menu item to open, because the skin is already showing it.
+    ///
+    /// It used to mean "the one presented view", because there was one window. A panel the skin
+    /// opened with `theme.openView` is now a window of its own, so a toggle for a playlist that is
+    /// already up must report checked-and-inert rather than opening it a second time.
     func wmpSkinShowsInActiveView(_ surface: WMPSkinSurface) -> Bool {
         guard uiMode.controllerFamily == .wmp,
               let controller = mainWindowController as? WMPMainWindowController else { return false }
-        return controller.skinSurfaces.view(controller.selectedViewID, provides: surface)
+        return controller.anyOpenViewProvides(surface)
     }
 
     /// Whether the active `.wmz` skin owns this surface. Answers false in every other mode, so the

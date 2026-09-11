@@ -38,6 +38,13 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private let visClassicWaveform = WinampModernWaveformTap(consumerId: "wmp.effects.visclassic")
     private var visClassicBridge: VisClassicBridge?
     private var visClassicBytes: [UInt8] = []
+    /// The GL engines are pulled, not pushed: the view is never in the hierarchy, its display link
+    /// never starts, and this timer asks it for one frame at a time. 30fps rather than 60 because
+    /// every frame costs a `glReadPixels` of the rect, and the rect is small — Cerulean's is
+    /// 103x75 — so the readback is cheap but not free.
+    private var engineFrameTimer: Timer?
+    private var engineImage: CGImage?
+    private static let engineFrameInterval: TimeInterval = 1.0 / 30
 
     override var isFlipped: Bool { true }
 
@@ -79,6 +86,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         }
         pcmObserver = nil; selectionObserver = nil
         cycleTimer?.invalidate(); cycleTimer = nil
+        engineFrameTimer?.invalidate(); engineFrameTimer = nil
         cavaPresenter.stop()
         visClassicWaveform.stop()
         visClassicBridge = nil
@@ -110,9 +118,12 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func applySelection() {
         guard !isTornDown else { return }
         effect = WMPEffectSelection.shared.current
-        // A WMP effect is part of the skin's composition. Do not mount a second, full-window
-        // renderer into this small rect; it is the source of the black ProjectM panels reported
-        // in Asimov Radio and Cerulean.
+        // **A WMP effect is part of the skin's composition, and that is now enforced by the scene
+        // rather than by refusing engines (W140).** The skin's own artwork composites over this
+        // rect, so an opaque renderer is occluded exactly where the markup says it is. What still
+        // holds is that a GL engine is never *mounted* here: it renders offscreen and is presented
+        // as an image, because a legacy CGL drawable between two raster layers has no guaranteed
+        // ordering and its own clock tears against the overlay's edge.
         releaseEngine()
         cavaPresenter.stop()
         visClassicWaveform.stop()
@@ -122,6 +133,8 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
+            case .projectM, .geiss, .tripex:
+                startOffscreenEngine()
             case .bars, .spikes, .ambience:
                 break
             }
@@ -130,10 +143,39 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         needsDisplay = true
     }
 
+    /// The engine view, built but never added to the hierarchy. `makeEngineView` wires the PCM
+    /// observer it needs; `startRendering` is deliberately not called, because the frames come from
+    /// `engineFrameTimer` and a display link would render onto a drawable nothing presents.
+    private func startOffscreenEngine() {
+        guard let engine = effect.engine, let view = makeEngineView() else { return }
+        view.switchEngine(to: engine, persistPreference: false)
+        applyPreset(to: view, engine: engine)
+        applyPresetCycleMode()
+        engineFrameTimer = Timer.scheduledTimer(withTimeInterval: Self.engineFrameInterval,
+                                                repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pullOffscreenFrame() }
+        }
+    }
+
+    private func pullOffscreenFrame() {
+        guard !isTornDown, isActive, let engineView, let engine = effect.engine else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        let width = max(1, Int((bounds.width * scale).rounded()))
+        let height = max(1, Int((bounds.height * scale).rounded()))
+        // `initializeEngineOnRenderThread` sizes the engine from `convertToBacking(bounds)`, so the
+        // frame is the rect in *points* and the readback asks for the same rect in pixels — set it
+        // in pixels and the engine would be created at twice the surface it renders into.
+        engineView.frame = NSRect(origin: .zero, size: bounds.size)
+        applyPreset(to: engineView, engine: engine)
+        guard let image = engineView.renderOffscreenImage(pixelWidth: width, pixelHeight: height) else { return }
+        engineImage = image
+        needsDisplay = true
+    }
+
     private func makeEngineView() -> VisualizationGLView? {
         guard let view = VisualizationGLView(frame: bounds, pixelFormat: nil) else { return nil }
-        view.autoresizingMask = [.width, .height]
-        addSubview(view)
+        // **Never `addSubview`.** See `startOffscreenEngine`: this view exists only to own a GL
+        // context and an engine, and its picture reaches the skin through `renderOffscreenImage`.
         engineView = view
         appliedPreset = -1
         // **PCM arrives on the audio thread, and the observer must not hop to the main actor to
@@ -156,9 +198,10 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         if let observer = pcmObserver { NotificationCenter.default.removeObserver(observer) }
         pcmObserver = nil
         cycleTimer?.invalidate(); cycleTimer = nil
+        engineFrameTimer?.invalidate(); engineFrameTimer = nil
+        engineImage = nil
         guard let view = engineView else { return }
         view.stopRendering()
-        view.removeFromSuperview()
         engineView = nil
         appliedPreset = -1
     }
@@ -193,42 +236,66 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        // A stopped player leaves the skin's own artwork visible.
-        guard isActive, !levels.isEmpty else { return }
+        // A stopped player leaves the skin's own artwork visible. The spectrum is what the three
+        // WMP-native renderers draw from; Cava, vis_classic and the GL engines carry their own
+        // audio, so an empty `levels` must not stand them down.
+        guard isActive else { return }
+        switch effect.style {
+        case .bars, .spikes, .ambience: if levels.isEmpty { return }
+        case .cava, .visClassic, .projectM, .geiss, .tripex: break
+        }
         // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
         // itself — here the whole 596x468 window arrived as {{-269, -26}, {596, 468}} in this
         // view's coordinates — and a layer-backed view does not clip it (`masksToBounds` is
         // false). Filling it painted this surface's wash over the entire skin.
+        //
+        // **Every renderer fills the authored rect and nothing shapes it here.** A skin that wants
+        // a circular lens, a tilted oval, or a square pane draws its own artwork *over* this
+        // surface — the scene's paint commands from the `<EFFECTS>` node onwards are hosted above
+        // it (`WMPWidget.commandSplitIndex`), which is what a negative `zIndex` means in WMP. The
+        // inscribed-circle clip that used to stand in for that occlusion is gone: it approximated
+        // Cerulean's real 73px hole and was wrong for the 83 corpus rects that are wider than tall.
+        NSGraphicsContext.current?.cgContext.clip(to: bounds)
         switch effect.style {
         case .bars: drawBars()
         case .spikes: drawSpikes()
         case .ambience: drawAmbience()
         case .cava: drawCava()
         case .visClassic: drawVisClassic()
+        case .projectM, .geiss, .tripex: drawOffscreenEngine()
         }
+    }
+
+    /// The GL readback, drawn like any other picture. **No y-flip**: `glReadPixels` returns rows
+    /// bottom-first, a `CGImage` calls row 0 its top, and this view is flipped — the two reversals
+    /// cancel. vis_classic needs one precisely because its buffer is top-first instead.
+    private func drawOffscreenEngine() {
+        guard let engineImage, let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.interpolationQuality = .low
+        context.draw(engineImage, in: bounds)
+        context.restoreGState()
     }
 
     private func drawCava() {
         let bars = cavaPresenter.barArrays
         guard !bars.isEmpty else { return }
-        withCircularEffectClip {
-            guard let context = NSGraphicsContext.current?.cgContext else { return }
-            context.saveGState()
-            // CavaDrawing is shared with y-up AppKit hosts. The WMP skin view is flipped, so
-            // present its baseline through the same local transform as vis_classic.
-            context.translateBy(x: 0, y: compactEffectBounds.minY + compactEffectBounds.maxY)
-            context.scaleBy(x: 1, y: -1)
-            CavaDrawing.draw(in: compactEffectBounds, barArrays: bars,
-                             lowColor: cavaPresenter.lowGradientColor,
-                             highColor: cavaPresenter.highGradientColor,
-                             mode: cavaPresenter.mode)
-            context.restoreGState()
-        }
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        // CavaDrawing is shared with y-up AppKit hosts. The WMP skin view is flipped, so
+        // present its baseline through the same local transform as vis_classic.
+        context.translateBy(x: 0, y: bounds.minY + bounds.maxY)
+        context.scaleBy(x: 1, y: -1)
+        CavaDrawing.draw(in: bounds, barArrays: bars,
+                         lowColor: cavaPresenter.lowGradientColor,
+                         highColor: cavaPresenter.highGradientColor,
+                         mode: cavaPresenter.mode)
+        context.restoreGState()
     }
 
     private func drawVisClassic() {
         let scale = window?.backingScaleFactor ?? 1
-        let content = compactEffectBounds
+        let content = bounds
         let width = max(1, Int((content.width * scale).rounded()))
         let height = max(1, Int((content.height * scale).rounded()))
         guard let bridge = visClassicBridge(width: width, height: height) else { return }
@@ -240,34 +307,14 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard visClassicBytes.count >= stride * height,
               let image = visClassicImage(width: width, height: height, stride: stride) else { return }
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        withCircularEffectClip {
-            context.saveGState()
-            // CVisClassicCore writes top-row-first pixels. A flipped AppKit view uses the opposite
-            // image orientation, so draw through a local y-flip rather than presenting its bars
-            // upside down in the skin.
-            context.translateBy(x: 0, y: content.minY + content.maxY)
-            context.scaleBy(x: 1, y: -1)
-            context.interpolationQuality = .none
-            context.draw(image, in: content)
-            context.restoreGState()
-        }
-    }
-
-    /// Suite renderers are rectangular canvases, but an `<EFFECTS>` slot is often a circular lens
-    /// set into larger artwork (Cerulean's 103×75 slot frames an 81px eye). Keep the renderer in
-    /// that inscribed lens: pixels outside remain the skin's own bezel, overlay, or LCD detail.
-    private var compactEffectBounds: NSRect {
-        let side = min(bounds.width, bounds.height)
-        return NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2,
-                      width: side, height: side)
-    }
-
-    private func withCircularEffectClip(_ body: () -> Void) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
-        context.addEllipse(in: compactEffectBounds)
-        context.clip()
-        body()
+        // CVisClassicCore writes top-row-first pixels. A flipped AppKit view uses the opposite
+        // image orientation, so draw through a local y-flip rather than presenting its bars
+        // upside down in the skin.
+        context.translateBy(x: 0, y: content.minY + content.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.interpolationQuality = .none
+        context.draw(image, in: content)
         context.restoreGState()
     }
 
@@ -306,89 +353,84 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         }
     }
 
+    /// **The three WMP-native renderers draw against the rect, not about its centre.**
+    ///
+    /// They used to be polar — rays and rings around `bounds.mid` at `min(w, h) * 0.46` — which put
+    /// a circle in every slot whatever its shape. Of the 107 corpus `<EFFECTS>` rects with numeric
+    /// dimensions only 19 are square and 83 are wider than tall, so the centred square covered a
+    /// median 75% of the authored rect and as little as 17% (`Alpine7618_v09`, 150x26). A skin with
+    /// no occluding artwork gets its full `width x height`: no shape fitting, no letterboxing.
+    ///
+    /// `isFlipped` is true here, so `bounds.maxY` is the baseline a bar stands on.
     private func drawBars() {
-        let bands = normalizedLevels(count: min(32, max(16, Int(min(bounds.width, bounds.height) / 4))))
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let bands = normalizedLevels(count: min(48, max(6, Int(bounds.width / 6))))
         guard !bands.isEmpty else { return }
-        let context = NSGraphicsContext.current?.cgContext
-        let center = NSPoint(x: bounds.midX, y: bounds.midY)
-        let maximum = min(bounds.width, bounds.height) * 0.46
-        let inner = maximum * 0.30
-        let cellWidth = max(1, (maximum * .pi * 2 / CGFloat(bands.count)) * 0.60)
+        let slot = bounds.width / CGFloat(bands.count)
+        let barWidth = max(1, slot * 0.68)
         for (index, level) in bands.enumerated() {
-            let angle = (CGFloat(index) / CGFloat(bands.count)) * (.pi * 2) - (.pi / 2)
-            let height = max(maximum * 0.09, (maximum - inner) * level)
-            context?.saveGState()
-            context?.translateBy(x: center.x, y: center.y)
-            context?.rotate(by: angle)
+            let height = max(1, bounds.height * level)
+            let x = bounds.minX + CGFloat(index) * slot + (slot - barWidth) / 2
             NSColor(calibratedRed: 0.18 + level * 0.25, green: 0.72 + level * 0.22,
                     blue: 0.30 + level * 0.22, alpha: 0.95).setFill()
-            NSRect(x: inner, y: -cellWidth / 2, width: height, height: cellWidth).fill()
-            context?.restoreGState()
+            NSRect(x: x, y: bounds.maxY - height, width: barWidth, height: height).fill()
+            // The cap is what reads as a level on a 26px LCD strip, where the bar itself is a
+            // couple of pixels tall.
+            NSColor(calibratedRed: 0.62, green: 0.98, blue: 0.66, alpha: 0.9).setFill()
+            NSRect(x: x, y: bounds.maxY - height, width: barWidth, height: 1).fill()
         }
-        let core = NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner,
-                                               width: inner * 2, height: inner * 2))
-        core.lineWidth = max(1, maximum / 55)
-        NSColor(calibratedRed: 0.35, green: 0.92, blue: 0.45, alpha: 0.65).setStroke()
-        core.stroke()
     }
 
     private func drawSpikes() {
-        let bands = normalizedLevels(count: min(48, max(20, Int(min(bounds.width, bounds.height) / 3))))
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let bands = normalizedLevels(count: min(64, max(8, Int(bounds.width / 4))))
         guard !bands.isEmpty else { return }
-        let center = NSPoint(x: bounds.midX, y: bounds.midY)
-        let maximum = min(bounds.width, bounds.height) * 0.46
-        let inner = maximum * 0.28
-
-        // The legacy effect sits *in* the skin's display rather than replacing it. Keeping the
-        // surrounding pixels transparent is what lets round frames such as Asimov Radio's remain
-        // round instead of becoming a black square.
-        let outline = NSBezierPath(ovalIn: NSRect(x: center.x - maximum, y: center.y - maximum,
-                                                  width: maximum * 2, height: maximum * 2))
-        outline.lineWidth = max(1, maximum / 42)
-        NSColor(calibratedRed: 0.25, green: 0.88, blue: 1, alpha: 0.82).setStroke()
-        outline.stroke()
-        let core = NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner,
-                                               width: inner * 2, height: inner * 2))
-        core.lineWidth = max(1, maximum / 70)
-        NSColor(calibratedRed: 0.60, green: 0.96, blue: 1, alpha: 0.68).setStroke()
-        core.stroke()
+        let slot = bounds.width / CGFloat(bands.count)
+        let lineWidth = max(1, slot * 0.5)
+        let baseline = bounds.maxY
         for (index, level) in bands.enumerated() {
-            let angle = (CGFloat(index) / CGFloat(bands.count)) * (.pi * 2) - (.pi / 2)
-            let extent = inner + (maximum - inner) * level
-            let start = NSPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner)
-            let end = NSPoint(x: center.x + cos(angle) * extent, y: center.y + sin(angle) * extent)
-            let outer = NSBezierPath()
-            outer.move(to: start)
-            outer.line(to: end)
+            let x = bounds.minX + (CGFloat(index) + 0.5) * slot
+            let extent = max(1, bounds.height * level)
+            let spike = NSBezierPath()
+            spike.move(to: NSPoint(x: x, y: baseline))
+            spike.line(to: NSPoint(x: x, y: baseline - extent))
             NSColor(calibratedRed: 0.04, green: 0.44 + level * 0.28,
                     blue: 0.76 + level * 0.22, alpha: 0.75).setStroke()
-            outer.lineWidth = max(1, maximum / 34)
-            outer.stroke()
+            spike.lineWidth = lineWidth
+            spike.stroke()
             let core = NSBezierPath()
-            core.move(to: start)
-            core.line(to: NSPoint(x: center.x + cos(angle) * (extent * 0.94),
-                                  y: center.y + sin(angle) * (extent * 0.94)))
+            core.move(to: NSPoint(x: x, y: baseline))
+            core.line(to: NSPoint(x: x, y: baseline - extent * 0.94))
             NSColor(calibratedRed: 0.64, green: 0.96, blue: 1, alpha: 0.95).setStroke()
             core.lineWidth = 1
             core.stroke()
         }
+        // The baseline rule replaces the old outer ring: the same "this is a display, not a hole in
+        // the artwork" cue, drawn along the rect the skin authored.
+        NSColor(calibratedRed: 0.25, green: 0.88, blue: 1, alpha: 0.5).setFill()
+        NSRect(x: bounds.minX, y: baseline - 1, width: bounds.width, height: 1).fill()
     }
 
     private func drawAmbience() {
-        let bands = normalizedLevels(count: 12)
-        guard !bands.isEmpty else { return }
-        let center = NSPoint(x: bounds.midX, y: bounds.midY)
-        let maximum = min(bounds.width, bounds.height) * 0.47
-        for (index, level) in bands.enumerated().reversed() {
-            let fraction = CGFloat(index + 1) / CGFloat(bands.count)
-            let radius = maximum * fraction * (0.45 + level * 0.55)
-            let rect = NSRect(x: center.x - radius, y: center.y - radius,
-                              width: radius * 2, height: radius * 2)
-            let ring = NSBezierPath(ovalIn: rect)
-            NSColor(calibratedRed: 0.14 + fraction * 0.30, green: 0.35 + level * 0.45,
-                    blue: 0.72 + fraction * 0.22, alpha: 0.18 + level * 0.38).setStroke()
-            ring.lineWidth = max(1, bounds.width / 100)
-            ring.stroke()
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let bands = normalizedLevels(count: max(4, min(24, Int(bounds.width / 8))))
+        guard bands.count > 1 else { return }
+        // Three translucent envelopes over the whole rect, the near one tallest. Layered alpha is
+        // what made the old concentric rings read as "ambience"; the shape is now the skin's rect.
+        for layer in (0..<3).reversed() {
+            let scale = 1 - CGFloat(layer) * 0.24
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: bounds.minX, y: bounds.maxY))
+            for (index, level) in bands.enumerated() {
+                let x = bounds.minX + bounds.width * CGFloat(index) / CGFloat(bands.count - 1)
+                path.line(to: NSPoint(x: x, y: bounds.maxY - bounds.height * level * scale))
+            }
+            path.line(to: NSPoint(x: bounds.maxX, y: bounds.maxY))
+            path.close()
+            let depth = CGFloat(layer) / 3
+            NSColor(calibratedRed: 0.14 + depth * 0.30, green: 0.35 + depth * 0.35,
+                    blue: 0.72 + depth * 0.22, alpha: 0.42 - depth * 0.10).setFill()
+            path.fill()
         }
     }
 
@@ -453,6 +495,17 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .visClassic:
             menu.addItem(.separator())
             visClassicOptionsMenu().items.forEach(menu.addItem)
+        case .projectM, .geiss, .tripex:
+            // The engine's own menu, through the shared `VisualizationMenuTarget` protocol this
+            // view already conforms to — the same presets, cycling and sensitivity items the
+            // standalone window offers, minus fullscreen and close, which a slot inside a skin's
+            // window has nowhere to go with.
+            menu.addItem(.separator())
+            let options = VisualizationContextMenu.Options(
+                cycleMode: presetCycleMode, cycleInterval: presetCycleInterval,
+                tripexCycleMode: tripexCycleMode, tripexCycleInterval: tripexCycleInterval,
+                showsFullscreen: false, showsClose: false)
+            VisualizationContextMenu.build(target: self, options: options).items.forEach(menu.addItem)
         case .bars, .spikes, .ambience:
             break
         }

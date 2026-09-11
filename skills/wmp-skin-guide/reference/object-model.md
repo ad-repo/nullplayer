@@ -280,35 +280,55 @@ literally scrolls at 200 px/s instead of WMP's roughly 24 px/s at its authored t
 and is still counted live; that is a known inconsistency, not a statement that a resize mode does
 anything.
 
-## `theme.openView`
+## `theme.openView`, `theme.openViewRelative` and `theme.closeView`
 
-WMP opens the named view as an **additional** window and `theme.closeView` closes it; that is what
-separates it from `theme.currentViewID`, which *replaces* the presented view. This app has one WMP
-window, so `openView` posts its own `openView` host command and `WMPMainWindowController` presents
-the view, pushing the view it covered onto `openedViewStack` (capped, cleared when the skin is torn
-down). `closeView` pops that stack and switches back; only with an empty stack does it still order
-the window out, which is what it always did.
+WMP opens the named view as an **additional** window beside the opener and leaves the opener alone;
+only `theme.currentViewID` *replaces* a view. That is what this engine now does.
+`WMPViewWindowMaterializer` builds one borderless `NSWindow` per open view, all rendering and taking
+input against **one shared script runtime**; the first view presented binds the app's own window and
+is the player. `openView` posts its own `openView` host command and the controller materializes a
+window for it; the calling window's scene is untouched, so — unlike `setCurrentView` — the command
+does **not** report "switched view" and the transaction that posted it still draws.
 
-It is **live**, not `inert()`: a view is presented as a result, and the skin's own close button
-returns from it. The macOS window close control must take that same return path while the stack is
-non-empty; it cannot close or minimize the one app window and strand the covered player (W127,
-Plus! Professional). What is lost is the extra window — an auxiliary panel covers the player instead
-of sitting beside it. That reduction is the whole of the deviation and is written here because
-nothing in the call trace can show it.
+Measured over the 180 installed archives: `openView` 579 uses across **90** skins, `view.close()`
+424 across 170, `theme.closeView(name)` 183 across **84**, `theme.currentViewID` 196 across 68,
+`theme.openViewRelative` 8 across 2 (`Revert`).
 
-Two things it is deliberately **not**:
+- **`theme.closeView(name)` closes the window showing that view**, and is a silent no-op when it is
+  not open. It used to be unrecognised, which aborted the handler on that statement: `Halo 2`'s
+  `checkRemoteViewStatus()` dies on `theme.closeView('vidRemoteView')` and never reaches the four
+  statements after it. With no argument it keeps the meaning `view.close()` already posts — close
+  the window the handler is running in.
+- **`theme.openViewRelative(id, dx, dy)` places the new window at `dx,dy` skin pixels from the
+  opener's top-left**, on its first placement only, in place of the tiler. `Revert` hangs its EQ
+  under the player and its playlist beside it entirely with this call. It was deliberately left
+  unimplemented while this engine had one window (W50) — aliasing it to `openView` would have
+  dropped the displacement silently and taken the member out of the demand tally, which is the trap
+  `INERT` exists for. The offset rides the action (`openViewRelative:<dx>,<dy>`), the way
+  `setEQBand:<n>` and `playPlaylistItem:<n>` already do, because a host command carries exactly one
+  value and the view id is it.
+- **`view.close()` closes the calling window.** Closing an auxiliary window leaves the player
+  running — still animating, still holding its own overrides — which is what the covered-view stack
+  used to simulate. Closing the **player** closes the whole skin UI, panels and all: leaving panels
+  up with no player behind them is the W96 shape, and a player that cannot be closed while a panel
+  is open is not a player. The macOS close control means the same thing, so the W127 compensation
+  (intercept it and pop the stack instead) is gone with the stack.
+- **`view.minimize()` miniaturizes the calling window.**
 
-- **Not an alias for `setCurrentView`.** The two mean different things to the host, and collapsing
-  them in the object model would erase the distinction before the controller could act on it — the
-  return path is the part that depends on knowing a view was *opened* rather than switched to.
-- **Not extended to `theme.openViewRelative`.** That variant places the opened window at an offset
-  from the current one (`theme.openViewRelative('vwEQ', 0, 130)`), which is meaningless with one
-  window; aliasing it here would present the view, silently drop the offset, and vanish from the
-  demand tally. It stays unimplemented and is tracked as W50.
+All of it is **live**, not `inert()`. The former deviation recorded here — "an auxiliary panel
+covers the player instead of sitting beside it" — is closed, and with it the three defects it
+caused: W90 (closing an interior window closes the whole UI), W96 (the skin is empty and shows no
+player) and W127 (the macOS close control strands the user). Each existed only because a covered
+view had to be simulated.
+
+**`openView` is still not an alias for `setCurrentView`.** The two mean different things to the host
+and collapsing them in the object model would erase the distinction before the controller could act
+on it — one opens a window, the other replaces one.
 
 Initial load treats `openView` and `setCurrentView` identically in one place only: the windowless-view
 redirect. A view that never becomes a window can honour neither as a window operation, and both are
-a request for which view to show next.
+a request for which view to show next. A windowless view reached through `openView` at any other time
+is the same case: it never becomes a window, and its host commands run against whoever asked for it.
 
 ## `theme.loadPreference`
 

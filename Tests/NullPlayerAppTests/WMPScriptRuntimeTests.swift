@@ -150,7 +150,7 @@ final class WMPScriptRuntimeTests: XCTestCase {
         // any transaction writes only the committed override — there is no context to hold it yet.
         _ = await runtime.transact(skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
                                    snapshot: WMPHostSnapshot(), event: nil)
-        await runtime.setWidgetValue(stableID: seek, value: 42)
+        await runtime.setWidgetValue(stableID: seek, value: 42, viewID: "main")
         let output = await runtime.transact(
             skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
             snapshot: WMPHostSnapshot(),

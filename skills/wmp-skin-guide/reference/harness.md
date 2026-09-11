@@ -90,13 +90,28 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
 | `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]`, any entry may be a `>`-joined path | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after. **An entry written `x,y>x,y>x,y` is a drag**: press at the first point, move through the rest, release at the last, with the pointer captured on the object the press landed on. `DRAG` reports the control's direction, range and border, the value and drawn thumb frame at every step, and then the two claims the flag exists to settle — `follows-pointer=yes\|no\|flat` and `thumb-travel=<px>`. `flat` is the one to read for: a value that never moves is trivially monotonic, and a `yes/no` answer alone would call it a pass |
 | `WMP_RENDER_HOVER` | `<view>@x,y[;x,y…]` | `HOVER` — walk the pointer through the points in order and raise the edges each move crosses: an `onMouseOut` on the node left, then an `onMouseOver` on the node entered, through `WMPMainWindowController.handlers(in:event:…)`, the same call the app dispatches through. A move that stays inside the same node prints `inside=… — no edge` and raises nothing, which is the claim worth falsifying: a hover fired per mouse-moved event would be a script transaction per pixel. Separate from `WMP_RENDER_CLICK`'s `>` drag form on purpose — a drag holds a capture and asks what the *value* did, a hover holds nothing and asks which handlers the crossing raised (W54) |
-| `WMP_RENDER_APPKIT` | `1` | `APPKIT` — host the scene in the **real `NSView` stack** and report what the AppKit layer adds over the artwork. `outside=` is the number that ranks: an overlay drawing inside its own widget frame is the hosting working, and one drawing anywhere else is the W43 class. `blit=`/`blit-max-delta=` is a second, separate comparison of the renderer's own image against the view's blit of it. Set `WMP_RENDER_APPKIT_DUMP=<dir>` alongside it to write both bitmaps as `<view>-scene.png` and `<view>-hosted.png` when isolating one view |
+| `WMP_RENDER_APPKIT` | `1` | `APPKIT` — host the scene in the **real `NSView` stack** and report what the AppKit layer adds over the artwork. `outside=` is the number that ranks: an overlay drawing inside its own widget frame is the hosting working, and one drawing anywhere else is the W43 class. `blit=`/`blit-max-delta=` is a second, separate comparison of the renderer's own image against the view's blit of it. Set `WMP_RENDER_APPKIT_DUMP=<dir>` alongside it to write both bitmaps as `<view>-scene.png` and `<view>-hosted.png` when isolating one view. **A scene with an `<EFFECTS>` is two rasters** either side of `WMPScene.effectsCommandSplitIndex` (W139), and this probe presents both: the baseline pass hides only `WMPMainView.hostedWidgetViews`, never the artwork overlay, because artwork a skin draws *above* its visualizer is the skin's picture and not something AppKit added over it. `blit=` compares the view against the two layers flattened back together, and a split scene with partially transparent artwork above the effects node reads a small non-zero there — the intermediate premultiplied buffer quantizes, measured at 0.11% of pixels and max-delta 16 on `Plus! Professional/mainView`. Read the shape, as the line has always said |
 | `WMP_RENDER_SETTLE` | seconds | run the **view's own timer loop** for that long before measuring — at the period the skin asks for, honouring every `setViewTimerInterval` its handlers post back, rebuilding the scene between ticks |
 | `WMP_RENDER_CLOCK` | `<s>[;<s>…]` | seconds into an animation to draw, one PNG per value (suffixed `@t<s>`; a zero clock keeps the original filename). **A render dump is a still, so this flag is the only way an animation is falsifiable** — frame zero is indistinguishable from an engine that never animates. Two pinned values, diffed, are the proof. `ANIMATION <view>: shortestDelay=… bounds=…` reports what the scene actually animates |
 | `WMP_RENDER_HOST` | `playing`, or a `key=value` list | seed a **playing** host for the whole run instead of the default stopped one, and print `HOST` per skin saying what was seeded. Everything else in the harness measures a stopped player with an empty playlist, which is the one state a `.wmz`'s transport readouts never show a user: the elapsed readout of **108 archives** is `<TEXT value="wmpprop:player.controls.currentPositionString">` and **89** hang a seek slider off `player.controls.currentPosition` with `max="wmpprop:player.currentMedia.duration"`, and against the default snapshot every one of those resolves to `0:00` on a zero-length track — indistinguishable from an engine that never answers the path at all. Defaults are a track 1:03 into 3:33, one of three in the playlist, half volume, centred, with a title/artist/album; `WMP_RENDER_HOST='t=42,dur=137,state=paused,vol=0.8,title=X'` overrides any field (`state`, `t`/`time`/`position`, `dur`, `vol`, `bal`, `mute`, `shuffle`, `repeat`, `buffering`, `bitrate`, `title`, `artist`, `album`, `tracks`, `index`, `eq`). **Read the `HOST` line before reading anything else in such a capture** — a seeded run misread as a default-state one is wrong about every readout in it |
 | `WMP_RENDER_SIZE` | `<W>x<H>` | `RESIZE` — lay the view out at its **own** size first, run `onLoad` there, then resize to this and re-drive `onResize`, which is the order a user produces. An expression-driven layout is a *different* layout, not the same one scaled. The transaction runs whether or not the view declares an `onResize`, because an expression re-reads `view.width` either way; `handlers=` is how many the changed-object set actually raised, and `handlers=0` with a skin you know authors one means nothing moved |
 
-### The two probes that are not in the test binary
+### The probes that are not in the test binary
+
+`WMP_PLACE_TRACE=1` is read by **the app** (`WMPViewWindowMaterializer.place`) and prints one
+`[wmp/place] <viewID> <frame>` line per auxiliary window, at the moment it is placed and never
+again — placement happens once per window, so a window the user has moved is never yanked back.
+It is the `.wmz` counterpart of `WINAMP_MODERN_PLACE_TRACE`, and it exists for one question a
+screenshot answers badly: **a skin that opens five panels at load has five windows to fit**.
+`Halo 2`'s `onLoadSkin` opens four from its own preferences plus `mainView`, and the failure mode
+is not a wrong-looking window but an invisible one — the tiler walking off the bottom of its column.
+A line whose frame is outside every screen is the `rescuedOrigin` fallback failing; a line that
+repeats for the same view is placement running twice, which is the bug this flag exists to catch.
+
+```bash
+WMP_PLACE_TRACE=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
+  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+```
 
 `NULLPLAYER_PLAY=<audio file>` is read by **the app** (`AppDelegate`, `#if DEBUG`) and enqueues and
 plays that file at launch through the same `application(_:openFiles:)` a Finder open takes. **Live QA
@@ -106,37 +121,25 @@ into a launched debug build costs a Local Library window and a CGEvent double-cl
 WMP mode's own route to a track is a file dialog. It is the live counterpart of `WMP_RENDER_HOST`:
 
 ```bash
-WMP_TRACE_INPUT=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
+NULLPLAYER_PLAY=/abs/path/track.mp3 \
   nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
 ```
 
-`WMP_TRACE_INPUT=1` is read by **the app**, not by the harness (`WMPMainWindowController.tracesInput`,
-`#if DEBUG`). It writes one line per input the window turns into a script transaction and one per
-transaction that reaches the screen, straight to stderr — so launch the debug build redirected to a
-file and read it there:
+**`WMP_TRACE_INPUT` and the `INPUT` trace were removed on 2026-09-11.** The instrument had become
+unusable as a *live* one and that is the lesson worth keeping: the lines were emitted per present
+and per pointer crossing, and a skin repaints at its own cadence — an animated view presents 20x/s,
+each present re-running `synchronizeWidgetViews` and the position-change transaction — so three
+identical lines a frame buried everything that carried news, and a hover edge with no authored
+handler wrote "nothing happened" for every button the pointer passed over on the way to the one it
+wanted. Reported live as unreadable log noise, twice, and the second time the answer was to take it
+out rather than to filter it.
 
-```bash
-WMP_TRACE_INPUT=1 nohup ./.build/arm64-apple-macosx/debug/NullPlayer > /tmp/app.log 2>&1 &
-```
-
-```
-INPUT candidate <view> canvas=<size> requested=<size|->      which views the loader walked, and why
-INPUT present-view <view> canvas=<size> commands=<n>         the view that actually became a window
-INPUT view-timer <n>ms                                       the view's own timerInterval, 0 = stopped
-INPUT hover <id>#<sid> -> <id>#<sid>                         a pointer crossing, before dispatch
-INPUT dispatch <event> target=<id>#<sid> handlers=<n> gated=<bool>
-INPUT present <event> geometry=<n> properties=<n> commands=<n> diagnostics=<n>
-INPUT action <action> value=<v|->                            a widget press reaching the host directly
-INPUT command <action> value=<v>                             a host command the transaction posted
-INPUT widgets hosted=<n> [<kind> id=<id> frame=<rect>, …]    the AppKit overlays this present built
-INPUT menu at=<point> frames=[<effects rects>]               a right-click, and what decided it
-INPUT animation <view> delay=<s> endsAt=<s|endless> clock=<s>  every startAnimation, and the clock it runs on
-INPUT script-diag [<code>] <message>                         a script diagnostic from a live transaction
-INPUT video hosted id=<id> frame=<rect> source=<w>x<h>       the picture parked in the skin's video box
-INPUT video detached reveal=<bool>                           the loan given back, and whether it was shown
-INPUT video reparented (was orphaned|elsewhere)              the parked window had stopped being a child
-INPUT video reordered above parent                           the parked window had fallen behind the skin
-```
+It *did* find real defects — `hosted=0` through a whole track settled Corona's "no visualization",
+and no `hover` lines at all while `dispatch click` worked settled the window-never-key defect on
+2026-09-08. **Both were answered by a state that never changed, not by a stream.** If a question
+like that comes back, build the instrument that way: a counter, a one-shot, or a line that prints
+only on a *change*. Never one per frame, and never one per pointer move. What follows is kept
+because the distinctions it records are about the app, not about the trace.
 
 **`action` and `command` are two different inputs and only one of them was ever traced.** `command`
 is a host command a *script transaction* posted, so a skin that commits through JScript is visible —
@@ -211,7 +214,7 @@ screen-only report rather than a last resort. Nothing in it is committed; rebuil
    ```bash
    defaults write NullPlayer wmpSkinName -string "9SeriesDefault"
    defaults delete NullPlayer wmpSkinViewID
-   WMP_TRACE_INPUT=1 nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+   nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
    ```
 
    `-uiMode wmp` is `PlayerUIMode.argumentOverride`, and it works in release builds too. **Restore
@@ -468,14 +471,26 @@ the top-left quarter and calls it the window; presenting a 1x image into a 2x re
 upscaler against the renderer. Both were made on the way to this line and both look exactly like a
 defect in the app.
 
-**`INPUT widgets hosted=…` is the live counterpart of `WIDGET`, and the two answer different
-questions.** `WIDGET` is what the *harness* resolved from a scene; `widgets hosted=` is what the
-running window actually built, printed on every present. It is the line to read when a skin dumps a
-perfect frame and is missing its playlist or its visualization on screen — the overlays are never in
-a PNG — and it is what settled Corona's "no visualization": `hosted=0` through a whole track said the
-pane was never built, which moved the search into the script that turns it on rather than into the
-drawing. `menu at=` prints the point a right-click landed on and every `<EFFECTS>` frame it was
-tested against, which is what decides whether the visualization's own context menu opens.
+**`dispatch` prints only when the transaction actually runs.** A gated hover edge with no authored
+handler returns without doing anything, and the pointer crosses a whole row of buttons on the way to
+the one it wants — tracing before the gate wrote a line per crossing that said "nothing happened".
+The `hover <id> -> <id>` crossing line went with it for the same reason. What this costs is the
+signature that found the window-never-key defect on 2026-09-08 (*no `hover` lines at all while
+`dispatch click` worked*); if that question comes back, the way to ask it is a counter or a
+one-shot, not a line per pointer move.
+
+**Three more lines were removed on 2026-09-11, and the reason is worth keeping**:
+`widgets hosted=…`, `present <event> …` and `animation <view> …` were printed on every present, and
+a skin repaints at its own cadence — an animated view presents 20×/s, and each present re-runs
+`synchronizeWidgetViews` and the position-change transaction. Interleaved, they wrote three
+identical lines forty times a second and buried every line that carried news, which is the opposite
+of what a trace is for. `widgets hosted=` had earned its place once — `hosted=0` through a whole
+track settled Corona's "no visualization" by saying the pane was never built — so if that question
+comes up again, ask it with a line that prints when the hosted set *changes*, never one per frame.
+`WIDGET` still answers the same question from the harness side.
+
+`menu at=` prints the point a right-click landed on and every `<EFFECTS>` frame it was tested
+against, which is what decides whether the visualization's own context menu opens.
 
 `WIDGET` is the only line about the AppKit overlays — playlist, equaliser, popup, effects, video —
 and they are **not in the dumped PNG at all**: the renderer draws the scene, and these are `NSView`s
@@ -553,6 +568,17 @@ git rev it was measured at. This is the only honest source for the reach numbers
 
 `--parse-only` re-derives the TSV from a previous run's logs without paying the sweep again — it is
 how a parsing change is checked against a capture that is already known-good.
+
+**Check `render.txt` is non-empty before believing a single number out of a capture.** The script
+exits **0** on a run that was killed part-way through its own `swift test`, leaving an output
+directory that looks exactly like a successful one — `corpus/`, `render.txt`, `render.stderr.txt`
+— with `render.txt` at zero lines and no `census.tsv`. Reproduced twice on 2026-09-11 by starting
+it detached (`nohup … &`): `render.stderr.txt` ends mid-build (`[1/6] Write swift-version…`), not
+after it. The script's header already warns that *a binary that will not compile* writes an empty
+capture that diffs as "everything changed"; **a killed run is the same failure with a clean exit
+status**, which is worse, because nothing anywhere says so. `wc -l <outdir>/render.txt` and the
+presence of `census.tsv` are the two-second check. Run it in the foreground and wait for the
+`done — <outdir>/census.tsv` line; that line is the only thing that means it finished.
 
 It also writes two **ranked promotion files**, every run, and names the worst rows on stdout where
 the person who ran it is already looking. Both exist because a number the instrument already
@@ -764,8 +790,8 @@ Both cost a stated, confident, wrong answer during W102's live QA. Neither is ab
 
 **A synthetic click must set `mouseEventClickState`, or it is not a click.** A `CGEvent` pair of
 `.leftMouseDown`/`.leftMouseUp` posted without `e.setIntegerValueField(.mouseEventClickState, 1)`
-arrives with `clickCount == 0`. The pointer moves, `INPUT hover` updates, `mouseDown` may even
-dispatch — and no click is ever synthesised. This was read as *"the skin's play button is dead"*
+arrives with `clickCount == 0`. The pointer moves, the hover artwork follows it, `mouseDown` may
+even dispatch — and no click is ever synthesised. This was read as *"the skin's play button is dead"*
 when it was the tool. **Prove the input arrives before concluding the app ignored it**: click
 something with a known trace (`INPUT action <transport>` on any transport button) and see the line
 appear. Same rule as every other instrument on this page. A double-click additionally needs
@@ -1149,8 +1175,9 @@ other way:
 The first round left `Cablemusic` drawing a whole player and four defects still on the screen:
 "when you click the compact button there is a large overlay, the track information does not appear
 and the track text is shifted up too high in the track window, the playlist is always showing."
-**Two of the four were reachable headlessly and two were not**, and the two that were not are the
-reason `WMP_TRACE_INPUT`'s `script-diag` line exists.
+**Two of the four were reachable headlessly and two were not**, and the two that were not are why a
+live script diagnostic mattered at the time (the `INPUT` trace that carried it was removed on
+2026-09-11; see above).
 
 * **Headless, one command each.** `WMP_RENDER_CLICK='mainview@384,390;579,390'` opens the playlist
   drawer and closes it again: the second click printed `changed=[subPlayList.left=178]` and

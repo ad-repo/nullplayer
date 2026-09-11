@@ -122,7 +122,12 @@ final class WMPPhase6Tests: XCTestCase {
         XCTAssertEqual(demand.last, true)
         view.prepareForUITeardown()
         XCTAssertEqual(demand.last, false)
-        XCTAssertTrue(view.subviews.isEmpty)
+        // Every hosted surface goes; the one subview left is the persistent artwork overlay the
+        // effects surface is ordered against, which is created once in `init` and never a widget.
+        XCTAssertTrue(view.subviews.allSatisfy {
+            !($0 is WMPPlaylistSurfaceView) && !($0 is WMPEffectsSurfaceView)
+        })
+        XCTAssertEqual(view.subviews.count, 1)
     }
 
     @MainActor

@@ -22,19 +22,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// The two events raised on the pointer crossing a control's edge, dispatched only where the
     /// markup authored a handler for them. See `dispatchScriptEvent(name:targetID:…)`.
     static let hoverEvents: Set<String> = ["mouseover", "mouseout"]
-    #if DEBUG
-    /// `WMP_TRACE_INPUT=1` — one line per input event the window turns into a script transaction,
-    /// and one per transaction that reaches the screen. Read once at process start like every other
-    /// probe: exporting it at an already-running app reports nothing. Documented in
-    /// `skills/wmp-skin-guide/reference/harness.md`.
-    static let tracesInput = ProcessInfo.processInfo.environment["WMP_TRACE_INPUT"] != nil
-    static func traceInput(_ line: @autoclosure () -> String) {
-        guard tracesInput else { return }
-        FileHandle.standardError.write(Data(("INPUT " + line() + "\n").utf8))
-    }
-    #else
-    static func traceInput(_ line: @autoclosure () -> String) {}
-    #endif
 
     private let importer: WMPSkinImporter
     private let host: any WMPHost
@@ -45,18 +32,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// lands within 100 ms and looks immediate — and with the player stopped the skin's
     /// `currentEffectType_onchange` would never be raised at all (W129).
     private var effectSelectionObserver: NSObjectProtocol?
+    /// The skin *session's* load — the archive, the candidate walk, the first present. Per-view work
+    /// has its own task on the presentation it belongs to.
     private var loadTask: Task<Void, Never>?
-    private var scriptTask: Task<Void, Never>?
-    private var scriptTimerTasks: [Int: Task<Void, Never>] = [:]
-    /// The active view's own `timerInterval`, which is a host timer rather than a scene property.
-    private var viewTimerTask: Task<Void, Never>?
     /// **The windowless view the skin keeps running alongside the player, and its clock.**
     ///
     /// 24 of the 180 corpus archives author a `controlView` that is never a window and poll it at
     /// 100 ms; their panel, minimize and close buttons do not call the host at all, they write a
     /// preference and let this view's `onTimer` read it back and act (W89). It outlives a view
-    /// switch on purpose — it is the way back from the panel it opened — so it is not part of
-    /// `stopAllTimers`, and only teardown and a skin reload stop it.
+    /// switch on purpose — it is the way back from the panel it opened — so only teardown and a
+    /// skin reload stop it.
     private var dispatcherViewID: String?
     private var dispatcherTimerTask: Task<Void, Never>?
     /// The dispatcher's `onTimer` sources, resolved once. `handlers` walks the whole graph, and at
@@ -64,46 +49,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// fixed before the skin loaded.
     private var dispatcherHandlers: [String] = []
     private var dispatcherVideoSnapshot: WMPVideoSnapshot?
-    /// The animation repaint loop and the instant its clock is measured from. Separate from
-    /// `viewTimerTask`: that one dispatches the skin's own `onTimer` and rebuilds the scene, and an
-    /// animation must not do either — it re-renders the scene that already exists.
-    private var animationTask: Task<Void, Never>?
-    private var animationEpoch = Date()
-    /// **The view the animation clock belongs to.** An animation clock is a property of the view on
-    /// screen, not of the scene object — and a scene object is rebuilt by every hover repaint,
-    /// every script transaction and every `onTimer` tick. `startAnimation` used to rewind the epoch
-    /// on each of those, so every GIF in the view restarted from frame zero at the rate the view
-    /// was rebuilt. Once the view timers started running (Phase 7) that became continuous: a view
-    /// declaring `timerInterval="100"` rewound a 2.16s one-shot intro ten times a second, and it
-    /// never reached its second frame. Reported live as "the animations keep opening and closing
-    /// constantly", and worse under the pointer because a hover adds transactions of its own.
-    private var animationEpochViewID: String?
     private var loadedSkin: WMPLoadedSkin?
     private var imageStore: WMPImageStore?
-    private var activeViewID: String?
-    /// Views the skin asked to *open* on top of what was showing. WMP gives each one its own
-    /// window; this app has one, so the opened view is presented and the view it covered is
-    /// remembered here, which is what gives `closeView` somewhere to go back to.
-    ///
-    /// **What is remembered is the view as it was drawn, not just its name.** WMP never touched the
-    /// covered window — `openView` opened a second one beside it — so coming back has to restore it
-    /// rather than load it: the overrides its script had accumulated and the period its script had
-    /// left its own timer at. Rebuilding it from markup instead is what made `Alienware Invader`
-    /// return from its equaliser to a blank player and then shutter itself, reported as "closing an
-    /// interior window closes the whole UI".
-    private var openedViewStack: [CoveredView] = []
-    struct CoveredView {
-        let viewID: String
-        let overrides: WMPSceneOverrides
-        let viewTimerMilliseconds: Int
-        /// The covered WMP window keeps animating while an auxiliary window is open. Restoring it
-        /// must therefore use its original clock rather than replay its intro from frame zero.
-        let animationEpoch: Date?
-    }
-    /// The period the view timer is currently running at, so a covered view can be given it back.
-    private var viewTimerMilliseconds = 0
-    private var activeLimits: WMPResizeLimits?
-    private var activeScene: WMPScene?
     /// Which surfaces the loaded skin provides itself (`WMPSkinSurfaces`). Empty while the
     /// app-authored unskinned player is up, which is what makes NullPlayer's playlist and equalizer
     /// available there.
@@ -113,43 +60,40 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// `WMPSurfacePalette`. Nil whenever the app-authored unskinned player is up, which is what makes
     /// `WindowManager.hostedSurfaceStyle` nil there and sends those windows back to their own drawing.
     private(set) var currentSurfacePalette: WMPSurfacePalette?
-    private var sceneOverrides = WMPSceneOverrides.empty
-    /// The pointer/keyboard state the view last reported, so a **script** transaction can rebuild
-    /// the scene with it. Without it a script present erases whatever hover or pressed artwork the
-    /// input that raised it had just painted — measured on 2026-09-08: Melvin's buttons swapped to
-    /// their `hoverImage` and were overwritten milliseconds later by the `onMouseOver` transaction,
-    /// which read as hover never working at all.
-    private var interactionState = WMPInteractionState()
     private var scriptRuntime: WMPScriptRuntime?
     private var lastScriptSnapshot: WMPHostSnapshot?
-    /// Host events a refresh has *decided* on but not yet dispatched.
-    ///
-    /// **A state change is compared once and dispatched later, and the two used to be able to come
-    /// apart.** `refreshHostState` writes `lastScriptSnapshot` at comparison time and schedules the
-    /// dispatch 16 ms out; the next refresh — a time tick, which arrives about five times a second
-    /// during playback — then compared against the *new* snapshot, found only `status_onchange`,
-    /// and cancelled the pending task with `playstatechange` still inside it. Nothing ever raised
-    /// it again, because by then nothing differed. Corona is what that cost: its `<WMPEFFECTS>`
-    /// pane is authored `visible="false"` and turned on by `OnPlayStateChange`, so the skin's
-    /// visualization never appeared however long it played. Events accumulate here until a
-    /// dispatch actually runs.
-    private var pendingHostEvents: [String] = []
-    private var mainView: WMPMainView?
     private var unskinnedView: WMPUnskinnedMainView?
-    private var isApplyingSceneSize = false
-    /// The size the skin's own script last assigned the view, held until a user resize replaces it.
+
+    /// **The windows this skin has open, and the one bound to the app's own.**
     ///
-    /// **A scripted view size is the script's output, not the drawing's**, so it is committed in the
-    /// uncancellable half of a transaction beside the host commands and it outlives the scene that
-    /// carried it. `Cablemusic`'s compact mode is why: `SwitchSmall()` runs on a click, and with a
-    /// track playing a `status_onchange` transaction lands five times a second and cancels the
-    /// click's task after its render. The overrides had already committed, so the *next* rebuild
-    /// drew the compact player — at the old canvas, in a 593x600 window, which is precisely the
-    /// "large overlay" that was reported. This is W88's rule applied to the one geometry a
-    /// transaction owns that the scene alone cannot carry.
-    private var scriptViewSize: WMPSize?
-    /// The host's **UI Size** as a multiplier on this window, and the window's size in the skin's
-    /// own pixels — the size the scene is built and clamped at, which the multiplier never enters.
+    /// `theme.openView` opens an additional window in WMP and leaves the opener alone. Every field
+    /// that used to be a singleton on this controller and is really per-window now lives on a
+    /// `WMPViewPresentation`; this is where they are.
+    private var materializer: WMPViewWindowMaterializer!
+    /// A window being opened that has no presentation yet — the scene is built before the window is
+    /// created, so its size is known when it is placed. Keyed by folded view id so a second
+    /// `theme.openView` for the same panel while the first is still building is a no-op rather than
+    /// a second window.
+    private var pendingOpenTasks: [String: Task<Void, Never>] = [:]
+
+    /// **One video surface for the whole session, lent to whichever window is showing the picture.**
+    ///
+    /// `WMPVideoSurface.update(in:…)` already re-parents the VLC child window to `view.window` on
+    /// every tick, so moving it between windows needs an arbiter rather than new plumbing — and
+    /// `Halo 2`'s `<VIDEO>` is in `videoView`, a window of its own. The `video reparented` /
+    /// `video reordered above parent` traces in `SKILL.md` § W102 are the check that this is not
+    /// thrashing: they must fire once per incident, not continuously.
+    private let videoSurface = WMPVideoSurface()
+
+    /// **The spectrum consumer is ref-counted across windows, not a Bool.**
+    ///
+    /// `WMPMainView` reports whether *its* view hosts an `<EFFECTS>` rect. With one window that was
+    /// the whole answer; with several, the player reporting `false` would switch the tap off under a
+    /// visualisation panel that is still drawing. Identity of the reporting view, so a window that
+    /// closes takes its own claim with it.
+    private var spectrumConsumers: Set<ObjectIdentifier> = []
+
+    /// The host's **UI Size** as a multiplier on every WMP window.
     ///
     /// A `.wmz` view is not resizable in the sense UI Size means: its size is authored, most of the
     /// corpus pins `WMPResizeLimits` to exactly it, and growing the window re-*lays out* the scene
@@ -159,36 +103,45 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// drawing, hit testing, cursor rects and widget frames through `bounds / canvasSize`, so input
     /// and the AppKit overlays follow the zoom with nothing further.
     private(set) var uiScale: CGFloat = 1
-    private var skinSpaceSize = WMPMainWindowController.unskinnedSize
     private var pendingRestoredFrame: NSRect?
     private var pendingRestoredViewID: String?
     private(set) var lastLoadDiagnostic: String?
 
+    /// How many windows one skin may have open at once. The covered-view stack this replaces was
+    /// bounded at the same number, and `Halo 2` — the skin that found this row — opens six.
+    static let maximumOpenViews = 8
+
     var availableViewIDs: [String] { loadedSkin?.views.map(\.id) ?? [] }
-    var selectedViewID: String? { activeViewID }
+
+    /// The views this skin has open, player first.
+    var openViewIDs: [String] { materializer?.openPresentations.map(\.viewID) ?? [] }
+    /// The **player's** view. A panel in a window of its own is not the session's view (W96), and
+    /// every caller of this — the restore path, the menu's checked state, the diagnostics — means
+    /// the player.
+    var selectedViewID: String? { materializer?.playerPresentation?.viewID }
     var hasCompatibilityReport: Bool { loadedSkin != nil }
 
-    /// Emits the exact routing state needed to distinguish a WMP auxiliary view from a skin that
-    /// changed its only main view in place. It is intentionally diagnostic only.
-    func traceNavigationState(_ origin: String) {
-        let scene = activeScene
-        let widgets = scene?.widgets.map { widget in
-            "\(widget.kind.rawValue):\(widget.nodeID ?? "#\(widget.stableID)")"
-        }.joined(separator: ",") ?? "-"
-        let frame = window?.frame
-        Self.traceInput("navigation origin=\(origin) activeView=\(activeViewID ?? "-") canvas=\(scene?.canvasSize.width ?? 0)x\(scene?.canvasSize.height ?? 0) windowVisible=\(window?.isVisible == true) frame=\(frame?.width ?? 0)x\(frame?.height ?? 0) playlistDeclared=\(skinSurfaces.view(activeViewID, provides: .playlist)) playlistWidget=\(scene?.widgets.contains { $0.kind == .playlist } == true) stack=\(openedViewStack.map(\.viewID).joined(separator: ",")) widgets=[\(widgets)]")
+    /// The player window's size in the skin's own pixels.
+    private var skinSpaceSize: NSSize {
+        materializer?.playerPresentation?.skinSpaceSize ?? Self.unskinnedSize
     }
 
     /// NVIDIA implements playlist and video as modes inside `mainView`, but its global close
     /// button still calls `view.close()`. In either embedded mode, close returns to audio mode.
-    private func closeNVIDIAEmbeddedMode() -> Bool {
+    ///
+    /// **This is the drawer exception in its purest form and it is deliberately untouched.** An
+    /// in-place mode is a `<SUBVIEW>` of the presented view's own canvas; it never reaches
+    /// `theme.openView` and it has no window of its own to close. The guard that used to read
+    /// "nothing has been opened over the player" now reads "this *is* the player and it is the only
+    /// window open", which is the same statement made in the new vocabulary.
+    private func closeNVIDIAEmbeddedMode(_ presentation: WMPViewPresentation) -> Bool {
         guard importer.selectedSkinName?.caseInsensitiveCompare("NVIDIA") == .orderedSame,
-              openedViewStack.isEmpty,
-              let widgets = activeScene?.widgets,
+              presentation.isPlayer, materializer.openPresentations.count == 1,
+              let widgets = presentation.activeScene?.widgets,
               widgets.contains(where: { $0.kind == .playlist || $0.kind == .video })
         else { return false }
-        traceNavigationState("nvidia-close-embedded-mode")
-        dispatchScriptTransaction(WMPJScriptEvent(name: "hostRestoreMainLayout", targetID: nil,
+        dispatchScriptTransaction(presentation,
+                                  WMPJScriptEvent(name: "hostRestoreMainLayout", targetID: nil,
                                                   handlers: ["theme.savePreference('videoItem','false');audioModeToggle()"]))
         return true
     }
@@ -204,6 +157,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                    styleMask: [.borderless, .resizable, .miniaturizable],
                                    backing: .buffered, defer: false)
         super.init(window: window)
+        materializer = WMPViewWindowMaterializer(controller: self, playerWindow: window)
         effectSelectionObserver = NotificationCenter.default.addObserver(
             forName: WMPEffectSelection.didChange, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
@@ -235,9 +189,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     func reloadSelectedSkin() {
-        traceNavigationState("reload-selected-skin")
         loadTask?.cancel()
         stopDispatcher()
+        materializer.teardown()
+        bindingCache.removeAll()
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -285,9 +240,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     let scene = try await builder.build(viewID: registration.id,
                                                         requestedSize: requested)
-                    Self.traceInput("candidate \(registration.id) canvas=\(scene.canvasSize) "
-                        + "requested=\(requested.map(String.init(describing:)) ?? "-")")
-                    await runtime.prepareForViewSwitch()
+                    await runtime.discardView(registration.id)
                     let loadEvent = WMPJScriptEvent(name: "load", targetID: registration.id,
                         handlers: Self.handlers(in: skin, event: "load", targetID: nil,
                                                 viewID: registration.id))
@@ -319,7 +272,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         // request for which view to show next, and neither can do more than that
                         // from a view that never becomes a window.
                         if let next = output.hostCommands.last(where: {
-                            $0.action == "setCurrentView" || $0.action == "openView"
+                            $0.action == "setCurrentView" || $0.action.hasPrefix("openView")
                         })?.value?.string {
                             candidates.insert(next, at: index)
                         }
@@ -334,15 +287,29 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     let rendered = try await WMPRenderer(imageStore: store).render(
                         scene: resolved, backingScale: renderScale(for: resolved.canvasSize))
                     try Task.checkCancellation()
+                    // The first view with a canvas binds the app's own window and becomes the
+                    // player; everything the skin opens after it gets a window of its own.
+                    guard let presentation = materializer.materialize(
+                        viewID: resolved.viewID,
+                        size: NSSize(width: resolved.canvasSize.width,
+                                     height: resolved.canvasSize.height),
+                        opener: nil, offset: nil) else { continue }
                     apply(skin: skin, store: store, scene: resolved, image: rendered.image,
-                          runtime: runtime, overrides: output.overrides)
-                    let switchedView = applyHostCommands(output.hostCommands)
+                          overlay: rendered.overlayImage,
+                          runtime: runtime, overrides: output.overrides, into: presentation)
+                    // **Before the load transaction's commands, so a skin that re-opens its own
+                    // panels does not end up with two.** A dispatcher skin reads
+                    // `theme.loadPreference('plViewer')` and calls `theme.openView` for each panel
+                    // it had open; `show` on a view that is already open is a raise, so whichever
+                    // of the two runs first wins and the other is a no-op.
+                    restoreOpenAuxiliaryViews(skin: skin, store: store, runtime: runtime)
+                    let switchedView = applyHostCommands(output.hostCommands, from: presentation)
                     if !switchedView {
-                        applyTimerDelta(registered: output.timerRequests,
+                        applyTimerDelta(presentation, registered: output.timerRequests,
                                         cleared: output.clearedTimerTokens)
                     }
                     recordScriptDiagnostics(output.diagnostics)
-                    await adoptDispatcher(in: skin, store: store, presenting: registration.id)
+                    await adoptDispatcher(in: skin, store: store, presenting: resolved.viewID)
                     presented = true
                     break
                 }
@@ -355,6 +322,24 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             } catch {
                 presentUnskinned(message: error.localizedDescription)
             }
+        }
+    }
+
+    /// Re-open the panels the user last had open, following `.wal`'s rule that **what the user last
+    /// decided wins over what the skin declares**.
+    ///
+    /// Runs after the player is on screen — an auxiliary window is placed relative to it — and
+    /// before the load transaction's host commands, so a skin that re-opens its own panels from a
+    /// preference raises the window this restored rather than opening a second one.
+    private func restoreOpenAuxiliaryViews(skin: WMPLoadedSkin, store: WMPImageStore,
+                                           runtime: WMPScriptRuntime) {
+        let stored = WMPViewFrameStore(defaults: importer.defaults)
+            .openViews(skin: importer.selectedSkinName ?? "")
+        guard !stored.isEmpty, let player = materializer.playerPresentation else { return }
+        for viewID in stored.prefix(Self.maximumOpenViews)
+        where !materializer.isOpen(viewID)
+            && viewID.caseInsensitiveCompare(player.viewID) != .orderedSame {
+            openView(viewID, from: player, offset: nil)
         }
     }
 
@@ -448,7 +433,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if loadedSkin != nil { reloadSelectedSkin() }
         else if skinName == nil, let safe = pendingRestoredFrame {
             // The unskinned player owns a fixed safe size; restore position only.
-            skinSpaceSize = Self.unskinnedSize
             var positioned = safe
             positioned.size = NSSize(width: Self.unskinnedSize.width * uiScale,
                                      height: Self.unskinnedSize.height * uiScale)
@@ -459,18 +443,20 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     private func apply(skin: WMPLoadedSkin, store: WMPImageStore, scene: WMPScene, image: CGImage,
-                       runtime: WMPScriptRuntime, overrides: WMPSceneOverrides) {
+                       overlay: CGImage? = nil,
+                       runtime: WMPScriptRuntime, overrides: WMPSceneOverrides,
+                       into presentation: WMPViewPresentation) {
         loadedSkin = skin
         imageStore = store
-        activeViewID = scene.viewID
-        activeLimits = scene.resizeLimits
-        activeScene = scene
+        materializer.rekey(presentation, to: scene.viewID)
+        presentation.activeLimits = scene.resizeLimits
+        presentation.activeScene = scene
         scriptRuntime = runtime
         lastScriptSnapshot = host.snapshot
         // A newly loaded view must receive video readiness even when decoding preceded its load.
         lastScriptSnapshot?.videoEvent = WMPVideoSnapshot()
         lastScriptSnapshot?.video = WMPVideoSnapshot()
-        sceneOverrides = overrides
+        presentation.sceneOverrides = overrides
         lastLoadDiagnostic = nil
         // A `.wmz` window is genuinely shaped — Corona is transparent across the 250 px its
         // playlist slides into and the 124 px its equaliser drops into — and macOS derives a
@@ -478,28 +464,25 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // with every drawer and every repaint that gets stale, and a stale shadow over a
         // transparent region reads as a dark box the size of the window. There is no drop shadow
         // in Windows Media Player to lose.
-        window?.hasShadow = false
-        window?.invalidateShadow()
-        Self.traceInput("present-view \(scene.viewID) canvas=\(scene.canvasSize) commands=\(scene.commands.count)")
-        // **Only the base view is the session's view.** `theme.openView` opens a *second* window in
-        // WMP and this app presents it in the one window it has (`CoveredView`), so persisting the
-        // presented view here recorded a panel as the thing to restore. `WoW` opens its playlist
-        // with `theme.openView('plView')`; quitting with it open persisted `plView`, and the next
-        // launch restored a playlist panel with an empty listbox and **no player at all** — the
-        // covered view is not persisted, so nothing could close back to it. Reported as "the skin
-        // is empty and shows no player". A covering view is presented and not recorded; the base
-        // view is rewritten when `closeView` pops back to it.
-        if openedViewStack.isEmpty {
+        presentation.window.hasShadow = false
+        presentation.window.invalidateShadow()
+        // **Only the player is the session's view (W96).** `theme.openView` opens a second window,
+        // so persisting whatever is presented recorded a panel as the thing to restore: `WoW` opens
+        // its playlist that way, and quitting with it open restored a playlist panel with an empty
+        // listbox and no player at all — reported as "the skin is empty and shows no player". This
+        // used to be spelled "nothing has been opened over the player"; with real windows it is
+        // simply the player's own presentation.
+        if presentation.isPlayer {
             importer.defaults.set(scene.viewID, forKey: WMPSkinImporter.selectedViewIDKey)
         }
-        setViewTimer(milliseconds: Self.authoredTimerInterval(in: skin, viewID: scene.viewID))
+        setViewTimer(presentation,
+                     milliseconds: Self.authoredTimerInterval(in: skin, viewID: scene.viewID))
 
-        let view = mainView ?? WMPMainView(frame: .zero)
-        mainView = view
+        let view = presentation.mainView ?? WMPMainView(frame: .zero)
+        presentation.mainView = view
         // Native playlist rows are the one WMP-owned surface the scene cannot paint.  Feed them
         // this skin's palette before they are installed, never a palette from another UI mode.
         view.surfaceStyle = WMPSurfacePalette(skin: skin, viewID: scene.viewID).surfaceStyle
-        if view.videoSurface == nil { view.videoSurface = WMPVideoSurface() }
         view.videoController = { WMPAudioEngineHost.localVideoController }
         view.onAction = { [weak self] action, value in
             guard let self else { return }
@@ -508,61 +491,111 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // (Cablemusic's seek slider posts `seekSeconds`) was visible while a plain transport
             // button was not — and "no play in the log" then reads as "play was never pressed",
             // which it does not mean. Traced here, at the one place every widget action passes.
-            Self.traceInput("action \(action) value=\(value.map(String.init(describing:)) ?? "-")")
             self.host.perform(action, value: value)
             self.refreshHostState()
         }
-        view.onScriptEvent = { [weak self] name, targetID, targetStableID in
-            self?.dispatchScriptEvent(name: name, targetID: targetID, targetStableID: targetStableID,
-                                      onlyWhenAuthored: Self.hoverEvents.contains(name))
+        view.onScriptEvent = { [weak self, weak presentation] name, targetID, targetStableID in
+            guard let self, let presentation else { return }
+            self.dispatchScriptEvent(presentation, name: name, targetID: targetID,
+                                     targetStableID: targetStableID,
+                                     onlyWhenAuthored: Self.hoverEvents.contains(name))
         }
-        view.onElementTextChanged = { [weak self] stableID, targetID, text in
-            guard let self, let scriptRuntime = self.scriptRuntime else { return }
+        view.onElementTextChanged = { [weak self, weak presentation] stableID, targetID, text in
+            guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
             Task {
-                await scriptRuntime.setWidgetText(stableID: stableID, text: text)
-                self.dispatchScriptEvent(name: "keyup", targetID: targetID, targetStableID: stableID)
+                await scriptRuntime.setWidgetText(stableID: stableID, text: text,
+                                                  viewID: presentation.viewID)
+                self.dispatchScriptEvent(presentation, name: "keyup", targetID: targetID,
+                                         targetStableID: stableID)
             }
         }
-        view.onElementValueChanged = { [weak self] stableID, targetID, value in
-            guard let self, let scriptRuntime = self.scriptRuntime else { return }
+        view.onElementValueChanged = { [weak self, weak presentation] stableID, targetID, value in
+            guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
             Task {
-                await scriptRuntime.setWidgetValue(stableID: stableID, value: value)
-                self.dispatchScriptEvent(name: "change", targetID: targetID, targetStableID: stableID)
+                await scriptRuntime.setWidgetValue(stableID: stableID, value: value,
+                                                   viewID: presentation.viewID)
+                self.dispatchScriptEvent(presentation, name: "change", targetID: targetID,
+                                         targetStableID: stableID)
             }
         }
-        view.onSpectrumDemandChanged = { [weak self] active in
-            self?.host.setSpectrumConsumerActive(active)
+        view.onSpectrumDemandChanged = { [weak self, weak view] active in
+            guard let self, let view else { return }
+            self.setSpectrumDemand(active, from: ObjectIdentifier(view))
         }
-        view.onInteractionChanged = { [weak self] state, changed in
-            self?.interactionState = state
-            self?.renderInteraction(state: state, changed: changed)
+        view.onInteractionChanged = { [weak self, weak presentation] state, changed in
+            guard let self, let presentation else { return }
+            presentation.interactionState = state
+            self.renderInteraction(presentation, state: state, changed: changed)
         }
-        unskinnedView = nil
+        if presentation.isPlayer { unskinnedView = nil }
         // A present is a new view (or a reload of this one): the previous view's scripted size is
         // not this one's, and `apply` sizes the window from the scene it was handed.
-        scriptViewSize = nil
-        window?.contentView = view
-        if let restored = pendingRestoredFrame {
-            skinSpaceSize = NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height)
+        presentation.scriptViewSize = nil
+        presentation.window.contentView = view
+        if presentation.isPlayer, let restored = pendingRestoredFrame {
+            presentation.skinSpaceSize = NSSize(width: scene.canvasSize.width,
+                                                height: scene.canvasSize.height)
             var frame = restored
-            frame.size = NSSize(width: skinSpaceSize.width * uiScale,
-                                height: skinSpaceSize.height * uiScale)
+            frame.size = NSSize(width: presentation.skinSpaceSize.width * uiScale,
+                                height: presentation.skinSpaceSize.height * uiScale)
             frame.origin.y = restored.maxY - frame.height
-            isApplyingSceneSize = true
-            window?.setFrame(frame, display: true)
-            isApplyingSceneSize = false
-            window?.invalidateShadow()
+            presentation.isApplyingSceneSize = true
+            presentation.window.setFrame(frame, display: true)
+            presentation.isApplyingSceneSize = false
+            presentation.window.invalidateShadow()
             pendingRestoredFrame = nil
             pendingRestoredViewID = nil
         } else {
-            setWindowSize(NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height))
+            setWindowSize(presentation,
+                          NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height))
         }
-        view.present(image, scene: scene)
+        view.present(image, overlay: overlay, scene: scene)
         view.refreshHostState(host.snapshot)
-        startAnimation(for: scene)
-        publishSurfacePalette(skin: skin, viewID: scene.viewID, rendered: image)
+        startAnimation(presentation, for: scene)
+        arbitrateVideoSurface()
+        if presentation.isPlayer {
+            publishSurfacePalette(skin: skin, viewID: scene.viewID, rendered: image)
+        }
         skinSurfaces = WMPSkinSurfaces(skin: skin)
-        traceNavigationState("presented-scene")
+        if !presentation.isPlayer { presentation.window.orderFront(nil) }
+        persistOpenViews()
+    }
+
+    /// **One `WMPVideoSurface`, handed to whichever window is showing the picture.**
+    ///
+    /// `Halo 2`'s `<VIDEO>` lives in `videoView`, a window of its own, while its player draws in
+    /// another — so ownership has to be decided rather than assumed. The surface re-parents the VLC
+    /// child window to its host view's window on every tick, so a transfer is this assignment plus a
+    /// detach; everything else already self-heals. Every other window holds no surface at all, which
+    /// is what keeps `WMPMainView.refreshHostState` from two views fighting over the same picture.
+    private func arbitrateVideoSurface() {
+        let owner = materializer.openPresentations.first { presentation in
+            presentation.activeScene?.widgets.contains {
+                $0.kind == .video && ($0.videoPresentation?.alpha ?? 1) > 0
+            } == true
+        }
+        for presentation in materializer.openPresentations {
+            guard let view = presentation.mainView else { continue }
+            if presentation === owner {
+                if view.videoSurface !== videoSurface {
+                    videoSurface.detach(reveal: false)
+                    view.videoSurface = videoSurface
+                }
+            } else if view.videoSurface != nil {
+                view.videoSurface = nil
+            }
+        }
+        if owner == nil { videoSurface.detach(reveal: false) }
+    }
+
+    /// **The spectrum tap is ref-counted, not a Bool.** With one window, "this view has no
+    /// `<EFFECTS>`" meant "nobody does"; with several it must not switch the tap off under a
+    /// visualisation panel that is still drawing. The last claim to go is what stops it.
+    private func setSpectrumDemand(_ active: Bool, from view: ObjectIdentifier) {
+        let before = spectrumConsumers.isEmpty
+        if active { spectrumConsumers.insert(view) } else { spectrumConsumers.remove(view) }
+        guard before != spectrumConsumers.isEmpty else { return }
+        host.setSpectrumConsumerActive(!spectrumConsumers.isEmpty)
     }
 
     /// Whether the skin owns this surface, and — when asked to switch — showing it the way the skin
@@ -578,16 +611,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     ///   for an explicit toggle from a menu.
     @discardableResult
     func revealSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool) -> Bool {
-        traceNavigationState("reveal-\(surface.rawValue)-before switchingViews=\(switchingViews)")
         guard skinSurfaces.provides(surface) else { return false }
-        // Already on screen as part of the skin: nothing to open, and nothing of ours to add.
-        if skinSurfaces.view(activeViewID, provides: surface) { return true }
-        if switchingViews, let target = skinSurfaces.viewIDs(for: surface).first {
-            // A menu-selected WMP surface is an auxiliary window just as surely as one opened
-            // by the skin's own button. `switchView` bypasses the covered-view stack, leaving a
-            // panel's `view.close()` with no return target and ordering out the player itself.
-            // Route every surface through `openView` so closing it restores the player state.
-            _ = applyHostCommands([.init(action: "openView", value: .string(target))])
+        // Already on screen in one of this skin's windows: nothing to open, and nothing of ours to
+        // add. With real windows this is a question about the whole session rather than about the
+        // one view that used to be presented.
+        if materializer.anyOpenView(where: { skinSurfaces.view($0, provides: surface) }) { return true }
+        if switchingViews, let target = skinSurfaces.viewIDs(for: surface).first,
+           let player = materializer.playerPresentation {
+            // The same call the skin's own button makes. Routing a menu toggle through `openView`
+            // rather than a view *switch* is what keeps the player up beside the panel — and it is
+            // the panel's own `view.close()` that takes it away again.
+            _ = applyHostCommands([.init(action: "openView", value: .string(target))], from: player)
         }
         return true
     }
@@ -597,7 +631,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// The rendered bitmap is only *sampled* when the markup declared no background — 84 of the 180
     /// corpus archives declare no colour at all — and the sample is taken from the same image the
     /// window is showing, so what our chrome is coloured from is literally what the user is looking
-    /// at.
+    /// at. **Only the player's bitmap**: NullPlayer's own windows must not be recoloured by
+    /// whichever panel the skin happened to open last.
     private func publishSurfacePalette(skin: WMPLoadedSkin, viewID: String, rendered: CGImage) {
         var palette = WMPSurfacePalette(skin: skin, viewID: viewID)
         if palette.background == nil {
@@ -619,20 +654,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         clearSurfacePalette()
         loadedSkin = nil
         imageStore = nil
-        activeViewID = nil
-        openedViewStack.removeAll()
-        activeLimits = nil
-        activeScene = nil
-        sceneOverrides = .empty
+        materializer.teardown()
+        bindingCache.removeAll()
+        spectrumConsumers.removeAll()
+        host.setSpectrumConsumerActive(false)
+        videoSurface.detach(reveal: false)
         if let scriptRuntime { Task { await scriptRuntime.teardown() } }
         scriptRuntime = nil
         lastScriptSnapshot = nil
-        pendingHostEvents.removeAll()
-        stopAllTimers()
         stopDispatcher()
         lastLoadDiagnostic = message
-        mainView?.prepareForUITeardown()
-        mainView = nil
 
         // The app-authored player is an ordinary opaque rectangle and keeps its shadow.
         window?.hasShadow = true
@@ -645,50 +676,56 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         view.host = host
         view.show(message: message)
         window?.contentView = view
-        setWindowSize(Self.unskinnedSize)
+        guard let window else { return }
+        let scaled = NSSize(width: Self.unskinnedSize.width * uiScale,
+                            height: Self.unskinnedSize.height * uiScale)
+        var frame = window.frame
+        frame.size = scaled
+        frame.origin.y = window.frame.maxY - scaled.height
+        window.setFrame(frame, display: true)
+        view.setBoundsSize(Self.unskinnedSize)
+        window.invalidateShadow()
     }
 
     /// `size` is in the skin's own pixels. UI Size is applied here and in `windowWillResize`, and
     /// nowhere else.
-    private func setWindowSize(_ size: NSSize) {
-        guard let window else { return }
-        skinSpaceSize = size
+    private func setWindowSize(_ presentation: WMPViewPresentation, _ size: NSSize) {
+        let window = presentation.window
+        presentation.skinSpaceSize = size
         let scaled = NSSize(width: size.width * uiScale, height: size.height * uiScale)
         let old = window.frame
         var frame = old
         frame.size = scaled
         frame.origin.y = old.maxY - scaled.height
-        isApplyingSceneSize = true
+        presentation.isApplyingSceneSize = true
         window.setFrame(frame, display: true)
-        isApplyingSceneSize = false
-        // The app-authored player is real AppKit content rather than a bitmap, so it has no
-        // `bounds / canvasSize` mapping of its own to zoom through. Scaling its bounds gives it
-        // one: its layout stays in the 440x170 it is written for and AppKit draws it magnified.
-        unskinnedView?.setBoundsSize(size)
+        presentation.isApplyingSceneSize = false
         // A borderless, non-opaque window keeps the shadow it had at its previous frame. Corona
         // resizes the view when a drawer opens, so without this the old outline is left behind
         // beside the window as a ghost of the shape it used to be.
         window.invalidateShadow()
     }
 
-    private func renderCurrentSize() {
-        guard !isApplyingSceneSize, let skin = loadedSkin, let store = imageStore,
-              let viewID = activeViewID, let window else { return }
+    func renderCurrentSize(_ presentation: WMPViewPresentation) {
+        guard !presentation.isApplyingSceneSize, let skin = loadedSkin, let store = imageStore
+        else { return }
+        let viewID = presentation.viewID
+        let window = presentation.window
         // The user has just chosen a size, which retires whatever the script last asked for.
-        scriptViewSize = nil
-        loadTask?.cancel()
+        presentation.scriptViewSize = nil
+        presentation.loadTask?.cancel()
         let requested = WMPSize(width: window.contentLayoutRect.width / uiScale,
                                 height: window.contentLayoutRect.height / uiScale)
-        let overrides = sceneOverrides
+        let overrides = presentation.sceneOverrides
         let scriptRuntime = scriptRuntime
-        loadTask = Task { [weak self] in
+        presentation.loadTask = Task { [weak self, weak presentation] in
             do {
                 var resolvedOverrides = overrides
                 var scriptOutput: WMPScriptOutput?
                 if let scriptRuntime, let self {
                     let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                         size: requested, snapshot: self.host.snapshot, event: nil,
-                        geometry: self.activeScene?.scriptGeometry ?? [:])
+                        geometry: presentation?.activeScene?.scriptGeometry ?? [:])
                     resolvedOverrides = output.overrides
                     scriptOutput = output
                 }
@@ -700,7 +737,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // the window opened with and slide out from under their labels.
                 if let scriptRuntime, let self,
                    let event = Self.resizeEvent(in: skin, viewID: viewID,
-                                                before: self.activeScene, after: scene) {
+                                                before: presentation?.activeScene, after: scene) {
                     let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                         size: scene.canvasSize, snapshot: self.host.snapshot, event: event,
                         geometry: scene.scriptGeometry)
@@ -711,19 +748,23 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: self?.renderScale(for: scene.canvasSize) ?? 1,
-                    clock: self?.animationClock(for: scene.viewID) ?? 0)
+                    clock: presentation?.animationClock(for: scene.viewID) ?? 0)
                 try Task.checkCancellation()
-                self?.sceneOverrides = resolvedOverrides
-                self?.activeScene = scene
-                self?.startAnimation(for: scene)
-                if let scriptOutput { self?.mainView?.updateListItems(scriptOutput.listItems) }
-                self?.mainView?.present(result.image, scene: scene)
-                self?.mainView?.refreshHostState(self?.host.snapshot ?? WMPHostSnapshot())
+                guard let self, let presentation else { return }
+                presentation.sceneOverrides = resolvedOverrides
+                presentation.activeScene = scene
+                self.startAnimation(presentation, for: scene)
+                if let scriptOutput { presentation.mainView?.updateListItems(scriptOutput.listItems) }
+                presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene)
+                presentation.mainView?.refreshHostState(self.host.snapshot)
                 if let scriptOutput {
-                    let switchedView = self?.applyHostCommands(scriptOutput.hostCommands) ?? false
-                    if !switchedView { self?.applyTimerDelta(registered: scriptOutput.timerRequests,
-                                                             cleared: scriptOutput.clearedTimerTokens) }
-                    self?.recordScriptDiagnostics(scriptOutput.diagnostics)
+                    let switchedView = self.applyHostCommands(scriptOutput.hostCommands,
+                                                              from: presentation)
+                    if !switchedView {
+                        self.applyTimerDelta(presentation, registered: scriptOutput.timerRequests,
+                                             cleared: scriptOutput.clearedTimerTokens)
+                    }
+                    self.recordScriptDiagnostics(scriptOutput.diagnostics)
                 }
             } catch is CancellationError {} catch {
                 self?.lastLoadDiagnostic = error.localizedDescription
@@ -734,16 +775,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func prepareForUITeardown() {
         loadTask?.cancel()
         loadTask = nil
-        scriptTask?.cancel()
-        scriptTask = nil
-        stopAllTimers()
+        // The materializer first, so no auxiliary window outlives the mode.
+        materializer.invalidate()
         stopDispatcher()
         if let scriptRuntime { Task { await scriptRuntime.teardown() } }
         scriptRuntime = nil
         lastScriptSnapshot = nil
-        pendingHostEvents.removeAll()
-        mainView?.prepareForUITeardown()
-        mainView = nil
+        spectrumConsumers.removeAll()
+        videoSurface.detach(reveal: false)
         unskinnedView?.onImport = nil
         unskinnedView?.onMinimize = nil
         unskinnedView?.onClose = nil
@@ -752,64 +791,99 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         clearSurfacePalette()
         loadedSkin = nil
         imageStore = nil
-        activeScene = nil
-        sceneOverrides = .empty
         host.stopContinuousCommands()
     }
 
-    /// `restoring` is set only by `closeView` popping back to a view that was **covered** by
-    /// `theme.openView` rather than replaced by `theme.currentViewID`. That view's window was never
-    /// closed in WMP, so it comes back exactly as it was left: its own overrides, its own live
-    /// elements, its own timer period, and **no second `load`**. Every other route through here is
-    /// a genuine view change and still loads exactly like a launch (W46).
-    func switchView(to requestedID: String, restoring covered: CoveredView? = nil) {
-        traceNavigationState("switch-view requested=\(requestedID) restoring=\(covered?.viewID ?? "-")")
+    // MARK: - Opening, switching and closing a window
+
+    /// **`theme.openView` opens an additional window and leaves the opener alone.**
+    ///
+    /// A view already open is *raised*, never opened twice — which is what lets a dispatcher skin
+    /// re-open its own panels from `theme.loadPreference` at load without ending up with two of
+    /// each, and what makes a NullPlayer menu toggle for an already-visible surface inert.
+    ///
+    /// `offset` is `theme.openViewRelative`'s displacement in skin pixels from `opener`'s top-left.
+    private func openView(_ requestedID: String, from opener: WMPViewPresentation?,
+                          offset: CGPoint?) {
+        guard let skin = loadedSkin, skin.views.contains(where: {
+            $0.id.caseInsensitiveCompare(requestedID) == .orderedSame
+        }) else { return }
+        if let existing = materializer.presentation(for: requestedID) {
+            materializer.raise(existing)
+            return
+        }
+        // Bounded like the covered-view stack it replaces. A skin that opens a window on every tick
+        // of its own dispatcher must not be able to open an unbounded number of them.
+        guard materializer.openPresentations.count < Self.maximumOpenViews else { return }
+        loadView(requestedID, into: nil, opener: opener, offset: offset)
+    }
+
+    /// `theme.currentViewID` replaces the view inside the **calling** window. The window survives;
+    /// the view it was showing does not, so its script scope is discarded.
+    func switchView(to requestedID: String) {
+        guard let player = materializer.playerPresentation else { return }
+        switchView(player, to: requestedID)
+    }
+
+    func switchView(_ presentation: WMPViewPresentation, to requestedID: String) {
+        guard let skin = loadedSkin, skin.views.contains(where: {
+                  $0.id.caseInsensitiveCompare(requestedID) == .orderedSame
+              }), requestedID.caseInsensitiveCompare(presentation.viewID) != .orderedSame
+        else { return }
+        loadView(requestedID, into: presentation, opener: presentation, offset: nil)
+    }
+
+    /// Present a view — into the window that is already showing another one, or into a new window of
+    /// its own when `existing` is nil.
+    ///
+    /// **A view arrived at by either route loads exactly as one arrived at by launch.** Initial load
+    /// raises `load`, honours the host commands the handler posts and schedules the timers it asks
+    /// for; this path did none of the three for a long time (W46), and a `.wmz` compact mode is
+    /// built out of all three. Corona's `viewTiny` is authored `timerInterval="0"` and animates
+    /// itself into the mini player entirely from `OnTinyLoad` — which registers a timed event and
+    /// writes `view.timerInterval`, a `setViewTimerInterval` host command. With the load event
+    /// dropped the handler never ran; with the commands dropped the interval never arrived. So the
+    /// view switched and then sat at frame zero, which for Corona is drawn from the same artwork at
+    /// the same size as `vPlayer`: **the compact view was visually indistinguishable from the
+    /// player**, and the only symptom was that the playlist and equaliser buttons stopped answering.
+    ///
+    /// **There is no `restoring` parameter any more.** It existed to put a *covered* view back as it
+    /// was left, because `theme.openView` presented over it in the one window there was. A covered
+    /// view is now genuinely never touched — it is in its own window, still running — which is what
+    /// that restore was simulating (W90).
+    private func loadView(_ requestedID: String, into existing: WMPViewPresentation?,
+                          opener: WMPViewPresentation?, offset: CGPoint?) {
         guard let skin = loadedSkin, let store = imageStore,
               let registration = skin.views.first(where: {
                   $0.id.caseInsensitiveCompare(requestedID) == .orderedSame
-              }), registration.id.caseInsensitiveCompare(activeViewID ?? "") != .orderedSame,
-              let scriptRuntime else { return }
-        loadTask?.cancel(); scriptTask?.cancel(); stopAllTimers()
-        // A covered WMP view remained alive in the real player while its child window was open.
-        // Keep its animation clock alive too: AlienMorph's shutter has already finished opening
-        // when its playlist closes, so starting it again at zero makes the returned player look
-        // closed until the whole intro plays a second time.
-        if let covered, let epoch = covered.animationEpoch {
-            animationEpoch = epoch
-            animationEpochViewID = covered.viewID
+              }), let scriptRuntime else { return }
+        let key = WMPPath.fold(registration.id)
+        let previousViewID = existing?.viewID
+        if let existing {
+            existing.loadTask?.cancel()
+            existing.scriptTask?.cancel()
+            existing.stopAllTimers()
+            existing.mainView?.cancelInputCapture()
+        } else if pendingOpenTasks[key] != nil {
+            return
         }
-        mainView?.cancelInputCapture(); host.stopContinuousCommands()
-        let oldTopLeft = window.map { NSPoint(x: $0.frame.minX, y: $0.frame.maxY) }
-        let savedSize = WMPViewFrameStore(defaults: importer.defaults).size(
-            skin: importer.selectedSkinName ?? "", view: registration.id)
-        loadTask = Task { [weak self] in
+        host.stopContinuousCommands()
+        let oldTopLeft = existing.map {
+            NSPoint(x: $0.window.frame.minX, y: $0.window.frame.maxY)
+        }
+        let frameStore = WMPViewFrameStore(defaults: importer.defaults)
+        let skinName = importer.selectedSkinName ?? ""
+        let savedSize = frameStore.size(skin: skinName, view: registration.id)
+        let savedOrigin = frameStore.origin(skin: skinName, view: registration.id)
+        let task = Task { [weak self] in
             guard let self else { return }
-            if let covered {
-                await scriptRuntime.prepareForRestore(viewID: covered.viewID,
-                                                      overrides: covered.overrides)
-            } else {
-                await scriptRuntime.prepareForViewSwitch()
-            }
+            defer { self.pendingOpenTasks.removeValue(forKey: key) }
+            if let previousViewID { await scriptRuntime.discardView(previousViewID) }
+            await scriptRuntime.discardView(registration.id)
             do {
                 let base = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: registration.id, requestedSize: savedSize,
-                           overrides: covered?.overrides ?? .empty)
-                // **A view arrived at by a switch loads exactly as one arrived at by launch.**
-                // Initial load raises `load` here, honours the host commands the handler posts and
-                // schedules the timers it asks for; this path did none of the three, and a
-                // `.wmz` compact mode is built out of all three. Corona's `viewTiny` is authored
-                // `timerInterval="0"` and animates itself into the mini player entirely from
-                // `OnTinyLoad` — which registers a timer event and writes `view.timerInterval`,
-                // a `setViewTimerInterval` host command. With the load event dropped, the handler
-                // never ran; with the host commands dropped, the interval never arrived. So the
-                // view switched and then sat at frame zero, which for Corona is drawn from the
-                // same artwork at the same size as `vPlayer`: **the compact view was visually
-                // indistinguishable from the player**, and the only symptom was that the playlist
-                // and equaliser buttons — markup `viewTiny` does not have — stopped answering.
-                // `RestorePlayer()` is driven by the same timer, so there was also no way back.
-                // A restore raises nothing. The covered view already ran its `load` when it was
-                // first presented, and running it again is precisely what this path is fixing.
-                let loadEvent = covered != nil ? nil : WMPJScriptEvent(
+                    .build(viewID: registration.id, requestedSize: savedSize)
+                let loadEvent = WMPJScriptEvent(
                     name: "load", targetID: registration.id,
                     handlers: Self.handlers(in: skin, event: "load", targetID: nil,
                                             viewID: registration.id))
@@ -817,20 +891,22 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     size: base.canvasSize, snapshot: host.snapshot, event: loadEvent,
                     geometry: base.scriptGeometry)
                 // A windowless view — `controlView`, `pharaoh`'s `vGhost` — runs its script and
-                // hands off; it must never become the presented window. Whatever it asks for next
-                // is honoured, and if it asks for nothing the current view simply stays.
-                //
-                // A view can also declare itself windowless *in* that `onLoad` by writing zero, so
-                // the same `collapsed` test initial load applies belongs here now that the handler
-                // runs: `Halo 2`'s `previewView` blanks itself and redirects, and presenting it
-                // would leave an empty window the size of its thumbnail.
+                // hands off; it must never become a window. Whatever it asks for next is honoured,
+                // and if it asks for nothing nothing happens. A view can also declare itself
+                // windowless *in* that `onLoad` by writing zero, so the same `collapsed` test
+                // initial load applies belongs here: `Halo 2`'s `previewView` blanks itself and
+                // redirects, and presenting it would leave an empty window the size of a thumbnail.
                 let collapsed = ["width", "height"].contains { property in
                     output.overrides.geometry[.init(stableID: registration.node.stableID,
                                                     property: property)] == 0
                 }
                 guard base.canvasSize.width > 0, base.canvasSize.height > 0, !collapsed else {
                     recordScriptDiagnostics(output.diagnostics)
-                    _ = applyHostCommands(output.hostCommands)
+                    // A windowless view has no window to run the commands against, so they run
+                    // against whoever asked for it.
+                    if let target = existing ?? opener ?? materializer.playerPresentation {
+                        _ = applyHostCommands(output.hostCommands, from: target)
+                    }
                     return
                 }
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
@@ -838,47 +914,102 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                            overrides: output.overrides)
                 let rendered = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderScale(for: scene.canvasSize),
-                    clock: animationClock(for: scene.viewID))
+                    clock: existing?.animationClock(for: scene.viewID) ?? 0)
                 try Task.checkCancellation()
+                let size = NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height)
+                guard let presentation = existing ?? materializer.materialize(
+                    viewID: registration.id, size: size, opener: opener, offset: offset,
+                    storedTopLeft: savedOrigin) else { return }
                 apply(skin: skin, store: store, scene: scene, image: rendered.image,
-                      runtime: scriptRuntime, overrides: output.overrides)
-                if let oldTopLeft, let window {
-                    window.setFrameOrigin(NSPoint(x: oldTopLeft.x, y: oldTopLeft.y - window.frame.height))
+                      overlay: rendered.overlayImage,
+                      runtime: scriptRuntime, overrides: output.overrides, into: presentation)
+                if let oldTopLeft {
+                    presentation.window.setFrameOrigin(
+                        NSPoint(x: oldTopLeft.x, y: oldTopLeft.y - presentation.window.frame.height))
                 }
                 // `apply` has just set the view timer from the markup, which is the default the
                 // script's `setViewTimerInterval` overrides — so the commands run after it, in
                 // that order. A command that switches again owns the timers of the view it moved
-                // to, exactly as on initial load, and there is no `viewchange` to raise for a view
-                // this controller is no longer on.
-                // `apply` sets the view timer from markup, which is the default a script's
-                // `setViewTimerInterval` overrides. A restored view's script already overrode it
-                // once — `Alienware Invader`'s intro ends on `view.timerInterval = 0` — and that
-                // answer has to survive the return, or the markup's period restarts an animation
-                // the skin had finished with.
-                if let covered { setViewTimer(milliseconds: covered.viewTimerMilliseconds) }
-                let switchedAgain = applyHostCommands(output.hostCommands)
+                // to, exactly as on initial load.
+                let switchedAgain = applyHostCommands(output.hostCommands, from: presentation)
                 recordScriptDiagnostics(output.diagnostics)
                 guard !switchedAgain else { return }
-                applyTimerDelta(registered: output.timerRequests,
+                applyTimerDelta(presentation, registered: output.timerRequests,
                                 cleared: output.clearedTimerTokens)
                 // Gated on an authored handler, like hover, and for the timers rather than the
                 // cost: a transaction's `timerRequests` are what *that* transaction registered, so
                 // an unconditional binding-only `viewchange` immediately posted an empty set and
-                // cancelled every script timer the `load` above had just scheduled. The bindings
-                // themselves have nothing left to settle — the load transaction built the scene
-                // that is on screen.
-                guard covered == nil else { return }
-                dispatchScriptEvent(name: "viewchange", targetID: registration.id,
+                // cancelled every script timer the `load` above had just scheduled. A window that
+                // has just opened has not changed its view, so it raises nothing.
+                guard existing != nil else { return }
+                dispatchScriptEvent(presentation, name: "viewchange", targetID: registration.id,
                                     onlyWhenAuthored: true)
             } catch is CancellationError {} catch { lastLoadDiagnostic = error.localizedDescription }
         }
+        if let existing { existing.loadTask = task } else { pendingOpenTasks[key] = task }
     }
+
+    /// **Close one window.** `view.close()`, `theme.closeView(name)` and the macOS close control all
+    /// arrive here.
+    ///
+    /// Closing the **player** closes the whole skin UI: the player window is the one WMP's own close
+    /// control means, and leaving panels up with no player behind them is the W96 class of defect
+    /// this change exists to delete. Closing an auxiliary window closes only it, and the player —
+    /// still running, still animating, still holding its own overrides — is untouched, which is what
+    /// the covered-view stack used to simulate.
+    @discardableResult
+    func closeViewWindow(_ presentation: WMPViewPresentation) -> Bool {
+        // NVIDIA's close is an in-place mode transition, not a window closing at all.
+        if closeNVIDIAEmbeddedMode(presentation) { return false }
+        if presentation.isPlayer {
+            for other in materializer.openPresentations where other !== presentation {
+                closeAuxiliaryWindow(other)
+            }
+            materializer.remove(presentation, closing: true)
+            let viewID = presentation.viewID
+            if let scriptRuntime { Task { await scriptRuntime.discardView(viewID) } }
+            persistOpenViews()
+            return true
+        }
+        closeAuxiliaryWindow(presentation)
+        persistOpenViews()
+        return true
+    }
+
+    private func closeAuxiliaryWindow(_ presentation: WMPViewPresentation) {
+        let viewID = presentation.viewID
+        if let view = presentation.mainView { setSpectrumDemand(false, from: ObjectIdentifier(view)) }
+        materializer.remove(presentation)
+        if let scriptRuntime { Task { await scriptRuntime.discardView(viewID) } }
+        arbitrateVideoSurface()
+    }
+
+    /// Which auxiliary views are open, so the next launch can put them back. The player's view is
+    /// not one of them — that is `WMPSkinImporter.selectedViewIDKey`.
+    private func persistOpenViews() {
+        guard loadedSkin != nil else { return }
+        let open = materializer.openPresentations.filter { !$0.isPlayer }.map(\.viewID)
+        WMPViewFrameStore(defaults: importer.defaults)
+            .setOpenViews(open, skin: importer.selectedSkinName ?? "")
+    }
+
+    /// Persist one window's size and origin, so the user's own arrangement survives a relaunch.
+    func persistViewFrame(for window: NSWindow) {
+        guard let presentation = materializer.presentation(for: window), loadedSkin != nil else { return }
+        let store = WMPViewFrameStore(defaults: importer.defaults)
+        let skinName = importer.selectedSkinName ?? ""
+        store.setOrigin(CGPoint(x: presentation.window.frame.minX,
+                                y: presentation.window.frame.maxY),
+                        skin: skinName, view: presentation.viewID)
+    }
+
+    // MARK: - Window delegate (the player window; the materializer owns the panels')
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         // The skin's own limits are in the skin's own pixels, so the drag is measured there and the
         // answer scaled back. A fixed skin stays fixed at every UI Size; a resizable one keeps the
         // range it authored, expressed at the current zoom.
-        guard let limits = activeLimits else {
+        guard let limits = materializer.presentation(for: sender)?.activeLimits else {
             return NSSize(width: Self.unskinnedSize.width * uiScale,
                           height: Self.unskinnedSize.height * uiScale)
         }
@@ -888,26 +1019,32 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     func windowDidResize(_ notification: Notification) {
-        if let window {
-            skinSpaceSize = NSSize(width: window.frame.width / uiScale,
-                                   height: window.frame.height / uiScale)
-            // Persisted in skin space as well, so a size the user dragged out at 200% is not
-            // restored as a scene twice that size the next time the skin loads.
-            if let viewID = activeViewID {
-                WMPViewFrameStore(defaults: importer.defaults).setSize(
-                    WMPSize(width: skinSpaceSize.width, height: skinSpaceSize.height),
-                    skin: importer.selectedSkinName ?? "", view: viewID)
-            }
-        }
-        renderCurrentSize()
+        guard let window = notification.object as? NSWindow,
+              let presentation = materializer.presentation(for: window) else { return }
+        windowDidResize(presentation)
     }
+
+    func windowDidResize(_ presentation: WMPViewPresentation) {
+        presentation.skinSpaceSize = NSSize(width: presentation.window.frame.width / uiScale,
+                                            height: presentation.window.frame.height / uiScale)
+        // Persisted in skin space as well, so a size the user dragged out at 200% is not restored
+        // as a scene twice that size the next time the skin loads.
+        WMPViewFrameStore(defaults: importer.defaults).setSize(
+            WMPSize(width: presentation.skinSpaceSize.width,
+                    height: presentation.skinSpaceSize.height),
+            skin: importer.selectedSkinName ?? "", view: presentation.viewID)
+        renderCurrentSize(presentation)
+    }
+
     func windowDidChangeBackingProperties(_ notification: Notification) {
-        renderCurrentSize()
+        guard let presentation = materializer.playerPresentation else { return }
+        renderCurrentSize(presentation)
     }
     func windowDidMove(_ notification: Notification) {
         guard let window else { return }
         let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: origin)
+        persistViewFrame(for: window)
     }
     func windowWillMiniaturize(_ notification: Notification) {
         if let window { WindowManager.shared.attachDockedWindowsForMiniaturize(mainWindow: window) }
@@ -919,32 +1056,54 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 
+    /// **The macOS close control closes the window it is on, like every other close route.**
+    ///
+    /// It used to mean `closeView` whenever anything had been opened over the player, because the
+    /// one window was standing in for two and letting AppKit order it out stranded the user on a
+    /// playlist with no route back (Plus! Professional, W127). With the panel in its own window
+    /// that compensation has no job: this is the player, and closing the player closes the skin.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        traceNavigationState("window-should-close")
-        // WMP's `theme.openView` creates a second window. We present that auxiliary view in this
-        // single window, so the macOS close control must mean the same thing as `view.close()`:
-        // restore the covered player. Letting AppKit close or order out the one window strands the
-        // user on the playlist/equaliser with no route back (Plus! Professional, W127).
-        guard sender === window, !openedViewStack.isEmpty else { return true }
-        _ = applyHostCommands([.init(action: "closeView", value: nil)])
-        return false
+        guard sender === window,
+              let presentation = materializer.presentation(for: sender) else { return true }
+        return closeViewWindow(presentation)
     }
+
+    // MARK: - Host state
 
     func updateTrackInfo(_ track: Track?) { refreshHostState() }
     func updateVideoTrackInfo(title: String, artworkTrack: Track?) { refreshHostState() }
     func clearVideoTrackInfo() { refreshHostState() }
     func updateTime(current: TimeInterval, duration: TimeInterval) { refreshHostState() }
     func updatePlaybackState() { refreshHostState() }
-    func updateSpectrum(_ levels: [Float]) { mainView?.updateSpectrum(levels) }
+    func updateSpectrum(_ levels: [Float]) {
+        for presentation in materializer.openPresentations {
+            presentation.mainView?.updateSpectrum(levels)
+        }
+    }
     func skinDidChange() {}
     func windowVisibilityDidChange() {}
     func setNeedsDisplay() { window?.contentView?.needsDisplay = true }
 
+    /// **The comparison happens once; the dispatch fans out to every open window.**
+    ///
+    /// The snapshot is the session's, so deciding what changed twice would be wrong as well as
+    /// wasteful. What is per window is the transaction: each runs in its own view scope, against its
+    /// own elements, producing its own overrides.
+    ///
+    /// Two bounds matter. The runtime's 120-transactions-per-second limit is shared across the
+    /// session — `Halo 2` with five panels plus its dispatcher at 10 Hz is about 60/s, under but not
+    /// by much — so a window with nothing to settle is **skipped** rather than run: no `wmpprop:` or
+    /// `wmpenabled:` binding in its view and no authored handler for anything being raised means the
+    /// transaction can have no effect. And `WMPScriptContext` is one serial queue, so N windows'
+    /// transactions serialize; that is already true of the dispatcher and is the isolation boundary
+    /// rather than a cost to design away.
     private func refreshHostState() {
-        mainView?.refreshHostState(host.snapshot)
-        unskinnedView?.refresh(host.snapshot)
-        guard loadedSkin != nil, scriptRuntime != nil else { return }
         let snapshot = host.snapshot
+        for presentation in materializer.openPresentations {
+            presentation.mainView?.refreshHostState(snapshot)
+        }
+        unskinnedView?.refresh(snapshot)
+        guard let skin = loadedSkin, scriptRuntime != nil else { return }
         let previous = lastScriptSnapshot
         lastScriptSnapshot = snapshot
         var events: [String] = []
@@ -1006,17 +1165,60 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if previous?.bufferingProgress != snapshot.bufferingProgress { events.append("buffering_onchange") }
         if previous?.receptionQuality != snapshot.receptionQuality { events.append("reception_onchange") }
         guard !events.isEmpty else { return }
-        for name in events where !pendingHostEvents.contains(name) { pendingHostEvents.append(name) }
-        scriptTask?.cancel()
-        scriptTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 16_000_000)
-            guard !Task.isCancelled, let self else { return }
-            // Open, play, status, mode, buffering, then reception order — the dispatch order the
-            // host contract fixes, whichever refresh each event was decided by.
-            let names = Self.hostEventOrder.filter { self.pendingHostEvents.contains($0) }
-            self.pendingHostEvents.removeAll()
-            self.dispatchHostEvents(names)
+        for presentation in materializer.openPresentations
+        where hasSomethingToSettle(skin: skin, viewID: presentation.viewID, events: events) {
+            for name in events where !presentation.pendingHostEvents.contains(name) {
+                presentation.pendingHostEvents.append(name)
+            }
+            presentation.scriptTask?.cancel()
+            presentation.scriptTask = Task { [weak self, weak presentation] in
+                try? await Task.sleep(nanoseconds: 16_000_000)
+                guard !Task.isCancelled, let self, let presentation else { return }
+                // Open, play, status, mode, buffering, then reception order — the dispatch order
+                // the host contract fixes, whichever refresh each event was decided by.
+                let names = Self.hostEventOrder.filter { presentation.pendingHostEvents.contains($0) }
+                presentation.pendingHostEvents.removeAll()
+                self.dispatchHostEvents(presentation, names)
+            }
         }
+    }
+
+    /// Whether a host refresh can change anything in this view: a `wmpprop:`/`wmpenabled:` binding
+    /// to settle, or an authored handler for one of the events being raised.
+    ///
+    /// With one window this question never had to be asked — the window either existed or the skin
+    /// was not loaded. With several it is what keeps a skin that opens five panels inside the
+    /// session's shared 120 transactions a second. The player, which has the bindings, is never the
+    /// one skipped.
+    private func hasSomethingToSettle(skin: WMPLoadedSkin, viewID: String,
+                                      events: [String]) -> Bool {
+        if declaresHostBinding(in: skin, viewID: viewID) { return true }
+        return events.contains {
+            !Self.handlers(in: skin, event: $0, targetID: nil, viewID: viewID).isEmpty
+        }
+    }
+
+    /// Whether any node in this view binds to the host. Cached per skin and view: the answer is
+    /// fixed by the markup before the skin loads, and this is asked on every host tick.
+    private var bindingCache: [String: Bool] = [:]
+    private func declaresHostBinding(in skin: WMPLoadedSkin, viewID: String) -> Bool {
+        let viewKey = WMPPath.fold(viewID)
+        if let cached = bindingCache[viewKey] { return cached }
+        var included = Set<Int>()
+        if let view = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node {
+            func include(_ node: WMPNode) { included.insert(node.stableID); node.children.forEach(include) }
+            include(view)
+        }
+        let answer = skin.graph.allNodes.contains { node in
+            included.contains(node.stableID) && node.attributes.contains {
+                if case .binding = $0.value { return true }
+                return false
+            }
+        }
+        bindingCache[viewKey] = answer
+        return answer
     }
 
     private static let hostEventOrder = ["openstatechange", "playstatechange", "videostart", "videoend", "status_onchange",
@@ -1025,25 +1227,29 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                          "positionchange", "currentposition_onchange", "modechange",
                                          "buffering_onchange", "reception_onchange"]
 
-    private func renderInteraction(state: WMPInteractionState, changed: Set<Int>) {
-        guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
-              let activeScene else { return }
-        loadTask?.cancel()
-        interactionState = state
-        let overrides = sceneOverrides
-        loadTask = Task { [weak self] in
+    private func renderInteraction(_ presentation: WMPViewPresentation,
+                                   state: WMPInteractionState, changed: Set<Int>) {
+        guard let skin = loadedSkin, let store = imageStore,
+              let activeScene = presentation.activeScene else { return }
+        let viewID = presentation.viewID
+        presentation.loadTask?.cancel()
+        presentation.interactionState = state
+        let overrides = presentation.sceneOverrides
+        presentation.loadTask = Task { [weak self, weak presentation] in
             do {
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID, requestedSize: activeScene.canvasSize,
                            interactionState: state, dirtyNodeIDs: changed,
                            overrides: overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: self?.renderBackingScale ?? 1,
-                    clock: self?.animationClock(for: scene.viewID) ?? 0)
+                    scene: scene, backingScale: self?.renderBackingScale(for: presentation) ?? 1,
+                    clock: presentation?.animationClock(for: scene.viewID) ?? 0)
                 try Task.checkCancellation()
-                self?.activeScene = scene
-                self?.startAnimation(for: scene)
-                self?.mainView?.present(result.image, scene: scene, dirtyBounds: scene.dirtyBounds)
+                guard let presentation else { return }
+                presentation.activeScene = scene
+                self?.startAnimation(presentation, for: scene)
+                presentation.mainView?.present(result.image, overlay: result.overlayImage,
+                                               scene: scene, dirtyBounds: scene.dirtyBounds)
             } catch is CancellationError {} catch { self?.lastLoadDiagnostic = error.localizedDescription }
         }
     }
@@ -1054,11 +1260,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// compact-mode button unnamed, so clicking it ran all 16 of the view's `onClick` handlers at
     /// once: the file dialog, both drawers, and `ToggleSuperCompact()`, which switched the skin to
     /// a compact view that renders indistinguishably from the player and persisted it.
-    private func dispatchScriptEvent(name: String, targetID: String?, targetStableID: Int? = nil,
+    private func dispatchScriptEvent(_ presentation: WMPViewPresentation, name: String,
+                                     targetID: String?, targetStableID: Int? = nil,
                                      onlyWhenAuthored: Bool = false) {
         guard let skin = loadedSkin else { return }
         let handlers = Self.handlers(in: skin, event: name, targetID: targetID,
-                                     targetStableID: targetStableID, viewID: activeViewID)
+                                     targetStableID: targetStableID, viewID: presentation.viewID)
         // **A hover edge is only worth a transaction when the skin asked for one.** Every other
         // dispatch site here is a discrete act — a click, a keystroke, a view change — and runs the
         // transaction even with no authored handler, because the bindings have to settle. Hover is
@@ -1066,23 +1273,24 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // transaction rebuilds and re-renders the entire scene (and cancels whatever click was
         // still in flight). So `onmouseover`/`onmouseout` dispatch only where the markup carries a
         // handler for them; the hover *artwork* never went through here and is unaffected.
-        Self.traceInput("dispatch \(name) target=\(targetID ?? "-")#\(targetStableID.map(String.init) ?? "-") "
-            + "handlers=\(handlers.count) gated=\(onlyWhenAuthored)")
         if onlyWhenAuthored, handlers.isEmpty { return }
-        dispatchScriptTransaction(WMPJScriptEvent(name: name, targetID: targetID,
+        dispatchScriptTransaction(presentation,
+                                  WMPJScriptEvent(name: name, targetID: targetID,
                                                   handlers: handlers))
     }
 
-    private func dispatchHostEvents(_ names: [String]) {
+    private func dispatchHostEvents(_ presentation: WMPViewPresentation, _ names: [String]) {
         guard let skin = loadedSkin else { return }
         let snapshot = host.snapshot
         let handlers = names.flatMap { name in
-            Self.handlers(in: skin, event: name, targetID: nil, viewID: activeViewID).map {
+            Self.handlers(in: skin, event: name, targetID: nil,
+                          viewID: presentation.viewID).map {
                 WMPJScriptEvent.Handler(source: $0, arguments: Self.arguments(for: name, snapshot))
             }
         }
-        dispatchScriptTransaction(WMPJScriptEvent(name: names.joined(separator: ","),
-                                                   targetID: nil, handlers: handlers))
+        dispatchScriptTransaction(presentation,
+                                  WMPJScriptEvent(name: names.joined(separator: ","),
+                                                  targetID: nil, handlers: handlers))
     }
 
     /// The implicit arguments WMP raises a host event with, per event rather than per transaction.
@@ -1125,13 +1333,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
-    private func dispatchScriptTransaction(_ event: WMPJScriptEvent) {
-        guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
-              let activeScene, let scriptRuntime else { return }
+    private func dispatchScriptTransaction(_ presentation: WMPViewPresentation,
+                                           _ event: WMPJScriptEvent) {
+        guard let skin = loadedSkin, let store = imageStore,
+              let activeScene = presentation.activeScene, let scriptRuntime else { return }
+        let viewID = presentation.viewID
         // A binding-only transaction is still required when no authored handler exists.
-        scriptTask?.cancel()
-        scriptTask = Task { [weak self] in
-            guard let self else { return }
+        presentation.scriptTask?.cancel()
+        presentation.scriptTask = Task { [weak self, weak presentation] in
+            guard let self, let presentation else { return }
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                 size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
                 geometry: activeScene.scriptGeometry)
@@ -1154,15 +1364,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // took the *other* branch of `toggleShutter()` and closed the shutter it had just
             // opened, 82 frames down to the closed state. Reported as "it opens and then closes".
             //
-            // A command that switches views owns everything after it, exactly as on initial load,
-            // so this transaction's scene is abandoned rather than drawn over the new view's.
-            let switchedView = applyHostCommands(output.hostCommands)
+            // A command that switches this window's view owns everything after it, exactly as on
+            // initial load, so this transaction's scene is abandoned rather than drawn over the new
+            // view's.
+            let switchedView = applyHostCommands(output.hostCommands, from: presentation)
             if let assigned = output.viewSize, !switchedView {
-                scriptViewSize = assigned
-                setWindowSize(NSSize(width: assigned.width, height: assigned.height))
+                presentation.scriptViewSize = assigned
+                setWindowSize(presentation,
+                              NSSize(width: assigned.width, height: assigned.height))
             }
             if !switchedView {
-                applyTimerDelta(registered: output.timerRequests,
+                applyTimerDelta(presentation, registered: output.timerRequests,
                                 cleared: output.clearedTimerTokens)
             }
             recordScriptDiagnostics(output.diagnostics)
@@ -1182,30 +1394,24 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // old canvas made `SwitchSmall()` draw a 475x373 player inside a 593x600 window
                 // with two hundred empty pixels around it.
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: viewID, requestedSize: scriptViewSize ?? activeScene.canvasSize,
-                           interactionState: interactionState, overrides: output.overrides)
+                    .build(viewID: viewID,
+                           requestedSize: presentation.scriptViewSize ?? activeScene.canvasSize,
+                           interactionState: presentation.interactionState,
+                           overrides: output.overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: renderBackingScale,
-                    clock: animationClock(for: scene.viewID))
+                    scene: scene, backingScale: renderBackingScale(for: presentation),
+                    clock: presentation.animationClock(for: scene.viewID))
                 guard !Task.isCancelled else { return }
-                sceneOverrides = output.overrides
-                self.activeScene = scene
-                self.startAnimation(for: scene)
-                self.mainView?.updateListItems(output.listItems)
-                mainView?.present(result.image, scene: scene)
-                Self.traceInput("present \(event.name) geometry=\(output.overrides.geometry.count) "
-                    + "properties=\(output.overrides.properties.count) commands=\(scene.commands.count) "
-                    + "diagnostics=\(output.diagnostics.count)")
+                presentation.sceneOverrides = output.overrides
+                presentation.activeScene = scene
+                self.startAnimation(presentation, for: scene)
+                presentation.mainView?.updateListItems(output.listItems)
+                presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene)
+                self.arbitrateVideoSurface()
             } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }
         }
     }
 
-    /// Authored handlers for one event, **inside one view**.
-    ///
-    /// The view scope is not tidiness. A `.wmz` declares every view in one file, so an unscoped
-    /// scan ran the *other* view's `onLoad` as well: Corona's tiny view then executed the player
-    /// view's setup against elements that do not exist there, and the census read the resulting
-    /// `ReferenceError` as a defect in the runtime rather than in the caller.
     /// The `timerInterval` the view declares in markup, which starts the view timer before any
     /// script has had a chance to change it.
     static func authoredTimerInterval(in skin: WMPLoadedSkin, viewID: String) -> Int {
@@ -1255,6 +1461,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         return WMPJScriptEvent(name: "resize", targetID: nil, handlers: sources)
     }
 
+    /// Authored handlers for one event, **inside one view**.
+    ///
+    /// The view scope is not tidiness. A `.wmz` declares every view in one file, so an unscoped
+    /// scan ran the *other* view's `onLoad` as well: Corona's tiny view then executed the player
+    /// view's setup against elements that do not exist there, and the census read the resulting
+    /// `ReferenceError` as a defect in the runtime rather than in the caller.
     static func handlers(in skin: WMPLoadedSkin, event: String, targetID: String?,
                          targetStableID: Int? = nil, viewID: String? = nil) -> [String] {
         let wanted = event.lowercased().replacingOccurrences(of: "_", with: "")
@@ -1267,9 +1479,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // 175 of 179 archives, raised where `change` already is: the user moved the control.
         //
         // Aliasing here rather than at the dispatch sites keeps one rule for both spellings, so a
-        // site cannot raise one name and miss the other. **What this does not do** is raise
-        // `value_onchange` when a bound host property moves the control on its own — that half has
-        // no observation path yet and is recorded as still-open work in `WMP_TASKS.md` (W51).
+        // site cannot raise one name and miss the other.
         let accepted: Set<String>
         switch wanted {
         case "change", "onchange": accepted = ["change", "valueonchange"]
@@ -1307,11 +1517,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
+    /// Apply one transaction's host commands. Transport, EQ, effect, video and file-dialog commands
+    /// are the session's; the six window commands belong to `presentation`, the window whose script
+    /// posted them.
+    ///
+    /// The return value means "this window's view was replaced", which is what abandons the scene
+    /// the caller was about to draw. **`openView` deliberately returns false**: opening a panel no
+    /// longer abandons the opener's scene, because the opener is still on screen.
     @discardableResult
-    private func applyHostCommands(_ commands: [WMPJScriptHostCommand]) -> Bool {
+    private func applyHostCommands(_ commands: [WMPJScriptHostCommand],
+                                   from presentation: WMPViewPresentation) -> Bool {
         var switchedView = false
         for command in commands.prefix(WMPJScriptProtocol.maximumHostCommands) {
-            Self.traceInput("command \(command.action) value=\(command.value?.string ?? "-")")
             let number = command.value?.number
             switch command.action {
             case "play": host.perform(.play, value: nil)
@@ -1341,7 +1558,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let current = video.window?.styleMask.contains(.fullScreen) == true
                 if requested && !current && !video.isVideoFullScreenTransition {
                     video.enterFullScreenReclaimingOutput()
-                    mainView?.videoSurface?.detach(reveal: true)
+                    videoSurface.detach(reveal: true)
                 } else if !requested && current {
                     video.window?.toggleFullScreen(nil)
                 }
@@ -1349,48 +1566,43 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             case "stepEffect":
                 host.perform((number ?? 1) < 0 ? .previousEffect : .nextEffect, value: nil)
             case "stepEffectPreset": host.perform(.nextEffectPreset, value: nil)
-            case "setViewTimerInterval": setViewTimer(milliseconds: Int(number ?? 0))
+            case "setViewTimerInterval": setViewTimer(presentation, milliseconds: Int(number ?? 0))
             case "openFileDialog": presentOpenMediaPanel()
             case "closeView":
-                traceNavigationState("command-close-view-before")
-                // A view this skin opened over another one closes back to it; only the outermost
-                // view closing means "close the player". The covered view is *restored*, not
-                // reloaded — see `CoveredView`.
-                if closeNVIDIAEmbeddedMode() {
-                    switchedView = true
-                } else if let previous = openedViewStack.popLast() {
-                    switchedView = true; switchView(to: previous.viewID, restoring: previous)
+                // **By name, or the window the handler is running in.** `theme.closeView('plView')`
+                // names a window; `view.close()` posts this with no value and means its own. 84 of
+                // the 180 archives call the named form and every one of them has been aborting the
+                // handler that does it — `Halo 2`'s `checkRemoteViewStatus()` dies on
+                // `theme.closeView('vidRemoteView')` and never reaches the statements after it.
+                if let id = command.value?.string {
+                    if let target = materializer.presentation(for: id) { closeViewWindow(target) }
                 } else {
-                    window?.orderOut(nil)
+                    closeViewWindow(presentation)
+                    switchedView = true
                 }
-                traceNavigationState("command-close-view-after")
-            case "minimizeWindow": window?.miniaturize(nil)
+            case "minimizeWindow": presentation.window.miniaturize(nil)
             case let action where action.hasPrefix("playPlaylistItem:"):
                 if let index = Int(action.dropFirst("playPlaylistItem:".count)) {
                     host.perform(.playPlaylistItem(index), value: nil)
                 }
             case "openView":
-                if let id = command.value?.string,
-                   loadedSkin?.views.contains(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) == true,
-                   id.caseInsensitiveCompare(activeViewID ?? "") != .orderedSame {
-                    if let covered = activeViewID,
-                       !openedViewStack.contains(where: {
-                           $0.viewID.caseInsensitiveCompare(covered) == .orderedSame
-                       }) {
-                        openedViewStack.append(.init(
-                            viewID: covered,
-                            overrides: sceneOverrides,
-                            viewTimerMilliseconds: viewTimerMilliseconds,
-                            animationEpoch: animationEpochViewID == covered ? animationEpoch : nil))
-                        if openedViewStack.count > 8 { openedViewStack.removeFirst() }
-                    }
-                    switchedView = true; switchView(to: id)
+                if let id = command.value?.string {
+                    openView(id, from: presentation, offset: nil)
+                }
+            case let action where action.hasPrefix("openViewRelative:"):
+                // `openViewRelative:<dx>,<dy>` — the offset rides the action, the way
+                // `setEQBand:<n>` does, because a host command carries exactly one value and the
+                // view id is it.
+                let parts = action.dropFirst("openViewRelative:".count).split(separator: ",")
+                if let id = command.value?.string, parts.count == 2,
+                   let dx = Double(parts[0]), let dy = Double(parts[1]) {
+                    openView(id, from: presentation, offset: CGPoint(x: dx, y: dy))
                 }
             case "setCurrentView":
                 if let id = command.value?.string,
                    loadedSkin?.views.contains(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) == true,
-                   id.caseInsensitiveCompare(activeViewID ?? "") != .orderedSame {
-                    switchedView = true; switchView(to: id)
+                   id.caseInsensitiveCompare(presentation.viewID) != .orderedSame {
+                    switchedView = true; switchView(presentation, to: id)
                 }
             default: continue
             }
@@ -1409,122 +1621,74 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// running is left alone rather than restarted.
     ///
     /// The Phase 0 active-timer limit is enforced on the **resulting** set, which is the quantity
-    /// the limit is about; a per-transaction cap could never see the total.
-    private func applyTimerDelta(registered: [WMPJScriptTimerRequest], cleared: [Int]) {
+    /// the limit is about; a per-transaction cap could never see the total. It is per window,
+    /// because the tokens are: two open panels each run their own chain.
+    private func applyTimerDelta(_ presentation: WMPViewPresentation,
+                                 registered: [WMPJScriptTimerRequest], cleared: [Int]) {
         for token in cleared {
-            scriptTimerTasks.removeValue(forKey: token)?.cancel()
+            presentation.scriptTimerTasks.removeValue(forKey: token)?.cancel()
         }
         for request in registered {
-            guard scriptTimerTasks[request.token] == nil,
-                  scriptTimerTasks.count < WMPPhase0Limits.activeTimers else { continue }
+            guard presentation.scriptTimerTasks[request.token] == nil,
+                  presentation.scriptTimerTasks.count < WMPPhase0Limits.activeTimers else { continue }
             let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, request.periodMilliseconds)
-            scriptTimerTasks[request.token] = Task { [weak self] in
+            presentation.scriptTimerTasks[request.token] = Task { [weak self, weak presentation] in
                 repeat {
                     try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled, let presentation else { return }
                     // A one-shot retires itself: the context reported it once, and nothing else
                     // would ever take it out of the running set.
-                    if !request.repeats { self?.retireScriptTimer(request.token) }
-                    self?.dispatchTimer(request)
+                    if !request.repeats { presentation.scriptTimerTasks.removeValue(forKey: request.token) }
+                    self?.dispatchTimer(presentation, request)
                 } while request.repeats && !Task.isCancelled
             }
         }
     }
 
-    private func retireScriptTimer(_ token: Int) {
-        scriptTimerTasks.removeValue(forKey: token)
-    }
-
-    private func dispatchTimer(_ request: WMPJScriptTimerRequest) {
-        guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
-              let activeScene, let scriptRuntime else { return }
-        scriptTask?.cancel()
-        scriptTask = Task { [weak self] in
-            guard let self else { return }
+    private func dispatchTimer(_ presentation: WMPViewPresentation, _ request: WMPJScriptTimerRequest) {
+        guard let skin = loadedSkin, let store = imageStore,
+              let activeScene = presentation.activeScene, let scriptRuntime else { return }
+        let viewID = presentation.viewID
+        presentation.scriptTask?.cancel()
+        presentation.scriptTask = Task { [weak self, weak presentation] in
+            guard let self, let presentation else { return }
             let event = WMPJScriptEvent(name: "timer", targetID: nil, handlers: [request.source])
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                 size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
                 geometry: activeScene.scriptGeometry)
             // Commands before drawing, and for the reason in `dispatchScriptTransaction`: the
             // build and the render are what a later tick cancels, and the commands are not theirs.
-            let switchedView = self.applyHostCommands(output.hostCommands)
+            let switchedView = self.applyHostCommands(output.hostCommands, from: presentation)
             // **A timer handler is where the next timer is registered.** The WMP idiom is a chain:
             // the callback does its step and calls `setTimeout` again for the next one. This path
             // used to drop what the tick asked for, so a chain fired exactly once and stopped —
             // and it is the only transaction site that could ever see a chained request (W119).
             if !switchedView {
-                self.applyTimerDelta(registered: output.timerRequests,
+                self.applyTimerDelta(presentation, registered: output.timerRequests,
                                      cleared: output.clearedTimerTokens)
             }
             self.recordScriptDiagnostics(output.diagnostics)
             guard !switchedView, !Task.isCancelled else { return }
             do {
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: viewID, requestedSize: activeScene.canvasSize, overrides: output.overrides)
+                    .build(viewID: viewID, requestedSize: activeScene.canvasSize,
+                           overrides: output.overrides)
                 let rendered = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: renderBackingScale,
-                    clock: self.animationClock(for: scene.viewID))
-                self.sceneOverrides = output.overrides; self.activeScene = scene
-                self.startAnimation(for: scene)
-                self.mainView?.updateListItems(output.listItems)
-                self.mainView?.present(rendered.image, scene: scene)
+                    scene: scene, backingScale: self.renderBackingScale(for: presentation),
+                    clock: presentation.animationClock(for: scene.viewID))
+                presentation.sceneOverrides = output.overrides
+                presentation.activeScene = scene
+                self.startAnimation(presentation, for: scene)
+                presentation.mainView?.updateListItems(output.listItems)
+                presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage,
+                                               scene: scene)
+                self.arbitrateVideoSurface()
             } catch { self.recordScriptDiagnostics([.init(code: "timer-transaction", message: error.localizedDescription)]) }
         }
     }
 
-    /// The **script's** timers — what a handler asked for with `setTimeout`/`setInterval` — and
-    /// nothing else.
-    ///
-    /// It used to stop the view's own `timerInterval` and the animation loop as well, and
-    /// `applyTimerDelta` is what maintains that set, and it used to be a wholesale replace called
-    /// on every transaction. So a load transaction that requested no script timers — the common
-    /// case — cancelled the view timer `apply` had just started, one line earlier. **No `.wmz` view timer in the corpus had ever
-    /// fired**: `Halo 2`'s `introStart()` never opened its shutter (reported 2026-09-08), and every
-    /// other authored `onTimer` — clocks, seek readouts, `checkRemoteViewStatus`, ALXMorph's
-    /// animations — was dead the same way. Teardown wants all three stopped and says so with
-    /// `stopAllTimers()`.
-    private func cancelScriptTimers() {
-        scriptTimerTasks.values.forEach { $0.cancel() }
-        scriptTimerTasks.removeAll()
-    }
-
-    /// Everything in this controller with a clock **that belongs to the presented view**. Teardown
-    /// and a view switch are synchronous and idempotent, and the animation loop retains the scene it
-    /// draws — a repaint arriving after teardown would present into a view being discarded.
-    ///
-    /// The background dispatcher is deliberately not here: it belongs to the skin session rather
-    /// than to a view, and a view switch is exactly when it is most needed — a `.wmz` panel opened
-    /// by `theme.openView` is closed again by the same `onTimer`. `stopDispatcher()` is what ends
-    /// it, and only teardown and a skin reload call it.
-    private func stopAllTimers() {
-        cancelScriptTimers()
-        setViewTimer(milliseconds: 0)
-        animationTask?.cancel()
-        animationTask = nil
-        animationEpochViewID = nil
-    }
-
-    /// Seconds of animation elapsed for `viewID`, or zero when the clock belongs to another view.
-    ///
-    /// **Every render of a view that is already animating has to pass this.** Preserving the epoch
-    /// alone does not stop the flicker: a rebuilt scene is rendered at `clock: 0` by default, so a
-    /// transaction still paints frame zero and the animation loop only catches up a frame later.
-    /// At a 100ms `timerInterval` that is ten frame-zero repaints a second on top of a running GIF.
-    private func animationClock(for viewID: String?) -> TimeInterval {
-        guard let viewID, animationEpochViewID == viewID else { return 0 }
-        return Date().timeIntervalSince(animationEpoch)
-    }
-
-    /// The `VIEW`'s own `timerInterval`, in milliseconds: zero stops it, anything else restarts it
-    /// at that period and dispatches the view's authored `onTimer` handlers.
-    ///
-    /// This is how a skin animates. Corona's compact view registers a timed event and then writes
-    /// `view.timerInterval`, and its player view declares `timerInterval="4000"` in markup to drive
-    /// its own transport readouts — so without this a `.wmz` sits frozen in whatever state it was
-    /// authored in, with no diagnostic anywhere to say why.
     /// `theme.openDialog('FILE_OPEN', …)`, which is how a `.wmz` skin's own Open button starts
-    /// playback. Without it WMP mode has no route to a track at all: the auxiliary NullPlayer
-    /// windows stay hidden in this mode until they have WMP-owned chrome.
+    /// playback. Without it WMP mode has no route to a track at all.
     private func presentOpenMediaPanel() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
@@ -1556,31 +1720,29 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// 90 of the 180 corpus archives carry a multi-frame GIF. The loop re-renders at the shortest
     /// frame delay the scene actually uses — no fixed frame rate — and does not exist at all for a
     /// scene with no animation, which is the other half of the corpus and every static view.
-    private func startAnimation(for scene: WMPScene) {
-        animationTask?.cancel()
-        animationTask = nil
+    private func startAnimation(_ presentation: WMPViewPresentation, for scene: WMPScene) {
+        presentation.animationTask?.cancel()
+        presentation.animationTask = nil
         guard let store = imageStore,
               let cadence = WMPRenderer(imageStore: store).animationCadence(for: scene) else { return }
-        if animationEpochViewID != scene.viewID {
-            animationEpoch = Date()
-            animationEpochViewID = scene.viewID
+        if presentation.animationEpochViewID != scene.viewID {
+            presentation.animationEpoch = Date()
+            presentation.animationEpochViewID = scene.viewID
         }
-        Self.traceInput("animation \(scene.viewID ?? "-") delay=\(cadence.shortestDelay)s "
-            + "endsAt=\(cadence.endsAt.map { "\($0)s" } ?? "endless") "
-            + "clock=\(Date().timeIntervalSince(animationEpoch))s")
         // A one-shot that has already played out needs no loop: the caller rendered this scene at
         // the same clock, so its final frame is already on screen. Without this every rebuild after
         // the animation ended would still start a task to draw that one still frame again.
-        if let endsAt = cadence.endsAt, Date().timeIntervalSince(animationEpoch) >= endsAt { return }
+        if let endsAt = cadence.endsAt,
+           Date().timeIntervalSince(presentation.animationEpoch) >= endsAt { return }
         let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds,
                          Int(cadence.shortestDelay * 1_000))
         let dirty = cadence.bounds
-        let epoch = animationEpoch
-        animationTask = Task { [weak self] in
+        let epoch = presentation.animationEpoch
+        presentation.animationTask = Task { [weak self, weak presentation] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
-                guard !Task.isCancelled, let self else { return }
-                await self.renderAnimationFrame(scene: scene, store: store, dirty: dirty)
+                guard !Task.isCancelled, let self, let presentation else { return }
+                await self.renderAnimationFrame(presentation, scene: scene, store: store, dirty: dirty)
                 // A scene of one-shot GIFs stops moving; keeping the loop alive would re-render
                 // the same still frame at the GIF's rate for as long as the view is open.
                 if let endsAt = cadence.endsAt, Date().timeIntervalSince(epoch) >= endsAt { return }
@@ -1588,30 +1750,38 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
-    private func renderAnimationFrame(scene: WMPScene, store: WMPImageStore, dirty: WMPRect) async {
-        // Only while this is still the scene on screen: a view switch or a script transaction
+    private func renderAnimationFrame(_ presentation: WMPViewPresentation, scene: WMPScene,
+                                      store: WMPImageStore, dirty: WMPRect) async {
+        // Only while this is still the scene in this window: a view switch or a script transaction
         // replaces it, and repainting the old one would undo what just landed.
-        guard activeScene == scene, let view = mainView else { return }
-        let clock = Date().timeIntervalSince(animationEpoch)
+        guard presentation.activeScene == scene, let view = presentation.mainView else { return }
+        let clock = Date().timeIntervalSince(presentation.animationEpoch)
         guard let rendered = try? await WMPRenderer(imageStore: store)
-            .render(scene: scene, backingScale: renderBackingScale, clock: clock) else { return }
-        guard activeScene == scene else { return }
-        view.present(rendered.image, scene: scene, dirtyBounds: dirty)
+            .render(scene: scene, backingScale: renderBackingScale(for: presentation),
+                    clock: clock) else { return }
+        guard presentation.activeScene == scene else { return }
+        view.present(rendered.image, overlay: rendered.overlayImage, scene: scene, dirtyBounds: dirty)
     }
 
-    private func setViewTimer(milliseconds: Int) {
-        Self.traceInput("view-timer \(milliseconds)ms")
-        viewTimerTask?.cancel()
-        viewTimerTask = nil
-        viewTimerMilliseconds = max(0, milliseconds)
+    /// The `VIEW`'s own `timerInterval`, in milliseconds: zero stops it, anything else restarts it
+    /// at that period and dispatches the view's authored `onTimer` handlers.
+    ///
+    /// This is how a skin animates. Corona's compact view registers a timed event and then writes
+    /// `view.timerInterval`, and its player view declares `timerInterval="4000"` in markup to drive
+    /// its own transport readouts — so without this a `.wmz` sits frozen in whatever state it was
+    /// authored in, with no diagnostic anywhere to say why.
+    private func setViewTimer(_ presentation: WMPViewPresentation, milliseconds: Int) {
+        presentation.viewTimerTask?.cancel()
+        presentation.viewTimerTask = nil
+        presentation.viewTimerMilliseconds = max(0, milliseconds)
         guard milliseconds > 0 else { return }
 
         let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, milliseconds)
-        viewTimerTask = Task { [weak self] in
+        presentation.viewTimerTask = Task { [weak self, weak presentation] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
-                guard !Task.isCancelled else { return }
-                self?.dispatchScriptEvent(name: "timer", targetID: nil)
+                guard !Task.isCancelled, let self, let presentation else { return }
+                self.dispatchScriptEvent(presentation, name: "timer", targetID: nil)
             }
         }
     }
@@ -1622,10 +1792,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// template — author `<view id="controlView" timerInterval="100" onTimer="checkRemoteViewStatus()">`
     /// with no window of its own, and route their panel, minimize and close buttons through it: the
     /// button writes a preference and this handler is what reads it back and answers with
-    /// `theme.openView`, `view.minimize()` or `view.close()`. Real WMP keeps it open beside the
-    /// player. Here it never becomes a window, so nothing ticked it and every one of those buttons
-    /// was dead — reported live, and recorded in the user's own defaults as four `remoteCall*`
-    /// flags stuck `true`, written by clicks that nothing consumed.
+    /// `theme.openView`, `theme.closeView`, `view.minimize()` or `view.close()`. Real WMP keeps it
+    /// open beside the player. Here it never becomes a window, so nothing ticked it and every one of
+    /// those buttons was dead — reported live, and recorded in the user's own defaults as four
+    /// `remoteCall*` flags stuck `true`, written by clicks that nothing consumed.
     ///
     /// **This is a scan, not a by-product of the candidate walk, because the walk usually never
     /// gets there.** `wmpSkinViewID` is persisted on every present, so the second launch onward
@@ -1664,7 +1834,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Start the background dispatcher's clock. Its period is the `timerInterval` the view authors,
     /// which is 100 ms in all 24 corpus skins that use this idiom. Unlike the view timer, a tick
     /// builds no scene and renders nothing — it runs one handler and applies whatever host commands
-    /// it posts — so it neither cancels `scriptTask` nor competes with the view's own animation.
+    /// it posts — so it neither cancels a window's `scriptTask` nor competes with its animation.
     private func startDispatcherTimer(in skin: WMPLoadedSkin) {
         dispatcherTimerTask?.cancel()
         dispatcherTimerTask = nil
@@ -1672,7 +1842,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let milliseconds = Self.authoredTimerInterval(in: skin, viewID: viewID)
         dispatcherHandlers = Self.handlers(in: skin, event: "timer", targetID: nil, viewID: viewID)
         guard milliseconds > 0, !dispatcherHandlers.isEmpty else { return }
-        Self.traceInput("dispatcher \(viewID) \(milliseconds)ms")
         let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, milliseconds)
         dispatcherTimerTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -1685,7 +1854,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private func dispatchDispatcherTick() async {
         guard let skin = loadedSkin, let scriptRuntime, let viewID = dispatcherViewID,
-              let currentViewID = activeViewID, !dispatcherHandlers.isEmpty else { return }
+              let player = materializer.playerPresentation, !dispatcherHandlers.isEmpty else { return }
         let snapshot = host.snapshot
         let videoEvents = WMPVideoPresentation.events(previous: dispatcherVideoSnapshot, current: snapshot.videoEvent)
         dispatcherVideoSnapshot = snapshot.videoEvent
@@ -1695,18 +1864,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let event = WMPJScriptEvent(name: (["timer"] + videoEvents).joined(separator: ","),
                                    targetID: viewID, handlers: videoHandlers + dispatcherHandlers)
         let output = await scriptRuntime.dispatch(skin: skin, viewID: viewID,
-                                                  currentViewID: currentViewID,
+                                                  currentViewID: player.viewID,
                                                   snapshot: snapshot, event: event)
         guard !Task.isCancelled, dispatcherViewID == viewID else { return }
-        // `timerRequests` are deliberately dropped rather than scheduled. `applyTimerDelta` owns
-        // the *presented* view's set, and `dispatchTimer` runs what it schedules against the
-        // presented view — so honouring a dispatcher's `setTimeout` here would cancel the timers of
-        // the view on screen and then run the callback in the wrong view. No corpus dispatcher asks
-        // for one; if one ever does, it needs its own schedule, not this one.
-        if !output.timerRequests.isEmpty {
-            Self.traceInput("dispatcher-timers-dropped \(output.timerRequests.count)")
-        }
-        _ = applyHostCommands(output.hostCommands)
+        // `timerRequests` are deliberately dropped rather than scheduled. `applyTimerDelta` owns a
+        // *window's* set and `dispatchTimer` runs what it schedules against that window — so
+        // honouring a dispatcher's `setTimeout` here would attach it to a window it does not belong
+        // to. No corpus dispatcher asks for one; if one ever does, it needs its own schedule.
+        //
+        // The player is the window a dispatcher's commands run against: it is the one the user is
+        // looking at, which is what `theme.currentViewID` answers from here, and its `openView`
+        // calls are the whole point of the idiom.
+        _ = applyHostCommands(output.hostCommands, from: player)
         recordScriptDiagnostics(output.diagnostics)
     }
 
@@ -1723,12 +1892,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // A live script error is the one thing the input trace could not see. The headless probes
         // print `SCRIPT-DIAG`; without the same line here, a handler that throws in the running app
         // is indistinguishable from one that ran and did nothing.
-        for diagnostic in diagnostics { Self.traceInput("script-diag [\(diagnostic.code)] \(diagnostic.message)") }
         lastLoadDiagnostic = diagnostics.map { "[\($0.code)] \($0.message)" }.joined(separator: "\n")
     }
 
-    private var renderBackingScale: CGFloat {
-        max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+    private func renderBackingScale(for presentation: WMPViewPresentation?) -> CGFloat {
+        max(1, presentation?.window.backingScaleFactor
+            ?? window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
     }
 
     /// What the scene is rasterized at: the display's backing scale multiplied by UI Size, so a
@@ -1739,7 +1908,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// 300% on a Retina display would simply stop repainting. Losing sharpness at the top of the
     /// ladder is the right trade against that.
     private func renderScale(for canvas: WMPSize) -> CGFloat {
-        let requested = renderBackingScale * uiScale
+        let requested = renderBackingScale(for: materializer.playerPresentation) * uiScale
         let pixels = canvas.width * canvas.height
         guard pixels > 0, requested > 1 else { return max(1, requested) }
         let ceiling = (CGFloat(WMPPhase0Limits.imagePixels) / pixels).squareRoot()
@@ -1748,24 +1917,46 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     // MARK: - UI Size
 
-    /// Applies the host's UI Size to this window: the frame becomes the skin-space size times the
-    /// multiplier, anchored at its top-left, and the scene is re-rasterized at the new scale.
+    /// Applies the host's UI Size to every WMP window: each frame becomes its skin-space size times
+    /// the multiplier, anchored at its top-left, and its scene is re-rasterized at the new scale.
     ///
-    /// `WindowManager.applyDoubleSize` calls this and then sets the frame itself from
+    /// `WindowManager.applyDoubleSize` calls this and then sets the player's frame itself from
     /// `mainWindowSize(atScale:)`; the two agree, so the second set is a no-op.
     func applyUIScale(_ scale: CGFloat) {
         let target = max(0.1, scale)
         guard target != uiScale else { return }
         uiScale = target
-        setWindowSize(skinSpaceSize)
-        window?.invalidateShadow()
-        renderCurrentSize()
+        guard !materializer.isEmpty else {
+            guard let window else { return }
+            let scaled = NSSize(width: Self.unskinnedSize.width * target,
+                                height: Self.unskinnedSize.height * target)
+            var frame = window.frame
+            frame.size = scaled
+            frame.origin.y = window.frame.maxY - scaled.height
+            window.setFrame(frame, display: true)
+            unskinnedView?.setBoundsSize(Self.unskinnedSize)
+            window.invalidateShadow()
+            return
+        }
+        for presentation in materializer.openPresentations {
+            setWindowSize(presentation, presentation.skinSpaceSize)
+            presentation.window.invalidateShadow()
+            renderCurrentSize(presentation)
+        }
     }
 
     /// The window size this skin wants at `scale` — its skin-space size times the multiplier. The
     /// unskinned player answers the same way, from its own fixed size.
     func mainWindowSize(atScale scale: CGFloat) -> NSSize? {
         NSSize(width: skinSpaceSize.width * scale, height: skinSpaceSize.height * scale)
+    }
+
+    /// The windows this skin has open, for `WindowManager`'s docking branch.
+    var materializedAuxiliaryWindows: [NSWindow] { materializer?.auxiliaryWindows ?? [] }
+
+    /// Whether any open WMP window is showing a view that provides `surface`.
+    func anyOpenViewProvides(_ surface: WMPSkinSurface) -> Bool {
+        materializer?.anyOpenView(where: { skinSurfaces.view($0, provides: surface) }) ?? false
     }
 }
 

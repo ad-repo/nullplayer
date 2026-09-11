@@ -190,9 +190,9 @@ final class WMPScriptContext: @unchecked Sendable {
     /// The live elements of every view this session has installed, and which one is installed now.
     ///
     /// Two paths read this back. A background dispatcher swaps its own in for the length of a tick
-    /// (`runBackground`), and a view **covered** by `theme.openView` gets its own back when the
-    /// panel over it closes (`restoreElements(for:)`) — WMP opened a second window and never
-    /// touched the first, so coming back is a restore rather than a load.
+    /// (`runBackground`), and every open window's transaction swaps its own in on the way past
+    /// (`restoreElements(for:)`) — one `JSContext` serves them all, and every view root is called
+    /// `view`, so a panel's transaction must not run against the player's objects.
     private var viewRegistries: [String: WMPObjectModel.ElementRegistry] = [:]
     private var installedViewID: String?
 
@@ -241,6 +241,16 @@ final class WMPScriptContext: @unchecked Sendable {
             model.restoreElements(cached)
             installedViewID = WMPPath.fold(viewID)
             return true
+        }
+    }
+
+    /// Forget a view's live elements. Its window has closed, or `theme.currentViewID` has replaced
+    /// it — either way the next time this id is opened it is a load, not a restore.
+    func discardElements(for viewID: String) {
+        queue.sync {
+            let key = WMPPath.fold(viewID)
+            viewRegistries.removeValue(forKey: key)
+            if installedViewID == key { installedViewID = nil }
         }
     }
 

@@ -184,7 +184,11 @@ enum WMPJScriptCompatibility {
                "currentPresetTitle", "nextPreset", "previousPreset", "reset",
                "gainLevel1", "gainLevel2", "gainLevel3", "gainLevel4", "gainLevel5",
                "gainLevel6", "gainLevel7", "gainLevel8", "gainLevel9", "gainLevel10"],
-        "theme": ["currentViewID", "loadPreference", "savePreference", "loadString", "openView"],
+        // `closeView` and `openViewRelative` joined this list the moment they became live host
+        // commands (W41, W50). A member the runtime answers must never stay in the demand tally:
+        // that is how `alphaBlendTo` came to be ranked as the largest open row while it worked.
+        "theme": ["currentViewID", "loadPreference", "savePreference", "loadString", "openView",
+                  "closeView", "openViewRelative"],
         // `backgroundImage` is on this list because the view root resolves it the way every other
         // node does — a script override before the authored attribute (W75). Every skin with a
         // store-thumbnail `previewView` writes it, and the tally must not call it unknown.
@@ -329,9 +333,18 @@ actor WMPScriptRuntime {
     private let executionSeconds: TimeInterval
     private var context: WMPScriptContext?
     private var contextSkin: ObjectIdentifier?
+    /// Whose elements are installed in the context right now. One `JSContext` serves every open
+    /// window, and every view root is called `view`, so the registry is swapped per transaction.
     private var contextViewID: String?
-    private var propertyRegistry: WMPObservablePropertyRegistry?
-    private var committedOverrides = WMPSceneOverrides.empty
+    /// **One registry per open view, and it is required rather than cosmetic.** The registry only
+    /// reports values that *moved since it last looked*, so two windows sharing one would each see
+    /// half the changes — the player's seek readout would settle on the ticks the playlist panel
+    /// did not take, and vice versa.
+    private var propertyRegistries: [String: WMPObservablePropertyRegistry] = [:]
+    /// The scene overrides each open view has accumulated, by folded view id. A panel's script
+    /// writes belong to its own window; before `theme.openView` opened one, applying them to the
+    /// single presented view is what W90 was.
+    private var committedOverrides: [String: WMPSceneOverrides] = [:]
     private var recentTransactionTimes: [Date] = []
     /// The dispatcher view's plan, built once. Building one walks the whole graph, and a dispatcher
     /// runs at the period its markup authored — 100 ms in every corpus skin that has one.
@@ -353,11 +366,12 @@ actor WMPScriptRuntime {
     func transact(skin: WMPLoadedSkin, viewID: String, size: WMPSize,
                   snapshot: WMPHostSnapshot, event: WMPJScriptEvent?,
                   geometry: [Int: WMPRect] = [:]) async -> WMPScriptOutput {
-        guard !torndown else { return WMPScriptOutput(overrides: committedOverrides) }
+        let scope = WMPPath.fold(viewID)
+        guard !torndown else { return WMPScriptOutput(overrides: overrides(for: scope)) }
         let now = Date()
         recentTransactionTimes.removeAll { now.timeIntervalSince($0) >= 1 }
         guard recentTransactionTimes.count < WMPJScriptProtocol.maximumTransactionsPerSecond else {
-            return WMPScriptOutput(overrides: committedOverrides,
+            return WMPScriptOutput(overrides: overrides(for: scope),
                 diagnostics: [.init(code: "script-rate-limit",
                                     message: "more than 120 transactions per second")])
         }
@@ -372,10 +386,21 @@ actor WMPScriptRuntime {
             contextViewID = nil
             pendingLoad = true
         }
-        guard let context else { return WMPScriptOutput(overrides: committedOverrides) }
-        if propertyRegistry == nil { propertyRegistry = WMPObservablePropertyRegistry(graph: skin.graph) }
+        guard let context else { return WMPScriptOutput(overrides: overrides(for: scope)) }
+        if propertyRegistries[scope] == nil {
+            propertyRegistries[scope] = WMPObservablePropertyRegistry(graph: skin.graph)
+        }
+        // **Swap this view's own live elements in, and leave the other window's stashed.** A
+        // `restoreElements` that answers true is a view this session has already run — its objects,
+        // its accumulated state — and the context stashes whichever view was installed before it on
+        // the way past. A false answer is a view being opened for the first time, which installs
+        // from the plan. This is the same primitive `runBackground` uses for the windowless
+        // dispatcher, generalized: with more than one window there is no single "presented" view to
+        // put back, and the next transaction for that window restores it.
         if contextViewID?.caseInsensitiveCompare(viewID) != .orderedSame {
-            context.install(elements: plan.elements, for: viewID)
+            if !context.restoreElements(for: viewID) {
+                context.install(elements: plan.elements, for: viewID)
+            }
             contextViewID = viewID
         }
         // The elements are installed first on purpose: a skin's programs run top-level code that
@@ -389,7 +414,7 @@ actor WMPScriptRuntime {
         // scene *draws* and wrong for what the skin can *react to*: a control the host moved read
         // as unmoved for the whole handler pass, and nothing raised its `value_onchange` at all.
         // Committing them afterwards is unchanged — this only decides what the transaction knew.
-        let boundChanges = propertyRegistry?.changes(for: snapshot) ?? []
+        let boundChanges = propertyRegistries[scope]?.changes(for: snapshot) ?? []
         var boundValues: [Int: WMPJSONValue] = [:]
         for change in boundChanges where change.address.property == "value" {
             boundValues[change.address.stableID] = change.value
@@ -400,7 +425,7 @@ actor WMPScriptRuntime {
 
         var diagnostics = startupDiagnostics + result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
-        var overrides = committedOverrides
+        var overrides = overrides(for: scope)
         for change in boundChanges {
             overrides.properties[change.address] = change.value
         }
@@ -445,7 +470,7 @@ actor WMPScriptRuntime {
             // the authored window size. Restore any pre-existing scripted size, if there was one.
             for property in ["width", "height"] {
                 let address = WMPScenePropertyAddress(stableID: root.stableID, property: property)
-                if let previous = committedOverrides.geometry[address] {
+                if let previous = self.overrides(for: scope).geometry[address] {
                     overrides.geometry[address] = previous
                 } else {
                     overrides.geometry.removeValue(forKey: address)
@@ -453,7 +478,7 @@ actor WMPScriptRuntime {
             }
         }
         let repaint = Set(result.repaintHints.compactMap { plan.idToStableID[WMPPath.fold($0)] })
-        committedOverrides = overrides
+        committedOverrides[scope] = overrides
         return WMPScriptOutput(overrides: overrides, hostCommands: result.hostCommands,
                                diagnostics: diagnostics, repaintNodeIDs: repaint,
                                timerRequests: result.timers, clearedTimerTokens: result.clearedTimers,
@@ -590,43 +615,42 @@ actor WMPScriptRuntime {
 
     func resetPreferences() { preferences.reset() }
 
-    func setWidgetValue(stableID: Int, value: Double) {
+    func setWidgetValue(stableID: Int, value: Double, viewID: String) {
         guard value.isFinite else { return }
-        committedOverrides.properties[.init(stableID: stableID, property: "value")] = .number(value)
+        let scope = WMPPath.fold(viewID)
+        var stored = overrides(for: scope)
+        stored.properties[.init(stableID: stableID, property: "value")] = .number(value)
+        committedOverrides[scope] = stored
         context?.setElementValue(stableID: stableID, value: value)
     }
 
-    func setWidgetText(stableID: Int, text: String) {
-        committedOverrides.properties[.init(stableID: stableID, property: "value")] = .string(text)
+    func setWidgetText(stableID: Int, text: String, viewID: String) {
+        let scope = WMPPath.fold(viewID)
+        var stored = overrides(for: scope)
+        stored.properties[.init(stableID: stableID, property: "value")] = .string(text)
+        committedOverrides[scope] = stored
         context?.setElementText(stableID: stableID, text: text)
     }
 
-    /// A view switch drops this view's overrides and its element registrations, but **not** the
-    /// context: a skin's globals are declared once by its `.js` files and every view shares them.
-    func prepareForViewSwitch() {
-        committedOverrides = .empty
-        propertyRegistry = nil
-        contextViewID = nil
+    private func overrides(for scope: String) -> WMPSceneOverrides {
+        committedOverrides[scope] ?? .empty
     }
 
-    /// **Come back to a view that was covered rather than replaced.**
+    /// **Drop one view's scope.** Called when its window closes and when `theme.currentViewID`
+    /// replaces the view inside a window — the two moments a view genuinely stops existing.
     ///
-    /// `theme.openView` opens a *second window* in WMP and leaves the first one alone; only
-    /// `theme.currentViewID` replaces a view. With one window the difference is this method: a
-    /// `closeView` return puts back the overrides the covered view was drawn with and the live
-    /// elements it was left holding, instead of rebuilding it from its markup.
-    ///
-    /// Reloading it was wrong in a way that was invisible until a skin could open a panel at all.
-    /// `Alienware Invader` reveals its player by writing `mainBack.backgroundImage` and
-    /// `mainBackGroup1.visible` from a 568-frame intro and then stopping its own timer; a rebuilt
-    /// `mainView` had none of that, so closing the equaliser returned to a view that drew **nothing**
-    /// (`commands=0`) and then re-ran the markup's `timerInterval="500"` — which fires
-    /// `toggleShutter()` with the skin's own `introStatus` already true and closes the shutter over
-    /// the whole player. Reported live as "closing an interior window closes the whole UI".
-    func prepareForRestore(viewID: String, overrides: WMPSceneOverrides) {
-        committedOverrides = overrides
-        propertyRegistry = nil
-        contextViewID = context?.restoreElements(for: viewID) == true ? viewID : nil
+    /// Its overrides, its observable-property registry and its live elements all go; the context
+    /// does not, because a skin's globals are declared once by its `.js` files and every view shares
+    /// them. **There is no restore counterpart any more.** `prepareForRestore` existed to put back a
+    /// view that `theme.openView` had *covered* — WMP opened a second window and never touched the
+    /// first, so this engine had to simulate one having survived. It now genuinely survives, in its
+    /// own window, and nothing was ever put back except by that simulation (W90).
+    func discardView(_ viewID: String) {
+        let scope = WMPPath.fold(viewID)
+        committedOverrides.removeValue(forKey: scope)
+        propertyRegistries.removeValue(forKey: scope)
+        context?.discardElements(for: viewID)
+        if contextViewID?.caseInsensitiveCompare(viewID) == .orderedSame { contextViewID = nil }
     }
 
     func teardown() {
@@ -636,5 +660,7 @@ actor WMPScriptRuntime {
         context = nil
         contextSkin = nil
         contextViewID = nil
+        committedOverrides.removeAll()
+        propertyRegistries.removeAll()
     }
 }

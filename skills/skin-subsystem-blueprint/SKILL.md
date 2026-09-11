@@ -108,6 +108,60 @@ that declare none. Answer all three shapes: declared in the view on screen (noth
 menu item should say so), declared in another view (open that view the way the skin's own button
 does), declared nowhere (your window).
 
+### The skin's *own* extra windows are a second, separate decision
+
+Not to be confused with the policy above, which is about **NullPlayer's** windows. This one is about
+the windows **the skin format itself declares**, and every family has them: a `.wal` names containers,
+a `.wmz` names views its script opens with `theme.openView`. The question is whether they become real
+windows, and the honest answer is yes — the alternative is to simulate one, and **a simulated second
+window is a defect generator rather than a reduction**. `.wmz` ran that experiment for four phases:
+presenting the opened view in the one window and remembering what it covered produced three separate
+*reported* defects (an interior window's close taking the whole UI with it, a panel persisted as the
+session's view so the next launch had no player, and the macOS close control stranding the user), and
+all three were deleted by making the window real rather than fixed individually (W141, 2026-09-11).
+
+**Copy `.wal`'s auxiliary containers, and copy them rather than the other two families.** Classic's
+windows are a 275px grid with a rigid centre stack and Original's geometry is ours to decide; only
+`.wal` already assumes nothing about the main window's geometry, which is what an arbitrary authored
+canvas needs (`Halo 2`'s panels are 406x209 against a 327x294 player). The recipe:
+
+- **One borderless `NSWindow` per container/view, all against one shared script runtime**, with a map
+  from container/view to the window that owns it, so a script callback reaches the right one.
+  `WinampModernHostedWindowMaterializer` and `WMPViewWindowMaterializer` are the same class twice.
+- **Independent top-level windows, never `addChildWindow`.** A child window is for a foreign
+  *rendering surface* glued to a layout tree it must not join — the VLC video output is the only one
+  in the app (`wmp-skin-guide` § W102).
+- **The first view presented binds the controller's existing window.** That window is
+  `MainWindowProviding`'s anchor, the frame-restore anchor, the tiler's anchor and the host the
+  unskinned fallback is swapped back into; binding to it means none of those move when the skin opens
+  panels. **The trap that binding carries: the main window is the app's, not the skin's.** Ordering
+  it out means *close* and nothing else — a skin reload or a mode teardown drops its presentation and
+  leaves the window alone, because something is about to be put into it. Let a materializer share one
+  teardown path between "close this window" and "release everything" and the main window goes off
+  screen on reload; on `.wmz` that surfaced at **launch**, because restoring a saved frame reloads
+  the skin (`main windows launch minimized`, 2026-09-11). Auxiliary windows are ordered out either
+  way — they belong to the skin.
+- **`WindowManager`'s placement seams are already family-neutral despite their names.**
+  `winampModernTiler`, `tiledOrigin(for:avoiding:)`, `occupiedWindowFrames`, `rescuedOrigin`,
+  `windowWillMove`, `applySnappedPosition` and `bringAllWindowsToFront` are generic; the tiler is
+  anchored on `mainWindowController?.window`, whatever family owns it. Do not write a second one.
+- **Place once, on first show, and never again** — a window the user moved must never be yanked back
+  — with `rescuedOrigin` as the never-`nil` fallback. The failure mode is an *invisible* window, not
+  a wrong-looking one, so give the family a placement trace flag on day one
+  (`WINAMP_MODERN_PLACE_TRACE`, `WMP_PLACE_TRACE`).
+- **Join docking through your own gated branch of `managedWindowRecords`**, as a snap target and
+  **not** a centre-stack member: a skin-authored canvas has no column to join.
+- **Per-window state has to actually be per window.** Whatever the controller holds that is really
+  the presented view's — scene, overrides, timers, animation clock, interaction state, pending host
+  events — moves onto one reference type per window (`WMPViewPresentation`), and the *script runtime*
+  has to be keyed per view too. An observable-property registry is the trap: it reports only values
+  that **moved since it last looked**, so two windows sharing one each see half the changes.
+
+**And know which of the format's panels are not windows at all.** A drawer that slides inside the
+main window is markup *inside* the presented view — Corona's playlist and equaliser, NVIDIA's
+embedded playlist and video modes — and must keep being drawn by the scene like any other node. It
+never reaches the open-a-window call. Getting this backwards hides the player behind its own drawer.
+
 ## Isolation
 
 Generalised from all four families; `.wmz` states it most explicitly.

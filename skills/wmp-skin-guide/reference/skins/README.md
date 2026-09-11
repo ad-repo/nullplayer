@@ -41,6 +41,7 @@ with no command goes stale silently and nothing fails.
 | Skin | Why it has a file |
 |---|---|
 | [`cablemusic.md`](cablemusic.md) | Nine unrelated engine defects across two reports, four of which no headless probe could see |
+| [`halo-2.md`](halo-2.md) | Three unrelated app-path defects, none visible to any headless probe. The corpus's purest windowless-dispatcher skin: every window it has, including its player, arrives through `theme.openView`, and every panel opens and closes through one `toggleView` function |
 
 ## Skins that are counter-evidence, and what each one holds
 

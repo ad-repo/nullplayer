@@ -116,12 +116,21 @@ struct WMPWidget: Hashable, Codable {
     /// one has said where its slider writes; see `WMPTransportAction.boundAction`.
     let valueBindingPath: String?
     let videoPresentation: WMPVideoPresentation?
+    /// Where this widget sits in `WMPScene.commands`: the index the walk had reached when the node
+    /// was visited, which is before its own paint commands and before any of its children. Paint
+    /// commands at or after it are the artwork a skin means to draw *over* the widget's content —
+    /// which is how a negative `zIndex` on an `<EFFECTS>` puts the visualizer behind a
+    /// colour-keyed hole in the parent's `backgroundImage` (Cerulean, Plus! Professional).
+    ///
+    /// It is an index and not a zIndex threshold on purpose: `WMPSceneBuilder.walk` sorts only
+    /// siblings, so `commands` is DFS order and is not globally sorted by zIndex.
+    let commandSplitIndex: Int?
 
     init(stableID: Int, nodeID: String?, kind: WMPWidgetKind, frame: WMPRect, clipRect: WMPRect?,
          label: String, toolTip: String?, minimumValue: Double? = nil, maximumValue: Double? = nil,
          value: Double? = nil, direction: WMPSliderDirection? = nil, borderSize: CGFloat = 0,
          thumbSize: WMPSize? = nil, valueBindingPath: String? = nil,
-         videoPresentation: WMPVideoPresentation? = nil) {
+         videoPresentation: WMPVideoPresentation? = nil, commandSplitIndex: Int? = nil) {
         self.stableID = stableID
         self.nodeID = nodeID
         self.kind = kind
@@ -137,6 +146,7 @@ struct WMPWidget: Hashable, Codable {
         self.thumbSize = thumbSize
         self.valueBindingPath = valueBindingPath
         self.videoPresentation = videoPresentation
+        self.commandSplitIndex = commandSplitIndex
     }
 }
 
@@ -280,6 +290,16 @@ struct WMPScene: Hashable, Codable {
     /// `element.height` answers the height the element actually has — including one that came from
     /// its background artwork or from an alignment stretch — rather than only what markup authored.
     var scriptGeometry: [Int: WMPRect] { geometries.mapValues(\.localFrame) }
+
+    /// Where `commands` splits into what is drawn *below* the effects surface and what is drawn
+    /// over it. Nil when the scene hosts no `<EFFECTS>`, in which case the whole list is one layer
+    /// and the rendered output is exactly what it has always been.
+    ///
+    /// A scene with several effects widgets takes the earliest, so every surface sits under the
+    /// same overlay — the artwork between two of them is authored to cover both.
+    var effectsCommandSplitIndex: Int? {
+        widgets.filter { $0.kind == .effects }.compactMap(\.commandSplitIndex).min()
+    }
 
     var deterministicDump: String {
         var lines = ["view=\(viewID) size=\(WMPNumber.format(canvasSize.width))x\(WMPNumber.format(canvasSize.height)) resolved=\(metrics.resolvedNodeCount) unresolved=\(metrics.unresolvedNodeCount)"]

@@ -12,7 +12,7 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertTrue(selection.select("spikes"))
         XCTAssertEqual(selection.snapshot.type, "spikes")
         XCTAssertEqual(selection.snapshot.title, "Spikes")
-        XCTAssertNil(selection.current.engine, "WMP effect slots must not host a standalone visualization engine")
+        XCTAssertNil(selection.current.engine, "a WMP-native effect is drawn by the surface itself")
 
         selection.step(by: 1)
         XCTAssertEqual(selection.snapshot.type, "bars")
@@ -22,9 +22,43 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertEqual(selection.snapshot.type, "cava")
         selection.step(by: 1)
         XCTAssertEqual(selection.snapshot.type, "vis_classic")
-        XCTAssertFalse(selection.select("projectm"), "ProjectM belongs in its own visualization window")
-        XCTAssertEqual(selection.snapshot.type, "vis_classic")
+        // **The three suite engines joined the catalogue with W140**, because what made them a
+        // black rectangle in the slot was the missing occlusion (W139) and not the engines. They
+        // render offscreen and are presented as an image; nothing is mounted in the rect.
+        selection.step(by: 1)
+        XCTAssertEqual(selection.snapshot.type, "projectm")
+        XCTAssertEqual(selection.current.engine, .projectM)
+        XCTAssertTrue(selection.current.isOffscreenEngine)
+        selection.step(by: 1)
+        XCTAssertEqual(selection.snapshot.type, "geiss")
+        selection.step(by: 1)
+        XCTAssertEqual(selection.snapshot.type, "tripex")
+        // Eight entries, so one more step is back to the start.
+        selection.step(by: 1)
+        XCTAssertEqual(selection.snapshot.type, "spikes")
         _ = selection.select("spikes")
+    }
+
+    /// **The readback W140 rests on, with no window anywhere.** A GL engine in an `<EFFECTS>` rect
+    /// is never mounted as a live view — it renders into an FBO and the surface draws the image —
+    /// and nothing else in the suite exercises an `NSOpenGLView` outside a window, so a context
+    /// that silently refuses to render offscreen would show only during live QA.
+    @MainActor
+    func testOffscreenEngineReadbackProducesAnImage() throws {
+        guard let view = VisualizationGLView(frame: NSRect(x: 0, y: 0, width: 206, height: 150),
+                                             pixelFormat: nil) else {
+            throw XCTSkip("no OpenGL pixel format on this machine")
+        }
+        // `persistPreference: false` is the whole of the WMP contract here: a skin cycling its
+        // slot must never write `visualizationEngineType`.
+        let before = UserDefaults.standard.string(forKey: "visualizationEngineType")
+        view.switchEngine(to: .geiss, persistPreference: false)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "visualizationEngineType"), before,
+                       "the skin's slot must not rewrite the app's visualization preference")
+        let image = try XCTUnwrap(view.renderOffscreenImage(pixelWidth: 206, pixelHeight: 150),
+                                  "offscreen readback produced no image")
+        XCTAssertEqual(image.width, 206)
+        XCTAssertEqual(image.height, 150)
     }
 
     @MainActor

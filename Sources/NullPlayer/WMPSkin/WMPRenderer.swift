@@ -6,10 +6,30 @@ import UniformTypeIdentifiers
 
 struct WMPRenderResult {
     let image: CGImage
+    /// The artwork a skin draws *over* its effects surface, when it has one: everything from
+    /// `WMPScene.effectsCommandSplitIndex` onwards, on a transparent canvas of the same size.
+    /// Nil for every scene without an `<EFFECTS>` widget, where `image` is the whole picture and
+    /// the output is byte-identical to a single-layer render.
+    ///
+    /// This is what makes a negative `zIndex` mean what WMP means by it — Cerulean's `face.bmp`
+    /// with its 73px keyed-out hole composites over the visualizer, rather than the visualizer
+    /// covering the bezel — without any shape fitting in the surface view itself.
+    let overlayImage: CGImage?
     let renderMilliseconds: Double
     let backingScale: CGFloat
     let imageMetrics: WMPImageStoreMetrics
     let wasRenderedOnMainThread: Bool
+
+    init(image: CGImage, overlayImage: CGImage? = nil, renderMilliseconds: Double,
+         backingScale: CGFloat, imageMetrics: WMPImageStoreMetrics,
+         wasRenderedOnMainThread: Bool) {
+        self.image = image
+        self.overlayImage = overlayImage
+        self.renderMilliseconds = renderMilliseconds
+        self.backingScale = backingScale
+        self.imageMetrics = imageMetrics
+        self.wasRenderedOnMainThread = wasRenderedOnMainThread
+    }
 }
 
 struct WMPRenderDumpRecord: Codable {
@@ -94,7 +114,8 @@ struct WMPRenderer: @unchecked Sendable {
     func dump(scene: WMPScene, to directory: URL, backingScale: CGFloat = 1,
               clock: TimeInterval = 0) async throws -> WMPRenderDumpRecord {
         try await Task.detached(priority: .userInitiated) {
-            let result = try renderOffMain(scene: scene, backingScale: backingScale, clock: clock)
+            let result = try renderOffMain(scene: scene, backingScale: backingScale, clock: clock,
+                                           splitAtEffects: false)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let safeID = scene.viewID.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" }
             // The clock is in the name only when it is non-zero, so every still dump keeps the
@@ -122,8 +143,13 @@ struct WMPRenderer: @unchecked Sendable {
         }.value
     }
 
+    /// `splitAtEffects` is false for a render dump: a dump is a flat picture of the skin's
+    /// artwork, the effects surface is an AppKit overlay that never appears in one, and splitting
+    /// the list there would drop everything above the visualizer out of the PNG. Every dump stays
+    /// byte-identical to what it was before the split existed.
     private func renderOffMain(scene: WMPScene, backingScale: CGFloat,
-                               clock: TimeInterval = 0) throws -> WMPRenderResult {
+                               clock: TimeInterval = 0,
+                               splitAtEffects: Bool = true) throws -> WMPRenderResult {
         guard backingScale > 0, backingScale.isFinite,
               scene.canvasSize.width > 0, scene.canvasSize.height > 0 else {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Canvas and backing scale must be positive."))
@@ -135,6 +161,30 @@ struct WMPRenderer: @unchecked Sendable {
             throw WMPFailure(WMPDiagnostic(.oversizedImage,
                 "Render surface exceeds the \(WMPPhase0Limits.imagePixels)-pixel limit."))
         }
+        let started = CFAbsoluteTimeGetCurrent()
+        // A scene that hosts an `<EFFECTS>` is rasterized as two layers: everything the walk
+        // reached before the effects node, and everything after it. The surface view is hosted
+        // between them, which is the whole of the z-order fix — the skin's own artwork occludes
+        // the visualizer exactly where it declares it does. With no effects widget there is no
+        // split and this is one pass over the same list as before.
+        let split = splitAtEffects ? scene.effectsCommandSplitIndex : nil
+        let below = split.map { Array(scene.commands[..<$0]) } ?? scene.commands
+        let image = try rasterize(below, scene: scene, pixelWidth: pixelWidth,
+                                  pixelHeight: pixelHeight, backingScale: backingScale, clock: clock)
+        let overlay = try split.map {
+            try rasterize(Array(scene.commands[$0...]), scene: scene, pixelWidth: pixelWidth,
+                          pixelHeight: pixelHeight, backingScale: backingScale, clock: clock)
+        }
+        return WMPRenderResult(image: image, overlayImage: overlay,
+            renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
+            backingScale: backingScale, imageMetrics: imageStore.metrics,
+            wasRenderedOnMainThread: Thread.isMainThread)
+    }
+
+    /// One layer of the scene, on its own transparent canvas.
+    private func rasterize(_ commands: [WMPPaintCommand], scene: WMPScene,
+                           pixelWidth: Int, pixelHeight: Int, backingScale: CGFloat,
+                           clock: TimeInterval) throws -> CGImage {
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
             | CGImageAlphaInfo.premultipliedLast.rawValue
         guard let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight,
@@ -142,13 +192,12 @@ struct WMPRenderer: @unchecked Sendable {
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: bitmapInfo) else {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Unable to allocate render surface."))
         }
-        let started = CFAbsoluteTimeGetCurrent()
         context.clear(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
         context.scaleBy(x: backingScale, y: backingScale)
         context.translateBy(x: 0, y: scene.canvasSize.height)
         context.scaleBy(x: 1, y: -1)
 
-        for command in scene.commands {
+        for command in commands {
             // `alphaBlend="0"` means invisible, and 717 of the corpus's 778 uses are exactly that.
             // Skipping the draw rather than setting alpha to zero saves the decode as well.
             guard command.alpha > 0 else { continue }
@@ -207,10 +256,7 @@ struct WMPRenderer: @unchecked Sendable {
         guard let image = context.makeImage() else {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Unable to finalize render surface."))
         }
-        return WMPRenderResult(image: image,
-            renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
-            backingScale: backingScale, imageMetrics: imageStore.metrics,
-            wasRenderedOnMainThread: Thread.isMainThread)
+        return image
     }
 
     private func crop(_ rect: WMPRect?, from image: CGImage) -> CGImage {
