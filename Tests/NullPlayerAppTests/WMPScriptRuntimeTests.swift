@@ -281,6 +281,68 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertFalse(WMPJScriptCompatibility.supports(object: "element", member: "setFocus"))
     }
 
+    /// W128. The vocabulary is the SDK's element-method list, and an SDK method this engine does
+    /// **not** implement has to resolve unrecognised so the census can rank it. A name missing from
+    /// the set falls into the open property surface instead, answers `""`, and dies as a bare
+    /// `TypeError` — the same abort, but invisible to the instrument the backlog is ranked from,
+    /// which is how `view.returnToMediaCenter` had to be found by a live reporter (W100).
+    func testSDKElementMethodsAreCountedWhenUnimplemented() {
+        for method in ["deleteall", "copy", "abortcopy", "deleteselected", "insertitem",
+                       "returntomediacenter", "sortcolumn", "getline", "getbutton"] {
+            XCTAssertTrue(WMPObjectModel.elementMethodVocabulary.contains(method),
+                          "\(method) is an SDK element method and must be counted, not swallowed")
+            XCTAssertFalse(WMPObjectModel.implementedElementMethods.contains(method),
+                           "\(method) gained an implementation — move this name to the other list")
+            XCTAssertFalse(WMPJScriptCompatibility.supports(object: "element", member: method),
+                           "\(method) is unimplemented, so the census must keep counting it")
+        }
+        // The surface stays closed: a name the SDK does not define is not a method here either,
+        // because every name in this set also gates an *unauthored property read* of the same
+        // spelling and would newly abort the handler that made it.
+        for absent in ["settext", "refresh", "scrollintoview", "setvalue"] {
+            XCTAssertFalse(WMPObjectModel.elementMethodVocabulary.contains(absent),
+                           "\(absent) is not in the SDK's element-method list")
+        }
+    }
+
+    /// The behavioural half of W128, on the three highest-reach names in the corpus scan:
+    /// `plListBox1.deleteAll()` (10 skins), `playlist2.copy()` (8) and `view.returnToMediaCenter()`
+    /// (7). Each aborts its own handler exactly as before — the screen does not change — and each
+    /// now appears in `output.calls` as unrecognised demand instead of nowhere.
+    func testUnimplementedSDKMethodsAreTalliedRatherThanSilent() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <LISTBOX id="box" left="0" top="0" width="40" height="20"/>
+          <PLAYLIST id="pl" left="0" top="20" width="40" height="20"/>
+          <SUBVIEW id="pane" left="0" top="45" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onLoad", targetID: "main",
+                         handlers: ["box.deleteAll(); pane.left = 1;",
+                                    "pl.copy(); pane.top = 2;",
+                                    "view.returnToMediaCenter(); pane.width = 3;",
+                                    "pane.height = 4;"]))
+        for method in ["deleteall", "copy", "returntomediacenter"] {
+            XCTAssertTrue(output.calls.contains {
+                $0.path.hasSuffix(method) && $0.kind == .read && !$0.recognised
+            }, "\(method) must be tallied as unrecognised demand, not answer as an empty string")
+        }
+        // Each call aborts its own handler at the statement that made it, and only that one.
+        for property in ["left", "top", "width"] {
+            XCTAssertNil(output.overrides.geometry[.init(stableID: pane.stableID,
+                                                         property: property)],
+                         "the handler must abort at the unrecognised method, as it did before")
+        }
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: pane.stableID,
+                                                       property: "height")], 4,
+                       "an unrelated handler must still run")
+        await session.teardown()
+    }
+
     /// The defect the whole phase exists for. `g_paneCurrent` is set by one click handler and read
     /// by the next; under a fresh realm per transaction the second click found it undefined, so a
     /// pane toggle could open and never close.

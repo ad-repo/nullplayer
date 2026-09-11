@@ -169,6 +169,45 @@ defines as element methods; one of those that this engine does not implement sta
 rather than falling into the open property surface. Without that, `svPlaylist.moveTo(…)` reads as an
 empty string, dies with a bare `TypeError`, and never appears in the tally that ranks the work.
 
+**The vocabulary is the SDK's element-method list, not a list of names the corpus has been seen to
+call (W128).** It is transcribed from the Skin Programming Reference:
+[`ambient-attributes`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/ambient-attributes),
+[`view-element`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/view-element),
+[`playlist-element`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/playlist-element),
+[`listbox-element`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/listbox-element),
+[`popup-element`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/popup-element),
+[`editbox-element`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/editbox-element),
+[`effects-element`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/effects-element),
+[`buttongroup-element`](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/buttongroup-element).
+`VIDEO`, `BUTTON`, `TEXT` and `SUBVIEW` define no methods of their own. Start the next audit from
+those pages rather than from a corpus scan — a scan can only find what some skin already calls.
+
+**The rule the audit established: a method outside the vocabulary is invisible to the tally, not
+merely unimplemented.** It reaches the open property surface instead, answers `""`, and the call
+dies as a bare `TypeError` — the same abort at the same statement, but classified as an *inert
+property* rather than as unrecognised method demand, so it ranks in Tier 2b ("recognised, answered,
+nothing behind it") when it belongs in Tier 2a. `view.returnToMediaCenter` is the evidence: it had
+to be found by a live reporter (W100) because `WMP_CALL_TRACE` could not see it, and
+`WMP_CALL_TRACE` is what every row in `WMP_TASKS.md` is ranked from.
+
+Two consequences bind any change to this set:
+
+* **Widening it implements nothing.** `elementMethod(_:_:)` stays the kind-aware authority on what
+  actually runs, and `implementedElementMethods` on what the census counts as answered.
+  `WMPJScriptCompatibility.members["element"]` is derived from the latter, not from the vocabulary —
+  which is why `setFocus` is in the vocabulary and correctly absent from the compatibility table.
+* **A name is only ever added, never removed.** The vocabulary gates *reads* as well as calls:
+  `readElement` consults it only after `element.properties`, `element.authored` and
+  `standardElementProperties`, so an authored or already-written name still answers, but an
+  **unauthored bare property read** of a vocabulary name aborts its handler. Before adding a name,
+  grep the extracted corpus scripts for `\.<name>\s*[^(]` and confirm the hits are calls or host
+  receivers. W128 found exactly one read class — `mediacenter.effectType`, 376 uses across 130
+  archives — and it is a host receiver answered by `readMediaCenter` before the element path, so it
+  was safe. **Decode the corpus the way `WMPTextDecoder` does when you run that grep**: the first
+  W128 scan read every file as UTF-8 and silently skipped the 153 of 392 that are UTF-16, reporting
+  141. See `harness.md` § *Counting a tag across the corpus*. Dropping a
+  name can only turn a currently-tallied call back into a silent empty string.
+
 Implemented today: `moveTo`, `resizeTo`, `alphaBlendTo` (endpoint applied immediately — the tween is
 *not* drawn yet, but the **completion now fires**, see below),
 `appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` and `setColumnWidth` on the

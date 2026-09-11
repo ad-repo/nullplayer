@@ -53,6 +53,19 @@ and the error was invisible until two instruments were compared. If a scan of yo
 unavoidable, decode the way `WMPTextDecoder` does — BOM first, then a **positional** BOM-less UTF-16
 sniff, then Windows-1252 — and reconcile it against the census before recording a number anywhere.
 
+**Grepping the corpus's *script text* is a different job, and the same decode trap ends it.**
+Neither census reads `.wms`/`.js` as program text, so a question like "is this name ever read as a
+property rather than called as a method" needs its own scan — that is the check that made W128 safe
+to land. Extract with Python's `zipfile` (it refuses `Need_for_Speed_Underground.wmz` and
+`SplinterCellWMPSkin.wmz`, whose local headers `WMPArchiveHeaderRepair` exists to fix, so **177 of
+180**, and every count is a floor), then decode each file the way `WMPTextDecoder` does before
+matching anything. The W128 scan was run twice because the first pass decoded as
+`utf-8, errors="replace"`: **153 of the 392 script files are UTF-16**, they became null-interleaved
+mojibake, no pattern matched in any of them, and the result — 141 uses — looked entirely plausible
+beside the correct 376. The mix, for calibration: 153 UTF-16-with-BOM, 143 cp1252, 87 UTF-8, 9
+UTF-8-with-BOM. **A scan of script text that did not print its own encoding breakdown has not earned
+its number.**
+
 **Views are the one thing the census does not count**, so the per-view numbers in `SKILL.md`
 § *Ask what the skin provides* (595 views across 179 archives; which surface lives in which view;
 `openView` targets by name) came from splitting each `.wms` on `<VIEW` with that decoder. Re-derive
@@ -338,6 +351,21 @@ exactly (`svVideo.height` stuck at 241, `currentViewID` never set), and changing
 index loop produced the correct result. **Both halves matter**: a repro that only fails proves you
 have *a* bug, not *the* bug. Afterwards the same rig runs the engine's real rewrite output, which is
 how the fix was confirmed before the app was ever rebuilt.
+
+### An `INERT` row may be a misclassified `UNRECOGNISED` one
+
+`INERT` means "recognised, answered, and nothing behind it" — Tier 2b, explicitly the tier you do
+*not* take runtime work from. But the **open property surface** answers any unknown element property
+with `""`/`0` and counts it `inert()`, and a *method* name that is not in
+`WMPObjectModel.elementMethodVocabulary` lands there too. So an unimplemented method can sit in the
+census as an inert property, and the row that should be ranking real demand ranks nothing.
+
+W128 is the measured case: `plListBox1.deleteAll()` read as `CALL plView pllistbox1.deleteall read
+value= INERT` in seven skins, and the audit that found it predicted it would appear *nowhere*. Both
+readings were wrong in the same direction — the demand was visible but filed under the tier that
+means "ignore me". **When you check whether the engine measures demand for a name, read which word
+the trace gives it, not just whether the name appears.** An `INERT` on something that is spelled like
+a verb is the shape to distrust.
 
 ### The sweep is the arbiter, including against your own fix
 
@@ -641,18 +669,40 @@ scripts/wmp_render_sweep.sh compare  /tmp/wmp-sweep/base /tmp/wmp-sweep/curr
 
 **Never capture the baseline with `git stash`** — it relinks `.build` under the user's running app.
 
+**A before/after `wmp_skin_census.sh` pair *is* a render sweep — do not run both.** The census
+writes every PNG to `<outdir>/png/<skin>/` with every probe on, so comparing the two `png/` trees by
+`sha256` answers the same question `compare` answers, off captures you already paid for. W128 needed
+the `UNRECOGNISED` tally *and* proof that nothing moved; one census pair gave both, and a second pair
+of sweeps would have been ~10 minutes of rebuild for a duplicate answer. Use `wmp_render_sweep.sh`
+when the pixels are the whole question; use the census when you also need the counts.
+
 **A fresh worktree cannot build: `Frameworks/` is not in git.** `swift build` fails with `no such
 module 'VLCKit'`, and even once it links, the test bundle refuses to load without the frameworks
-`swift build` copies next to it. Link both from the working repo, then capture with `--allow-dirty`
-(the links are what makes the worktree dirty; check `git status -- Sources Tests scripts` is clean
-before believing the baseline is HEAD):
+`swift build` copies next to it. Link both from the working repo, then capture with `--allow-dirty`.
+
+**But `Frameworks/` is *partly* tracked, so do not symlink the directory.** `libaubio/`,
+`libkeyfinder/`, `libprojectm-4/` and `libaubio.5.dylib` are in git, so the worktree already has a
+real `Frameworks/` and `ln -s "$PWD/Frameworks" ../nullplayer-base/Frameworks` silently lands
+*inside* it as `Frameworks/Frameworks` — the build then fails with the same `no such module
+'VLCKit'` it would have without the link, which reads as the link not working rather than as the
+link going somewhere else. Link the four **entries** git does not carry, then the build directory:
 
 ```bash
-ln -s "$PWD/Frameworks" ../nullplayer-base/Frameworks
-for f in VLCKit.framework ogg.framework vorbis.framework libprojectM-4.dylib libprojectM-4.4.dylib; do
-  ln -sfn "$PWD/.build/arm64-apple-macosx/debug/$f" ../nullplayer-base/.build/arm64-apple-macosx/debug/$f
+for f in VLCKit.framework libaubio.dylib libprojectM-4.dylib libprojectM-4.4.dylib; do
+  ln -sfn "$PWD/Frameworks/$f" "../nullplayer-base/Frameworks/$f"
+done
+# `swift build` in the worktree now compiles and links, and dies in dlopen: the test bundle's rpath
+# resolves beside itself. Run it once to create the directory, then mirror what the working repo has
+# there — ogg/vorbis are real directories, the rest are links.
+for f in "$PWD"/.build/arm64-apple-macosx/debug/*.framework "$PWD"/.build/arm64-apple-macosx/debug/*.dylib; do
+  ln -sfn "$(readlink "$f" || echo "$f")" "../nullplayer-base/.build/arm64-apple-macosx/debug/$(basename "$f")"
 done
 ```
+
+`git status -- Sources Tests scripts` staying clean is the check that the baseline really is HEAD;
+the framework links are what make it dirty. Confirmed working 2026-09-11 for W128's before/after
+census — the W76 note in the archive records a pixel comparison that could not run for exactly this
+reason, and that is the gap this paragraph closes.
 
 ---
 

@@ -595,11 +595,46 @@ final class WMPObjectModel {
     /// stays unrecognised rather than falling into the open property surface — otherwise
     /// `svPlaylist.moveTo(…)` reads as an empty string, fails with a bare `TypeError`, and the
     /// method never appears in the demand tally that ranks the work.
+    ///
+    /// **This is the SDK's element-method list, not a guess** (W128). It is transcribed from the
+    /// Skin Programming Reference pages named per group below, so a method the corpus calls is
+    /// counted whether or not this engine has ever seen it: a name missing from here is invisible
+    /// to `WMP_CALL_TRACE`, which is the instrument every row in `WMP_TASKS.md` is ranked from.
+    /// `view.returnToMediaCenter` is the evidence — it had to be found by a live reporter (W100)
+    /// because the tally could not see it. Widening this set implements nothing; `elementMethod`
+    /// stays the authority on what actually runs and `implementedElementMethods` on what is
+    /// counted as answered.
+    ///
+    /// A name is only ever added here, never removed: dropping one turns a call the census
+    /// currently tallies back into a silent empty string, which is the defect this set exists for.
     static let elementMethodVocabulary: Set<String> = [
-        "moveto", "resizeto", "alphablendto", "show", "hide", "close", "minimize", "maximize",
-        "appenditem", "removeallitems", "removeitem", "deleteitem", "getitem", "selectitem",
-        "setcolumnresizemode", "setcolumnwidth", "setfocus", "invoke", "click", "play", "stop",
-        "next", "previous", "nextpreset", "settings"
+        // Ambient — every element (`ambient-attributes`). `resizeTo` is *not* ambient in the SDK;
+        // this engine implements it anyway, so it stays.
+        "alphablendto", "movesizeto", "moveto", "slideto", "resizeto",
+        // VIEW (`view-element`).
+        "close", "maximize", "minimize", "restore", "returntomediacenter", "size",
+        // PLAYLIST (`playlist-element`) — 18.
+        "abortcopy", "addselectedtoplaylist", "copy", "deleteselected",
+        "deleteselectedfromlibrary", "getnextcheckeditem", "getnextcheckeditem2",
+        "getnextselecteditem", "getnextselecteditem2", "moveselecteddown", "moveselectedup",
+        "setcheckedstate", "setcheckedstate2", "setcolumnresizemode", "setcolumnwidth",
+        "setselectedstate", "setselectedstate2", "sortcolumn",
+        // LISTBOX and POPUP (`listbox-element`, `popup-element` — identical) — 11, of which
+        // `getNextSelectedItem` and `setSelectedState` are spelled the same as PLAYLIST's above.
+        "appenditem", "deleteall", "deleteitem", "dismiss", "finditem", "getitem",
+        "insertitem", "replaceitem", "show",
+        // EDITBOX (`editbox-element`) — 7.
+        "getline", "getlinefromchar", "getlineindex", "getselectionend", "getselectionstart",
+        "replaceselection", "setselection",
+        // EFFECTS (`effects-element`) — 9.
+        "effecttitle", "effecttype", "next", "nexteffect", "nextpreset", "previous",
+        "previouseffect", "previouspreset", "settings",
+        // BUTTONGROUP (`buttongroup-element`) — 2.
+        "click", "getbutton",
+        // **Non-SDK residue, kept deliberately.** These were here before the list was checked
+        // against the specification and the corpus calls them; they are already tallied, and
+        // removing a name can only make a measured call silent again.
+        "hide", "removeallitems", "removeitem", "selectitem", "setfocus", "invoke", "play", "stop"
     ]
 
     /// `PLAYLIST`, `DROPDOWNPLAYLIST` and the `ITEMSPLAYLIST` the corpus actually ships. The last

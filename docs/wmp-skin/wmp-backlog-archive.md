@@ -447,3 +447,42 @@ corrected it. **Suspect it before suspecting the skin when a picture stops.**
 | W125 | JPEG `transparencyColor` leaves a magenta slab | Confirmed on Plus! Professional; applies to every declared JPEG color key | **Closed 2026-09-11.** The skin declares `#FF00FF` on its `s_main_no.jpg` button sheets, but JPEG decoding makes its matte a blue-channel ramp from `#FF00FE`; an exact comparison rendered the filler as two bright magenta rectangles beside the transport. JPEG color keys now tolerate the bounded 64-value compression fringe; PNG, GIF and BMP remain exact, and non-keyed JPEG artwork remains opaque. `testJPEGColorKeyAllowsTheOneValueRoundingIntroducedByLossyDecoding` pins both sides. |
 | W126 | Invalid marquee delay runs at the invalid speed | Every skin that authors `scrollingDelay` below 30 ms; Plus! Professional is the screen repro | **Closed 2026-09-11.** WMP specifies a 30 ms minimum and an 85 ms default; its `scrollingDelay="10" scrollingAmount="2"` must therefore move at the default cadence, not 200 px/s. The renderer and animation scheduler now share that normalization. `testTooFastScrollingDelayUsesWMPs85MillisecondDefault` pins the 85 ms cadence. |
 | W127 | The macOS window close control strands a player covered by `theme.openView` | Every skin that opens an auxiliary view; Plus! Professional is the screen repro | **Closed 2026-09-11.** WMP opens `plView` beside its player, while this app presents it in the one WMP window. Its in-skin close already popped `openedViewStack`, but the macOS window X bypassed that command and minimized/ordered out the only window. `windowShouldClose` now cancels the close and restores the covered view whenever the stack is non-empty; closing the actual player is unchanged. `testWindowCloseRestoresAPlayerCoveredByAnOpenedView` pins the route. |
+
+## Phase 17 — the SDK conformance audit's first row
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W128 | The element method vocabulary is narrower than the SDK, so an SDK method this engine does not implement fails **untallied** | `plListBox1/2.deleteAll()` 10 skins, `playlist2.copy()` 8, `playlist2.abortCopy()` 8, `view.returnToMediaCenter()` 7, `playlist1.deleteSelected()` 5, `fileList.insertItem()` 3 — corpus scan of the `.wms`/`.js` in the 177 measured archives | **Closed 2026-09-11.** First row of the SDK conformance audit, taken first because it changes what every later measurement can see. `WMPObjectModel.elementMethodVocabulary` held 25 hand-accumulated names; it is now the SDK's element-method list (64 names) transcribed from `ambient-attributes`, `view-element`, `playlist-element`, `listbox-element`, `popup-element`, `editbox-element`, `effects-element` and `buttongroup-element`, commented by source element, plus the eight non-SDK names that were already there and already tallied. **Vocabulary only — no new implementations**: `elementMethod(_:_:)` and `implementedElementMethods` are untouched, so `WMPJScriptCompatibility.members["element"]` is unchanged and `setFocus` stays in the vocabulary and out of the compatibility table. Evidence below. |
+
+### What the census delta actually showed, and the one correction it forced
+
+Baseline `scripts/wmp_skin_census.sh /tmp/wmp/census-base` from a `git worktree add ../nullplayer-base HEAD`, then `/tmp/wmp/census-w128` on the change; both 179 archives, 535 views, `render.txt` 56,188 lines in each.
+
+`UNRECOGNISED` element-method rows, tallied by name and by containing `SKIN` block:
+
+| member | base | after |
+|---|---|---|
+| `deleteall` | **absent** | **7 uses / 7 skins** (`Alienware Invader`, `Batman Begins`, `Constantine`, `Disney_Mix_Central`, `LostPlanet`, `STALKER`, `WoW`) |
+| `speakersize`, `closeview`, `setcolumnresizemode`, `enablesplinetension`, `enhancedaudio`, `setiteminfo`, `bypass` | 30 total | unchanged |
+
+`inert_calls` 2,214 → 2,200 (−14: the 7 `CALL` lines and their 7 `CALLS` aggregates), `ok` 26,553 unchanged, `handler-error` **119 in both**.
+
+**The audit's claim that such a call "never appears in the demand tally" is half right, and the census corrected it.** The call was not invisible — it reached the open property surface, answered `""`, and was counted **`INERT`**: `CALL plView pllistbox1.deleteall read value= INERT` in the baseline against `… value=null UNRECOGNISED` after. So an unimplemented SDK method was ranking in Tier 2b, "recognised, answered, and nothing behind it", when it belongs in Tier 2a. The defect is a **misclassification**, not an absence, which is worse for ranking than it looks: Tier 2b is explicitly the tier you do *not* take runtime work from.
+
+**Only `deleteAll` moves, and that is expected rather than short.** The other five names in the reach list sit in click handlers; the headless census drives each view's `onLoad`, so it cannot see them. They become visible to the live loop or to a click-driving sweep, and are ranked in `WMP_TASKS.md` § 2a accordingly.
+
+**Why no screen can change, measured rather than argued.** In all seven skins the call is inside the skin's *own* `try`/`catch` — `fillListBox()` in `warcraft.js:1584` is the shape — so the throw is caught by the skin, not by the handler boundary, and `handler-error` is identical at 119 in both captures. A `TypeError` on `""()` and an unrecognised-member throw abort at the same statement.
+
+### Render sweep: 535 images, zero changed
+
+0 lost, 0 new, **1 changed** — `Scooby-Doo_2/infoView`, which is the counter-evidence table's own entry and not a regression. Its `randomPic()` (`scooby.js:799`, `parseInt(Math.random() * 10)`) picks one of ten character images per capture. Proven rather than asserted: base vs change is 5,522 differing pixels, and **two captures on the *same* tree differ by 9,031** — more than the cross-tree delta. `reference/skins/README.md` now records the mechanism and the numbers.
+
+### The regression check the vocabulary needs, and its result
+
+The vocabulary gates *reads* as well as calls, so a newly added name could newly abort a handler that reads it as an unauthored bare property. All 39 new names were grepped as `\.<name>\s*[^(]` across the `.wms` and `.js` of every archive Python's `zipfile` can open (392 files, 177 archives). **One read class, and it is safe**: `mediacenter.effectType`, **376 uses across 192 files / 130 archives**, every single one on the `mediacenter` host receiver — answered by `readMediaCenter` before the element path is reached. Zero reads on an element receiver. `x.size`, `x.show`, `x.click`, `x.copy` and `x.next` as property reads: zero hits corpus-wide.
+
+**That scan had to be run twice, and the first run was wrong in the way `harness.md` § *Counting a tag across the corpus* predicts.** It decoded every file as UTF-8 with `errors="replace"`, so the **153 of 392 files that are UTF-16** became null-interleaved mojibake and `\.deleteAll` could not match in any of them — 39% of the corpus silently skipped, reported as 141 uses. Re-run with `WMPTextDecoder`'s order (BOM, then a positional BOM-less UTF-16 sniff, then cp1252) the same scan finds 376. **The conclusion did not change and got stronger** — still zero element-receiver reads — but the number in it was wrong by 2.7x, and nothing about the first run looked wrong. The corpus file-encoding mix, measured here: 153 UTF-16-with-BOM, 143 cp1252, 87 UTF-8, 9 UTF-8-with-BOM.
+
+`testSDKElementMethodsAreCountedWhenUnimplemented` and `testUnimplementedSDKMethodsAreTalliedRatherThanSilent` pin both halves: the SDK names resolve unrecognised and stay out of the compatibility table, a name the SDK does not define stays out of the vocabulary, and `deleteAll`/`copy`/`returnToMediaCenter` each abort their own handler and only their own.
+
+W129–W135, the rest of the audit, are open and ranked in `WMP_TASKS.md`.
