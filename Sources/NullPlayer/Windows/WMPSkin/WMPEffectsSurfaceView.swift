@@ -211,16 +211,19 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func drawCava() {
         let bars = cavaPresenter.barArrays
         guard !bars.isEmpty else { return }
-        CavaDrawing.draw(in: bounds, barArrays: bars,
-                         lowColor: cavaPresenter.lowGradientColor,
-                         highColor: cavaPresenter.highGradientColor,
-                         mode: cavaPresenter.mode)
+        withCircularEffectClip {
+            CavaDrawing.draw(in: compactEffectBounds, barArrays: bars,
+                             lowColor: cavaPresenter.lowGradientColor,
+                             highColor: cavaPresenter.highGradientColor,
+                             mode: cavaPresenter.mode)
+        }
     }
 
     private func drawVisClassic() {
         let scale = window?.backingScaleFactor ?? 1
-        let width = max(1, Int((bounds.width * scale).rounded()))
-        let height = max(1, Int((bounds.height * scale).rounded()))
+        let content = compactEffectBounds
+        let width = max(1, Int((content.width * scale).rounded()))
+        let height = max(1, Int((content.height * scale).rounded()))
         guard let bridge = visClassicBridge(width: width, height: height) else { return }
         let waveform = visClassicWaveform.samples
         let stride = width * 4
@@ -230,9 +233,34 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard visClassicBytes.count >= stride * height,
               let image = visClassicImage(width: width, height: height, stride: stride) else { return }
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        withCircularEffectClip {
+            context.saveGState()
+            // CVisClassicCore writes top-row-first pixels. A flipped AppKit view uses the opposite
+            // image orientation, so draw through a local y-flip rather than presenting its bars
+            // upside down in the skin.
+            context.translateBy(x: 0, y: content.minY + content.maxY)
+            context.scaleBy(x: 1, y: -1)
+            context.interpolationQuality = .none
+            context.draw(image, in: content)
+            context.restoreGState()
+        }
+    }
+
+    /// Suite renderers are rectangular canvases, but an `<EFFECTS>` slot is often a circular lens
+    /// set into larger artwork (Cerulean's 103×75 slot frames an 81px eye). Keep the renderer in
+    /// that inscribed lens: pixels outside remain the skin's own bezel, overlay, or LCD detail.
+    private var compactEffectBounds: NSRect {
+        let side = min(bounds.width, bounds.height)
+        return NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2,
+                      width: side, height: side)
+    }
+
+    private func withCircularEffectClip(_ body: () -> Void) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
-        context.interpolationQuality = .none
-        context.draw(image, in: bounds)
+        context.addEllipse(in: compactEffectBounds)
+        context.clip()
+        body()
         context.restoreGState()
     }
 
@@ -246,6 +274,9 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         }
         made.setReferenceWidth(width)
         made.reloadPersistedSettings()
+        // This is an overlay, not a standalone analyzer canvas. Profiles may specify a black
+        // background for their window, but that must not cover the WMP skin's authored lens.
+        _ = made.setTransparentBackground(true)
         visClassicBridge = made
         return made
     }
