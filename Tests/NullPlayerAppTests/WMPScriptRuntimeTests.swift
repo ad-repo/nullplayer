@@ -669,6 +669,31 @@ final class WMPScriptRuntimeTests: XCTestCase {
         await session.teardown()
     }
 
+    /// WMP skins distinguish an absent preference from one deliberately saved as an empty string.
+    /// `Plus! Professional` tests `loadPreference("vidRightDrawer") != "--"`; answering `""`
+    /// for an absent key therefore took its closed-drawer branch on a fresh skin session (W76).
+    func testThemeLoadPreferenceUsesWMPAbsentSentinelAndPreservesSavedValues() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <TEXT id="answer" left="0" top="0" width="100" height="12"/>
+        </VIEW></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let answer = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "answer" }?.stableID)
+        let missing = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "answer",
+                         handlers: ["answer.value = theme.loadPreference('unset');"]))
+        XCTAssertEqual(missing.overrides.properties[.init(stableID: answer, property: "value")], .string("--"))
+
+        let saved = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: "answer",
+                         handlers: ["theme.savePreference('unset', 'open'); answer.value = theme.loadPreference('unset');"]))
+        XCTAssertEqual(saved.overrides.properties[.init(stableID: answer, property: "value")], .string("open"))
+        await session.teardown()
+    }
+
     /// WMP opens the named view as an *additional* window; this app has one WMP window, so the
     /// command is `openView` and the controller presents the view, remembering the one it covered
     /// so `closeView` has somewhere to go back to. It is deliberately **not** an alias for

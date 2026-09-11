@@ -874,6 +874,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // WMP's `theme.openView` creates a second window. We present that auxiliary view in this
+        // single window, so the macOS close control must mean the same thing as `view.close()`:
+        // restore the covered player. Letting AppKit close or order out the one window strands the
+        // user on the playlist/equaliser with no route back (Plus! Professional, W127).
+        guard sender === window, !openedViewStack.isEmpty else { return true }
+        _ = applyHostCommands([.init(action: "closeView", value: nil)])
+        return false
+    }
+
     func updateTrackInfo(_ track: Track?) { refreshHostState() }
     func updateVideoTrackInfo(title: String, artworkTrack: Track?) { refreshHostState() }
     func clearVideoTrackInfo() { refreshHostState() }

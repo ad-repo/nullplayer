@@ -829,7 +829,9 @@ final class WMPObjectModel {
             hostCommand("openView", .string(id))
             return .value(.null)
         case ("theme", "loadpreference"):
-            return .value(.string(preferences[arguments.first?.string ?? ""] ?? ""))
+            // WMP skins use "--" as the absent-preference sentinel. Returning an empty string
+            // makes an untouched preference look like a saved value and inverts their defaults.
+            return .value(.string(preferences[arguments.first?.string ?? ""] ?? "--"))
         case ("theme", "savepreference"):
             savePreference(arguments)
             return .value(.null)

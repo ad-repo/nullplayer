@@ -64,10 +64,15 @@ struct WMPSceneText: Hashable, Codable {
     /// metadata.width)` on every metadata change — and `scrollingDelay`/`scrollingAmount` are the
     /// marquee's clock and step. 114 of the 180 corpus archives author `scrolling`.
     let scrolling: Bool
-    /// Milliseconds between marquee steps. WMP's default is 100.
+    /// Milliseconds between marquee steps as authored. WMP falls back to 85 ms when a skin supplies
+    /// less than its 30 ms minimum, rather than accepting the faster value.
     let scrollDelayMilliseconds: Double
     /// Skin pixels per marquee step. WMP's default is 1.
     let scrollAmount: CGFloat
+
+    var effectiveScrollDelayMilliseconds: Double {
+        scrollDelayMilliseconds >= 30 ? scrollDelayMilliseconds : 85
+    }
 }
 
 enum WMPPaint: Hashable, Codable {

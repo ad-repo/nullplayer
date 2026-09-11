@@ -356,6 +356,11 @@ queue, with the object model as the security boundary — see Amendment 2 in
   back to one. Reported as "the skin is empty and shows no player or skin windows", and it strands
   any skin whose panels are `openView` rather than `currentViewID`. Only a present with an empty
   `openedViewStack` writes the key.
+- **Microsoft's WMP SDK describes an `EFFECTS` element as stretching its visualization when the
+  player resizes, but it does not specify deriving a display mask from nearby skin artwork.**
+  `clippingColor` applies to a `clippingImage`, not to an arbitrary sibling or parent bitmap. Do not
+  turn image overlap, z-order, alpha, or an artwork's transparent bounds into effects geometry unless
+  WMP markup declares an actual clipping image; Cerulean and Plus! Professional are counter-evidence.
 - **A zero geometry override is a value, not an absence.** Every skin with a store-thumbnail
   `previewView` collapses it in `onLoad` — `view.width = 0; view.height = 0; view.backgroundImage =
   ""; theme.currentViewID = "controlView"` — and Microsoft's own `auto.js` in `Official_Xbox_XP`
@@ -399,9 +404,11 @@ queue, with the object model as the security boundary — see Amendment 2 in
   subview routinely carries both with *different* values (`Alpine7618_v09` keys `#FF00FF` and
   `#FF0033`). 103 of the 180 archives author clipping attributes, so an engine honouring one key per
   image paints the other as a flat slab over most of the window. `WMPSceneImage.colorKeys` is
-  therefore a list, in authored order, and the image-store cache key contains all of it. Color keys
-  compare exact un-premultiplied RGB and clear only matching pixels. Preserve the source alpha of
-  every non-matching pixel.
+  therefore a list, in authored order, and the image-store cache key contains all of it. PNG, GIF
+  and BMP color keys compare exact un-premultiplied RGB; JPEG keys allow the bounded 64-value
+  compression fringe per channel because lossy decoding turns authored `#FF00FF` into a
+  blue-channel ramp (W125, Plus! Professional). Preserve the source alpha of every non-matching
+  pixel.
 - **Do not generalize Cerulean's keyed-head correction.** Its `face.bmp` in the exact
   `cerulean.wms` definition carries a blue `backgroundColor` that creates a visible rectangular
   fill behind two keyed colours; the compatibility exception suppresses that one fill only. A

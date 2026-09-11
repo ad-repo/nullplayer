@@ -432,7 +432,8 @@ final class WMPImageStore: @unchecked Sendable {
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO could not decode '\(path)'."))
         }
-        image = try WMPColorKey.applying(keys(colorKeys, implicitKey: implicitKey), to: image)
+        image = try WMPColorKey.applying(keys(colorKeys, implicitKey: implicitKey), to: image,
+            componentTolerance: (ext == "jpg" || ext == "jpeg") ? WMPColorKey.jpegComponentTolerance : 0)
         return WMPDecodedImage(image: image,
             size: WMPSize(width: CGFloat(width), height: CGFloat(height)),
             decodedBytes: decodedByteCount)

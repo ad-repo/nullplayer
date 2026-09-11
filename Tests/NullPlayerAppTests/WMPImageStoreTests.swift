@@ -50,6 +50,25 @@ final class WMPImageStoreTests: XCTestCase {
         assertComponent(retained[2], equals: 150, accuracy: 1)
     }
 
+    func testJPEGColorKeyAllowsTheOneValueRoundingIntroducedByLossyDecoding() throws {
+        let magenta = [UInt8](repeating: 0, count: 16 * 16 * 4)
+        var rgba = magenta
+        for pixel in 0..<(16 * 16) {
+            let offset = pixel * 4
+            rgba[offset] = 255
+            rgba[offset + 1] = pixel % 16 < 8 ? 0 : 80
+            rgba[offset + 2] = pixel % 16 < 8 ? 255 : 80
+            rgba[offset + 3] = 255
+        }
+        let data = try WMPSkinTestSupport.encodedImage(width: 16, height: 16, rgba: rgba, type: .jpeg)
+        let store = WMPImageStore(provider: WMPMemoryResourceProvider(["key.jpg": data]))
+        let image = try store.image(for: "key.jpg", colorKey: WMPColor(red: 255, green: 0, blue: 255)).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(image, x: 3, yFromTop: 8)[3], 0,
+                       "JPEG commonly decodes an authored #FF00FF key as #FF00FE")
+        XCTAssertGreaterThan(WMPSkinTestSupport.rgba(image, x: 12, yFromTop: 8)[3], 0,
+                             "nearby artwork must remain opaque")
+    }
+
     func testEachKeySetIsDecodedAndCachedSeparately() throws {
         let rgba: [UInt8] = [255, 0, 255, 255, 255, 0, 0, 255]
         let data = try WMPSkinTestSupport.encodedImage(width: 2, height: 1, rgba: rgba)

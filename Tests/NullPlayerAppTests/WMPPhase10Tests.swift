@@ -71,6 +71,18 @@ final class WMPPhase10Tests: XCTestCase {
         XCTAssertNotEqual(settled, later, "ten steps of 2 px moves the glyphs under the sample")
     }
 
+    func testTooFastScrollingDelayUsesWMPs85MillisecondDefault() async throws {
+        let archive = try textFixture(
+            #"value="MMMMMMMMMMMMMMMMMMMMMMMM" scrolling="true" scrollingDelay="10" scrollingAmount="2""#)
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let renderer = WMPRenderer(imageStore: WMPImageStore(provider: skin.archive))
+
+        let cadence = try XCTUnwrap(renderer.animationCadence(for: scene))
+        XCTAssertEqual(cadence.shortestDelay, 0.085, accuracy: 0.0001,
+                       "WMP rejects delays below 30 ms and uses its 85 ms default")
+    }
+
     /// A string that already fits is not scrolled: jittering a static readout is worse than leaving
     /// it alone, and `WoW` turns `scrolling` on and off from one handler as titles change.
     func testAStringThatFitsIsNotScrolled() async throws {

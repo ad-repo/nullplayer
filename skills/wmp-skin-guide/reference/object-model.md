@@ -230,6 +230,12 @@ are in `standardElementProperties`/`standardNumericProperties` for the reason `a
 `WoW`'s markup authors the two numbers and never `scrolling`, so a write to it would otherwise be
 stored inert and never reach the scene.
 
+`scrollingDelay` remains the skin's authored value in the object model, but the renderer follows
+WMP's timing contract: a value below the 30 ms minimum falls back to the 85 ms default. It must not
+be clamped to 30 ms or rendered at the invalid value. Plus! Professional authors `10`; treating it
+literally scrolls at 200 px/s instead of WMP's roughly 24 px/s at its authored two-pixel step
+(W126).
+
 `setColumnWidth` is recognised so it stops aborting the handler that calls it, and counted
 **`inert()`**: nothing draws playlist columns. `setColumnResizeMode` predates the `inert` convention
 and is still counted live; that is a known inconsistency, not a statement that a resize mode does
@@ -245,9 +251,11 @@ down). `closeView` pops that stack and switches back; only with an empty stack d
 the window out, which is what it always did.
 
 It is **live**, not `inert()`: a view is presented as a result, and the skin's own close button
-returns from it. What is lost is the extra window — an auxiliary panel covers the player instead of
-sitting beside it. That reduction is the whole of the deviation and is written here because nothing
-in the call trace can show it.
+returns from it. The macOS window close control must take that same return path while the stack is
+non-empty; it cannot close or minimize the one app window and strand the covered player (W127,
+Plus! Professional). What is lost is the extra window — an auxiliary panel covers the player instead
+of sitting beside it. That reduction is the whole of the deviation and is written here because
+nothing in the call trace can show it.
 
 Two things it is deliberately **not**:
 
@@ -262,6 +270,14 @@ Two things it is deliberately **not**:
 Initial load treats `openView` and `setCurrentView` identically in one place only: the windowless-view
 redirect. A view that never becomes a window can honour neither as a window operation, and both are
 a request for which view to show next.
+
+## `theme.loadPreference`
+
+`loadPreference(name)` returns the skin-scoped value previously written through
+`savePreference(name, value)`. An absent key answers **`"--"`**, WMP's sentinel for an authored
+default that has never been saved; it is distinct from a key explicitly saved as an empty string.
+Skins branch on that distinction — `Plus! Professional` uses
+`loadPreference("vidRightDrawer") != "--"` to choose its saved drawer state (W76).
 
 ## `mediacenter`
 

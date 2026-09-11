@@ -150,6 +150,31 @@ final class WMPPhase9Tests: XCTestCase {
         controller.window?.close()
     }
 
+    func testWindowCloseRestoresAPlayerCoveredByAnOpenedView() async throws {
+        let (controller, _, cleanup) = try await controller(wms: """
+        <THEME>
+          <VIEW id="main" width="120" height="80">
+            <SUBVIEW left="0" top="0" width="120" height="80" backgroundColor="#224466"/>
+          </VIEW>
+          <VIEW id="playlist" width="140" height="90">
+            <PLAYLIST id="rows" left="0" top="0" width="140" height="70"/>
+          </VIEW>
+        </THEME>
+        """, filename: "Phase9WindowClose.wmz")
+        defer { cleanup() }
+        try await waitUntil { controller.selectedViewID == "main" }
+        XCTAssertTrue(controller.revealSkinSurface(.playlist, switchingViews: true))
+        try await waitUntil { controller.selectedViewID == "playlist" }
+
+        let window = try XCTUnwrap(controller.window)
+        XCTAssertFalse(controller.windowShouldClose(window),
+                       "the one app window represents the auxiliary view only while it covers a player")
+        try await waitUntil { controller.selectedViewID == "main" }
+        XCTAssertFalse(window.isMiniaturized, "restoring the player must not minimize the app window")
+        controller.prepareForUITeardown()
+        window.close()
+    }
+
     /// A view that blanks itself in the `onLoad` this path now runs must not become the window.
     /// `Halo 2` opens on a store-thumbnail `previewView` whose handler sets `view.width = 0` and
     /// redirects; presenting it leaves an empty window the size of a thumbnail. Initial load already

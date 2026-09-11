@@ -24,8 +24,14 @@ enum WMPColorKey {
     /// format, not a statement about the key.
     static let implicitTransparency = WMPColor(red: 255, green: 0, blue: 255)
 
-    /// Replaces only pixels whose un-premultiplied RGB exactly matches the key. Non-matching pixels
-    /// keep their original alpha, including partial alpha from PNG/GIF sources.
+    /// JPEG chroma quantisation turns a solid #FF00FF matte into a short blue-channel ramp. A 64
+    /// component window clears the whole matte without reaching normal artwork.
+    static let jpegComponentTolerance: UInt8 = 64
+
+    /// Replaces only pixels whose un-premultiplied RGB matches the key. JPEG has no lossless RGB
+    /// representation, so a JPEG colour key permits the bounded compression fringe around its key;
+    /// other formats stay exact. Non-matching pixels keep their original alpha, including partial
+    /// alpha from PNG/GIF sources.
     static func applying(_ key: WMPColor, to image: CGImage) throws -> CGImage {
         try applying([key], to: image)
     }
@@ -33,7 +39,8 @@ enum WMPColorKey {
     /// A node may declare more than one key — `clippingColor` cuts the shape of a subview out of its
     /// own artwork while `transparencyColor` keys the drawing inside it, and the two are different
     /// colours in most of the corpus. Every declared key clears in one pass.
-    static func applying(_ keys: [WMPColor], to image: CGImage) throws -> CGImage {
+    static func applying(_ keys: [WMPColor], to image: CGImage,
+                         componentTolerance: UInt8 = 0) throws -> CGImage {
         guard !keys.isEmpty else { return image }
         let width = image.width, height = image.height
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -58,7 +65,11 @@ enum WMPColorKey {
             let red = unpremultiply(bytes[offset], alpha: alpha)
             let green = unpremultiply(bytes[offset + 1], alpha: alpha)
             let blue = unpremultiply(bytes[offset + 2], alpha: alpha)
-            if keys.contains(where: { $0.red == red && $0.green == green && $0.blue == blue }) {
+            if keys.contains(where: { key in
+                abs(Int(key.red) - Int(red)) <= Int(componentTolerance)
+                    && abs(Int(key.green) - Int(green)) <= Int(componentTolerance)
+                    && abs(Int(key.blue) - Int(blue)) <= Int(componentTolerance)
+            }) {
                 bytes[offset] = 0
                 bytes[offset + 1] = 0
                 bytes[offset + 2] = 0

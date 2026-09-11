@@ -68,7 +68,7 @@ struct WMPRenderer: @unchecked Sendable {
                WMPTextMetrics.width(of: text.value, fontName: text.fontName,
                                     fontSize: text.fontSize, bold: text.bold,
                                     italic: text.italic) > command.frame.width {
-                let delay = max(1, text.scrollDelayMilliseconds) / 1_000
+                let delay = text.effectiveScrollDelayMilliseconds / 1_000
                 shortest = min(shortest ?? delay, delay)
                 bounds = bounds.map { $0.union(visible) } ?? visible
                 endsAt = nil
@@ -312,7 +312,7 @@ struct WMPRenderer: @unchecked Sendable {
         // scrolling a string that already fits would just jitter a static readout.
         if text.scrolling, width > frame.width {
             let period = width + Self.marqueeGap
-            let step = max(1, text.scrollDelayMilliseconds) / 1_000
+            let step = text.effectiveScrollDelayMilliseconds / 1_000
             let travelled = (clock / step) * Double(text.scrollAmount)
             var offset = CGFloat(travelled.truncatingRemainder(dividingBy: Double(period)))
             if offset < 0 { offset += period }
