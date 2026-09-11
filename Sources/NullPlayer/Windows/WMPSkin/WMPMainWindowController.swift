@@ -168,6 +168,31 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     var selectedViewID: String? { activeViewID }
     var hasCompatibilityReport: Bool { loadedSkin != nil }
 
+    /// Emits the exact routing state needed to distinguish a WMP auxiliary view from a skin that
+    /// changed its only main view in place. It is intentionally diagnostic only.
+    func traceNavigationState(_ origin: String) {
+        let scene = activeScene
+        let widgets = scene?.widgets.map { widget in
+            "\(widget.kind.rawValue):\(widget.nodeID ?? "#\(widget.stableID)")"
+        }.joined(separator: ",") ?? "-"
+        let frame = window?.frame
+        Self.traceInput("navigation origin=\(origin) activeView=\(activeViewID ?? "-") canvas=\(scene?.canvasSize.width ?? 0)x\(scene?.canvasSize.height ?? 0) windowVisible=\(window?.isVisible == true) frame=\(frame?.width ?? 0)x\(frame?.height ?? 0) playlistDeclared=\(skinSurfaces.view(activeViewID, provides: .playlist)) playlistWidget=\(scene?.widgets.contains { $0.kind == .playlist } == true) stack=\(openedViewStack.map(\.viewID).joined(separator: ",")) widgets=[\(widgets)]")
+    }
+
+    /// NVIDIA implements playlist and video as modes inside `mainView`, but its global close
+    /// button still calls `view.close()`. In either embedded mode, close returns to audio mode.
+    private func closeNVIDIAEmbeddedMode() -> Bool {
+        guard importer.selectedSkinName?.caseInsensitiveCompare("NVIDIA") == .orderedSame,
+              openedViewStack.isEmpty,
+              let widgets = activeScene?.widgets,
+              widgets.contains(where: { $0.kind == .playlist || $0.kind == .video })
+        else { return false }
+        traceNavigationState("nvidia-close-embedded-mode")
+        dispatchScriptTransaction(WMPJScriptEvent(name: "hostRestoreMainLayout", targetID: nil,
+                                                  handlers: ["theme.savePreference('videoItem','false');audioModeToggle()"]))
+        return true
+    }
+
     convenience init() {
         self.init(importer: WMPSkinImporter(), host: WMPAudioEngineHost(audioEngine: WindowManager.shared.audioEngine))
     }
@@ -210,6 +235,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     func reloadSelectedSkin() {
+        traceNavigationState("reload-selected-skin")
         loadTask?.cancel()
         stopDispatcher()
         loadTask = Task { [weak self] in
@@ -536,6 +562,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         startAnimation(for: scene)
         publishSurfacePalette(skin: skin, viewID: scene.viewID, rendered: image)
         skinSurfaces = WMPSkinSurfaces(skin: skin)
+        traceNavigationState("presented-scene")
     }
 
     /// Whether the skin owns this surface, and — when asked to switch — showing it the way the skin
@@ -551,6 +578,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     ///   for an explicit toggle from a menu.
     @discardableResult
     func revealSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool) -> Bool {
+        traceNavigationState("reveal-\(surface.rawValue)-before switchingViews=\(switchingViews)")
         guard skinSurfaces.provides(surface) else { return false }
         // Already on screen as part of the skin: nothing to open, and nothing of ours to add.
         if skinSurfaces.view(activeViewID, provides: surface) { return true }
@@ -735,6 +763,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// elements, its own timer period, and **no second `load`**. Every other route through here is
     /// a genuine view change and still loads exactly like a launch (W46).
     func switchView(to requestedID: String, restoring covered: CoveredView? = nil) {
+        traceNavigationState("switch-view requested=\(requestedID) restoring=\(covered?.viewID ?? "-")")
         guard let skin = loadedSkin, let store = imageStore,
               let registration = skin.views.first(where: {
                   $0.id.caseInsensitiveCompare(requestedID) == .orderedSame
@@ -891,6 +920,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        traceNavigationState("window-should-close")
         // WMP's `theme.openView` creates a second window. We present that auxiliary view in this
         // single window, so the macOS close control must mean the same thing as `view.close()`:
         // restore the covered player. Letting AppKit close or order out the one window strands the
@@ -1322,14 +1352,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             case "setViewTimerInterval": setViewTimer(milliseconds: Int(number ?? 0))
             case "openFileDialog": presentOpenMediaPanel()
             case "closeView":
+                traceNavigationState("command-close-view-before")
                 // A view this skin opened over another one closes back to it; only the outermost
                 // view closing means "close the player". The covered view is *restored*, not
                 // reloaded — see `CoveredView`.
-                if let previous = openedViewStack.popLast() {
+                if closeNVIDIAEmbeddedMode() {
+                    switchedView = true
+                } else if let previous = openedViewStack.popLast() {
                     switchedView = true; switchView(to: previous.viewID, restoring: previous)
                 } else {
                     window?.orderOut(nil)
                 }
+                traceNavigationState("command-close-view-after")
             case "minimizeWindow": window?.miniaturize(nil)
             case let action where action.hasPrefix("playPlaylistItem:"):
                 if let index = Int(action.dropFirst("playPlaylistItem:".count)) {

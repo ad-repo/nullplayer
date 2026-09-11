@@ -150,6 +150,56 @@ final class WMPPhase9Tests: XCTestCase {
         controller.window?.close()
     }
 
+    /// NVIDIA keeps its playlist inside `mainView`; unlike an EQ panel there is no view stack for
+    /// `view.close()` to pop. Its close control must therefore run the skin's authored audio-mode
+    /// transition, including clearing the video latch that otherwise sends the transition back to
+    /// video mode.
+    func testNVIDIAEmbeddedPlaylistCloseReturnsToAudioMode() async throws {
+        let (controller, _, cleanup) = try await controller(wms: """
+        <THEME>
+          <VIEW id="mainView" width="285" height="301" scriptFile="skin.js">
+            <SUBVIEW id="audio" width="285" height="301" visible="true">
+              <BUTTON id="openPlaylist" left="0" top="0" width="20" height="20"
+                      onClick="JScript:plModeToggle();"/>
+            </SUBVIEW>
+            <SUBVIEW id="playlistMode" width="780" height="920" visible="false">
+              <PLAYLIST id="playlist1" left="0" top="0" width="400" height="400"/>
+              <BUTTON id="close" left="400" top="0" width="20" height="20"
+                      onClick="JScript:view.close();"/>
+            </SUBVIEW>
+          </VIEW>
+        </THEME>
+        """, filename: "NVIDIA.wmz", script: """
+        function plModeToggle() {
+          audio.visible = false;
+          playlistMode.visible = true;
+          view.width = 780;
+          view.height = 920;
+        }
+        function audioModeToggle() {
+          audio.visible = true;
+          playlistMode.visible = false;
+          view.width = 285;
+          view.height = 301;
+        }
+        """)
+        defer { cleanup() }
+        try await waitUntil { controller.selectedViewID == "mainView" }
+        controller.showWindow(nil)
+        let view = try XCTUnwrap(controller.window?.contentView as? WMPMainView)
+        view.onScriptEvent?("click", "openPlaylist", nil)
+        try await waitUntil {
+            controller.window?.frame.size == NSSize(width: 780, height: 920)
+                && view.subviews.contains { $0.accessibilityIdentifier() == "wmp.playlist1" }
+        }
+
+        view.onScriptEvent?("click", "close", nil)
+        try await waitUntil { controller.window?.frame.size == NSSize(width: 285, height: 301) }
+        XCTAssertTrue(controller.window?.isVisible == true)
+        controller.prepareForUITeardown()
+        controller.window?.close()
+    }
+
     func testWindowCloseRestoresAPlayerCoveredByAnOpenedView() async throws {
         let (controller, _, cleanup) = try await controller(wms: """
         <THEME>

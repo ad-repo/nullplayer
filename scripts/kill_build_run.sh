@@ -10,11 +10,13 @@ cd "$(dirname "$0")/.."
 # A debug build is required to exercise #if DEBUG-only features such as the
 # "Recreate Windows (Debug)" Window-menu action used for live-UI-switch QA.
 CONFIG="release"
+WMP_TRACE_LOG=""
 for arg in "$@"; do
     case "$arg" in
         --debug|-d) CONFIG="debug" ;;
         --release|-r) CONFIG="release" ;;
-        *) echo "Unknown option: $arg (use --debug or --release)"; exit 1 ;;
+        --trace-wmp) WMP_TRACE_LOG="/private/tmp/nullplayer-wmp-navigation.log" ;;
+        *) echo "Unknown option: $arg (use --debug, --release, or --trace-wmp)"; exit 1 ;;
     esac
 done
 
@@ -68,6 +70,12 @@ if [[ ! -d "$VLCKIT_DEST" ]] || ! codesign --verify "$VLCKIT_DEST" 2>/dev/null; 
 fi
 
 echo "🚀 Launching NullPlayer..."
-"$BUILD_DIR/NullPlayer" &
+if [[ -n "$WMP_TRACE_LOG" ]]; then
+    : > "$WMP_TRACE_LOG"
+    WMP_TRACE_INPUT=1 "$BUILD_DIR/NullPlayer" > "$WMP_TRACE_LOG" 2>&1 &
+    echo "🧭 WMP navigation trace: $WMP_TRACE_LOG"
+else
+    "$BUILD_DIR/NullPlayer" &
+fi
 
 echo "✅ NullPlayer is running!"

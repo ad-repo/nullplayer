@@ -951,11 +951,13 @@ class WindowManager {
             exitCompactWindow()
             return
         }
+        (mainWindowController as? WMPMainWindowController)?.traceNavigationState("menu-toggle-main-before")
         if let controller = mainWindowController, controller.window?.isVisible == true {
             controller.window?.orderOut(nil)
         } else {
             showMainWindow()
         }
+        (mainWindowController as? WMPMainWindowController)?.traceNavigationState("menu-toggle-main-after")
         mainWindowController?.windowVisibilityDidChange()
     }
     
@@ -1242,8 +1244,13 @@ class WindowManager {
     @discardableResult
     private func routeWMPSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool) -> Bool {
         guard uiMode.controllerFamily == .wmp,
-              let controller = mainWindowController as? WMPMainWindowController,
-              controller.revealSkinSurface(surface, switchingViews: switchingViews) else { return false }
+              let controller = mainWindowController as? WMPMainWindowController else { return false }
+        controller.traceNavigationState("menu-route-\(surface.rawValue)-before switchingViews=\(switchingViews)")
+        guard controller.revealSkinSurface(surface, switchingViews: switchingViews) else {
+            controller.traceNavigationState("menu-route-\(surface.rawValue)-unhandled")
+            return false
+        }
+        controller.traceNavigationState("menu-route-\(surface.rawValue)-after")
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
         return true
