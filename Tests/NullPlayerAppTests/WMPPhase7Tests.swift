@@ -18,9 +18,34 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertEqual(selection.snapshot.type, "bars")
         selection.step(by: 1)
         XCTAssertEqual(selection.snapshot.type, "ambience")
+        selection.step(by: 1)
+        XCTAssertEqual(selection.snapshot.type, "cava")
+        selection.step(by: 1)
+        XCTAssertEqual(selection.snapshot.type, "vis_classic")
         XCTAssertFalse(selection.select("projectm"), "ProjectM belongs in its own visualization window")
-        XCTAssertEqual(selection.snapshot.type, "ambience")
+        XCTAssertEqual(selection.snapshot.type, "vis_classic")
         _ = selection.select("spikes")
+    }
+
+    @MainActor
+    func testWMPEffectSuiteOptionsUseTheirRealContextMenus() {
+        let effects = WMPEffectsSurfaceView(frame: NSRect(x: 0, y: 0, width: 120, height: 80))
+        var playing = WMPHostSnapshot(); playing.state = .playing
+        effects.update(playing)
+
+        XCTAssertTrue(WMPEffectSelection.shared.select("cava"))
+        let cavaTitles = effects.buildMenu().items.map(\.title)
+        XCTAssertTrue(cavaTitles.contains("Effect"))
+        XCTAssertTrue(cavaTitles.contains("Mono"))
+        XCTAssertTrue(cavaTitles.contains("Color"))
+        XCTAssertTrue(cavaTitles.contains("Bars"))
+
+        XCTAssertTrue(WMPEffectSelection.shared.select("vis_classic"))
+        let classicTitles = effects.buildMenu().items.map(\.title)
+        XCTAssertTrue(classicTitles.contains("Profile"))
+        XCTAssertTrue(classicTitles.contains("Fit To Width"))
+        XCTAssertTrue(classicTitles.contains("Transparent Background"))
+        _ = WMPEffectSelection.shared.select("spikes")
     }
 
     /// The overlays paint their own `bounds`, never the `dirtyRect` handed to them.

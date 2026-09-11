@@ -22,7 +22,7 @@ them. UTF-8, UTF-16LE, UTF-16BE, and deterministic legacy Windows-1252 definitio
 | playlist | `count`, bounded `item(index)` snapshots (`name`, `duration`, artist metadata), `attributeCount`, `getAttributeName` |
 | network | `bufferingProgress`, `receptionQuality`, `bandWidth` (`bandWidth` is currently zero) |
 | `eq` | live `enabled` and ten gain-level properties, remapped to/from NullPlayer's active 10/21-band layout |
-| `vis` | bounded `currentEffect` / `currentPreset` state; WMP effects render native Spikes, Bars, or Ambience in the authored rect |
+| `vis` | bounded `currentEffect` / `currentPreset` state; WMP effects render native Spikes, Bars, Ambience, Cava, or vis_classic in the authored rect |
 | `theme` | live `currentViewID`; assignment requests a controlled switch to an authored view |
 | `view` / elements | `left`, `top`, `width`, `height`, `visible`, `enabled`, `value`, `text`, `down` |
 | popup | `show` is recognized but modal script UI is not executed |
@@ -42,7 +42,7 @@ finite-checked and clamped again at the main-actor host boundary.
 | `DROPDOWNPLAYLIST` | Live bounded selection and play |
 | `EQUALIZERSETTINGS` | AppKit 10-band/preamp surface backed by live EQ with 10↔21-band remapping |
 | `POPUP` | Safe host-owned preset menu only; arbitrary script modal UI remains denied |
-| `WMPEFFECTS` | Native Spikes/Bars/Ambience visualizer; its audio consumer exists only while the active view contains the surface |
+| `WMPEFFECTS` | Native Spikes/Bars/Ambience/Cava/vis_classic visualizer; its audio consumers exist only while the active view contains the surface |
 | `VIDEO`, `WMPVIDEO` | Documented app-authored placeholder; plug-ins and ActiveX remain denied |
 | Multiple `VIEW`s | Controlled `theme.currentViewID` transaction, per-skin/view size, safe top-left, accessibility replacement |
 

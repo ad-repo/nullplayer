@@ -11,8 +11,8 @@ import AppKit
 /// The catalogue is deliberately WMP-native. `<EFFECTS>` is an in-skin display slot, not a tiny
 /// ProjectM window: a skin such as Asimov Radio or Cerulean has composed its frame around the old
 /// WMP effects plug-in, and a modern full-frame renderer turns that carefully placed slot into a
-/// conspicuous black rectangle. These compact Bars, Spikes and Ambience renderers are drawn by the
-/// WMP surface itself and preserve that contract.
+/// conspicuous black rectangle. These compact renderers — including Cava and vis_classic — are
+/// drawn by the WMP surface itself and preserve that contract.
 ///
 /// This is a session choice, independent of NullPlayer's standalone Visualizations window. A skin
 /// cycling `visEffects` must never reconfigure the user's separate visualization engine.
@@ -31,7 +31,7 @@ final class WMPEffectSelection {
     }
 
     enum NativeStyle: String {
-        case bars, spikes, ambience
+        case bars, spikes, ambience, cava, visClassic
     }
 
     /// Posted when the selected effect or preset changes, so every hosted surface follows one
@@ -41,7 +41,9 @@ final class WMPEffectSelection {
     static let catalogue: [Effect] = [
         Effect(id: "spikes", title: "Spikes", style: .spikes),
         Effect(id: "bars", title: "Bars", style: .bars),
-        Effect(id: "ambience", title: "Ambience", style: .ambience)
+        Effect(id: "ambience", title: "Ambience", style: .ambience),
+        Effect(id: "cava", title: "Cava", style: .cava),
+        Effect(id: "vis_classic", title: "vis_classic", style: .visClassic)
     ]
 
     private(set) var index: Int

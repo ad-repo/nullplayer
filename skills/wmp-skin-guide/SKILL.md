@@ -779,9 +779,12 @@ of these was invisible to the harness and visible in the first minute of live QA
   that value only for an unauthored, unoverridden height. The scene builder remains off-main and
   does not construct AppKit controls; an authored or scripted height wins.
 - **The visualization surface is this player's own visuals in the rect the skin authored (W101).**
-  `WMPEffectsSurfaceView` draws compact WMP-native **Spikes**, **Bars**, and **Ambience** directly;
-  it must never host ProjectM, Geiss, Tripex, or any other standalone visualization window in that
-  slot. Asimov Radio and Cerulean make the reason visible: their artwork frames a small legacy WMP
+  `WMPEffectsSurfaceView` draws compact WMP-native **Spikes**, **Bars**, **Ambience**, **Cava**, and
+  **vis_classic** directly; it must never host ProjectM, Geiss, Tripex, or any other standalone
+  visualization window in that slot. Cava uses its actual presenter/full-stereo tap and vis_classic
+  uses its actual waveform/profile core, each with a WMP-only preference scope. Their right-click
+  controls are therefore the real Cava tuning menu and vis_classic profile menu, not inert replicas.
+  Asimov Radio and Cerulean make the reason visible: their artwork frames a small legacy WMP
   effect, while a full-window renderer becomes an incongruous black rectangle. `WMPEffectSelection`
   is the one place the choice lives, because 96 archives bind `currentEffectType` to
   `wmpprop:mediacenter.effectType`. Three rules it is built on: **nothing playing draws nothing at

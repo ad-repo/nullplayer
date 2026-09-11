@@ -60,8 +60,10 @@ claimed player version. Definitions may use UTF-8, UTF-16LE, UTF-16BE, or legacy
 
 ActiveX, registry and shell access, DLLs, WMP plug-ins, arbitrary filesystem/network access,
 skin-authored HTML, and native-object reflection are unsupported. Video tags show a
-NullPlayer-owned placeholder; `<EFFECTS>` uses bounded native Spikes, Bars, and Ambience renderers
-inside the skin-authored rectangle rather than loading Windows effect plug-ins. Script runs in a
+NullPlayer-owned placeholder; `<EFFECTS>` uses bounded native Spikes, Bars, Ambience, Cava, and
+vis_classic renderers inside the skin-authored rectangle rather than loading Windows effect
+plug-ins. Right-click Cava and vis_classic to use their normal tuning and profile controls; those
+choices are kept separate from their standalone windows. Script runs in a
 separate killable helper with bounded messages and deadlines; a script failure keeps the last valid
 static scene and disables script for that skin session.
 

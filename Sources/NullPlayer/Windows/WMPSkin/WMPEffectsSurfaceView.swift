@@ -32,6 +32,12 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private var tripexCycleMode: VisualizationCycleMode = .cycle
     private var tripexCycleInterval: TimeInterval = 30
     private var cycleTimer: Timer?
+    /// These are the actual suite renderers, not visual approximations. Their scopes keep a WMP
+    /// skin's right-click choices separate from the standalone and `.wal` surfaces.
+    private let cavaPresenter = CavaPresenter(scope: .wmpEffects)
+    private let visClassicWaveform = WinampModernWaveformTap(consumerId: "wmp.effects.visclassic")
+    private var visClassicBridge: VisClassicBridge?
+    private var visClassicBytes: [UInt8] = []
 
     override var isFlipped: Bool { true }
 
@@ -39,6 +45,10 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+        cavaPresenter.onNeedsDisplay = { [weak self] in
+            guard let self, self.isActive, self.effect.style == .cava else { return }
+            self.needsDisplay = true
+        }
         selectionObserver = NotificationCenter.default.addObserver(
             forName: WMPEffectSelection.didChange, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.applySelection() } }
@@ -69,6 +79,10 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         }
         pcmObserver = nil; selectionObserver = nil
         cycleTimer?.invalidate(); cycleTimer = nil
+        cavaPresenter.stop()
+        visClassicWaveform.stop()
+        visClassicBridge = nil
+        visClassicBytes = []
         releaseEngine()
     }
 
@@ -100,6 +114,18 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         // renderer into this small rect; it is the source of the black ProjectM panels reported
         // in Asimov Radio and Cerulean.
         releaseEngine()
+        cavaPresenter.stop()
+        visClassicWaveform.stop()
+        if isActive {
+            switch effect.style {
+            case .cava:
+                cavaPresenter.start()
+            case .visClassic:
+                visClassicWaveform.start()
+            case .bars, .spikes, .ambience:
+                break
+            }
+        }
         if !isActive { levels = [] }
         needsDisplay = true
     }
@@ -177,7 +203,61 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .bars: drawBars()
         case .spikes: drawSpikes()
         case .ambience: drawAmbience()
+        case .cava: drawCava()
+        case .visClassic: drawVisClassic()
         }
+    }
+
+    private func drawCava() {
+        let bars = cavaPresenter.barArrays
+        guard !bars.isEmpty else { return }
+        CavaDrawing.draw(in: bounds, barArrays: bars,
+                         lowColor: cavaPresenter.lowGradientColor,
+                         highColor: cavaPresenter.highGradientColor,
+                         mode: cavaPresenter.mode)
+    }
+
+    private func drawVisClassic() {
+        let scale = window?.backingScaleFactor ?? 1
+        let width = max(1, Int((bounds.width * scale).rounded()))
+        let height = max(1, Int((bounds.height * scale).rounded()))
+        guard let bridge = visClassicBridge(width: width, height: height) else { return }
+        let waveform = visClassicWaveform.samples
+        let stride = width * 4
+        bridge.processAndDraw(leftData: waveform.left, rightData: waveform.right,
+                              sampleRate: 44_100, width: width, height: height,
+                              into: &visClassicBytes, stride: stride)
+        guard visClassicBytes.count >= stride * height,
+              let image = visClassicImage(width: width, height: height, stride: stride) else { return }
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.interpolationQuality = .none
+        context.draw(image, in: bounds)
+        context.restoreGState()
+    }
+
+    private func visClassicBridge(width: Int, height: Int) -> VisClassicBridge? {
+        if let visClassicBridge {
+            visClassicBridge.setReferenceWidth(width)
+            return visClassicBridge
+        }
+        guard let made = VisClassicBridge(width: width, height: height, scope: .wmpEffects) else {
+            return nil
+        }
+        made.setReferenceWidth(width)
+        made.reloadPersistedSettings()
+        visClassicBridge = made
+        return made
+    }
+
+    private func visClassicImage(width: Int, height: Int, stride: Int) -> CGImage? {
+        let bytes = visClassicBytes.withUnsafeBufferPointer { Data($0) }
+        guard let provider = CGDataProvider(data: bytes as CFData) else { return nil }
+        let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+            .union(.byteOrder32Little)
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: stride, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: info,
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 
     private func normalizedLevels(count: Int) -> [CGFloat] {
@@ -314,14 +394,77 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// NullPlayer's Visualizations window.
     func buildMenu() -> NSMenu {
         let menu = NSMenu(title: "Visual Effects")
+        let effectItem = NSMenuItem(title: "Effect", action: nil, keyEquivalent: "")
+        let effectMenu = NSMenu(title: "Effect")
         for candidate in WMPEffectSelection.catalogue {
             let item = NSMenuItem(title: candidate.title, action: #selector(selectNativeEffect(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = candidate.id
             item.state = candidate.id == effect.id ? .on : .off
-            menu.addItem(item)
+            effectMenu.addItem(item)
+        }
+        effectItem.submenu = effectMenu
+        menu.addItem(effectItem)
+
+        switch effect.style {
+        case .cava:
+            menu.addItem(.separator())
+            // Same presenter and controls as the Cava window; only Close/transparency are omitted
+            // because this is a skin-owned display slot.
+            cavaPresenter.buildMenu(showTransparency: false, includeClose: false).items.forEach(menu.addItem)
+        case .visClassic:
+            menu.addItem(.separator())
+            visClassicOptionsMenu().items.forEach(menu.addItem)
+        case .bars, .spikes, .ambience:
+            break
         }
         return menu
+    }
+
+    private func visClassicOptionsMenu() -> NSMenu {
+        let menu = NSMenu(title: "vis_classic")
+        let current = visClassicBridge?.currentProfileName ?? VisClassicBridge.lastProfileName(for: .wmpEffects)
+        let profileItem = NSMenuItem(title: "Profile", action: nil, keyEquivalent: "")
+        let profileMenu = NSMenu(title: "Profile")
+        for profile in VisClassicBridge.availableProfilesCatalog() {
+            let item = NSMenuItem(title: profile.name, action: #selector(selectVisClassicProfile(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = profile.name
+            item.state = profile.name == current ? .on : .off
+            profileMenu.addItem(item)
+        }
+        profileItem.submenu = profileMenu
+        menu.addItem(profileItem)
+        let fit = NSMenuItem(title: "Fit To Width", action: #selector(toggleVisClassicFit(_:)), keyEquivalent: "")
+        fit.target = self
+        fit.state = VisClassicBridge.fitToWidthDefault(for: .wmpEffects) ? .on : .off
+        menu.addItem(fit)
+        let transparent = NSMenuItem(title: "Transparent Background", action: #selector(toggleVisClassicTransparency(_:)), keyEquivalent: "")
+        transparent.target = self
+        transparent.state = VisClassicBridge.transparentBgDefault(for: .wmpEffects) ? .on : .off
+        menu.addItem(transparent)
+        return menu
+    }
+
+    @objc private func selectVisClassicProfile(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(name, forKey: VisClassicBridge.PreferenceScope.wmpEffects.lastProfileNameKey)
+        _ = visClassicBridge?.loadProfile(named: name)
+        needsDisplay = true
+    }
+
+    @objc private func toggleVisClassicFit(_ sender: NSMenuItem) {
+        let enabled = !VisClassicBridge.fitToWidthDefault(for: .wmpEffects)
+        UserDefaults.standard.set(enabled, forKey: VisClassicBridge.PreferenceScope.wmpEffects.fitToWidthKey)
+        _ = visClassicBridge?.setFitToWidth(enabled)
+        needsDisplay = true
+    }
+
+    @objc private func toggleVisClassicTransparency(_ sender: NSMenuItem) {
+        let enabled = !VisClassicBridge.transparentBgDefault(for: .wmpEffects)
+        UserDefaults.standard.set(enabled, forKey: VisClassicBridge.PreferenceScope.wmpEffects.transparentBgKey)
+        _ = visClassicBridge?.setTransparentBackground(enabled)
+        needsDisplay = true
     }
 
     @objc private func selectNativeEffect(_ sender: NSMenuItem) {

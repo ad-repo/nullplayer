@@ -16,12 +16,16 @@ final class VisClassicBridge {
         /// vis_classic state is window-scoped: a profile picked inside a skin must not move the
         /// dedicated spectrum window's, and a skin embedding must not be able to write over either.
         case winampModernVisBox
+        /// A WMP skin's `<EFFECTS>` slot. Its profile controls stay in the skin surface's menu
+        /// instead of altering the standalone analyzer or a `.wal` skin.
+        case wmpEffects
 
         var lastProfileNameKey: String {
             switch self {
             case .spectrumWindow: return "visClassicLastProfileName.spectrumWindow"
             case .mainWindow: return "visClassicLastProfileName.mainWindow"
             case .winampModernVisBox: return "visClassicLastProfileName.winampModernVisBox"
+            case .wmpEffects: return "visClassicLastProfileName.wmpEffects"
             }
         }
 
@@ -30,6 +34,7 @@ final class VisClassicBridge {
             case .spectrumWindow: return "visClassicFitToWidth.spectrumWindow"
             case .mainWindow: return "visClassicFitToWidth.mainWindow"
             case .winampModernVisBox: return "visClassicFitToWidth.winampModernVisBox"
+            case .wmpEffects: return "visClassicFitToWidth.wmpEffects"
             }
         }
 
@@ -38,6 +43,7 @@ final class VisClassicBridge {
             case .spectrumWindow: return "visClassicTransparentBg.spectrumWindow"
             case .mainWindow: return "visClassicTransparentBg.mainWindow"
             case .winampModernVisBox: return "visClassicTransparentBg.winampModernVisBox"
+            case .wmpEffects: return "visClassicTransparentBg.wmpEffects"
             }
         }
 
@@ -46,6 +52,7 @@ final class VisClassicBridge {
             case .spectrumWindow: return "visClassicOpacity.spectrumWindow"
             case .mainWindow: return "visClassicOpacity.mainWindow"
             case .winampModernVisBox: return "visClassicOpacity.winampModernVisBox"
+            case .wmpEffects: return "visClassicOpacity.wmpEffects"
             }
         }
     }
@@ -372,7 +379,7 @@ final class VisClassicBridge {
         }
         // A `.wal` skin's `<vis>` box is a recess its author drew, and the analyzer that normally
         // lives there paints only its bars — an opaque black rectangle would cover the artwork.
-        if scope == .winampModernVisBox {
+        if scope == .winampModernVisBox || scope == .wmpEffects {
             return true
         }
         // Metal finishes default to a transparent vis_classic background so the analyzer
