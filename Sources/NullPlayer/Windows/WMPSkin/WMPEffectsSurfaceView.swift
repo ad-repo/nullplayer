@@ -212,10 +212,17 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         let bars = cavaPresenter.barArrays
         guard !bars.isEmpty else { return }
         withCircularEffectClip {
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            context.saveGState()
+            // CavaDrawing is shared with y-up AppKit hosts. The WMP skin view is flipped, so
+            // present its baseline through the same local transform as vis_classic.
+            context.translateBy(x: 0, y: compactEffectBounds.minY + compactEffectBounds.maxY)
+            context.scaleBy(x: 1, y: -1)
             CavaDrawing.draw(in: compactEffectBounds, barArrays: bars,
                              lowColor: cavaPresenter.lowGradientColor,
                              highColor: cavaPresenter.highGradientColor,
                              mode: cavaPresenter.mode)
+            context.restoreGState()
         }
     }
 
