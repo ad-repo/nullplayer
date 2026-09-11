@@ -486,3 +486,50 @@ The vocabulary gates *reads* as well as calls, so a newly added name could newly
 `testSDKElementMethodsAreCountedWhenUnimplemented` and `testUnimplementedSDKMethodsAreTalliedRatherThanSilent` pin both halves: the SDK names resolve unrecognised and stay out of the compatibility table, a name the SDK does not define stays out of the vocabulary, and `deleteAll`/`copy`/`returnToMediaCenter` each abort their own handler and only their own.
 
 W129–W135, the rest of the audit, are open and ranked in `WMP_TASKS.md`.
+
+## Phase 17 (second pass) — the ambient event mechanism, and what its reach did not say
+
+| W129 | `<attribute>_onchange` is a five-property whitelist against a general SDK mechanism | **387 authored handlers across 104 of the 177 measured archives**, 20 distinct properties: `currentPosition_onchange` 77 skins, `currentEffectType_onchange` 57, `currentPlaylist_onchange` 48, `currentPreset_onchange` 30, `textWidth_onchange` 17, `selectedItem_onchange` 12, `playlist_onchange` 9, `currentMedia_onchange` 9 | **Closed 2026-09-11.** Largest row of the SDK conformance audit. Three pieces, each a separate place a name could go missing: **classification** — `WMPAttributeParser.parse` now makes any `*_onchange` attribute a `.handler`, where the closed list left 387 handlers across 104 archives sitting in the graph as literals; **collection** — `WMPScriptViewPlan.attributeChangeHandlers`, keyed by folded attribute and carrying the **authored** spelling, with `value` deliberately excluded so W51/W52's own path cannot fire twice; **dispatch** — `WMPScriptContext.raiseAttributeChangeHandlers` for element writes (W87's bound, now over every attribute instead of the four geometry ones) and `WMPMainWindowController.refreshHostState` for the four player attributes off the snapshot diff. **The bare-name binding is what decides whether any of it runs**: 68 of the 77 `currentEffectType_onchange` uses are `mediacenter.effectType=currentEffectType`, a `ReferenceError` on the first statement without it, so the attribute is bound under its authored spelling for the duration of its own handler and cleared after — the same shape `value` and `NewState` use. `currentMedia`/`currentPlaylist` are **not** bound: WMP's are objects, and all 77 of their sources call a skin function rather than reading the name. Evidence below. |
+
+Census pair, `git worktree add ../nullplayer-base HEAD` vs the change, 179 archives / 535 views:
+
+| | base | after |
+|---|---|---|
+| `UNKNOWN event` lines / uses | 1,179 / 2,763 | **1,002 / 2,536** |
+| `currentposition_onchange` / `currenteffecttype_onchange` / `currentplaylist_onchange` / `currentmedia_onchange` | 80 / 66 / 49 / 5 skins | **0 / 0 / 0 / 0** |
+| `selecteditem_onchange`, `currentpreset_onchange`, `textwidth_onchange` | 12, 38, 21 | **unchanged** |
+| `handler-error` | 119 | **119** |
+| commands / hits / widgets / unresolved | 10,879 / 4,603 / 2,450 / 1,141 | **all four unchanged** |
+| `traced_calls` | 34,568 | 34,571 |
+
+**The three names leaving the tally is the whole structural delta, and nothing entered it.**
+`WMPCompatibilityReport` already counted any `_onchange` suffix as an event regardless of how the
+attribute was classified, so widening classification adds no name — it only lets the four that now
+have a dispatch site drop out. A name still without one stays put, which is why
+`currentpreset_onchange` reads 38 in both columns: it is authored on the same `<EFFECTS>` element by
+the same idiom as `currentEffectType_onchange` and was deliberately left unimplemented.
+
+**535 PNGs: 0 lost, 0 new, 1 changed** — `Scooby-Doo_2/infoView`, whose `randomPic()` differs
+between any two runs of any binary (`reference/harness.md`). So the headless corpus is unmoved, as
+predicted: nothing changes an attribute in a still.
+
+**The three new `traced_calls` are one skin and they are the element half working.** `Main_Street`
+authors `visible_onchange="vidmodebut()"`, which had never run; it now reads
+`player.currentMedia.ImageSourceWidth` and writes `nmsm.enabled` / `nmmm.enabled` — two buttons
+that were left disabled. No pixel moves in the default state because `enabled` there gates input,
+which is exactly why a sweep could not have found this row and cannot close it.
+
+**Verified live by the reporter, 2026-09-11**, on the one signature that exists:
+`currentEffectType_onchange` → `setVisEffectsText()` → `visEffectName.value = currentEffectTitle
++ " - " + currentPresetTitle` (both implemented by W101). Switching visualization effect now
+repaints the label, which previously kept its load-time value forever and threw nothing. `corona`
+confirmed unmoved — it authors 10 `enabled_onchange`, newly live, each
+`cursor=enabled?'hand':'system'`, an unqualified write that lands on a JS global rather than the
+element because this engine deliberately has no `with(element)`.
+
+**The rule this row leaves behind: reading a handler's reach is not reading its result.** Three of
+the four host attributes were described as visible and are not. 96 of the 105
+`currentPosition_onchange` uses are `seek.value = player.controls.currentPosition`, a number **W120
+already supplies** from the declared range; all 9 `currentMedia_onchange` uses are
+`updateAlbumArt()`, whose body asks for `WMPImage_AlbumArtLarge`, a built-in this engine does not
+resolve — **opened as W137**. Read the body before naming a skin to look at.

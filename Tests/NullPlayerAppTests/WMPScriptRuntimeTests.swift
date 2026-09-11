@@ -1078,6 +1078,130 @@ final class WMPScriptRuntimeTests: XCTestCase {
         await session.teardown()
     }
 
+    /// **`<attribute>_onchange` is a general SDK mechanism, and the attribute is readable by its
+    /// own name inside its own handler (W129).** *Ambient Event Handlers*: "when a skin attribute
+    /// changes value, an event occurs… the name of the event handler is the name of the attribute
+    /// followed by `_onchange`". This engine collected four geometry properties and `value`;
+    /// everything else the corpus writes in that form — 387 handlers across 104 of the 177
+    /// measured archives — was classified `.literal` and was not a handler at all.
+    ///
+    /// The bare-name binding is the half that decides whether any of it runs: **68 of the corpus's
+    /// 77 `currentEffectType_onchange` uses are `mediacenter.effectType=currentEffectType`**, and
+    /// without the attribute bound that is a `ReferenceError` on the handler's first statement — a
+    /// handler that dies silently, which is this row's whole failure mode.
+    func testAnAmbientAttributeChangeHandlerFiresWithTheAttributeBoundByItsName() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="panel" left="0" top="0" width="100" height="100" alphaBlend="255"
+                     alphaBlend_onchange="bar.top = alphaBlend;"/>
+            <SUBVIEW id="bar" left="0" top="180" width="100" height="10"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10"
+                    onClick="panel.alphaBlend = 42;"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        func stableID(_ id: String) throws -> Int {
+            try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == id }?.stableID)
+        }
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go",
+                                   handlers: ["panel.alphaBlend = 42;"]))
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: try stableID("bar"),
+                                                       property: "top")], 42,
+                       "a non-geometry attribute must raise its declared handler, and the handler "
+                       + "must read the new value under the attribute's own authored name")
+        XCTAssertTrue(output.diagnostics.filter { $0.code == "handler-error" }.isEmpty,
+                      "the bare name must resolve, not throw: \(output.diagnostics)")
+    }
+
+    /// The bound is unchanged by generalising the property: only what the markup declared, and each
+    /// `(element, attribute)` at most once per transaction, so two attributes that write each other
+    /// cannot loop (W87's rule, now over every attribute rather than the four geometry ones).
+    func testAmbientChangeHandlersThatWriteEachOtherCannotLoop() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="a" left="0" top="0" width="10" height="10" alphaBlend="255"
+                     alphaBlend_onchange="b.alphaBlend = a.alphaBlend;"/>
+            <SUBVIEW id="b" left="0" top="20" width="10" height="10" alphaBlend="255"
+                     alphaBlend_onchange="a.alphaBlend = b.alphaBlend;"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10" onClick="a.alphaBlend = 10;"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go",
+                                   handlers: ["a.alphaBlend = 10;"]))
+        XCTAssertTrue(output.diagnostics.filter { $0.code == "handler-error" }.isEmpty,
+                      "a mutual pair must settle, not abort: \(output.diagnostics)")
+    }
+
+    /// **`value_onchange` must not be collected twice.** It has its own map and its own two
+    /// directions (W51/W52); claiming it as an ambient attribute handler as well would raise it a
+    /// second time in the same transaction, and 2,170 uses across 175 archives is the wrong place
+    /// to discover that. The general rule is deliberately matched *after* it.
+    func testValueOnchangeStaysOnItsOwnPathAndTheGeneralRuleTakesTheRest() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SLIDER id="s" left="0" top="0" width="10" height="40" min="0" max="10"
+                    value_onchange="readout.left = value;"/>
+            <TEXT id="label" left="0" top="50" width="40" height="10"
+                  textWidth_onchange="readout.top = textWidth;"/>
+            <SUBVIEW id="readout" left="0" top="60" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        func stableID(_ id: String) throws -> Int {
+            try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == id }?.stableID)
+        }
+        let plan = WMPScriptViewPlan(skin: skin, viewID: "main")
+        XCTAssertEqual(plan.valueChangeHandlers[try stableID("s")], "readout.left = value;")
+        XCTAssertNil(plan.attributeChangeHandlers[try stableID("s")]?["value"],
+                     "value belongs to the value path alone, or it fires twice per transaction")
+        XCTAssertEqual(plan.attributeChangeHandlers[try stableID("label")]?["textwidth"]?.attribute,
+                       "textWidth", "the authored spelling is what the handler reads it by")
+    }
+
+    /// The four host-driven ambient handlers (W129). They are attributes of the *player*, which no
+    /// script writes and which move underneath the skin, and they carry the measured reach:
+    /// `currentPosition_onchange` 105 uses / 81 skins, `currentEffectType_onchange` 77 / 65,
+    /// `currentPlaylist_onchange` 65 / 48, `currentMedia_onchange` 12 / 9. They resolve through the
+    /// same one matcher every other dispatch site goes through, and the negative half matters as
+    /// much: a sibling spelling this engine does not raise must stay unmatched and keep ranking.
+    func testTheHostAmbientChangeEventsResolveToTheirAuthoredHandlers() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <PLAYER currentPlaylist_onChange="updateMetadata('playlist');"
+                    currentMedia_onChange="updateAlbumArt();">
+                <controls currentPosition_onchange="seek.value=player.controls.currentPosition;"/>
+            </PLAYER>
+            <EFFECTS id="vis" left="0" top="0" width="50" height="50"
+                     currentEffectType_onchange="mediacenter.effectType=currentEffectType;"
+                     currentPreset_onchange="mediacenter.effectPreset=currentPreset;"/>
+        </VIEW></THEME>
+        """)
+        for (event, source) in [("currenteffecttype_onchange", "mediacenter.effectType=currentEffectType;"),
+                                ("currentposition_onchange", "seek.value=player.controls.currentPosition;"),
+                                ("currentplaylist_onchange", "updateMetadata('playlist');"),
+                                ("currentmedia_onchange", "updateAlbumArt();")] {
+            XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: event, targetID: nil,
+                                                            viewID: "main"),
+                           [source], "\(event) must reach its authored handler")
+        }
+        // `currentPreset_onchange` is authored on the same element by the same idiom and is
+        // deliberately not raised: W129's breadth is the four above. It must stay visible as demand.
+        XCTAssertTrue(WMPMainWindowController.handlers(in: skin, event: "currentpreset_onchange",
+                                                        targetID: nil, viewID: "main").isEmpty
+                       == false,
+                      "the matcher finds it; what must not exist is a dispatch site raising it")
+        XCTAssertFalse(WMPCorpusReportHarness.supportedEvents.contains("currentpreset_onchange"),
+                       "an event with no dispatch site must keep ranking as measured demand")
+    }
+
     private func fixtureScript(_ name: String) throws -> String {
         let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/WMPSkin")

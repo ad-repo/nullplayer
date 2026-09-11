@@ -407,6 +407,8 @@ instead of failing honestly.
 | `openstatechange` | `NewState` | the `os*` open state, the same number `player.openState` answers |
 | `playstatechange` | `NewState` | the `ps*` play state, the same number `player.playState` answers |
 | `status_onchange` | `status` | `player.status`, which is inert and empty here |
+| `currenteffecttype_onchange` | `currentEffectType` | the selected effect's stable id, the same string `<EFFECTS>.currentEffectType` answers |
+| `currentposition_onchange` | `currentPosition` | the playback position in seconds, the same number `player.controls.currentPosition` answers |
 
 **They belong to the handler and not to the transaction.** One refresh raises `openstatechange` and
 `playstatechange` together and `NewState` is a *different* enumeration in each, so a single binding
@@ -414,9 +416,64 @@ for the whole transaction would be wrong for one of the two. Measured demand is 
 installed archives name `NewState` in a handler attribute and 5 name `status` — and the cost of not
 having it was every statement after the first in those skins.
 
+**An ambient `<attribute>_onchange` handler reads the attribute by its own authored name**, and it
+is the same binding for the same reason: 68 of the corpus's 77 `currentEffectType_onchange` uses are
+`mediacenter.effectType=currentEffectType`, which without the name bound is a `ReferenceError` on
+the first statement. `currentMedia` and `currentPlaylist` are deliberately **not** bound — WMP's are
+objects, this engine has no JS object to stand for either, and all 77 of their corpus sources call a
+skin function (`updateAlbumArt()`, `getVisMeta()`, `updateMetadata('playlist')`) rather than reading
+the bare name. Binding a scalar in their place would answer a question the skin never asked.
+
 **`WMPScriptConstants` carries the whole enumeration for the same reason.** A skin switches over all
 of `WMPOpenState`, and one missing global (`osMediaWaiting`, in Corona's case) is a `ReferenceError`
 that costs the handler — the W37 class rather than a gap in a table nothing reads.
+
+---
+
+## Ambient `<attribute>_onchange` handlers
+
+**The SDK defines an `_onchange` handler for every attribute of most elements, not a list of five**
+(*Ambient Event Handlers*: "when a skin attribute changes value, an event occurs… the name of the
+event handler is the name of the attribute followed by `_onchange`"). It is **three** pieces, and
+each one is a separate place a name can go missing:
+
+1. **Classification** — `WMPAttributeParser.parse` makes any `*_onchange` attribute a `.handler`.
+   A name missing here is not a handler that fails; it is markup classified as a literal, invisible
+   to the dispatcher *and* to the `UNKNOWN event` tally. That is the state 387 handlers across 104
+   of the 177 measured archives sat in until W129.
+2. **Collection** — `WMPScriptViewPlan.attributeChangeHandlers`, keyed by folded attribute, holding
+   the **authored** spelling beside the source because the handler reads the attribute by name.
+   `value` is deliberately absent: it has its own map and its own two directions (W51/W52), and
+   collecting it twice raises it twice in one transaction. The general rule is matched *after* the
+   `value_onchange`/`onChange` case for exactly that reason.
+3. **Dispatch**, of which there are two, and a name needs the right one:
+   * *Element side* — `WMPScriptContext.raiseAttributeChangeHandlers`, in the same transaction as
+     the write, bounded the way W87's cascade is: only what the markup declared, each
+     `(element, attribute)` at most once, never a re-resolve of the expression set.
+   * *Host side* — `WMPMainWindowController.refreshHostState`, off the snapshot diff, for the four
+     attributes of the *player* that no script writes and that move underneath the skin:
+     `currentPosition` (105 uses / 81 skins), `currentEffectType` (77 / 65), `currentPlaylist`
+     (65 / 48), `currentMedia` (12 / 9).
+
+**The failure mode of all three is silence.** Nothing throws, so no diagnostic appears anywhere: the
+readout simply keeps the value it loaded with. A headless capture cannot see it either — no
+attribute changes in a still — so this class is verified through the live loop, `reference/harness.md`
+§ *Driving the app*.
+
+**An attribute with no dispatch site stays off `WMPCorpusReportHarness.supportedEvents`**, whatever
+its reach. `currentPreset_onchange` (40 uses) is authored on the same `<EFFECTS>` element by the same
+idiom as `currentEffectType_onchange` and is *not* implemented; listing it would drop it out of the
+tally while still doing nothing, which is where `onResize` sat for three phases.
+
+**Reading a handler's reach is not reading its result, and W129 is the case that proves it.** Of the
+four host attributes, only `currentEffectType_onchange` moves a pixel today: `setVisEffectsText()`
+paints `visEffectName.value = currentEffectTitle + " - " + currentPresetTitle`, both of which W101
+implemented. The other three were talked about as visible and are not — 96 of the 105
+`currentPosition_onchange` uses are `seek.value = player.controls.currentPosition`, a number **W120
+already supplies** from the declared range, and all 9 `currentMedia_onchange` uses are
+`updateAlbumArt()`, whose body is `backgroundImage = "WMPImage_AlbumArtLarge"`, a WMP built-in
+pseudo-resource this engine does not resolve. **Read the handler's body before naming a skin to look
+at**; the census says a skin asks, never that anything answers.
 
 ---
 

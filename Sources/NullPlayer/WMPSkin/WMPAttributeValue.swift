@@ -81,10 +81,28 @@ enum WMPAttributeParser {
         "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend"
     ]
 
+    /// **`<attribute>_onchange` is a general SDK mechanism, not a list (W129).** *Ambient Event
+    /// Handlers*: "when a skin attribute changes value, an event occurs… the name of the event
+    /// handler is the name of the attribute followed by `_onchange`". The set above carries the
+    /// spellings that were enumerated one at a time; everything else the corpus authors in that
+    /// form — `currentPosition_onchange` (77 skins), `currentEffectType_onchange` (57),
+    /// `currentPlaylist_onchange` (48), `currentPreset_onchange` (30), `textWidth_onchange` (17),
+    /// `selectedItem_onchange` (12), 387 handlers across 104 of the 177 measured archives — was
+    /// classified `.literal`/`.jScript` and was therefore **not a handler at all**: invisible to
+    /// the dispatcher, invisible to the tally, and silent, because nothing ever threw.
+    ///
+    /// Classification alone changes no screen, which is the trap this engine has fallen into
+    /// before (`onResize`). The dispatch sites are the cost: element-side in
+    /// `WMPScriptContext.raiseAttributeChangeHandlers`, host-side in
+    /// `WMPMainWindowController.refreshHostState`.
+    private static func isAmbientChangeHandler(_ lowerName: String) -> Bool {
+        lowerName.count > "_onchange".count && lowerName.hasSuffix("_onchange")
+    }
+
     static func parse(name: String, value raw: String) -> WMPAttributeValue {
         let lowerName = name.lowercased()
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if handlerNames.contains(lowerName) {
+        if handlerNames.contains(lowerName) || isAmbientChangeHandler(lowerName) {
             return .handler(event: name, source: stripPrefix("jscript:", from: trimmed) ?? trimmed)
         }
         if let payload = stripPrefix("jscript:", from: trimmed) { return .jScript(payload) }

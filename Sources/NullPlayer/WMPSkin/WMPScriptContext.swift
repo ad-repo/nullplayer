@@ -25,14 +25,20 @@ struct WMPScriptViewPlan: Sendable {
     let expressionAddresses: [String: WMPScenePropertyAddress]
     /// Folded element id to stable graph id.
     let idToStableID: [String: Int]
-    /// `stableID -> geometry property -> handler source`, from the `<property>_onchange` attributes
-    /// a skin uses to keep a dependent pane glued to one it moves. Kept as its own map rather than
+    /// `stableID -> attribute -> handler source`, from the `<attribute>_onchange` attributes the
+    /// SDK defines for every attribute of most elements (W129). Kept as its own map rather than
     /// looked up through the element because these are `.handler` attributes, so they are not in
     /// the element's property bag at all.
-    let geometryChangeHandlers: [Int: [String: String]]
+    ///
+    /// It began as the four geometry properties — a skin keeping a dependent pane glued to one it
+    /// moves (W87) — and is general because the mechanism is: `textWidth_onchange` and
+    /// `selectedItem_onchange` are the same shape on the same elements. `value` is deliberately
+    /// **not** here: it has its own map and its own two directions (W51/W52), and collecting it
+    /// twice would raise it twice in one transaction.
+    let attributeChangeHandlers: [Int: [String: WMPAmbientChangeHandler]]
     /// `stableID -> completion event -> handler source`, from the `onEndMove`/`onEndAlphaBlend`
     /// attributes a skin chains an animation sequence from (W55). Same shape and same reason as
-    /// `geometryChangeHandlers`: these are `.handler` attributes, so they are not in the element's
+    /// `attributeChangeHandlers`: these are `.handler` attributes, so they are not in the element's
     /// property bag.
     let completionHandlers: [Int: [String: String]]
     /// `stableID -> handler source`, from the `value_onchange`/`onChange` attribute a control uses
@@ -45,7 +51,7 @@ struct WMPScriptViewPlan: Sendable {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
         })?.node else {
             elements = []; expressions = []; expressionAddresses = [:]; idToStableID = [:]
-            geometryChangeHandlers = [:]; completionHandlers = [:]; valueChangeHandlers = [:]
+            attributeChangeHandlers = [:]; completionHandlers = [:]; valueChangeHandlers = [:]
             return
         }
         var included = Set<Int>()
@@ -56,7 +62,7 @@ struct WMPScriptViewPlan: Sendable {
         var expressions: [WMPScriptExpression] = []
         var addresses: [String: WMPScenePropertyAddress] = [:]
         var ids: [String: Int] = [:]
-        var changeHandlers: [Int: [String: String]] = [:]
+        var changeHandlers: [Int: [String: WMPAmbientChangeHandler]] = [:]
         var completions: [Int: [String: String]] = [:]
         var valueChanges: [Int: String] = [:]
         for node in skin.graph.allNodes where included.contains(node.stableID) {
@@ -80,17 +86,19 @@ struct WMPScriptViewPlan: Sendable {
                     let key = "\(id).\(name)"
                     expressions.append(.init(key: key, source: source))
                     addresses[key.lowercased()] = .init(stableID: node.stableID, property: name)
-                case let .handler(event, source) where event.lowercased().hasSuffix("_onchange")
-                    && WMPScriptExpression.geometryProperties.contains(
-                        String(event.lowercased().dropLast("_onchange".count))):
-                    changeHandlers[node.stableID, default: [:]][
-                        String(event.lowercased().dropLast("_onchange".count))] = source
                 // `value_onchange` is the spelling 175 of 179 archives use and `onChange` is the
                 // other; the app's own matcher accepts both for `change`, so both are collected
-                // here rather than a second rule being invented (W51).
+                // here rather than a second rule being invented (W51). **It is matched before the
+                // general `_onchange` rule below**, which would otherwise claim it as an ambient
+                // attribute handler and raise it a second time in the same transaction.
                 case let .handler(event, source)
                     where ["value_onchange", "onchange", "change"].contains(event.lowercased()):
                     valueChanges[node.stableID] = source
+                case let .handler(event, source) where event.lowercased().hasSuffix("_onchange")
+                    && event.count > "_onchange".count:
+                    let attribute = String(event.dropLast("_onchange".count))
+                    changeHandlers[node.stableID, default: [:]][attribute.lowercased()] =
+                        .init(attribute: attribute, source: source)
                 case let .handler(event, source)
                     where Self.completionEvents.contains(event.lowercased()):
                     completions[node.stableID, default: [:]][
@@ -106,9 +114,19 @@ struct WMPScriptViewPlan: Sendable {
         self.expressions = expressions
         expressionAddresses = addresses
         idToStableID = ids
-        geometryChangeHandlers = changeHandlers
+        attributeChangeHandlers = changeHandlers
         completionHandlers = completions
         valueChangeHandlers = valueChanges
+    }
+
+    /// One ambient `<attribute>_onchange` handler: the **authored** spelling of the attribute
+    /// beside its source. The spelling is carried rather than folded because the handler reads the
+    /// attribute by its own name — 68 of the corpus's 77 `currentEffectType_onchange` uses are
+    /// `mediacenter.effectType=currentEffectType`, and a bare name bound in the wrong case is a
+    /// `ReferenceError` on the handler's first statement.
+    struct WMPAmbientChangeHandler: Sendable {
+        let attribute: String
+        let source: String
     }
 
     /// Authored spellings of the two completion callbacks that have a dispatch site. `onEndResize`
@@ -430,7 +448,7 @@ final class WMPScriptContext: @unchecked Sendable {
         // off a moved one trail it by a transaction, which is W87 again.
         raiseValueChangeHandlers(plan: plan, changes: boundValues, into: &result)
         raiseCompletionHandlers(plan: plan, into: &result)
-        raiseGeometryChangeHandlers(plan: plan, into: &result)
+        raiseAttributeChangeHandlers(plan: plan, into: &result)
 
         result.calls = model.calls
         result.mutations = model.mutations
@@ -478,7 +496,7 @@ final class WMPScriptContext: @unchecked Sendable {
         }
     }
 
-    /// **A `<property>_onchange` fires in the same transaction as the write that triggered it.**
+    /// **An `<attribute>_onchange` fires in the same transaction as the write that triggered it.**
     ///
     /// The alternative — letting the dependent catch up on the next transaction — is what tore the
     /// compact view in half (W87). A `.wmz` animates by writing geometry once per timer tick, and a
@@ -489,7 +507,11 @@ final class WMPScriptContext: @unchecked Sendable {
     ///
     /// This raises only what the skin itself declared, which is the narrow half of the problem and
     /// the half WMP actually specifies: 16 attributes across 6 archives, of which both compact-mode
-    /// skins author `height_onchange` on the panel they collapse. **It deliberately does not
+    /// skins author `height_onchange` on the panel they collapse. **W129 widened the property, not
+    /// the rule** — the SDK defines the mechanism for every attribute of most elements, so the
+    /// geometry filter that stood here is gone and a mutation of any attribute the markup declared
+    /// a handler for raises it. The bound stays exactly where it was: only declared handlers, once
+    /// per `(element, attribute)` per transaction. **It deliberately does not
     /// re-run the view's `JScript:` geometry expressions** — those are an initial layout, not a live
     /// binding, and re-resolving them after a handler was measured against the corpus and moved 175
     /// of 545 images, turning `Back to the Future Trilogy`'s `videoView` and `ALXMorph`'s frame into
@@ -497,9 +519,9 @@ final class WMPScriptContext: @unchecked Sendable {
     ///
     /// Cascades are bounded and each handler fires at most once per transaction, so a pair of panes
     /// that position off one another cannot loop.
-    private func raiseGeometryChangeHandlers(plan: WMPScriptViewPlan,
-                                             into result: inout WMPScriptRunResult) {
-        guard !plan.geometryChangeHandlers.isEmpty else { return }
+    private func raiseAttributeChangeHandlers(plan: WMPScriptViewPlan,
+                                              into result: inout WMPScriptRunResult) {
+        guard !plan.attributeChangeHandlers.isEmpty else { return }
         var consumed = 0
         var fired = Set<String>()
         for _ in 0..<WMPPhase0Limits.expressionPasses {
@@ -509,13 +531,20 @@ final class WMPScriptContext: @unchecked Sendable {
             var raised = false
             for mutation in fresh {
                 let property = mutation.property.lowercased()
-                guard WMPScriptExpression.geometryProperties.contains(property),
-                      let stableID = plan.idToStableID[WMPPath.fold(mutation.targetID)],
-                      let source = plan.geometryChangeHandlers[stableID]?[property] else { continue }
+                guard let stableID = plan.idToStableID[WMPPath.fold(mutation.targetID)],
+                      let handler = plan.attributeChangeHandlers[stableID]?[property]
+                else { continue }
                 let token = "\(stableID).\(property)"
                 guard fired.insert(token).inserted else { continue }
                 raised = true
-                if let error = invokeHandler(source, label: "\(property)_onchange") {
+                // **The changing attribute is readable by its own name inside its handler**, the
+                // way `value` is inside `value_onchange` and `NewState` is inside
+                // `playstatechange`. Bound in the authored spelling and cleared with the handler,
+                // so a stale one cannot be read by an unrelated later handler.
+                context.setObject(Self.jsAny(mutation.value),
+                                  forKeyedSubscript: handler.attribute as NSString)
+                defer { context.setObject(nil, forKeyedSubscript: handler.attribute as NSString) }
+                if let error = invokeHandler(handler.source, label: "\(property)_onchange") {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(property)_onchange: \(error)"))
                 }

@@ -926,6 +926,26 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             events.append("status_onchange")
         }
         if previous?.currentTime != snapshot.currentTime { events.append("positionchange") }
+        // **The host half of the SDK's ambient `<attribute>_onchange` mechanism (W129).** The
+        // element half is raised inside the transaction that wrote the attribute
+        // (`WMPScriptContext.raiseAttributeChangeHandlers`); these four are attributes of the
+        // *player*, which no script writes and which move underneath the skin — and they carry the
+        // measured reach: `currentPosition_onchange` 77 skins, `currentEffectType_onchange` 57,
+        // `currentPlaylist_onchange` 48, `currentMedia_onchange` 9, out of 387 authored handlers
+        // across 104 of the 177 measured archives.
+        //
+        // Each rides the snapshot field the engine actually has behind the WMP name, so a raise
+        // and a subsequent read can never disagree: `currentMedia` is the metadata of the open
+        // media, `currentPlaylist` the queue's own items, `currentEffectType` the selection W101
+        // made live and writable. Position is a clock tick, so this raise lands ten times a second
+        // — which is what the skins authoring it are for (a readout painter), and it costs no new
+        // transaction because `positionchange` already ran one on the same edge. **The W119 trap is
+        // the opposite mistake and is not repeated here**: that was a clock tick raising
+        // `status_onchange`, an event about a different quantity.
+        if previous?.currentTime != snapshot.currentTime { events.append("currentposition_onchange") }
+        if previous?.metadata != snapshot.metadata { events.append("currentmedia_onchange") }
+        if previous?.playlistItems != snapshot.playlistItems { events.append("currentplaylist_onchange") }
+        if previous?.effects.type != snapshot.effects.type { events.append("currenteffecttype_onchange") }
         if previous?.shuffle != snapshot.shuffle || previous?.repeatMode != snapshot.repeatMode {
             events.append("modechange")
         }
@@ -946,8 +966,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     private static let hostEventOrder = ["openstatechange", "playstatechange", "videostart", "videoend", "status_onchange",
-                                         "positionchange", "modechange", "buffering_onchange",
-                                         "reception_onchange"]
+                                         "currentmedia_onchange", "currentplaylist_onchange",
+                                         "currenteffecttype_onchange",
+                                         "positionchange", "currentposition_onchange", "modechange",
+                                         "buffering_onchange", "reception_onchange"]
 
     private func renderInteraction(state: WMPInteractionState, changed: Set<Int>) {
         guard let skin = loadedSkin, let store = imageStore, let viewID = activeViewID,
@@ -1027,6 +1049,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             return ["NewState": .number(Double(WMPScriptConstants.playState(for: snapshot.state)))]
         case "status_onchange":
             return ["status": .string("")]
+        // **An ambient handler reads the attribute that changed by its own name** — the SDK's
+        // per-handler argument, and the whole of what these two handlers are made of: 68 of the
+        // corpus's 77 `currentEffectType_onchange` uses are
+        // `mediacenter.effectType=currentEffectType`, which without this binding is a
+        // `ReferenceError` on the first statement and a handler that dies silently (W129).
+        //
+        // `currentMedia` and `currentPlaylist` are deliberately **not** bound: WMP's are objects,
+        // this engine has no JS object to stand for either, and every one of their 77 corpus
+        // sources calls a skin function (`updateAlbumArt()`, `getVisMeta()`,
+        // `updateMetadata('playlist')`) rather than reading the bare name. Binding a scalar in
+        // their place would answer a question the skin never asked, wrongly.
+        case "currenteffecttype_onchange":
+            return ["currentEffectType": .string(snapshot.effects.type)]
+        case "currentposition_onchange":
+            return ["currentPosition": .number(snapshot.currentTime)]
         default:
             return [:]
         }
