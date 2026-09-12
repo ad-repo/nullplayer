@@ -167,10 +167,9 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
     /// What an unanswerable binding commits, or `nil` to commit nothing and leave the markup's own
     /// value standing. See `changes(for:)`.
     ///
-    /// **A host property this engine does not implement is genuinely off**, and saying so is
-    /// honest: `xsn_sports` hangs its whole SRS WOW panel off `visible="wmpprop:eq.enhancedAudio"`,
-    /// and this player has no SRS WOW, so showing the "SRS ON" badge would claim a feature that
-    /// does nothing. **An element this skin never declared is not off — it is unknown**, and that
+    /// Unsupported host paths must not claim an active feature. Implemented paths such as
+    /// `eq.enhancedAudio` resolve from the snapshot before reaching this fallback.
+    /// **An element this skin never declared is not off — it is unknown**, and that
     /// is where defaulting destroys content: `WoW`'s playlist hangs off `wmpprop:plMode.visible`,
     /// a name WMP's own UI owns.
     private static func unansweredValue(for binding: Binding) -> WMPJSONValue? {
@@ -205,6 +204,11 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         }
         switch path {
         case "eq.enabled", "eq.enable": return .bool(snapshot.equalizer.enabled)
+        case "eq.enhancedaudio": return .bool(snapshot.equalizer.enhancedAudio)
+        case "eq.wowlevel": return .number(snapshot.equalizer.wowLevel)
+        case "eq.trubasslevel": return .number(snapshot.equalizer.truBassLevel)
+        case "eq.speakersize": return .number(Double(snapshot.equalizer.speakerSize))
+        case "eq.currentspeakername": return .string(snapshot.equalizer.currentSpeakerName)
         case "eq.preamp": return .number(snapshot.equalizer.preamp)
         case "player.controls.currentposition": return .number(snapshot.currentTime)
         case "player.controls.currentpositionstring": return .string(snapshot.elapsedText)

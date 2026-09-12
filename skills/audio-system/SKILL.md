@@ -265,6 +265,13 @@ CLI flags (`--tuning`, `--tuning-source`, `--tuning-offset-cents`) provide sessi
 
 Casting paths (Sonos / Chromecast / DLNA) hand the remote renderer a stream URL with no local AVFoundation graph to insert into, so Reference Tuning and Playback Speed are intentionally unavailable while casting. Their menus grey out with a "Not available while casting" tooltip; `engine.isAnyCastingActive` is the gate. The persisted speed remains stored and resumes for local/HTTP playback after casting ends.
 
+## WMP WOW and TruBass
+
+WMP skins own an optional stereo butterfly and bass enhancement stage after EQ/tuning in both audio
+pipelines. Read [the design and implementation reference](../wmp-skin-guide/reference/audio-enhancements.md)
+before changing `WMPWOWAudioUnit`, `WMPTruBassDSP`, or their graph integration. The controller follows
+Reference Tuning’s per-player node ownership, but activation is explicitly restricted to WMP mode.
+
 ## Spectrum Analyzer
 
 Both pipelines feed spectrum data to the UI for visualization.
@@ -514,3 +521,9 @@ For detailed information, see:
 | File validation | `Audio/AudioFileValidator.swift` |
 | ProjectM | `Visualization/ProjectMWrapper.swift`, `Windows/ProjectM/` |
 | Reporters | `Plex/PlexPlaybackReporter.swift`, `Plex/PlexVideoPlaybackReporter.swift`, `Subsonic/SubsonicPlaybackReporter.swift`, `Jellyfin/JellyfinPlaybackReporter.swift`, `Jellyfin/JellyfinVideoPlaybackReporter.swift`, `Emby/EmbyPlaybackReporter.swift`, `Emby/EmbyVideoPlaybackReporter.swift` |
+
+## Debugging a live defect
+
+For an audio-control defect that only reproduces on screen, read `skills/live-ui-testing/SKILL.md`
+and `skills/winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect*. Instrument
+the control-to-engine path before changing DSP; use offline PCM tests for sample-level behavior.

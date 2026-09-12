@@ -182,17 +182,16 @@ final class WMPPhase10Tests: XCTestCase {
                         "the playlist keeps its hosted surface, which is what holds the rows")
     }
 
-    /// **And a host property this engine does not implement genuinely is off.** `xsn_sports` hangs
-    /// its whole SRS WOW panel off `visible="wmpprop:eq.enhancedAudio"` (101 uses across 33 skins);
-    /// showing the "SRS ON" badge would claim a feature that does nothing.
-    func testAnUnimplementedHostPathStillHides() async throws {
+    /// A disabled enhancement must hide the authored WOW panel. This is now a live Boolean
+    /// snapshot property rather than an unsupported path returning an empty string.
+    func testDisabledWOWHostPathStillHides() async throws {
         let answered = try await registryChange("""
             <THEME><VIEW id="main" width="40" height="20">
               <SUBVIEW id="srs" left="0" top="0" width="40" height="20"
                        visible="wmpprop:eq.enhancedAudio"/>
             </VIEW></THEME>
             """, id: "srs", property: "visible")
-        XCTAssertEqual(answered, .string(""))
+        XCTAssertEqual(answered, .bool(false))
     }
 
     /// A `wmpprop:` path may name another element in the same skin — 150 of the corpus's

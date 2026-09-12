@@ -411,6 +411,11 @@ final class WMPObjectModel {
             return .value(.number(gains.indices.contains(band - 1) ? gains[band - 1] : 0))
         }
         switch name {
+        case "enhancedaudio": return .value(.bool(snapshot.equalizer.enhancedAudio))
+        case "wowlevel": return .value(.number(snapshot.equalizer.wowLevel))
+        case "trubasslevel": return .value(.number(snapshot.equalizer.truBassLevel))
+        case "speakersize": return .value(.number(Double(snapshot.equalizer.speakerSize)))
+        case "currentspeakername": return .value(.string(snapshot.equalizer.currentSpeakerName))
         case "enabled": return .value(.bool(snapshot.equalizer.enabled))
         case "presetcount": return .value(.number(Double(EQPreset.allPresets.count)))
         case "currentpreset": return .value(.number(Double(currentPresetIndex)))
@@ -692,6 +697,29 @@ final class WMPObjectModel {
             sessionSettings[name] = value
             inert()
             return .value(value)
+        case ("eq", "enhancedaudio"):
+            snapshot.equalizer.enhancedAudio = value.truth
+            hostCommand("setWOWEnabled", .number(value.truth ? 1 : 0))
+            return .value(.bool(value.truth))
+        case ("eq", "wowlevel"):
+            guard let number = value.number, number.isFinite else { return .value(.number(snapshot.equalizer.wowLevel)) }
+            let level = max(0, min(100, number))
+            snapshot.equalizer.wowLevel = level
+            hostCommand("setWOWLevel", .number(level))
+            return .value(.number(level))
+        case ("eq", "trubasslevel"):
+            guard let number = value.number, number.isFinite else { return .value(.number(snapshot.equalizer.truBassLevel)) }
+            let level = max(0, min(100, number))
+            snapshot.equalizer.truBassLevel = level
+            hostCommand("setTruBassLevel", .number(level))
+            return .value(.number(level))
+        case ("eq", "speakersize"):
+            guard let number = value.number, number.isFinite else { return .value(.number(Double(snapshot.equalizer.speakerSize))) }
+            // Authored cycling uses -1 followed by ++ within one transaction.
+            let speaker = Int(max(-1, min(2, number)))
+            snapshot.equalizer.speakerSize = speaker
+            if speaker >= 0 { hostCommand("setSpeakerSize", .number(Double(speaker))) }
+            return .value(.number(Double(speaker)))
         case ("eq", "enabled"):
             hostCommand("setEQEnabled", .number(value.truth ? 1 : 0))
             return .value(value)

@@ -77,6 +77,10 @@ final class WMPAudioEngineHost: WMPHost {
             playlistIndex: engine.currentIndex, playlistCount: engine.playlist.count,
             playlistItems: playlistItems,
             equalizer: WMPEqualizerSnapshot(enabled: engine.isEQEnabled(),
+                enhancedAudio: engine.wmpWOWController.active && engine.wmpWOWController.enabled,
+                wowLevel: engine.wmpWOWController.level,
+                truBassLevel: engine.wmpWOWController.bassLevel,
+                speakerSize: engine.wmpWOWController.speakerSize,
                 preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
             effects: WMPEffectSelection.shared.snapshot)
         guard let video = Self.localVideoSessionController,
@@ -157,6 +161,22 @@ final class WMPAudioEngineHost: WMPHost {
         case let .playPlaylistItem(index): engine.playTrack(at: index)
         case let .removePlaylistItem(index): engine.removeTrack(at: index)
         case let .movePlaylistItem(source, destination): engine.moveTrack(from: source, to: destination)
+        case .setWOWEnabled:
+            guard WindowManager.shared.uiMode.controllerFamily == .wmp,
+                  let enabled = value?.finiteNumber else { return }
+            engine.wmpWOWController.setEnabled(enabled != 0)
+        case .setWOWLevel:
+            guard WindowManager.shared.uiMode.controllerFamily == .wmp,
+                  let level = value?.finiteNumber else { return }
+            engine.wmpWOWController.setLevel(level)
+        case .setTruBassLevel:
+            guard WindowManager.shared.uiMode.controllerFamily == .wmp,
+                  let level = value?.finiteNumber else { return }
+            engine.wmpWOWController.setBassLevel(level)
+        case .setSpeakerSize:
+            guard WindowManager.shared.uiMode.controllerFamily == .wmp,
+                  let speaker = value?.finiteNumber, (0...2).contains(speaker) else { return }
+            engine.wmpWOWController.setSpeakerSize(Int(speaker))
         case .setEQEnabled:
             guard let enabled = value?.finiteNumber else { return }
             engine.setEQEnabled(enabled != 0)

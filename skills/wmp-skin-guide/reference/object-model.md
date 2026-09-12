@@ -128,6 +128,10 @@ control here. They retain authored and script-written values so a skin can round
 but every read and write is recorded as `INERT` and produces neither a host command nor a scene
 mutation (W134). In particular, `bypass` is not silently treated as the inverse of `enable`.
 
+`eq.enhancedAudio`, `wowLevel`, `truBassLevel`, `speakerSize`, and `currentSpeakerName` are live
+audio-enhancement members; see [audio-enhancements.md](audio-enhancements.md) for their typed command
+path and the temporary -1 speaker-cycle rule. They are separate from the inert spline/bypass fields.
+
 ### The `<EFFECTS>` element
 
 `EFFECTS` and `WMPEFFECTS` are the same surface and both map to `.effects`. Only the second was ever

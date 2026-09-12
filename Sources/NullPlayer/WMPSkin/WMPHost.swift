@@ -8,6 +8,7 @@ enum WMPTransportAction: Hashable, Codable {
     case seek, volume, balance
     case toggleMute, toggleShuffle, toggleRepeat
     case playPlaylistItem(Int), removePlaylistItem(Int), movePlaylistItem(Int, Int)
+    case setWOWEnabled, setWOWLevel, setTruBassLevel, setSpeakerSize
     case setEQEnabled, setEQBand(Int), setPreamp
     /// An index into `EQPreset.allPresets`. Every `<POPUP>` in the corpus is a preset menu, and
     /// `eq.currentPreset` is what its handler writes.
@@ -67,6 +68,11 @@ struct WMPEffectsSnapshot: Hashable, Codable {
 
 struct WMPEqualizerSnapshot: Hashable, Codable {
     var enabled = false
+    var enhancedAudio = false
+    var wowLevel: Double = 50
+    var truBassLevel: Double = 50
+    var speakerSize = 0
+    var currentSpeakerName: String { ["Headphones", "Normal speakers", "Large speakers"][max(0, min(2, speakerSize))] }
     var preamp: Double = 0
     var gains: [Double] = Array(repeating: 0, count: 10)
 }
@@ -114,7 +120,7 @@ struct WMPHostSnapshot: Hashable, Codable {
         case let .movePlaylistItem(source, destination):
             return playlistItems.indices.contains(source) && playlistItems.indices.contains(destination)
         case .endScan, .volume, .balance, .toggleMute, .toggleShuffle, .toggleRepeat,
-             .setEQEnabled, .setEQBand, .setPreamp, .setEQPreset,
+             .setWOWEnabled, .setWOWLevel, .setTruBassLevel, .setSpeakerSize, .setEQEnabled, .setEQBand, .setPreamp, .setEQPreset,
              .setEffectType, .nextEffect, .previousEffect, .setEffectPreset, .nextEffectPreset:
             return true
         }
@@ -146,6 +152,10 @@ extension WMPTransportAction {
         case "player.settings.volume": return .volume
         case "player.settings.balance": return .balance
         case "player.controls.currentposition": return .seek
+        case "eq.enhancedaudio": return .setWOWEnabled
+        case "eq.wowlevel": return .setWOWLevel
+        case "eq.trubasslevel": return .setTruBassLevel
+        case "eq.speakersize": return .setSpeakerSize
         case "eq.enabled", "eq.enable": return .setEQEnabled
         default: break
         }

@@ -21,15 +21,19 @@ them. UTF-8, UTF-16LE, UTF-16BE, and deterministic legacy Windows-1252 definitio
 | media / metadata | `name`, `duration`, `durationString`, `getItemInfo`; title, artist, album |
 | playlist | `count`, bounded `item(index)` snapshots (`name`, `duration`, artist metadata), `attributeCount`, `getAttributeName` |
 | network | `bufferingProgress`, `receptionQuality`, `bandWidth` (`bandWidth` is currently zero) |
-| `eq` | live `enabled` and ten gain-level properties, remapped to/from NullPlayer's active 10/21-band layout |
+| `eq` | live `enabled` and ten gain-level properties, remapped to/from NullPlayer's active 10/21-band layout; `enhancedAudio`, `wowLevel`, `truBassLevel`, `speakerSize`, and read-only `currentSpeakerName` |
 | `vis` | bounded `currentEffect` / `currentPreset` state; WMP effects render native Spikes, Bars, Ambience, Cava, or vis_classic in the authored rect |
 | `theme` | live `currentViewID`; assignment requests a controlled switch to an authored view |
 | `view` / elements | `left`, `top`, `width`, `height`, `visible`, `enabled`, `value`, `text`, `down` |
 | popup | `show` is recognized but modal script UI is not executed |
 
 The implemented host-command vocabulary is transport, scan, seek, volume, balance, mute, shuffle,
-repeat, playlist play/remove/move, EQ enable/gain/preamp, and view switching. Numeric values are
+repeat, playlist play/remove/move, EQ enable/gain/preamp, WOW/TruBass enable/levels/speaker size, and view switching. Numeric values are
 finite-checked and clamped again at the main-actor host boundary.
+
+WOW and TruBass are WMP-only approximations for local and HTTP audio playback. They do not process
+remote casting or VLC video audio. The design, defaults, and limits are documented in
+[the enhancement reference](../../skills/wmp-skin-guide/reference/audio-enhancements.md).
 
 ## Phase 6 tags and native surfaces
 

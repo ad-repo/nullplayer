@@ -86,3 +86,14 @@ status: Phase 6 WMP-owned changes plus the user-supplied, untracked skins/ corpu
 The planning worktree is clean at `4af0b7e4`. The original `/Users/ad/Projects/nullplayer` checkout
 contains only its pre-existing Winamp Modern edits and untracked `.opencode/`; it contains no WMP
 Phase 6 implementation path.
+
+## 2026-09-12 audio-enhancement extension: shared-path audit
+
+WOW/TruBass now require a rendered-audio stage. `AudioEngine.swift` owns the local node, graph
+rebuild connections, and independent primary/crossfade stream nodes; `StreamingAudioPlayer.swift`
+accepts the optional node through its existing attachment seam. `WindowManager.uiMode` explicitly
+gates activation to the WMP controller family. All other skin families receive dry samples.
+A WMP view/host cannot process output PCM, a spectrum tap only observes it, and repurposing graphic-EQ
+bands would overwrite unrelated settings. Those WMP-local alternatives were rejected for these reasons.
+The DSP, control contract, and verification are maintained in
+[the owning skill reference](../../skills/wmp-skin-guide/reference/audio-enhancements.md).

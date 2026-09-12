@@ -180,7 +180,7 @@ enum WMPJScriptCompatibility {
                      "setColumnResizeMode", "setColumnWidth"],
         "network": ["bufferingProgress", "receptionQuality", "bandWidth", "bitRate", "framesSkipped",
                     "lostPackets", "receivedPackets"],
-        "eq": ["enabled", "bands", "presetCount", "presetTitle", "currentPreset",
+        "eq": ["enhancedAudio", "wowLevel", "truBassLevel", "speakerSize", "currentSpeakerName", "enabled", "bands", "presetCount", "presetTitle", "currentPreset",
                "currentPresetTitle", "nextPreset", "previousPreset", "reset",
                "gainLevel1", "gainLevel2", "gainLevel3", "gainLevel4", "gainLevel5",
                "gainLevel6", "gainLevel7", "gainLevel8", "gainLevel9", "gainLevel10"],
