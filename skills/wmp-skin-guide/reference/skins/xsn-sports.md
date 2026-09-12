@@ -57,6 +57,34 @@ to be a mini drawer that opens into the the frame with a seconds selector, this 
    `saveVisPrefs()` never ran, nothing was ever persisted, and `loadVisPrefs` took its first-run
    branch every time. 373 `onClose` handlers across 133 of the 180 archives were dead.
 
+## Defects it found (2026-09-12, borrowed window frames)
+
+Reported live while testing the borrowed-frame work: *"the nullplayer window does not follow the
+color theme selected in xsn"*, *"on the xsn the issue is there are 2 eq windows"*.
+
+5. **Two equalizer windows.** Not an xsn defect at all — it is the *fallback* rule failing on a skin
+   switch, and xsn is where it shows because xsn declares `<EQUALIZERSETTINGS>` (164 of the 180
+   archives declare an equaliser). Loading a `.wmz` with none opens NullPlayer's; switching from
+   there to xsn left ours standing beside the skin's. The reporter diagnosed it themselves — *"if
+   you switch skins from a skin that has no internal eq to one that does it carries that window to
+   the new skin"* — and they were right.
+   `WindowManager.dismissWMPFallbackSurfacesTheSkinProvides()` now runs on every presentation.
+   **The lesson generalises past the equaliser**: any "ours or the skin's" decision taken when a
+   window opens has to be retaken when the skin changes.
+6. **A borrowed window frame wears the skin's *opening* colour, not its selected one** (W145, open).
+   xsn's colour scheme is not a palette: `plView` stacks **all eight frame variants** (`pl1_1`…
+   `pl1_8`, 2-8 authored `alphaBlend="0"`) and `htcpStartupPl()` cross-fades between them from the
+   `htcpID` / `winAlpha` preferences, read in the view's own `onLoad`. "Hyper-Transient Color
+   Phasing", trademarked in a comment block in `xsn.js`. Anything that reads this skin's appearance
+   from markup alone gets variant 1 forever.
+
+**And xsn is the reason the donor view is ranked rather than taken.** `WMPHostedFrameTemplate` looks
+for the best eight-piece ring in the skin, and xsn wraps the *same* ring around `upgradeView` — the
+"your Windows Media Player is too old" nag panel — which is declared before `plView` and won on
+document order, so the first implementation borrowed the frame of a window nothing was ever meant to
+look at. A view that holds a `PLAYLIST`, `VIDEO`, `EFFECTS`, `LISTBOX` or `EQUALIZERSETTINGS` now
+outranks one that holds nothing. `Halo 2` and `T3-Skynet_Media_Player` have the same duplicate.
+
 ## What was ruled out
 
 - **It is not `visDrawerFrame.visible`.** That is the skin's own hide mechanism and it works: the

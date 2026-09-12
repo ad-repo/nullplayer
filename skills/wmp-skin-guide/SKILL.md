@@ -61,6 +61,58 @@ deleted, corrupt, or rejected selections also recover to it while remaining in `
 Original/Classic/Winamp Modern controller, preference, `skin.json`, or artwork as WMP's default or
 fallback. Existing users keep their persisted mode.
 
+## Every NullPlayer window in WMP mode is the skin's or is themed
+
+**The rule, stated by the reporter on 2026-09-12: a NullPlayer window that can open in `.wmz` mode
+either routes to the skin's own window or wears the skin — if it can be themed at all.** A window
+that draws no skin chrome in any mode (the video player, the radio sheets, compact mode, the debug
+window) is outside it; one that draws chrome is inside it, and there is no third option.
+
+Routing is `routeWMPSkinSurface` / `WMPSkinSurfaces` — 171 of the 180 archives declare a playlist and
+164 an equaliser, so ours is the fallback for the handful that declare neither. **A fallback is
+decided when the window opens, and the skin can change underneath it**: loading a `.wmz` with no
+equaliser opened ours, and switching to one that has an equaliser left ours standing beside the
+skin's — two equalizer windows on `xsn_sports`.
+`WindowManager.dismissWMPFallbackSurfacesTheSkinProvides()` runs on every presentation and closes
+(never destroys) ours, so the window keeps its frame for the next skin that needs it.
+
+Theming is two layers, and the second is the one a skin with styled panels is asking for:
+
+- **Colour** — `WMPSurfacePalette` → `SkinnedSurfaceStyle`, the seven roles every hosted surface
+  needs.
+- **Shape** — `WMPHostedFrameTemplate` → `SkinnedSurfaceFrameArtwork`, the skin's own **eight-piece
+  resizable ring** (four corner bitmaps, four tiled or stretched edges) around its stretched client
+  subview. Measured 2026-09-12: **85 archives declare a view with all four corners, and all 85 of
+  those views also declare the stretched client subview** that makes the ring reusable.
+  `WMPHostedFrameProvider` renders it per window size through the ordinary
+  `WMPSceneBuilder`/`WMPRenderer`, so alignment, tiling and `JScript:` layout expressions are
+  resolved by the code that draws the skin rather than by a second reading of the same markup.
+  **Insets come from the client subview, never from the artwork's thickness** — `Halo 2`'s "border"
+  bitmaps are 190px wide on a 406px window and mostly transparent. Only the ring is borrowed: the
+  donor's buttons and playlist are the skin's window, not ours. The title and close control keep the
+  *window's* own coordinates, because every hosted view hit-tests its close box at `width - 25`.
+
+**The donor view is ranked, not taken.** Several skins wrap the *same* ring around an `upgradeView`
+— the "your Windows Media Player is too old" nag panel — and declare it before the real one, so
+document order borrows the frame of a window nothing was ever meant to look at (`xsn_sports`,
+`Halo 2`, `T3-Skynet_Media_Player`). A view holding a `PLAYLIST`, `VIDEO`, `EFFECTS`, `LISTBOX` or
+`EQUALIZERSETTINGS` outranks one holding nothing, and the presented player ranks last — its body is
+what the user is already looking at.
+
+**How the ring numbers were measured.** Not by the markup census: `harness.md` records that views are
+the one thing it does not count, so these came from splitting each `.wms` on `<VIEW` with a
+`WMPTextDecoder`-shaped decoder (BOM, then a positional BOM-less UTF-16 sniff, then Windows-1252) and
+classifying each direct `<SUBVIEW backgroundImage=…>` child by its `horizontalAlignment` /
+`verticalAlignment` pair. **85 of 180** archives by that scan; **86 of 180** when
+`WMPHostedFrameTemplate.derive` is run over the installed corpus through `WMPSkinLoader`. Quote
+whichever you re-derive, with the method — the engine's own answer is the authoritative one, and the
+one-skin gap is the scan's, not the engine's.
+
+The windows inside the rule: playlist, library, equalizer, visualizations, spectrum, Cava, Flow,
+PeppyMeter, audio analyzer, waveform. **Adding another one means wiring both layers in the same
+change** — `SkinnedSurfaceChrome.metrics(for:fallback:)` for its layout and hit testing, and
+`WindowManager.hostedSurfaceFrameArtwork(for:)` for its chrome.
+
 ## Loader contracts
 
 - `WMPPhase0Limits` and stable codes `WMP0001`–`WMP0020` are locked. Production loading must preserve

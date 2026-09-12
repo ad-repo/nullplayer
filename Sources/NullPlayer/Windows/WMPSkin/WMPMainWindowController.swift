@@ -60,6 +60,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// `WMPSurfacePalette`. Nil whenever the app-authored unskinned player is up, which is what makes
     /// `WindowManager.hostedSurfaceStyle` nil there and sends those windows back to their own drawing.
     private(set) var currentSurfacePalette: WMPSurfacePalette?
+
+    /// The skin's own window *shape* for those same windows, where it draws one — see
+    /// `WMPHostedFrameTemplate`. The palette above is what a `.wmz` could always lend us; this is
+    /// the eight-piece ring that 85 of the 180 corpus archives build their panels out of, rendered
+    /// for whatever size each of our windows is open at.
+    let hostedFrames = WMPHostedFrameProvider()
     private var scriptRuntime: WMPScriptRuntime?
     /// The in-flight fetch for WMP's built-in album-art images. It is cancelled on a track change
     /// and session teardown, so a slow server cannot replace a newer track's artwork.
@@ -570,6 +576,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             publishSurfacePalette(skin: skin, viewID: scene.viewID, rendered: image)
         }
         skinSurfaces = WMPSkinSurfaces(skin: skin)
+        // A fallback window opened under the *previous* skin is not a fallback under this one.
+        WindowManager.shared.dismissWMPFallbackSurfacesTheSkinProvides()
         if !presentation.isPlayer { presentation.window.orderFront(nil) }
         persistOpenViews()
     }
@@ -651,6 +659,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if palette.background == nil {
             palette.sampledBackground = WMPSurfacePalette.dominantColor(of: rendered)
         }
+        // The frame is adopted whether or not the palette moved: they answer different questions
+        // and a view switch can leave the colours identical while the ring changes.
+        hostedFrames.configure(skin: skin, playerViewID: viewID)
         guard palette != currentSurfacePalette else { return }
         currentSurfacePalette = palette
         NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
@@ -658,6 +669,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private func clearSurfacePalette() {
         skinSurfaces = .empty
+        hostedFrames.reset()
         guard currentSurfacePalette != nil else { return }
         currentSurfacePalette = nil
         NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)

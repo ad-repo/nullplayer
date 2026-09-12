@@ -68,8 +68,13 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     // MARK: - Layout Constants
     // Reference to SkinElements.ProjectM.Layout for consistency
     
-    private var Layout: SkinElements.ProjectM.Layout.Type {
-        SkinElements.ProjectM.Layout.self
+    /// Where this window's chrome ends and the visualization begins.
+    ///
+    /// The classic constants, unless the hosting skin lends a window frame of its own — a `.wmz`
+    /// skin that builds its panels out of an eight-piece ring states its content hole exactly
+    /// (`WMPHostedFrameTemplate`).
+    private var Layout: SkinnedSurfaceChrome.Metrics {
+        SkinnedSurfaceChrome.metrics(for: bounds, fallback: .projectM)
     }
 
     // MARK: - Initialization
@@ -138,6 +143,8 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         updateAudioActiveState()
 
         // Observe connected-window highlight changes for drag-mode visual feedback
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
     }
@@ -259,10 +266,26 @@ class ProjectMView: NSView, VisualizationMenuTarget {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
         
-        // Draw window chrome at actual window bounds (no scaling - chrome tiles to fill)
-        renderer.drawProjectMWindow(in: context, bounds: bounds, isActive: isActive,
-                                    pressedButton: pressedButton,
-                                    controlScale: WindowManager.shared.playlistChromeScale)
+        // Draw window chrome at actual window bounds (no scaling - chrome tiles to fill) — or, in a
+        // mode that hosts a foreign skin, that skin's palette and its own window ring.
+        if let style = WindowManager.shared.hostedSurfaceStyle {
+            SkinnedSurfaceChrome(style: style,
+                                 artwork: WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size))
+                .drawSpectrumFamilyWindow(
+                    in: context,
+                    bounds: bounds,
+                    metrics: .projectM,
+                    isActive: isActive,
+                    isClosePressed: pressedButton == .close,
+                    controlScale: WindowManager.shared.playlistChromeScale,
+                    title: "VISUALIZATIONS",
+                    fillBackground: true
+                )
+        } else {
+            renderer.drawProjectMWindow(in: context, bounds: bounds, isActive: isActive,
+                                        pressedButton: pressedButton,
+                                        controlScale: WindowManager.shared.playlistChromeScale)
+        }
         
         context.restoreGState()
 
@@ -270,6 +293,12 @@ class ProjectMView: NSView, VisualizationMenuTarget {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
         }
+    }
+
+    /// The hosting skin's palette or its borrowed frame has moved — a skin load, a view switch, or
+    /// a ring that has finished rendering for this window's size.
+    @objc private func hostedSurfaceStyleDidChange() {
+        needsDisplay = true
     }
 
     @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {

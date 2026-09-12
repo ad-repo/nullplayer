@@ -1518,7 +1518,27 @@ class PlexBrowserView: NSView {
     /// own classic window (Phase 13.8). Set once, at construction.
     private(set) var isEmbeddedInSkin = false
 
-    var Layout: LayoutMetrics { isEmbeddedInSkin ? .embedded : .classic }
+    var Layout: LayoutMetrics {
+        if isEmbeddedInSkin { return .embedded }
+        guard let metrics = hostedFrame?.metrics else { return .classic }
+        // The borrowed frame's own client hole replaces the four chrome numbers and nothing else:
+        // the tab, server, search and status *bars* are this window's own furniture and keep their
+        // heights, so only where the window's edges are moves.
+        var borrowed = LayoutMetrics.classic
+        borrowed.titleBarHeight = metrics.titleHeight
+        borrowed.leftBorder = metrics.leftBorder
+        borrowed.rightBorder = metrics.rightBorder
+        borrowed.statusBarHeight = max(metrics.bottomBorder, LayoutMetrics.classic.statusBarHeight)
+        return borrowed
+    }
+
+    /// The window frame the hosting skin lends this browser, when it lends one — a `.wmz` skin that
+    /// draws its own panels as an eight-piece ring (`WMPHostedFrameTemplate`). Never for an embedded
+    /// browser: a `.wal` holder has already drawn the chrome around it.
+    var hostedFrame: SkinnedSurfaceFrameArtwork? {
+        guard !isEmbeddedInSkin else { return nil }
+        return WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)
+    }
 
     // MARK: - Winamp Modern styling (Phase 16)
 
@@ -2568,10 +2588,28 @@ class PlexBrowserView: NSView {
     /// pixels do.
     private func drawWinampModernChrome(style: WinampModernSurfaceStyle, context: CGContext,
                                         bounds: NSRect, isActive: Bool) {
-        let titleHeight = SkinElements.PlexBrowser.Layout.titleBarHeight
-        let leftBorder = SkinElements.PlexBrowser.Layout.leftBorder
-        let rightBorder = SkinElements.PlexBrowser.Layout.rightBorder
-        let statusHeight = SkinElements.PlexBrowser.Layout.statusBarHeight
+        let titleHeight = Layout.titleBarHeight
+        let leftBorder = Layout.leftBorder
+        let rightBorder = Layout.rightBorder
+        let statusHeight = Layout.statusBarHeight
+
+        // The hosting skin's own window ring, where it lends one. The client hole is filled first
+        // and the artwork drawn over it — these rings are full of keyed-out and rounded corners, so
+        // a slab painted over the whole window would square off everything the skin cut away.
+        if let artwork = hostedFrame {
+            let content = artwork.scaled(to: bounds.size).contentRect
+            context.setFillColor(style.background.cgColor)
+            context.fill(content)
+            context.saveGState()
+            context.translateBy(x: 0, y: bounds.height)
+            context.scaleBy(x: 1, y: -1)
+            context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
+            context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
+            context.restoreGState()
+            drawBorrowedFrameCaption(style: style, context: context, bounds: bounds,
+                                     captionHeight: max(0, content.minY), isActive: isActive)
+            return
+        }
 
         context.setFillColor(style.background.cgColor)
         context.fill(bounds)
@@ -2608,6 +2646,40 @@ class PlexBrowserView: NSView {
             scale: titleScale * 1.6, color: titleColor, in: context)
 
         // The close button, in the box `hitTestCloseButton` owns.
+        let closeHit = NSRect(x: bounds.width - 20, y: 0, width: 20, height: 14)
+        if pressedButton == .close {
+            context.setFillColor(style.pressedFill.cgColor)
+            context.fill(closeHit)
+        }
+        let glyph = closeHit.insetBy(dx: 7, dy: 4)
+        context.setStrokeColor(titleColor.cgColor)
+        context.setLineWidth(1)
+        context.beginPath()
+        context.move(to: CGPoint(x: glyph.minX, y: glyph.minY))
+        context.addLine(to: CGPoint(x: glyph.maxX, y: glyph.maxY))
+        context.move(to: CGPoint(x: glyph.maxX, y: glyph.minY))
+        context.addLine(to: CGPoint(x: glyph.minX, y: glyph.maxY))
+        context.strokePath()
+    }
+
+    /// The title and close control over a borrowed ring, in the band above its client hole.
+    ///
+    /// Both keep the window's own coordinates — `hitTestCloseButton` owns the top-right 20×14 box —
+    /// so the ring changes what is behind them and not where they are.
+    private func drawBorrowedFrameCaption(style: WinampModernSurfaceStyle, context: CGContext,
+                                          bounds: NSRect, captionHeight: CGFloat, isActive: Bool) {
+        guard captionHeight >= WinampModernSurfaceStyle.classicCharHeight else { return }
+        let titleColor = isActive ? style.legibleText(style.currentText, on: style.background)
+                                  : style.legibleDimText(on: style.background)
+        let titleScale = WindowManager.shared.playlistChromeScale * 1.6
+        let title = "LIBRARY"
+        let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: titleScale)
+        WinampModernSurfaceStyle.drawText(
+            title,
+            at: NSPoint(x: (bounds.width - titleWidth) / 2,
+                        y: (captionHeight - WinampModernSurfaceStyle.classicCharHeight * titleScale) / 2),
+            scale: titleScale, color: titleColor, in: context)
+
         let closeHit = NSRect(x: bounds.width - 20, y: 0, width: 20, height: 14)
         if pressedButton == .close {
             context.setFillColor(style.pressedFill.cgColor)

@@ -95,6 +95,22 @@ itself and redirects, up to five windows opened before anything is on screen, cl
   for "the panel buttons only work once", and no probe that does not run the skin's own script can
   see it. W41's `theme.closeView` half.
 
+- **"In Halo 2 the library window did not style but the playlist did"** (reported 2026-09-12). Not a
+  Halo 2 defect — it is the borrowed-frame work reaching nine of the ten skin-chromed NullPlayer
+  windows and not the tenth. It is recorded here because **this is the shape every future gap in
+  that feature will take**: one window of the ten wearing the skin and its neighbour wearing classic
+  Winamp sprites, on a skin where everything else is right. The rule the reporter drew from it — *"any
+  nullplayer native window that is enabled to run should either call the skin native window or it
+  should be themed"* — is now the opening section of `SKILL.md`.
+
+**And Halo 2 is the measurement that killed inset-from-artwork.** Its ring bitmaps are not a border:
+`f_left_tile.png` is **190px wide** on a 406px window and `f_top_left.png` is 190x88, mostly keyed
+out to `#ff00ff`, while its client hole is stated exactly by `plFrame`
+(`left="22" top="34" width="view.width-43" height="view.height-81"`). Sizing a hosted window's
+content from the corner bitmaps would have left 190px of dead margin on a 275px window.
+`WMPHostedFrameTemplate` therefore takes insets from the stretched client subview and never from the
+artwork's thickness.
+
 ## What was ruled out
 
 - **Not a starved view, and not expressions.** The census ranks `mainView` at 0.33 unresolved with

@@ -36,8 +36,14 @@ class SpectrumView: NSView {
     
     // MARK: - Layout Constants
     
-    private var Layout: SkinElements.SpectrumWindow.Layout.Type {
-        SkinElements.SpectrumWindow.Layout.self
+    /// Where this window's chrome ends and its content begins.
+    ///
+    /// The classic constants, unless the hosting skin lends a window frame of its own — a `.wmz`
+    /// skin that builds its panels out of an eight-piece ring states its content hole exactly, and
+    /// laying our surface out inside it is what makes the borrowed frame a window rather than a
+    /// picture (`WMPHostedFrameTemplate`).
+    private var Layout: SkinnedSurfaceChrome.Metrics {
+        SkinnedSurfaceChrome.metrics(for: bounds, fallback: .spectrumFamily)
     }
 
     // MARK: - Initialization
@@ -181,7 +187,8 @@ class SpectrumView: NSView {
         }
 
         if let style = WindowManager.shared.hostedSurfaceStyle {
-            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+            WinampModernChrome(style: style,
+                               artwork: WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)).drawSpectrumFamilyWindow(
                 in: context,
                 bounds: bounds,
                 metrics: .spectrumFamily,

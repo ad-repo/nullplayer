@@ -13,10 +13,13 @@ class WaveformView: BaseWaveformView {
 
     override var waveformRect: NSRect {
         if hostedContext != nil { return bounds }
-        let titleHeight = SkinElements.WaveformWindow.Layout.titleBarHeight
-        let leftBorder = SkinElements.WaveformWindow.Layout.leftBorder
-        let rightBorder = SkinElements.WaveformWindow.Layout.rightBorder
-        let bottomBorder = SkinElements.WaveformWindow.Layout.bottomBorder
+        // The classic constants, unless the hosting skin lends a window frame of its own and states
+        // its own content hole — see `WMPHostedFrameTemplate`.
+        let chrome = SkinnedSurfaceChrome.metrics(for: bounds, fallback: .waveform)
+        let titleHeight = chrome.titleHeight
+        let leftBorder = chrome.leftBorder
+        let rightBorder = chrome.rightBorder
+        let bottomBorder = chrome.bottomBorder
 
         // Extra 2px left/right inset prevents visualization content from occluding window borders
         let extraInset: CGFloat = 2
@@ -121,7 +124,8 @@ class WaveformView: BaseWaveformView {
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         if let style = WindowManager.shared.hostedSurfaceStyle {
-            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+            WinampModernChrome(style: style,
+                               artwork: WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)).drawSpectrumFamilyWindow(
                 in: context,
                 bounds: bounds,
                 metrics: .waveform,

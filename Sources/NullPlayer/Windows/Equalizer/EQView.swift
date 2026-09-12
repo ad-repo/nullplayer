@@ -349,6 +349,35 @@ class EQView: NSView {
         return Metrics(width: bounds.width / scaleFactor)
     }
 
+    /// The window frame the hosting skin lends this equalizer, when it lends one — a `.wmz` skin
+    /// that draws its own panels as an eight-piece ring (`WMPHostedFrameTemplate`).
+    ///
+    /// Never while this view is mounted in a `.wal` holder: there the skin's own frame is already
+    /// around it and the holder decides where the body goes.
+    private var borrowedFrame: SkinnedSurfaceFrameArtwork? {
+        guard hostedContext == nil else { return nil }
+        return WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)
+    }
+
+    /// Where the equalizer's *body* — the classic layout minus its title bar — is drawn inside a
+    /// borrowed ring, in the flipped top-left coordinates everything here draws in.
+    ///
+    /// One value read by both the drawing and `convertToOriginalCoordinates`, for the same reason
+    /// `Metrics` is: a transform applied in one and not inverted in the other is an equalizer whose
+    /// sliders move when you click them.
+    private var borrowedBody: (origin: NSPoint, scale: CGFloat)? {
+        guard let content = borrowedFrame?.scaled(to: bounds.size).contentRect,
+              content.width > 0, content.height > 0 else { return nil }
+        let scale = min(content.width / Self.hostedContentSize.width,
+                        content.height / Self.hostedContentSize.height)
+        guard scale > 0 else { return nil }
+        // Centred in the hole, the way the classic path centres in the window.
+        let drawn = NSSize(width: Self.hostedContentSize.width * scale,
+                           height: Self.hostedContentSize.height * scale)
+        return (NSPoint(x: content.minX + (content.width - drawn.width) / 2,
+                        y: content.minY + (content.height - drawn.height) / 2), scale)
+    }
+
     /// Calculate scale factor based on current bounds vs original size
     private var scaleFactor: CGFloat {
         // Hosted: the width is the skin frame's to give, so only the height sets the scale and the
@@ -356,6 +385,7 @@ class EQView: NSView {
         if hostedContext != nil {
             return bounds.height / Self.hostedContentSize.height
         }
+        if let borrowedBody { return borrowedBody.scale }
         let originalSize = Skin.baseEQSize
         let scaleX = bounds.width / originalSize.width
         let scaleY = bounds.height / originalSize.height
@@ -375,6 +405,13 @@ class EQView: NSView {
             let fromTop = bounds.height - point.y
             return NSPoint(x: point.x / scale,
                            y: Self.hostedContentSize.height - fromTop / scale)
+        }
+
+        // The same inversion, offset by where the borrowed ring's client hole put the body.
+        if let borrowedBody {
+            let fromTop = bounds.height - point.y - borrowedBody.origin.y
+            return NSPoint(x: (point.x - borrowedBody.origin.x) / borrowedBody.scale,
+                           y: Self.hostedContentSize.height - fromTop / borrowedBody.scale)
         }
 
         if scale == 1.0 {
@@ -420,6 +457,36 @@ class EQView: NSView {
             drawWinampModernNormalMode(
                 style: style, context: context, isActive: true,
                 drawBounds: NSRect(x: 0, y: 0, width: layoutWidth, height: Skin.baseEQSize.height),
+                drawsChrome: false)
+            context.restoreGState()
+            return
+        }
+
+        // The hosting skin's own window ring, where it lends one: the ring is the chrome, and the
+        // equalizer's body is drawn into the client hole the skin states — the same shape as the
+        // `.wal` holder path above, with the hole in place of the holder.
+        if let artwork = borrowedFrame, let placement = borrowedBody,
+           let style = WindowManager.shared.hostedSurfaceStyle {
+            let content = artwork.scaled(to: bounds.size).contentRect
+            context.setFillColor(style.background.cgColor)
+            context.fill(content)
+            context.saveGState()
+            context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
+            context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
+            context.restoreGState()
+            SkinnedSurfaceChrome(style: style).drawBorrowedCaption(
+                in: context, bounds: bounds, captionHeight: max(0, content.minY),
+                title: "EQUALIZER", isActive: window?.isKeyWindow ?? true,
+                isClosePressed: pressedButton == .close,
+                controlScale: WindowManager.shared.playlistChromeScale)
+
+            context.translateBy(x: placement.origin.x, y: placement.origin.y)
+            context.scaleBy(x: placement.scale, y: placement.scale)
+            context.translateBy(x: 0, y: -Layout.titleBarHeight)
+            drawWinampModernNormalMode(
+                style: style, context: context, isActive: window?.isKeyWindow ?? true,
+                drawBounds: NSRect(x: 0, y: 0, width: Self.hostedContentSize.width,
+                                   height: Skin.baseEQSize.height),
                 drawsChrome: false)
             context.restoreGState()
             return

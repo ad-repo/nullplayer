@@ -1044,6 +1044,25 @@ class WindowManager {
         }
     }
 
+    /// The frame the hosting skin lends one of NullPlayer's own windows at `size`, or nil when it
+    /// lends none and the window should draw the palette-derived chrome instead.
+    ///
+    /// A `switch` on the family for the same reason `hostedSurfaceStyle` is one: a family that has
+    /// not answered the borrowed-frame question must not silently inherit another one's answer.
+    /// `.wal` deliberately answers nil — a `.wal` skin's own windows reach our surfaces through the
+    /// hosted-window materializer, which mounts them *in* the skin's frame rather than painting a
+    /// picture of it (`winamp-modern-skin-guide`, `reference/components.md`).
+    func hostedSurfaceFrameArtwork(for size: CGSize) -> SkinnedSurfaceFrameArtwork? {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern: return nil
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController else { return nil }
+            // Every caller is a view's draw or hit test, which is already the main thread; the
+            // provider is `@MainActor` because it mutates its render cache from a completed build.
+            return MainActor.assumeIsolated { controller.hostedFrames.artwork(for: size) }
+        }
+    }
+
     /// Whether the loaded `.wal` skin registered any settings of its own (Phase 27.3). Safe default
     /// in every other mode, per the mode-guarding rule in CLAUDE.md — the menu asks this before it
     /// offers an entry point, so a skin that registers nothing shows no menu item at all.
@@ -1274,6 +1293,32 @@ class WindowManager {
         guard uiMode.controllerFamily == .wmp,
               let controller = mainWindowController as? WMPMainWindowController else { return false }
         return controller.anyOpenViewProvides(surface)
+    }
+
+    /// Put away NullPlayer's own playlist or equalizer when the `.wmz` now on screen draws that
+    /// surface itself.
+    ///
+    /// Ours is a *fallback* — `routeWMPSkinSurface` gives the skin's own copy the toggle first, and
+    /// only the handful of archives declaring neither ever open one of these windows. But the
+    /// fallback is decided at the moment a window is opened, and the skin can change underneath it:
+    /// loading a `.wmz` with no equaliser of its own opens ours, and switching from there to one
+    /// that has an equaliser (164 of the 180 corpus archives do) left our window standing beside the
+    /// skin's. Reported on `xsn_sports` as two equalizer windows.
+    ///
+    /// Called on every skin presentation, so it is the skin *currently* loaded that decides, and it
+    /// closes rather than destroys: the window keeps its frame for the next skin that needs it.
+    func dismissWMPFallbackSurfacesTheSkinProvides() {
+        guard uiMode.controllerFamily == .wmp else { return }
+        var closed = false
+        for (surface, window) in [(WMPSkinSurface.playlist, playlistWindowController?.window),
+                                  (WMPSkinSurface.equalizer, equalizerWindowController?.window)] {
+            guard wmpSkinProvides(surface), let window, window.isVisible else { continue }
+            window.orderOut(nil)
+            closed = true
+        }
+        guard closed else { return }
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
     }
 
     /// Whether the active `.wmz` skin owns this surface. Answers false in every other mode, so the
