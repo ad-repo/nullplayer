@@ -29,6 +29,17 @@
 
 ### Bug Fixes
 
+- **Media Player skins' playlist, equalizer and video windows are built correctly again.** Those
+  windows are drawn as a frame of separate pieces — corners, edge tiles, and a piece meant to sit
+  in the middle of each side — and the middle pieces were being stacked in the top-left corner
+  instead of centred. In the Alienware and ALX skins that meant the side panels landed on top of
+  the corner artwork and took the window's whole title bar and its inner border with them, leaving
+  black bands and gaps. The pieces now sit where they belong, at every window size. This reaches far
+  beyond one family: a quarter of all Media Player skins centre something this way, so WALL-E's
+  logo, the badges and readouts in TripleX, STALKER and Quantum Redshift, the stripes on Project
+  Gotham Racing 2's frame, and the whole frame of the T3 Skynet skin — which had been drawing at
+  half width with its buttons outside it — are all right now too.
+
 - **Media Player skin animations now run at the speed they were drawn to run at.** Two things were
   slowing them down. Every time a skin redrew itself — which the busier ones do ten times a second —
   the animation was being started over, losing part of each frame's wait, so an animation asking for

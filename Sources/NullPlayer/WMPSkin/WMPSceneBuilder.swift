@@ -409,19 +409,37 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // chrome (close button, search box, resize grip) off the canvas and read as "the
                 // window resizes and the skin doesn't". The literal cases are untouched: `pl8_1`
                 // has `left=208` with no `width`, and its `stretch` still fills the top tile.
+                //
+                // **`center` is the one alignment that is not a margin, and treating it as one was
+                // a whole window frame.** `right`, `bottom` and `stretch` all say "hold this edge's
+                // authored distance to the parent's edge", which is the delta form and is a no-op at
+                // the authored size. `center` says the element *stays centred*, so the coordinate is
+                // computed from the parent and the element's own size and the authored one on that
+                // axis is not an offset into it — which is why a skin that wants a centred piece
+                // authors no `top` for it at all. The Alienware/ALX frame family is built entirely
+                // out of that: every one of their playlist, equaliser, visualisation and video
+                // windows hangs its side columns off `<subview id="plLeftCenter"
+                // verticalAlignment="center" backgroundImage="f_left_center.png"/>` with no `top`,
+                // plus a tile above and below at `top="wmpprop:plLeftCenter.top"`. Read as an
+                // offset, all of it collapsed to `top=0`: the two 175-wide side pieces painted over
+                // `f_top_left.png`/`f_top_right.png` and took the window's whole title bar and the
+                // top of its inner border with them, leaving white stubs where only the centre tile
+                // survived. Reported as "the playlist and eq windows are not properly constructed,
+                // the window border is not correct and there are large gaps", against AlienMorph and
+                // every skin that shares the frame.
                 let horizontal = WMPAxisAlignment(horizontal: literalString(node, "horizontalAlignment"))
                 let vertical = WMPAxisAlignment(vertical: literalString(node, "verticalAlignment"))
                 let deltaWidth = parentFrame.width - parentAuthoredSize.width
                 let deltaHeight = parentFrame.height - parentAuthoredSize.height
                 var x = left, y = top
                 switch horizontal {
-                case .center where !isComputed(node, "left"): x += deltaWidth / 2
+                case .center where !isComputed(node, "left"): x = (parentFrame.width - width) / 2
                 case .trailing where !isComputed(node, "left"): x += deltaWidth
                 case .stretch where !isComputed(node, "width"): width = max(0, width + deltaWidth)
                 default: break
                 }
                 switch vertical {
-                case .center where !isComputed(node, "top"): y += deltaHeight / 2
+                case .center where !isComputed(node, "top"): y = (parentFrame.height - height) / 2
                 case .trailing where !isComputed(node, "top"): y += deltaHeight
                 case .stretch where !isComputed(node, "height"): height = max(0, height + deltaHeight)
                 default: break

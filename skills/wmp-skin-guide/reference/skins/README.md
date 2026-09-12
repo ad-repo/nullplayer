@@ -42,6 +42,7 @@ with no command goes stale silently and nothing fails.
 |---|---|
 | [`cablemusic.md`](cablemusic.md) | Nine unrelated engine defects across two reports, four of which no headless probe could see |
 | [`halo-2.md`](halo-2.md) | Three unrelated app-path defects, none visible to any headless probe. The corpus's purest windowless-dispatcher skin: every window it has, including its player, arrives through `theme.openView`, and every panel opens and closes through one `toggleView` function |
+| [`alienmorph.md`](alienmorph.md) | Four defects across the six skins that share its markup, and the corpus's densest use of a centred piece with no authored coordinate — the whole Alienware/ALX frame is built out of it (W143). Its player is healthy and all five of the windows it opens beside it were not, which is a distinction no `mainView` capture can make |
 
 ## Skins that are counter-evidence, and what each one holds
 
@@ -52,6 +53,7 @@ that looked right. Check them by name when you touch the rule beside them.
 |---|---|
 | `polygon` | `mappingColor` on a `<SUBVIEW>` with real geometry is a self-mask, not group membership. Exempting every node that declares one from layout drops its panel and moves its `returnButton` to the window corner |
 | `LostPlanet` | `onLoadInfo` opens `view.width = view.minWidth`. A script-assigned view size must not replace the size alignment deltas are measured from, or its stretch tiles stop covering 61 px and punch holes through the window frame |
+| `AlienMorph`, `ALXMorph`, `ALXVortex`, `AlienwareTeleport`, `Alienware_Darkstar_WMP11`, `Alienware Invader` | The mirror of `LostPlanet`, and the two must be checked together: `center` is **not** a margin. Their five auxiliary windows each centre two 175-wide side columns with no authored `top`, so offsetting a centred piece instead of computing its coordinate from the parent lands both on the corner bitmaps that carry the title bar. `LostPlanet` holds the delta form for `right`/`bottom`/`stretch`; these hold the computed form for `center` |
 | `Xbox Live Skin`, `Rave-MP` | Their `remoteView`/`eqView` ask for their own canvas in script. Before the view root read its size overrides, all four of `Xbox Live Skin`'s views drew at one shared 423x343 |
 | `Thomas` | Its `0 kbps` / `0%` readouts are the corpus's visible proof that `player.network.bitRate` reaches a handler |
 | `Scooby-Doo_2` | Its `infoView` picks a character in its own `onLoad`, so that image differs between captures for a reason that is not a defect. The mechanism is `randomPic()` in `scooby.js` — `parseInt(Math.random() * 10)` — so it is nondeterministic by construction and **it is the only image a clean sweep moves**. Measured while landing W128: base vs change 5,522 px, and **two captures on the *same* tree 9,031 px**. Re-run the one view twice before reading it as a regression |

@@ -158,6 +158,31 @@ queue, with the object model as the security boundary — see Amendment 2 in
   read the window's current size — is not mistaken for a resize request. A non-positive result is
   not a size: that is the store-thumbnail collapse, and ten more `mediaSwitcherView`s joined the
   documented `WMP0035` windowless class when the override finally reached the view root.
+- **Three of the four alignments are margins and `center` is not, and reading it as one cost a whole
+  window frame (W143).** `right`, `bottom` and `stretch` say *hold this edge's authored distance to
+  the parent's edge* — the delta form, a no-op at the view's own authored size, and what W113's
+  `ownAuthoredSize` and `LostPlanet` exist to protect. `center` says the element **stays centred**,
+  so its coordinate is `(parent − own) / 2` computed fresh, and the authored coordinate on that axis
+  is not an offset into it — which is exactly why a skin that wants a centred piece authors none at
+  all. Read as a margin, every one of them collapsed to the parent's origin. **The Alienware/ALX
+  frame is built out of this and nothing else**: each of their playlist, equaliser, visualisation and
+  video windows hangs its two 175px side columns off `<subview id="plLeftCenter"
+  verticalAlignment="center" backgroundImage="f_left_center.png"/>` with no `top`, plus a tile above
+  and below at `top="wmpprop:plLeftCenter.top"`, so the columns landed on top of
+  `f_top_left.png`/`f_top_right.png` and took the window's whole title bar and the top of its inner
+  border with them. Reported as "the playlist and eq windows are not properly constructed … the
+  window border and details are not correct and there are large gaps". **The blast radius is the
+  measurement, and it is the largest of any single line in this engine: 139 of 535 corpus images
+  moved, and every one sampled is a repair** — WALL-E's logo and transport row, `PowerToys`' cancel
+  button, `xsn_sports`' progress panel finally sitting over its own pointer arrow, `TripleX`'s
+  clipped `X3-080902` readout, the five `US …` video placeholders, `Plus! Pulsar`'s side-drawer tab,
+  `Project Gotham Racing 2`'s frame stripes, and `T3-Skynet_Media_Player`, which had been drawing a
+  half-width frame with its own buttons outside it. **The axes are independent** (AlienMorph's
+  `plRightCenter` is centred vertically and pinned right) and the `isComputed` guard still wins on
+  the centred axis, which is what keeps WoW's `left="JScript:view.width-202"` from being counted
+  twice. `mainView` is byte-identical across the whole family: a non-resizable player authors no
+  centred pieces, so **this class lives entirely in the windows a skin opens beside its player** —
+  which is why four phases of `mainView` work never saw it. `WMPAlignmentTests` pins both halves.
 - **A number a script writes must reach the drawing, and `<TEXT>` is where it did not (W114).**
   `WMPSceneBuilder.literal(_:_:)` reads the attribute and nothing else — geometry has
   `parseDimension` and a slider has `sliderMetrics`, and the rest had nothing. `Cablemusic` lays its

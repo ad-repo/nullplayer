@@ -410,6 +410,19 @@ Sweep before believing a fix, not only before believing a refactor — and read 
 counts in the invariants diff, not just the image count: `33 commands / 15 hits → 28 / 8` named the
 regressed view before any PNG was opened.
 
+**And the mirror case, so the rule is not read as "a big diff is a bad fix": W143 moved 139 of 535
+and was right.** The two are distinguishable without taste, by two things measured in the same
+capture. First, **the invariants**: W87's collateral announced itself as changed `RENDER-DUMP`
+counts, and W143's 514 changed invariant lines are *entirely* `loadms` timings and `SCRIPT inline:`
+tie-ordering — no view gained or lost a node, command, hit target or canvas, so nothing stopped
+resolving and nothing started. A wide image diff with a still invariants diff is a layout rule
+reaching everything that authored it. Second, **sample across skins unrelated to the report and to
+each other, and open them side by side** — ten of the 139, and each one had to be a repair on its own
+evidence (a badge centred under its own pointer arrow, a clipped readout made whole, a frame that
+had been half its window's width). "Every one I opened looks better" is the claim to make, and it is
+only worth anything if the ten were chosen before they were looked at. Neither check is the PNG
+count, and the count is what both fixes have in common.
+
 ### A baseline worktree needs the vendored frameworks linked in
 
 `capture` refuses a dirty tree and tells you to use a worktree, which is right — but `Frameworks/`
