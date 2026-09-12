@@ -120,6 +120,14 @@ and refusing `hoverFontStyle` on a `TEXT` would abort the handler that sets it, 
 the whole of `InitControls`. An unauthored, undrawn property is stored and answers `inert`, so the
 census can rank "properties skins set that nothing renders" instead of losing them.
 
+### The `<EQUALIZERSETTINGS>` element
+
+`enable` / `enabled` is handled at load time as declared host state: it turns NullPlayer's existing
+equalizer on or off. `enableSplineTension`, `splineTension`, and `bypass` have no corresponding DSP
+control here. They retain authored and script-written values so a skin can round-trip its own state,
+but every read and write is recorded as `INERT` and produces neither a host command nor a scene
+mutation (W134). In particular, `bypass` is not silently treated as the inverse of `enable`.
+
 ### The `<EFFECTS>` element
 
 `EFFECTS` and `WMPEFFECTS` are the same surface and both map to `.effects`. Only the second was ever

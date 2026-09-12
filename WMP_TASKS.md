@@ -46,8 +46,8 @@ audit is the first time this engine was read against Microsoft's Skin Programmin
 find what some skin already calls. W128 brought `elementMethodVocabulary` up to the SDK's
 element-method list, which changed what every later measurement can see: an unimplemented SDK method
 was being counted `INERT` — Tier 2b, the tier you do not take runtime work from — and is now
-`UNRECOGNISED` where it belongs. **W129–W136 are that audit's remaining rows, ranked in its order**
-(W129 in § 2c, W134 in § 2b, W136 in § 2a, W130–W133 and W135 in Tier 3), and § *2c-note* is its
+`UNRECOGNISED` where it belongs. **W136 and W130–W133/W135 are that audit's remaining rows, ranked
+in that order** (W136 in § 2a; W130–W133 and W135 in Tier 3), and § *2c-note* is its
 disproved list: read that before opening a row that came from reading the SDK against a scan. The
 closure note, with the census delta and the render-sweep result, is in
 [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md).
@@ -419,10 +419,6 @@ renders", which is Phase 5 rendering work rather than runtime work. Top by skins
 `inert_calls` in `census.tsv`. `vidback.alphaBlendTo` (14) was the second row here and is gone:
 W38 made it live, and `setColumnWidth` joined this tier in its place — recognised so it stops
 aborting its handler, counted `inert()` because nothing draws playlist columns.
-
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W134 | `<EQUALIZERSETTINGS>` is read for `enable` and nothing else | `enableSplineTension` **72 skins**, `splineTension` **67**, `bypass` 7 skins / 45 uses plus `bypass_onchange`, measured 2026-09-11 over the 177 archives `scripts/wmp_markup_census.sh` can read | W117 established that this element's *markup* carries host state. The SDK defines more of it and the corpus authors it; this engine has no spline-tension equivalent, so the honest outcome is an `inert()` read, **not a DSP feature**. It belongs in this tier for exactly that reason. **It also corrects W39**, which tracks `eq.enableSplineTension` at **1 skin** — that is the *script* spelling; the markup spelling is 72 times larger and was untracked. Read W39's reach as the script half only. |
 
 ## Tier 3 — drawing the skin's own controls (Phase 5)
 

@@ -599,6 +599,38 @@ final class WMPPhase14Tests: XCTestCase {
         XCTAssertNil(WMPDeclaredHostState.equalizerEnabled(in: bound))
     }
 
+    // MARK: - W134: unsupported equaliser settings stay visible as inert state
+
+    /// Spline tension and bypass are WMP equaliser settings, but NullPlayer has no matching DSP
+    /// knobs. They must remain readable and writable for a skin's own bookkeeping without being
+    /// reported as live audio effects or triggering a scene rebuild.
+    func testUnsupportedEqualizerSettingsRoundTripAsInertState() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <EQUALIZERSETTINGS id="settings" enableSplineTension="true" splineTension="7" bypass="false"/>
+            <TEXT id="out" left="0" top="0" width="90" height="12" value=""/>
+            <BUTTON id="go" left="0" top="20" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let settingsID = try stableID(skin, "settings")
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: .init(width: 100, height: 100),
+            snapshot: WMPHostSnapshot(), event: .init(name: "click", targetID: "go", handlers: [
+                "settings.bypass = true; out.value = settings.enableSplineTension + '|' + settings.splineTension + '|' + settings.bypass;"
+            ]))
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" })
+        XCTAssertEqual(output.overrides.properties[.init(stableID: try stableID(skin, "out"), property: "value")],
+                       .string("true|7|true"), "the retained settings round-trip through the script")
+        let settingsCalls = output.calls.filter { $0.path.hasPrefix("settings.") }
+        XCTAssertFalse(settingsCalls.isEmpty)
+        XCTAssertTrue(settingsCalls.allSatisfy { $0.resolution == .inert },
+                      "unsupported equaliser settings remain visible to the INERT tally")
+        XCTAssertFalse(output.overrides.properties.keys.contains { $0.stableID == settingsID },
+                       "inert settings do not claim to have changed a rendered scene")
+    }
+
     // MARK: - W118: a semantic slider tag is itself a binding
 
     /// `<SLIDER value="wmpprop:player.settings.balance">` says where the control reads;

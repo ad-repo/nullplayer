@@ -9,6 +9,12 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W134 — inert equalizer-settings members
+
+| ID | Item | Landed |
+|---|---|---|
+| W134 | `<EQUALIZERSETTINGS>` is read for `enable` and nothing else | Closed 2026-09-11. `enableSplineTension`, `splineTension`, and `bypass` retain authored/script-written values, but each access is reported as `INERT`; NullPlayer has no spline-tension DSP or separate bypass state. They post no audio command and no scene mutation. In particular, `bypass` is not silently mapped to the inverse of `enable`. `testUnsupportedEqualizerSettingsRoundTripAsInertState` pins retained values, call-trace classification, and the no-mutation boundary. The 72-skin `enableSplineTension` / 67-skin `splineTension` markup reach is distinct from W39's one-skin script-host spelling. |
+
 ## W137 — built-in album art
 
 | ID | Item | Landed |

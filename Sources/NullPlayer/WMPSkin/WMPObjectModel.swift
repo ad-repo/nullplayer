@@ -523,6 +523,15 @@ final class WMPObjectModel {
             return .value(.string(snapshot.effects.presetTitle))
         default: break
         }
+        // WMP exposes these settings on `<EQUALIZERSETTINGS>`, but NullPlayer has no
+        // spline-tension DSP or separate bypass state.  Keep the value a skin authored (or later
+        // writes) so its own bookkeeping round-trips, while keeping it in the INERT tally rather
+        // than pretending that it changed the audio engine (W134).
+        if element.kind == .equalizerSettings,
+           Self.inertEqualizerSettingsProperties.contains(name) {
+            inert()
+            return .value(element.properties[name] ?? Self.defaultInertEqualizerSettingsValue(for: name))
+        }
         if let value = element.properties[name] { return .value(value) }
         // WMP's `alphaBlend` is 0-255 and an element that never authored it is fully opaque. The
         // unset-numeric default of 0 would tell a skin reading its own element that it is invisible,
@@ -746,6 +755,12 @@ final class WMPObjectModel {
             hostCommand("setViewTimerInterval", .number(max(0, value.number ?? 0)))
             return .value(value)
         }
+        if element.kind == .equalizerSettings,
+           Self.inertEqualizerSettingsProperties.contains(name) {
+            element.properties[name] = value
+            inert()
+            return .value(value)
+        }
         let rendered = videoProperty || element.authored.contains(name) || Self.standardElementProperties.contains(name)
             || element.properties[name] != nil
         // Same contract as the read side: the property surface is open, and one nothing draws is
@@ -759,6 +774,18 @@ final class WMPObjectModel {
             repaintHints.append(element.id)
         }
         return .value(value)
+    }
+
+    private static let inertEqualizerSettingsProperties: Set<String> = [
+        "enablesplinetension", "splinetension", "bypass"
+    ]
+
+    private static func defaultInertEqualizerSettingsValue(for name: String) -> WMPJSONValue {
+        switch name {
+        case "enablesplinetension", "bypass": return .bool(false)
+        case "splinetension": return .number(0)
+        default: return .string("")
+        }
     }
 
     // MARK: - Calls
