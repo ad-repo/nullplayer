@@ -294,7 +294,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
         }
 
         func walk(_ node: WMPNode, parentFrame: WMPRect, parentAuthoredSize: WMPSize,
-                  inheritedClip: WMPRect?, parentAlpha: CGFloat = 1, isRoot: Bool = false) throws {
+                  inheritedClip: WMPRect?, parentAlpha: CGFloat = 1, isRoot: Bool = false,
+                  parentNode: WMPNode? = nil, parentNodeFrame: WMPRect? = nil) throws {
             // A script override outranks the markup. Corona's `SetPane` switches its video and
             // visualization panes purely by writing `vid.visible` / `vis.visible`, so a builder
             // that reads only the authored attribute draws whichever the author happened to leave
@@ -316,7 +317,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if isNonLayout(node) {
                 for child in node.children.sorted(by: nodeOrder) {
                     try walk(child, parentFrame: parentFrame, parentAuthoredSize: parentAuthoredSize,
-                             inheritedClip: inheritedClip, parentAlpha: parentAlpha)
+                             inheritedClip: inheritedClip, parentAlpha: parentAlpha,
+                             parentNode: parentNode, parentNodeFrame: parentNodeFrame)
                 }
                 return
             }
@@ -394,7 +396,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     let partialAuthored = WMPSize(width: width ?? 0, height: height ?? 0)
                     for child in node.children.sorted(by: nodeOrder) {
                         try walk(child, parentFrame: partial, parentAuthoredSize: partialAuthored,
-                                 inheritedClip: inheritedClip, parentAlpha: parentAlpha)
+                                 inheritedClip: inheritedClip, parentAlpha: parentAlpha,
+                                 parentNode: node, parentNodeFrame: partial)
                     }
                     return
                 }
@@ -478,6 +481,23 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 ? resource(node, names: ["positionImage"]).map { try imageStore.positionMap(for: $0.1) }
                 : nil
 
+            // **The container's artwork is the visualizer's shape.** Only `<EFFECTS>` reads it:
+            // a `SUBVIEW`'s `transparencyColor` carves the region its windowless child is confined
+            // to, and every other hosted surface in this engine is a real rectangular control.
+            var regionMask: WMPWidgetRegionMask?
+            if node.kind == .effects, let parentNode, let parentNodeFrame, !parentNodeFrame.isEmpty,
+               let (_, maskPath) = try resource(parentNode, names: ["backgroundImage", "background"]) {
+                let keys = colors(parentNode, names: ["transparencyColor", "clippingColor"])
+                // Only a container that shapes by region, never one that occludes by paint — the
+                // two read the key oppositely, and `shapesChildrenByRegion` carries the corpus
+                // measurement that separates them. Cerulean is the case this guard protects.
+                if !keys.isEmpty,
+                   try imageStore.shapesChildrenByRegion(for: maskPath, keyedOut: keys) {
+                    regionMask = WMPWidgetRegionMask(resourcePath: maskPath, keyedOut: keys,
+                                                     frame: parentNodeFrame)
+                }
+            }
+
             if let kind = widgetKind(node.kind), visible != nil {
                 let label = literalString(node, "accessibleName")
                     ?? literalString(node, "title") ?? literalString(node, "name")
@@ -496,6 +516,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         stretchToFit: literalString(node, "stretchToFit")?.lowercased() == "true",
                         maintainAspectRatio: literalString(node, "maintainAspectRatio")?.lowercased() != "false",
                         alpha: Double(alpha)) : nil,
+                    // The same inherited `alphaBlend` `emit` filters paint on. A hosted surface
+                    // obeys its container's fade or it draws over artwork the fade removed.
+                    alpha: alpha,
+                    regionMask: regionMask,
                     commandSplitIndex: commands.count,
                     isWindowedEffects: kind == .effects
                         && literalString(node, "windowed")?.lowercased() == "true"))
@@ -515,7 +539,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
             let behindOwnArtwork = orderedChildren.prefix { Int(literal($0, "zIndex") ?? 0) < 0 }
             for child in behindOwnArtwork {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
-                         inheritedClip: childClip, parentAlpha: alpha)
+                         inheritedClip: childClip, parentAlpha: alpha,
+                         parentNode: node, parentNodeFrame: frame)
             }
 
             // `clippingImage` shapes an element by a bitmap the way `clippingColor` shapes it by a
@@ -762,7 +787,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
             for child in orderedChildren.dropFirst(behindOwnArtwork.count) {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
-                         inheritedClip: childClip, parentAlpha: alpha)
+                         inheritedClip: childClip, parentAlpha: alpha,
+                         parentNode: node, parentNodeFrame: frame)
             }
         }
 

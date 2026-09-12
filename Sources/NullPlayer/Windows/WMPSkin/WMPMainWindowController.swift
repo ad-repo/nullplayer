@@ -493,6 +493,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // Native playlist rows are the one WMP-owned surface the scene cannot paint.  Feed them
         // this skin's palette before they are installed, never a palette from another UI mode.
         view.surfaceStyle = WMPSurfacePalette(skin: skin, viewID: scene.viewID).surfaceStyle
+        // The container shape a windowless `<EFFECTS>` is confined to. Decoded through the same
+        // store the scene draws from, so it is cached alongside the artwork it comes from.
+        view.regionMaskProvider = { [weak store] mask in
+            try? store?.regionMask(for: mask.resourcePath, keyedOut: mask.keyedOut)
+        }
         view.videoController = { WMPAudioEngineHost.localVideoController }
         view.onAction = { [weak self] action, value in
             guard let self else { return }
@@ -1684,6 +1689,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             case "setMute": if (command.value?.number ?? 0) != (host.snapshot.muted ? 1 : 0) { host.perform(.toggleMute, value: nil) }
             case "setShuffle": if (command.value?.number ?? 0) != (host.snapshot.shuffle ? 1 : 0) { host.perform(.toggleShuffle, value: nil) }
             case "setRepeat": if (command.value?.number ?? 0) != (host.snapshot.repeatMode ? 1 : 0) { host.perform(.toggleRepeat, value: nil) }
+            case "setWOWEnabled": host.perform(.setWOWEnabled, value: command.value.map { .number($0.number ?? 0) })
+            case "setTruBassLevel": host.perform(.setTruBassLevel, value: command.value.map { .number($0.number ?? 0) })
+            case "setSpeakerSize": host.perform(.setSpeakerSize, value: command.value.map { .number($0.number ?? 0) })
+            case "setWOWLevel": host.perform(.setWOWLevel, value: command.value.map { .number($0.number ?? 0) })
             case "setEQEnabled": host.perform(.setEQEnabled, value: command.value.map { .number($0.number ?? 0) })
             case let action where action.hasPrefix("setEQBand:"):
                 if let index = Int(action.dropFirst("setEQBand:".count)) {

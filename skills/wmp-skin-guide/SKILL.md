@@ -40,6 +40,12 @@ unconditionally unless `EDITION_CUSTOM` is defined, which nothing defines. That 
 not a self-qualified one. The census likewise found their corpus numbers wrong in both directions —
 see `reference/harness.md` § "What the harness measured".
 
+## WOW and TruBass audio enhancements
+
+Read [reference/audio-enhancements.md](reference/audio-enhancements.md) for the WMP-only DSP design,
+source research, control round trips, graph ownership, mode gating, and verification. The skin’s
+`eq.enhancedAudio`, `wowLevel`, `truBassLevel`, and `speakerSize` now drive audio processing.
+
 ## Isolation boundary
 
 WMP is an independent skin engine. Keep engine/model work in `WMPSkin/`, AppKit work in
@@ -957,6 +963,35 @@ of these was invisible to the harness and visible in the first minute of live QA
 
 ## Drawing the skin's own controls
 
+- **A hosted AppKit surface obeys the container's `alphaBlend`; it is not exempt because it is not
+  a paint command.** `alphaBlend` inherits, and a `.wmz` closes a pane it has not opened by fading
+  the container to zero — so `WMPWidget` carries the walk's inherited alpha, `WMPMainView` hosts
+  **no view at all** at `alpha == 0` (rather than `alphaValue = 0`, so a shut pane runs no GL engine
+  and no 30fps readback), and a partial fade is applied every sync. `Plus! Bionic Dot` is the worked
+  case twice over: its `<subview id="visMask" alphaBlend="0">` correctly drew no artwork while the
+  `<EFFECTS>` inside it put a 169x160 visualizer across the face, and its `checkPlayerState()` also
+  runs `visMask.alphaBlendTo(0,500)` whenever `player.controls.isAvailable("Stop")` is false — so a
+  stopped player is *supposed* to show no visualizer and a disabled vis button. Six archives author
+  the idiom, five of them Plus!.
+- **A container shapes its windowless `<EFFECTS>` in one of two ways, and they read the colour key
+  oppositely. Measure which before touching either.**
+  - *Artwork with a keyed hole* — every pixel is the key or opaque paint. The key is the **opening**;
+    the paint occludes the rest, and the engine already renders that by hosting the container's own
+    paint commands above the surface (`WMPWidget.commandSplitIndex`). **Cerulean is this** —
+    `face.bmp`, 56% key, 44% paint, 0% transparent.
+  - *A shape mask* — the file carries a **third state**. The key marks the **outside**, genuinely
+    transparent pixels mark the opening, and the little paint there is is trim. `WMPWidgetRegionMask`
+    clips the surface to it, counter-flipped exactly as `WMPRenderer.clip(to:mask:)` is.
+
+  **The Plus! archives are a sub-family with their own idioms, and both halves of this rule came out
+  of them** — `reference/skins/plus-family.md` is the dossier, including what has been ruled out.
+
+  The discriminator is *has transparent pixels alongside keyed ones* — not a threshold, not a skin
+  name. Measured over all 30 `<EFFECTS>` in the corpus whose container declares a background image
+  and a transparency colour, **28 are two-state and 2 are three-state**: `Plus! Bionic Dot`'s
+  `main_vis_back.png` (36/58/5) and `Plus! Professional`'s `vis_mask_s.png` (23/59/18). Getting the
+  sign wrong on Cerulean does not distort its visualizer, it **erases** it: the mask would keep the
+  surface only where the face already covers it and clip it away inside the hole.
 - **The skin draws its controls; an AppKit overlay is only for what the scene genuinely cannot
   paint.** What is left hosted is `PLAYLIST`, `DROPDOWNPLAYLIST`, `EFFECTS`, `EDITBOX`, `LISTBOX`
   and `POPUP`. `VIDEO` is not: its placeholder filled every `<VIDEO>` frame with opaque black over

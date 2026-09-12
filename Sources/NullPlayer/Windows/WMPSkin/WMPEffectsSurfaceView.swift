@@ -45,6 +45,11 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private var engineFrameTimer: Timer?
     private var engineImage: CGImage?
     private static let engineFrameInterval: TimeInterval = 1.0 / 30
+    /// The container shape this surface is confined to, and where it sits in these bounds. See
+    /// `WMPWidgetRegionMask` — a skin whose lens is a *mask* rather than overpainted artwork has
+    /// nothing above this view to hide the corners of its rect.
+    private var regionMask: CGImage?
+    private var regionMaskRect: CGRect = .zero
 
     override var isFlipped: Bool { true }
 
@@ -72,6 +77,15 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// The engine hosts a click-through picture, so the whole surface is click-through: a press over
     /// the rect reaches `WMPMainView`, which raises the skin's own `onClick` on the `<EFFECTS>` node.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// The mask is resolved by the controller, which owns the image store; passing nil restores the
+    /// plain rect. Both are cheap and idempotent — this is called on every layout pass.
+    func applyRegionMask(_ mask: CGImage?, rect: CGRect) {
+        guard regionMask !== mask || regionMaskRect != rect else { return }
+        regionMask = mask
+        regionMaskRect = rect
+        needsDisplay = true
+    }
 
     override func removeFromSuperview() {
         teardown()
@@ -249,13 +263,34 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         // view's coordinates — and a layer-backed view does not clip it (`masksToBounds` is
         // false). Filling it painted this surface's wash over the entire skin.
         //
-        // **Every renderer fills the authored rect and nothing shapes it here.** A skin that wants
-        // a circular lens, a tilted oval, or a square pane draws its own artwork *over* this
-        // surface — the scene's paint commands from the `<EFFECTS>` node onwards are hosted above
-        // it (`WMPWidget.commandSplitIndex`), which is what a negative `zIndex` means in WMP. The
-        // inscribed-circle clip that used to stand in for that occlusion is gone: it approximated
-        // Cerulean's real 73px hole and was wrong for the 83 corpus rects that are wider than tall.
-        NSGraphicsContext.current?.cgContext.clip(to: bounds)
+        // **Every renderer fills the authored rect, and what shapes it is the skin's own art.**
+        // Usually that art is drawn *over* this surface: the scene's paint commands from the
+        // `<EFFECTS>` node onwards are hosted above it (`WMPWidget.commandSplitIndex`), which is
+        // what a negative `zIndex` means in WMP, and Cerulean's `face.bmp` hides the corners of the
+        // rect that way. The inscribed-circle clip that used to stand in for that occlusion is
+        // gone: it approximated Cerulean's real 73px hole and was wrong for the 83 corpus rects
+        // that are wider than tall.
+        //
+        // **A mask is the other half of it, and paints nothing.** `Plus! Bionic Dot`'s
+        // `main_vis_back.png` paints 1,369 of its 27,040 pixels and carries the lens shape in its
+        // colour key, so there is no artwork above this view to hide anything — without the clip
+        // below, the spectrum is a 169x160 slab across the face and over the transport controls.
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.clip(to: bounds)
+        if let regionMask, !regionMaskRect.isEmpty {
+            // The same counter-flip `WMPRenderer.clip(to:mask:)` performs, and for the same reason:
+            // this view is flipped, the mask's row zero is the authored *top*, and `clip(to:mask:)`
+            // maps the mask through the CTM. Skipping it mirrors the shape — which for this lens
+            // means clipping away the dome and keeping the arc that clears the play controls.
+            let centerY = regionMaskRect.midY
+            context.translateBy(x: 0, y: centerY)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: 0, y: -centerY)
+            context.clip(to: regionMaskRect, mask: regionMask)
+            context.translateBy(x: 0, y: centerY)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: 0, y: -centerY)
+        }
         switch effect.style {
         case .bars: drawBars()
         case .spikes: drawSpikes()

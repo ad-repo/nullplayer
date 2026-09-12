@@ -726,3 +726,78 @@ timings and `SCRIPT inline:` tie-ordering — no `RENDER-DUMP`, `COMPAT`, `FINDI
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | W144 | An `xsn_sports` settings drawer that was in the wrong place, would not stay open, showed through the video when shut, and opened itself on every launch | Four separate rules. Centring: amends W143. Expression re-application: every view with an `onTimer`. Windowed `<EFFECTS>`: **18 nodes / 17 skins**. `onClose`: **373 handlers / 133 of 180 skins**, all previously dead | **Closed 2026-09-12.** (1) *"two drawers… double size on the border"* — the `isComputed` guard W143 carried onto the `center` case let `moveTo(0, …)`'s scripted `left` beat the centring, pinning a 141-wide drawer to the window edge while its own cover artwork stayed centred. `moveTo` takes both axes and the horizontal one is how an author says "unchanged" for a centred piece. Nothing outranks centring on the centred axis now; the guard protected only 3 corpus nodes, all in `Ice`, and all three are repairs. (2) *"it still does not open"* — an authored `JScript:` geometry expression was re-committed every transaction ahead of the mutations, so the 500 ms `onTimer` put the drawer back at `view.height-123` within half a second of every click. Expressions re-apply only when their own value changes, which keeps resize working. (3) *"the contents still bleed through when it is close"* — the drawer retracts 26px (`visView`) / 108px (`videoView`) **inside** the effects rect and relies on the windowed surface to hide it; the skin's overlay raster was being drawn over it. `WMPScene.windowedEffectsRects` is now punched out of the overlay. Ruled out and recorded: it is not `visible` (the hosted widgets do hide — what remained is `vis_drawer_1.png`, which *pictures* a button and a slider row), not `onEndMove`, not z-order (`cerulean`), not "drop the overlay" (the surface is transparent while idle, and the drawer must still draw below the rect), and not "make the surface opaque" (a stopped player draws nothing, and the hole belongs to whatever the skin painted before the effects node). (4) *"when the skin launches it is open"* — `onClose` had no dispatch site anywhere, so `saveVisPrefs()` never ran, `theme.loadPreference` answered the `--` absent sentinel every launch, and `loadVisPrefs` took its first-run branch. Dispatched before `discardView` at both window-close sites, and `flushCloseHandlersOnTermination` covers quitting, which an async close never survives. Dossier: `reference/skins/xsn-sports.md`. |
+
+## Phase 21 — a visualization that is hosted when it should be hidden, and square when it should be shaped
+
+Closed 2026-09-12. One live report against `Plus! Bionic Dot`: *"bionic dot spectrum is displaying as
+rectangle on top of the player and look bad it should be layered in the opening"*, then, on a second
+capture, *"the spectrum is just slapped on top of the UI covering controls"*. The reporter's own
+framing carried two of the three findings: *"cereleon is your groundtruth and must not break"*, and
+*"all plus skins seem to have unique issues I suspect they are a different sub family of skins"* —
+both correct, and the second is what turned a skin fix into a rule.
+
+**It is two defects in one rectangle, and the first hides the second.** The `<EFFECTS>` at
+`120,45 169x160` is wrong in the stopped state *and* in the playing state, for unrelated reasons, so
+either one alone reproduces the screenshot and neither alone explains it.
+
+### W146 — a hosted surface ignored its container's inherited `alphaBlend`
+
+`alphaBlend` inherits, and the scene's paint commands have honoured it since they were filtered at
+`WMPSceneBuilder.emit`. A hosted `NSView` is not a paint command, and `WMPWidget` carried no alpha at
+all — so `Plus! Bionic Dot`'s `<subview id="visMask" … alphaBlend="0">` correctly drew none of its
+own artwork while the `<EFFECTS>` inside it drew a full-opacity visualizer over the face.
+
+The skin closes that pane in two separate places and both were being overridden: `toggleVis()` fades
+it with `visMask.alphaBlendTo(255,500)` / `(0,500)`, and `checkPlayerState()` — reached from the view's
+`onLoad` — runs `visMask.alphaBlendTo(0,500)` and `visButton.enabled = false` whenever
+`player.controls.isAvailable("Stop")` is false. **A stopped player is supposed to show no visualizer
+and a greyed-out vis button.** Patching the markup to `alphaBlend="255"` and then patching the script
+both failed to open the pane in the harness, which is the engine's script runtime getting this right.
+
+Reach: 7 widget elements in 6 archives sit inside a fully transparent subtree — `Plus! Bionic Dot`
+(twice, it ships as two archives), `Plus! Professional`, `Plus! HueShifter`, `Plus! Plasma Ball`,
+`Plus! Pulsar` and `Halloween`. Five of six are Plus!. **Cerulean is not among them.**
+
+Fixed by carrying the walk's inherited alpha on `WMPWidget` and hosting **no view at all** at
+`alpha == 0` — rather than `alphaValue = 0`, so a shut pane runs no GL engine and no 30fps readback —
+with partial fades applied on every sync, because `Plus! Plasma Ball`'s `alphaBlend="110"` layer is a
+real state.
+
+### W147 — a windowless `<EFFECTS>` was clipped to its container's rectangle, not its shape
+
+`main_vis_back.png` is 169x160 and **paints 1,369 pixels — 5% of the file**. It is not artwork that
+covers the visualizer; it is a shape mask, and it carries the lens in two further values the author
+chose deliberately: 9,865 pixels of `#ff00ff` marking the *outside*, and 15,806 fully transparent
+pixels marking the *inside*, with an arc swept out of the lower left to clear the transport ring.
+Dumped:
+
+```
+##################OOOOOOO##################
+#########O.......................O#########
+O.........................................#
+######O.OO#############O.................O#   ← the arc that clears the play controls
+###############################O..O########
+```
+
+**The trap is that a keyed container means opposite things, and the corpus contains both.** Reading
+every keyed container as a shape would have erased Cerulean's visualizer outright — its `face.bmp` is
+56% key, 44% opaque paint, **0% transparent**, and there the key is the *hole* the visualizer shows
+through while the paint occludes the rest through `WMPWidget.commandSplitIndex`. The discriminator is
+a property of the file, not a threshold and not a skin name: *does it carry transparent pixels
+alongside keyed ones*. Measured over all 30 `<EFFECTS>` whose container declares both a background
+image and a transparency colour, in 27 archives: **28 two-state, 2 three-state** — `Plus! Bionic Dot`
+(36/58/5) and `Plus! Professional`'s `vis_mask_s.png` (23/59/18, a slanted lens the hand survey had
+missed and the measured rule caught).
+
+Fixed with `WMPWidgetRegionMask` + `WMPImageStore.regionMask`, counter-flipped exactly as
+`WMPRenderer.clip(to:mask:)` is. Corpus sweep after: **3 of 117 effects widgets are masked**, and
+nothing else moved.
+
+### What the instruments cost
+
+`WMP_RENDER_APPKIT` reported `outside=0` on the unfixed skin and again on a capture whose mask was
+never applied — the probe builds `WMPMainView` by hand and had not been given the mask provider the
+controller installs, so it hosted the surface unclipped and the skin's own artwork drawn over it read
+as the mask working. Both new `WIDGET` fields (`alpha=`, `mask=`) and the probe's provider exist
+because of that round; see `skills/wmp-skin-guide/reference/harness.md`.
+

@@ -127,6 +127,7 @@ final class WMPImageStore: @unchecked Sendable {
     private var positionBytes = 0
     private var clipEntries: [String: ClipEntry] = [:]
     private var clipBytes = 0
+    private var regionShapeEntries: [String: Bool] = [:]
     /// `.some(nil)` is "checked, not animated" — a still must not be re-probed on every frame.
     private var animationEntries: [String: WMPImageAnimation??] = [:]
     /// Artwork belongs to the WMP session, not to the archive. The transparent defaults preserve
@@ -206,6 +207,7 @@ final class WMPImageStore: @unchecked Sendable {
         positionEntries.removeAll(keepingCapacity: false)
         positionBytes = 0
         clipEntries.removeAll(keepingCapacity: false)
+        regionShapeEntries.removeAll(keepingCapacity: false)
         clipBytes = 0
         animationEntries.removeAll(keepingCapacity: false)
         lock.unlock()
@@ -395,9 +397,83 @@ final class WMPImageStore: @unchecked Sendable {
     /// them also declares a `clippingColor`. A `CGImage` mask wants "keep" as opaque, so the two
     /// tests are combined into one alpha channel here rather than at every draw.
     func clippingMask(for path: String, keyedOut: [WMPColor]) throws -> CGImage {
+        try mask(for: path, keyedOut: keyedOut, honoringSourceAlpha: true, kind: "clip")
+    }
+
+    /// A container's artwork read as a **region** rather than as a clipping image: in the region
+    /// wherever the pixel is not the keyed-out colour, *whatever its alpha*.
+    ///
+    /// That last clause is the whole difference from `clippingMask`, and it is what a `SUBVIEW`'s
+    /// `transparencyColor` means. `Plus! Bionic Dot`'s `main_vis_back.png` is 169x160 and paints
+    /// 1,369 pixels — a highlight ring, 5% of the file. The other 95% carries the shape in two
+    /// distinct values the author chose deliberately: 9,865 pixels of `#ff00ff` marking the
+    /// *outside* of the lens, and 15,806 fully transparent pixels marking its *inside*. Reading
+    /// alpha as "cut away" there — which `clippingMask` correctly does for a `clippingImage` —
+    /// would mask away the lens and keep the surround, exactly inverting the shape.
+    ///
+    /// 30 `<EFFECTS>` across 27 archives hang off a parent that carries a `backgroundImage` and a
+    /// `transparencyColor`, and the Plus! family names the asset outright: `Egg_Body_Mask.gif`,
+    /// `body_Mask.gif`, `green_body_MASK.gif`, `perfect_tray_shape_mask.gif`.
+    /// Whether a container's background image shapes its children by **region** — the caller's
+    /// licence to use `regionMask` at all.
+    ///
+    /// **Two states or three is the whole question, and the corpus answers it cleanly.** A keyed
+    /// container comes in two shapes, and they mean opposite things:
+    ///
+    /// - *Artwork with a keyed hole.* Every pixel is either the key or opaque paint. The key marks
+    ///   the **opening** the child shows through, and the paint occludes the rest — which this
+    ///   engine already renders correctly, by hosting the container's own paint commands above the
+    ///   surface (`WMPWidget.commandSplitIndex`). Cerulean's `face.bmp` is this: 56% key, 44%
+    ///   opaque, **0% transparent**. Masking it by region would keep the visualizer only where the
+    ///   face already covers it and clip it away inside the hole — erasing the visualizer outright.
+    /// - *A shape mask.* The file carries a third state, and the author is using it to say
+    ///   something the first shape cannot: the key marks the **outside**, genuinely transparent
+    ///   pixels mark the opening, and what little paint there is is trim.
+    ///
+    /// Measured over every `<EFFECTS>` in the installed corpus whose container declares both a
+    /// background image and a transparency colour — 30 of them, in 27 archives — **29 are
+    /// two-state and one is three-state**: `Plus! Bionic Dot`'s `main_vis_back.png`, at 36% key,
+    /// 58% transparent and 5% paint (it ships in two archives, so 2 of 30 rows). Nothing else in
+    /// the corpus, Plus! or otherwise, mixes the two. So the predicate is *has transparent pixels
+    /// alongside keyed ones*, not a threshold and not a skin name.
+    func shapesChildrenByRegion(for path: String, keyedOut: [WMPColor]) throws -> Bool {
+        guard !keyedOut.isEmpty else { return false }
+        let canonical = provider.canonicalPath(for: path) ?? path
+        lock.lock()
+        if let cached = regionShapeEntries[canonical] { lock.unlock(); return cached }
+        lock.unlock()
+        let source = try image(for: canonical).image
+        let answer = Self.hasTransparentPixels(source)
+        lock.lock()
+        regionShapeEntries[canonical] = answer
+        lock.unlock()
+        return answer
+    }
+
+    private static func hasTransparentPixels(_ image: CGImage) -> Bool {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0 else { return false }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        for index in stride(from: 3, to: pixels.count, by: 4) where pixels[index] == 0 { return true }
+        return false
+    }
+
+    func regionMask(for path: String, keyedOut: [WMPColor]) throws -> CGImage {
+        try mask(for: path, keyedOut: keyedOut, honoringSourceAlpha: false, kind: "region")
+    }
+
+    private func mask(for path: String, keyedOut: [WMPColor], honoringSourceAlpha: Bool,
+                      kind: String) throws -> CGImage {
         let canonical = provider.canonicalPath(for: path) ?? path
         let keys = keyedOut.map(\.description).joined(separator: ",")
-        let key = "\(canonical)|clip=\(keys)"
+        let key = "\(canonical)|\(kind)=\(keys)"
         lock.lock()
         if var entry = clipEntries[key] {
             clock &+= 1
@@ -409,7 +485,8 @@ final class WMPImageStore: @unchecked Sendable {
         lock.unlock()
 
         let source = try image(for: canonical).image
-        let mask = try Self.makeClippingMask(from: source, keyedOut: keyedOut)
+        let mask = try Self.makeClippingMask(from: source, keyedOut: keyedOut,
+                                             honoringSourceAlpha: honoringSourceAlpha)
         let bytes = mask.width * mask.height
         lock.lock()
         defer { lock.unlock() }
@@ -426,7 +503,8 @@ final class WMPImageStore: @unchecked Sendable {
         return mask
     }
 
-    private static func makeClippingMask(from image: CGImage, keyedOut: [WMPColor]) throws -> CGImage {
+    private static func makeClippingMask(from image: CGImage, keyedOut: [WMPColor],
+                                        honoringSourceAlpha: Bool = true) throws -> CGImage {
         let width = image.width, height = image.height
         guard width > 0, height > 0 else {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Clipping image has no pixels."))
@@ -449,7 +527,12 @@ final class WMPImageStore: @unchecked Sendable {
             for x in 0..<width {
                 let offset = sourceRow + x * 4
                 let a = source[offset + 3]
-                guard a > 0 else { continue }
+                // A region reads a transparent pixel as *inside* the shape — see `regionMask`.
+                // A clipping image reads it as cut away, which is the `honoringSourceAlpha` case.
+                guard a > 0 else {
+                    if !honoringSourceAlpha { alpha[y * width + x] = 255 }
+                    continue
+                }
                 let scale = Double(a) / 255
                 let red = UInt8(max(0, min(255, Double(source[offset]) / scale)))
                 let green = UInt8(max(0, min(255, Double(source[offset + 1]) / scale)))

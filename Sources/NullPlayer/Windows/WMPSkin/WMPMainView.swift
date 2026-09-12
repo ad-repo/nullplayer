@@ -76,6 +76,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
                 .forEach { $0.apply(style: surfaceStyle) }
         }
     }
+    /// Resolves a widget's container shape to a mask image. The image store lives on the
+    /// controller, so the view asks rather than decodes; nil is a skin that authored no shape.
+    var regionMaskProvider: ((WMPWidgetRegionMask) -> CGImage?)?
     var videoSurface: WMPVideoSurface?
     var videoController: (() -> VideoPlayerWindowController?)?
 
@@ -266,9 +269,19 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         let xScale = bounds.width / max(1, scene.canvasSize.width)
         let yScale = bounds.height / max(1, scene.canvasSize.height)
         for widget in scene.widgets {
-            widgetViews[widget.stableID]?.frame = NSRect(x: widget.frame.x * xScale,
-                y: widget.frame.y * yScale, width: widget.frame.width * xScale,
-                height: widget.frame.height * yScale)
+            guard let view = widgetViews[widget.stableID] else { continue }
+            view.frame = NSRect(x: widget.frame.x * xScale, y: widget.frame.y * yScale,
+                                width: widget.frame.width * xScale, height: widget.frame.height * yScale)
+            guard let effects = view as? WMPEffectsSurfaceView else { continue }
+            // The mask image covers its container's frame, which is not always the widget's own —
+            // so the rect is the offset between the two, in this surface's scaled bounds.
+            guard let mask = widget.regionMask, let image = regionMaskProvider?(mask) else {
+                effects.applyRegionMask(nil, rect: .zero); continue
+            }
+            effects.applyRegionMask(image, rect: NSRect(
+                x: (mask.frame.x - widget.frame.x) * xScale,
+                y: (mask.frame.y - widget.frame.y) * yScale,
+                width: mask.frame.width * xScale, height: mask.frame.height * yScale))
         }
         videoSurface?.update(in: self, scene: scene, video: currentSnapshot.video,
                              controller: videoController?())
@@ -537,8 +550,19 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // **`.effects` reaches the whole corpus now that `<EFFECTS>` is a kind (W101).** It used
         // to reach five archives: `WMPElementKind` mapped `wmpeffects` and not `effects`, so the
         // 166 of 177 that spell the tag the other way fell to `.unknown` and were never widgets.
+        //
+        // **A widget its container has faded out is not hosted at all.** `alphaBlend` inherits, and
+        // the scene's paint commands have honoured that since they were filtered at `emit` — but a
+        // hosted `NSView` is not a paint command, so `Plus! Bionic Dot`'s `<subview id="visMask"
+        // alphaBlend="0">` correctly drew no artwork while the `<EFFECTS>` inside it put a 169x160
+        // visualizer over the face. Dropping the view rather than setting `alphaValue = 0` is what
+        // stops an invisible `WMPEffectsSurfaceView` from running a GL engine and a 30fps readback
+        // for a pane the user has not opened; `toggleVis()` fades the mask back up, the scene is
+        // rebuilt, and the surface is created again. Cerulean's `<effects>` has no `alphaBlend`
+        // above it, reads 1, and is hosted exactly as before.
         let native = widgets.filter { [WMPWidgetKind.playlist, .dropdownPlaylist, .popup,
-                                       .editBox, .listBox, .effects].contains($0.kind) }
+                                       .editBox, .listBox, .effects].contains($0.kind)
+            && $0.alpha > 0 }
         let wanted = Set(native.map(\.stableID))
         let widgetIDs = Set(widgets.map(\.stableID))
         widgetValues = widgetValues.filter { widgetIDs.contains($0.key) }
@@ -593,6 +617,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             }
             widgetViews[widget.stableID] = view; addSubview(view)
         }
+        // A partial fade is a real state in the corpus — `Plus! Plasma Ball` hangs its effects off
+        // a `alphaBlend="110"` layer — so the surviving surfaces carry their inherited alpha, and
+        // it is re-applied on every sync because a fade changes it without recreating the view.
+        for widget in native { widgetViews[widget.stableID]?.alphaValue = widget.alpha }
         overlayView.frame = bounds
         enforceLayerOrder()
         onSpectrumDemandChanged?(native.contains { $0.kind == .effects })
@@ -714,6 +742,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         case .playPlaylistItem: return "Play playlist item"
         case .removePlaylistItem: return "Remove playlist item"
         case .movePlaylistItem: return "Move playlist item"
+        case .setWOWEnabled: return "Enable WOW stereo widening"
+        case .setTruBassLevel: return "TruBass strength"
+        case .setSpeakerSize: return "Speaker size"
+        case .setWOWLevel: return "WOW strength"
         case .setEQEnabled: return "Enable equalizer"
         case .setEQBand: return "Equalizer band"
         case .setEQPreset: return "Equalizer preset"

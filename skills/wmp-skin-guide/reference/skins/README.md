@@ -43,6 +43,7 @@ with no command goes stale silently and nothing fails.
 | [`cablemusic.md`](cablemusic.md) | Nine unrelated engine defects across two reports, four of which no headless probe could see |
 | [`halo-2.md`](halo-2.md) | Three unrelated app-path defects, none visible to any headless probe. The corpus's purest windowless-dispatcher skin: every window it has, including its player, arrives through `theme.openView`, and every panel opens and closes through one `toggleView` function |
 | [`xsn-sports.md`](xsn-sports.md) | Four unrelated defects in one report (W144), two of which no headless probe can see — the corpus's clearest **windowed** visualization, and its only skin that slides a centred drawer by script against its own 500 ms view timer |
+| [`plus-family.md`](plus-family.md) | **A family dossier, not a skin one** — the 13 Microsoft Plus! archives share authoring idioms nothing else in the corpus uses at any scale, and both defects found in them so far (W146, W147) were idioms rather than skins. Also records what has been ruled out, including the dancer that is not a skin asset |
 | [`alienmorph.md`](alienmorph.md) | Four defects across the six skins that share its markup, and the corpus's densest use of a centred piece with no authored coordinate — the whole Alienware/ALX frame is built out of it (W143). Its player is healthy and all five of the windows it opens beside it were not, which is a distinction no `mainView` capture can make |
 
 ## Skins that are counter-evidence, and what each one holds

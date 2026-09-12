@@ -95,6 +95,26 @@ extension WMPWidgetKind {
     }
 }
 
+/// The container artwork that shapes a hosted surface: which image, which colours it keys out,
+/// and where that image sits in scene coordinates.
+///
+/// **A windowless `<EFFECTS>` is confined by its container's *shape*, not by its bounding box.**
+/// The rect has never been the picture: `Plus! Bionic Dot` authors a 169x160 `visMask` whose
+/// `main_vis_back.png` keys `#ff00ff` out of everything but a round lens with an arc cut from its
+/// lower edge to clear the transport ring. Clipping the visualizer to the rect instead put a hard
+/// 169x160 slab of spectrum across the face and over the play controls.
+///
+/// Cerulean needs none of this and gets none: its `face.bmp` is *opaque artwork drawn over* the
+/// visualizer through `commandSplitIndex`, so the surround is hidden by paint rather than by shape,
+/// and its `<EFFECTS>` parent declares no keyed background at all.
+struct WMPWidgetRegionMask: Hashable, Codable {
+    let resourcePath: String
+    let keyedOut: [WMPColor]
+    /// The masking image's frame in scene coordinates. It is not always the widget's own frame, so
+    /// the offset between the two is what aligns the mask over the surface.
+    let frame: WMPRect
+}
+
 struct WMPWidget: Hashable, Codable {
     let stableID: Int
     let nodeID: String?
@@ -125,6 +145,25 @@ struct WMPWidget: Hashable, Codable {
     /// It is an index and not a zIndex threshold on purpose: `WMPSceneBuilder.walk` sorts only
     /// siblings, so `commands` is DFS order and is not globally sorted by zIndex.
     let commandSplitIndex: Int?
+    /// The inherited `alphaBlend` of the subtree this widget sits in, 0-1 — the same number
+    /// `WMPPaintCommand.alpha` carries, computed by the same walk.
+    ///
+    /// **A hosted AppKit surface is not exempt from its parent's fade.** `alphaBlend` inherits, so
+    /// a `.wmz` hides a pane it has not opened yet by fading the container to zero, and the scene's
+    /// paint commands have honoured that since they were filtered at `emit`. The widgets were not:
+    /// `Plus! Bionic Dot` declares `<subview id="visMask" … alphaBlend="0"><effects …/></subview>`
+    /// and fades the mask to 255 in `toggleVis()`, so its artwork correctly drew nothing while the
+    /// `<EFFECTS>` overlay drew a 169x160 visualizer rectangle over the face. Five other archives
+    /// author the same idiom — `Plus! Professional`, `Plus! Pulsar`, `Plus! HueShifter`,
+    /// `Plus! Plasma Ball` and `Halloween` — and it is the Plus! house style, not one skin.
+    ///
+    /// Cerulean is untouched by it: its `<effects zIndex="-1">` sits under a colour-keyed hole with
+    /// no `alphaBlend` anywhere above it, so this reads 1 and the surface hosts exactly as before.
+    let alpha: CGFloat
+    /// Set for `.effects` only: the container shape this surface is confined to, when the skin
+    /// authored one. See `WMPWidgetRegionMask`.
+    let regionMask: WMPWidgetRegionMask?
+
     /// `<EFFECTS windowed="true">`: the visualization is a **windowed** control, and in WMP a
     /// windowed control is a real child window that the skin's own painting cannot draw over.
     /// `windowed="false"` (106 skins) and an absent attribute (46, Cerulean among them) are
@@ -136,8 +175,9 @@ struct WMPWidget: Hashable, Codable {
          label: String, toolTip: String?, minimumValue: Double? = nil, maximumValue: Double? = nil,
          value: Double? = nil, direction: WMPSliderDirection? = nil, borderSize: CGFloat = 0,
          thumbSize: WMPSize? = nil, valueBindingPath: String? = nil,
-         videoPresentation: WMPVideoPresentation? = nil, commandSplitIndex: Int? = nil,
-         isWindowedEffects: Bool = false) {
+         videoPresentation: WMPVideoPresentation? = nil, alpha: CGFloat = 1,
+         regionMask: WMPWidgetRegionMask? = nil,
+         commandSplitIndex: Int? = nil, isWindowedEffects: Bool = false) {
         self.stableID = stableID
         self.nodeID = nodeID
         self.kind = kind
@@ -153,6 +193,8 @@ struct WMPWidget: Hashable, Codable {
         self.thumbSize = thumbSize
         self.valueBindingPath = valueBindingPath
         self.videoPresentation = videoPresentation
+        self.alpha = alpha
+        self.regionMask = regionMask
         self.commandSplitIndex = commandSplitIndex
         self.isWindowedEffects = isWindowedEffects
     }

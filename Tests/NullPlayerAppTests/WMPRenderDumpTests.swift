@@ -991,6 +991,16 @@ enum WMPHarness {
             "WIDGET \(scene.viewID)/\(widget.stableID) \(widget.kind) id=\(widget.nodeID ?? "-") "
                 + "frame=\(widget.frame) clip=\(widget.clipRect.map(String.init(describing:)) ?? "-") "
                 + "visible=\(widget.clipRect.flatMap { widget.frame.intersection($0) }.map(String.init(describing:)) ?? "none")"
+                // The inherited `alphaBlend`. A widget at `alpha=0` is one its container has faded
+                // out and `WMPMainView` hosts no surface for — and without this field the line was
+                // indistinguishable from a hosted one, which is how `Plus! Bionic Dot` read as a
+                // correctly placed `<EFFECTS>` while drawing a rectangle over the face.
+                + (widget.alpha < 1 ? " alpha=\(WMPNumber.format(widget.alpha))" : "")
+                // The container shape a windowless `<EFFECTS>` is confined to. Absent means the
+                // surface fills its rect, which for a skin that masks rather than overpaints is
+                // the spectrum-slab defect this field exists to make visible.
+                + (widget.regionMask.map { " mask=\($0.resourcePath)"
+                    + "@\($0.frame) keys=\($0.keyedOut.map(\.description).joined(separator: ","))" } ?? "")
         }
         lines += Self.paintProbeLines(scene: scene, skin: skin)
         return lines
@@ -1409,6 +1419,14 @@ enum WMPHarness {
             return ["APPKIT \(viewID): SKIPPED canvas=\(width)x\(height)"]
         }
         let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        // **The same provider the controller installs.** Without it this probe hosts every effects
+        // surface unmasked and reports a clean `outside=0` for a skin whose visualizer is a slab —
+        // a silent instrument, which is worse than no instrument. It cost one wrong reading before
+        // it was wired: the shaped green fill in the capture was the skin's own artwork drawn over
+        // an unclipped rect, and read as the mask working.
+        view.regionMaskProvider = { [weak imageStore] mask in
+            try? imageStore?.regionMask(for: mask.resourcePath, keyedOut: mask.keyedOut)
+        }
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
             return ["APPKIT \(viewID): SKIPPED no bitmap rep"]
         }
