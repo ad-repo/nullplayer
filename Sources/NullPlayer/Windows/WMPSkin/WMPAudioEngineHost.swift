@@ -29,6 +29,12 @@ final class WMPAudioEngineHost: WMPHost {
         return video
     }
 
+    /// The artwork WMP exposes belongs to the presentation currently visible to the user. A local
+    /// video takes precedence over the audio queue for the same reason `snapshot` does below.
+    var artworkTrack: Track? {
+        Self.localVideoController?.currentArtworkTrack ?? engine.currentTrack
+    }
+
     private static func videoIdentity(_ video: VideoPlayerWindowController) -> String? {
         guard let track = video.currentArtworkTrack else {
             return video.currentTitle.map { "title:\($0)" }

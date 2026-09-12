@@ -155,6 +155,10 @@ struct WMPSkinLoader {
                     diagnostics.append(WMPDiagnostic(.unsupportedResource,
                         "Resource '\(authored)' uses an unsupported external scheme.",
                         severity: .warning, location: node.location))
+                } else if WMPBuiltInImage.named(authored) != nil {
+                    resources.append(WMPResourceRegistration(attributeName: attribute.name,
+                        authoredPath: authored, resolvedPath: authored, declaringPath: path,
+                        status: .available))
                 } else if let resolved = try archive.resolve(authored, relativeTo: path) {
                     resources.append(WMPResourceRegistration(attributeName: attribute.name,
                         authoredPath: authored, resolvedPath: resolved, declaringPath: path, status: .available))

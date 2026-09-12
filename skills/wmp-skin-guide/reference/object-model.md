@@ -101,6 +101,14 @@ Three rules, each of which was a live defect first:
    The image store keys its cache on the canonical resource path, so a scripted swap is a different
    key and a different decode; the scene owns no image state of its own.
 
+5. **`WMPImage_AlbumArtLarge` and `WMPImage_AlbumArtSmall` are WMP-owned pseudo-resources.** They
+   resolve before archive lookup and are backed only by the current track's artwork, asynchronously
+   loaded by the WMP session from local tags, supported servers, or a stream artwork URL. They are
+   200px and 75px square respectively, preserve aspect ratio, and draw transparent until artwork
+   arrives. The skin never receives a URL, token, `Track`, or any other host object. No other
+   `WMPImage_*` spelling is accepted: in particular `WMPImage_AdBanner` remains unresolved because
+   NullPlayer has no equivalent surface.
+
 ## Elements
 
 Every element id is a global, and a write to one of its properties mutates the retained graph and

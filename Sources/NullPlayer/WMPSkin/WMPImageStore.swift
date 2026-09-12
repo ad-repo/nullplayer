@@ -28,6 +28,25 @@ struct WMPDecodedImage {
     let decodedBytes: Int
 }
 
+/// The images WMP supplies to skins rather than reads from their archive. These names are a closed
+/// compatibility surface: an arbitrary `WMPImage_*` spelling is still a missing skin resource.
+enum WMPBuiltInImage: String, CaseIterable {
+    case albumArtLarge = "WMPImage_AlbumArtLarge"
+    case albumArtSmall = "WMPImage_AlbumArtSmall"
+
+    var pixelSize: Int {
+        switch self {
+        case .albumArtLarge: return 200
+        case .albumArtSmall: return 75
+        }
+    }
+
+    static func named(_ value: String) -> WMPBuiltInImage? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return allCases.first { $0.rawValue.caseInsensitiveCompare(trimmed) == .orderedSame }
+    }
+}
+
 /// A multi-frame GIF's timing. **90 of the 180 corpus archives carry one** — 2,166 files, most of
 /// them three to six frames — so an engine that draws frame zero forever is showing half the corpus
 /// a still of something the skin animates.
@@ -110,6 +129,13 @@ final class WMPImageStore: @unchecked Sendable {
     private var clipBytes = 0
     /// `.some(nil)` is "checked, not animated" — a still must not be re-probed on every frame.
     private var animationEntries: [String: WMPImageAnimation??] = [:]
+    /// Artwork belongs to the WMP session, not to the archive. The transparent defaults preserve
+    /// WMP's intrinsic built-in-image sizes while a remote source is still loading.
+    private var builtInImages: [WMPBuiltInImage: WMPDecodedImage] = Dictionary(
+        uniqueKeysWithValues: WMPBuiltInImage.allCases.map { image in
+            (image, WMPImageStore.transparentImage(size: image.pixelSize))
+        }
+    )
 
     init(provider: WMPResourceProviding, limits: WMPImageStoreLimits = .production) {
         self.provider = provider
@@ -131,6 +157,12 @@ final class WMPImageStore: @unchecked Sendable {
 
     private func image(for path: String, colorKeys: [WMPColor], implicitKey: WMPColor? = nil,
                        frameSuffix frame: Int) throws -> WMPDecodedImage {
+        if let builtIn = WMPBuiltInImage.named(path) {
+            lock.lock()
+            let image = builtInImages[builtIn]!
+            lock.unlock()
+            return image
+        }
         let canonical = provider.canonicalPath(for: path) ?? path
         let cacheKey = canonical + colorKeys.map { "|key=\($0)" }.joined()
             + (implicitKey.map { "|implicit=\($0)" } ?? "")
@@ -177,6 +209,48 @@ final class WMPImageStore: @unchecked Sendable {
         clipBytes = 0
         animationEntries.removeAll(keepingCapacity: false)
         lock.unlock()
+    }
+
+    /// Replace WMP's in-memory album-art resources from one decoded artwork image. This is called
+    /// after the WMP-owned asynchronous artwork load completes; it never asks a skin archive for
+    /// data and `WMPImage_AdBanner` intentionally has no entry here.
+    func setAlbumArtwork(_ image: CGImage?) {
+        lock.lock()
+        defer { lock.unlock() }
+        for resource in WMPBuiltInImage.allCases {
+            builtInImages[resource] = image.map { Self.scaledImage($0, size: resource.pixelSize) }
+                ?? Self.transparentImage(size: resource.pixelSize)
+        }
+    }
+
+    private static func transparentImage(size: Int) -> WMPDecodedImage {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8,
+                                bytesPerRow: size * 4, space: colorSpace,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.clear(CGRect(x: 0, y: 0, width: size, height: size))
+        let image = context.makeImage()!
+        return WMPDecodedImage(image: image,
+                               size: WMPSize(width: CGFloat(size), height: CGFloat(size)),
+                               decodedBytes: size * size * 4)
+    }
+
+    private static func scaledImage(_ source: CGImage, size: Int) -> WMPDecodedImage {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8,
+                                bytesPerRow: size * 4, space: colorSpace,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.interpolationQuality = .high
+        context.clear(CGRect(x: 0, y: 0, width: size, height: size))
+        let scale = min(CGFloat(size) / CGFloat(source.width), CGFloat(size) / CGFloat(source.height))
+        let width = CGFloat(source.width) * scale
+        let height = CGFloat(source.height) * scale
+        context.draw(source, in: CGRect(x: (CGFloat(size) - width) / 2,
+                                         y: (CGFloat(size) - height) / 2,
+                                         width: width, height: height))
+        return WMPDecodedImage(image: context.makeImage()!,
+                               size: WMPSize(width: CGFloat(size), height: CGFloat(size)),
+                               decodedBytes: size * size * 4)
     }
 
     func mappingImage(for path: String, nodeByColor: [WMPColor: Int]) throws -> WMPMappingImage {

@@ -84,6 +84,20 @@ final class WMPImageStoreTests: XCTestCase {
         XCTAssertEqual(store.metrics.decodedImageCount, 2)
     }
 
+    func testBuiltInAlbumArtworkSuppliesBothWMPSizesWithoutTreatingItAsSkinArtwork() throws {
+        let data = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels)
+        let store = WMPImageStore(provider: WMPMemoryResourceProvider(["source.png": data]))
+        store.setAlbumArtwork(try store.image(for: "source.png").image)
+
+        let large = try store.image(for: "WMPImage_AlbumArtLarge")
+        let small = try store.image(for: "WMPImage_AlbumArtSmall")
+        XCTAssertEqual(large.size, WMPSize(width: 200, height: 200))
+        XCTAssertEqual(small.size, WMPSize(width: 75, height: 75))
+        XCTAssertEqual(WMPSkinTestSupport.rgba(large.image, x: 50, yFromTop: 50), [255, 0, 0, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(small.image, x: 18, yFromTop: 18), [255, 0, 0, 255])
+        XCTAssertNil(WMPBuiltInImage.named("WMPImage_AdBanner"))
+    }
+
     private func assertComponent(_ lhs: UInt8, equals rhs: UInt8, accuracy: UInt8,
                                  file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertLessThanOrEqual(abs(Int(lhs) - Int(rhs)), Int(accuracy), file: file, line: line)

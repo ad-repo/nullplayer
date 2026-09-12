@@ -779,7 +779,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
             clippingMaskPath: clippingPath,
             clippingMaskKeys: clippingPath == nil ? []
                 : colors(node, names: ["clippingColor", "transparencyColor"]),
-            implicitColorKey: declared.isEmpty ? WMPColorKey.implicitTransparency : nil)
+            implicitColorKey: declared.isEmpty && WMPBuiltInImage.named(path) == nil
+                ? WMPColorKey.implicitTransparency : nil)
         return WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID, frame: frame,
             clipRect: clip, zIndex: z, documentOrder: node.stableID, paint: .image(image),
             alpha: alpha)
@@ -804,6 +805,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // `view.backgroundImage = ""` is how every store-thumbnail `previewView` clears its
                 // splash bitmap: an empty override is an authored absence, not a missing file.
                 if authored.isEmpty { continue }
+                if let builtIn = WMPBuiltInImage.named(authored) {
+                    return (name, builtIn.rawValue)
+                }
                 // `try?`, not `try`: an override is a runtime value and `resolve` *throws* for a
                 // path outside the provider. A skin that assigns a `res://wmploc/RT_IMAGE/#2024`
                 // it read back off its own markup must warn like any other unresolvable path. When
@@ -820,6 +824,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
             guard let attribute = node.attribute(named: name) else { continue }
             guard case let .resource(authored) = attribute.value else { continue }
+            if let builtIn = WMPBuiltInImage.named(authored) {
+                return (name, builtIn.rawValue)
+            }
             if let path = try loadedSkin.archive.resolve(authored, relativeTo: loadedSkin.definitionPath) {
                 return (name, path)
             }

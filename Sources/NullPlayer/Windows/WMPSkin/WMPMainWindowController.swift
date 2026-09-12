@@ -61,6 +61,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// `WindowManager.hostedSurfaceStyle` nil there and sends those windows back to their own drawing.
     private(set) var currentSurfacePalette: WMPSurfacePalette?
     private var scriptRuntime: WMPScriptRuntime?
+    /// The in-flight fetch for WMP's built-in album-art images. It is cancelled on a track change
+    /// and session teardown, so a slow server cannot replace a newer track's artwork.
+    private var artworkLoadTask: Task<Void, Never>?
+    private var artworkTrackID: UUID?
     private var lastScriptSnapshot: WMPHostSnapshot?
     private var unskinnedView: WMPUnskinnedMainView?
 
@@ -551,6 +555,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         view.present(image, overlay: overlay, scene: scene)
         view.refreshHostState(host.snapshot)
+        // A mode switch can create this WMP session while audio (or local video) is already
+        // playing. `lastScriptSnapshot` is deliberately seeded above so normal host events do not
+        // replay on every skin reload, but that also means no later snapshot diff can raise the one
+        // `currentMedia_onchange` which assigns WMPImage_AlbumArtLarge. Seed the WMP-only artwork
+        // surface and dispatch that authored event once, now that its store and presentation exist.
+        if let audioHost = host as? WMPAudioEngineHost {
+            updateArtwork(for: audioHost.artworkTrack)
+        }
+        dispatchHostEvents(presentation, ["currentmedia_onchange"])
         startAnimation(presentation, for: scene)
         arbitrateVideoSurface()
         if presentation.isPlayer {
@@ -652,6 +665,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private func presentUnskinned(message: String?) {
         clearSurfacePalette()
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        artworkTrackID = nil
         loadedSkin = nil
         imageStore = nil
         materializer.teardown()
@@ -775,6 +791,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func prepareForUITeardown() {
         loadTask?.cancel()
         loadTask = nil
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        artworkTrackID = nil
         // The materializer first, so no auxiliary window outlives the mode.
         materializer.invalidate()
         stopDispatcher()
@@ -1070,11 +1089,46 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     // MARK: - Host state
 
-    func updateTrackInfo(_ track: Track?) { refreshHostState() }
-    func updateVideoTrackInfo(title: String, artworkTrack: Track?) { refreshHostState() }
-    func clearVideoTrackInfo() { refreshHostState() }
+    func updateTrackInfo(_ track: Track?) {
+        updateArtwork(for: track)
+        refreshHostState()
+    }
+    func updateVideoTrackInfo(title: String, artworkTrack: Track?) {
+        updateArtwork(for: artworkTrack)
+        refreshHostState()
+    }
+    func clearVideoTrackInfo() {
+        updateArtwork(for: nil)
+        refreshHostState()
+    }
     func updateTime(current: TimeInterval, duration: TimeInterval) { refreshHostState() }
     func updatePlaybackState() { refreshHostState() }
+
+    /// The skin has already assigned a reserved pseudo-resource name by the time this completes.
+    /// Rebuilding changes only that resource's pixels; it never exposes a track URL to JScript.
+    private func updateArtwork(for track: Track?) {
+        let newID = track?.id
+        guard artworkTrackID != newID else { return }
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        artworkTrackID = newID
+        imageStore?.setAlbumArtwork(nil)
+        renderAlbumArtwork()
+        guard let track else { return }
+        artworkLoadTask = Task { [weak self] in
+            let image = await WMPArtworkLoader.loadArtwork(for: track)
+            guard !Task.isCancelled, let self, self.artworkTrackID == track.id else { return }
+            self.imageStore?.setAlbumArtwork(image)
+            self.renderAlbumArtwork()
+            self.artworkLoadTask = nil
+        }
+    }
+
+    private func renderAlbumArtwork() {
+        for presentation in materializer.openPresentations where presentation.activeScene != nil {
+            renderInteraction(presentation, state: presentation.interactionState, changed: [])
+        }
+    }
     func updateSpectrum(_ levels: [Float]) {
         for presentation in materializer.openPresentations {
             presentation.mainView?.updateSpectrum(levels)

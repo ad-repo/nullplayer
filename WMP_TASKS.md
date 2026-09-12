@@ -32,14 +32,6 @@ former residual was `portals/mode1` (829 px, 0.38%), resolved by W116, plus `Plu
 correct. **Do not open another magenta row without a screen to point at.** Their closure notes are
 in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md).
 
-**W137 is the next row, and it is the one thing this backlog has never had: an engine gap found by
-reading a handler's *body* rather than its reach.** Closing W129 raised 77 handlers whose whole
-content is `plAlbumArt.backgroundImage = "WMPImage_AlbumArtLarge"` — a WMP **built-in image
-pseudo-resource**, not a file in the archive — and nothing under `Sources/NullPlayer/WMPSkin/`
-resolves one, so the handler now runs, asks for a bitmap that cannot exist, and the pane stays
-blank. **17 skins ask for one.** It is in § *Tier 1e* because the answer is a host surface (what a
-`.wmz` may see of this player's artwork), not drawing work.
-
 **W129 closed 2026-09-11 and it closes the largest row of the SDK conformance audit.** It also
 produced the rule that should govern every remaining row of that audit: *reading a handler's reach
 is not reading its result*. Of its four host attributes only `currentEffectType_onchange` moves a
@@ -297,7 +289,7 @@ across the corpus* is the trap that rule exists for.
 
 | Surface | views | skins | own view | Hosted today | Row |
 |---|---:|---:|---:|---|---|
-| `<VIDEO>` / `<WMPVIDEO>` | 268 | 170 | 165 | no — placeholder removed by W9 | **W102** |
+| `<VIDEO>` / `<WMPVIDEO>` | 268 | 170 | 165 | yes (W102) | — |
 | `<EFFECTS>` / `<WMPEFFECTS>` | 178 | 171 | 144 | yes (W101) | — |
 | `<PLAYLIST>` family | 175 | 170 | 162 | yes (W93, W97) | — |
 | `<EQUALIZERSETTINGS>` | 170 | 163 | 147 | yes, as the skin's own bound sliders | — |
@@ -306,10 +298,6 @@ across the corpus* is the trap that rule exists for.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W137 | Album art is a WMP **built-in image**, not a file in the skin, and this engine resolves no such name | `WMPImage_AlbumArtLarge` 13 uses / **12 skins**, `WMPImage_AlbumArtSmall` 13 / 6, `WMPImage_AdBanner` 5 / 3 — **17 skins** in total across the 179 measured archives. Counts are a **floor**: `Need_for_Speed_Underground` and `SplinterCellWMPSkin` carry overwritten local headers and some entries refuse to decompress outside the engine. Reproduce by scanning `.wms`/`.js` with `WMPTextDecoder`'s order, per `reference/harness.md` § *Counting a tag across the corpus* | **Opened 2026-09-11 by W129 closing**, and it is the reason that row changed no album art: `currentMedia_onchange` now runs, and all 9 of its corpus sources are `updateAlbumArt()`, whose body is `plAlbumArt.backgroundImage = "WMPImage_AlbumArtLarge"`. WMP serves these names itself — they are not archive entries, so the image store reports a missing bitmap and the pane draws nothing. `NVIDIA`'s is the worked case (`nvidia.js`: blank the property, set the name, gated on the `albumArt` preference, which W76 already answers correctly). **The requirement is that art works from every source this player has, not just local files**: local tags, and the server integrations — Plex, Jellyfin, Subsonic, Emby — plus radio/stream artwork where the source carries it. NullPlayer already resolves artwork per track for its own windows; this row is the seam that hands the same bitmap to the WMP image store under a reserved name, at the two sizes WMP defines. **Decide the refusal too**: `WMPImage_AdBanner` (3 skins) has no counterpart here and must stay unresolved rather than be aliased to artwork. Read `plex-integration` and the sibling server skills for where a track's art actually comes from before adding a seam. |
-| W103 | `<VIDEOSETTINGS>` binds 94 skins' sliders to controls this player does not have | **Deferred 2026-09-10 by user direction.** **94 uses across 94 of 177 archives**, one per skin, 93 of them in a view of their own | The brightness / contrast / hue / saturation panel — and the tooltip vocabulary is unambiguous about what the sliders are (`brightness` 80, `hue` 80, `saturation` 79, `contrast` 78, plus `reset …` ×20 each across the corpus's `toolTip` attributes). NullPlayer's video path exposes none of the four, so **this is a decision, not drawing work**: either `inert()` — the trap `INERT` exists for — or add the four controls to the video path in W102's wake and bind them honestly. Do not resolve them to a value this player never applies; a slider that moves and changes nothing is the worse of the two outcomes. **W102 closed 2026-09-10, so the question it was held on is answered**: there is a real video path in the authored rect, and these four sliders are now purely a decision about whether to bind them or `inert()` them. |
-| W104 | `<NETWORK>` answers nothing, and Flow is not what it means | **Deferred 2026-09-10 by user direction.** **6 uses across 4 of 177 archives**; the smallest surface in the corpus | `<NETWORK>` is an object, not a control — it authors no attributes at all in the whole corpus, so `WMPSceneBuilder.isNonLayout` treating it as non-layout is correct and stays. What a skin reads off it is stream state: `player.network.downloadProgress` and `player.network.bufferingProgress` already resolve in `WMPPropertyRegistry.swift:126`, and `bandwidth`, `receivedPackets` and `lostPackets` are the members behind the `network bandwidth` (12) and `buffering progress` (10) tooltips. **Feed it from the streaming player's own statistics, never from Flow**: `Windows/NetworkMonitor` measures *interface* throughput for the whole machine, which is a different quantity from this stream's bitrate and buffer, and wiring one to the other would draw a confident wrong number. Flow is still the right *window* for the routing half (W105) — 4 skins declare a network view and nothing else in this app claims that menu slot — but the object and the window are two separate answers. |
-| W105 | WMP surface routing remains incomplete for video settings and network | **Deferred 2026-09-10 by user direction.** video settings **94 skins**, network **4** | The visualizer item is complete and removed from this row: W101 hosts its authored `<EFFECTS>` rect and this change keeps its native effect transparent so the skin's overlay artwork survives. Video is likewise routed by W102. The remaining cases are intentionally gated: `.networkStats` may go in because Flow is its safe fallback, while `.videoSettings` earns a case only if W103 implements controls it can actually apply. The rule is unchanged: adding a case before its surface is hosted trades a duplicate window for an empty drawer. |
 
 ## Tier 2 — the script runtime, after Phase 3
 

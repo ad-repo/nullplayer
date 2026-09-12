@@ -9,6 +9,12 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W137 — built-in album art
+
+| ID | Item | Landed |
+|---|---|---|
+| W137 | Album art is a WMP **built-in image**, not a file in the skin, and this engine resolves no such name | Closed 2026-09-11. `WMPImage_AlbumArtLarge` and `WMPImage_AlbumArtSmall` resolve as the WMP session's only two in-memory pseudo-resources (200px and 75px), not archive paths. `WMPArtworkLoader` asynchronously supplies them from local embedded tags, Plex, Subsonic, Jellyfin, Emby, or a direct stream artwork URL; a track change cancels the prior request and redraws the existing scene without rerunning JScript. The names are transparent while loading and preserve the artwork aspect ratio. `WMPImage_AdBanner` remains unresolved. A Plus! WMP skin visibly displayed the artwork after this change. `testBuiltInAlbumArtworkSuppliesBothWMPSizesWithoutTreatingItAsSkinArtwork` pins both sizes and the refusal. |
+
 **When you close a `.wmz` item, move its row here in the same change** — an entry left behind in
 `WMP_TASKS.md` reads as open work and gets picked up twice.
 
