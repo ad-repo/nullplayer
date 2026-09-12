@@ -858,15 +858,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
         for name in names {
             guard let attribute = node.attribute(named: name) else { continue }
             if case let .color(value) = attribute.value { return value }
-            let raw = attribute.rawValue.lowercased()
-            switch raw {
-            case "black": return WMPColor(red: 0, green: 0, blue: 0)
-            case "white": return WMPColor(red: 255, green: 255, blue: 255)
-            case "red": return WMPColor(red: 255, green: 0, blue: 0)
-            case "green": return WMPColor(red: 0, green: 128, blue: 0)
-            case "blue": return WMPColor(red: 0, green: 0, blue: 255)
-            default: continue
-            }
+            if let value = WMPAttributeParser.color(from: attribute.rawValue) { return value }
         }
         return nil
     }

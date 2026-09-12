@@ -17,8 +17,8 @@ import AppKit
 ///    `foregroundColor` is the single most authored colour in the corpus outside the transparency
 ///    keys (760 uses).
 /// 3. **The artwork itself** (`sampledBackground`). Coverage is why this step exists rather than
-///    being a nicety: **only 96 of the 180 archives declare any background colour at all and 95 any
-///    foreground**, so declarations alone leave nearly half the corpus with no palette. What the
+///    being a nicety: 165 of the 177 readable archives declare a background colour and 171 a
+///    foreground now that SDK named colours parse, but artwork remains the fallback for the rest. What the
 ///    skin *draws* is the next most honest source, so the presented view's rendered bitmap is
 ///    sampled for its dominant opaque colour.
 /// 4. **An app-authored WMP-neutral fallback.** Never another skin family's colours, per

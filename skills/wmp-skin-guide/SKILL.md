@@ -513,9 +513,9 @@ found by looking at the screen rather than by reasoning.
   `PLAYLIST` (`backgroundColor`, `foregroundColor`, `itemPlayingColor`,
   `itemPlayingBackgroundColor`) → `VIEW`/`SUBVIEW` background plus `TEXT` foreground → the **dominant
   opaque colour of the presented view's own rendered bitmap** → an app-authored WMP-neutral pair.
-  The sampling step is not a nicety: measured over the 180-archive corpus on 2026-09-09, **only 96
-  archives declare any background colour and 95 any foreground**, so declarations alone leave nearly
-  half the corpus with no palette at all. Counts per role are in `WMPSurfacePalette`'s own doc
+  The sampling step is not a nicety: measured over the 177 readable archives on 2026-09-11, **165
+  declare a background colour and 171 a foreground** now that the parser accepts the SDK's named
+  colours as well as `#RRGGBB`. Counts per role are in `WMPSurfacePalette`'s own doc
   comment, next to the scan that produced them.
 - **Every foreground goes through the legibility guard, against the ground it is actually drawn on.**
   `SkinnedSurfaceStyle.legible`, the same WCAG 3.0:1 bar `.wal` uses — but it is load-bearing here in

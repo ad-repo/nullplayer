@@ -70,16 +70,31 @@ final class WMPHostedSurfaceTests: XCTestCase {
     func testColorAttributesAreParsedAsStrictlyAsTheEngineDoes() async throws {
         let loaded = try await skin("""
         <THEME><VIEW id="main" width="20" height="10">
-        <PLAYLIST id="pl" itemPlayingColor="00FF00" itemPlayingBackgroundColor="#00FF00"/>
+        <PLAYLIST id="pl" itemPlayingColor="00FF00" itemPlayingBackgroundColor="Pink"/>
         </VIEW></THEME>
         """)
         let palette = WMPSurfacePalette(skin: loaded, viewID: "main")
         XCTAssertNil(palette.playingText)
-        XCTAssertEqual(palette.playingBackground, WMPColor(red: 0, green: 255, blue: 0))
+        XCTAssertEqual(palette.playingBackground, WMPColor(red: 0xFF, green: 0xC0, blue: 0xCB))
     }
 
-    /// Half the corpus declares no colour at all (96 of 180 declare any background), so a palette
-    /// with nothing in it must still be a usable one — the app-authored WMP-neutral pair, never
+    func testNamedColorsDriveTheSceneAndSurfacePalette() async throws {
+        let loaded = try await skin("""
+        <THEME><VIEW id="main" width="20" height="10" backgroundColor="pink">
+        <TEXT id="caption" foregroundColor="yellowgreen"/></VIEW></THEME>
+        """)
+        let palette = WMPSurfacePalette(skin: loaded, viewID: "main")
+        XCTAssertEqual(palette.background, WMPColor(red: 0xFF, green: 0xC0, blue: 0xCB))
+        XCTAssertEqual(palette.text, WMPColor(red: 0x9A, green: 0xCD, blue: 0x32))
+        let scene = try await WMPSceneBuilder(loadedSkin: loaded).build(viewID: "main")
+        XCTAssertTrue(scene.commands.contains(where: { command in
+            guard case let .fill(color) = command.paint else { return false }
+            return color == WMPColor(red: 0xFF, green: 0xC0, blue: 0xCB)
+        }))
+    }
+
+    /// Some skins still declare no parseable colour, so a palette with nothing in it must remain
+    /// usable — the app-authored WMP-neutral pair, never
     /// another skin family's.
     func testUndeclaredPaletteLandsOnTheAppAuthoredNeutralGround() async throws {
         let loaded = try await skin("""

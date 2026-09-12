@@ -31,6 +31,11 @@ final class WMPGraphTests: XCTestCase {
         XCTAssertEqual(WMPAttributeParser.parse(name: "onTop", value: "true"), .literal("true"))
         XCTAssertEqual(WMPAttributeParser.parse(name: "mappingColor", value: "#FA6A6A"),
                        .color(WMPColor(red: 250, green: 106, blue: 106)))
+        XCTAssertEqual(WMPAttributeParser.parse(name: "backgroundColor", value: "Pink"),
+                       .color(WMPColor(red: 0xFF, green: 0xC0, blue: 0xCB)))
+        XCTAssertEqual(WMPAttributeParser.color(from: "darkgoldenrod"),
+                       WMPColor(red: 0xB8, green: 0x86, blue: 0x0B))
+        XCTAssertNil(WMPAttributeParser.color(from: "none"))
         XCTAssertEqual(WMPAttributeParser.parse(name: "image", value: "art\\button.bmp"),
                        .resource("art\\button.bmp"))
         XCTAssertEqual(WMPAttributeParser.parse(name: "image", value: "res://wmploc.dll/#1"),

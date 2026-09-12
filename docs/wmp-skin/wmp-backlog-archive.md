@@ -564,6 +564,12 @@ already supplies** from the declared range; all 9 `currentMedia_onchange` uses a
 `updateAlbumArt()`, whose body asks for `WMPImage_AlbumArtLarge`, a built-in this engine does not
 resolve — **opened as W137**. Read the body before naming a skin to look at.
 
+## Phase 17 (third pass) — named colour values
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W130 | Two colour parsers and only one knows names, so declared chrome is invisible to the palette | `backgroundColor` authored as an SDK name in 92 skins (`black` 124 uses, `pink` 14, `blue` 3, `white` 1); `foregroundColor` in 22 skins (`white` 52, `black` 37), measured over 177 readable archives | **Closed 2026-09-11.** WMP's Color Reference permits 140 named colours for every colour attribute, but `WMPAttributeParser.color(from:)` had accepted only `#RRGGBB`; `WMPSceneBuilder` separately recognized five names while `WMPSurfacePalette` recognized none. The parser now owns the full SDK table, case-insensitively, and both scene fills and palette roles route through it. `"none"` remains unparsed, preserving WMP's absence/transparent semantics. `testAttributeClassificationDoesNotExecuteAuthoredCode`, `testColorAttributesAreParsedAsStrictlyAsTheEngineDoes`, and `testNamedColorsDriveTheSceneAndSurfacePalette` pin classification, raw palette attributes, a rendered `pink` fill, and a named foreground role. The named-colour census and the resulting declaration counts are recorded in `wmp-skin-guide`; 165 of 177 readable archives now declare a parseable background colour and 171 a foreground. |
+
 ## Phase 18 — the z-order an `<EFFECTS>` declares, and the engines that ban rested on
 
 Closed 2026-09-11. Reported live as "visualizations in `.wmz` skins are circular everywhere":
