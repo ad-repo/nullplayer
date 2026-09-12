@@ -83,6 +83,55 @@ enum WMPSkinTestSupport {
         return output as Data
     }
 
+    /// A 1x1 multi-frame GIF, built byte by byte, with an exact frame count and an exact
+    /// per-frame delay in hundredths of a second.
+    ///
+    /// **Neither number survives ImageIO's encoder, which is why this is hand-rolled.** It will not
+    /// write a zero delay — and zero is the value the corpus actually authors, in 768 of its 2,166
+    /// multi-frame GIFs — so a fixture built through it would test the clamp with input the clamp
+    /// never sees. It also *merges frames*: asking `CGImageDestination` for 4 distinct frames
+    /// writes 3, and for 119 writes 4, so a frame count is not a frame count either.
+    ///
+    /// `loops` is the NETSCAPE2.0 loop count — `nil` writes no extension at all, which is the GIF
+    /// grammar's "play once", and `0` is the endless loop 88 of those corpus GIFs declare.
+    static func animatedGIF(frameCount: Int, delayCentiseconds: Int, loops: Int? = nil) -> Data {
+        precondition(frameCount > 1)
+        func le16(_ value: Int) -> [UInt8] { [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF)] }
+        var bytes: [UInt8] = Array("GIF89a".utf8)
+        // 1x1, a 2-entry global colour table, no background, no aspect ratio.
+        bytes += le16(1)
+        bytes += le16(1)
+        bytes += [0x80, 0x00, 0x00]
+        bytes += [0, 0, 0, 255, 255, 255]
+        if let loops {
+            bytes += [0x21, 0xFF, 0x0B]
+            bytes += Array("NETSCAPE2.0".utf8)
+            bytes += [0x03, 0x01]
+            bytes += le16(loops)
+            bytes += [0x00]
+        }
+        for frame in 0..<frameCount {
+            // Graphic Control Extension: no disposal, no transparency, the authored delay.
+            bytes += [0x21, 0xF9, 0x04, 0x00]
+            bytes += le16(delayCentiseconds)
+            bytes += [0x00, 0x00]
+            // Image descriptor at the origin, no local colour table.
+            bytes += [0x2C]
+            bytes += le16(0)
+            bytes += le16(0)
+            bytes += le16(1)
+            bytes += le16(1)
+            bytes += [0x00]
+            // One pixel, LZW with a 2-bit minimum code size: clear (4), the pixel, end (5), three
+            // bits each, packed least-significant-bit first into two bytes. Frames alternate
+            // between the table's two colours so consecutive frames genuinely differ.
+            let pixel = frame % 2
+            bytes += [0x02, 0x02, UInt8(4 | (pixel << 3) | 0x40), 0x01, 0x00]
+        }
+        bytes += [0x3B]
+        return Data(bytes)
+    }
+
     /// A real 24-bit BMP — no alpha channel, the way the corpus authors its sheets.
     ///
     /// `encodedImage(type: .bmp)` cannot stand in for one: it encodes an RGBA `CGImage`, so ImageIO

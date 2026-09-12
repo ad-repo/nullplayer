@@ -113,6 +113,33 @@ WMP_PLACE_TRACE=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
   nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
 ```
 
+`WMP_ANIM_TRACE=1` is read by **the app** (`WMPMainWindowController.startAnimation`) and prints what
+the repaint loop *achieved* over the last second, once a second per animating window:
+
+```
+[wmp/anim] <viewID> want=<n>fps got=<n>fps frames=<n> restarts=<n> sleep=<ms> render=<ms> present=<ms>
+```
+
+**`got` against `want` is the whole instrument, and `restarts` is what usually explains the gap.**
+A frame rate is not a thing `ANIMATION` or a render dump can show: a dump is a still, and the
+cadence line reports what the scene *asked for*, so an engine delivering 60% of it looks identical
+to one delivering all of it. This found W142 on the first run — `want=25.0fps got=20.0fps frames=21
+restarts=10 sleep=42.3ms render=4.5ms` — and the line carries its own diagnosis: ten restarts a
+second is a rebuild cancelling the loop mid-sleep, `sleep` above the requested period is
+`Task.sleep` overshoot, and `render` is what a serial render adds to every frame interval.
+
+```bash
+WMP_ANIM_TRACE=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
+  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+```
+
+**Once a second, never once a frame** — and `restarts` is *why* it can be. The first version reset
+its window inside `startAnimation`, which is called by every rebuild, so on `AlienMorph` no window
+ever reached a second and **27 seconds of capture produced zero `got=` lines** while printing 267
+useless start lines. That is the `INPUT` trace's removal repeating itself inside a new instrument:
+a per-frame line in a subsystem that repaints 25x/s is not a trace. Counters live on the
+presentation and survive a restart; the restart is counted rather than narrated.
+
 `NULLPLAYER_PLAY=<audio file>` is read by **the app** (`AppDelegate`, `#if DEBUG`) and enqueues and
 plays that file at launch through the same `application(_:openFiles:)` a Finder open takes. **Live QA
 needs playback**, and every readout a skin binds to the host — the clock, the seek thumb, the

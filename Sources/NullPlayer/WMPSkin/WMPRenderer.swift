@@ -63,7 +63,7 @@ struct WMPRenderer: @unchecked Sendable {
     /// What a repaint loop needs to drive this scene's animated artwork, and nothing more: the
     /// shortest frame delay anything in it uses, and the union of the frames that move. Answered
     /// from the image store, so a still scene costs one cached lookup per resource and returns nil.
-    struct WMPAnimationCadence {
+    struct WMPAnimationCadence: Equatable {
         let shortestDelay: TimeInterval
         /// Only the animated commands. Repainting the whole window at 10 fps for one blinking LED
         /// is the difference between a skin that animates and a skin that burns a core doing it.

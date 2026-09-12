@@ -1720,12 +1720,35 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// 90 of the 180 corpus archives carry a multi-frame GIF. The loop re-renders at the shortest
     /// frame delay the scene actually uses — no fixed frame rate — and does not exist at all for a
     /// scene with no animation, which is the other half of the corpus and every static view.
+    ///
+    /// **Two things here decide the frame rate the user actually sees, and both were wrong.**
+    /// Measured live on `AlienMorph` with `WMP_ANIM_TRACE=1`: `want=25.0fps got=20.0fps frames=21
+    /// restarts=10 sleep=42.3ms render=4.5ms`.
+    ///
+    /// * **A rebuild must not restart the loop.** This is called by *every* rebuild, and a `.wmz`
+    ///   rebuilds constantly — AlienMorph's 100 ms view timer alone restarted it 10x a second.
+    ///   Cancelling mid-sleep throws the elapsed part of that sleep away, so with a 40 ms frame
+    ///   period inside a 100 ms rebuild window exactly two frames landed per window: 20 fps for a
+    ///   scene asking for 25, and the shortfall grows as the rebuild period approaches the frame
+    ///   period. The loop now keeps running while the cadence is unchanged, and renders
+    ///   `presentation.activeScene` rather than the scene it was started with — a rebuild replaces
+    ///   what it draws without interrupting when it draws. A cadence change, a view change and
+    ///   teardown still stop it.
+    /// * **Frames are scheduled against the epoch, not against "now + period".** `Task.sleep`
+    ///   overshoots (42.3 ms for a 40 ms request) and the render that follows it is serial, so
+    ///   sleeping a period per frame accumulated 4.5 ms of render into every frame interval.
+    ///   Deadlines off the animation epoch absorb both, and are the same clock
+    ///   `WMPImageAnimation.frame(at:)` picks the frame with — so a frame that runs late draws the
+    ///   frame it was late for rather than putting the animation behind. Falling a whole period
+    ///   behind skips to the next boundary instead of bursting to catch up.
     private func startAnimation(_ presentation: WMPViewPresentation, for scene: WMPScene) {
-        presentation.animationTask?.cancel()
-        presentation.animationTask = nil
         guard let store = imageStore,
-              let cadence = WMPRenderer(imageStore: store).animationCadence(for: scene) else { return }
+              let cadence = WMPRenderer(imageStore: store).animationCadence(for: scene) else {
+            presentation.stopAnimation()
+            return
+        }
         if presentation.animationEpochViewID != scene.viewID {
+            presentation.stopAnimation()
             presentation.animationEpoch = Date()
             presentation.animationEpochViewID = scene.viewID
         }
@@ -1733,16 +1756,43 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // the same clock, so its final frame is already on screen. Without this every rebuild after
         // the animation ended would still start a task to draw that one still frame again.
         if let endsAt = cadence.endsAt,
-           Date().timeIntervalSince(presentation.animationEpoch) >= endsAt { return }
+           Date().timeIntervalSince(presentation.animationEpoch) >= endsAt {
+            presentation.animationTask?.cancel()
+            presentation.animationTask = nil
+            presentation.animationCadence = nil
+            return
+        }
+        // The loop is already driving exactly this cadence. Restarting it here is what cost the
+        // frames; the scene it renders is read per frame, so there is nothing to hand it.
+        if presentation.animationTask != nil, presentation.animationCadence == cadence { return }
+        presentation.animationTask?.cancel()
+        presentation.animationCadence = cadence
         let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds,
                          Int(cadence.shortestDelay * 1_000))
+        let interval = TimeInterval(period) / 1_000
         let dirty = cadence.bounds
         let epoch = presentation.animationEpoch
+        if Self.animationTrace { presentation.animationTraceRestarts += 1 }
         presentation.animationTask = Task { [weak self, weak presentation] in
+            var deadline = (Date().timeIntervalSince(epoch) / interval).rounded(.down)
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
+                deadline += 1
+                var wait = epoch.addingTimeInterval(deadline * interval).timeIntervalSinceNow
+                if wait <= 0 {
+                    // A whole period behind — a stalled main thread, a slow render, a sleeping
+                    // machine. Rejoin the schedule at the next boundary; bursting through the
+                    // frames that were missed would render them all to draw the last one.
+                    deadline = (Date().timeIntervalSince(epoch) / interval).rounded(.down) + 1
+                    wait = epoch.addingTimeInterval(deadline * interval).timeIntervalSinceNow
+                }
+                try? await Task.sleep(nanoseconds: UInt64(max(0, wait) * 1_000_000_000))
                 guard !Task.isCancelled, let self, let presentation else { return }
-                await self.renderAnimationFrame(presentation, scene: scene, store: store, dirty: dirty)
+                await self.renderAnimationFrame(presentation, store: store, dirty: dirty)
+                if Self.animationTrace {
+                    presentation.animationTraceFrames += 1
+                    presentation.animationTraceSleepSeconds += max(0, wait)
+                    self.emitAnimationTrace(presentation, period: period)
+                }
                 // A scene of one-shot GIFs stops moving; keeping the loop alive would re-render
                 // the same still frame at the GIF's rate for as long as the view is open.
                 if let endsAt = cadence.endsAt, Date().timeIntervalSince(epoch) >= endsAt { return }
@@ -1750,17 +1800,48 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
-    private func renderAnimationFrame(_ presentation: WMPViewPresentation, scene: WMPScene,
+    /// The scene comes from the presentation rather than from the caller: the loop outlives any one
+    /// rebuild now, so what it draws is whatever this window currently holds.
+    private func renderAnimationFrame(_ presentation: WMPViewPresentation,
                                       store: WMPImageStore, dirty: WMPRect) async {
         // Only while this is still the scene in this window: a view switch or a script transaction
         // replaces it, and repainting the old one would undo what just landed.
-        guard presentation.activeScene == scene, let view = presentation.mainView else { return }
+        guard let scene = presentation.activeScene, let view = presentation.mainView else { return }
         let clock = Date().timeIntervalSince(presentation.animationEpoch)
+        let renderStarted = Date()
         guard let rendered = try? await WMPRenderer(imageStore: store)
             .render(scene: scene, backingScale: renderBackingScale(for: presentation),
                     clock: clock) else { return }
+        let presentStarted = Date()
         guard presentation.activeScene == scene else { return }
         view.present(rendered.image, overlay: rendered.overlayImage, scene: scene, dirtyBounds: dirty)
+        if Self.animationTrace {
+            presentation.animationTraceRenderSeconds += presentStarted.timeIntervalSince(renderStarted)
+            presentation.animationTracePresentSeconds += Date().timeIntervalSince(presentStarted)
+        }
+    }
+
+    /// `WMP_ANIM_TRACE=1`: what the repaint loop achieved over the last second — the period it asked
+    /// for against the one it got, and where the difference went. One line a second, never one a
+    /// frame: an animated view repaints 20-30x/s and a per-frame line buries every other trace.
+    static let animationTrace = ProcessInfo.processInfo.environment["WMP_ANIM_TRACE"] == "1"
+
+    private func emitAnimationTrace(_ presentation: WMPViewPresentation, period: Int) {
+        let elapsed = Date().timeIntervalSince(presentation.animationTraceWindowStart)
+        guard elapsed >= 1, presentation.animationTraceFrames > 0 else { return }
+        let frames = Double(presentation.animationTraceFrames)
+        NSLog("[wmp/anim] %@ want=%.1ffps got=%.1ffps frames=%d restarts=%d sleep=%.1fms render=%.1fms present=%.1fms",
+              presentation.viewID, 1_000 / Double(period), frames / elapsed,
+              presentation.animationTraceFrames, presentation.animationTraceRestarts,
+              presentation.animationTraceSleepSeconds / frames * 1_000,
+              presentation.animationTraceRenderSeconds / frames * 1_000,
+              presentation.animationTracePresentSeconds / frames * 1_000)
+        presentation.animationTraceWindowStart = Date()
+        presentation.animationTraceFrames = 0
+        presentation.animationTraceRestarts = 0
+        presentation.animationTraceRenderSeconds = 0
+        presentation.animationTracePresentSeconds = 0
+        presentation.animationTraceSleepSeconds = 0
     }
 
     /// The `VIEW`'s own `timerInterval`, in milliseconds: zero stops it, anything else restarts it

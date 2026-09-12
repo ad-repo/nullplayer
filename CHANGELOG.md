@@ -29,6 +29,16 @@
 
 ### Bug Fixes
 
+- **Media Player skin animations now run at the speed they were drawn to run at.** Two things were
+  slowing them down. Every time a skin redrew itself — which the busier ones do ten times a second —
+  the animation was being started over, losing part of each frame's wait, so an animation asking for
+  25 frames a second got 20. And an animation whose author asked for it to play *as fast as
+  possible* was being given a tenth of a second a frame instead, which is where most of the
+  slowness was: AlienMorph's shutter took nearly twelve seconds to open, and shutters, intros and
+  the glow under your pointer are drawn that way in 62 of the 90 skins that animate at all. Both
+  are fixed, so a skin's intro, its opening shutter and its button highlights move at a natural
+  speed rather than crawling.
+
 - **A Media Player skin's equalizer now changes the sound** — nearly every `.wmz` skin switches the
   equalizer on as part of its own design, and that was being ignored, so the ten sliders a skin draws
   moved, showed their new gains, and were inaudible. They work now, and on the handful of skins that

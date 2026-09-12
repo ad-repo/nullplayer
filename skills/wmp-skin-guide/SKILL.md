@@ -996,6 +996,36 @@ of these was invisible to the harness and visible in the first minute of live QA
   between a skin that animates and one that burns a core. **A render dump is a still, so without
   `WMP_RENDER_CLOCK` an animation is unfalsifiable** — frame zero looks exactly like an engine that
   never animates.
+- **The rate a user sees is not the rate `ANIMATION` reports, and nothing headless can tell them
+  apart (W142).** Reported live as "the animation fps is low in general". `WMP_ANIM_TRACE=1`
+  separated two independent causes on its first line — `want=25.0fps got=20.0fps frames=21
+  restarts=10 sleep=42.3ms render=4.5ms` — and both are about *when* a frame is drawn, so a dump,
+  a cadence line and a corpus sweep are all blind to them.
+  * **A rebuild must not restart the repaint loop.** `startAnimation` runs on every rebuild and a
+    `.wmz` rebuilds constantly — AlienMorph's 100 ms view timer alone restarted it ten times a
+    second — and each cancel discarded a partly-elapsed sleep, so a 40 ms frame period inside a
+    100 ms rebuild window landed exactly two frames per window. The loop now keeps running while
+    `WMPViewPresentation.animationCadence` compares equal to the new one, and renders
+    `activeScene` rather than the scene it was started with: a rebuild replaces *what* it draws
+    without interrupting *when*. **That equality is the fix**, so anything that makes an unchanged
+    animation produce an unequal cadence silently restores the defect.
+  * **Frames are scheduled against the animation epoch, not "now + period".** `Task.sleep`
+    overshoots and the render after it is serial, so a period per frame accumulated both into
+    every interval. Deadlines off the epoch absorb them and are the same clock
+    `WMPImageAnimation.frame(at:)` picks a frame with; falling a whole period behind skips to the
+    next boundary rather than bursting.
+- **A GIF delay of 0 or 1 cs means "as fast as possible", and the browser's answer to it is not
+  this corpus's answer (W142).** `WMPImageStore.animationFloor` floors them at 0.0667s (15 fps);
+  the browser convention of 0.1s was the largest single cause of "the animations are slow".
+  **768 of the 2,166 multi-frame GIFs, across 62 of the 90 skins that animate, author a minimum
+  delay of 0 or 1 cs, and 625 of those author nothing else** — at 0.1s `AlienMorph`'s 119-frame
+  shutter took 11.9 seconds to open. **679 of the 768 are one-shot**, so this number is choosing
+  how long a *transition* takes, not how fast a loop spins, and only one endless corpus GIF is
+  short enough for the rate to read as a flicker. The floor itself is set **by eye against the
+  running app** and there is no measurement that can set it — the file said "as fast as possible".
+  0.04s was tried first, argued from the delays the corpus authors when it names one, and was
+  reported too fast on sight. Do not re-derive it from the corpus; that argument is what produced
+  0.04.
 - **A `<POPUP>` is an equaliser preset menu and its items come from the skin's own script.** All four
   corpus popups call `appendItem` in an `onLoad` and apply the choice through
   `eq.currentPreset`; `WMPScriptOutput.listItems` carries them out of the transaction, because the

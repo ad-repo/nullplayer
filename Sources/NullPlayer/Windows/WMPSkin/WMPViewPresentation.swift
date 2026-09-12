@@ -60,6 +60,17 @@ final class WMPViewPresentation {
     /// The view the animation clock belongs to. A window outlives the view inside it, so this is
     /// still needed even though a presentation has one `viewID` at a time.
     var animationEpochViewID: String?
+    /// What the running loop is pacing to. A rebuild that produces the same cadence leaves the loop
+    /// alone; only a change to it — or a view change, or teardown — restarts one.
+    var animationCadence: WMPRenderer.WMPAnimationCadence?
+    /// `WMP_ANIM_TRACE` only: what the repaint loop actually achieved, summarised once a second
+    /// rather than once a frame. A line per frame is what made the old `INPUT` trace unusable.
+    var animationTraceWindowStart = Date()
+    var animationTraceFrames = 0
+    var animationTraceRestarts = 0
+    var animationTraceRenderSeconds: TimeInterval = 0
+    var animationTracePresentSeconds: TimeInterval = 0
+    var animationTraceSleepSeconds: TimeInterval = 0
     /// The script's own `setTimeout`/`setInterval` tasks, by token. Per view because the tokens are
     /// per view: two open panels each run their own chain.
     var scriptTimerTasks: [Int: Task<Void, Never>] = [:]
@@ -108,9 +119,16 @@ final class WMPViewPresentation {
         viewTimerTask?.cancel()
         viewTimerTask = nil
         viewTimerMilliseconds = 0
+        stopAnimation()
+        animationEpochViewID = nil
+    }
+
+    /// Stop the repaint loop and forget the cadence it was pacing to, so the next `startAnimation`
+    /// starts one rather than recognising its own.
+    func stopAnimation() {
         animationTask?.cancel()
         animationTask = nil
-        animationEpochViewID = nil
+        animationCadence = nil
     }
 
     /// Stop everything and release the drawing. The window itself is the materializer's to order out

@@ -215,9 +215,28 @@ final class WMPImageStore: @unchecked Sendable {
 
     /// The frame timing of an animated image, or nil when it has one frame.
     ///
-    /// GIF delays are authored in hundredths of a second and browsers have taught authors that
-    /// 0 and 0.01 mean "as fast as possible", which in practice is about 10 fps — so both are
-    /// clamped to 0.1 rather than spinning the render loop for a skin that asked for 100 fps.
+    /// GIF delays are authored in hundredths of a second, and 0 or 1 cs means "as fast as
+    /// possible". That still needs a floor — nothing here may spin the repaint loop — but the
+    /// floor a **browser** uses for it (0.1s, 10 fps) is not this corpus's answer and was the
+    /// largest single cause of "the animations are slow": **768 of the corpus's 2,166 multi-frame
+    /// GIFs, across 62 of the 90 skins that animate at all, author a minimum delay of 0 or 1 cs**,
+    /// and 625 of those author *nothing else* — every frame is "as fast as possible". Clamping
+    /// them to 10 fps stretched `AlienMorph`'s 119-frame shutter to 12 seconds.
+    ///
+    /// **The floor itself is set by eye, and there is no measurement that can set it** — the file
+    /// said "as fast as possible", so every value is a choice about what that should look like.
+    /// What the corpus does say is the shape of what it is applied to: **679 of the 768 are
+    /// one-shot transitions**, not loops — a shutter opening, a button lighting under the pointer —
+    /// so the floor is choosing how long a transition takes, and only one endless GIF in the
+    /// corpus is short enough for the rate to read as a flicker (`Creed`'s 3-frame `CloseGates`).
+    ///
+    /// 0.1s was too slow (`AlienMorph`'s 119-frame shutter took 11.9s, `Blinx`'s 4.7s) and 0.04s
+    /// was then reported too fast on sight. 0.0667s is where it sits: the alien shutter runs 7.9s,
+    /// `Blinx` 3.1s, a 9-frame hover glow 0.6s. Every duration scales linearly with this number,
+    /// so it is the one dial — and it is a judgement, not a finding. Do not "correct" it against
+    /// the corpus's authored delays; that argument produced 0.04.
+    static let animationFloor: TimeInterval = 0.0667
+
     func animation(for path: String) throws -> WMPImageAnimation? {
         let canonical = provider.canonicalPath(for: path) ?? path
         lock.lock()
@@ -244,7 +263,7 @@ final class WMPImageStore: @unchecked Sendable {
             let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
             let unclamped = (gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double)
                 ?? (gif?[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
-            delays.append(unclamped <= 0.011 ? 0.1 : unclamped)
+            delays.append(unclamped <= 0.011 ? Self.animationFloor : unclamped)
         }
         let properties = CGImageSourceCopyProperties(source, options) as? [CFString: Any]
         let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
