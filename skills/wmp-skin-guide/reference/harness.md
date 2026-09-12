@@ -397,6 +397,42 @@ means "ignore me". **When you check whether the engine measures demand for a nam
 the trace gives it, not just whether the name appears.** An `INERT` on something that is spelled like
 a verb is the shape to distrust.
 
+### The dump is flat, so it cannot answer a layering question
+
+`WMPRenderer.dump` passes `splitAtEffects: false` **on purpose**: a PNG is a picture of the skin's
+artwork, the effects surface is an AppKit view that never appears in one, and splitting the list
+there would drop everything above the visualizer out of the file. Every dump therefore shows the
+whole scene flattened in one pass — including artwork that the running app does *not* draw, because
+in the app it lands on the overlay raster hosted above the surface.
+
+W144 cost three rounds of "still broken" to that. The reported defect was a skin drawer's artwork
+showing through a windowed visualization; the fix was correct on the second attempt and the dump kept
+showing the drawer, because the dump always shows the drawer. **`WMP_RENDER_APPKIT` with
+`WMP_RENDER_APPKIT_DUMP=<dir>` is the instrument for anything about layering**: it hosts the real
+`NSView` stack and writes `<view>-hosted.png`, which is what the user sees. Combine it with
+`WMP_RENDER_CLICK` to capture a state the skin only reaches through a handler.
+
+The general form, which is not only about `<EFFECTS>`: **before believing a render dump has
+falsified a fix, ask whether the thing you changed is something a dump can represent at all.**
+
+### A single-transaction sweep cannot measure a per-transaction rule
+
+`wmp_render_sweep.sh` renders each view once, after `onLoad`. A change to what happens on the
+*second* and later transactions is therefore invisible to it, and the sweep reports it as a clean
+no-op rather than as unmeasured.
+
+W144's expression-stickiness change — an authored `JScript:` geometry expression no longer
+re-applies unless its value changed — came out **485 identical, 50 differing, 0 lost, 0 gained**
+against the baseline both with and without it, byte for byte, because every one of those 50 came
+from the alignment change sitting beside it. The rule it fixed only bites on a view with an
+`onTimer`, which the sweep never ticks.
+
+`WMP_RENDER_SETTLE=<seconds>` is the instrument: it runs the view's own timer loop at the period the
+skin asks for, and it reproduced the defect on the first run (`visDrawer1` back at its authored
+`y=215` after two seconds, having been slid to `265` by `onLoad`). This is the same shape as the
+"live QA needs playback" rule — **a byte-identical sweep across a change to timers, hover, drag or
+playback is unmeasured, not unchanged.**
+
 ### The sweep is the arbiter, including against your own fix
 
 W87 had an obvious general fix — re-resolve the view's `JScript:` geometry expressions after the

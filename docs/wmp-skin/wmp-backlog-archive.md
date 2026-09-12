@@ -683,3 +683,46 @@ nothing headless can tell them apart (W142)".
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | W69 | `Xbox Live Skin` animates and flickers | 1 skin confirmed live; the flicker class covers **90 of 180 archives** that carry a multi-frame GIF | Reported as "xbox live skin animated/flickers", so the clock and the repaint loop both work and the compositing does not. Its `mainView` is also in W68's class — `19 nodes, 15 commands, 11 hits, 15 unresolved` — so some of what looks like flicker may be a starved layout rather than the repaint loop; separate the two before diagnosing either. It reports `ANIMATION shortestDelay=0.030 bounds=23,9 248x195` — a **33 fps full-scene re-render** with a sub-rect invalidation, which is the most demanding case in the corpus and therefore the right one to fix against. Candidates, none of them confirmed and all of them cheap to distinguish: (a) `present()` replaces the whole `NSImage` while `setNeedsDisplay` invalidates only the animated bounds, so the untouched region keeps older pixels against a newer image; (b) the animated `bounds` union is computed once at `startAnimation` from the scene's commands and never revisited, so a node that moves leaves its old frame un-erased; (c) 145 frames of `intro_anim.gif` decoded and cached separately may be thrashing the image store's 64 MiB LRU, forcing re-decodes mid-loop. **Instrument before reasoning**: the loop is the only thing in this engine that repaints without a script transaction, so log what it presents and what it invalidates before changing either. **That instrument now exists — `WMP_ANIM_TRACE=1`, built for W142 — and W142 closed two things this row was standing on.** The loop no longer restarts on every rebuild and no longer paces by `sleep(period)`, so the frame timing under this flicker is now correct and steady (`got=25.0fps restarts=0`); anything still flickering is compositing, which is what this row always suspected. It also **moves this skin's cadence**: `Xbox Live`'s 145-frame `intro_anim.gif` is in the 0-cs population, so the 33 fps in this row was the old scene minimum and must be re-measured before candidate (c) — the LRU-thrash theory — is argued from a frame rate at all. Candidates (a) and (b) are untouched by W142 and are still the place to start; re-run with the trace *and* a log of what `present()` invalidates. **Closed 2026-09-12 by W142, and it was never the thing this row suspected.** The reporter confirmed live that the flicker is gone, with no compositing change of any kind: candidates (a) the whole-`NSImage` replacement against a sub-rect invalidation, (b) the animated `bounds` union computed once at `startAnimation`, and (c) the 145-frame `intro_anim.gif` thrashing the image store's 64 MiB LRU were **none of them implemented, and none of them needed to be**. The cause was entirely *when* a frame was drawn: the repaint loop restarted on every rebuild and discarded a partly-elapsed sleep, and this skin's 0-cs GIF was floored at the browser's 0.1s — so the picture was a correct composite of frames arriving at an irregular rate, which is what a flicker looks like. **The lesson is the direction the diagnosis ran**: three plausible compositing theories were written down from the symptom, and the instrument (`WMP_ANIM_TRACE=1`) named a timing defect on its first line. The row was right that the loop is the only thing in this engine that repaints without a script transaction, and right to say instrument before reasoning; what it got wrong was assuming that a steady clock was already established. It was not — no view timer in the corpus had ever fired. |
+
+## Phase 20 — a skin's drawer, and the four things between it and working
+
+Closed 2026-09-12. One live report against `xsn_sports`, and four unrelated engine defects under it:
+*"there is a bug with video screen on xsn sports skins and others… this does not open reliably… when
+clicking this it can grow to double size on the border… there also seems to be a mini drawer that
+opens into the the frame with a seconds selector, this never closes."* Followed, across three rounds
+of live QA, by *"it still does not open and the content still show when retracted"*, *"now it open
+but 2 bugs, 1. when the skin launches it is open 2. the contents still bleed through when it is
+close"*.
+
+**The four are independent and each had to be measured separately.** The report reads as one broken
+drawer, and treating it as one is what made the first two rounds feel like the same fix failing.
+
+**What the reporter's own framing was worth.** *"i dont think a sweep is needed since we have a case
+to test against"* — correct, and `cerulean` (the skin they named) is what killed the theory the
+engine was about to be rebuilt around. The obvious reading of the bleed-through is that WMP's
+documented "z-order **within the view**" means a flat order, which would put `xsn`'s
+`<effects zIndex="25">` over its `<subview id="visDrawer" zIndex="17">`. Cerulean disproves it in
+two moves: its `<statusText zIndex="2">` sits inside `<subview zIndex="4">` and must draw *over* the
+seek slider beside it, and `xsn`'s own drawer artwork is unauthored `zIndex` 0, which a flat order
+would drop behind the video permanently. The discriminator was `windowed`, not z. **A named
+counter-example is cheaper than a sweep and settles more.**
+
+**Two instruments were being read wrong, and that is the process lesson.** `WMPRenderer.dump` is
+deliberately flat (`splitAtEffects: false`), so a render dump *always* contains the overlay artwork
+the running app does not draw — three rounds of "still broken" came from PNGs that could not have
+shown the fix. And `wmp_render_sweep.sh` renders one transaction per view, so the
+expression-stickiness change is byte-identical across it: **485 identical, 50 differing, 0 lost, 0
+gained** with and without it. `WMP_RENDER_APPKIT`/`WMP_RENDER_APPKIT_DUMP` and `WMP_RENDER_SETTLE`
+are the instruments that answer those two questions, and both rules are now in
+`reference/harness.md`.
+
+Verification: `swift test` green (2,213) with `WMPEffectsOcclusionTests` new and three tests added to
+`WMPScriptRuntimeTests`; `WMPAlignmentTests.testAComputedCoordinateOutranksCentring` replaced,
+because it asserted the rule W144 removes. Corpus sweep 485/50/0/0, invariants moving only `loadms`
+timings and `SCRIPT inline:` tie-ordering — no `RENDER-DUMP`, `COMPAT`, `FINDING`, `BITMAPS` or
+`UNKNOWN` line. `cerulean`'s render is byte-identical to the baseline. Dossier:
+`reference/skins/xsn-sports.md`.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W144 | An `xsn_sports` settings drawer that was in the wrong place, would not stay open, showed through the video when shut, and opened itself on every launch | Four separate rules. Centring: amends W143. Expression re-application: every view with an `onTimer`. Windowed `<EFFECTS>`: **18 nodes / 17 skins**. `onClose`: **373 handlers / 133 of 180 skins**, all previously dead | **Closed 2026-09-12.** (1) *"two drawers… double size on the border"* — the `isComputed` guard W143 carried onto the `center` case let `moveTo(0, …)`'s scripted `left` beat the centring, pinning a 141-wide drawer to the window edge while its own cover artwork stayed centred. `moveTo` takes both axes and the horizontal one is how an author says "unchanged" for a centred piece. Nothing outranks centring on the centred axis now; the guard protected only 3 corpus nodes, all in `Ice`, and all three are repairs. (2) *"it still does not open"* — an authored `JScript:` geometry expression was re-committed every transaction ahead of the mutations, so the 500 ms `onTimer` put the drawer back at `view.height-123` within half a second of every click. Expressions re-apply only when their own value changes, which keeps resize working. (3) *"the contents still bleed through when it is close"* — the drawer retracts 26px (`visView`) / 108px (`videoView`) **inside** the effects rect and relies on the windowed surface to hide it; the skin's overlay raster was being drawn over it. `WMPScene.windowedEffectsRects` is now punched out of the overlay. Ruled out and recorded: it is not `visible` (the hosted widgets do hide — what remained is `vis_drawer_1.png`, which *pictures* a button and a slider row), not `onEndMove`, not z-order (`cerulean`), not "drop the overlay" (the surface is transparent while idle, and the drawer must still draw below the rect), and not "make the surface opaque" (a stopped player draws nothing, and the hole belongs to whatever the skin painted before the effects node). (4) *"when the skin launches it is open"* — `onClose` had no dispatch site anywhere, so `saveVisPrefs()` never ran, `theme.loadPreference` answered the `--` absent sentinel every launch, and `loadVisPrefs` took its first-run branch. Dispatched before `discardView` at both window-close sites, and `flushCloseHandlersOnTermination` covers quitting, which an async close never survives. Dossier: `reference/skins/xsn-sports.md`. |

@@ -1213,4 +1213,115 @@ final class WMPScriptRuntimeTests: XCTestCase {
             .appendingPathComponent("Fixtures/WMPSkin")
         return try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8)
     }
+    // MARK: - W144: what an authored expression may overwrite, and when a view saves
+
+    /// **An authored `JScript:` geometry expression re-applies only when its own value changes.**
+    ///
+    /// It is re-evaluated every transaction — that is what makes `top="jscript:view.height-123"`
+    /// follow a resize — and committing it unconditionally put it *ahead of the mutations*, so any
+    /// transaction whose handlers did not touch the node snapped the node back to its authored
+    /// place. A view with an `onTimer` therefore undid its own script within one tick.
+    /// `xsn_sports` slides its drawers with `visDrawer.moveTo(0, view.height-73, 400)` against
+    /// `timerInterval="500"`, and half a second after every click the drawer was back at
+    /// `view.height-123` — reported as "it still does not open".
+    func testATimerTickDoesNotUndoAScriptedMoveWithTheAuthoredExpression() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js"
+                   onTimer="tick();" timerInterval="500">
+            <SUBVIEW id="drawer" left="0" top="jscript:view.height-123" width="140" height="130"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10"
+                    onClick="drawer.moveTo(0, view.height-73, 400);"/>
+        </VIEW></THEME>
+        """, js: "function tick(){}")
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let drawer = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "drawer" }?.stableID)
+        let top = WMPScenePropertyAddress(stableID: drawer, property: "top")
+        let size = WMPSize(width: 200, height: 200)
+
+        let opened = await runtime.transact(
+            skin: skin, viewID: "main", size: size, snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go",
+                                   handlers: ["drawer.moveTo(0, view.height-73, 400);"]))
+        XCTAssertEqual(opened.overrides.geometry[top], 127, "200 - 73")
+
+        let ticked = await runtime.transact(
+            skin: skin, viewID: "main", size: size, snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "timer", targetID: nil, handlers: ["tick();"]))
+        XCTAssertEqual(ticked.overrides.geometry[top], 127,
+                       "the timer touched nothing, so `view.height-123` must not put it back to 77")
+    }
+
+    /// The other half, which is why the rule is "when its value changes" and not "never again":
+    /// a resize *does* change what the expression answers, and it has to win then. This is also
+    /// how an expression reading an element the script moved keeps working.
+    func testAResizeStillLetsTheExpressionOverrideTheScriptedPosition() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="drawer" left="0" top="jscript:view.height-123" width="140" height="130"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let drawer = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "drawer" }?.stableID)
+        let top = WMPScenePropertyAddress(stableID: drawer, property: "top")
+
+        _ = await runtime.transact(skin: skin, viewID: "main",
+                                   size: WMPSize(width: 200, height: 200),
+                                   snapshot: WMPHostSnapshot(), event: nil)
+        let moved = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: nil, handlers: ["drawer.top = 5;"]))
+        XCTAssertEqual(moved.overrides.geometry[top], 5)
+
+        let resized = await runtime.transact(skin: skin, viewID: "main",
+                                             size: WMPSize(width: 200, height: 300),
+                                             snapshot: WMPHostSnapshot(), event: nil)
+        XCTAssertEqual(resized.overrides.geometry[top], 177,
+                       "300 - 123: the expression answers something new, so it takes the axis back")
+    }
+
+    /// **`onClose` is where a `.wmz` saves its state, and it had no dispatch site at all.**
+    ///
+    /// 373 handlers across 133 of the 180 archives were dead. `xsn_sports` closes with
+    /// `saveVisPrefs()`, which writes `visDrawerStatus` through `theme.savePreference`; with
+    /// nothing ever saved, `theme.loadPreference` answered the `--` absent sentinel on every launch
+    /// and the settings drawer opened itself every time. This is the transaction shape the two
+    /// controller sites and `flushCloseHandlersOnTermination` post: the handlers run, and the
+    /// preference writes they post are committed before the view's scope is discarded.
+    func testACloseTransactionCommitsThePreferencesItsHandlerWrites() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js" onClose="saveState();">
+            <SUBVIEW id="drawer" left="0" top="0" width="10" height="10"/>
+        </VIEW></THEME>
+        """, js: "var open=false; function saveState(){ theme.savePreference('drawer', open); }")
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "close", targetID: nil,
+                                                        viewID: "main"),
+                       ["saveState();"],
+                       "the dispatch site looks up `close`, and the markup spells it `onClose`")
+
+        let closed = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "close", targetID: nil, handlers: ["saveState();"]))
+        XCTAssertTrue(closed.diagnostics.isEmpty,
+                      "\(closed.diagnostics.map(\.message))")
+
+        // Read it back the way the next launch does. A boolean round-trips as "true"/"false", which
+        // is what `loadVisPrefs` compares against — and never as the `--` absent sentinel again.
+        let reopened = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "load", targetID: nil,
+                                   handlers: ["drawer.width = (theme.loadPreference('drawer') == '--') ? 1 : 2;"]))
+        let width = WMPScenePropertyAddress(
+            stableID: try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "drawer" }?.stableID),
+            property: "width")
+        XCTAssertEqual(reopened.overrides.geometry[width], 2,
+                       "the saved value is there, so the skin takes its restore branch")
+    }
 }

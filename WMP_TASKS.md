@@ -40,6 +40,18 @@ all 9 `currentMedia_onchange` uses are the album-art call that became W137. The 
 the corpus sweep and the live verification are in
 [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md).
 
+**W144 closed 2026-09-12 and it is four rules, not one defect.** One live report against
+`xsn_sports`' settings drawer produced four unrelated engine defects — centring beaten by a scripted
+`left`, an authored `JScript:` geometry expression re-applying every transaction and undoing the
+script that moved the node, skin artwork drawn over a **windowed** `<EFFECTS>`, and `onClose` having
+no dispatch site at all (**373 handlers across 133 of 180 archives**, all dead). The last two are
+capability rows in their own right and neither was on this page. Its two process lessons are in
+[`reference/harness.md`](skills/wmp-skin-guide/reference/harness.md): a render dump is flat and
+cannot answer a layering question, and a single-transaction sweep cannot measure a per-transaction
+rule. Closure note and the ruled-out list are in
+[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 20*; dossier
+at [`reference/skins/xsn-sports.md`](skills/wmp-skin-guide/reference/skins/xsn-sports.md).
+
 **W128 closed 2026-09-11 and it is the row the rest of the SDK conformance audit hangs off.** That
 audit is the first time this engine was read against Microsoft's Skin Programming Reference as a
 *specification* rather than against a corpus sweep, and its point is that a corpus scan can only

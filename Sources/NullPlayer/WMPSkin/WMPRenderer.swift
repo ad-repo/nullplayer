@@ -171,9 +171,14 @@ struct WMPRenderer: @unchecked Sendable {
         let below = split.map { Array(scene.commands[..<$0]) } ?? scene.commands
         let image = try rasterize(below, scene: scene, pixelWidth: pixelWidth,
                                   pixelHeight: pixelHeight, backingScale: backingScale, clock: clock)
+        // **A windowed visualization is not something the skin can draw over.** Its rects are
+        // punched out of the overlay after it is rasterized, so the surface hosted underneath shows
+        // through and whatever the skin painted *before* the effects node stands where the
+        // visualization is idle. See `WMPScene.windowedEffectsRects` (W144).
         let overlay = try split.map {
             try rasterize(Array(scene.commands[$0...]), scene: scene, pixelWidth: pixelWidth,
-                          pixelHeight: pixelHeight, backingScale: backingScale, clock: clock)
+                          pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
+                          punchingOut: scene.windowedEffectsRects)
         }
         return WMPRenderResult(image: image, overlayImage: overlay,
             renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
@@ -184,7 +189,7 @@ struct WMPRenderer: @unchecked Sendable {
     /// One layer of the scene, on its own transparent canvas.
     private func rasterize(_ commands: [WMPPaintCommand], scene: WMPScene,
                            pixelWidth: Int, pixelHeight: Int, backingScale: CGFloat,
-                           clock: TimeInterval) throws -> CGImage {
+                           clock: TimeInterval, punchingOut: [WMPRect] = []) throws -> CGImage {
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
             | CGImageAlphaInfo.premultipliedLast.rawValue
         guard let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight,
@@ -252,6 +257,11 @@ struct WMPRenderer: @unchecked Sendable {
                 draw(text, in: command.frame, context: context, clock: clock)
             }
             context.restoreGState()
+        }
+        // After every command, not by clipping each one: the punch-out is an occlusion, so it has
+        // to remove what the skin drew there rather than stop it from being drawn elsewhere.
+        for rect in punchingOut where !rect.isEmpty {
+            context.clear(CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height))
         }
         guard let image = context.makeImage() else {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Unable to finalize render surface."))

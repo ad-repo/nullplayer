@@ -125,12 +125,19 @@ struct WMPWidget: Hashable, Codable {
     /// It is an index and not a zIndex threshold on purpose: `WMPSceneBuilder.walk` sorts only
     /// siblings, so `commands` is DFS order and is not globally sorted by zIndex.
     let commandSplitIndex: Int?
+    /// `<EFFECTS windowed="true">`: the visualization is a **windowed** control, and in WMP a
+    /// windowed control is a real child window that the skin's own painting cannot draw over.
+    /// `windowed="false"` (106 skins) and an absent attribute (46, Cerulean among them) are
+    /// windowless — composited into the artwork at the node's place in the paint order, which is
+    /// what `commandSplitIndex` exists for. 17 corpus skins declare `true`.
+    let isWindowedEffects: Bool
 
     init(stableID: Int, nodeID: String?, kind: WMPWidgetKind, frame: WMPRect, clipRect: WMPRect?,
          label: String, toolTip: String?, minimumValue: Double? = nil, maximumValue: Double? = nil,
          value: Double? = nil, direction: WMPSliderDirection? = nil, borderSize: CGFloat = 0,
          thumbSize: WMPSize? = nil, valueBindingPath: String? = nil,
-         videoPresentation: WMPVideoPresentation? = nil, commandSplitIndex: Int? = nil) {
+         videoPresentation: WMPVideoPresentation? = nil, commandSplitIndex: Int? = nil,
+         isWindowedEffects: Bool = false) {
         self.stableID = stableID
         self.nodeID = nodeID
         self.kind = kind
@@ -147,6 +154,7 @@ struct WMPWidget: Hashable, Codable {
         self.valueBindingPath = valueBindingPath
         self.videoPresentation = videoPresentation
         self.commandSplitIndex = commandSplitIndex
+        self.isWindowedEffects = isWindowedEffects
     }
 }
 
@@ -297,8 +305,38 @@ struct WMPScene: Hashable, Codable {
     ///
     /// A scene with several effects widgets takes the earliest, so every surface sits under the
     /// same overlay — the artwork between two of them is authored to cover both.
+    ///
     var effectsCommandSplitIndex: Int? {
         widgets.filter { $0.kind == .effects }.compactMap(\.commandSplitIndex).min()
+    }
+
+    /// The rects a **windowed** visualization occupies, in which the skin's own overlay artwork is
+    /// not drawn at all.
+    ///
+    /// `windowed="true"` makes the surface a real child window in WMP, and nothing the skin paints
+    /// can be layered over a windowed control — which is exactly why 106 corpus skins say
+    /// `windowed="false"` and only 17 say `true`. The split index alone does not express that: it
+    /// hosts the surface *between* two rasters, so artwork declared after the effects node still
+    /// lands on top. `xsn_sports` is built on the occlusion: its video and visualisation drawers
+    /// retract to a resting position 26px inside the bottom of the effects rect
+    /// (`top="jscript:view.height-123"` against a rect ending at `view.height-97`), and the
+    /// windowed surface is what hides the retracted drawer. Drawing it anyway put the drawer's own
+    /// background — `vis_drawer_1.png` pictures a button and a slider row — across the bottom of
+    /// the visualization while the drawer was shut (W144).
+    ///
+    /// Clearing the rect rather than dropping the overlay is what keeps the rest of the drawer
+    /// right: the part of it below the effects rect is the tab and its cover, and that must still
+    /// draw. It is also why this is not "make the surface opaque" — a stopped player draws no
+    /// visualization at all, and what belongs in the hole then is whatever the skin painted
+    /// *before* the effects node (`visMask`'s own black), not a black rectangle of ours.
+    ///
+    /// Windowless is untouched and stays the common case: Cerulean's `<effects zIndex="-1">` under
+    /// a colour-keyed hole in `face.bmp` is the shape the split index was built for.
+    var windowedEffectsRects: [WMPRect] {
+        widgets.filter { $0.kind == .effects && $0.isWindowedEffects }.compactMap { widget in
+            guard let clip = widget.clipRect else { return widget.frame }
+            return widget.frame.intersection(clip)
+        }
     }
 
     var deterministicDump: String {

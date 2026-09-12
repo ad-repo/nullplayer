@@ -29,6 +29,20 @@
 
 ### Bug Fixes
 
+- **The slide-out settings drawers in Media Player skins work properly.** In XSN Sports and skins
+  built the same way, the little drawer along the bottom of the visualization and video windows was
+  broken four different ways at once: it sat at the left edge while the tab that opens it stayed
+  centred — so the window appeared to have two drawers, one of them doubling the width of its own
+  border — it sprang shut again about half a second after every click, the controls printed on it
+  showed through the middle of the video while it was closed, and it opened itself again on every
+  launch no matter how you left it. All four are fixed: the drawer sits under its tab, stays where
+  you put it, disappears completely when shut, and remembers whether it was open.
+
+- **Media Player skins now save their settings when you close a window or quit.** Most of them —
+  133 of the 180 we test against — save something when a window closes: which panels were showing,
+  how big you had made a window, the state of their own switches. None of it was ever being saved,
+  so every launch started over from the skin's factory defaults.
+
 - **Media Player skins' playlist, equalizer and video windows are built correctly again.** Those
   windows are drawn as a frame of separate pieces — corners, edge tiles, and a piece meant to sit
   in the middle of each side — and the middle pieces were being stacked in the top-left corner

@@ -427,19 +427,37 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // survived. Reported as "the playlist and eq windows are not properly constructed,
                 // the window border is not correct and there are large gaps", against AlienMorph and
                 // every skin that shares the frame.
+                //
+                // **Nothing outranks centring on the centred axis — not an expression, and not a
+                // coordinate a script wrote.** W143 carried the `isComputed` guard onto `center`
+                // alongside the other three values, on WoW's `left="JScript:view.width-202"` beside
+                // an alignment; WoW's alignment on that node is `right`, and a decoded scan of the
+                // 180-archive corpus finds **3** centred nodes authoring an expression on the
+                // centred axis, all in `Ice`, against 285 + 91 that author no coordinate at all. The
+                // guard protected nothing it was written for and cost every drawer a skin slides by
+                // script: `xsn_sports` opens both its video and visualisation drawers with
+                // `visDrawer.moveTo(0, view.height-73, 400)`, where the `0` is not a position —
+                // `moveTo` takes both axes, and the horizontal one is how the author says
+                // "unchanged" for a piece that is centred. Honouring it pinned the 141-wide drawer
+                // to the window's left edge while the cover artwork above it stayed centred, so the
+                // window drew two drawers, one of them doubling the bottom border, with the
+                // settings panel inside the misplaced one showing through the video and its tab
+                // out at the corner where no click could reach it (W144). Ice's three read as
+                // counter-evidence and agree: its 313-wide `Pl-xp.bmp` bottom bar ran off the right
+                // edge of the playlist and visualisation windows and now sits under them.
                 let horizontal = WMPAxisAlignment(horizontal: literalString(node, "horizontalAlignment"))
                 let vertical = WMPAxisAlignment(vertical: literalString(node, "verticalAlignment"))
                 let deltaWidth = parentFrame.width - parentAuthoredSize.width
                 let deltaHeight = parentFrame.height - parentAuthoredSize.height
                 var x = left, y = top
                 switch horizontal {
-                case .center where !isComputed(node, "left"): x = (parentFrame.width - width) / 2
+                case .center: x = (parentFrame.width - width) / 2
                 case .trailing where !isComputed(node, "left"): x += deltaWidth
                 case .stretch where !isComputed(node, "width"): width = max(0, width + deltaWidth)
                 default: break
                 }
                 switch vertical {
-                case .center where !isComputed(node, "top"): y = (parentFrame.height - height) / 2
+                case .center: y = (parentFrame.height - height) / 2
                 case .trailing where !isComputed(node, "top"): y += deltaHeight
                 case .stretch where !isComputed(node, "height"): height = max(0, height + deltaHeight)
                 default: break
@@ -478,7 +496,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         stretchToFit: literalString(node, "stretchToFit")?.lowercased() == "true",
                         maintainAspectRatio: literalString(node, "maintainAspectRatio")?.lowercased() != "false",
                         alpha: Double(alpha)) : nil,
-                    commandSplitIndex: commands.count))
+                    commandSplitIndex: commands.count,
+                    isWindowedEffects: kind == .effects
+                        && literalString(node, "windowed")?.lowercased() == "true"))
             }
 
             // **A negative `zIndex` means behind the parent's own artwork, so those children are

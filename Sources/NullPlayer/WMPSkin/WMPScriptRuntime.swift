@@ -345,6 +345,9 @@ actor WMPScriptRuntime {
     /// writes belong to its own window; before `theme.openView` opened one, applying them to the
     /// single presented view is what W90 was.
     private var committedOverrides: [String: WMPSceneOverrides] = [:]
+    /// The value each authored geometry expression produced the last time it was evaluated, per
+    /// view scope. An expression re-applies only when this changes — see `transact`.
+    private var committedExpressions: [String: [WMPScenePropertyAddress: CGFloat]] = [:]
     private var recentTransactionTimes: [Date] = []
     /// The dispatcher view's plan, built once. Building one walks the whole graph, and a dispatcher
     /// runs at the period its markup authored — 100 ms in every corpus skin that has one.
@@ -429,6 +432,29 @@ actor WMPScriptRuntime {
         for change in boundChanges {
             overrides.properties[change.address] = change.value
         }
+        // **An authored geometry expression re-applies only when its own value changes, because
+        // otherwise it overwrites the script assignment that came after it.**
+        //
+        // `JScript:` geometry is re-evaluated every transaction — that is what makes
+        // `top="jscript:view.height-123"` follow a resize — and the result was being committed
+        // unconditionally, ahead of the mutations. A transaction whose handlers never touch the
+        // node contributes no mutation for it, so the expression's answer won and the node snapped
+        // back to its authored position. Any view with an `onTimer` therefore undid its own script
+        // within one tick: `xsn_sports` slides its video and visualisation drawers with
+        // `visDrawer.moveTo(0, view.height-73, 400)` against `onTimer="htcpVis()" timerInterval="500"`,
+        // and half a second later `view.height-123` put the drawer back while the settings panel
+        // the drawer had revealed stayed visible — reported as "it still does not open and the
+        // content still shows when retracted" (W144). This is the same distinction
+        // `assignedViewSize` already draws for the root: an expression that re-resolves is a layout
+        // reading the current size, not a fresh request.
+        //
+        // Comparing against the value this expression last produced is what keeps the resize case
+        // working: `view.height` changing makes the expression's answer change, so it wins again,
+        // and so does an expression reading another element the script moved
+        // (`top="wmpprop:plLeftCenter.top"`). When the answer is identical, writing it or not
+        // differs only where something else has since written the address — which is exactly the
+        // assignment that must stand.
+        var expressionValues = committedExpressions[scope] ?? [:]
         for expression in result.expressions {
             guard expression.error == nil, let value = expression.value?.number, value.isFinite,
                   let address = plan.expressionAddresses[expression.key.lowercased()] else {
@@ -442,8 +468,12 @@ actor WMPScriptRuntime {
                 diagnostics.append(.init(code: "invalid-geometry", message: "\(expression.key) is negative"))
                 continue
             }
-            overrides.geometry[address] = CGFloat(value)
+            let resolved = CGFloat(value)
+            defer { expressionValues[address] = resolved }
+            guard expressionValues[address] != resolved else { continue }
+            overrides.geometry[address] = resolved
         }
+        committedExpressions[scope] = expressionValues
         for mutation in result.mutations {
             guard let stableID = plan.idToStableID[WMPPath.fold(mutation.targetID)] else { continue }
             let address = WMPScenePropertyAddress(stableID: stableID,
@@ -648,6 +678,7 @@ actor WMPScriptRuntime {
     func discardView(_ viewID: String) {
         let scope = WMPPath.fold(viewID)
         committedOverrides.removeValue(forKey: scope)
+        committedExpressions.removeValue(forKey: scope)
         propertyRegistries.removeValue(forKey: scope)
         context?.discardElements(for: viewID)
         if contextViewID?.caseInsensitiveCompare(viewID) == .orderedSame { contextViewID = nil }
@@ -661,6 +692,7 @@ actor WMPScriptRuntime {
         contextSkin = nil
         contextViewID = nil
         committedOverrides.removeAll()
+        committedExpressions.removeAll()
         propertyRegistries.removeAll()
     }
 }

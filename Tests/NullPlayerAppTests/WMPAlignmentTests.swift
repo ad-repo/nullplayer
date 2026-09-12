@@ -130,12 +130,25 @@ final class WMPAlignmentTests: XCTestCase {
                        "a stretch tile covers the growth; centring must not have changed this")
     }
 
-    /// **An expression that already reads `view.width` is not centred on top of its own answer.**
-    /// WoW authors `left="JScript:view.width-202"` beside an alignment on the same node, and
-    /// counting the resize twice threw its right-hand chrome off the canvas. The `isComputed` guard
-    /// covers the centred axis for the same reason it covers the other three — including a
-    /// coordinate a script wrote, which is an explicit answer and not a layout hint.
-    func testAComputedCoordinateOutranksCentring() async throws {
+    /// **Nothing outranks centring on the centred axis — not an expression, and not a coordinate
+    /// a script assigned.** The `isComputed` guard was carried onto `center` alongside the other
+    /// three values when W143 landed, justified by WoW's `left="JScript:view.width-202"` beside an
+    /// alignment; WoW's alignment on that node is `right`, and a decoded scan of the 180-archive
+    /// corpus puts **3** centred nodes with an authored expression on the centred axis, all three
+    /// in `Ice`, against 285 + 91 that author no coordinate at all. So the guard protected nothing
+    /// it was written for and cost every drawer a skin slides by script: `xsn_sports` opens its
+    /// video and visualisation drawers with `visDrawer.moveTo(0, view.height-73, 400)`, and the
+    /// `0` is not a position — `moveTo` takes both axes and the horizontal one is the author's way
+    /// of saying "unchanged", because the drawer is centred. Honouring it pinned a 141-wide drawer
+    /// to the window's left edge while its own cover artwork stayed centred: reported as two
+    /// drawers, one growing "to double size on the border", with the settings panel inside the
+    /// misplaced one showing through the video window and no reachable tab to shut it. W144.
+    ///
+    /// Ice is the counter-evidence that turned out to agree: it authors
+    /// `left="jscript:view.width-180"` on the 313-wide `Pl-xp.bmp` bar its playlist and
+    /// visualisation windows hang along the bottom, which ran the bar off the right edge and left
+    /// the bottom-left corner empty. Centred, it sits under the window.
+    func testCentringOutranksBothAnExpressionAndAScriptedCoordinate() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="389" height="247">
             <SUBVIEW id="expressed" top="jscript:view.height-100" verticalAlignment="center"
@@ -147,9 +160,36 @@ final class WMPAlignmentTests: XCTestCase {
         overrides.geometry[.init(stableID: try stableID(skin, "scripted"), property: "top")] = 12
         let scene = try await WMPSceneBuilder(loadedSkin: skin)
             .build(viewID: "main", overrides: overrides)
-        XCTAssertEqual(try frame(skin, scene, "expressed").y, 147,
-                       "the expression's own answer stands; centring would have said 77")
-        XCTAssertEqual(try frame(skin, scene, "scripted").y, 12,
-                       "so does a coordinate the skin's script assigned")
+        XCTAssertEqual(try frame(skin, scene, "expressed").y, (247 - 92) / 2,
+                       "the expression's 147 does not survive a centred axis")
+        XCTAssertEqual(try frame(skin, scene, "scripted").y, (247 - 92) / 2,
+                       "and neither does a coordinate the skin's script assigned")
+    }
+
+    /// The other axis, and the shape the report came in as: a centred drawer, the cover artwork it
+    /// has to line up with, and a `moveTo` that slides it vertically while passing `0` for `left`.
+    /// Both pieces must land on the same x or the skin draws two drawers.
+    func testAScriptedSlideKeepsACentredDrawerUnderItsCover() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="vis" width="379" height="338">
+            <SUBVIEW id="cover" top="241" width="141" height="24"
+                     horizontalAlignment="center" backgroundColor="#00FF00"/>
+            <SUBVIEW id="drawer" top="jscript:view.height-123" width="141" height="131"
+                     verticalAlignment="bottom" horizontalAlignment="center"
+                     backgroundColor="#0000FF"/>
+        </VIEW></THEME>
+        """)
+        var overrides = WMPSceneOverrides.empty
+        let drawer = try stableID(skin, "drawer")
+        overrides.geometry[.init(stableID: drawer, property: "left")] = 0
+        overrides.geometry[.init(stableID: drawer, property: "top")] = 265
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "vis", overrides: overrides)
+        XCTAssertEqual(try frame(skin, scene, "drawer").x, (379 - 141) / 2,
+                       "moveTo's 0 does not un-centre the drawer")
+        XCTAssertEqual(try frame(skin, scene, "drawer").x, try frame(skin, scene, "cover").x,
+                       "which is the only way it stays under its own cover")
+        XCTAssertEqual(try frame(skin, scene, "drawer").y, 265,
+                       "while the axis the skin actually slid still takes the scripted value")
     }
 }

@@ -178,11 +178,56 @@ queue, with the object model as the security boundary — see Amendment 2 in
   clipped `X3-080902` readout, the five `US …` video placeholders, `Plus! Pulsar`'s side-drawer tab,
   `Project Gotham Racing 2`'s frame stripes, and `T3-Skynet_Media_Player`, which had been drawing a
   half-width frame with its own buttons outside it. **The axes are independent** (AlienMorph's
-  `plRightCenter` is centred vertically and pinned right) and the `isComputed` guard still wins on
-  the centred axis, which is what keeps WoW's `left="JScript:view.width-202"` from being counted
-  twice. `mainView` is byte-identical across the whole family: a non-resizable player authors no
+  `plRightCenter` is centred vertically and pinned right). **Amended by W144: nothing outranks
+  centring on the centred axis** — the `isComputed` guard was carried onto `center` alongside the
+  other three, justified by WoW's `left="JScript:view.width-202"` beside an alignment, and WoW's
+  alignment on that node is `right`. A decoded corpus scan finds **3** centred nodes authoring an
+  expression on the centred axis, all in `Ice`, against 376 that author no coordinate at all — so
+  the guard protected nothing it was written for, and it cost every drawer a skin slides by script.
+  See the `windowed`/drawer entry below and `reference/skins/xsn-sports.md`. `mainView` is
+  byte-identical across the whole family: a non-resizable player authors no
   centred pieces, so **this class lives entirely in the windows a skin opens beside its player** —
   which is why four phases of `mainView` work never saw it. `WMPAlignmentTests` pins both halves.
+- **A `windowed="true"` `<EFFECTS>` is a real child window: nothing the skin paints goes over it
+  (W144).** This is the *other* answer to the occlusion question the entry below settles for the
+  windowless case, and the two are opposite on purpose — which is why 106 corpus skins say
+  `windowed="false"` and only 17 say `true` (18 nodes; absent on 52 nodes / 46 skins, and absent
+  means windowless). A windowless surface is composited into the artwork at its own place in the
+  paint order and the skin draws over it deliberately; a windowed one is an HWND in WMP and cannot
+  be layered on at all. `WMPScene.windowedEffectsRects` is cleared out of the overlay raster after
+  it is drawn. **Three near-misses are worth not repeating.** It is not z-order — `cerulean` is the
+  counter-evidence and holds per-parent ordering down; it is not "drop the overlay", because the
+  surface is transparent while idle *and* the artwork must still draw outside the rect; and it is
+  not "make the surface opaque", because a stopped player draws no visualization and what belongs
+  in the hole is whatever the skin painted **before** the effects node. `xsn_sports` retracts its
+  settings drawers to a resting place 26px (`visView`) and 108px (`videoView`) inside the effects
+  rect and relies on the surface to hide them; reported as the drawer's contents showing through the
+  video window while shut. `WMPEffectsOcclusionTests` pins both sides.
+- **An authored `JScript:` geometry expression re-applies only when its own value changes (W144).**
+  It is re-evaluated every transaction — that is what makes `top="jscript:view.height-123"` follow a
+  resize — and committing it unconditionally put it **ahead of the mutations**, so any transaction
+  whose handlers did not touch the node snapped the node back to its authored place. **Any view with
+  an `onTimer` therefore undid its own script within one tick**: `xsn_sports` slides its drawers with
+  `visDrawer.moveTo(0, view.height-73, 400)` against `timerInterval="500"`, and half a second after
+  every click the drawer was back where the markup put it. Reported as "it still does not open".
+  Comparing against the value the expression last produced is what keeps the resize case working,
+  and an expression reading an element the script moved (`top="wmpprop:plLeftCenter.top"`) with it.
+  This is the same distinction `WMPScriptRuntime.assignedViewSize` already drew for the root: an
+  expression that re-resolves is a layout reading the current size, not a fresh request. **A plain
+  render sweep cannot see this class** — it renders one transaction per view, and base-vs-change came
+  out identical either side of the fix. `WMP_RENDER_SETTLE` is the instrument.
+- **`onClose` is a view's last transaction, and it is where a `.wmz` saves its state (W144).** It had
+  **no dispatch site at all**: `discardView` dropped the view's scope and its live elements and the
+  handler never ran, so **373 `onClose` handlers across 133 of the 180 archives** were dead. What
+  they do is persist — `xsn_sports` writes `visDrawerStatus` and its own view size through
+  `theme.savePreference` and restores both in `onLoad`, branching on the `--` absent sentinel, so
+  with nothing ever saved its settings drawer opened itself on every single launch and no window
+  remembered its size. The transaction runs **before** `discardView`, because the handler needs the
+  view's elements and the skin's globals, and it renders nothing: the window is already gone.
+  **Quitting is a close too**, and `applicationWillTerminate` returns and the process exits, so the
+  `Task` an ordinary close posts never runs — `flushCloseHandlersOnTermination` runs the same
+  transaction for every open view and waits for it, which is safe only because nothing on the script
+  path touches `MainActor`.
 - **A number a script writes must reach the drawing, and `<TEXT>` is where it did not (W114).**
   `WMPSceneBuilder.literal(_:_:)` reads the attribute and nothing else — geometry has
   `parseDimension` and a slider has `sliderMetrics`, and the rest had nothing. `Cablemusic` lays its

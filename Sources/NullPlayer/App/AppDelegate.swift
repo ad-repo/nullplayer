@@ -291,6 +291,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Save window positions (always saved, used by snapToDefault)
         windowManager.saveWindowPositions()
 
+        // A `.wmz` saves its state in `onClose`, and quitting never gave it the chance —
+        // see `WMPMainWindowController.flushCloseHandlersOnTermination`. Gated on the WMP
+        // controller: no other skin mode has script handlers to run.
+        (windowManager.mainWindowController as? WMPMainWindowController)?
+            .flushCloseHandlersOnTermination()
+
         // Flush WAL to disk before exit so history survives hard shutdown / reboot
         MediaLibraryStore.shared.checkpoint()
         MediaLibraryStore.shared.close()

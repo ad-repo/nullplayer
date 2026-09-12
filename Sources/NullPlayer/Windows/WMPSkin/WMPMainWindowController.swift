@@ -984,9 +984,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             for other in materializer.openPresentations where other !== presentation {
                 closeAuxiliaryWindow(other)
             }
-            materializer.remove(presentation, closing: true)
             let viewID = presentation.viewID
-            if let scriptRuntime { Task { await scriptRuntime.discardView(viewID) } }
+            let size = presentation.activeScene?.canvasSize
+            materializer.remove(presentation, closing: true)
+            closeScriptView(viewID, size: size)
             persistOpenViews()
             return true
         }
@@ -997,10 +998,81 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     private func closeAuxiliaryWindow(_ presentation: WMPViewPresentation) {
         let viewID = presentation.viewID
+        let size = presentation.activeScene?.canvasSize
         if let view = presentation.mainView { setSpectrumDemand(false, from: ObjectIdentifier(view)) }
         materializer.remove(presentation)
-        if let scriptRuntime { Task { await scriptRuntime.discardView(viewID) } }
+        closeScriptView(viewID, size: size)
         arbitrateVideoSurface()
+    }
+
+    /// **`onClose` is a view's last transaction, and it is where a `.wmz` saves its state.**
+    ///
+    /// It had no dispatch site at all: `discardView` dropped the view's scope and its live elements
+    /// and the handler never ran, so **373 `onClose` handlers across 133 of the 180 archives** were
+    /// dead. What they do is persist — `xsn_sports` closes with
+    /// `saveVisPrefs()`/`saveVidPrefs()`, which write `visDrawerStatus` and the view's own size
+    /// through `theme.savePreference`, and its `onLoad` restores both. With nothing saved,
+    /// `theme.loadPreference` answered the `--` absent sentinel on every launch and `loadVisPrefs`
+    /// took its first-run branch, so the settings drawer opened itself every single time and no
+    /// window remembered its size. Reported as "when the skin launches it is open" (W144).
+    ///
+    /// The transaction runs *before* `discardView`, because the handler needs the view's elements
+    /// and the skin's globals, and the preference writes it posts are committed inside `transact`.
+    /// It renders nothing: the window is already gone, and a scene built for it would have nowhere
+    /// to go. A view with no authored handler skips straight to the discard, which is what every
+    /// close did before.
+    private func closeScriptView(_ viewID: String, size: WMPSize?) {
+        guard let scriptRuntime else { return }
+        let handlers = loadedSkin.map {
+            Self.handlers(in: $0, event: "close", targetID: nil, viewID: viewID)
+        } ?? []
+        let skin = loadedSkin
+        let snapshot = host.snapshot
+        Task { [weak self] in
+            if let skin, let size, !handlers.isEmpty {
+                let output = await scriptRuntime.transact(
+                    skin: skin, viewID: viewID, size: size, snapshot: snapshot,
+                    event: WMPJScriptEvent(name: "close", targetID: nil, handlers: handlers))
+                await MainActor.run { self?.recordScriptDiagnostics(output.diagnostics) }
+            }
+            await scriptRuntime.discardView(viewID)
+        }
+    }
+
+    /// **Quitting is a close too, and the app does not come back to finish an asynchronous one.**
+    ///
+    /// `applicationWillTerminate` returns and the process exits, so the `Task` an ordinary close
+    /// posts never gets to run: a skin that saves its state in `onClose` saved nothing unless the
+    /// user had closed its window by hand first, which is most of the time nobody. This runs the
+    /// same transaction for every open view and *waits* for it.
+    ///
+    /// Waiting on the main thread is safe here and nowhere else: nothing on the script path touches
+    /// `MainActor` — no `MainActor.run`, no main-actor-isolated type in `WMPScriptRuntime`,
+    /// `WMPScriptContext` or `WMPObjectModel` — so the wait cannot deadlock against the thread it
+    /// blocks. It is bounded anyway, and each handler is separately capped by
+    /// `WMPPhase0Limits.scriptExecutionSeconds`.
+    func flushCloseHandlersOnTermination(timeout: TimeInterval = 2) {
+        guard let scriptRuntime, let skin = loadedSkin else { return }
+        let snapshot = host.snapshot
+        let pending: [(String, WMPSize, [String])] = materializer.openPresentations
+            .compactMap { presentation in
+                let handlers = Self.handlers(in: skin, event: "close", targetID: nil,
+                                             viewID: presentation.viewID)
+                guard !handlers.isEmpty, let size = presentation.activeScene?.canvasSize
+                else { return nil }
+                return (presentation.viewID, size, handlers)
+            }
+        guard !pending.isEmpty else { return }
+        let finished = DispatchSemaphore(value: 0)
+        Task.detached {
+            for (viewID, size, handlers) in pending {
+                _ = await scriptRuntime.transact(
+                    skin: skin, viewID: viewID, size: size, snapshot: snapshot,
+                    event: WMPJScriptEvent(name: "close", targetID: nil, handlers: handlers))
+            }
+            finished.signal()
+        }
+        _ = finished.wait(timeout: .now() + timeout)
     }
 
     /// Which auxiliary views are open, so the next launch can put them back. The player's view is
