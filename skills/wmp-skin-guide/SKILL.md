@@ -1029,7 +1029,13 @@ of these was invisible to the harness and visible in the first minute of live QA
   apart (W142).** Reported live as "the animation fps is low in general". `WMP_ANIM_TRACE=1`
   separated two independent causes on its first line — `want=25.0fps got=20.0fps frames=21
   restarts=10 sleep=42.3ms render=4.5ms` — and both are about *when* a frame is drawn, so a dump,
-  a cadence line and a corpus sweep are all blind to them.
+  a cadence line and a corpus sweep are all blind to them. **It also closed W69, the one reported
+  *flicker*, and that is the row's sharpest lesson.** `Xbox Live Skin`'s 145-frame intro was filed
+  with three written-down compositing candidates — a whole-`NSImage` replacement against a sub-rect
+  invalidation, an animated `bounds` union computed once, and a 64 MiB LRU thrashing — and **none of
+  them was implemented, because none of them was the cause.** Frames arriving at an irregular rate
+  look exactly like a bad composite. Suspect the clock before the compositor whenever the symptom is
+  a picture that will not settle; confirmed gone live on 2026-09-12.
   * **A rebuild must not restart the repaint loop.** `startAnimation` runs on every rebuild and a
     `.wmz` rebuilds constantly — AlienMorph's 100 ms view timer alone restarted it ten times a
     second — and each cancel discarded a partly-elapsed sleep, so a 40 ms frame period inside a

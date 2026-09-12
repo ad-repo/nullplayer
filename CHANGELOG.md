@@ -50,6 +50,10 @@
   are fixed, so a skin's intro, its opening shutter and its button highlights move at a natural
   speed rather than crawling.
 
+- **The flickering animation in the Xbox Live skin is gone.** It turned out to be the same cause as
+  the slow animations above — the frames were arriving at an uneven rate rather than being drawn
+  wrongly — so a skin with a long intro now plays it smoothly.
+
 - **A Media Player skin's equalizer now changes the sound** — nearly every `.wmz` skin switches the
   equalizer on as part of its own design, and that was being ignored, so the ten sliders a skin draws
   moved, showed their new gains, and were inaudible. They work now, and on the handful of skins that
