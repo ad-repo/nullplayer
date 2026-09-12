@@ -119,6 +119,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
         var commands: [WMPPaintCommand] = []
         var hits: [WMPHitMetadata] = []
+        // One alpha plane per (sprite, keys) for the length of this build. Coverage is asked for
+        // once per interactive node and several nodes share a sprite, so decoding it per node is
+        // the only cost worth avoiding here; nothing outlives the build.
+        var paintSequence = 0
+        var alphaPlanes: [String: WMPAlphaPlane?] = [:]
+        func alphaPlane(for image: WMPSceneImage) -> WMPAlphaPlane? {
+            let key = "\(image.resourcePath)|\(image.colorKeys.map(\.description).joined(separator: ","))"
+                + "|\(image.implicitColorKey?.description ?? "-")"
+            if let cached = alphaPlanes[key] { return cached }
+            let plane = (try? imageStore.image(for: image.resourcePath, colorKeys: image.colorKeys,
+                                               implicitKey: image.implicitColorKey))
+                .flatMap { WMPAlphaPlane($0.image) }
+            alphaPlanes[key] = plane
+            return plane
+        }
         var widgets: [WMPWidget] = []
         // A fully transparent node still lays out — its geometry is readable, and a script fades
         // it in by writing `alphaBlend` — but it draws nothing, so it must not reach the command
@@ -478,7 +493,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
             let alpha = inheritedAlpha(node, parentAlpha)
             let slider = isSlider(node.kind) ? sliderMetrics(node) : nil
             let positionMap = try node.kind == .customSlider
-                ? resource(node, names: ["positionImage"]).map { try imageStore.positionMap(for: $0.1) }
+                ? resource(node, names: ["positionImage"]).map {
+                    try imageStore.positionMap(for: $0.1,
+                        keyedOut: colors(node, names: ["transparencyColor", "clippingColor"]))
+                  }
                 : nil
 
             // **The container's artwork is the visualizer's shape.** Only `<EFFECTS>` reads it:
@@ -546,6 +564,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // `clippingImage` shapes an element by a bitmap the way `clippingColor` shapes it by a
             // colour — 25 corpus skins author a non-empty one, and every one of them declares a
             // `clippingColor` beside it, which is what the mask keys out.
+            // Everything emitted from here to the hit registration below is this node's own
+            // artwork, and that span is what `WMPHitCoverage` is built from.
+            let ownPaintStart = commands.count
             let clippingPath = try resource(node, names: ["clippingImage"])?.1
             let backgroundPath = try resource(node, names: ["backgroundImage", "background"])?.1
             let childStates = node.kind == .buttonGroup
@@ -775,11 +796,39 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // is also what stops `BITMAPS … missing=hand sizenwse` reporting cursor names as
                 // absent artwork.
                 let cursor = literalString(node, "cursor").flatMap(WMPCursor.init(authored:))
+                // The traversal position, taken where the hit is registered: after this node's own
+                // artwork and any negative-`zIndex` children, before the siblings that paint over
+                // it. See `WMPHitMetadata.paintOrder`.
+                paintSequence += 1
+                let ownPaint = commands[ownPaintStart...].filter { $0.stableID == node.stableID }
+                // **A mapping image is already the authority on its group's hit region**, per
+                // colour and per child, and `WMPHitTester` consults it directly — an unregistered
+                // or alpha-zero pixel there falls through exactly as coverage would make it. Asking
+                // the group's artwork as well can only contradict the map: a `#FF00FF` mapping
+                // colour is a real region, while the same colour in artwork is the implicit
+                // transparency key, so the two disagree about the same pixel by construction.
+                // **A `CUSTOMSLIDER`'s position map is the authority on its region**, exactly as a
+                // mapping image is for a `<BUTTONGROUP>`, and for the same reason: the map says
+                // which pixels are the control and the artwork does not. Deriving coverage from the
+                // sprite instead cost `Plus! Pulsar` 577 pixels of its seek arc and 551 of its
+                // volume arc — the soft edges, which the art keys out and the map claims — while
+                // `seek.png` is a 13-frame filmstrip whose opaque area is a property of the *frame*
+                // the current value happens to select.
+                let coverage: WMPHitCoverage?
+                if mappingImage != nil {
+                    coverage = nil
+                } else if let positionMap {
+                    coverage = positionMap.coverage()
+                } else {
+                    coverage = WMPHitCoverageBuilder.coverage(for: Array(ownPaint), frame: frame,
+                                                             pixels: alphaPlane)
+                }
                 hits.append(WMPHitMetadata(stableID: node.stableID, nodeID: node.xmlID,
                     kind: node.kind.description, frame: frame, clipRect: inheritedClip, zIndex: z,
-                    documentOrder: node.stableID, action: WMPTransportAction.authoredAction(for: node),
+                    documentOrder: node.stableID, paintOrder: paintSequence,
+                    action: WMPTransportAction.authoredAction(for: node),
                     sticky: sticky, enabled: enabled, mappingImage: mappingImage,
-                    mappingTargets: mappingTargets, cursor: cursor,
+                    mappingTargets: mappingTargets, coverage: coverage, cursor: cursor,
                     tabStop: literalString(node, "tabStop")?.caseInsensitiveCompare("false") != .orderedSame,
                     positionMap: positionMap,
                     toolTip: toolTip(node, state: visualState, literal: literalString)))
@@ -795,7 +844,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
         try walk(view, parentFrame: canvasRect,
                  parentAuthoredSize: WMPSize(width: width, height: height),
                  inheritedClip: canvasRect, parentAlpha: 1, isRoot: true)
-        hits.sort { ($0.zIndex, $0.stableID) < ($1.zIndex, $1.stableID) }
+        hits.sort { $0.paintOrder < $1.paintOrder }
         let allDirty = commands.compactMap { command in
             command.clipRect.flatMap { command.frame.intersection($0) } ?? command.frame
         }.reduce(nil as WMPRect?) { accumulated, next in

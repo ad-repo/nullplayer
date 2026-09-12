@@ -801,3 +801,168 @@ controller installs, so it hosted the surface unclipped and the skin's own artwo
 as the mask working. Both new `WIDGET` fields (`alpha=`, `mask=`) and the probe's provider exist
 because of that round; see `skills/wmp-skin-guide/reference/harness.md`.
 
+
+## Phase 22 — a player that hovered and did nothing
+
+Closed 2026-09-12. Reported against one skin — *"plus pulsar skin seems to ignore most clicks despite
+showing hover graphics"* — followed by *"you might want to test other plus skins for the same
+defect"*, which is what turned it from a skin fix into three engine rules.
+
+### W148 — hit testing asked the wrong question in three different ways
+
+**Hover and click take the same path.** `WMPMainView` resolves both through `interactiveTarget(at:)`,
+so "it highlights but does not respond" cannot be a dispatch defect: it is a control the pointer
+reached for hover on one set of pixels and never reached at all on the rest. That is what made the
+report legible, and it is worth stating because the next one will sound the same.
+
+`Plus! Pulsar` authors its equalizer, playlist and three visualization buttons as one
+`<BUTTONGROUP>` inside a `<SUBVIEW zIndex="10">`, and lays a `<CUSTOMSLIDER zIndex="55">` on either
+side of it in `<SUBVIEW zIndex="5">` siblings whose 79x136 rects cover the group completely.
+`WMPHitTester` sorted a *flat* array by the authored `zIndex`, so `55 > 0` handed all five clicks to
+a slider. `WMP_RENDER_CLICK="mainView@218,100"` returned `hit=volume#34 kind=customSlider`.
+
+**No probe could see this class, so the first work was building one.** `starved.tsv` ranks views
+that failed to *lay out*; `Pulsar/mainView` lays out completely and its `RENDER-DUMP` line —
+`27 nodes, 19 commands, 9 hits, 4 widgets` — is healthy. A fully resolved view whose controls are
+buried reads as a pass in every count the harness had. `WMP_RENDER_OCCLUDED=1` samples each target's
+own rect and reports the ones nothing reaches, under both the old rule and the new, with the blocker
+named; `reference/harness.md` carries it.
+
+**Each of the three rules was landed on a measurement that killed the previous attempt.** The
+sequence is the point:
+
+| Attempt | recovered | lost |
+|---|---|---|
+| Paint-traversal order alone | 91 | **75** |
+| + artwork coverage | 101 | **144** |
+| + "an all-transparent sprite is a hit catcher" | 101 | 24 |
+| + `<EFFECTS>`/`<VIDEO>` rank last | 103 | **16** |
+
+The 75 says ordering alone is wrong: `Navigator` puts its `close` button in a `zIndex="-1"` subview
+under a `progress` slider and cuts holes in `progress_map.bmp` where the button sits, so it needs
+coverage, not order. The 144 says coverage alone is worse: `holiday_skin`, `Grinch` and
+`Josie_and_the_Pussycats` build whole transports out of fully transparent `<BUTTON>`s laid over
+artwork their parent draws, and reading those as "drawn nowhere" removed 104 working controls. Both
+numbers came from the same sweep on the same tree and neither was predictable from the markup.
+
+Of the 16 that remain, 10 are `<BUTTONGROUP>` *containers* with no mapping children, which dispatch
+nothing in any case. The rest are open in `WMP_TASKS.md`.
+
+**The fixture that pushed back is in the suite already.**
+`testAMagentaMappingColorStillAnswersThePointer` reuses a mapping image as artwork, so coverage read
+its `#FF00FF` region as the implicit transparency key and deleted the button from its own map. That
+is the third guard: **a node with a `mappingImage` takes its hit region from the map, never from its
+art** — `WMPHitTester` already consults the map per colour and per child, and asking the artwork as
+well can only contradict it.
+
+Reach: **103 controls across 32 archives**, `WMP_RENDER_HOST=playing`. 7 of the 13 Plus! archives
+(`Pulsar` 3, `HueShifter` 5, `Bionic Dot` ×2, `Plasma Ball`, `Professional`, `SlimLine`), and the two
+worst are not Plus! at all — `Beck` 16 and `Spider-man` 13.
+
+### W150 — the seek arc, and the square it lives in
+
+Reported the same day, against the same skin, once W148 made its buttons reachable: *"the seek area
+does not work properly"*, then *"there is also a clickable artifact to the right of the seek that
+does nothing"*. **Three defects in one control**, and the second report is the tell for the third —
+an "artifact that does nothing" is something advertising itself as a control while hitting nothing.
+
+`Plus! Pulsar`'s `seekMain` and `volume` are diagonal **arcs inside 79x136 squares**. Only 29% of
+each square is the control.
+
+1. **A keyed colour in a position map read as a fraction.** `WMPPositionMap` treated only
+   alpha-zero pixels as outside the control. `seek_map.png` marks its 7,111 non-arc pixels — **66%
+   of the file** — as opaque `#ff00ff`, which averaged to a luminance of 170 and therefore a
+   fraction of `0.667`. Clicking anywhere in the dead corners seeked to 67% of the track. Predates
+   W148. Fixed by passing the node's `transparencyColor`/`clippingColor` into the map and marking
+   those pixels unmapped; the store's cache key had to take the colours too, since it was keyed by
+   path alone on the assumption that "nothing about the node changes what the map decodes to".
+2. **W148's coverage asked the artwork instead of the map.** `seek.png` is a 13-frame filmstrip, so
+   its opaque area is a property of whichever frame the *current value* selects — and even at one
+   frame it disagrees with the map by **577 pixels on seek and 551 on volume**, all of them the
+   arc's soft edges, which is exactly where a pointer aims. A `CUSTOMSLIDER` with a `positionImage`
+   now takes coverage from the map, the same way a `<BUTTONGROUP>` takes it from its mapping image.
+3. **The cursor and the tooltip still covered the square.** `resetCursorRects` and the
+   `stringForToolTip` widget fallback both scan bounding boxes, so the dead corners kept a hand
+   cursor and a "Seek" tip. Both consult `WMPHitCoverage` now. The cursor is added as one rect per
+   run of covered pixels per scanline — `addCursorRect` is a list AppKit scans, and the arc is ~136
+   bands where a pixel mask would be thousands.
+
+**The grey check is why this was safe to land.** Excluding keyed colours from a position map would
+clip a legitimate ramp value if any skin keyed a grey, since the ramp *is* greyscale. Scanned across
+the corpus before the change: 335 `<CUSTOMSLIDER>` tags, 173 declaring a key on a node with a
+position image — `#ff00ff` 148, `#00ffff` 21, `#473f3f` 2, `#665577` 1, `#ff0000` 1 — and **not one
+is a grey**. Re-run that scan before widening this rule.
+
+Corpus after, `WMP_RENDER_HOST=playing`: **112 controls in 33 archives recovered, 11 lost**, from
+W148's 103/16. Both `lost` and `unreachable-either-way` (155 → 146) moved down, which is the shape a
+correct narrowing has.
+
+### W151 — the seek committed to wherever the track already was
+
+Reported as *"seek is still not working"* after W150, then *"it snaps back when you release the
+mouse"*. Diagnosed by one sentence from the reporter: *"the volume is fine and has the same control
+shape"* — which exonerates everything the two controls share (geometry, coverage, position map, hit
+ordering) in a single move and leaves the markup.
+
+**The cause is an implicit binding the engine adds, fighting the user's own gesture.**
+`WMPPropertyRegistry.positionSliderPaths` gives any slider whose `max` binds to
+`player.currentMedia.duration` an *implicit* `value` binding to `player.controls.currentPosition`,
+even when the markup declares no `value` — that is W128, and it is right: without it the filmstrip
+never advances and the clock never moves. But it settles on **every transaction**, including the one
+raised by the release, and `Plus! Pulsar` commits its seek by reading the control back:
+
+```xml
+<customSlider id="seekMain" max="wmpprop:player.currentMedia.duration"
+              onmouseup="player.controls.currentPosition=seekMain.value;"/>
+```
+
+So the binding overwrote the dragged value microseconds before the handler read it. `volume` is
+immune because its `value` binds to `player.settings.volume`, which `performSlider` recognises
+through `WMPTransportAction.boundAction` and commits **natively**, never through the script.
+
+Fixed by holding the element for the length of the gesture:
+`WMPPropertyRegistry.changes(for:origin:holding:)` skips `value` for elements the pointer is
+dragging (only `value` — `enabled` and `max` still settle, so a track ending mid-drag still disables
+the control), and `WMPMainWindowController.sliderCaptureActive` suppresses the two position events
+that would otherwise raise the skin's own write-back handler. Two ordering traps came with it, and
+both produced a *plausible* wrong answer rather than a failure:
+
+- **`dispatchScriptTransaction` cancels the presentation's previous script task**, so dispatching
+  `mouseup` and then `dragend` cancelled the first before it ran. Both handler sets now go into one
+  event.
+- **`dispatchScriptTransaction` only *creates* a task.** Releasing the hold on the line after it
+  released the element before the transaction ran, and the binding settled anyway. The release now
+  `await`s `presentation.scriptTask?.value` first.
+
+Measured live at each stage, dragging to the middle of the arc on a 1,155 s track:
+
+| | committed by the release | reached the engine |
+|---|---|---|
+| before | 520.99 s | `seekSeconds=18.95`, `positionBefore=18.95` |
+| after | 520.99 s | `target=520.99`, `positionBefore=926.71` |
+
+**Reach: 148 sliders across 112 of the 180 archives.** That is every slider whose `max` binds to the
+track duration *and* which commits the seek in its own `onmouseup`/`ondragend`/`onchange` handler —
+measured by decoding each `.wms` the way `WMPTextDecoder` does and matching both conditions on the
+same tag. 114 archives carry the implicit binding at all. This was never a Pulsar defect; Pulsar is
+where it was looked at.
+
+### What the instruments cost, and what found this
+
+**Four headless "proofs" in a row were all consistent with a seek that does not work.** A
+hand-built sequence through the real runtime committed `seekSeconds=150` and was wrong about the
+app, because it did not contain the implicit binding's settle. The lesson is the one
+`measurement-is-not-its-interpretation` already states, in its sharpest form yet: *every* link in
+this chain is plausible in isolation and only the live sequence is wrong, so nothing short of
+driving the running app could have found it.
+
+What worked: a debug build launched with `NULLPLAYER_SKIN` + `NULLPLAYER_PLAY`, `AXRaise` on the WMP
+window, a CGEvent drag tool, and `WMP_SEEK_TRACE=1`. Three traps on the way in, all of which look
+like "the fix did not work":
+
+- **A redirected `print` is block-buffered.** The first capture produced an empty log while the app
+  was working. Live traces write to **stderr**.
+- **The first click on an inactive window is consumed activating it**, so the first whole drag
+  produced no trace at all. Drive an activation gesture, then the real one.
+- **A 5-second track cannot show a seek** — the reporter caught that one. `NULLPLAYER_PLAY` wants
+  something long; the capture above used a 19-minute recording.

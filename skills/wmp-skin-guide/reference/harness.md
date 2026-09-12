@@ -84,6 +84,7 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_RENDER_DUMP` | directory | one PNG per view; per-skin subdirectory in a sweep |
 | `WMP_RENDER_PROBE` | `all` or a view id | `PROBE` — every drawn node's type, id, resolved frame, clip, z, paint and authored attributes; plus a `WIDGET` line per widget — the AppKit-hosted surfaces the scene image does **not** contain. Two fields appear on a `WIDGET` line only when they are not the default, and both are about whether the surface is hosted at all and in what shape: `alpha=` is the container's inherited `alphaBlend` (`alpha=0` is a pane the skin has faded shut — `WMPMainView` hosts no view for it, and without the field such a widget read identically to a live one), and `mask=` names the container artwork a windowless `<EFFECTS>` is clipped to, with its frame and keyed colours. `WMP_RENDER_APPKIT` installs the same mask provider the controller does, so its `outside=` reading covers the masked surface rather than an unclipped rect |
 | `WMP_RENDER_BITMAPS` | `1` | `BITMAPS` — resolved count and every path that failed to load, with `missing=` |
+| `WMP_RENDER_OCCLUDED` | `1` | `OCCLUDED` — every control the pointer cannot reach **anywhere in its own frame**, plus a per-view tally. A target is unreachable when no sample of its rect hit-tests back to it: something in front answers everywhere, so the control draws, hovers nothing and clicks nothing. Each line names what answered instead (`by=[…]`) and which rule reached it — `covered-only` is a control the current rule recovered, `rect-only` is one it **lost**, `neither` is dead under both. **`rect-only` is the column that ranks work**: it is the flat-`zIndex`, whole-rectangle hit testing this engine did before W148, and a change that populates it is taking controls away. Sampling is a 17x17 grid over the frame plus, for a `<BUTTONELEMENT>`, the first pixel its mapping colour owns — a mapping child holds an arbitrary region and a grid alone misses a thin one. No headless probe saw this class before it existed: a starved view is `starved.tsv`'s subject, and a *fully laid out* view whose controls are buried is invisible to every count in `RENDER-DUMP` |
 | `WMP_RENDER_UNRESOLVED` | `1` | `UNRESOLVED` — one line per node the scene could not place: authored tag, id, and **which dimension** was missing (`width`, `height` or `width+height`). `RENDER-DUMP`'s `unresolved` count is the numerator `starved.tsv` ranks on and it names nothing, so every use of it had been followed by opening the `.wms` and guessing. It is what separated the three populations that count conflates — a `<TEXT>` sized by its own glyphs, a `<BUTTONGROUP>` sized by its mapping image, and a `<PLAYELEMENT>` that is a colour region and was never a box — and each was a rule rather than a skin |
 | `WMP_RENDER_SCRIPTS` | `1` | `SCRIPTS`/`SCRIPT` — per program: bytes, declared handlers, and the runtime's availability |
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
@@ -139,6 +140,35 @@ ever reached a second and **27 seconds of capture produced zero `got=` lines** w
 useless start lines. That is the `INPUT` trace's removal repeating itself inside a new instrument:
 a per-frame line in a subsystem that repaints 25x/s is not a trace. Counters live on the
 presentation and survive a restart; the restart is counted rather than narrated.
+
+`WMP_SEEK_TRACE=1` is read by **the app** (`WMPMainView`, `WMPMainWindowController`) and prints the
+value a dragged slider carries from the pointer to the host command — three lines per *gesture*,
+which is what makes it usable where the removed `INPUT` trace was not:
+
+```
+[wmp/seek] performSlider seekMain mapped=Optional(0.451) min=0.0 max=1155.23 value=520.99
+[wmp/seek] release seekMain#48 value=Optional(520.99)
+[wmp/seek] hostCommand seekSeconds=18.95 duration=1155.23      ← the defect, in one line
+```
+
+**Read the last line against the second.** They disagreed by the whole track on W151, because an
+implicit binding settled over the user's value between the release and the handler that read it.
+Every link in that chain is plausible in isolation, so this is the instrument for "the control moves
+and nothing happens".
+
+**Three traps, each of which looks exactly like "the fix did not work":**
+
+- **A redirected `print` is block-buffered.** The first capture of this trace produced an empty log
+  while the app was working perfectly. Live traces write to **stderr** — `WMP_PLACE_TRACE` and
+  `WMP_ANIM_TRACE` are read on a terminal, which is why they get away with `print`.
+- **The first click on an inactive window is consumed activating it**, so the first whole drag
+  raises nothing. `AXRaise` the window, drive one throwaway gesture, then the real one.
+- **A short track cannot show a seek.** Pair it with `NULLPLAYER_PLAY` and something long.
+
+```bash
+WMP_SEEK_TRACE=1 NULLPLAYER_SKIN="…/Plus! Pulsar.wmz" NULLPLAYER_PLAY=/abs/path/long.m4a \
+  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+```
 
 `NULLPLAYER_PLAY=<audio file>` is read by **the app** (`AppDelegate`, `#if DEBUG`) and enqueues and
 plays that file at launch through the same `application(_:openFiles:)` a Finder open takes. **Live QA

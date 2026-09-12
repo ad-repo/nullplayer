@@ -28,7 +28,16 @@ struct WMPPositionMap: Hashable, Codable {
     var decodedBytes: Int { luminance.count + mapped.count }
     var size: WMPSize { WMPSize(width: CGFloat(width), height: CGFloat(height)) }
 
-    init(image: CGImage) throws {
+    /// `keyedOut` are the colours the *node* declares transparent — `transparencyColor` and
+    /// `clippingColor`. They mark the pixels that are **not part of the control**, and a position
+    /// map is the one derived bitmap that has to be told, because nothing else can tell.
+    ///
+    /// Alpha alone is not the marker. `Plus! Pulsar`'s `seek_map.png` is a 79x136 square holding a
+    /// diagonal arc, and it marks the 7,111 pixels outside that arc — **66% of the file** — as
+    /// opaque `#ff00ff`. Averaged as a luminance that is a fraction of `0.667`, so two thirds of
+    /// the control's rectangle answered "seek to 67%" instead of "not the control". Reported as
+    /// *"the seek area does not work properly"*.
+    init(image: CGImage, keyedOut: [WMPColor] = []) throws {
         width = image.width
         height = image.height
         guard width > 0, height > 0 else {
@@ -61,6 +70,10 @@ struct WMPPositionMap: Hashable, Codable {
                 let green = Double(bytes[offset + 1]) / scale
                 let blue = Double(bytes[offset + 2]) / scale
                 let index = y * pixelWidth + x
+                let color = WMPColor(red: UInt8(max(0, min(255, red))),
+                                     green: UInt8(max(0, min(255, green))),
+                                     blue: UInt8(max(0, min(255, blue))))
+                guard !keyedOut.contains(color) else { continue }
                 luminance[index] = UInt8(max(0, min(255, (red + green + blue) / 3)))
                 mapped[index] = true
             }
@@ -81,6 +94,13 @@ struct WMPPositionMap: Hashable, Codable {
         let index = y * width + x
         guard mapped[index] else { return nil }
         return Double(luminance[index]) / 255
+    }
+
+    /// The control's region, for hit testing: mapped where the map claims the pixel, keyed-out and
+    /// alpha-zero pixels excluded. `nil` when the map claims everything, which needs no mask.
+    func coverage() -> WMPHitCoverage? {
+        WMPHitCoverage(width: width, height: height,
+                       opaque: mapped.map { $0 ? 1 : 0 })
     }
 
     /// How `image` is laid out against this map, and which frame a fraction selects.

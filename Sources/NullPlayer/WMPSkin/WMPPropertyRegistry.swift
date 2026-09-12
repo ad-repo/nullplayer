@@ -106,11 +106,29 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         .currentPositionText: [("value", "player.controls.currentPositionString")]
     ]
 
-    mutating func changes(for snapshot: WMPHostSnapshot, origin: WMPPropertyTransactionOrigin? = nil)
-        -> [WMPBoundPropertyChange] {
+    /// `holding` are elements the pointer is currently dragging. **Their `value` is the user's for
+    /// the length of the gesture and the host does not get to write it** (W151).
+    ///
+    /// This is what `positionSliderPaths` costs: a slider whose `max` binds to the track duration
+    /// gets an *implicit* `value` binding to `player.controls.currentPosition`, so every
+    /// transaction settles it back to the live playback position — including the very transaction
+    /// raised by the release, which is where a skin like `Plus! Pulsar` reads the control back
+    /// (`onmouseup="player.controls.currentPosition=seekMain.value;"`). Measured live before this
+    /// guard: dragged to 36s, committed 18s, because between the two the binding had settled.
+    /// Only `value` is held; `enabled`, `max` and the rest still settle, so a track that ends
+    /// mid-drag still disables the control.
+    mutating func changes(for snapshot: WMPHostSnapshot, origin: WMPPropertyTransactionOrigin? = nil,
+                          holding: Set<Int> = []) -> [WMPBoundPropertyChange] {
         if origin != nil && origin == lastAppliedOrigin { return [] }
         var changes: [WMPBoundPropertyChange] = []
         for binding in bindings {
+            if !holding.isEmpty, binding.address.property.lowercased() == "value",
+               holding.contains(binding.address.stableID) {
+                // Drop the remembered value too, so the first settle after the gesture is a real
+                // change rather than one suppressed by the equality check below.
+                lastValues[binding.address] = nil
+                continue
+            }
             // **On `visible`, a path this engine cannot answer is not the answer "false".** `WoW`
             // authors `<PLAYLIST id="playlist1" visible="wmpprop:plMode.visible">`, and `plMode` is
             // not one of its elements — the skin is written against a name WMP's own object model

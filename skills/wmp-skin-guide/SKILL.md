@@ -119,6 +119,73 @@ PeppyMeter, audio analyzer, waveform. **Adding another one means wiring both lay
 change** — `SkinnedSurfaceChrome.metrics(for:fallback:)` for its layout and hit testing, and
 `WindowManager.hostedSurfaceFrameArtwork(for:)` for its chrome.
 
+## Which control a click reaches
+
+**Three rules decide it, and each was measured against the corpus rather than reasoned from the SDK
+(W148).** `WMP_RENDER_OCCLUDED=1` is the instrument and `reference/harness.md` describes it; the
+report that produced them is *"plus pulsar skin seems to ignore most clicks despite showing hover
+graphics"*. Hover and click take the same path, so a control that highlights and does nothing is not
+a dispatch defect — it is a control the pointer never reached at all.
+
+- **Order by the paint traversal, not by `zIndex`.** `WMPHitMetadata.paintOrder` is the position
+  `WMPSceneBuilder.walk` had reached, which is the order `commands` is already built in: DFS,
+  siblings sorted by `zIndex`, negative-z children ahead of their parent's artwork. Sorting the flat
+  `hits` array on the authored `zIndex` compares literals from unrelated branches — the same
+  flattening `cerulean` rules out for paint. `Plus! Pulsar` is the worked case.
+- **A control is its artwork, not its rectangle.** `WMPHitCoverage` falls a click through a pixel
+  the skin keyed out of the node's own sprite, exactly as `mappingImage` already does per colour for
+  a `<BUTTONGROUP>`'s children. `Navigator` states the intent outright: its `progress` slider spans
+  the whole player and `progress_map.bmp` has holes cut in it where the close, full-mode and
+  visualization buttons sit. **Two guards, and both cost controls when they were missing** — a
+  sprite with *nothing* opaque in it is a hit catcher rather than a shape (`holiday_skin`, `Grinch`
+  and `Josie_and_the_Pussycats` build whole transports that way, 104 controls across 21 archives),
+  and a node with a `mappingImage` takes its region from the *map*, never from its art.
+- **A `CUSTOMSLIDER`'s `positionImage` is the authority on its region, and the colours the node
+  keys out are not part of it (W150).** `WMPPositionMap` marked only *alpha-zero* pixels as outside
+  the control, and `Plus! Pulsar`'s `seek_map.png` marks the 66% of its 79x136 square that is not
+  the arc as opaque `#ff00ff` — averaged to a luminance that is a fraction of `0.667`, so two thirds
+  of the seek control answered "seek to 67%". Coverage for such a node comes from the **map**, never
+  from the sprite: `seek.png` is a 13-frame filmstrip whose opaque area is a property of the frame
+  the current value selects, and deriving the region from it cost the arc 577 of its own pixels —
+  the soft edges a pointer aims for. Measured before landing: **173 corpus sliders declare a key on
+  a node with a position image and not one of them is a grey**, so no ramp value can be clipped by
+  this.
+- **Whatever advertises a control must agree with the hit tester.** `resetCursorRects` and the
+  `stringForToolTip` widget fallback both scanned bounding boxes, so Pulsar's dead corners kept a
+  hand cursor and a "Seek" tip over pixels that hit nothing — reported as *"a clickable artifact to
+  the right of the seek that does nothing"*. Both now consult `WMPHitCoverage`; the cursor is added
+  as one rect per run of covered pixels per scanline, because `addCursorRect` is a list AppKit scans
+  and an arc is ~136 bands where a pixel mask would be thousands. **A new surface that reads
+  `hit.frame` to offer the user something inherits this bug** — ask coverage too.
+- **A control the pointer is holding is the user's, and the host does not write to it (W151).**
+  `WMPPropertyRegistry.positionSliderPaths` gives any slider whose `max` binds to
+  `player.currentMedia.duration` an *implicit* `value` binding to `player.controls.currentPosition`
+  — that is W128 and it is right, or the filmstrip never advances. But it settles on **every**
+  transaction, including the one the release raises, and a skin that commits its seek by reading the
+  control back (`onmouseup="player.controls.currentPosition=seekMain.value;"`) therefore seeks to
+  wherever the track already was. `changes(for:origin:holding:)` skips `value` for held elements —
+  only `value`, so `enabled` and `max` still settle — and `sliderCaptureActive` suppresses the two
+  position events that raise the skin's own write-back. **Reach: 148 sliders across 112 of the 180
+  archives**, every one whose `max` binds to the duration *and* which commits in its own handler. A
+  slider with a `value` binding to a transport path is immune and is **not** the test:
+  `performSlider` commits those natively through `WMPTransportAction.boundAction`, which is why
+  `Plus! Pulsar`'s volume arc always worked while its identical seek arc did nothing.
+- **Two ordering traps live in `dispatchScriptTransaction`, and both give plausible wrong answers.**
+  It **cancels the presentation's previous script task**, so dispatching two events back to back
+  loses the first — put both handler sets in one event. And it only *creates* a task, so anything
+  that must outlive the transaction (releasing a hold, clearing a gate) has to `await
+  presentation.scriptTask?.value`, not simply follow the call.
+- **`<EFFECTS>` and `<VIDEO>` are fallbacks, never blockers.** Both are click-through by design —
+  `WMPEffectsSurfaceView.hitTest` returns `nil` — but 51 skins wire an `onClick` on the effects node,
+  so they rank last rather than not at all. Both are routinely the largest node in their view and
+  declared late, so paint order alone buries whatever is drawn over them: `Alienware Invader`'s
+  rating stars, `Radio`'s equalizer sliders, `XBOX`'s `xDown`.
+
+Net over the 180-archive corpus, `WMP_RENDER_HOST=playing`: **112 controls in 33 archives recovered,
+11 lost**. The 11 are open and named in `WMP_TASKS.md` (W149): `Sports`'s 7 equalizer sliders under
+its playlist text, `anime`, `STALKER`, `T3-Skynet_Media_Player`, and one `<BUTTONGROUP>` container
+with no mapping children, which dispatches nothing in any case.
+
 ## Loader contracts
 
 - `WMPPhase0Limits` and stable codes `WMP0001`–`WMP0020` are locked. Production loading must preserve

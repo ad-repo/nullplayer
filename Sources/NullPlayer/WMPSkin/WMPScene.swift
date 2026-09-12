@@ -255,11 +255,27 @@ struct WMPHitMetadata: Hashable, Codable {
     let clipRect: WMPRect?
     let zIndex: Int
     let documentOrder: Int
+    /// Where this target sits in the **paint traversal** — the position `WMPSceneBuilder.walk` had
+    /// reached when it registered the hit, so a target painted later has a higher value.
+    ///
+    /// **`zIndex` is ordered among siblings, not flat across the view**, and this is what lets the
+    /// hit tester say so. `WMPScene.commands` already expresses it by construction (DFS, siblings
+    /// sorted by `zIndex`, negative-z children walked before the parent's own artwork); `hits` is a
+    /// flat array, so sorting it on the authored `zIndex` compares numbers from different sibling
+    /// sets and answers with whichever branch wrote the larger literal. `Plus! Pulsar` is the
+    /// worked case: its mute button sits in a `<SUBVIEW zIndex="22">` and its volume slider in a
+    /// `<SUBVIEW zIndex="5">`, so the button paints in front exactly as authored — while `55 > 0`
+    /// on the two nodes' own attributes handed its clicks to the slider underneath it.
+    let paintOrder: Int
     let action: WMPTransportAction?
     let sticky: Bool
     let enabled: Bool
     let mappingImage: WMPMappingImage?
     let mappingTargets: [WMPHitTarget]
+    /// Where this control's own artwork is, when the skin keyed a hole in it. `nil` means the node
+    /// draws no sprite of its own, or draws one with no transparent pixel — either way the whole
+    /// frame is live, which is what it was before coverage existed. See `WMPHitCoverage`.
+    let coverage: WMPHitCoverage?
     let cursor: WMPCursor?
     /// `tabStop="false"` is authored 544 times against `"true"`'s 170: a skin marks most of its
     /// controls *out* of the keyboard ring and leaves a handful in. Absent is in, as in WMP.
@@ -274,14 +290,20 @@ struct WMPHitMetadata: Hashable, Codable {
     let toolTip: String?
 
     init(stableID: Int, nodeID: String?, kind: String, frame: WMPRect, clipRect: WMPRect?,
-         zIndex: Int, documentOrder: Int, action: WMPTransportAction?, sticky: Bool, enabled: Bool,
+         zIndex: Int, documentOrder: Int, paintOrder: Int? = nil,
+         action: WMPTransportAction?, sticky: Bool, enabled: Bool,
          mappingImage: WMPMappingImage?, mappingTargets: [WMPHitTarget],
+         coverage: WMPHitCoverage? = nil,
          cursor: WMPCursor? = nil, tabStop: Bool = true, positionMap: WMPPositionMap? = nil,
          toolTip: String? = nil) {
         self.stableID = stableID; self.nodeID = nodeID; self.kind = kind; self.frame = frame
         self.clipRect = clipRect; self.zIndex = zIndex; self.documentOrder = documentOrder
+        // A hand-built fixture that states no traversal position is ordered by document order,
+        // which is what a flat list of siblings means.
+        self.paintOrder = paintOrder ?? documentOrder
         self.action = action; self.sticky = sticky; self.enabled = enabled
         self.mappingImage = mappingImage; self.mappingTargets = mappingTargets
+        self.coverage = coverage
         self.cursor = cursor; self.tabStop = tabStop; self.positionMap = positionMap
         self.toolTip = toolTip
     }

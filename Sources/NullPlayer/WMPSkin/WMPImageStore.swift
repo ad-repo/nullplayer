@@ -361,22 +361,29 @@ final class WMPImageStore: @unchecked Sendable {
     /// A `CUSTOMSLIDER`'s greyscale position map, cached under the same byte bound as every other
     /// derived buffer. Keyed by canonical path alone: unlike a mapping image, nothing about the
     /// node changes what the map decodes to.
-    func positionMap(for path: String) throws -> WMPPositionMap {
+    func positionMap(for path: String, keyedOut: [WMPColor] = []) throws -> WMPPositionMap {
         let canonical = provider.canonicalPath(for: path) ?? path
+        // Keyed by path **and** the node's transparency colours: those decide which pixels are part
+        // of the control, so two nodes sharing one map file but keying different colours out of it
+        // do not decode to the same answer. (It used to be keyed by path alone.)
+        let cacheKey = "\(canonical)|\(keyedOut.map(\.description).joined(separator: ","))"
         lock.lock()
-        if var entry = positionEntries[canonical] {
+        if var entry = positionEntries[cacheKey] {
             clock &+= 1
             entry.access = clock
-            positionEntries[canonical] = entry
+            positionEntries[cacheKey] = entry
             lock.unlock()
             return entry.map
         }
         lock.unlock()
 
-        let map = try WMPPositionMap(image: image(for: canonical).image)
+        // The map is read for its colours, so it must never be decoded with a key applied — the
+        // same rule `mappingImage` follows. `keyedOut` is interpreted by `WMPPositionMap`, not by
+        // the decoder.
+        let map = try WMPPositionMap(image: image(for: canonical).image, keyedOut: keyedOut)
         lock.lock()
         defer { lock.unlock() }
-        if let existing = positionEntries[canonical] { return existing.map }
+        if let existing = positionEntries[cacheKey] { return existing.map }
         guard map.decodedBytes <= limits.cacheBytes else { return map }
         while positionBytes + map.decodedBytes > limits.cacheBytes,
               let victim = positionEntries.min(by: { $0.value.access < $1.value.access }) {
@@ -384,7 +391,7 @@ final class WMPImageStore: @unchecked Sendable {
             positionEntries.removeValue(forKey: victim.key)
         }
         clock &+= 1
-        positionEntries[canonical] = PositionEntry(map: map, access: clock)
+        positionEntries[cacheKey] = PositionEntry(map: map, access: clock)
         positionBytes += map.decodedBytes
         return map
     }

@@ -1,5 +1,20 @@
 import AppKit
 
+#if DEBUG
+/// `WMP_SEEK_TRACE=1` — the value a dragged slider carries from the pointer to the host command.
+///
+/// Per *gesture*, not per frame, which is what makes it usable where the old `INPUT` trace was not:
+/// three lines for a whole drag. It exists because every part of this chain is plausible in
+/// isolation and only the sequence is wrong — see `reference/harness.md`.
+///
+/// **stderr, not `print`.** A redirected stdout is block-buffered, and the first capture of this
+/// instrument produced an empty log while the app was working perfectly.
+func wmpSeekTrace(_ message: @autoclosure () -> String) {
+    guard ProcessInfo.processInfo.environment["WMP_SEEK_TRACE"] != nil else { return }
+    FileHandle.standardError.write(Data(("[wmp/seek] " + message() + "\n").utf8))
+}
+#endif
+
 /// Which window edges a borderless-window resize drag is moving.
 struct WMPWindowEdges: OptionSet {
     let rawValue: Int
@@ -34,6 +49,12 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
 /// `.wmz` is free to leave a control unnamed, and an authored id is therefore optional.
     var onScriptEvent: ((String, String?, Int?) -> Void)?
     var onElementValueChanged: ((Int, String?, Double) -> Void)?
+    /// A slider the user has just let go of: its value, then `mouseup`/`dragend`, **in that order
+    /// and in one transaction**. See W151.
+    var onSliderRelease: ((Int, String?, Double) -> Void)?
+    /// Raised `true` when the pointer takes hold of a slider. **While it is held, the host must not
+    /// write to that control** — see W151 and `WMPMainWindowController.sliderCaptureActive`.
+    var onSliderCaptureChanged: ((Bool, Int) -> Void)?
     /// An `<EDITBOX>`'s text, which is a string rather than a number and so cannot go through
     /// `onElementValueChanged`. Nine of the corpus's ten edit boxes are a playlist search field
     /// whose script reads this back as `plSearchEdit.value`.
@@ -209,6 +230,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
     func cancelInputCapture() {
+        if let capturedTarget, isSlider(capturedTarget) {
+            onSliderCaptureChanged?(false, capturedTarget.stableID)
+        }
         notify(interaction.cancelCapture()); capturedTarget = nil; onAction?(.endScan, nil)
     }
 
@@ -324,6 +348,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
         guard let target else { beginWindowDrag(event); return }
         capturedTarget = target
+        if isSlider(target) { onSliderCaptureChanged?(true, target.stableID) }
         notify(interaction.press(target))
         onScriptEvent?("mousedown", target.nodeID, target.stableID)
         window?.makeFirstResponder(self)
@@ -346,8 +371,17 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
         let result = interaction.release(over: target)
         notify(result.changed)
-        onScriptEvent?("mouseup", capturedTarget?.nodeID, capturedTarget?.stableID)
         defer { capturedTarget = nil }
+        if let capturedTarget, isSlider(capturedTarget), let release = onSliderRelease {
+            #if DEBUG
+            wmpSeekTrace("release \(capturedTarget.nodeID ?? "-")#\(capturedTarget.stableID) "
+                + "value=\(String(describing: widgetValues[capturedTarget.stableID]))")
+            #endif
+            release(capturedTarget.stableID, capturedTarget.nodeID,
+                    widgetValues[capturedTarget.stableID] ?? 0)
+        } else {
+            onScriptEvent?("mouseup", capturedTarget?.nodeID, capturedTarget?.stableID)
+        }
         guard let capturedTarget else { return }
         // **`onDragEnd` is the seek commit** (W55). It is authored only on `SLIDER` (125 uses) and
         // `CUSTOMSLIDER` (16), and 111 of those 141 sources are
@@ -355,7 +389,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // commits the seek once, on release. Raised for a captured slider whether or not the
         // pointer moved, because a press and release on a slider track is a completed drag in WMP:
         // `performSlider` already ran on `mouseDown` and moved the value there.
-        if isSlider(capturedTarget) {
+        if isSlider(capturedTarget), onSliderRelease == nil {
             onScriptEvent?("dragend", capturedTarget.nodeID, capturedTarget.stableID)
         }
         if case .beginScan = capturedTarget.action { onAction?(.endScan, nil); return }
@@ -533,6 +567,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
         if target.kind.lowercased().contains("slider") {
             widgetValues[target.stableID] = value
+            #if DEBUG
+            wmpSeekTrace("performSlider \(target.nodeID ?? "-") mapped=\(String(describing: mapped)) "
+                + "min=\(minimum) max=\(maximum) value=\(value)")
+            #endif
             onElementValueChanged?(target.stableID, target.nodeID, value)
         }
         onScriptEvent?("change", target.nodeID, target.stableID)

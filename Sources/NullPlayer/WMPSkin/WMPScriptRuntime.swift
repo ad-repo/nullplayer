@@ -417,7 +417,7 @@ actor WMPScriptRuntime {
         // scene *draws* and wrong for what the skin can *react to*: a control the host moved read
         // as unmoved for the whole handler pass, and nothing raised its `value_onchange` at all.
         // Committing them afterwards is unchanged — this only decides what the transaction knew.
-        let boundChanges = propertyRegistries[scope]?.changes(for: snapshot) ?? []
+        let boundChanges = propertyRegistries[scope]?.changes(for: snapshot, holding: heldElements) ?? []
         var boundValues: [Int: WMPJSONValue] = [:]
         for change in boundChanges where change.address.property == "value" {
             boundValues[change.address.stableID] = change.value
@@ -644,6 +644,12 @@ actor WMPScriptRuntime {
     }
 
     func resetPreferences() { preferences.reset() }
+
+    /// Elements the pointer is dragging. See `WMPPropertyRegistry.changes(for:origin:holding:)`.
+    private var heldElements: Set<Int> = []
+
+    func holdElement(stableID: Int) { heldElements.insert(stableID) }
+    func releaseElement(stableID: Int) { heldElements.remove(stableID) }
 
     func setWidgetValue(stableID: Int, value: Double, viewID: String) {
         guard value.isFinite else { return }

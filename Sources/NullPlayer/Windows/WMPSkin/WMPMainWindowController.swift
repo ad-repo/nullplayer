@@ -533,6 +533,47 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                          targetStableID: stableID)
             }
         }
+        // One task, three steps, in order: the value the user left the control at, then the two
+        // handlers that read it. See W151.
+        view.onSliderCaptureChanged = { [weak self] active, stableID in
+            guard let self else { return }
+            self.sliderCaptureActive = active
+            guard let scriptRuntime = self.scriptRuntime else { return }
+            Task { active ? await scriptRuntime.holdElement(stableID: stableID)
+                          : await scriptRuntime.releaseElement(stableID: stableID) }
+        }
+        // **One transaction, not two.** `dispatchScriptTransaction` cancels the presentation's
+        // previous script task, so dispatching `mouseup` and then `dragend` cancels the first
+        // before it runs. Both handler sets go into a single event, after the value the user left
+        // the control at — and the capture gate is only released once that has been sent, so no
+        // position tick can land between the value and the handlers that read it.
+        view.onSliderRelease = { [weak self, weak presentation] stableID, targetID, value in
+            guard let self, let presentation, let scriptRuntime = self.scriptRuntime,
+                  let skin = self.loadedSkin else { self?.sliderCaptureActive = false; return }
+            Task {
+                await scriptRuntime.setWidgetValue(stableID: stableID, value: value,
+                                                   viewID: presentation.viewID)
+                let handlers = ["mouseup", "dragend"].flatMap {
+                    Self.handlers(in: skin, event: $0, targetID: targetID,
+                                  targetStableID: stableID, viewID: presentation.viewID)
+                }
+                #if DEBUG
+                wmpSeekTrace("onSliderRelease committed value=\(value) handlers=\(handlers.count)")
+                #endif
+                self.dispatchScriptTransaction(presentation,
+                    WMPJScriptEvent(name: "mouseup", targetID: targetID, handlers: handlers))
+                // **The hold outlives the dispatch, not the call that made it.**
+                // `dispatchScriptTransaction` only *creates* a task, so releasing here released the
+                // element before the transaction ran — and the transaction then settled the
+                // implicit `player.controls.currentPosition` binding over the user's value before
+                // the handler read it. Measured: dragged to 521s, committed `seekSeconds=18.95`,
+                // which was the live position, so the seek landed exactly where it already was and
+                // the thumb snapped back on release.
+                await presentation.scriptTask?.value
+                self.sliderCaptureActive = false
+                await scriptRuntime.releaseElement(stableID: stableID)
+            }
+        }
         view.onSpectrumDemandChanged = { [weak self, weak view] active in
             guard let self, let view else { return }
             self.setSpectrumDemand(active, from: ObjectIdentifier(view))
@@ -1273,7 +1314,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if previous?.metadata != snapshot.metadata || previous?.duration != snapshot.duration {
             events.append("status_onchange")
         }
-        if previous?.currentTime != snapshot.currentTime { events.append("positionchange") }
+        // **A control the user is holding is the user's.** `Plus! Pulsar` authors
+        // `<controls currentPosition_onchange="seekMain.value=player.controls.currentPosition;">`,
+        // so every tick of the clock writes the live position into the element its own
+        // `onmouseup="player.controls.currentPosition=seekMain.value;"` is about to read. Raising
+        // these two while a slider is captured makes the seek commit to wherever the track already
+        // was — measured live: dragged to 36s, committed 79s. The clock stops updating for the
+        // length of the drag, which is what WMP does and what a scrub looks like everywhere else.
+        if previous?.currentTime != snapshot.currentTime, !sliderCaptureActive {
+            events.append("positionchange")
+        }
         // **The host half of the SDK's ambient `<attribute>_onchange` mechanism (W129).** The
         // element half is raised inside the transaction that wrote the attribute
         // (`WMPScriptContext.raiseAttributeChangeHandlers`); these four are attributes of the
@@ -1290,7 +1340,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // transaction because `positionchange` already ran one on the same edge. **The W119 trap is
         // the opposite mistake and is not repeated here**: that was a clock tick raising
         // `status_onchange`, an event about a different quantity.
-        if previous?.currentTime != snapshot.currentTime { events.append("currentposition_onchange") }
+        if previous?.currentTime != snapshot.currentTime, !sliderCaptureActive {
+            events.append("currentposition_onchange")
+        }
         if previous?.metadata != snapshot.metadata { events.append("currentmedia_onchange") }
         if previous?.playlistItems != snapshot.playlistItems { events.append("currentplaylist_onchange") }
         if previous?.effects.type != snapshot.effects.type { events.append("currenteffecttype_onchange") }
@@ -1475,6 +1527,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             return [:]
         }
     }
+
+    /// True while the pointer is holding a slider. The host's position write-backs are suppressed
+    /// for the duration, so the value the user is setting cannot be overwritten underneath them.
+    private var sliderCaptureActive = false
 
     private func dispatchScriptTransaction(_ presentation: WMPViewPresentation,
                                            _ event: WMPJScriptEvent) {
@@ -1683,6 +1739,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             case "scanReverse": host.perform(.beginScan(.reverse), value: nil)
             case "seekSeconds":
                 let duration = max(host.snapshot.duration, 0.001)
+                #if DEBUG
+                wmpSeekTrace("hostCommand seekSeconds=\(number ?? -1) duration=\(duration)")
+                #endif
                 host.perform(.seek, value: .number(max(0, min(1, (number ?? 0) / duration))))
             case "volumePercent": host.perform(.volume, value: .number(max(0, min(1, (number ?? 0) / 100))))
             case "balancePercent": host.perform(.balance, value: .number(max(-1, min(1, (number ?? 0) / 100))))

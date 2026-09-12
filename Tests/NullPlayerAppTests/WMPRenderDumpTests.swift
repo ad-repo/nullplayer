@@ -98,6 +98,7 @@ struct WMPProbe {
     /// every use of it so far has been followed by opening the `.wms` by hand to guess which nodes
     /// it counted. This prints them.
     var wantsUnresolved: Bool { env["WMP_RENDER_UNRESOLVED"] != nil }
+    var wantsOccluded: Bool { env["WMP_RENDER_OCCLUDED"] != nil }
     var wantsScripts: Bool { env["WMP_RENDER_SCRIPTS"] != nil }
     var wantsExpressions: Bool { env["WMP_RENDER_EXPR"] != nil }
     var wantsCallTrace: Bool { env["WMP_CALL_TRACE"] != nil }
@@ -903,6 +904,9 @@ enum WMPHarness {
         if probe.wantsUnresolved {
             for line in unresolvedLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
         }
+        if probe.wantsOccluded {
+            for line in occludedLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
+        }
         if probe.wantsExpressions {
             for line in expressionLines(scene: scene, skin: skin, viewID: viewID, output: output) { WMPHarnessOutput.emit(line) }
         }
@@ -1019,6 +1023,83 @@ enum WMPHarness {
             return "UNRESOLVED \(scene.viewID)/\(entry.stableID) "
                 + "\(node?.authoredTagName ?? "?") id=\(entry.nodeID ?? "-") "
                 + "\(entry.attribute)=\(condense(entry.authoredValue))"
+        }
+    }
+
+    /// Every control the pointer cannot reach anywhere in its own frame, with and without
+    /// artwork coverage.
+    ///
+    /// A hit target is *unreachable* when no pixel of its frame hit-tests back to it: something in
+    /// front answers everywhere, so the control is drawn, hovers nothing and clicks nothing. The
+    /// point of reporting it twice is that the two rules disagree, and the disagreement is the
+    /// measurement: `covered=` is what `WMPHitTester` does now (a control is its artwork), `rect=`
+    /// re-tests the same scene with every coverage mask dropped, which is what it did before.
+    /// `reached=rect-only` is a control this rule *lost* and that column has to stay empty.
+    ///
+    /// Sampling is the target's own frame on a bounded grid plus, for a mapping child, the first
+    /// pixel the mapping image gives that colour — a `<BUTTONELEMENT>` owns an arbitrary region of
+    /// its group's rect and a grid alone can miss a thin one.
+    static func occludedLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
+        let covered = WMPHitTester(hits: scene.hits)
+        // The rule this engine used before: flat `zIndex` across the view, and no coverage.
+        let flat: [WMPHitMetadata] = scene.hits.map { $0.withoutCoverage() }
+        let ordered: [WMPHitMetadata] = flat.sorted { (lhs: WMPHitMetadata, rhs: WMPHitMetadata) -> Bool in
+            if lhs.zIndex != rhs.zIndex { return lhs.zIndex < rhs.zIndex }
+            return lhs.documentOrder < rhs.documentOrder
+        }
+        var restamped: [WMPHitMetadata] = []
+        for (offset, hit) in ordered.enumerated() { restamped.append(hit.restamped(paintOrder: offset)) }
+        let rect = WMPHitTester(hits: restamped)
+        var lines: [String] = []
+        for hit in scene.hits where hit.enabled {
+            let children: [(id: Int, label: String, seed: WMPPoint?)] = hit.mappingTargets.isEmpty
+                ? [(hit.stableID, hit.nodeID ?? "-", nil)]
+                : hit.mappingTargets.filter(\.enabled).map { child in
+                    (child.stableID, child.nodeID ?? "-",
+                     hit.mappingImage?.firstPixel(for: child.stableID).map { point in
+                        WMPPoint(x: hit.frame.x + point.x * hit.frame.width
+                                    / CGFloat(max(1, hit.mappingImage?.width ?? 1)) + 0.5,
+                                 y: hit.frame.y + point.y * hit.frame.height
+                                    / CGFloat(max(1, hit.mappingImage?.height ?? 1)) + 0.5)
+                     })
+                }
+            for child in children {
+                var points = samplePoints(in: hit.frame)
+                if let seed = child.seed { points.append(seed) }
+                let byCovered = points.contains { covered.hitTest($0)?.stableID == child.id }
+                let byRect = points.contains { rect.hitTest($0)?.stableID == child.id }
+                guard !(byCovered && byRect) else { continue }
+                let reached = byCovered ? "covered-only" : (byRect ? "rect-only" : "neither")
+                // Name what answers instead. A control lost to this rule is only a defect if the
+                // thing in front of it is something the user can see there.
+                let blockers = Set(points.compactMap { point -> String? in
+                    guard let front = covered.hitTest(point), front.stableID != child.id else { return nil }
+                    return "\(front.nodeID ?? "-")#\(front.stableID):\(front.kind)"
+                })
+                lines.append("OCCLUDED \(scene.viewID)/\(child.id) \(hit.kind) id=\(child.label) "
+                    + "frame=\(hit.frame) z=\(hit.zIndex) reached=\(reached) "
+                    + "by=[\(blockers.sorted().joined(separator: " "))]")
+            }
+        }
+        let lost = lines.filter { $0.contains("reached=rect-only") }.count
+        let recovered = lines.filter { $0.contains("reached=covered-only") }.count
+        let neither = lines.filter { $0.contains("reached=neither") }.count
+        let masks = scene.hits.filter { $0.coverage != nil }.count
+        lines.append("OCCLUDED \(scene.viewID): recovered=\(recovered) lost=\(lost) "
+            + "unreachable-either-way=\(neither) masks=\(masks) of \(scene.hits.count) hits")
+        return lines
+    }
+
+    /// A 17x17 grid over the frame, inset half a step so no sample lands on an edge two controls
+    /// share. Bounded on purpose: this runs over every view of a 180-archive sweep.
+    private static func samplePoints(in frame: WMPRect) -> [WMPPoint] {
+        guard frame.width > 0, frame.height > 0 else { return [] }
+        let steps = 17
+        return (0..<steps).flatMap { row in
+            (0..<steps).map { column in
+                WMPPoint(x: frame.x + (CGFloat(column) + 0.5) * frame.width / CGFloat(steps),
+                         y: frame.y + (CGFloat(row) + 0.5) * frame.height / CGFloat(steps))
+            }
         }
     }
 
@@ -1834,5 +1915,205 @@ enum WMPHarness {
             if WMPJScriptCompatibility.supports(object: "element", member: member) { return true }
         }
         return WMPJScriptCompatibility.supports(object: object, member: member)
+    }
+}
+
+extension WMPHitMetadata {
+    /// The same target with its artwork mask dropped — how `occludedLines` rebuilds the rectangle
+    /// hit testing this engine did before `WMPHitCoverage`, so one sweep reports both what the
+    /// rule recovered and what, if anything, it lost.
+    func restamped(paintOrder: Int) -> WMPHitMetadata {
+        WMPHitMetadata(stableID: stableID, nodeID: nodeID, kind: kind, frame: frame,
+            clipRect: clipRect, zIndex: zIndex, documentOrder: documentOrder,
+            paintOrder: paintOrder, action: action, sticky: sticky, enabled: enabled,
+            mappingImage: mappingImage, mappingTargets: mappingTargets, coverage: coverage,
+            cursor: cursor, tabStop: tabStop, positionMap: positionMap, toolTip: toolTip)
+    }
+
+    func withoutCoverage() -> WMPHitMetadata {
+        WMPHitMetadata(stableID: stableID, nodeID: nodeID, kind: kind, frame: frame,
+            clipRect: clipRect, zIndex: zIndex, documentOrder: documentOrder,
+            paintOrder: paintOrder, action: action,
+            sticky: sticky, enabled: enabled, mappingImage: mappingImage,
+            mappingTargets: mappingTargets, coverage: nil, cursor: cursor,
+            tabStop: tabStop, positionMap: positionMap, toolTip: toolTip)
+    }
+}
+
+/// The two rules that decide which control a click reaches, both reported against `Plus! Pulsar`
+/// as "seems to ignore most clicks despite showing hover graphics".
+final class WMPHitOrderingTests: XCTestCase {
+    /// **`zIndex` orders siblings, so a subview's rank beats its child's literal.** Pulsar lays a
+    /// `<SUBVIEW zIndex="5">` holding a `<CUSTOMSLIDER zIndex="55">` straight across a
+    /// `<SUBVIEW zIndex="10">` holding its equalizer and playlist buttons. Comparing `55` with `0`
+    /// across the whole view handed every one of those clicks to the slider.
+    func testASubviewsZIndexOutranksADeeperChildsLargerLiteral() async throws {
+        let art = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 2,
+            rows: [[(255, 0, 0), (255, 0, 0)], [(255, 0, 0), (255, 0, 0)]])
+        let xml = """
+        <THEME><VIEW id="main" width="20" height="20">
+          <SUBVIEW id="under" zIndex="5" left="0" top="0" width="20" height="20">
+            <BUTTON id="slider" zIndex="55" left="0" top="0" width="20" height="20"
+                    image="art.bmp" onClick="a()"/>
+          </SUBVIEW>
+          <SUBVIEW id="over" zIndex="10" left="0" top="0" width="20" height="20">
+            <BUTTON id="button" left="4" top="4" width="8" height="8" image="art.bmp" onClick="b()"/>
+          </SUBVIEW>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 8, y: 8))?.nodeID, "button")
+        // Outside the button, the node underneath still answers — this reorders, it does not mask.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 18, y: 18))?.nodeID, "slider")
+    }
+
+    /// **A control is its artwork, not its rectangle.** `Navigator`'s progress slider spans the
+    /// whole player and cuts holes in itself exactly where the close and full-mode buttons sit.
+    func testAClickOnAKeyedOutPixelFallsThroughToTheControlBeneath() async throws {
+        // Left column magenta (the implicit transparency key), right column red.
+        let holed = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 1,
+            rows: [[(255, 0, 255), (255, 0, 0)]])
+        let solid = WMPSkinTestSupport.trueColor24Bitmap(width: 1, height: 1, rows: [[(0, 255, 0)]])
+        let xml = """
+        <THEME><VIEW id="main" width="20" height="10">
+          <BUTTON id="under" left="0" top="0" width="20" height="10" image="solid.bmp" onClick="a()"/>
+          <BUTTON id="over" left="0" top="0" width="20" height="10" image="holed.bmp" onClick="b()"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("holed.bmp", data: holed),
+            WMPTestArchiveEntry("solid.bmp", data: solid)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        // Left half of `over` is keyed away, so the click belongs to what is drawn underneath.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 4, y: 5))?.nodeID, "under")
+        // Right half is painted, so `over` keeps it.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 15, y: 5))?.nodeID, "over")
+    }
+
+    /// A sprite with nothing opaque in it is a hit catcher, not a shape: `holiday_skin`, `Grinch`
+    /// and `Josie_and_the_Pussycats` build whole transports out of fully transparent buttons laid
+    /// over artwork their parent draws. Coverage must only ever subtract from a node that is drawn.
+    func testAFullyTransparentButtonKeepsItsWholeRect() async throws {
+        let clear = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 1,
+            rows: [[(255, 0, 255), (255, 0, 255)]])
+        let xml = """
+        <THEME><VIEW id="main" width="20" height="10">
+          <BUTTON id="catcher" left="0" top="0" width="20" height="10" image="clear.bmp" onClick="a()"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("clear.bmp", data: clear)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        XCTAssertEqual(WMPHitTester(hits: scene.hits).hitTest(WMPPoint(x: 10, y: 5))?.nodeID, "catcher")
+    }
+
+    /// **A `CUSTOMSLIDER`'s position map says which pixels are the control, and the colours the
+    /// node keys out are not among them.** `Plus! Pulsar`'s `seek_map.png` marks the 66% of its
+    /// square that is not the arc as opaque `#ff00ff`; averaged as a luminance that is a fraction
+    /// of `0.667`, so clicking anywhere in the dead corners seeked to 67% of the track.
+    func testAKeyedColourInAPositionMapIsNotPartOfTheControl() async throws {
+        // Left half a real ramp, right half the transparency colour.
+        let map = WMPSkinTestSupport.trueColor24Bitmap(width: 4, height: 1,
+            rows: [[(0, 0, 0), (128, 128, 128), (255, 0, 255), (255, 0, 255)]])
+        let art = WMPSkinTestSupport.trueColor24Bitmap(width: 4, height: 1,
+            rows: [[(9, 9, 9), (9, 9, 9), (9, 9, 9), (9, 9, 9)]])
+        let xml = """
+        <THEME><VIEW id="main" width="40" height="10">
+          <BUTTON id="under" left="0" top="0" width="40" height="10" image="art.bmp" onClick="a()"/>
+          <CUSTOMSLIDER id="seek" left="0" top="0" width="40" height="10" min="0" max="100"
+                        image="art.bmp" positionImage="map.bmp" transparencyColor="#FF00FF"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art),
+            WMPTestArchiveEntry("map.bmp", data: map)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        // The ramped half is the control…
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 5, y: 5))?.nodeID, "seek")
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 15, y: 5))?.nodeID, "seek")
+        // …and the keyed half belongs to what is underneath, rather than reading as a fraction.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 25, y: 5))?.nodeID, "under")
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 35, y: 5))?.nodeID, "under")
+        let map2 = try store.positionMap(for: "map.bmp", keyedOut: [WMPColor(red: 255, green: 0, blue: 255)])
+        let frame = WMPRect(x: 0, y: 0, width: 40, height: 10)
+        XCTAssertEqual(map2.fraction(at: WMPPoint(x: 5, y: 5), in: frame), 0)
+        XCTAssertNil(map2.fraction(at: WMPPoint(x: 35, y: 5), in: frame))
+    }
+
+    /// The map is the authority, **not the artwork** — a filmstrip's opaque area is a property of
+    /// whichever frame the current value selects. Pulsar's seek arc loses 577 of its own pixels to
+    /// the sprite's soft edges, and they are the ones nearest the band a pointer aims for.
+    func testASlidersRegionComesFromItsMapNotItsCurrentFilmstripFrame() async throws {
+        // The map claims all four columns; the artwork keys out the outer two.
+        let map = WMPSkinTestSupport.trueColor24Bitmap(width: 4, height: 1,
+            rows: [[(0, 0, 0), (85, 85, 85), (170, 170, 170), (255, 255, 255)]])
+        let art = WMPSkinTestSupport.trueColor24Bitmap(width: 4, height: 1,
+            rows: [[(255, 0, 255), (9, 9, 9), (9, 9, 9), (255, 0, 255)]])
+        let xml = """
+        <THEME><VIEW id="main" width="40" height="10">
+          <CUSTOMSLIDER id="seek" left="0" top="0" width="40" height="10" min="0" max="100"
+                        image="art.bmp" positionImage="map.bmp" transparencyColor="#FF00FF"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art),
+            WMPTestArchiveEntry("map.bmp", data: map)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        for x in [5.0, 15.0, 25.0, 35.0] {
+            XCTAssertEqual(tester.hitTest(WMPPoint(x: x, y: 5))?.nodeID, "seek",
+                           "the map claims x=\(x); the sprite's transparency must not overrule it")
+        }
+    }
+
+    /// `<EFFECTS>` is a fallback target, never a blocker: `Alienware Invader` draws its rating
+    /// stars over a visualizer declared after them, and ranking by paint order alone ate all five.
+    func testAVisualizerNeverBlocksAControlDrawnOverIt() async throws {
+        let art = WMPSkinTestSupport.trueColor24Bitmap(width: 1, height: 1, rows: [[(255, 0, 0)]])
+        let xml = """
+        <THEME><VIEW id="main" width="20" height="20">
+          <SUBVIEW id="panel" zIndex="28" left="0" top="0" width="20" height="20">
+            <BUTTON id="star" zIndex="31" left="4" top="4" width="8" height="8"
+                    image="art.bmp" onClick="rate()"/>
+          </SUBVIEW>
+          <EFFECTS id="vis" zIndex="30" left="0" top="0" width="20" height="20" onClick="next()"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 8, y: 8))?.nodeID, "star")
+        // And the visualizer still answers where nothing is drawn over it.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 18, y: 18))?.nodeID, "vis")
     }
 }

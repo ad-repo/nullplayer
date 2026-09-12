@@ -71,6 +71,67 @@ Bionic Dot derivative, on the evidence of an identically named `visMask`/`visEff
 that came out of it is in `../../SKILL.md` § *Drawing the skin's own controls*, and **the guard on it
 is Cerulean** — a two-state keyed container means the opposite of a three-state one.
 
+### W148 — the controls hovered and did nothing
+
+*"plus pulsar skin seems to ignore most clicks despite showing hover graphics"*. Reported
+2026-09-12 against `Plus! Pulsar`; the cause was engine-wide and the family was where it showed.
+Archived in `docs/wmp-skin/wmp-backlog-archive.md` § *Phase 22*.
+
+`Pulsar` authors its equalizer, playlist and three visualization buttons as one `<BUTTONGROUP>` in a
+`<SUBVIEW zIndex="10">`, and drops a `<CUSTOMSLIDER zIndex="55">` on either side of it inside
+`<SUBVIEW zIndex="5">` siblings whose 79x136 rects cover the group completely. Hit testing sorted a
+*flat* list by the authored `zIndex`, so `55 > 0` gave all five clicks to a slider — and every
+contested pixel of `vol.png`/`seek.png` is `#ff00ff`, so the slider is not even drawn there.
+
+**The family-wide shape:** 7 of the 13 archives gained controls — `Pulsar` 3, `HueShifter` 5,
+`Bionic Dot` (×2) 1 each, `Plasma Ball`, `Professional` and `SlimLine` 1 each. Corpus-wide it is
+**103 controls across 32 archives**, so this is an idiom the family shares rather than owns; the
+worst-hit skins are not Plus! at all (`Beck` 16, `Spider-man` 13).
+
+**The reporter's instinct was right a second time** — *"you might want to test other plus skins for
+the same defect"* — and the instrument that answered it is `WMP_RENDER_OCCLUDED=1`, written for this
+report because no existing probe could see the class. `starved.tsv` ranks views that failed to *lay
+out*; `Pulsar/mainView` lays out completely and its `RENDER-DUMP` line is healthy. A fully resolved
+view whose controls are buried reads as a pass in every count the harness had.
+
+### W150 — the seek arc, and the square it lives in
+
+*"the seek area does not work properly"* and *"there is also a clickable artifact to the right of the
+seek that does nothing"*. Reported 2026-09-12 against `Plus! Pulsar` immediately after W148, and it
+is three defects in one control. Archived in `docs/wmp-skin/wmp-backlog-archive.md` § *Phase 22*.
+
+`seekMain` and `volume` are **diagonal arcs inside 79x136 squares**, and only 29% of each square is
+the control. `seek_map.png` marks the other 66% as opaque `#ff00ff`, which `WMPPositionMap` averaged
+into a fraction of `0.667` — so a click anywhere in the dead corners seeked to 67% of the track.
+W148's coverage then derived the arc's region from `seek.png`, which is a **13-frame filmstrip**, and
+lost 577 pixels of the arc's own soft edges (551 on volume). And the cursor rect and the tooltip
+fallback both still covered the whole square, so it kept a hand cursor and a "Seek" tip over pixels
+that hit nothing — the "clickable artifact".
+
+**Both arcs are the same shape, so check the volume control whenever the seek one moves.** They are
+mirror images with the same map encoding, and every measurement above has a volume twin.
+
+### W151 — the seek snapped back on release
+
+*"seek is still not working"*, then *"it snaps back when you release the mouse"*, and the sentence
+that found it: *"the volume is fine and has the same control shape"*. Archived in
+`docs/wmp-skin/wmp-backlog-archive.md` § *Phase 22*.
+
+**Not a Plus! defect at all — 148 sliders across 112 of the 180 archives** have the shape, and
+Pulsar is simply where it was looked at. Any slider whose `max` binds to
+`player.currentMedia.duration` receives an *implicit* `value` binding to
+`player.controls.currentPosition` (W128), which settles on every transaction — including the one the
+release raises, which is where a skin like this one reads the control back:
+`onmouseup="player.controls.currentPosition=seekMain.value;"`. Dragged to 521 s, it committed 18.95 s
+— the live position — so the audio never moved and the thumb snapped back to the truth.
+
+**Why `volume` was fine on an identical arc:** it carries
+`value="wmpprop:player.settings.volume"`, so `performSlider` commits it natively through
+`WMPTransportAction.boundAction` and never goes near the script. **A bound slider cannot reproduce
+this**, and most of the corpus binds — reach for an unbound one when testing this path.
+
+**The two arcs are mirror images, so check volume whenever seek moves**, and vice versa.
+
 ## Ruled out — do not chase these again
 
 - **The dancer is not ours and is not in the archive.** Reference screenshots of Bionic Dot show a
@@ -99,6 +160,31 @@ is Cerulean** — a two-state keyed container means the opposite of a three-stat
   `vidToolTips`, `vidSize*`). **Do not open a row on the count itself**; name the node first.
 
 ## The instruments to reach for
+
+```bash
+# Which controls in the family cannot be reached, and what answers instead (W148).
+WMP_SKIN="$HOME/Library/Application Support/NullPlayer/WMPSkins" \
+WMP_RENDER_HOST=playing WMP_RENDER_OCCLUDED=1 \
+  swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus 2>&1 | grep "^OCCLUDED"
+```
+
+The seek arc, end to end — `follows-pointer=yes`, and the dead corners of its square must `MISS`:
+
+```bash
+WMP_SKIN="…/Plus! Pulsar.wmz" WMP_RENDER_HOST=playing \
+WMP_RENDER_CLICK="mainView@332,78>330,94>328,110>326,126>320,142>313,158>300,174>284,190>273,206;318,194;308,204" \
+  swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus
+```
+
+`Pulsar`'s five contested controls, once they dispatch — `mainView@218,100` eq, `258,92` vis,
+`274,92` vis-next, `297,101` playlist, and `242,92` vis-prev, which correctly answers the slider
+underneath while the skin has it disabled:
+
+```bash
+WMP_SKIN="…/Plus! Pulsar.wmz" WMP_RENDER_HOST=playing \
+WMP_RENDER_CLICK="mainView@218,100;258,92;274,92;297,101" \
+  swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus
+```
 
 ```bash
 # Which Plus! surfaces are faded shut, and which are shaped by a mask.
