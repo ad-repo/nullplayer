@@ -485,6 +485,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // `clippingColor` beside it, which is what the mask keys out.
             let clippingPath = try resource(node, names: ["clippingImage"])?.1
             let backgroundPath = try resource(node, names: ["backgroundImage", "background"])?.1
+            let childStates = node.kind == .buttonGroup
+                ? node.children.map { ($0.stableID, interactionState.visualState(for: $0.stableID)) } : []
+            let visualState: WMPVisualInteractionState
+            if childStates.contains(where: { $0.1 == .down }) { visualState = .down }
+            else if childStates.contains(where: { $0.1 == .hover }) { visualState = .hover }
+            else if !childStates.isEmpty && childStates.allSatisfy({ $0.1 == .disabled }) { visualState = .disabled }
+            else { visualState = interactionState.visualState(for: node.stableID) }
             // Cerulean's face art keys away both magenta and red. Its matching blue
             // `backgroundColor` is an authored export artefact: WMP's rectangular fill is visible
             // behind the transparent head. Restrict the compatibility correction to this exact
@@ -495,7 +502,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 && node.kind == .subview
                 && color(node, names: ["backgroundColor"]) == WMPColor(red: 154, green: 172, blue: 219)
                 && colors(node, names: ["transparencyColor", "clippingColor"]).count == 2
-            if let background = color(node, names: ["backgroundColor"]), !frame.isEmpty, !isCeruleanFace {
+            let backgroundNames = visualState == .hover && isText(node.kind)
+                ? ["hoverBackgroundColor", "backgroundColor"]
+                : ["backgroundColor"]
+            if let background = color(node, names: backgroundNames), !frame.isEmpty, !isCeruleanFace {
                 emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .fill(background), alpha: alpha))
@@ -505,13 +515,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     clip: inheritedClip, z: z, background: true, alpha: alpha,
                     clippingPath: clippingPath))
             }
-            let childStates = node.kind == .buttonGroup
-                ? node.children.map { ($0.stableID, interactionState.visualState(for: $0.stableID)) } : []
-            let visualState: WMPVisualInteractionState
-            if childStates.contains(where: { $0.1 == .down }) { visualState = .down }
-            else if childStates.contains(where: { $0.1 == .hover }) { visualState = .hover }
-            else if !childStates.isEmpty && childStates.allSatisfy({ $0.1 == .disabled }) { visualState = .disabled }
-            else { visualState = interactionState.visualState(for: node.stableID) }
             let foregroundNames: [String]
             switch visualState {
             case .disabled: foregroundNames = ["disabledImage", "image"]
@@ -646,16 +649,22 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // **`fontFace` is the attribute the corpus authors, not `fontType`**: 110 skins
                 // against 21. Reading only `fontType` rendered every one of those in Arial, which
                 // is why so many readouts sat in the wrong face at the right size.
-                let style = (literalString(node, "fontStyle") ?? "").lowercased()
-                let disabled = visualState == .disabled
+                let style = ((visualState == .disabled
+                    ? literalString(node, "disabledFontStyle") : nil)
+                    ?? literalString(node, "fontStyle") ?? "").lowercased()
+                let textColorNames: [String]
+                switch visualState {
+                case .disabled: textColorNames = ["disabledForegroundColor", "foregroundColor", "color"]
+                case .hover: textColorNames = ["hoverForegroundColor", "foregroundColor", "color"]
+                case .down, .normal: textColorNames = ["foregroundColor", "color"]
+                }
                 let text = WMPSceneText(value: value,
                     fontName: literalString(node, "fontFace") ?? literalString(node, "fontType") ?? "Arial",
                     fontSize: max(1, literalNumber(node, "fontSize") ?? 12),
                     bold: style.contains("bold"), italic: style.contains("italic"),
                     underline: style.contains("underline"),
                     smoothed: literalString(node, "fontSmoothing")?.caseInsensitiveCompare("false") != .orderedSame,
-                    color: (disabled ? color(node, names: ["disabledForegroundColor"]) : nil)
-                        ?? color(node, names: ["foregroundColor", "color"])
+                    color: color(node, names: textColorNames)
                         ?? WMPColor(red: 255, green: 255, blue: 255), alignment: alignment,
                     scrolling: literalString(node, "scrolling")?.caseInsensitiveCompare("true")
                         == .orderedSame,

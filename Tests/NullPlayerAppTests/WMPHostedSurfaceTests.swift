@@ -93,6 +93,45 @@ final class WMPHostedSurfaceTests: XCTestCase {
         }))
     }
 
+    func testTextUsesItsHoverColorsAndDisabledFontStyle() async throws {
+        let loaded = try await skin("""
+        <THEME><VIEW id="main" width="120" height="30">
+        <TEXT id="reset" left="10" top="5" width="80" height="16" value="RESET"
+              foregroundColor="#111111" hoverForegroundColor="blue"
+              backgroundColor="#222222" hoverBackgroundColor="#333333"
+              fontStyle="italic" disabledFontStyle="bold underline" onClick="reset()"/>
+        </VIEW></THEME>
+        """)
+        let reset = try XCTUnwrap(loaded.graph.nodes(id: "reset").first)
+        let builder = WMPSceneBuilder(loadedSkin: loaded)
+
+        func drawnText(in scene: WMPScene) throws -> WMPSceneText {
+            try XCTUnwrap(scene.commands.compactMap { command in
+                guard command.stableID == reset.stableID, case let .text(text) = command.paint else { return nil }
+                return text
+            }.first)
+        }
+
+        let resting = try await builder.build(viewID: "main")
+        XCTAssertEqual(try drawnText(in: resting).color, WMPColor(red: 0x11, green: 0x11, blue: 0x11))
+        XCTAssertTrue(try drawnText(in: resting).italic)
+
+        var state = WMPInteractionState()
+        let target = try XCTUnwrap(WMPHitTester(hits: resting.hits).hitTest(WMPPoint(x: 20, y: 10)))
+        _ = state.move(over: target)
+        let hovered = try await builder.build(viewID: "main", interactionState: state)
+        XCTAssertEqual(try drawnText(in: hovered).color, WMPColor(red: 0, green: 0, blue: 0xFF))
+        XCTAssertTrue(hovered.commands.contains { command in
+            command.stableID == reset.stableID && command.paint == .fill(WMPColor(red: 0x33, green: 0x33, blue: 0x33))
+        })
+
+        _ = state.setDisabled(true, node: reset.stableID)
+        let disabled = try await builder.build(viewID: "main", interactionState: state)
+        XCTAssertTrue(try drawnText(in: disabled).bold)
+        XCTAssertTrue(try drawnText(in: disabled).underline)
+        XCTAssertFalse(try drawnText(in: disabled).italic)
+    }
+
     /// Some skins still declare no parseable colour, so a palette with nothing in it must remain
     /// usable — the app-authored WMP-neutral pair, never
     /// another skin family's.

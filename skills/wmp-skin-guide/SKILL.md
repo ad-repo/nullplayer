@@ -87,6 +87,10 @@ fallback. Existing users keep their persisted mode.
 - Attribute parsing classifies expressions, bindings, handlers, colors, and resources without
   executing skin code. `res://` and optional missing artwork warn; path escapes and required missing
   scripts fail.
+- **TEXT colour roles follow interaction state.** Resolve `hoverForegroundColor` and
+  `hoverBackgroundColor` only while the TEXT hit target is hovered, then fall back to the normal
+  roles; resolve `disabledFontStyle` only while disabled, then fall back to `fontStyle`. Use
+  `WMPAttributeParser.color(from:)` for every role so named SDK colours stay consistent (W131).
 - Graph IDs and registry order are deterministic. Duplicate authored IDs are retained and warned,
   not silently collapsed.
 

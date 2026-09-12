@@ -570,6 +570,12 @@ resolve — **opened as W137**. Read the body before naming a skin to look at.
 |---|---|---|---|
 | W130 | Two colour parsers and only one knows names, so declared chrome is invisible to the palette | `backgroundColor` authored as an SDK name in 92 skins (`black` 124 uses, `pink` 14, `blue` 3, `white` 1); `foregroundColor` in 22 skins (`white` 52, `black` 37), measured over 177 readable archives | **Closed 2026-09-11.** WMP's Color Reference permits 140 named colours for every colour attribute, but `WMPAttributeParser.color(from:)` had accepted only `#RRGGBB`; `WMPSceneBuilder` separately recognized five names while `WMPSurfacePalette` recognized none. The parser now owns the full SDK table, case-insensitively, and both scene fills and palette roles route through it. `"none"` remains unparsed, preserving WMP's absence/transparent semantics. `testAttributeClassificationDoesNotExecuteAuthoredCode`, `testColorAttributesAreParsedAsStrictlyAsTheEngineDoes`, and `testNamedColorsDriveTheSceneAndSurfacePalette` pin classification, raw palette attributes, a rendered `pink` fill, and a named foreground role. The named-colour census and the resulting declaration counts are recorded in `wmp-skin-guide`; 165 of 177 readable archives now declare a parseable background colour and 171 a foreground. |
 
+## Phase 17 (fourth pass) — TEXT interaction colour roles
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W131 | `hoverForegroundColor` and the TEXT hover-colour family are never read | `hoverForegroundColor` **212 uses / 40 skins**, `hoverBackgroundColor` 5 / 1, `disabledFontStyle` 20 / 2 | **Closed 2026-09-11.** `WMPSceneBuilder` already tracked a TEXT hit target's hover state, but used it only for image artwork. It now resolves `hoverForegroundColor` and `hoverBackgroundColor` before their normal roles, and uses `disabledFontStyle` in the disabled state. The pre-fix live probe against Plus! Bionic Dot's `videoView/resetButton` recorded `onMouseOver resetButton#235` while it still painted its normal `#666666` foreground despite authoring `hoverForegroundColor="#CCCCCC"`; that control now has an observable hover paint role. The named `blue` test input proves this row uses W130's shared parser rather than a second colour table. `testTextUsesItsHoverColorsAndDisabledFontStyle` pins normal, hover, and disabled behavior. |
+
 ## Phase 18 — the z-order an `<EFFECTS>` declares, and the engines that ban rested on
 
 Closed 2026-09-11. Reported live as "visualizations in `.wmz` skins are circular everywhere":
