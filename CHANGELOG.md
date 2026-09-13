@@ -29,6 +29,11 @@
 
 ### Bug Fixes
 
+- **Dragging a Media Player skin's seek bar no longer sounds harsh.** The seek was being applied
+  again on every twitch of the mouse — around twenty times across a single drag — and each one
+  restarted the audio abruptly. The track now moves once, when you let go, and the thumb still
+  follows the pointer the whole way.
+
 - **Media Player skins no longer draw a blank slab over their own buttons.** A skin often keeps a
   whole row of buttons in one image, with a separate map telling the player where each button sits.
   The area of that image *around* the buttons was being painted instead of left clear, so it covered

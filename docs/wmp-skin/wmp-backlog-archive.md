@@ -33,6 +33,59 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 |---|---|---|
 | W155 | The W154 mask made every render walk every group's mapping image | Closed 2026-09-13. **Opened by W154 the same day and found on the running app, not in a sweep.** Masking only the one *lit* group had hidden the cost; masking every group's base sheet exposed it, and `WMPRenderer.rasterize` called `WMPMappingImage.maskImage` — a full pixel walk, an allocation and a `CGImage` — **per draw, per group**. Reported as the app stuttering and hanging while clicking `New Super Mario Bros`'s playlist and equalizer buttons. The main thread was **idle** (3513 of 3565 samples in `mach_msg`); what was saturated were six `com.apple.root.user-initiated-qos.cooperative` threads at 3565/3565, with `maskImage` at 3510 of them — the renderer runs off-main, so it starved the pool everything else was awaiting rather than blocking the UI thread. The mask is a pure function of the bitmap and the child set and never changes with interaction state, so `WMPImageStore.mappingMask` caches it on the same LRU and eviction budget as the clipping masks, keyed by resource path plus sorted node ids (`WMPSceneMappingMask` gained `resourcePath` for it). `maskImage` also stopped hashing a `WMPColor` per pixel — a mapping image registers a handful of colours, so the accepted set resolves once and the inner loop compares three bytes, which is what the `swift_retain`/`swift_release` traffic in the profile was. **Measured on the reported skin, 20 renders after a warm pass: 173.1 ms → 0.3 ms per render.** The corpus re-sweep is 534 of 535 images identical to the pre-optimisation capture; the one mover is `Scooby-Doo_2/infoView`, which is nondeterministic by construction. **The lesson is the row**: a render sweep draws each view once, so a per-draw cost that only bites from the second frame on is invisible to it — `sample` on the running app was the only instrument that could see this, and W154 shipped without it. |
 
+## W156 — a seek is committed once, on release
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W156 | A `.wmz` seek slider commits a seek on **every mouse-move**, and dragging one is audibly harsh | **Every seek slider in the corpus** takes this path — `WMPMainView.performSlider` runs from `mouseDragged` — but the audible complaint is so far **one skin**, `New Super Mario Bros`, with `corona` explicitly reported clean. Reported 2026-09-13 while streaming; unmeasured against the rest of the corpus | Reported as *"there is a harsh audio artifact at the time adjustment"* and *"it seems related to this skin, corona did not have the same issue. I am using streaming content"*. **Measured, live, with `WMP_SEEK_TRACE=1` and a `CGEvent` drag of 200 px across Mario's bar: 21 `performSlider` commits in ~0.5 s**, each one `onAction(.seek, fraction)` → `engine.seek(to:)`, then a 22nd from the skin's own `onDragEnd`. **Classic mode has never done this** — `MainWindowView.mouseUp` commits the position bar once, on release, and only moves the thumb during the drag. What each seek costs is in `AudioEngine.seek`: a local file does `playerNode.stop()` + `scheduleSegment` + restart with **no ramp**, a hard discontinuity per seek; streaming is debounced 0.15 s but only while `isSeekingStreaming` is up, and once that resets the next drag event seeks immediately again. **The hole to close first is why `corona` is clean**, because the obvious structural difference does not explain it: Mario is `<slider value="wmpprop:player.controls.currentPosition" … onDragEnd="player.controls.currentPosition=value;">` and corona is a bare `<SEEKSLIDER>` with no release handler, but **both resolve to `.seek` and both commit per move** — corona through `authoredAction` on the tag, Mario through its `value` binding. Do not fix this from the mechanism alone: that is exactly what was tried on 2026-09-13 and it **made seeking worse**, landing at roughly double the target time, so it was reverted in full (the tree is unchanged here). Two things that attempt learned and the next one should not re-derive: coalescing to a release-only commit **cannot** simply drop the per-move commits, because most corpus seek sliders author no `mouseup`/`dragend` at all and nothing else would ever commit them — corona is that shape; and a synthesized `mouseDown`/`mouseDragged`/`mouseUp` sequence against `WMPMainView` showed the release commit **never firing**, which contradicts the doubling seen live and means the release path is not understood yet. **One trace line settles both questions**, and it already prints both numbers: `hostCommand seekSeconds=<n> duration=<d>` — run one drag on each skin and compare. An untested hypothesis for the doubling, worth nothing until measured: `seekSeconds` divides by `host.snapshot.duration`, so a snapshot duration lagging the stream's real duration resolves the same absolute position to a larger fraction. Reproduce with `WMP_SEEK_TRACE=1 ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp` and a `CGEvent` drag; take the window rect from `CGWindowListCopyWindowInfo` filtered on owner `NullPlayer`, **not** from System Events, which returns whichever NullPlayer window it likes and cost a launch per miss. Note also that `defaults write NullPlayer wmpSkinName` does **not** select the skin at launch — `AppStateManager` restores its own persisted selection over it. |
+
+Closed 2026-09-13.
+
+**The hole the row said to close first is closed, and the answer is that there is no difference.**
+Both skins were driven live with `WMP_SEEK_TRACE=1` and a 20-step `CGEvent` drag across their seek
+bars, against a 21:49 local track: **21 `performSlider` commits apiece**, the same values, the same
+`.seek` per mouse-move. `New Super Mario Bros` reaches `.seek` through its `value` binding and
+`corona` through `target.action` on a bare `<SEEKSLIDER>`, and the two paths meet in the same
+`onAction?(.seek, …)`. The only thing the markup changes is the **22nd** commit: Mario's authored
+`onDragEnd` posts `seekSeconds` after release and corona's `handlers=0` posts nothing. So
+*"it seems related to this skin, corona did not have the same issue"* does not correspond to a
+structural difference, and nothing in the fix rests on one. Anything built on the obvious
+explanation would have been built on a skin that does not actually behave differently.
+
+**What it costs, and why one skin can sound worse than another anyway.** `AudioEngine.seek` on a
+local file stops the player node and reschedules the file from the new frame with **no ramp** — a
+hard discontinuity per commit, 21 of them in ~0.5 s. Streaming is debounced 0.15 s, but only while
+`isSeekingStreaming` is up, so once it resets the next mouse-move seeks immediately again. Both
+skins pay the same price; how harsh it sounds is a property of the material and of how far the
+pointer travels, not of the markup.
+
+**The fix: the gesture asks for one seek, at the end.** `WMPMainView.performSlider` holds a `.seek`
+in `pendingSeek` instead of sending it, and `mouseUp` hands it to `onSliderRelease`;
+`cancelInputCapture` drops it, because a cancelled drag asks for no seek. Every other slider action
+still commits per move — a volume drag the user cannot hear would be a broken control, and the
+balance and equaliser bands are the same argument.
+
+**Who commits it is decided after the skin's own handlers have run, not from the markup.**
+`WMPMainWindowController` already awaits the release transaction; it now commits `pendingSeek` there
+**only if** that transaction issued no `seekSeconds` of its own (`scriptDidCommitSeek`, set in
+`applyHostCommands`). This is what the row warned could not be dropped, from both sides: 111 of the
+corpus's 141 `onDragEnd` sources are `player.controls.currentPosition = value`, so committing
+unconditionally would be two `AudioEngine.seek` restarts where the user asked for one — the very
+click being removed — while corona and every seek slider that binds `value` and nothing else author
+no release handler at all and have no other committer.
+
+**The thumb is not deferred, only the audio.** `widgetValues` and `onElementValueChanged` are
+untouched, and W151's hold keeps the host from settling the implicit
+`player.controls.currentPosition` binding over the user's value for the length of the gesture — which
+covers a bare `<SEEKSLIDER>` too, because `WMPPropertyRegistry` gives it that binding implicitly.
+
+**The doubling the previous attempt hit did not reappear, and the trace says why it could not.**
+`hostCommand seekSeconds=1014.577 duration=1309.727` resolves to 0.7746, which is exactly the
+`pendingSeek` fraction the pointer left — the value and the divisor now come from the same gesture.
+Measured after the change: corona commits once through the engine and lands at 16:12, Mario once
+through its own handler and lands at 16:54, both still playing. `swift test` 2241 tests, 0 failures.
+No render sweep: the change is input dispatch and a host command, and cannot move a headless render.
+
 ## W152 — not a defect: a skin's own access gate
 
 | ID | Item | Landed |

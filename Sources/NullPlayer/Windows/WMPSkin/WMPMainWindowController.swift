@@ -555,9 +555,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // before it runs. Both handler sets go into a single event, after the value the user left
         // the control at — and the capture gate is only released once that has been sent, so no
         // position tick can land between the value and the handlers that read it.
-        view.onSliderRelease = { [weak self, weak presentation] stableID, targetID, value in
+        view.onSliderRelease = { [weak self, weak presentation] stableID, targetID, value, pendingSeek in
             guard let self, let presentation, let scriptRuntime = self.scriptRuntime,
-                  let skin = self.loadedSkin else { self?.sliderCaptureActive = false; return }
+                  let skin = self.loadedSkin else {
+                self?.sliderCaptureActive = false
+                if let pendingSeek { self?.host.perform(.seek, value: pendingSeek) }
+                return
+            }
             Task {
                 await scriptRuntime.setWidgetValue(stableID: stableID, value: value,
                                                    viewID: presentation.viewID)
@@ -568,6 +572,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 #if DEBUG
                 wmpSeekTrace("onSliderRelease committed value=\(value) handlers=\(handlers.count)")
                 #endif
+                self.scriptDidCommitSeek = false
                 self.dispatchScriptTransaction(presentation,
                     WMPJScriptEvent(name: "mouseup", targetID: targetID, handlers: handlers))
                 // **The hold outlives the dispatch, not the call that made it.**
@@ -578,6 +583,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // which was the live position, so the seek landed exactly where it already was and
                 // the thumb snapped back on release.
                 await presentation.scriptTask?.value
+                // **The seek the gesture asked for, committed once, here** (W156). It waits for the
+                // skin's own handlers because 111 of the corpus's 141 `onDragEnd` sources are
+                // `player.controls.currentPosition = value` and would otherwise make this a second
+                // seek to the same second — two `AudioEngine.seek` restarts where the user asked
+                // for one. `scriptDidCommitSeek` is what the transaction reports back; a slider
+                // whose skin authors no release handler at all (`corona`'s bare `<SEEKSLIDER>`,
+                // and every seek slider that binds `value` and nothing else) is committed here and
+                // nowhere else, which is why coalescing cannot simply drop the per-move commits.
+                if let pendingSeek, !self.scriptDidCommitSeek {
+                    self.host.perform(.seek, value: pendingSeek)
+                    self.refreshHostState()
+                }
                 self.sliderCaptureActive = false
                 await scriptRuntime.releaseElement(stableID: stableID)
             }
@@ -1540,6 +1557,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// for the duration, so the value the user is setting cannot be overwritten underneath them.
     private var sliderCaptureActive = false
 
+    /// Set by `applyHostCommands` when a script transaction issued `seekSeconds`, read by the
+    /// slider release path so a skin that commits its own seek is not seeked twice (W156).
+    private var scriptDidCommitSeek = false
+
     private func dispatchScriptTransaction(_ presentation: WMPViewPresentation,
                                            _ event: WMPJScriptEvent) {
         guard let skin = loadedSkin, let store = imageStore,
@@ -1746,6 +1767,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             case "scanForward": host.perform(.beginScan(.forward), value: nil)
             case "scanReverse": host.perform(.beginScan(.reverse), value: nil)
             case "seekSeconds":
+                // Read by the slider release path, which commits its own seek only where the skin's
+                // handlers did not (W156).
+                scriptDidCommitSeek = true
                 let duration = max(host.snapshot.duration, 0.001)
                 #if DEBUG
                 wmpSeekTrace("hostCommand seekSeconds=\(number ?? -1) duration=\(duration)")

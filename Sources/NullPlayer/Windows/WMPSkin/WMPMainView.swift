@@ -50,8 +50,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     var onScriptEvent: ((String, String?, Int?) -> Void)?
     var onElementValueChanged: ((Int, String?, Double) -> Void)?
     /// A slider the user has just let go of: its value, then `mouseup`/`dragend`, **in that order
-    /// and in one transaction**. See W151.
-    var onSliderRelease: ((Int, String?, Double) -> Void)?
+    /// and in one transaction**. See W151. The fourth argument is the seek the gesture is asking
+    /// for, held back from every intermediate mouse-move — see `pendingSeek` and W156.
+    var onSliderRelease: ((Int, String?, Double, WMPHostValue?) -> Void)?
     /// Raised `true` when the pointer takes hold of a slider. **While it is held, the host must not
     /// write to that control** — see W151 and `WMPMainWindowController.sliderCaptureActive`.
     var onSliderCaptureChanged: ((Bool, Int) -> Void)?
@@ -68,6 +69,20 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     private var hitTester: WMPHitTester?
     private var interaction = WMPInteractionState()
     private var capturedTarget: WMPHitTarget?
+    /// **The seek a drag is asking for, not yet asked (W156).** Every other slider action is
+    /// continuous — a volume drag that only applied on release would be a control the user cannot
+    /// hear — but a seek is a discontinuity in the audio: `AudioEngine.seek` stops the player node
+    /// and reschedules the file from the new frame with no ramp, so committing one per mouse-move
+    /// is 21 hard restarts across a 200 px drag, which is what "a harsh audio artifact at the time
+    /// adjustment" was. Measured on `New Super Mario Bros` **and** on `corona`, whose bare
+    /// `<SEEKSLIDER>` takes the same path through `target.action`: the two skins are identical
+    /// here, 21 commits apiece, so the authored `onDragEnd` is not what separates them.
+    ///
+    /// The thumb still follows the pointer for the length of the gesture — `widgetValues` and
+    /// `onElementValueChanged` are untouched, and W151's hold keeps the host from settling the
+    /// implicit `player.controls.currentPosition` binding over it — so what is deferred is the
+    /// audio, not the control.
+    private var pendingSeek: WMPHostValue?
     /// The node the pointer is over, kept alongside `WMPInteractionState.hoveredNode` because the
     /// *exit* edge has to name the node the pointer just left — and by then the interaction state
     /// has already moved on. The authored id travels with it for the same reason.
@@ -233,6 +248,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         if let capturedTarget, isSlider(capturedTarget) {
             onSliderCaptureChanged?(false, capturedTarget.stableID)
         }
+        // A cancelled drag asks for no seek: the gesture never reached `mouseUp`, which is the only
+        // place one is committed (W156).
+        pendingSeek = nil
         notify(interaction.cancelCapture()); capturedTarget = nil; onAction?(.endScan, nil)
     }
 
@@ -383,15 +401,19 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
         let result = interaction.release(over: target)
         notify(result.changed)
-        defer { capturedTarget = nil }
+        defer { capturedTarget = nil; pendingSeek = nil }
         if let capturedTarget, isSlider(capturedTarget), let release = onSliderRelease {
             #if DEBUG
             wmpSeekTrace("release \(capturedTarget.nodeID ?? "-")#\(capturedTarget.stableID) "
-                + "value=\(String(describing: widgetValues[capturedTarget.stableID]))")
+                + "value=\(String(describing: widgetValues[capturedTarget.stableID])) "
+                + "pendingSeek=\(String(describing: pendingSeek))")
             #endif
             release(capturedTarget.stableID, capturedTarget.nodeID,
-                    widgetValues[capturedTarget.stableID] ?? 0)
+                    widgetValues[capturedTarget.stableID] ?? 0, pendingSeek)
         } else {
+            // No controller listening — a test, or a view being torn down. The gesture's seek has
+            // nowhere to be arbitrated against the skin's own handlers, so send it plainly.
+            if let pendingSeek { onAction?(.seek, pendingSeek) }
             onScriptEvent?("mouseup", capturedTarget?.nodeID, capturedTarget?.stableID)
         }
         guard let capturedTarget else { return }
@@ -573,7 +595,11 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         if let action = target.action ?? widget?.valueBindingPath.flatMap(WMPTransportAction.boundAction) {
             switch action {
             case .balance: onAction?(action, .number(fraction * 2 - 1))
-            case .seek, .volume: onAction?(action, .number(fraction))
+            // Held for the release rather than sent. `mouseUp` is the only place a `.seek` leaves
+            // this view, and 89 corpus sliders reach it the same way whether they name themselves
+            // `<SEEKSLIDER>` or bind `value` to `player.controls.currentPosition` (W156).
+            case .seek: pendingSeek = .number(fraction)
+            case .volume: onAction?(action, .number(fraction))
             default: onAction?(action, .number(value))
             }
         }

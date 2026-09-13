@@ -147,9 +147,15 @@ which is what makes it usable where the removed `INPUT` trace was not:
 
 ```
 [wmp/seek] performSlider seekMain mapped=Optional(0.451) min=0.0 max=1155.23 value=520.99
-[wmp/seek] release seekMain#48 value=Optional(520.99)
+[wmp/seek] release seekMain#48 value=Optional(520.99) pendingSeek=Optional(...number(0.451))
 [wmp/seek] hostCommand seekSeconds=18.95 duration=1155.23      ← the defect, in one line
 ```
+
+`pendingSeek` on the release line is the seek the whole gesture is asking for, and since W156 it is
+the **only** one: a drag prints its `performSlider` lines and then exactly one commit, either the
+skin's `hostCommand seekSeconds` or the engine's own. **Count the commits, not the moves** — a
+capture with a commit per `performSlider` line is the W156 regression, and it is what a 200 px drag
+looked like before: 21 of them in half a second.
 
 **Read the last line against the second.** They disagreed by the whole track on W151, because an
 implicit binding settled over the user's value between the release and the handler that read it.

@@ -170,6 +170,24 @@ a dispatch defect — it is a control the pointer never reached at all.
   slider with a `value` binding to a transport path is immune and is **not** the test:
   `performSlider` commits those natively through `WMPTransportAction.boundAction`, which is why
   `Plus! Pulsar`'s volume arc always worked while its identical seek arc did nothing.
+- **A seek is committed once, on release — every other slider action is continuous (W156).**
+  `WMPMainView.performSlider` runs from `mouseDragged`, so a `.seek` used to reach
+  `AudioEngine.seek` on every mouse-move: **21 commits across a 200 px drag**, each one a
+  `playerNode.stop()` and a reschedule with no ramp, which is what *"a harsh audio artifact at the
+  time adjustment"* was. It is now held in `pendingSeek` and handed to `onSliderRelease` at
+  `mouseUp` (`cancelInputCapture` drops it — a cancelled drag asks for no seek). Volume, balance and
+  the equaliser bands still commit per move; a volume drag the user cannot hear is a broken control.
+  **Who commits it is decided after the skin's own handlers have run, never from the markup**:
+  `WMPMainWindowController` awaits the release transaction and commits `pendingSeek` only if that
+  transaction posted no `seekSeconds` (`scriptDidCommitSeek`). Both halves are load-bearing — 111 of
+  the corpus's 141 `onDragEnd` sources are `player.controls.currentPosition = value` and would
+  otherwise be seeked twice, while a bare `<SEEKSLIDER>` authors no release handler at all and has
+  no other committer. **The thumb is not deferred, only the audio**: `widgetValues` and
+  `onElementValueChanged` are untouched and W151's hold keeps the position binding off the user's
+  value. **The skin the report blamed was not the difference.** `New Super Mario Bros` was reported
+  harsh and `corona` clean; driven live, they are identical — 21 commits apiece, Mario through its
+  `value` binding and corona through `target.action` — and the markup changes only the 22nd. How
+  harsh it sounds is the material and the distance dragged, not the authoring.
 - **A control the host has greyed out is still a control, and the window does not move under it
   (W154).** `WMPMainView.interactiveTarget` answers `nil` for a disabled target exactly as it does
   for bare artwork, and `mouseDown` reads that as "no control here" — so pressing a greyed transport
@@ -486,7 +504,8 @@ queue, with the object model as the security boundary — see Amendment 2 in
   removes an accidental compensation, so budget for what it uncovers**: where a drawer fails to open
   for an unrelated reason, the user now sees an empty drawer rather than usable controls in the
   wrong place. `onDragEnd` is the input-side sibling, raised from `WMPMainView.mouseUp` for a
-  captured slider, and it is where a seek commits. See `reference/object-model.md` § *Methods*, and
+  captured slider, and it is one of the two places a seek commits — see W156 above for the other and
+  for how the engine chooses between them. See `reference/object-model.md` § *Methods*, and
   `reference/harness.md` for why an image-only sweep cannot see any of it.
 - **A `<TEXT>`'s own artwork is its glyphs, and a `<BUTTONGROUP>`'s is its mapping image.** Every
   other node falls back to the natural size of its `backgroundImage`; these two have none, and both

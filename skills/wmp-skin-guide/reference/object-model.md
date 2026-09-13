@@ -255,8 +255,11 @@ and clears it after, rather than scoping the whole element: 111 of the 141 `onDr
 `player.controls.currentPosition = value`, and a bare *assignment* like `toolTip='Seek'` (6 uses)
 creates a global and costs nothing either way — so only reads were ever blocked, and `with(element)`
 would change name resolution for every handler in the corpus to buy those six. `onDragEnd` itself is
-raised by `WMPMainView.mouseUp` for a captured slider, which is where a seek is actually committed;
-it is authored only on `SLIDER` (125) and `CUSTOMSLIDER` (16).
+raised by `WMPMainView.mouseUp` for a captured slider; it is authored only on `SLIDER` (125) and
+`CUSTOMSLIDER` (16). **A seek commits on release and nowhere else (W156)**, and the release is where
+the engine decides whether the skin committed it: a transaction that posts `seekSeconds` owns the
+seek, and one that does not hands it back to `WMPMainWindowController`, which commits the value the
+pointer left. See `SKILL.md`.
 
 `WMPObjectModel.implementedElementMethods` is the flat set of those names, and
 `WMPJScriptCompatibility.members["element"]` is derived from it rather than restating it. That
