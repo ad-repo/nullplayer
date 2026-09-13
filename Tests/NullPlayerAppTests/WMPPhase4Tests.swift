@@ -95,12 +95,15 @@ final class WMPPhase4Tests: XCTestCase {
     }
 
     func testSceneBuildCreatesSemanticMappedTargetsAndStateArtwork() async throws {
-        let normal = try WMPSkinTestSupport.encodedImage(width: 2, height: 1,
-            rgba: [10, 10, 10, 255, 10, 10, 10, 255])
-        let hover = try WMPSkinTestSupport.encodedImage(width: 2, height: 1,
-            rgba: [20, 20, 20, 255, 20, 20, 20, 255])
-        let mapping = try WMPSkinTestSupport.encodedImage(width: 2, height: 1,
-            rgba: [255, 0, 0, 255, 0, 255, 0, 255])
+        // Sheets the size of the group, because that is what a `<BUTTONGROUP>` authors: the
+        // artwork is not stretched to a frame it does not fill, so a 2x1 sprite in a 20x10 group
+        // would be testing the anchoring rule rather than the lighting one.
+        let normal = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { _, _ in [10, 10, 10, 255] })
+        let hover = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { _, _ in [20, 20, 20, 255] })
+        let mapping = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { x, _ in x < 10 ? [255, 0, 0, 255] : [0, 255, 0, 255] })
         let archive = try WMPSkinTestSupport.makeArchive([
             WMPTestArchiveEntry("skin.wms", data: Data("""
             <THEME><VIEW id="main" width="20" height="10"><BUTTONGROUP id="transport"
@@ -128,7 +131,12 @@ final class WMPPhase4Tests: XCTestCase {
             return XCTFail("Expected normal group artwork plus a mapped state overlay")
         }
         XCTAssertEqual(base.resourcePath, "normal.png")
-        XCTAssertNil(base.mappingMask)
+        // **The base sheet is painted through the mask too, over every registered child (W154).**
+        // The dead area a sheet carries around its controls is the map's, not the group's declared
+        // `transparencyColor`, and drawing it whole is what put a white slab under
+        // `portals/mode1`'s transport.
+        XCTAssertEqual(base.mappingMask?.nodeIDs.sorted(),
+                       group.mappingTargets.map(\.stableID).sorted())
         XCTAssertEqual(overlay.resourcePath, "hover.png")
         XCTAssertEqual(overlay.mappingMask?.nodeIDs, [playTarget.stableID])
         let rendered = try await WMPRenderer(imageStore: WMPImageStore(provider: skin.archive))
@@ -144,12 +152,12 @@ final class WMPPhase4Tests: XCTestCase {
     /// highlight". The mapped test above splits its map left/right, where a vertical flip is
     /// invisible; this one splits it top/bottom.
     func testMappedStateArtworkIsNotMirroredVertically() async throws {
-        let normal = try WMPSkinTestSupport.encodedImage(width: 1, height: 2,
-            rgba: [10, 10, 10, 255, 10, 10, 10, 255])
-        let hover = try WMPSkinTestSupport.encodedImage(width: 1, height: 2,
-            rgba: [20, 20, 20, 255, 20, 20, 20, 255])
-        let mapping = try WMPSkinTestSupport.encodedImage(width: 1, height: 2,
-            rgba: [255, 0, 0, 255, 0, 255, 0, 255])
+        let normal = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { _, _ in [10, 10, 10, 255] })
+        let hover = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { _, _ in [20, 20, 20, 255] })
+        let mapping = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { _, y in y < 5 ? [255, 0, 0, 255] : [0, 255, 0, 255] })
         let archive = try WMPSkinTestSupport.makeArchive([
             WMPTestArchiveEntry("skin.wms", data: Data("""
             <THEME><VIEW id="main" width="20" height="10"><BUTTONGROUP id="transport"
@@ -175,6 +183,60 @@ final class WMPPhase4Tests: XCTestCase {
         // The half the pointer is over is the half that lights up.
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 10, yFromTop: 2), [20, 20, 20, 255])
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 10, yFromTop: 7), [10, 10, 10, 255])
+    }
+
+    /// Top-left-origin RGBA for a `width`x`height` sprite, one `[r, g, b, a]` per pixel.
+    static func flood(_ width: Int, _ height: Int,
+                      _ pixel: (Int, Int) -> [UInt8]) -> [UInt8] {
+        (0..<height).flatMap { y in (0..<width).flatMap { x in pixel(x, y) } }
+    }
+
+    /// **A `<BUTTONGROUP>`'s sheet is painted through its mapping mask, and the region the map
+    /// registers to nobody is not part of the group (W154).**
+    ///
+    /// `portals/mode1` is the worked case and states it three times in one view: its
+    /// `cbuttons_play` sheet is white around the transport ovals while the map is black around
+    /// them — 24,997 pixels each — and `transparencyColor="#000000"` keys the map's dead colour,
+    /// not the art's, so the transport drew on a white slab. Its `sysbuttons_group` is the same
+    /// shape in magenta (829 against 829) and was the whole of the corpus PNG sweep's opaque-
+    /// magenta residual outside `Plus! Pulsar`; its `shufrep_buttons` is the control case, where
+    /// art and map share one dead colour and the declared key already covered both.
+    func testButtonGroupSheetIsPaintedThroughItsMappingMask() async throws {
+        // A sheet whose dead area is opaque white, over a map that registers only the left half.
+        let normal = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { x, _ in x < 10 ? [10, 10, 10, 255] : [255, 255, 255, 255] })
+        let mapping = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { x, _ in x < 10 ? [255, 0, 0, 255] : [0, 0, 0, 255] })
+        func archive(_ extra: String) throws -> URL {
+            try WMPSkinTestSupport.makeArchive([
+                WMPTestArchiveEntry("skin.wms", data: Data("""
+                <THEME><VIEW id="main" width="20" height="10"><BUTTONGROUP id="transport"
+                left="0" top="0" width="20" height="10" image="normal.png" mappingImage="map.png"
+                transparencyColor="#000000"\(extra)><PLAYELEMENT id="play" mappingColor="#FF0000"/>
+                </BUTTONGROUP></VIEW></THEME>
+                """.utf8)), WMPTestArchiveEntry("normal.png", data: normal),
+                WMPTestArchiveEntry("map.png", data: mapping)
+            ])
+        }
+        func rendered(_ url: URL) async throws -> CGImage {
+            let skin = try await WMPSkinLoader().load(from: url)
+            let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+            return try await WMPRenderer(imageStore: WMPImageStore(provider: skin.archive))
+                .render(scene: scene).image
+        }
+
+        let masked = try await rendered(archive(""))
+        XCTAssertEqual(WMPSkinTestSupport.rgba(masked, x: 5, yFromTop: 5), [10, 10, 10, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(masked, x: 15, yFromTop: 5), [0, 0, 0, 0],
+                       "The map registers no child here, so the sheet is not the group")
+
+        // **`showBackground="true"` is the author's exemption**, and the corpus states both
+        // polarities: 41 declarations across 7 archives, every one `true` but `Compact`'s two.
+        // `elvis` wraps its entire 335x396 body in one group, and masking that to the mapped
+        // regions leaves a hole where the player was.
+        let whole = try await rendered(archive(" showBackground=\"true\""))
+        XCTAssertEqual(WMPSkinTestSupport.rgba(whole, x: 5, yFromTop: 5), [10, 10, 10, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(whole, x: 15, yFromTop: 5), [255, 255, 255, 255])
     }
 
     func testOptInNineSeriesTransportMapIsPixelClickable() async throws {
@@ -287,6 +349,59 @@ final class WMPPhase4Tests: XCTestCase {
         let child = view.accessibilityChildren()?.first as? NSAccessibilityElement
         XCTAssertEqual(child?.accessibilityIdentifier(), "wmp.node4")
         XCTAssertEqual(child?.accessibilityLabel(), "Play")
+    }
+
+    /// **A control the host has greyed out is still a control, and the window does not move under
+    /// it (W154).** `interactiveTarget` answers nil for a disabled target exactly as it does for
+    /// bare artwork, so pressing a greyed transport button dragged the whole player — reported on
+    /// `portals/mode1`, where a press on play with an empty playlist moved the window from
+    /// `680,279` to `374,509`. `refreshHostState` disables every transport child while
+    /// `player.controls.play` is unavailable, which is most of the corpus's five-button groups on
+    /// a cold start.
+    @MainActor
+    func testPressOnAHostDisabledControlDoesNotDragTheWindow() throws {
+        let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 100, height: 50),
+                              styleMask: [.borderless], backing: .buffered, defer: true)
+        let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: 100, height: 50))
+        window.contentView = view
+        let frame = WMPRect(x: 10, y: 10, width: 20, height: 10)
+        let scene = WMPScene(viewID: "main", canvasSize: WMPSize(width: 100, height: 50),
+            resizeLimits: WMPResizeLimits(minimum: WMPSize(width: 100, height: 50), maximum: nil),
+            commands: [], hits: [hit(id: 4, z: 1, order: 1, frame: frame)], geometries: [:],
+            unresolved: [], diagnostics: [], dirtyBounds: nil,
+            metrics: WMPSceneMetrics(resolvedNodeCount: 1, unresolvedNodeCount: 0,
+                                     visibleBounds: nil), wasBuiltOnMainThread: false)
+        let context = CGContext(data: nil, width: 100, height: 50, bitsPerComponent: 8,
+            bytesPerRow: 400, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        view.present(context.makeImage()!, scene: scene)
+        // Nothing queued: `play` is unavailable, so the group's child is greyed.
+        view.refreshHostState(WMPHostSnapshot())
+
+        let origin = window.frame.origin
+        // The scene's y runs down from the top; the view's runs up from the bottom.
+        let inside = NSPoint(x: 20, y: 50 - 15)
+        func press(_ point: NSPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: point,
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        view.mouseDown(with: try press(inside))
+        view.mouseDragged(with: try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDragged,
+            location: NSPoint(x: inside.x + 40, y: inside.y + 40), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+            pressure: 1)))
+        XCTAssertEqual(window.frame.origin, origin, "A greyed control swallows the press")
+
+        // Bare artwork still drags: that is what keeps a skin whose body is one disabled
+        // decorative `<BUTTON>` — `portals`' own 305x400 `main_button` — movable.
+        view.mouseUp(with: try press(inside))
+        view.mouseDown(with: try press(NSPoint(x: 80, y: 5)))
+        view.mouseDragged(with: try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDragged,
+            location: NSPoint(x: 100, y: 25), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+            pressure: 1)))
+        XCTAssertNotEqual(window.frame.origin, origin, "Bare artwork still moves the window")
     }
 
     private func hit(id: Int, z: Int, order: Int, frame: WMPRect) -> WMPHitMetadata {

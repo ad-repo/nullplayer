@@ -29,6 +29,19 @@
 
 ### Bug Fixes
 
+- **Media Player skins no longer draw a blank slab over their own buttons.** A skin often keeps a
+  whole row of buttons in one image, with a separate map telling the player where each button sits.
+  The area of that image *around* the buttons was being painted instead of left clear, so it covered
+  whatever the skin had drawn underneath: a white rectangle across Portals' transport (which turned
+  out to be hiding the brass casing behind it), a magenta border around the whole New Super Mario
+  Bros window, a black box behind the Xbox visualizer, and a white panel over Ocean's title and seek
+  bar. 125 of the 535 screens we test against were affected, and skins that genuinely use that image
+  as their backdrop — Elvis and the Microsoft Plus! skins — are unchanged.
+
+- **A greyed-out button in a Media Player skin no longer drags the window.** With nothing queued,
+  the play and pause buttons are correctly greyed out, but pressing one moved the whole player
+  instead of doing nothing. Dragging the skin by its artwork still moves the window as before.
+
 - **The "Return to full mode" button in Media Player skins now opens your library.** Nearly every
   skin — 162 of the 180 we test against — puts that button in its title bar, and in every one of
   them it did nothing at all. In Windows Media Player it leaves the skin for the full player window;

@@ -1315,6 +1315,41 @@ enum WMPHarness {
 
     // MARK: Clicks
 
+    /// Why every candidate under the pointer refused the click, one `refused=` line each.
+    ///
+    /// **A `MISS` on its own names nothing, and the two instruments either side of it cannot fill
+    /// the gap (W152).** `WMP_RENDER_OCCLUDED` enumerates targets that *have* a hit entry and asks
+    /// who answers instead, so a control that never reached the hit map is invisible to it, and a
+    /// bare `MISS` is equally silent about a control that did reach it and then declined. Both read
+    /// as "the engine lost this control" and neither is necessarily that: `digitaldj/DigitalDJ`'s
+    /// whole transport strip misses every click because the skin's own `loadDJ()` disables it until
+    /// the user picks an access level on its splash — `enabled=false` on the group, one line, and
+    /// hours of theory about the hit map before it.
+    ///
+    /// A point with no candidates at all prints nothing, which is the honest answer: nothing the
+    /// skin declared is there. `reached=` names the first rule that refused, in the order
+    /// `WMPHitTester` applies them.
+    private static func missReasons(at point: WMPPoint, in scene: WMPScene) -> [String] {
+        scene.hits.filter { $0.frame.contains(point) }.map { hit in
+            let reason: String
+            if !hit.enabled { reason = "disabled" }
+            else if !(hit.clipRect.map { $0.contains(point) } ?? true) { reason = "clipped" }
+            else if !(hit.coverage?.covers(point, in: hit.frame) ?? true) { reason = "not-drawn-here" }
+            else if let mapping = hit.mappingImage {
+                guard let child = mapping.node(at: point, in: hit.frame) else {
+                    reason = "unmapped-pixel"
+                    return "refused=\(hit.nodeID ?? "-")#\(hit.stableID) kind=\(hit.kind) \(reason)"
+                }
+                guard let target = hit.mappingTargets.first(where: { $0.stableID == child }) else {
+                    reason = "mapped-to-unregistered#\(child)"
+                    return "refused=\(hit.nodeID ?? "-")#\(hit.stableID) kind=\(hit.kind) \(reason)"
+                }
+                reason = target.enabled ? "answered#\(child)" : "child-disabled#\(child)"
+            } else { reason = "answered" }
+            return "refused=\(hit.nodeID ?? "-")#\(hit.stableID) kind=\(hit.kind) \(reason)"
+        }
+    }
+
     /// Several points in order, because a second click undoing the first is the thing worth
     /// checking: under a runtime that cannot hold state between events it does not, and that is the
     /// defect this probe is here to make visible rather than infer.
@@ -1334,6 +1369,9 @@ enum WMPHarness {
             let where_ = "\(viewID)@\(WMPNumber.format(point.x)),\(WMPNumber.format(point.y))"
             guard let target = WMPHitTester(hits: scene.hits).hitTest(point) else {
                 WMPHarnessOutput.emit("CLICK \(where_) MISS")
+                for line in Self.missReasons(at: point, in: scene) {
+                    WMPHarnessOutput.emit("CLICK \(where_) \(line)")
+                }
                 continue
             }
             let node = nodesByID[target.stableID]

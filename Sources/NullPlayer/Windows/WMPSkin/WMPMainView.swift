@@ -339,7 +339,19 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
 
     override func mouseDown(with event: NSEvent) {
         guard let scene else { return }
-        let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
+        let point = skinPoint(from: event, sceneSize: scene.canvasSize)
+        let target = interactiveTarget(at: point)
+        // **A control the host has greyed out is still a control, and the window does not move
+        // under it (W154).** `interactiveTarget` answers nil for a disabled target exactly as it
+        // does for bare artwork, and everything below reads that as "no control here" — so pressing
+        // a greyed transport button dragged the whole player. Reported on `portals/mode1`, where a
+        // press on play with an empty playlist moved the window from `680,279` to `374,509`;
+        // `refreshHostState` disables every transport child while `player.controls.play` is
+        // unavailable, which is most of the corpus's five-button `<BUTTONGROUP>`s on a cold start.
+        // An `enabled="false"` authored in the markup is *not* this case and still drags: those
+        // never reach the hit tester at all, which is what keeps `portals`' own 305x400
+        // `main_button` backdrop draggable.
+        if target == nil, hitTester?.hitTest(point) != nil { return }
         // The edge band is consulted only where hit testing found no control, so a button sitting
         // against the window edge keeps every pixel it had.
         if target == nil {

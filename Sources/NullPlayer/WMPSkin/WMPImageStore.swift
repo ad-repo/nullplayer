@@ -476,6 +476,50 @@ final class WMPImageStore: @unchecked Sendable {
         try mask(for: path, keyedOut: keyedOut, honoringSourceAlpha: false, kind: "region")
     }
 
+    /// The 8-bit region mask a `<BUTTONGROUP>` paints one of its sheets through, cached.
+    ///
+    /// **It is a pure function of the bitmap and the child set, and it must not be rebuilt per
+    /// draw.** W154 made every group's *base* sheet mask on every frame rather than only the one
+    /// group the pointer was lighting, and `WMPMappingImage.maskImage` — an allocation and a full
+    /// pixel walk — went straight to the top of a live profile: six saturated cooperative threads
+    /// on `New Super Mario Bros`, the renderer running off-main and starving everything else
+    /// awaiting that pool, reported as the app stuttering and hanging while clicking its playlist
+    /// and equalizer buttons. The main thread was idle throughout, which is why the profile had to
+    /// settle it rather than the symptom.
+    ///
+    /// Shares the clipping-mask LRU: both are one byte per pixel keyed by a resource path, and a
+    /// mapping mask is evicted on the same budget as any other.
+    func mappingMask(for mask: WMPSceneMappingMask) -> CGImage? {
+        let canonical = provider.canonicalPath(for: mask.resourcePath) ?? mask.resourcePath
+        let nodes = mask.nodeIDs.sorted()
+        let key = "\(canonical)|mapmask=\(nodes.map(String.init).joined(separator: ","))"
+        lock.lock()
+        if var entry = clipEntries[key] {
+            clock &+= 1
+            entry.access = clock
+            clipEntries[key] = entry
+            lock.unlock()
+            return entry.mask
+        }
+        lock.unlock()
+
+        guard let image = mask.mapping.maskImage(for: Set(nodes)) else { return nil }
+        let bytes = image.width * image.height
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = clipEntries[key] { return existing.mask }
+        guard bytes <= limits.cacheBytes else { return image }
+        while clipBytes + bytes > limits.cacheBytes,
+              let victim = clipEntries.min(by: { $0.value.access < $1.value.access }) {
+            clipBytes -= victim.value.bytes
+            clipEntries.removeValue(forKey: victim.key)
+        }
+        clock &+= 1
+        clipEntries[key] = ClipEntry(mask: image, bytes: bytes, access: clock)
+        clipBytes += bytes
+        return image
+    }
+
     private func mask(for path: String, keyedOut: [WMPColor], honoringSourceAlpha: Bool,
                       kind: String) throws -> CGImage {
         let canonical = provider.canonicalPath(for: path) ?? path

@@ -170,6 +170,16 @@ a dispatch defect — it is a control the pointer never reached at all.
   slider with a `value` binding to a transport path is immune and is **not** the test:
   `performSlider` commits those natively through `WMPTransportAction.boundAction`, which is why
   `Plus! Pulsar`'s volume arc always worked while its identical seek arc did nothing.
+- **A control the host has greyed out is still a control, and the window does not move under it
+  (W154).** `WMPMainView.interactiveTarget` answers `nil` for a disabled target exactly as it does
+  for bare artwork, and `mouseDown` reads that as "no control here" — so pressing a greyed transport
+  button **dragged the whole player**. Reported on `portals/mode1`, where a press on play with an
+  empty playlist moved the window from `680,279` to `374,509`; `refreshHostState` disables every
+  transport child while `player.controls.play` is unavailable, which is most of the corpus's
+  five-button `<BUTTONGROUP>`s on a cold start. A disabled target now swallows the press. **An
+  authored `enabled="false"` is not this case and still drags**, because those never reach the hit
+  tester at all — which is what keeps `portals`' own 305x400 decorative `main_button` backdrop
+  movable, and is the distinction to preserve if this is ever touched again.
 - **Two ordering traps live in `dispatchScriptTransaction`, and both give plausible wrong answers.**
   It **cancels the presentation's previous script task**, so dispatching two events back to back
   loses the first — put both handler sets in one event. And it only *creates* a task, so anything
@@ -1057,6 +1067,36 @@ of these was invisible to the harness and visible in the first minute of live QA
   same shape and still unraised.
 
 ## Drawing the skin's own controls
+
+- **A `<BUTTONGROUP>`'s artwork is a sheet the size of the whole group, and every state of it is
+  painted through the group's mapping mask (W154).** The dead area a sheet carries around its
+  controls is keyed by the **mapping image**, not by the group's `transparencyColor`: an author
+  names the *map's* dead colour there, because that is the one colour every one of the group's
+  bitmaps shares. `portals/mode1` states it three times in one view and settles it —
+  `cbuttons_play`'s sheet is white around the transport ovals against 24,997 black mask pixels (a
+  white slab at `13,236 280x140`, which was also hiding the brass casing under it);
+  `sysbuttons_group` is the same shape in magenta, 829 against 829, and was the whole of the corpus
+  PNG sweep's opaque-magenta residual outside `Plus! Pulsar`; and `shufrep_buttons` is the
+  **control case**, 3,723 magenta in the art against 3,723 magenta in the *map*, where the one
+  declared key covers both and nothing was ever wrong. The base sheet takes the union of every
+  registered child, a lit sheet takes the children in that state, and a group lit by itself rather
+  than by a child takes the union too. It also keeps the natural-size anchoring every other
+  foreground image has (W122) — `Plus! SlimLine`'s `perfectV_SideBar_normal.jpg` is authored
+  shorter than its 35x243 group and stretched when it did not.
+  - **`showBackground="true"` is the author's exemption, and it is measured rather than inferred:
+    41 declarations across 7 of the 177 measurable archives, every one `true` except `Compact`,
+    which writes `showBackground="false"` twice and is the only skin in the corpus that states the
+    default.** A group whose `image` is genuinely the window's own artwork says so — `elvis` wraps
+    its entire 335x396 body in one, as do `Plus! HueShifter`, `Plus! Plasma Ball`,
+    `Plus! Hard Boiled`, `Plus! SlimLine` and `Asimov_Radio`. Masking those leaves a hole where the
+    player was. Only the *base* sheet is exempted; a lit state is still cut to the control the
+    pointer is on, which is W108 and is what makes `elvis`'s `elvis_body_down.jpg` light one button
+    instead of redrawing the whole body.
+  - **The derived mask is cached and must stay cached (W155).** It is a pure function of the bitmap
+    and the child set and never changes with interaction state, so `WMPImageStore.mappingMask` keys
+    on the resource path plus the sorted node ids. Rebuilding it per draw cost **173.1 ms per
+    render** on `New Super Mario Bros` against 0.3 ms cached, and saturated six cooperative threads
+    while the main thread sat idle. Anything that adds a mask to more commands inherits that.
 
 - **A hosted AppKit surface obeys the container's `alphaBlend`; it is not exempt because it is not
   a paint command.** `alphaBlend` inherits, and a `.wmz` closes a pane it has not opened by fading

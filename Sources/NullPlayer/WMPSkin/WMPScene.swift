@@ -42,9 +42,15 @@ struct WMPSceneImage: Hashable, Codable {
     }
 }
 
+/// A `<BUTTONGROUP>`'s mapping image plus the children whose regions this command paints through.
+///
+/// `resourcePath` is what makes the derived mask cacheable: the mask is a pure function of the
+/// bitmap and the node set and never changes with interaction state, so `WMPImageStore.mappingMask`
+/// keys on the two and the renderer stops rebuilding it per draw. See `WMPMappingImage.maskImage`.
 struct WMPSceneMappingMask: Hashable, Codable {
     let mapping: WMPMappingImage
     let nodeIDs: [Int]
+    let resourcePath: String
 }
 
 struct WMPSceneText: Hashable, Codable {

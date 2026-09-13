@@ -223,7 +223,7 @@ struct WMPRenderer: @unchecked Sendable {
                                                    frame: frame)
                 let sourceImage = crop(specification.sourceRect, from: decoded.image)
                 if let mappingMask = specification.mappingMask,
-                   let mask = mappingMask.mapping.maskImage(for: Set(mappingMask.nodeIDs)) {
+                   let mask = imageStore.mappingMask(for: mappingMask) {
                     clip(to: command.frame, mask: mask, context: context)
                 }
                 // `clippingImage` shapes the element itself. Same counter-flip as every other mask:

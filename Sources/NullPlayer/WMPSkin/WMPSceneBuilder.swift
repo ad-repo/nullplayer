@@ -624,29 +624,74 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // So the normal artwork is now optional and only the mask is required. With no
                 // `image` there is nothing to draw *under* the lit region, which is correct: what
                 // is under it is the window, exactly as in the group's normal state.
-                if node.kind == .buttonGroup, visualState != .normal,
-                   let (_, statePath) = try resource(node, names: foregroundNames),
-                   let (_, mappingPath) = try resource(node, names: ["mappingImage"]) {
+                //
+                // **The normal `image` is the same sheet and takes the same mask (W154).** It was
+                // the one state drawn whole, and the dead area a sheet carries around its controls
+                // is not keyed by the group's `transparencyColor`: an author names the *map's*
+                // dead colour there, because that is the one colour every one of the group's
+                // bitmaps shares. `portals/mode1` states it three times over and settles it — its
+                // `cbuttons_play` sheet is white around the ovals and its mask is black around
+                // them, 24,997 pixels each, and `transparencyColor="#000000"` keys neither, so the
+                // transport drew on a white slab at `13,236 280x140`; its `sysbuttons_group` is the
+                // same shape in magenta, 829 pixels against 829 black mask pixels, which is the
+                // patch the corpus PNG-diff invariant has been carrying; and its
+                // `shufrep_buttons` is the control case, 3,723 magenta in the art against 3,723
+                // magenta in the *map*, where the one declared key covers both and nothing was ever
+                // wrong. One rule explains all three: the mask is what the sheet is painted
+                // through, in every state. The normal sheet takes the union of every registered
+                // child, a lit sheet takes the children in that state, and a group lit by itself
+                // rather than by a child takes the union too.
+                //
+                // **`showBackground="true"` is the author's exemption, and it is not a guess —
+                // the corpus states both polarities.** A group whose `image` is genuinely the
+                // window's own artwork rather than a sheet of controls says so: `elvis` wraps its
+                // entire 335x396 body in one (`elvis_body.jpg` over `elvis_body_map.gif`), as do
+                // `Plus! HueShifter`, `Plus! Plasma Ball`, `Plus! Hard Boiled`, `Plus! SlimLine`
+                // and `Asimov_Radio` — **41 declarations across 7 of the 177 measurable archives**,
+                // every one of them `true` except `Compact`, which writes `showBackground="false"`
+                // twice and is the only skin in the corpus that bothers to state the default.
+                // Masking those four Plus!-family bodies to their mapped regions left a hole where
+                // the player had been; painting the other 150 skins' sheets whole is the defect
+                // this rule closes. Only the *base* sheet is exempted — a lit state is still cut to
+                // the control the pointer is on, which is W108 and is what makes `elvis`'s
+                // `elvis_body_down.jpg` light one button instead of redrawing the whole body.
+                let showsBackground = literalString(node, "showBackground")?
+                    .caseInsensitiveCompare("true") == .orderedSame
+                if node.kind == .buttonGroup,
+                   let (_, mappingPath) = try resource(node, names: ["mappingImage"]),
+                   case let colors = mappingColors(of: node), !colors.isEmpty {
+                    let mapping = try imageStore.mappingImage(for: mappingPath, nodeByColor: colors)
+                    let everyChild = Array(Set(colors.values))
                     let normalPath = try resource(node, names: ["image"])?.1
-                    let colors = mappingColors(of: node)
                     let activeIDs = childStates.filter { $0.1 == visualState }.map(\.0)
-                    if !colors.isEmpty, !activeIDs.isEmpty {
-                        let mapping = try imageStore.mappingImage(for: mappingPath, nodeByColor: colors)
-                        if let normalPath {
-                            emit(imageCommand(node: node, path: normalPath, frame: frame,
-                                clip: inheritedClip, z: z, background: false, alpha: alpha,
-                                clippingPath: clippingPath))
-                        }
-                        emit(imageCommand(node: node, path: statePath, frame: frame,
+                    if let normalPath {
+                        // The base sheet keeps the anchoring every other foreground image has —
+                        // drawn at its own size, top-left, never stretched to a frame it does not
+                        // fill. It reached this branch from the generic path below, where that rule
+                        // lives, and `Plus! SlimLine`'s `perfectV_SideBar_normal.jpg` is what
+                        // notices: its group is authored 35x243 against shorter artwork, so drawing
+                        // it at the frame stretched the whole icon column.
+                        let artwork = try imageStore.image(for: normalPath).size
+                        emit(imageCommand(node: node, path: normalPath,
+                            frame: WMPRect(x: frame.x, y: frame.y,
+                                           width: min(frame.width, artwork.width),
+                                           height: min(frame.height, artwork.height)),
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
-                            mappingMask: WMPSceneMappingMask(mapping: mapping, nodeIDs: activeIDs),
+                            mappingMask: showsBackground ? nil
+                                : WMPSceneMappingMask(mapping: mapping, nodeIDs: everyChild,
+                                                        resourcePath: mappingPath),
                             clippingPath: clippingPath))
-                    } else if normalPath != nil {
-                        // A group whose own artwork *is* the sheet swaps it wholesale, the way a
-                        // `<BUTTON>` does. One with no artwork of its own and nothing lit draws
-                        // nothing, which is its normal state.
+                    }
+                    // A group whose own artwork *is* the sheet swaps it wholesale, the way a
+                    // `<BUTTON>` does. One with no artwork of its own and nothing lit draws
+                    // nothing, which is its normal state.
+                    if visualState != .normal,
+                       let (_, statePath) = try resource(node, names: foregroundNames) {
                         emit(imageCommand(node: node, path: statePath, frame: frame,
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
+                            mappingMask: WMPSceneMappingMask(mapping: mapping,
+                                nodeIDs: activeIDs.isEmpty ? everyChild : activeIDs,
+                                resourcePath: mappingPath),
                             clippingPath: clippingPath))
                     }
                 } else if let (_, path) = try resource(node, names: foregroundNames) {

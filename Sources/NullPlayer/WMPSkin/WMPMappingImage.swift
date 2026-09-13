@@ -114,12 +114,26 @@ struct WMPMappingImage: Hashable, Codable {
         return nil
     }
 
+    /// **Per pixel, this is a byte comparison against a handful of colours — never a dictionary
+    /// lookup.** A mapping image registers at most a few colours (the corpus's widest group has
+    /// nine), so the accepted set is resolved once and the inner loop compares three bytes against
+    /// it. Hashing `WMPColor` per pixel instead put `swift_retain`/`swift_release` and
+    /// `Dictionary.lookup` at the top of a live profile the moment W154 made every group's base
+    /// sheet mask on every frame — six saturated cooperative threads on `New Super Mario Bros`.
+    /// The caller caches the result (`WMPImageStore.mappingMask`); this only has to not be
+    /// gratuitous.
     func maskImage(for nodes: Set<Int>) -> CGImage? {
-        let bytes = (0..<(width * height)).map { pixel -> UInt8 in
-            guard alpha[pixel] > 0 else { return 0 }
-            let offset = pixel * 3
-            let color = WMPColor(red: rgb[offset], green: rgb[offset + 1], blue: rgb[offset + 2])
-            return nodeByColor[color].map(nodes.contains) == true ? 255 : 0
+        let accepted = nodeByColor.filter { nodes.contains($0.value) }.keys
+            .map { ($0.red, $0.green, $0.blue) }
+        var bytes = [UInt8](repeating: 0, count: width * height)
+        if !accepted.isEmpty {
+            for pixel in 0..<(width * height) where alpha[pixel] > 0 {
+                let offset = pixel * 3
+                let red = rgb[offset], green = rgb[offset + 1], blue = rgb[offset + 2]
+                if accepted.contains(where: { $0 == red && $1 == green && $2 == blue }) {
+                    bytes[pixel] = 255
+                }
+            }
         }
         guard let provider = CGDataProvider(data: Data(bytes) as CFData),
               let colorSpace = CGColorSpace(name: CGColorSpace.linearGray) else { return nil }
