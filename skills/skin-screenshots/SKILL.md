@@ -5,6 +5,10 @@ description: Capture one centred main-window screenshot per skin across every sk
 
 # Skin screenshot sweep
 
+> **Scope.** This skill produces a **gallery GIF** and nothing else. To launch, configure, drive,
+> screenshot or test the running app — for any reason other than assembling that GIF — see
+> **`app-control`**. It owns `winhelper` and `menu.applescript`, which this sweep only borrows.
+
 Photographs the **main window only**, one frame per skin, across all four skin systems, centres each
 on an identical white frame, and builds a slideshow GIF whose cycle is exactly the length you ask for.
 
@@ -50,8 +54,8 @@ that skin decided.
 | `capture.sh` | The sweep: mode switch, skin select, settle, capture, reframe, manifest |
 | `reframe.sh` | Centres the visible artwork on the white frame; owns the two framing rules |
 | `makegif.sh` | Assembles the GIF at an exact cycle length |
-| `winhelper` | Window enumeration via `CGWindowListCopyWindowInfo`, and real `CGEvent` clicks and hovers (`move <x> <y> …`) |
-| `menu.applescript` | The `mode` / `skin` / `list` / `closeaux` menu verbs |
+| `../../app-control/scripts/winhelper` | Window enumeration, and real `CGEvent` clicks, hovers and drags. Owned by `app-control` |
+| `../../app-control/scripts/menu.applescript` | The `mode` / `skin` / `list` / `closeaux` menu verbs, addressed by pid. Owned by `app-control` |
 
 `capture.sh` writes `manifest_<stamp>.tsv` next to the images recording, per skin: status, window
 size, artwork size, which framing rule fired, and the output path. **Read the manifest rather than

@@ -1,14 +1,24 @@
--- Drives the Skins / Windows menus. Three verbs:
---   mode <submenu>            click that submenu's "Switch to ..." item if present
---   skin <submenu> <item>     select a skin (does NOT switch system - use mode first)
---   closeaux                  toggle off every checked window except Main Window
+-- Drives the Skins / Windows menus of ONE process, addressed by unix id. Verbs:
+--   mode <pid> <submenu>          click that submenu's "Switch to ..." item if present
+--   skin <pid> <submenu> <item>   select a skin (does NOT switch system - use mode first)
+--   list <pid> <submenu>          the submenu's item names
+--   closeaux <pid>                toggle off every checked window except Main Window
+--
+-- The pid is required and there is no name fallback. `process "NullPlayer"` is ambiguous
+-- whenever the installed /Applications build is also running, and resolving it by name is
+-- how the installed app gets driven by accident. Pass the pid of the debug build you
+-- launched: see `app-control` Rule zero.
 -- Selecting a skin name only changes the skin WITHIN the active system. Switching
 -- systems requires the "Switch to ..." item, which is only present when you are
 -- outside that system. Getting this wrong silently re-photographs the old system.
 on run argv
   set act to item 1 of argv
+  if (count of argv) < 2 then
+    error "menu.applescript: a target pid is required (app-control Rule zero: drive the debug build you launched, never `process \"NullPlayer\"` by name)" number 1
+  end if
+  set targetPid to (item 2 of argv) as integer
   tell application "System Events"
-    tell process "NullPlayer"
+    tell (first process whose unix id is targetPid)
       if act is "closeaux" then
         set closed to ""
         repeat 3 times
@@ -42,7 +52,7 @@ on run argv
         return closed & "(gave-up)"
 
       else if act is "mode" then
-        set subName to item 2 of argv
+        set subName to item 3 of argv
         click menu bar item "Skins" of menu bar 1
         delay 0.4
         click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
@@ -64,7 +74,7 @@ on run argv
         return "already"
 
       else if act is "list" then
-        set subName to item 2 of argv
+        set subName to item 3 of argv
         click menu bar item "Skins" of menu bar 1
         delay 0.4
         click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
@@ -76,8 +86,8 @@ on run argv
         return nms
 
       else if act is "skin" then
-        set subName to item 2 of argv
-        set skinName to item 3 of argv
+        set subName to item 3 of argv
+        set skinName to item 4 of argv
         click menu bar item "Skins" of menu bar 1
         delay 0.4
         click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1

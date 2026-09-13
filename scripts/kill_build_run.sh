@@ -9,14 +9,20 @@ cd "$(dirname "$0")/.."
 # Build configuration: release by default, debug with --debug/-d.
 # A debug build is required to exercise #if DEBUG-only features such as the
 # "Recreate Windows (Debug)" Window-menu action used for live-UI-switch QA.
+#
+# Everything after a bare `--` is passed through to the binary, so a scenario can be
+# launched from the front door instead of a hand-rolled nohup line:
+#   ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode wmp
 CONFIG="release"
-WMP_TRACE_LOG=""
-for arg in "$@"; do
-    case "$arg" in
-        --debug|-d) CONFIG="debug" ;;
-        --release|-r) CONFIG="release" ;;
-        --trace-wmp) WMP_TRACE_LOG="/private/tmp/nullplayer-wmp-navigation.log" ;;
-        *) echo "Unknown option: $arg (use --debug, --release, or --trace-wmp)"; exit 1 ;;
+RUN_LOG=""
+APP_ARGS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --debug|-d) CONFIG="debug"; shift ;;
+        --release|-r) CONFIG="release"; shift ;;
+        --log) RUN_LOG="$2"; shift 2 ;;
+        --) shift; APP_ARGS=("$@"); break ;;
+        *) echo "Unknown option: $1 (use --debug, --release, --log <path>, or -- <app args>)"; exit 1 ;;
     esac
 done
 
@@ -70,12 +76,18 @@ if [[ ! -d "$VLCKIT_DEST" ]] || ! codesign --verify "$VLCKIT_DEST" 2>/dev/null; 
 fi
 
 echo "🚀 Launching NullPlayer..."
-if [[ -n "$WMP_TRACE_LOG" ]]; then
-    : > "$WMP_TRACE_LOG"
-    WMP_TRACE_INPUT=1 "$BUILD_DIR/NullPlayer" > "$WMP_TRACE_LOG" 2>&1 &
-    echo "🧭 WMP navigation trace: $WMP_TRACE_LOG"
+if [[ -n "$RUN_LOG" ]]; then
+    : > "$RUN_LOG"
+    "$BUILD_DIR/NullPlayer" "${APP_ARGS[@]}" > "$RUN_LOG" 2>&1 &
 else
-    "$BUILD_DIR/NullPlayer" &
+    "$BUILD_DIR/NullPlayer" "${APP_ARGS[@]}" &
 fi
+APP_PID=$!
 
-echo "✅ NullPlayer is running!"
+# A binary launched from a script shell inherits background QoS: the UI throttles, timers
+# defer, and animation stalls. Un-throttle so what is measured is the app, not the scheduler.
+taskpolicy -B -p "$APP_PID" 2>/dev/null || true
+
+echo "✅ NullPlayer is running! (pid $APP_PID)"
+[[ -n "$RUN_LOG" ]] && echo "📝 Log: $RUN_LOG"
+exit 0
