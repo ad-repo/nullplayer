@@ -30,8 +30,8 @@ say so.
 | `audio-gapless` / `-2` | two 10 s FLACs meeting at a phase boundary | B, E — gapless transition; a gap is an audible click | Anything needing tags |
 | `audio-tagged` | 60 s tone, title/artist/album/track/year + embedded cover | B, C, D, E — every skin readout, album-art visualizer, browser columns | Seek (too short) |
 | `audio-untagged` | the same audio, no tags, no art | B, E — fallback title rendering, missing-art placeholder | Anything asserting metadata |
-| `video-short` | 10 s H.264 + AAC, 640x360 | C, E — video window; `"$BIN" --cli --file <path> --cast <device>` | **`NULLPLAYER_PLAY`** — see below. Seek; audio-only paths |
-| `playlist-m3u` | extended M3U over the audio rows, absolute paths | C, D — the Playlist window's Load, drag-drop, a library browser | **`NULLPLAYER_PLAY`** — see below |
+| `video-short` | 10 s H.264 + AAC, 640x360 | B, C, E — a library scan, then the browser's MOVIES tab opens the video window | **`NULLPLAYER_PLAY`** — see below. Seek; audio-only paths |
+| `playlist-m3u` | extended M3U over the audio rows, absolute paths | B, D — a library scan imports it; the Playlist window's Load is **Route D** | **`NULLPLAYER_PLAY`**, and **Route C** — see below |
 | `cue-flac` + `cue-sheet` | 7 min FLAC with a 3-index `album.cue` | B, C, E — `cue-sheets` playback and splitting | — |
 | `library-dir` | 3 tagged tracks, 2 artists, 2 albums | B, E — `local-library` scan, browser grouping and sort | A scale test; it is three files |
 
@@ -48,8 +48,8 @@ exactly like a playback bug. `playlist-m3u` and `video-short` are both in that s
 | Row | Reaches the app by |
 |---|---|
 | every audio row, and `cue-sheet` | `NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"` |
-| `playlist-m3u` | the Playlist window's Load panel (`Windows/Playlist/PlaylistView.swift:1829`), drag-drop, or a library browser |
-| `video-short` | the video window, or `"$BIN" --cli --file <path> --cast <device>`. Without `--cast` the CLI refuses: *"Video casting in CLI mode requires --cast <Chromecast or DLNA TV>."* |
+| `playlist-m3u` | **a local-library scan** — `importMedia` passes `includePlaylists: true`, and the file lands in `library_playlists` (measured). The Playlist window's Load panel (`PlaylistView.swift:1827`) is reached only through the LIST button's `NSMenu` popup, so it is **Route D, not C** — a synthetic click cannot drive it |
+| `video-short` | **a local-library scan, then open it from the browser's MOVIES tab** — that is the only route to the video window; `WindowManager.toggleVideoPlayer` returns early until a video has been opened this way. Or `"$BIN" --cli --file <path> --cast <device>`; without `--cast` the CLI refuses: *"Video casting in CLI mode requires --cast <Chromecast or DLNA TV>."* |
 | `library-dir` | a local-library scan of the folder; see `local-library` |
 
 **The row an agent gets wrong is `audio-short`.** A seek, a drag, a two-capture comparison or any
