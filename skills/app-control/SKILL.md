@@ -125,6 +125,21 @@ export NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"
 | A deterministic start | `defaults write NullPlayer rememberStateEnabled -bool false` | no `AppStateManager: Restoring` lines; the skin key survives to window open |
 | Servers / radio / casting | do not launch the GUI — `"$BIN" --cli …` | `--json` output non-empty |
 
+### Ready-made blocks — `reference/launch-recipes.md`
+
+One standalone block per **skin family** (Classic, Original, Original-Metal, Winamp Modern, WMP),
+and one per **media cell** — audio/video × local/streaming, with real content frozen in. Copy a
+block and run it; nothing depends on a line from another block.
+
+|  | **Local** | **Streaming** |
+|---|---|---|
+| **Audio** | `NULLPLAYER_PLAY`, or `"$BIN" --cli --file` | `"$BIN" --cli --source plex\|subsonic\|jellyfin\|emby …`, or `--source radio --station` |
+| **Video** | library scan → browser **MOVIES** tab | Plex browser **MOVIES** tab (GUI); `--movie … --cast` (CLI only) |
+
+**Video never goes through `NULLPLAYER_PLAY`**, and **Windows → Video Player is inert** until a
+video has been opened from a browser (`App/WindowManager.swift:3205`). A browser is the only way
+into the video window.
+
 **The mode names do not match the menu.** `-uiMode modern` is the **Original** submenu;
 `-uiMode winampModern` is the **Modern** submenu (`App/PlayerUIMode.swift:33-39`). Getting this
 backwards silently tests the wrong family.
