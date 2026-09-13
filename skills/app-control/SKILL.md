@@ -189,7 +189,9 @@ osascript -e "tell application \"System Events\" to tell (first process whose un
 
 - **`clickState` is why clicks used to do nothing.** An event posted without it arrives
   `clickCount == 0`: any handler gating on `clickCount == 1` ignores it while the window still
-  highlights. Both `click` and `drag` set it.
+  highlights. Both `click` and `drag` set it. Measured A/B on the same browser row: the pre-fix
+  tool's two rapid clicks opened **0** windows and logged nothing; `dblclick` at the identical
+  point opened the video window and logged `VideoPlayerView: Playing`.
 - **A hover is not a click with the buttons left out.** `onMouseOver`/`onMouseOut` fire on the
   *edges* between controls, so the path is the test — and the app must be frontmost, or a
   borderless window gets no `mouseMoved` at all.
