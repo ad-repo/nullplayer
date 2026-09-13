@@ -1819,12 +1819,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     switchedView = true
                 }
             case "minimizeWindow": presentation.window.miniaturize(nil)
-            // `view.returnToMediaCenter()` — WMP's *Return to full mode*, which 162 of the 180
-            // archives put in their title bar (W100). Show, never toggle: the button says one
-            // thing, and a second press meaning "put it away" is not what the artwork claims. The
-            // skin stays exactly where it is; the browser opens beside it in chrome derived from
-            // the active `.wmz`, as every other NullPlayer-owned window in this mode does.
-            case "openLibrary": WindowManager.shared.showPlexBrowser()
+            // `view.returnToMediaCenter()` toggles the library beside the active skin.
+            case "toggleLibrary": WindowManager.shared.togglePlexBrowser()
             case let action where action.hasPrefix("playPlaylistItem:"):
                 if let index = Int(action.dropFirst("playPlaylistItem:".count)) {
                     host.perform(.playPlaylistItem(index), value: nil)

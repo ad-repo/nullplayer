@@ -310,16 +310,16 @@ final class WMPScriptRuntimeTests: XCTestCase {
 
     /// W100. *Return to full mode* is the most widely authored control in the corpus — **162 of 180
     /// archives, 196 controls** — and it died on its own first statement until this. WMP leaves skin
-    /// mode for the player's own shell; NullPlayer opens the Library Browser, which is the closest
+    /// mode for the player's own shell; NullPlayer toggles the Library Browser, which is the closest
     /// surface it has to what that shell is for. Two things are pinned here and the second is the
-    /// one to keep: it must post `openLibrary`, and it must **not** be `closeView` — taking the
+    /// one to keep: it must post `toggleLibrary`, and it must **not** be `closeView` — taking the
     /// user's skin away on a button labelled "Return to full mode" is the outcome the backlog row
     /// forbade by name.
     ///
     /// Dispatched on the `<VIEW>` kind and never on the receiver's spelling: 13 of the 196 call it
     /// on a named view element (`vFull`, `ballview`, `KidsView`, `digitaldj`…) rather than on
     /// `view`, so `vFull.returnToMediaCenter()` has to reach the same command.
-    func testReturnToMediaCenterOpensTheLibrary() async throws {
+    func testReturnToMediaCenterTogglesTheLibrary() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="vFull" width="100" height="60">
           <SUBVIEW id="pane" left="0" top="45" width="10" height="10"/>
@@ -332,7 +332,7 @@ final class WMPScriptRuntimeTests: XCTestCase {
             event: .init(name: "onLoad", targetID: "vFull",
                          handlers: ["view.returnToMediaCenter(); pane.width = 3;",
                                     "vFull.returnToMediaCenter();"]))
-        XCTAssertEqual(output.hostCommands.filter { $0.action == "openLibrary" }.count, 2,
+        XCTAssertEqual(output.hostCommands.filter { $0.action == "toggleLibrary" }.count, 2,
                        "both the `view` receiver and the skin's own named one must reach the command")
         XCTAssertFalse(output.hostCommands.contains { $0.action == "closeView" },
                        "returning to full mode must never take the skin away")
@@ -351,7 +351,7 @@ final class WMPScriptRuntimeTests: XCTestCase {
     /// the `<VIEW>` kind. Each aborts its own handler exactly as before — the screen does not
     /// change — and each now appears in `output.calls` as unrecognised demand instead of nowhere.
     /// `view.returnToMediaCenter()` was the third until W100; it is pinned the other way round in
-    /// `testReturnToMediaCenterOpensTheLibrary`.
+    /// `testReturnToMediaCenterTogglesTheLibrary`.
     func testUnimplementedSDKMethodsAreTalliedRatherThanSilent() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="100" height="60">

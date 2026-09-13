@@ -306,10 +306,14 @@ queue, with the object model as the security boundary — see Amendment 2 in
   five *"Return to Player/Main Mode"* buttons are video-mode returns, not compact** (`Plus! Professional`,
   `QuickSilver` ×2, `TripleX` ×2, `xXx_night_vision_redx`) and all reach `setCurrentView` cleanly. **And the
   button the reporter meets in nearly every skin is `view.returnToMediaCenter()` — 162 archives, 196
-  controls, 179 of them tooltipped "Return to full mode".** It opens the Library Browser since W100 closed on
+  controls, 179 of them tooltipped "Return to full mode".** It toggles the Library Browser (opens when hidden, closes when visible) since W100 closed on
   2026-09-13; before that it was dead in every one of them, which is why *"the compact button does nothing"*
   was that button and not compact mode. Name the skin and check it against this list before reading such a
   report as a compact defect.
+  Rapid library toggles require `WMPMainView.acceptsFirstMouse` so the click after the library
+  takes focus still activates the skin control, and WMP-only `animationBehavior = .none` in
+  `WindowManager.showPlexBrowser` so native window animations do not race visibility. Verified
+  on New Super Mario Bros with six consecutive clicks about 0.3 seconds apart, then user-confirmed.
   **A window bigger than the compact artwork is not a defect here**: `corona`'s `viewTiny` is authored 596x498 and
   draws a 346x103 mini player into it, exactly as its markup asks — WMP shapes that window with the transparency
   key and this engine leaves it transparent, which looks the same. Measure the window, not the ink.

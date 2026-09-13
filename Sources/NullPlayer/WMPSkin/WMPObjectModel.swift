@@ -1021,7 +1021,7 @@ final class WMPObjectModel {
         // so nothing downstream depends on what this returns. 13 of them call it on a named view
         // element rather than `view` (`vFull`, `ballview`, `KidsView`, `digitaldj`…), which is why
         // it dispatches on `.view` and never on the receiver's name.
-        case (.view, "returntomediacenter"): hostCommand("openLibrary", nil); return .value(.null)
+        case (.view, "returntomediacenter"): hostCommand("toggleLibrary", nil); return .value(.null)
         // WMP tweens these over the third argument's milliseconds. The endpoint still lands in this
         // transaction — the tween itself is rendering work, not a missing member (W38) — but **not
         // until the handler that asked for it has returned**; see `tween(_:_:_:duration:)`.

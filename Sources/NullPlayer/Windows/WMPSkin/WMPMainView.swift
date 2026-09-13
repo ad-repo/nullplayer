@@ -355,6 +355,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     override func mouseEntered(with event: NSEvent) { updateHover(event) }
     override func mouseExited(with event: NSEvent) { setHover(nil) }
 
+    // Opening an auxiliary window must not consume the next skin control click just for focus.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
         guard let scene else { return }
         let point = skinPoint(from: event, sceneSize: scene.canvasSize)

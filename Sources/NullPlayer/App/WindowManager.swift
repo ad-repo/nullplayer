@@ -2016,6 +2016,10 @@ class WindowManager {
             createPlexBrowserWindowController()
         }
         markModeDependentWindow(plexBrowserWindowController?.window)
+        if uiMode.controllerFamily == .wmp {
+            // Keep rapid skin toggles synchronous with the browser's visible state.
+            plexBrowserWindowController?.window?.animationBehavior = .none
+        }
         plexBrowserWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
         // Position window to match the vertical stack

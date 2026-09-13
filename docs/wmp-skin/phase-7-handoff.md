@@ -128,3 +128,14 @@ branch: feat/wmp-skin-support
 HEAD:   ce7a12c3ca407dbf5c3d1e7597ce962e41be0ce6
 status: Phase 7 WMP-owned changes plus the user-supplied, untracked skins/ corpus
 ```
+
+## WMP library toggle integration (2026-09-13)
+
+`WindowManager.showPlexBrowser` disables native window animation only when
+`uiMode.controllerFamily == .wmp`, before showing the browser. The WMP controller cannot
+configure this beforehand: the browser provider is private to WindowManager and may not exist
+until this call creates it. Configuring it after toggling misses the first presentation.
+`WMPMainView.acceptsFirstMouse` separately allows the next skin click after the browser takes
+focus. Other controller families do not enter the animation branch or use WMPMainView.
+Live New Super Mario Bros verification: six consecutive clicks about 0.3 seconds apart alternated
+library visibility each time. The user confirmed the final interaction works.
