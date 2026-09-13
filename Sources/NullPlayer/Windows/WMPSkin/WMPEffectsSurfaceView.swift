@@ -131,7 +131,17 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     private func applySelection() {
         guard !isTornDown else { return }
+        let previous = effect
         effect = WMPEffectSelection.shared.current
+        // **A preset step is not an effect change.** `setPreset` posts the same notification as
+        // `select`, and rebuilding the engine for it would reinitialize ProjectM on every press of
+        // the left/right keys. The running engine takes the new number instead, and `applyPreset`
+        // reports back the title it landed on.
+        if previous.id == effect.id, isActive, let engineView, let engine = effect.engine {
+            applyPreset(to: engineView, engine: engine)
+            needsDisplay = true
+            return
+        }
         // **A WMP effect is part of the skin's composition, and that is now enforced by the scene
         // rather than by refusing engines (W140).** The skin's own artwork composites over this
         // rect, so an opaque renderer is occluded exactly where the markup says it is. What still
@@ -471,9 +481,12 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     // MARK: - Keyboard
 
-    /// The visualization keys NullPlayer's own window and the `.wal` surface answer, on the rect the
-    /// skin authored: **left/right step the preset** (shift steps hard, without a blend), `r` picks
-    /// a random one, `p` halves the frame rate and `c` walks Manual → Auto-Cycle → Auto-Random.
+    /// **Up/down pick the effect, left/right move inside it.** The catalogue is two levels deep —
+    /// eight effects, and most of them carry a list of their own (ProjectM's presets, Geiss's and
+    /// Tripex's effects, vis_classic's profiles, Cava's mono/stereo) — so the axes are split the
+    /// way a two-level list reads: **down is the next effect** and up the previous, left/right step
+    /// within whatever is now selected. An effect with nothing inside it (Spikes, Bars, Ambience)
+    /// refuses left/right rather than swallowing them.
     ///
     /// Offered only after the skin has refused the key, so a focused slider still takes its own
     /// arrows and an authored accelerator always wins. Fullscreen is not among them: this surface
@@ -482,24 +495,54 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     func handleKeyDown(_ event: NSEvent) -> Bool {
         guard !isTornDown else { return false }
         switch event.keyCode {
-        case 124: WMPEffectSelection.shared.step(by: 1); return true
-        case 123: WMPEffectSelection.shared.step(by: -1); return true
+        case 125: WMPEffectSelection.shared.step(by: 1); return true
+        case 126: WMPEffectSelection.shared.step(by: -1); return true
+        case 124: return stepWithinEffect(by: 1)
+        case 123: return stepWithinEffect(by: -1)
         default: return false
         }
     }
 
-    /// Each engine's own idea of "the next one": ProjectM steps its preset list, Geiss and Tripex
-    /// their effects — the same thing the arrows do in NullPlayer's own visualization window.
-    private func stepPreset(by delta: Int, hardCut: Bool) {
-        guard let engineView, delta != 0 else { return }
-        switch engineView.currentEngineType {
-        case .geiss:
-            delta > 0 ? engineView.nextGeissEffect() : engineView.previousGeissEffect()
-        case .tripex:
-            delta > 0 ? engineView.nextTripexEffect() : engineView.previousTripexEffect()
-        case .projectM:
-            delta > 0 ? engineView.nextPreset(hardCut: hardCut)
-                      : engineView.previousPreset(hardCut: hardCut)
+    /// One step inside the selected effect, or `false` when this effect has no inside.
+    ///
+    /// The GL engines go through `WMPEffectSelection.setPreset`, not through the engine's own
+    /// `nextPreset()`: the skin's `currentPreset` / `currentPresetTitle` bindings read that number,
+    /// so stepping the engine behind the selection's back would leave 144 archives displaying a
+    /// preset that is not the one on screen. The index wraps on the running engine's own count and
+    /// `applyPreset` is what puts it there and reports the title back.
+    @discardableResult
+    private func stepWithinEffect(by delta: Int) -> Bool {
+        guard delta != 0 else { return false }
+        switch effect.style {
+        case .projectM, .geiss, .tripex:
+            guard let count = presetCount(), count > 0 else { return false }
+            let current = WMPEffectSelection.shared.preset % count
+            WMPEffectSelection.shared.setPreset(((current + delta) % count + count) % count)
+            return true
+        case .visClassic:
+            guard let bridge = visClassicBridge else { return false }
+            // `loadProfile(url:)` writes the scope's last-profile key itself, so the profile
+            // stepped to is the one this WMP scope comes back with next launch.
+            guard delta > 0 ? bridge.loadNextProfile() : bridge.loadPreviousProfile() else { return false }
+            needsDisplay = true
+            return true
+        case .cava:
+            // Cava's inside is its channel mode; two entries, so either direction toggles.
+            cavaPresenter.toggleMode()
+            needsDisplay = true
+            return true
+        case .bars, .spikes, .ambience:
+            return false
+        }
+    }
+
+    /// How many entries the running engine's own list has, for the wrap above.
+    private func presetCount() -> Int? {
+        guard let engineView, let engine = effect.engine else { return nil }
+        switch engine {
+        case .projectM: return engineView.presetCount
+        case .geiss: return engineView.geissEffectCount
+        case .tripex: return engineView.tripexEffectCount
         }
     }
 

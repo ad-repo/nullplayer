@@ -1190,8 +1190,18 @@ of these was invisible to the harness and visible in the first minute of live QA
   playing draws nothing at all** (the skin's own screen artwork stands); **the surface never takes a
   click**, because 51 archives wire an `onClick` on `<EFFECTS>` and that handler belongs to scene hit
   testing; and **the skin's selector is not the app's preference** — cycling from the rect, its menu,
-  or the left/right keys never writes `visualizationEngineType`, which the visualization window and
+  or the arrow keys never writes `visualizationEngineType`, which the visualization window and
   menu bar share.
+  **The keys are two-level, because the catalogue is.** Eight effects, and most carry a list of
+  their own, so **up/down pick the effect and left/right step inside it** — ProjectM's presets,
+  Geiss's and Tripex's effects, vis_classic's profiles, Cava's mono/stereo. An effect with no
+  inside (Spikes, Bars, Ambience) *refuses* left/right rather than swallowing them, so the key
+  falls through. Two things this wiring depends on: a preset step goes through
+  `WMPEffectSelection.setPreset`, never the engine's own `nextPreset()`, or the `currentPreset` /
+  `currentPresetTitle` bindings 144 archives read would show a preset that is not on screen; and
+  `applySelection` must tell a preset change from an effect change, because `setPreset` posts the
+  same notification as `select` and rebuilding the engine for it reinitializes ProjectM on every
+  key press.
   **Do not fill the widget's rectangle.** The effect is composited over the scene, and its untouched
   pixels must stay transparent: every renderer draws into the full authored rect and the skin's own
   artwork is what shapes it, through the z-order split above. **A suite renderer needs two extra

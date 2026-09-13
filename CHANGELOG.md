@@ -119,8 +119,10 @@
   draws a panel for one, and until now that panel stayed empty on all but five of them. It now
   holds NullPlayer's own visuals — ProjectM, Geiss or Tripex, the same engines and the same presets
   as the Visualizations window — inside the frame the skin drew for it, plus the classic Media
-  Player bars. Right-click it for the same menu the Visualizations window has, and the left and
-  right arrow keys step through presets exactly as they do there. When nothing is playing the panel
+  Player bars. Right-click it for the same menu the Visualizations window has. **The arrow keys
+  work in two levels:** up and down move between visualizations, and left and right move within the
+  one you are watching — MilkDrop, Geiss and Tripex presets, vis_classic profiles, Cava's mono and
+  stereo. When nothing is playing the panel
   draws nothing at all, so the skin's own artwork shows through, and a skin that puts its own button
   over the panel still gets the click. Skins that keep a visualization button or a readout beside
   the panel follow it, because the skin is told which effect is running.
