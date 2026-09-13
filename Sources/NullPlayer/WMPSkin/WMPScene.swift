@@ -150,7 +150,17 @@ struct WMPWidget: Hashable, Codable {
     ///
     /// It is an index and not a zIndex threshold on purpose: `WMPSceneBuilder.walk` sorts only
     /// siblings, so `commands` is DFS order and is not globally sorted by zIndex.
-    let commandSplitIndex: Int?
+    ///
+    /// **An `<EFFECTS>` node's own background is the exception, and it is advanced past it.** The
+    /// backdrop a skin declares on the rect itself (`backgroundColor="#000000"`, and the same for a
+    /// `backgroundImage`) is what WMP shows *behind* the visualizer while nothing is playing — not
+    /// artwork over it. Left before the split it was hoisted into the overlay and painted over the
+    /// hosted surface every frame, so the rect stayed a solid block for the whole of its skin:
+    /// `New Super Mario Bros` (reported), `Gorillaz`, `Primitive`, `Tomb Raider 2`, `MSN` and
+    /// `robbie` — 6 of the 178 readable archives. `WMPSceneBuilder` patches the index forward once
+    /// the node's own background commands are emitted; a widget with no background of its own —
+    /// Cerulean's, and every other `<EFFECTS>` in the corpus — keeps the index it was built with.
+    var commandSplitIndex: Int?
     /// The inherited `alphaBlend` of the subtree this widget sits in, 0-1 — the same number
     /// `WMPPaintCommand.alpha` carries, computed by the same walk.
     ///

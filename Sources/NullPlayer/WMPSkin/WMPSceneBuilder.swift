@@ -516,7 +516,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 }
             }
 
+            // Patched once this node's own background is emitted — see `effectsWidgetIndex` below.
+            var effectsWidgetIndex: Int?
             if let kind = widgetKind(node.kind), visible != nil {
+                if kind == .effects { effectsWidgetIndex = widgets.count }
                 let label = literalString(node, "accessibleName")
                     ?? literalString(node, "title") ?? literalString(node, "name")
                     ?? node.xmlID ?? node.kind.description
@@ -599,6 +602,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     clip: inheritedClip, z: z, background: true, alpha: alpha,
                     clippingPath: clippingPath))
             }
+            // **An `<EFFECTS>` rect's own backdrop belongs under the visualizer, not over it.**
+            // The split is taken when the node is visited, which is before the two emits above, so
+            // a skin that declares `backgroundColor="#000000"` on the rect had that fill hoisted
+            // into the overlay and repainted over the hosted surface — a black block where the
+            // visualizer was, for the whole of `New Super Mario Bros`, `Gorillaz`, `Primitive`,
+            // `Tomb Raider 2`, `MSN` and `robbie`. Behind the surface it still does the job WMP
+            // gives it: it is what shows while nothing is playing. Only the node's *background* is
+            // moved past; anything the skin paints afterwards — its own foreground, its siblings,
+            // its parent's keyed artwork (Cerulean) — stays in the overlay where it was.
+            if let effectsWidgetIndex { widgets[effectsWidgetIndex].commandSplitIndex = commands.count }
             let foregroundNames: [String]
             switch visualState {
             case .disabled: foregroundNames = ["disabledImage", "image"]

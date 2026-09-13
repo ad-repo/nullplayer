@@ -29,6 +29,12 @@
 
 ### Bug Fixes
 
+- **A Media Player skin's visualization window is no longer a black box.** Some skins paint their
+  own backdrop behind the visualizer — usually plain black — and that backdrop was being drawn back
+  over the top of it, so the window showed its frame and its buttons around an empty hole. The
+  visualizer now plays inside it, with the backdrop doing its proper job: it is what you see while
+  nothing is playing. Fourteen skins were affected, New Super Mario Bros and Xbox among them.
+
 - **Dragging a Media Player skin's seek bar no longer sounds harsh.** The seek was being applied
   again on every twitch of the mouse — around twenty times across a single drag — and each one
   restarted the audio abruptly. The track now moves once, when you let go, and the thumb still

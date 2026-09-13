@@ -641,6 +641,25 @@ queue, with the object model as the security boundary — see Amendment 2 in
   `zIndex = 10` node in another. `WMPImageStore.clippingMask(for:keyedOut:)` and `WMPColorKey` then
   apply to the overlay for free — no new masking code exists anywhere for this.
 
+  **The rect's own background is the one thing the split steps past.** A backdrop declared *on* the
+  `<EFFECTS>` node — `backgroundColor="#000000"`, or a `backgroundImage` — is what WMP shows behind
+  the visualizer while nothing plays, not artwork over it; with the split taken at the node's visit
+  it landed in the overlay and was repainted over the hosted surface every frame, so the rect was a
+  solid block for the whole of its skin. Reported against `New Super Mario Bros`, whose viz window
+  drew its frame, its buttons and a black hole where the visualizer belongs. Decoded scan of the 178
+  readable archives: **6 author an opaque `backgroundColor`** (`New Super Mario Bros`, `Gorillaz`,
+  `Primitive`, `Tomb Raider 2`, `MSN`, `robbie`) and **8 a `backgroundImage`** (`XBOX`, both `Xbox`
+  official releases, `Ice`, `WWC`, `The Unit`/`TheUnit`, `The_Sentinel_v.1.0`). `WMPSceneBuilder`
+  patches `commandSplitIndex` forward once those two emits are done and nothing else — a foreground
+  image on the node, its siblings, and the parent's keyed artwork stay in the overlay, so Cerulean,
+  which authors no background on its rect at all, keeps the index it always had.
+
+  **Nothing headless can see it.** The render dump flattens both rasters in the same order, so its
+  PNG is identical either way, and `WMP_RENDER_APPKIT`'s `differing=` is 0 for *every* skin's
+  `<EFFECTS>` because the surface draws nothing without live audio — `WMP_RENDER_HOST=playing` seeds
+  a playing snapshot, not a signal. The instrument is the running app with `NULLPLAYER_PLAY` and a
+  `screencapture -l <windowid>` of the skin's own visualization window.
+
   **A skin with no occluding artwork fills its authored rect exactly**: full `width × height`, a
   transparent background, no shape fitting and no aspect letterboxing. Of the 107 `<EFFECTS>` rects
   with numeric dimensions **19 are square, 83 wider than tall and 5 taller**, so a centred `min(w,h)`
