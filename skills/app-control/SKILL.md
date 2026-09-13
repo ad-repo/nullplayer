@@ -106,11 +106,19 @@ Then:
 4. Read the Confirm column. **Every row on this surface fails silently.**
 
 ```bash
+bash <<'SESSION'
+set -euo pipefail
+source skills/app-control/scripts/session-defaults.sh
+for key in rememberStateEnabled wmpSkinName wmpSkinViewID; do save "$key"; done
+scripts/testdata.sh ensure
 defaults write NullPlayer rememberStateEnabled -bool false
 defaults write NullPlayer wmpSkinName -string "corona"
-defaults delete NullPlayer wmpSkinViewID
-export NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"
+defaults delete NullPlayer wmpSkinViewID 2>/dev/null || true
+NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"
+export NULLPLAYER_PLAY
 ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode wmp
+read -r -p "Quit the app, then press Enter to restore defaults: " _ </dev/tty
+SESSION
 ```
 
 | Want | Set | Confirm it took |
@@ -221,7 +229,7 @@ cp skills/app-control/scripts/qa-session-template.sh "$SCRATCH/qa-session.sh"
 echo "Run:  ! $SCRATCH/qa-session.sh"
 ```
 
-The template — not the prose — carries the restore trap.
+The template and Route B recipes source `scripts/session-defaults.sh` for the restore trap.
 
 **Confirm it took:** the user reports the window is up, or the log has the Route B Confirm line.
 

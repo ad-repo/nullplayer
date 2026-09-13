@@ -18,7 +18,8 @@ tells you to run `./scripts/kill_build_run.sh --debug`; there is no fallback.
 
 Generation needs `ffmpeg` (`brew install ffmpeg`). The plain audio rows fall back to
 `afconvert` over a python-generated waveform; MP3, tags, cover art and video need ffmpeg and
-say so.
+say so. Failed encodes exit non-zero and discard their temporary output; `ensure` repairs
+missing or empty files individually, including members of the gapless and library groups.
 
 ## Local rows
 

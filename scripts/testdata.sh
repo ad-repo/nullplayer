@@ -14,7 +14,7 @@
 # shim, which execs the installed /Applications build.
 #
 # Route validity per target is in skills/app-control/reference/test-data.md.
-set -u
+set -eu
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -50,7 +50,23 @@ require_ffmpeg() {
   die "this target needs ffmpeg (tags, cover art, MP3 or video). Install it:  brew install ffmpeg"
 }
 
-ff() { "$FFMPEG" -y -loglevel error "$@"; }
+# Encode beside the destination, preserving its extension for format detection.
+# Failed/interrupted encodes never become fixtures that ensure would later skip.
+ENCODE_TMP=""
+cleanup_encode() { [ -z "$ENCODE_TMP" ] || rm -f "$ENCODE_TMP"; }
+trap cleanup_encode EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+ff() {
+  local output="${!#}"
+  local args=("$@")
+  ENCODE_TMP="${output%.*}.partial.$$.${output##*.}"
+  args[${#args[@]}-1]="$ENCODE_TMP"
+  "$FFMPEG" -y -loglevel error "${args[@]}" || die "encoding failed for $output"
+  [ -s "$ENCODE_TMP" ] || die "encoder produced no data for $output"
+  mv -f "$ENCODE_TMP" "$output" || die "cannot publish $output"
+  ENCODE_TMP=""
+}
 
 # --- afconvert fallback, for the plain audio rows only ------------------------------
 # afconvert cannot synthesize, so the waveform comes from python3's stdlib `wave` and
@@ -76,7 +92,11 @@ plain_audio() {
     die "neither ffmpeg nor afconvert is available. Install ffmpeg:  brew install ffmpeg"
   tmp="$DIR/.tone.wav"
   tone_wav "$tmp" "$2" "$3"
-  afconvert -f "$4" -d "$5" "$tmp" "$1" >/dev/null || die "afconvert failed for $1"
+  ENCODE_TMP="${1%.*}.partial.$$.${1##*.}"
+  afconvert -f "$4" -d "$5" "$tmp" "$ENCODE_TMP" >/dev/null || die "afconvert failed for $1"
+  [ -s "$ENCODE_TMP" ] || die "afconvert produced no data for $1"
+  mv -f "$ENCODE_TMP" "$1" || die "cannot publish $1"
+  ENCODE_TMP=""
   rm -f "$tmp"
   return 0
 }
@@ -85,14 +105,14 @@ plain_audio() {
 gen_ensure() {
   mkdir -p "$DIR" "$DIR/gapless" "$DIR/cue" "$DIR/library"
 
-  if [ ! -f "$DIR/audio-short.m4a" ]; then
+  if [ ! -s "$DIR/audio-short.m4a" ]; then
     plain_audio "$DIR/audio-short.m4a" 5 440 m4af aac ||
       ff -f lavfi -i "sine=frequency=440:duration=5" -c:a aac -b:a 128k "$DIR/audio-short.m4a"
     echo "made audio-short.m4a"
   fi
 
   # 20 minutes, because a 5 s file ends mid-diagnosis and the stop() reads as a bug.
-  if [ ! -f "$DIR/audio-long.mp3" ]; then
+  if [ ! -s "$DIR/audio-long.mp3" ]; then
     require_ffmpeg
     ff -f lavfi -i "sine=frequency=100:duration=1200:sample_rate=44100" \
        -af "aeval=sin(2*PI*(100+3900*t/1200)*t):c=same" \
@@ -102,7 +122,7 @@ gen_ensure() {
     echo "made audio-long.mp3"
   fi
 
-  if [ ! -f "$DIR/audio-lossless.flac" ]; then
+  if [ ! -s "$DIR/audio-lossless.flac" ]; then
     plain_audio "$DIR/audio-lossless.flac" 30 440 flac flac ||
       ff -f lavfi -i "sine=frequency=440:duration=30" -c:a flac "$DIR/audio-lossless.flac"
     echo "made audio-lossless.flac"
@@ -110,28 +130,26 @@ gen_ensure() {
 
   # The pair meets at a zero crossing of the same continuous tone: a gap is audible
   # as a click, and a gapless transition is not.
-  if [ ! -f "$DIR/gapless/01-gapless.flac" ]; then
-    if ! have_ffmpeg; then
-      plain_audio "$DIR/gapless/01-gapless.flac" 10 440 flac flac
-      plain_audio "$DIR/gapless/02-gapless.flac" 10 440 flac flac
-      echo "made gapless/ (untagged — tags need ffmpeg)"
-    else
-    ff -f lavfi -i "sine=frequency=440:duration=10" -c:a flac \
-       -metadata title="Gapless 1" -metadata album="Gapless Test" -metadata track=1 \
-       "$DIR/gapless/01-gapless.flac"
-    ff -f lavfi -i "sine=frequency=440:duration=10" -c:a flac \
-       -metadata title="Gapless 2" -metadata album="Gapless Test" -metadata track=2 \
-       "$DIR/gapless/02-gapless.flac"
-    echo "made gapless/01-gapless.flac + 02-gapless.flac"
+  for i in 1 2; do
+    output="$DIR/gapless/0$i-gapless.flac"
+    if [ ! -s "$output" ]; then
+      if ! have_ffmpeg; then
+        plain_audio "$output" 10 440 flac flac
+      else
+        ff -f lavfi -i "sine=frequency=440:duration=10" -c:a flac \
+           -metadata title="Gapless $i" -metadata album="Gapless Test" -metadata track="$i" \
+           "$output"
+      fi
+      echo "made gapless/0$i-gapless.flac"
     fi
-  fi
+  done
 
-  if [ ! -f "$DIR/cover.png" ]; then
+  if [ ! -s "$DIR/cover.png" ]; then
     require_ffmpeg
     ff -f lavfi -i "testsrc=size=600x600:duration=1:rate=1" -frames:v 1 "$DIR/cover.png"
   fi
 
-  if [ ! -f "$DIR/audio-tagged.mp3" ]; then
+  if [ ! -s "$DIR/audio-tagged.mp3" ]; then
     require_ffmpeg
     ff -f lavfi -i "sine=frequency=330:duration=60" -i "$DIR/cover.png" \
        -map 0:a -map 1:v -c:a libmp3lame -b:a 192k -c:v copy -id3v2_version 3 \
@@ -143,14 +161,14 @@ gen_ensure() {
     echo "made audio-tagged.mp3"
   fi
 
-  if [ ! -f "$DIR/audio-untagged.mp3" ]; then
+  if [ ! -s "$DIR/audio-untagged.mp3" ]; then
     require_ffmpeg
     ff -f lavfi -i "sine=frequency=330:duration=60" -c:a libmp3lame -b:a 192k \
        -map_metadata -1 -write_xing 0 "$DIR/audio-untagged.mp3"
     echo "made audio-untagged.mp3"
   fi
 
-  if [ ! -f "$DIR/video-short.mp4" ]; then
+  if [ ! -s "$DIR/video-short.mp4" ]; then
     require_ffmpeg
     ff -f lavfi -i "testsrc=size=640x360:duration=10:rate=30" \
        -f lavfi -i "sine=frequency=440:duration=10" \
@@ -159,12 +177,12 @@ gen_ensure() {
   fi
 
   # A 7-minute FLAC cut into three indexed tracks by album.cue.
-  if [ ! -f "$DIR/cue/album.flac" ]; then
+  if [ ! -s "$DIR/cue/album.flac" ]; then
     require_ffmpeg
     ff -f lavfi -i "sine=frequency=220:duration=420" -c:a flac "$DIR/cue/album.flac"
     echo "made cue/album.flac"
   fi
-  if [ ! -f "$DIR/cue/album.cue" ]; then
+  if [ ! -s "$DIR/cue/album.cue" ]; then
     cat > "$DIR/cue/album.cue" <<'CUE'
 PERFORMER "NullPlayer Testdata"
 TITLE "Cue Test Album"
@@ -187,21 +205,21 @@ CUE
 
   # A scannable folder: distinct artist/album/track tags, so a scan produces rows a
   # browser can sort rather than one undifferentiated blob.
-  if [ ! -f "$DIR/library/03-third.mp3" ]; then
-    require_ffmpeg
-    i=1
-    for spec in "first:Alpha Artist:Alpha Album:220" \
-                "second:Alpha Artist:Alpha Album:280" \
-                "third:Beta Artist:Beta Album:340"; do
-      IFS=: read -r slug artist album freq <<<"$spec"
+  i=1
+  for spec in "first:Alpha Artist:Alpha Album:220" \
+              "second:Alpha Artist:Alpha Album:280" \
+              "third:Beta Artist:Beta Album:340"; do
+    IFS=: read -r slug artist album freq <<<"$spec"
+    if [ ! -s "$DIR/library/0$i-$slug.mp3" ]; then
+      require_ffmpeg
       ff -f lavfi -i "sine=frequency=$freq:duration=20" -c:a libmp3lame -b:a 160k \
-         -metadata title="$(echo "$slug" | tr '[:lower:]' '[:upper:]')" \
-         -metadata artist="$artist" -metadata album="$album" -metadata track="$i" \
-         -metadata date="2026" "$DIR/library/0$i-$slug.mp3"
-      i=$((i + 1))
-    done
-    echo "made library/ (3 tagged tracks, 2 artists, 2 albums)"
-  fi
+       -metadata title="$(echo "$slug" | tr '[:lower:]' '[:upper:]')" \
+       -metadata artist="$artist" -metadata album="$album" -metadata track="$i" \
+       -metadata date="2026" "$DIR/library/0$i-$slug.mp3"
+      echo "made library/0$i-$slug.mp3"
+    fi
+    i=$((i + 1))
+  done
 
   # Written last: it holds absolute paths, so it is only correct once the rows exist.
   {

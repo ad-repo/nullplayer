@@ -73,6 +73,10 @@ All visualization choices persist across launches.
 - Drag-and-drop, macOS Now Playing integration, and [Discord Music Presence](https://github.com/ungive/discord-music-presence)
 - Headless CLI for querying libraries, playback, and routing to local outputs or cast devices, full color terminal cover art rendering
 
+### Agentic Development
+
+- [App-control guide](skills/app-control/SKILL.md) gives AI agents repeatable launch recipes, test media, UI controls, and interactive QA sessions, plus an [eval case and rubric](skills/app-control/eval/README.md) for comparing agents.
+
 ## Installation
 
 Download the latest DMG:
