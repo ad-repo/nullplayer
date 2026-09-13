@@ -5,7 +5,9 @@ description: Capture one centred main-window screenshot per skin across every sk
 
 # Skin screenshot sweep
 
-> **Scope.** This skill produces a **gallery GIF** and nothing else. To launch, configure, drive,
+> **Scope.** This skill produces a **gallery GIF** and nothing else. It sweeps four skin
+> families — Classic, Original, Original-Metal and Modern. The **Media Player** (`.wmz`)
+> submenu is deliberately not in the sweep; that is the intended scope, not a gap. To launch, configure, drive,
 > screenshot or test the running app — for any reason other than assembling that GIF — see
 > **`app-control`**. It owns `winhelper` and `menu.applescript`, which this sweep only borrows.
 
