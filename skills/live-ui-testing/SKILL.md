@@ -25,7 +25,9 @@ the hard way, having never opened them:
 | "Fixed" announced twice on an unverified change | §*A number that moved is not the symptom that was reported* |
 
 **So: before diagnosing anything, open the owning subsystem's harness/debugging reference and read
-its process section.** The cost of not doing so is measured in hours, twice now. If the subsystem has
+its process section.** For the *mechanics* — how to launch into a state, drive a control, and
+capture a window — go to **`app-control`**; this file is about not fooling yourself with what comes
+back. The cost of not doing so is measured in hours, twice now. If the subsystem has
 no such section, this file is the fallback and your findings belong in that subsystem's skill
 afterwards.
 
@@ -88,63 +90,37 @@ Two cheap checks that separate the three failure modes, in order: is the cursor 
 and is the point inside a node rather than inside the window. Only after all three should the app's
 input path be suspect.
 
-### Launching
+### Launching and driving — see `app-control`
 
-`./scripts/kill_build_run.sh --debug` builds, ad-hoc signs the vendored frameworks, and launches.
+**`app-control` owns the mechanics**: Rule zero (the app under test is always the local debug
+build), the Route B state matrix for launching straight into a mode / skin / playback state with a
+"Confirm it took" observable per row, the `winhelper` and `menu.applescript` verb tables, and the
+canonical test-data targets. It owns the tools, too — they live in
+`skills/app-control/scripts/`.
 
-- **It does not exit.** It stays attached to the app it launched. Piping it into `tail`/`head` means
-  the pipe never closes and the task never reports completion — it looks like an eternal build. Sat
-  "building" for eight minutes after finishing. Redirect to a file.
-- **A binary launched from the agent shell inherits background QoS** (`nice` 5): the UI throttles,
-  timers defer, and the spectrum analyzer stops animating — which reads exactly like a rendering bug.
-  `skin-screenshots` hard-fails on this. Un-throttle after launch (`-B` needs `-p`, it is not a prefix):
+Three of its rules are load-bearing for everything below and are restated here because a wrong
+answer to any of them invalidates the whole session:
 
-```bash
-WMP_TRACE=1 nohup ./.build/arm64-apple-macosx/debug/NullPlayer > /tmp/app.log 2>&1 &
-sleep 5; taskpolicy -B -p "$(pgrep -f 'debug/NullPlayer' | head -1)"
-```
+- **`./scripts/kill_build_run.sh --debug` is the build-and-run command, and it stays attached to
+  the app it launched.** Piping it into `tail`/`head` means the pipe never closes and the task
+  never reports completion — it looks like an eternal build. Use its `--log <path>`.
+- **Never drive the installed app.** Not `nullplayer`, not `open -a`, not
+  `activate application "NullPlayer"`. Raise and address the build under test by unix id.
+- **A CGEvent pair without `mouseEventClickState` is not a click.** It arrives `clickCount == 0`:
+  the pointer moves, hover traces update, and no click is ever synthesised. This produced a
+  confident wrong conclusion in one session — "the skin's play button is dead" — and it was the
+  tool, not the app. `winhelper click` and `drag` set it for you.
 
-- **The bare binary has no bundle identifier**, so its `UserDefaults` live in the `NullPlayer` domain,
-  not `com.nullplayer.app`. A preference written to the wrong domain silently does nothing and reads
-  as the app ignoring it. Check both.
+Two boundaries `app-control` cannot cross, which are epistemic and therefore this file's:
 
-### Driving
-
-`skills/skin-screenshots/scripts/` already solves this — use it rather than writing AppleScript.
-
-| Need | Use |
-|---|---|
-| Window rect | `./winhelper windows` → `layer x y w h alpha title` |
-| A real click | `./winhelper click <screenX> <screenY>` — **`CGEvent`, never System Events** |
-| A hover, or a path of them | `./winhelper move <x> <y> [<x> <y> …]` — `mouseMoved` through the points, 250 ms apart. Hover artwork and a skin's `onMouseOver`/`onMouseOut` fire on the *edges* between controls, so the path is the test, and **the app must be frontmost**: a borderless window gets no `mouseMoved` at all unless it is key |
-| Switch skin system | `osascript menu.applescript mode "<submenu>"` |
-| Select a skin | `osascript menu.applescript skin "<submenu>" "<item>"` |
-| Close aux windows | `osascript menu.applescript closeaux` |
-
-- **Raise the build under test by unix id**, never by name — by name launches the *installed* app:
-  `osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $P) to true"`
-- **A CGEvent click goes to the screen, not the app.** If the app is not frontmost the click lands in
-  whatever window is there; one went into a browser and produced a silent null result.
-- **Set `mouseEventClickState` or it is not a click.** A `.leftMouseDown`/`.leftMouseUp` pair posted
-  without `e.setIntegerValueField(.mouseEventClickState, value: 1)` arrives with `clickCount == 0`:
-  the pointer moves, hover traces update, the app may even dispatch `mouseDown` — and **no click is
-  ever synthesised**. This produced a confident wrong conclusion in one session — "the skin's play
-  button is dead" — and it was the tool, not the app. A double-click needs `clickState` 1 then 2 on
-  consecutive down/up pairs. **Prove the click lands** by first clicking a control whose trace you
-  know, and watching the line appear.
 - **A synthetic right-click does not open a contextual menu, even with `clickState` set.** A
   `CGEvent` `.rightMouseDown`/`.rightMouseUp` pair produced no menu and no `menu(for:)` entry trace
   against a menu a real right-click opens fine. That absence was written up as an engine defect —
   "no right-click reaches `menu(for:)`" — filed in a subsystem backlog, and withdrawn the same day
   when the reporter simply used the feature. **A menu is the one interaction to verify by hand.**
   Absence of a menu under synthetic input is evidence about your tool and nothing else.
-- **Clicking a submenu name does not switch skin system** — that needs its "Switch to …" item, which
-  `menu.applescript mode` finds. See `skin-screenshots` rule 1.
 - **Confirm the target before clicking it** with the subsystem's headless click probe (for `.wmz`,
   `WMP_RENDER_CLICK="<view>@x,y"`), or you will click the wrong control and misread the result.
-- Playback is a precondition for many visual defects. Drive the skin's own Open button, then
-  `Cmd+Shift+G`, path, Return, Return — and **check the track's length**: a 5-second file ends
-  mid-diagnosis and the resulting `AudioEngine.stop()` looks like a bug.
 
 ### Mark the log, and take a control
 
@@ -161,7 +137,7 @@ Eyeballing screenshots produced three wrong conclusions in one session, includin
 different view" (it was not) and "the window is oversized" (it was exactly right).
 
 ```bash
-./winhelper windows | awk -F'\t' '$2==0 && $7>0 {print $3,$4,$5,$6; exit}'
+skills/app-control/scripts/winhelper windows | awk -F'\t' '$2==0 && $7>0 {print $3,$4,$5,$6; exit}'
 screencapture -x -R $X,$Y,$W,$H /tmp/win.png     # the screen there — WHATEVER is on top
 screencapture -x -o -l $WINDOWID /tmp/win.png    # that window's OWN content, occlusion ignored
 ```
@@ -194,7 +170,7 @@ value: `calibratedWhite 0.04, alpha 0.9` over white is `0.04·0.9 + 1·0.1 = 0.1
 over black `(9,9,9)`. Both matched observed pixels to the digit, which found the offending `draw` by
 grepping for that one colour. Compare with harness.md §*The measurement that finds scale bugs*.
 
-Two checks that rule out whole families of cause before theorizing: `winhelper windows` (a stale
+Two checks that rule out whole families of cause before theorizing: `app-control`'s `winhelper windows` (a stale
 window from a mode switch explains a lot) and a recursive hierarchy dump behind `#if DEBUG` — class,
 `frame`, `bounds`, `layer != nil`, `isOpaque`, `isHidden`, `layer?.backgroundColor`.
 

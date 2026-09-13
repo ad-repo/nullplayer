@@ -273,19 +273,16 @@ if CommandLine.arguments.contains("--ui-testing") {
 }
 ```
 
-### `NULLPLAYER_SKIN` — launch straight into a given classic skin
+### Launching into a given skin or state — see `app-control`
 
-**DEBUG builds only** (`AppDelegate.swift:56`). Set it to the path of a `.wsz` and the app loads that
-skin at launch instead of the stored one, so a skin-specific check needs no clicking through the
-Skins menu and leaves the user's selection alone:
+`NULLPLAYER_SKIN` (DEBUG only, `AppDelegate.swift:56`) loads a **classic `.wsz`** at launch, so a
+skin-specific check needs no clicking through the Skins menu and leaves the user's selection alone.
 
-```bash
-NULLPLAYER_SKIN=/abs/path/Skin.wsz ./.build/arm64-apple-macosx/debug/NullPlayer
-```
-
-It loads a **classic** skin only — a `.wal` is selected with `-winampModernSkinPath` and a modern
-skin through its own preference. Useful for the "test with multiple skins" rule above, since a wrong
-skin is one of the commoner reasons a UI check passes locally and fails for someone else.
+It is one row of a larger surface, and **every row of that surface fails silently** — a `.wmz` path
+in `NULLPLAYER_SKIN` loads nothing at all. The full state matrix, with a "Confirm it took"
+observable per row, is **`app-control` § Route B**: UI mode, classic `.wsz`, `.wal`, `.wmz`,
+modern/metal skins, playback, and turning session restoration off so it does not overwrite the
+skin key before the window opens.
 
 ## Running Tests
 

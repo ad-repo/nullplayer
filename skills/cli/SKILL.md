@@ -24,6 +24,20 @@ Do not describe it as a daemon, background control server, or remote-control pro
 
 ## Launching
 
+> **The `nullplayer` shim runs the INSTALLED app.** `/usr/local/bin/nullplayer` `exec`s
+> `/Applications/NullPlayer.app`, whose version is unknown, whose defaults domain is
+> `com.nullplayer.app`, and which is not what you changed. For anything you are developing or
+> testing, invoke the local debug build by path:
+>
+> ```bash
+> BIN=.build/arm64-apple-macosx/debug/NullPlayer     # Intel: .build/x86_64-apple-macosx/…
+> "$BIN" --cli --list-libraries --source plex --json
+> ```
+>
+> The examples below are flag documentation and are written with the shim; this banner governs
+> them. See `app-control` Rule zero.
+
+
 ```bash
 nullplayer --cli [OPTIONS]
 ```

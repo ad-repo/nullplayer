@@ -231,6 +231,30 @@ rediscovering five rules already written there, because nothing pointed at them.
 Every family skill carries a *Debugging a live defect* section that does that routing and adds only
 what is specific to its engine. That is a required section, not an optional one.
 
+**One hop, not a fork.** The section routes to `live-ui-testing` for the epistemics; that file
+forwards the mechanics — launching into a state, driving a control, capturing a window — to
+`app-control`. A family skill must not restate either; it adds what its engine does differently.
+
+## The shape of a process skill
+
+`app-control` is the worked example, and these are constraints on the deliverable, not style
+preferences. The guides it replaced failed weak agents because they were **narrative**: they
+recount how a rule was learned rather than stating the rule, and an agent reading a narrative
+writes a narrative.
+
+- **Every route section has exactly this shape, in this order:** (a) one sentence saying when this
+  route applies; (b) numbered steps; (c) one copy-paste block that runs as written; (d) one
+  **"Confirm it took"** line naming the observable that proves the step worked.
+- **No sentence begins with a date, an incident, or "we learned".** A rule earned from an incident
+  is written as the rule. If the incident is genuinely needed to justify it, it becomes a one-line
+  footnote pointing at the owning harness reference, which is where the story lives.
+- **No prose paragraph longer than three lines.** Tables and steps otherwise.
+- **Every command in the file has been executed by its author before being written down.**
+- **≤ 300 lines.** If it does not fit, something belonged in a reference file.
+
+The *Confirm it took* line is the one that separates a process skill from the docs it replaces:
+a surface whose rows fail silently is a surface an agent cannot tell it has misconfigured.
+
 ## What a family's documentation looks like
 
 Mirror `winamp-modern-skin-guide`; `wmp-skin-guide` is the smaller version of the same shape.
