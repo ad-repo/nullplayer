@@ -84,12 +84,12 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_RENDER_DUMP` | directory | one PNG per view; per-skin subdirectory in a sweep |
 | `WMP_RENDER_PROBE` | `all` or a view id | `PROBE` — every drawn node's type, id, resolved frame, clip, z, paint and authored attributes; plus a `WIDGET` line per widget — the AppKit-hosted surfaces the scene image does **not** contain. Two fields appear on a `WIDGET` line only when they are not the default, and both are about whether the surface is hosted at all and in what shape: `alpha=` is the container's inherited `alphaBlend` (`alpha=0` is a pane the skin has faded shut — `WMPMainView` hosts no view for it, and without the field such a widget read identically to a live one), and `mask=` names the container artwork a windowless `<EFFECTS>` is clipped to, with its frame and keyed colours. `WMP_RENDER_APPKIT` installs the same mask provider the controller does, so its `outside=` reading covers the masked surface rather than an unclipped rect |
 | `WMP_RENDER_BITMAPS` | `1` | `BITMAPS` — resolved count and every path that failed to load, with `missing=` |
-| `WMP_RENDER_OCCLUDED` | `1` | `OCCLUDED` — every control the pointer cannot reach **anywhere in its own frame**, plus a per-view tally. A target is unreachable when no sample of its rect hit-tests back to it: something in front answers everywhere, so the control draws, hovers nothing and clicks nothing. Each line names what answered instead (`by=[…]`) and which rule reached it — `covered-only` is a control the current rule recovered, `rect-only` is one it **lost**, `neither` is dead under both. **`rect-only` is the column that ranks work**: it is the flat-`zIndex`, whole-rectangle hit testing this engine did before W148, and a change that populates it is taking controls away. Sampling is a 17x17 grid over the frame plus, for a `<BUTTONELEMENT>`, the first pixel its mapping colour owns — a mapping child holds an arbitrary region and a grid alone misses a thin one. No headless probe saw this class before it existed: a starved view is `starved.tsv`'s subject, and a *fully laid out* view whose controls are buried is invisible to every count in `RENDER-DUMP` |
+| `WMP_RENDER_OCCLUDED` | `1` | `OCCLUDED` — every control the pointer cannot reach **anywhere in its own frame**, plus a per-view tally. A target is unreachable when no sample of its rect hit-tests back to it: something in front answers everywhere, so the control draws, hovers nothing and clicks nothing. Each line names what answered instead (`by=[…]`) and which rule reached it — `covered-only` is a control the current rule recovered, `rect-only` is one it **lost**, `neither` is dead under both. **`rect-only` is the column that ranks work**: it is the flat-`zIndex`, whole-rectangle hit testing this engine did before W148, and a change that populates it is taking controls away. Sampling is a 17x17 grid over the frame plus, for a `<BUTTONELEMENT>`, the first pixel its mapping colour owns — a mapping child holds an arbitrary region and a grid alone misses a thin one. No headless probe saw this class before it existed: a starved view is `starved.tsv`'s subject, and a *fully laid out* view whose controls are buried is invisible to every count in `RENDER-DUMP`. **What this probe cannot see is a control with no hit entry at all** (W152): it enumerates targets that *have* one and asks who answers instead, so a group whose mapping regions never reached the hit map reads as a clean view here — `digitaldj/DigitalDJ` reports `unreachable-either-way=4 of 92 hits` while its entire transport strip misses every click. Pair it with `WMP_RENDER_CLICK` on a control you decoded yourself before believing a clean line |
 | `WMP_RENDER_UNRESOLVED` | `1` | `UNRESOLVED` — one line per node the scene could not place: authored tag, id, and **which dimension** was missing (`width`, `height` or `width+height`). `RENDER-DUMP`'s `unresolved` count is the numerator `starved.tsv` ranks on and it names nothing, so every use of it had been followed by opening the `.wms` and guessing. It is what separated the three populations that count conflates — a `<TEXT>` sized by its own glyphs, a `<BUTTONGROUP>` sized by its mapping image, and a `<PLAYELEMENT>` that is a colour region and was never a box — and each was a rule rather than a skin |
 | `WMP_RENDER_SCRIPTS` | `1` | `SCRIPTS`/`SCRIPT` — per program: bytes, declared handlers, and the runtime's availability |
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
-| `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]`, any entry may be a `>`-joined path | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, and the state after. **An entry written `x,y>x,y>x,y` is a drag**: press at the first point, move through the rest, release at the last, with the pointer captured on the object the press landed on. `DRAG` reports the control's direction, range and border, the value and drawn thumb frame at every step, and then the two claims the flag exists to settle — `follows-pointer=yes\|no\|flat` and `thumb-travel=<px>`. `flat` is the one to read for: a value that never moves is trivially monotonic, and a `yes/no` answer alone would call it a pass |
+| `WMP_RENDER_CLICK` | `<view>@x,y[;x,y…]`, any entry may be a `>`-joined path | `CLICK` — the object hit, handler count, every attribute changed anywhere in the graph, the host command reached, **`viewSize=<W>x<H>` when the handler resized its own window**, and the state after. The size line is not a host command and had to be printed separately: **a `.wmz` compact mode is a script resizing its own window** (W113), carried on `WMPScriptOutput.viewSize`, so before it existed a click that shrank the player printed no command at all and read exactly like an inert one — `Cablemusic`'s Shrink, `Goo`'s and `iconic`'s small-skin toggles and `Melvin`'s all resolve through it and none of them through `command=`. **An entry written `x,y>x,y>x,y` is a drag**: press at the first point, move through the rest, release at the last, with the pointer captured on the object the press landed on. `DRAG` reports the control's direction, range and border, the value and drawn thumb frame at every step, and then the two claims the flag exists to settle — `follows-pointer=yes\|no\|flat` and `thumb-travel=<px>`. `flat` is the one to read for: a value that never moves is trivially monotonic, and a `yes/no` answer alone would call it a pass. **It rebuilds the same `viewID` and never follows a view switch**, so `command=setCurrentView` here proves the switch was requested and nothing about what the user would be looking at afterwards — see § *A live pass is a window frame* |
 | `WMP_RENDER_HOVER` | `<view>@x,y[;x,y…]` | `HOVER` — walk the pointer through the points in order and raise the edges each move crosses: an `onMouseOut` on the node left, then an `onMouseOver` on the node entered, through `WMPMainWindowController.handlers(in:event:…)`, the same call the app dispatches through. A move that stays inside the same node prints `inside=… — no edge` and raises nothing, which is the claim worth falsifying: a hover fired per mouse-moved event would be a script transaction per pixel. Separate from `WMP_RENDER_CLICK`'s `>` drag form on purpose — a drag holds a capture and asks what the *value* did, a hover holds nothing and asks which handlers the crossing raised (W54) |
 | `WMP_RENDER_APPKIT` | `1` | `APPKIT` — host the scene in the **real `NSView` stack** and report what the AppKit layer adds over the artwork. `outside=` is the number that ranks: an overlay drawing inside its own widget frame is the hosting working, and one drawing anywhere else is the W43 class. `blit=`/`blit-max-delta=` is a second, separate comparison of the renderer's own image against the view's blit of it. Set `WMP_RENDER_APPKIT_DUMP=<dir>` alongside it to write both bitmaps as `<view>-scene.png` and `<view>-hosted.png` when isolating one view. **A scene with an `<EFFECTS>` is two rasters** either side of `WMPScene.effectsCommandSplitIndex` (W139), and this probe presents both: the baseline pass hides only `WMPMainView.hostedWidgetViews`, never the artwork overlay, because artwork a skin draws *above* its visualizer is the skin's picture and not something AppKit added over it. `blit=` compares the view against the two layers flattened back together, and a split scene with partially transparent artwork above the effects node reads a small non-zero there — the intermediate premultiplied buffer quantizes, measured at 0.11% of pixels and max-delta 16 on `Plus! Professional/mainView`. Read the shape, as the line has always said |
 | `WMP_RENDER_SETTLE` | seconds | run the **view's own timer loop** for that long before measuring — at the period the skin asks for, honouring every `setViewTimerInterval` its handlers post back, rebuilding the scene between ticks |
@@ -164,9 +164,11 @@ and nothing happens".
 - **The first click on an inactive window is consumed activating it**, so the first whole drag
   raises nothing. `AXRaise` the window, drive one throwaway gesture, then the real one.
 - **A short track cannot show a seek.** Pair it with `NULLPLAYER_PLAY` and something long.
+- **`NULLPLAYER_SKIN` does not select a `.wmz`.** `AppDelegate` hands it to `WindowManager.loadSkin`, which is the **classic** `.wsz` loader, so a `.wmz` path there loads nothing and the launch comes up on the unskinned WMP view (440x170) — which reads as the skin failing to load. A `.wmz` is selected the way step 1 of the live loop says, `defaults write NullPlayer wmpSkinName`, and **session restoration overwrites that key from the saved state before the window opens**, so a launch that keeps coming up on the wrong skin wants `defaults write NullPlayer rememberStateEnabled -bool false` for the duration. Both cost a launch each on 2026-09-12. Put the user's values back afterwards.
 
 ```bash
-WMP_SEEK_TRACE=1 NULLPLAYER_SKIN="…/Plus! Pulsar.wmz" NULLPLAYER_PLAY=/abs/path/long.m4a \
+defaults write NullPlayer wmpSkinName -string "Plus! Pulsar"
+WMP_SEEK_TRACE=1 NULLPLAYER_PLAY=/abs/path/long.m4a \
   nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
 ```
 
@@ -295,6 +297,61 @@ switch never loaded the view (W46); `setViewTimerInterval value=50` immediately 
 `value=4000` said a chained timer had registered and then been dropped (W86); and `script-diag`
 staying silent through all of it said no handler ever threw, which is what moved the search out of
 the script and into the engine's own semantics.
+
+### Auditing one authored control across the whole corpus
+
+*"Every skin has this button and it does nothing"* is a shape of report the census cannot answer,
+and W100 is the worked example: it stood **unmeasured for three days** at a recorded reach of 2
+skins and the true number was **162 of 180**. The route that produced it, in order, because each
+step exists to survive a trap the previous one hides:
+
+1. **Scan the script text, not the census.** `wmp_skin_census.sh` drives `onLoad`; a control's
+   demand lives in `onClick`, so the sweep never reaches it. That blind spot is *the* reason a
+   title-bar button can be authored by 90% of the corpus and tallied at 4%. Decode the way
+   `WMPTextDecoder` does and **print the encoding breakdown** — 153 UTF-16-BOM / 145 cp1252 /
+   88 UTF-8 / 9 UTF-8-BOM over the 180 archives is the calibration a correct scan reproduces.
+2. **Resolve the handler through the call graph, not by matching the attribute.** `onClick` is
+   usually a function name — `SwitchSmall()`, `ToggleSuperCompact()` — so a scan for the mechanism
+   in the attribute text finds a fraction of the population. Three levels of body substitution was
+   enough for this corpus.
+3. **Find the clickable point from `WMP_RENDER_PROBE`, per view, for the whole corpus in one
+   sweep.** A node with a frame is clicked at its centre. A `<BUTTONELEMENT>` has no frame and is
+   resolved through its group's mapping bitmap — and **take the median pixel of the colour, never
+   the first**: the first-scanline pixel lands on a stray or an edge and resolves to the *adjacent*
+   button, which reads exactly like the engine dispatching the wrong handler. Two skins were
+   misdiagnosed that way before the median fixed both.
+4. **A `<BUTTONGROUP>` that draws nothing has no `PROBE` line**, so step 3 finds no group to hang
+   the mapping decode on — `Cablemusic`'s is invisible for exactly this reason. Fall back to the
+   authored `left`/`top` chain, or to a per-skin dossier under `reference/skins/`.
+5. **Drive the click and read `unrecognised=`, not the screen.** `WMP_CALL_TRACE=1` alongside
+   `WMP_RENDER_CLICK` is what turns "nothing happened" into
+   `[handler-error] … unimplemented view.returntomediacenter`. Sampling 15 skins was enough to
+   establish the class; the population came from step 1.
+
+**`WMP_RENDER_CLICK` does not follow a view switch.** It rebuilds the *same* `viewID` after every
+gesture, so a click posting `command=setCurrentView value=viewTiny` proves the switch was
+*requested* and says nothing about what the user would then be looking at. For anything about the
+view a skin lands on, the running app is the only arbiter — which is what the loop above is for.
+
+### A live pass is a window frame, before and after
+
+For "does the button change anything", the measurement is `CGWindowListCopyWindowInfo` filtered on
+owner `NullPlayer`, read before the click and after it. It is objective, it is two lines of Swift,
+and it scales to a skin per launch — eleven skins were audited this way in one pass. A screenshot
+diff is the second reading, for the case where the window legitimately does not resize
+(`portals`'s two views are both 359x465, and byte-identical captures are what proved that click
+dead).
+
+Three traps, all of which produce a confident wrong answer:
+
+- **Check the window size against the view's canvas before believing anything.** A launch that
+  failed to select the skin comes up on the unskinned view at **440x170** and looks like a working
+  app. Four skins in one loop were driven that way — `zsh` does not word-split an unquoted
+  parameter, so `set -- $row` handed the whole line to the first argument — and every "before" and
+  "after" agreed, which reads as *the button does nothing* rather than as *no skin is loaded*.
+- **`AXRaise` and activate first.** The first click on an inactive window is consumed activating it.
+- **Play something.** `NULLPLAYER_PLAY` — a `status_onchange` lands five times a second with a track
+  playing and it is what cancelled the click transaction in W113.
 
 ### Number the transactions before theorising about one
 
@@ -670,7 +727,15 @@ from its slider's `onMouseUp`) wins over the authored attribute.
 *What is the state of the corpus?* One TSV row per archive: sha256, whether it loaded, the codes it
 was rejected for, encoding, view/node/script counts, findings by code, per-view node/command/hit
 counts, resolved and missing artwork, the unimplemented tags and host members it demands, and the
-git rev it was measured at. This is the only honest source for the reach numbers in `WMP_TASKS.md`.
+git rev it was measured at. This is the only honest source for the reach numbers in `WMP_TASKS.md`
+**for anything a view reaches on load**.
+
+**It drives `onLoad` and nothing else, and that bounds every demand number it produces.** A member
+called from an `onClick` is invisible here, so a row ranked on this alone is ranked on the subset
+of the corpus that runs before the user touches anything: `view.returnToMediaCenter` counted **7**
+and is authored by **162 of 180 archives** (W100), and W136 still carries that pair as its own
+warning. When a row is about a *control*, the census gives you a floor and § *Auditing one authored
+control across the whole corpus* gives you the number.
 
 `--parse-only` re-derives the TSV from a previous run's logs without paying the sweep again — it is
 how a parsing change is checked against a capture that is already known-good.

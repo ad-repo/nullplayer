@@ -266,6 +266,25 @@ queue, with the object model as the security boundary — see Amendment 2 in
   handler boundary, so W38 (the endpoint lands this transaction) and W55 (`onEndMove` is raised from
   it) both still hold. **A duration of zero is not a tween** and applies immediately, which is what
   `movePlayButton()`'s `moveTo(x, 116, 0)` toggle depends on.
+- **Compact mode is authored by 11 archives, and the button every skin has is not it — audited 2026-09-12.**
+  The corpus splits three ways and conflating them wastes a session. **Real compact toggles: 11 skins**, by two
+  mechanisms — a switch to a smaller view (`corona`, `9SeriesDefault` → `viewTiny`; `Main_Street` slim/mini;
+  `T3-Skynet_Media_Player`; `digitaldj`; `holiday_skin`; `portals`) and an in-place `view.width`/`view.height`
+  write (`Cablemusic`, `Goo`, `iconic`, `Melvin`). Every one of them was clicked in the running app with a track
+  playing and **10 of the 11 change the window**: 859x468→596x468, 593x600→475x373, 324x253→163x114,
+  288x255→79x70, 440x336→280x130, 516x496→214x49, 317x330→400x81. `portals` is the exception and its cause is not compact mode:
+  the walk opened the wrong view (**W153**, closed 2026-09-13) and the right one turned out to drag the window
+  instead of clicking (**W154**). `digitaldj` works from `DigitalDJMid` and not from `DigitalDJ`, which is W152. **The
+  five *"Return to Player/Main Mode"* buttons are video-mode returns, not compact** (`Plus! Professional`,
+  `QuickSilver` ×2, `TripleX` ×2, `xXx_night_vision_redx`) and all reach `setCurrentView` cleanly. **And the
+  button the reporter meets in nearly every skin is `view.returnToMediaCenter()` — 162 archives, 196
+  controls, 179 of them tooltipped "Return to full mode".** It opens the Library Browser since W100 closed on
+  2026-09-13; before that it was dead in every one of them, which is why *"the compact button does nothing"*
+  was that button and not compact mode. Name the skin and check it against this list before reading such a
+  report as a compact defect.
+  **A window bigger than the compact artwork is not a defect here**: `corona`'s `viewTiny` is authored 596x498 and
+  draws a 346x103 mini player into it, exactly as its markup asks — WMP shapes that window with the transparency
+  key and this engine leaves it transparent, which looks the same. Measure the window, not the ink.
 - **A `.wmz` compact mode is a script resizing its own window, and it is the script's output rather
   than the drawing's (W113).** `SwitchSmall()` writes `view.width = 475; view.height = 373` and
   swaps one shell for another. Three separate things had to hold and none of them did:
@@ -805,6 +824,15 @@ defects in the compact-mode report were app-path defects a render sweep can neve
 one launch once the loop existed. The same section carries the two things that decided those fixes:
 how to reduce a skin's own script to a standalone `JSContext` repro, and why a fix that closes the
 report while moving images elsewhere in the corpus is the wrong fix.
+
+**When the report is about a control rather than one skin — "every skin has this button and it does
+nothing" — the route is `reference/harness.md` § *Auditing one authored control across the whole
+corpus*, and the live half is § *A live pass is a window frame, before and after*.** The census
+cannot answer that question: it drives `onLoad` and a control's demand is in `onClick`, which is how
+W100 stood at a recorded reach of 2 skins against a true 162. A window frame read before and after a
+`CGEvent` click is the measurement, it scales to a skin per launch, and the first thing to check in
+any capture is that the window size matches the view's canvas — the unskinned view is **440x170** and
+a launch that failed to select the skin looks exactly like a button that does nothing.
 
 The ones that cost the most, in WMP terms:
 

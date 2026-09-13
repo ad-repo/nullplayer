@@ -576,7 +576,7 @@ final class WMPObjectModel {
 
     private func readViewHost(_ name: String) -> WMPMemberValue? {
         switch name {
-        case "close", "minimize": return .function
+        case "close", "minimize", "returntomediacenter": return .function
         default: return nil
         }
     }
@@ -588,7 +588,7 @@ final class WMPObjectModel {
         // way of cycling the surface, and the reason the selector never needed a menu (W101).
         case (.effects, "next"), (.effects, "previous"), (.effects, "nextpreset"): return name
         case (_, "moveto"), (_, "resizeto"), (_, "alphablendto"): return name
-        case (.view, "close"), (.view, "minimize"): return name
+        case (.view, "close"), (.view, "minimize"), (.view, "returntomediacenter"): return name
         default:
             return Self.isPlaylist(element.kind)
                 && ["setcolumnresizemode", "setcolumnwidth"].contains(name) ? name : nil
@@ -601,7 +601,7 @@ final class WMPObjectModel {
     /// `alphaBlendTo` came to be measured as the largest row on the backlog while `moveTo`, which
     /// has been implemented since Phase 3, was counted beside it (W38).
     static let implementedElementMethods: Set<String> = [
-        "moveto", "resizeto", "alphablendto", "close", "minimize",
+        "moveto", "resizeto", "alphablendto", "close", "minimize", "returntomediacenter",
         "appenditem", "removeallitems", "getitem", "setcolumnresizemode", "setcolumnwidth",
         "next", "previous", "nextpreset"
     ]
@@ -1011,6 +1011,17 @@ final class WMPObjectModel {
         case (.effects, "nextpreset"): hostCommand("stepEffectPreset", .number(1)); return .value(.null)
         case (.view, "close"): hostCommand("closeView", nil); return .value(.null)
         case (.view, "minimize"): hostCommand("minimizeWindow", nil); return .value(.null)
+        // **The most widely authored control in the corpus: 162 of 180 archives, 196 of them, and
+        // 179 tooltipped "Return to full mode"** (W100). WMP leaves skin mode for the player's own
+        // shell — menu bar, library, playlist — which this player has no single equivalent of, so
+        // it opens the Library Browser: the closest surface NullPlayer has to what that shell is
+        // *for*, and the one the user is reaching for when they leave a skin. **It is not
+        // `closeView`** — that would take the skin away and is what the backlog row forbade.
+        // Every corpus use is the last statement of its handler (0 of 196 have anything after it),
+        // so nothing downstream depends on what this returns. 13 of them call it on a named view
+        // element rather than `view` (`vFull`, `ballview`, `KidsView`, `digitaldj`…), which is why
+        // it dispatches on `.view` and never on the receiver's name.
+        case (.view, "returntomediacenter"): hostCommand("openLibrary", nil); return .value(.null)
         // WMP tweens these over the third argument's milliseconds. The endpoint still lands in this
         // transaction — the tween itself is rendering work, not a missing member (W38) — but **not
         // until the handler that asked for it has returned**; see `tween(_:_:_:duration:)`.

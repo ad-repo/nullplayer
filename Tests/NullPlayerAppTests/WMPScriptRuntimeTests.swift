@@ -287,8 +287,11 @@ final class WMPScriptRuntimeTests: XCTestCase {
     /// `TypeError` — the same abort, but invisible to the instrument the backlog is ranked from,
     /// which is how `view.returnToMediaCenter` had to be found by a live reporter (W100).
     func testSDKElementMethodsAreCountedWhenUnimplemented() {
+        // `returntomediacenter` was this list's `<VIEW>` example until W100 implemented it;
+        // `restore` replaces it because the point is the *kind*, not the name — a VIEW method the
+        // SDK defines and this engine does not answer still has to be counted rather than swallowed.
         for method in ["deleteall", "copy", "abortcopy", "deleteselected", "insertitem",
-                       "returntomediacenter", "sortcolumn", "getline", "getbutton"] {
+                       "restore", "sortcolumn", "getline", "getbutton"] {
             XCTAssertTrue(WMPObjectModel.elementMethodVocabulary.contains(method),
                           "\(method) is an SDK element method and must be counted, not swallowed")
             XCTAssertFalse(WMPObjectModel.implementedElementMethods.contains(method),
@@ -305,10 +308,50 @@ final class WMPScriptRuntimeTests: XCTestCase {
         }
     }
 
-    /// The behavioural half of W128, on the three highest-reach names in the corpus scan:
-    /// `plListBox1.deleteAll()` (10 skins), `playlist2.copy()` (8) and `view.returnToMediaCenter()`
-    /// (7). Each aborts its own handler exactly as before — the screen does not change — and each
-    /// now appears in `output.calls` as unrecognised demand instead of nowhere.
+    /// W100. *Return to full mode* is the most widely authored control in the corpus — **162 of 180
+    /// archives, 196 controls** — and it died on its own first statement until this. WMP leaves skin
+    /// mode for the player's own shell; NullPlayer opens the Library Browser, which is the closest
+    /// surface it has to what that shell is for. Two things are pinned here and the second is the
+    /// one to keep: it must post `openLibrary`, and it must **not** be `closeView` — taking the
+    /// user's skin away on a button labelled "Return to full mode" is the outcome the backlog row
+    /// forbade by name.
+    ///
+    /// Dispatched on the `<VIEW>` kind and never on the receiver's spelling: 13 of the 196 call it
+    /// on a named view element (`vFull`, `ballview`, `KidsView`, `digitaldj`…) rather than on
+    /// `view`, so `vFull.returnToMediaCenter()` has to reach the same command.
+    func testReturnToMediaCenterOpensTheLibrary() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="vFull" width="100" height="60">
+          <SUBVIEW id="pane" left="0" top="45" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "vFull",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onLoad", targetID: "vFull",
+                         handlers: ["view.returnToMediaCenter(); pane.width = 3;",
+                                    "vFull.returnToMediaCenter();"]))
+        XCTAssertEqual(output.hostCommands.filter { $0.action == "openLibrary" }.count, 2,
+                       "both the `view` receiver and the skin's own named one must reach the command")
+        XCTAssertFalse(output.hostCommands.contains { $0.action == "closeView" },
+                       "returning to full mode must never take the skin away")
+        XCTAssertFalse(output.calls.contains { $0.path.hasSuffix("returntomediacenter") && !$0.recognised },
+                       "the method is implemented and must no longer be counted as unmet demand")
+        XCTAssertTrue(output.diagnostics.isEmpty, "the handler must not raise: \(output.diagnostics)")
+        // 0 of the 196 corpus uses have a statement after the call, but the handler surviving it is
+        // what separates an implementation from an `inert()` that merely stops the diagnostic.
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: pane.stableID, property: "width")], 3,
+                       "the handler must continue past the call")
+        await session.teardown()
+    }
+
+    /// The behavioural half of W128, on the two highest-reach names in the corpus scan:
+    /// `plListBox1.deleteAll()` (10 skins) and `playlist2.copy()` (8), plus `view.restore()` for
+    /// the `<VIEW>` kind. Each aborts its own handler exactly as before — the screen does not
+    /// change — and each now appears in `output.calls` as unrecognised demand instead of nowhere.
+    /// `view.returnToMediaCenter()` was the third until W100; it is pinned the other way round in
+    /// `testReturnToMediaCenterOpensTheLibrary`.
     func testUnimplementedSDKMethodsAreTalliedRatherThanSilent() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="100" height="60">
@@ -324,9 +367,9 @@ final class WMPScriptRuntimeTests: XCTestCase {
             event: .init(name: "onLoad", targetID: "main",
                          handlers: ["box.deleteAll(); pane.left = 1;",
                                     "pl.copy(); pane.top = 2;",
-                                    "view.returnToMediaCenter(); pane.width = 3;",
+                                    "view.restore(); pane.width = 3;",
                                     "pane.height = 4;"]))
-        for method in ["deleteall", "copy", "returntomediacenter"] {
+        for method in ["deleteall", "copy", "restore"] {
             XCTAssertTrue(output.calls.contains {
                 $0.path.hasSuffix(method) && $0.kind == .read && !$0.recognised
             }, "\(method) must be tallied as unrecognised demand, not answer as an empty string")

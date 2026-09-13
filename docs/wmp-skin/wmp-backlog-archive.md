@@ -966,3 +966,79 @@ like "the fix did not work":
   produced no trace at all. Drive an activation gesture, then the real one.
 - **A 5-second track cannot show a seek** — the reporter caught that one. `NULLPLAYER_PLAY` wants
   something long; the capture above used a 19-minute recording.
+
+## W153 — the view a skin declares it opens in
+
+**Closed 2026-09-13.** `WMPMainWindowController`'s candidate walk was
+`[persisted view, "vPlayer", document order]`, and `<THEME currentViewID="…">` — WMP's authored
+startup view — was in none of it. `portals` declares `currentViewID="mode1"` and defines `mode2`
+first, so document order decided on the skin's behalf and the player opened on its info mode: a
+359x465 window where `mode1` is 550x400, with the mode button nowhere near where anyone was
+clicking. Reported 2026-09-12 in the compact-mode audit as the one skin of eleven whose mode button
+did nothing.
+
+`WMPDeclaredHostState.authoredStartupViewID(in:)` reads it and the walk inserts it **after** the
+persisted `wmpSkinViewID` and **before** `vPlayer`: a skin naming its startup view is not a skin
+overriding where the user last left it. A literal decides and nothing else — a `wmpprop:` value here
+would be asking the host which view to show before any view exists.
+
+**Reach is one skin and that was measured before the fix, not assumed**: 16 of the 180 archives
+author the attribute and `portals` is the only one whose walk lands elsewhere. Verified live —
+`defaults write NullPlayer wmpSkinName portals`, `defaults delete NullPlayer wmpSkinViewID`, debug
+launch: the window opens 550x400 and `wmpSkinViewID` persists `mode1`, where both were `mode2`
+before.
+
+**It closed one row and opened another, which is the point of it.** `mode1` had never been on
+screen, so nothing in it had ever been looked at: W154 is what was waiting behind this. A fix that
+makes a dead view live is expected to uncover what was sitting in it — that is not evidence the fix
+was wrong.
+
+## W100 — *Return to full mode*, the corpus's most widely authored dead control
+
+**Closed 2026-09-13.** `view.returnToMediaCenter()` is authored by **162 of the 180 archives — 196
+controls, 179 of them tooltipped exactly "Return to full mode"**, and **107 skins carry one in the
+view the player opens in**. It was unrecognised, so every one of them died on its own first
+statement. Reported live 2026-09-09 as "the 2 top right windows do not work" and again 2026-09-12,
+from the other end, as *"all skins seem to have a compact button"* — which is what this button is
+mistaken for, because a real compact mode exists in only 11 archives and this one is everywhere.
+
+**The count the row asked for could not come from the census**, and that is why it stood unmeasured
+for three days: `wmp_skin_census.sh` drives `onLoad`, these sit in `onClick`, and W136's figure of 7
+is what that blind spot sees. The corpus number came from a script-text scan decoded the way
+`WMPTextDecoder` does — 153 UTF-16-BOM / 145 cp1252 / 88 UTF-8 / 9 UTF-8-BOM text members, matching
+the harness's own calibration — with each located control then driven by a click.
+
+**What it does now: it opens the Library Browser.** WMP leaves skin mode for the player's own shell
+— menu bar, library, playlist — which this player has no single equivalent of. The decision was
+taken against three candidates: the unskinned default player (`WMPUnskinnedMainView`, the structural
+twin of WMP's full mode, rejected because it takes the user's skin away and offers no way back),
+leaving WMP mode for Classic/Modern (a different product), and the library (chosen: the closest
+surface NullPlayer has to what full mode is *for*). **Not `closeView`**, which the row forbade by
+name, and not `inert()` — see below.
+
+`WMPObjectModel` posts `openLibrary` from `case (.view, "returntomediacenter")`, the way `close` and
+`minimize` post `closeView` and `minimizeWindow`; `WMPMainWindowController` calls
+`WindowManager.showPlexBrowser()`. **Show, never toggle**: the button says one thing, and a second
+press meaning "put it away" is not what the artwork claims. The skin is untouched and the browser
+opens beside it in chrome derived from the active `.wmz`, like every other NullPlayer-owned window
+in this mode.
+
+**`inert()` was the cheap option and it would have bought nothing**, which the measurement settled
+rather than taste: across all 196 controls the call is the **last** statement — 189 are the bare
+call alone, 6 have `savePrefs()`/`saveVars()` before it, and **0 have anything after it**. So
+recognising the name without acting on it would have removed a diagnostic and changed nothing a user
+sees. That is also why `testReturnToMediaCenterOpensTheLibrary` asserts the handler *continues* past
+the call: it is what separates an implementation from an `inert()`.
+
+**Dispatched on the `<VIEW>` kind, never on the receiver's spelling**: 13 of the 196 call it on a
+named view element — `vFull` ×2, `ballview`, `ErectorView`, `KidsView`, `military`, `normal`,
+`ExtremeSportsView`, `tvView`, `main`, `animeView`, `digitaldj` — and the test pins both forms.
+
+**Verified 15 of 15 headlessly** (`Navigator`, `Gorillaz`, `Plus! Plasma Ball`, `Vario`,
+`BlueCrush_MP7`, `Creed`, `springflower`, `Stealth`, `Ducky`, `Plus! Bionic Dot`, `Thomas`,
+`BlueCrush_MPXP`, `Secura`, `Jaws`, `Beck`): each now prints `command=openLibrary` with
+`unrecognised=[]` where it printed `[handler-error] … unimplemented view.returntomediacenter`.
+**Live on `BlueCrush_MP7` and `Thomas`**: the browser opens beside an untouched player, wearing the
+skin's own chrome. `maximize`, `restore` and `size` remain the unimplemented `<VIEW>` methods and
+the corpus calls none of them; `restore` took this name's place as the census exemplar in
+`WMPScriptRuntimeTests`.

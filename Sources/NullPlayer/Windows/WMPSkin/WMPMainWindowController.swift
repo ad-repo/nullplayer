@@ -230,6 +230,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     preferences: WMPPreferenceStore(skinData: skinData, defaults: importer.defaults))
                 var candidates: [String] = []
                 if let preferred = importer.selectedViewID { candidates.append(preferred) }
+                // The skin's own `<THEME currentViewID>` outranks `vPlayer` and document order and
+                // is outranked by the user's persisted view (W153). Document order is a fallback
+                // for skins that declare nothing, and `portals` is what happens when it decides on
+                // their behalf: it defines `mode2` first and declares `mode1`, so the player opened
+                // on the skin's info mode and the mode button was not where anyone was clicking.
+                if let declared = WMPDeclaredHostState.authoredStartupViewID(in: skin) {
+                    candidates.append(declared)
+                }
                 candidates.append("vPlayer")
                 candidates.append(contentsOf: skin.views.map(\.id))
                 var visited = Set<String>()
@@ -1787,6 +1795,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     switchedView = true
                 }
             case "minimizeWindow": presentation.window.miniaturize(nil)
+            // `view.returnToMediaCenter()` — WMP's *Return to full mode*, which 162 of the 180
+            // archives put in their title bar (W100). Show, never toggle: the button says one
+            // thing, and a second press meaning "put it away" is not what the artwork claims. The
+            // skin stays exactly where it is; the browser opens beside it in chrome derived from
+            // the active `.wmz`, as every other NullPlayer-owned window in this mode does.
+            case "openLibrary": WindowManager.shared.showPlexBrowser()
             case let action where action.hasPrefix("playPlaylistItem:"):
                 if let index = Int(action.dropFirst("playPlaylistItem:".count)) {
                     host.perform(.playPlaylistItem(index), value: nil)

@@ -2,7 +2,7 @@ import Foundation
 
 /// Host state a skin declares in its **markup**, as opposed to state its script writes.
 ///
-/// One member today, and it is the whole equaliser. `<EQUALIZERSETTINGS>` is not a control — the
+/// Two members today. The first is the whole equaliser. `<EQUALIZERSETTINGS>` is not a control — the
 /// scene builder skips it (`WMPSceneBuilder.isNonLayout`) because 163 skins author it with no
 /// geometry — so nothing read its attributes at all, and `enable` is the attribute that turns
 /// WMP's equaliser on. Measured over the 177 readable archives on 2026-09-09: **146 of the 155
@@ -37,5 +37,26 @@ enum WMPDeclaredHostState {
     /// gives: what decides this is what the skin declared, not how much of it the graph classifies.
     private static func isEqualizerSettings(_ node: WMPNode) -> Bool {
         node.kind == .equalizerSettings || node.authoredTagName.uppercased() == "EQUALIZERSETTINGS"
+    }
+
+    /// The view the skin says it opens in — `<THEME currentViewID="…">` — or `nil` when it says
+    /// nothing, which is 164 of the 180 archives.
+    ///
+    /// **It is a declaration, not a redirect**, so it belongs to the candidate walk rather than to
+    /// `switchView`: the walk's first entry stays the *user's* persisted `wmpSkinViewID`, because a
+    /// skin naming its startup view is not a skin overriding where the user last left it.
+    ///
+    /// Only `portals` needs it today — 16 archives author the attribute and it is the one whose
+    /// walk lands elsewhere, because it defines `mode2` before `mode1` and the walk's fallback is
+    /// document order. That opened the player on the skin's info mode, where the mode button the
+    /// user is reaching for is not (W153). A literal decides and nothing else: a `wmpprop:` value
+    /// here would be asking the host which view to show before any view exists.
+    static func authoredStartupViewID(in skin: WMPLoadedSkin) -> String? {
+        for node in skin.graph.roots where node.authoredTagName.uppercased() == "THEME" {
+            guard case let .literal(raw)? = node.attribute(named: "currentViewID")?.value else { continue }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
     }
 }

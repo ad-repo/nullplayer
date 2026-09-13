@@ -29,6 +29,17 @@
 
 ### Bug Fixes
 
+- **The "Return to full mode" button in Media Player skins now opens your library.** Nearly every
+  skin — 162 of the 180 we test against — puts that button in its title bar, and in every one of
+  them it did nothing at all. In Windows Media Player it leaves the skin for the full player window;
+  NullPlayer opens the Library Browser instead, which is the closest thing it has, beside the skin
+  and in the skin's own colours. Your skin stays exactly where it is.
+
+- **Skins that name the screen they should open on now open on it.** A skin can declare which of its
+  screens to show first, and that declaration was being ignored in favour of whichever screen
+  happened to be defined first in the file. Portals opened on its info screen instead of its player,
+  where none of the buttons were where you expected them.
+
 - **The slide-out settings drawers in Media Player skins work properly.** In XSN Sports and skins
   built the same way, the little drawer along the bottom of the visualization and video windows was
   broken four different ways at once: it sat at the left edge while the tab that opens it stayed

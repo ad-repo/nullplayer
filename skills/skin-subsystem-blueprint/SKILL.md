@@ -209,6 +209,18 @@ Build, in this order:
 A completely green sweep is compatible with a black rectangle on screen — that is exactly what
 happened on 2026-09-07. Anything hosted as an `NSView` over the rendered scene is invisible to it.
 
+**A census measures the state it drives, and every demand number it prints inherits that bound.**
+The `.wmz` census raises `load` and nothing else, so a member called from a button's `onClick` does
+not appear in it — `view.returnToMediaCenter` was tallied at **7 skins** and is authored by **162 of
+180**, and the row sat mis-ranked for three days because the number looked like a measurement. The
+shape generalizes to any family: a sweep that drives one event ranks the subset of the corpus that
+event reaches. **Say in the reference which events your sweep raises**, and when a row is about a
+*control* rather than a layout, count it by scanning authored script text and driving the control —
+`wmp-skin-guide/reference/harness.md` § *Auditing one authored control across the whole corpus* is
+the worked method, and its traps (decode every encoding and print the breakdown; resolve handler
+names through the call graph; take the **median** pixel of a mapping colour, never the first) are
+family-agnostic.
+
 ## Debugging a live defect
 
 **Route to `skills/live-ui-testing` from the first version of your skill**, and read

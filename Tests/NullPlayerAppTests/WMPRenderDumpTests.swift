@@ -26,7 +26,9 @@ import XCTest
 //   WMP_RENDER_SCRIPTS=1           per program: bytes, declared handlers, whether it evaluated
 //   WMP_RENDER_EXPR=1              every JScript: geometry expression, its value, its order, deps
 //   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
-//   WMP_RENDER_CLICK=<view>@x,y[;x,y…]   drive clicks in order and report what each one moved
+//   WMP_RENDER_CLICK=<view>@x,y[;x,y…]   drive clicks in order and report what each one moved,
+//                                        including a viewSize= line when the handler resized the
+//                                        window (a .wmz compact mode, W113)
 //                                        an entry written x,y>x,y>x,y is a drag along that path
 //   WMP_RENDER_HOVER=<view>@x,y[;x,y…]   walk the pointer through the points and raise the
 //                                        onMouseOut/onMouseOver edges each move crosses
@@ -1355,6 +1357,14 @@ enum WMPHarness {
                 WMPHarnessOutput.emit("CLICK \(where_) \(line)")
             }
             previous = output.overrides
+            // **A `.wmz` compact mode is a script resizing its own window** (W113), and that arrives
+            // as `WMPScriptOutput.viewSize` rather than as a host command — so a click that shrank
+            // the player used to print no command at all and read exactly like an inert one. The
+            // line is the only headless evidence that separates a compact toggle that resized from
+            // one that merely hid half its artwork inside a window that never moved.
+            if let size = output.viewSize {
+                WMPHarnessOutput.emit("CLICK \(where_) viewSize=\(WMPNumber.format(size.width))x\(WMPNumber.format(size.height))")
+            }
             for command in output.hostCommands {
                 WMPHarnessOutput.emit("CLICK \(where_) command=\(command.action) value=\(command.value?.string ?? "-")")
             }
