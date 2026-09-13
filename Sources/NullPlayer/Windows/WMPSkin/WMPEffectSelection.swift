@@ -16,8 +16,10 @@ import AppKit
 /// WMP-native effects, Cava and vis_classic — the three rendering offscreen and presented as an
 /// image rather than mounted as a live `NSOpenGLView`.
 ///
-/// This is a session choice, independent of NullPlayer's standalone Visualizations window. A skin
-/// cycling `visEffects` must never reconfigure the user's separate visualization engine.
+/// This choice is independent of NullPlayer's standalone Visualizations window — a skin cycling
+/// `visEffects` must never reconfigure the user's separate visualization engine — and it is
+/// **remembered per skin**, not per session: `WMPVisualizationSettingsStore` saves it, and the
+/// slot's Cava and vis_classic settings with it, against the installed skin that was showing.
 @MainActor
 final class WMPEffectSelection {
     static let shared = WMPEffectSelection()
@@ -98,6 +100,19 @@ final class WMPEffectSelection {
         presetTitle = ""
         post()
         return true
+    }
+
+    /// Puts the rect back on what this skin was last left showing (`WMPVisualizationSettingsStore`).
+    /// Unlike `select`, a missing or unknown id means *the default* rather than "change nothing":
+    /// restoring a skin that has no record must not leave the previous skin's effect on screen.
+    func restore(effect id: String?, preset value: Int) {
+        let wanted = (id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        index = Self.catalogue.firstIndex(where: {
+            $0.id == wanted || $0.title.lowercased() == wanted
+        }) ?? 0
+        preset = max(0, value)
+        presetTitle = ""
+        post()
     }
 
     func step(by delta: Int) {

@@ -32,6 +32,20 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// lands within 100 ms and looks immediate — and with the player stopped the skin's
     /// `currentEffectType_onchange` would never be raised at all (W129).
     private var effectSelectionObserver: NSObjectProtocol?
+    /// **The effects slot's settings belong to the skin that authored the slot.** The selection and
+    /// the WMP-scoped Cava / vis_classic preferences are restored when a skin loads and captured
+    /// whenever they change, against the skin that is showing. See `WMPVisualizationSettingsStore`.
+    private lazy var visualizationSettings = WMPVisualizationSettingsStore(defaults: importer.defaults)
+    /// Capture is driven off the defaults domain rather than off each menu item, because the Cava
+    /// and vis_classic controls in the slot's menu write their own keys and offer no callback.
+    private var visualizationSettingsObserver: NSObjectProtocol?
+    private var isCapturingVisualizationSettings = false
+    /// The skin a captured change belongs to. It is the skin that was showing when the change was
+    /// made, not `importer.selectedSkinName` at the moment the notification is delivered: the
+    /// defaults notification arrives on the main queue asynchronously, so a change made just before
+    /// a skin switch would otherwise be filed against the skin being switched *to*. Nil until the
+    /// first restore, so nothing is captured before anything has been put in place.
+    private var visualizationSettingsSkin: String?
     /// The skin *session's* load — the archive, the candidate walk, the first present. Per-view work
     /// has its own task on the presentation it belongs to.
     private var loadTask: Task<Void, Never>?
@@ -170,7 +184,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         materializer = WMPViewWindowMaterializer(controller: self, playerWindow: window)
         effectSelectionObserver = NotificationCenter.default.addObserver(
             forName: WMPEffectSelection.didChange, object: nil, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshHostState()
+                self?.captureVisualizationSettings()
+            }
+        }
+        visualizationSettingsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: importer.defaults, queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.captureVisualizationSettings() } }
         configureWindow()
         presentUnskinned(message: nil)
         reloadSelectedSkin()
@@ -179,8 +201,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     required init?(coder: NSCoder) { nil }
 
     deinit {
-        if let effectSelectionObserver {
-            NotificationCenter.default.removeObserver(effectSelectionObserver)
+        for observer in [effectSelectionObserver, visualizationSettingsObserver].compactMap({ $0 }) {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 
@@ -198,7 +220,34 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         window.setAccessibilityLabel("Windows Media Player Main Window")
     }
 
+    /// Files the live effects-slot settings against the skin they were made in. Cheap enough to run
+    /// on every defaults change: it reads ~12 keys and writes only when the record actually moved,
+    /// which is also what stops the write from re-triggering this through `didChangeNotification`.
+    private func captureVisualizationSettings() {
+        guard let skin = visualizationSettingsSkin, !isCapturingVisualizationSettings else { return }
+        isCapturingVisualizationSettings = true
+        defer { isCapturingVisualizationSettings = false }
+        visualizationSettings.capture(skin: skin,
+                                      effect: WMPEffectSelection.shared.current.id,
+                                      preset: WMPEffectSelection.shared.preset)
+    }
+
+    /// Puts the incoming skin's effect, preset and WMP-scoped Cava / vis_classic preferences in
+    /// place before its scene — and therefore its `<EFFECTS>` surface — is built. The outgoing
+    /// skin's pending change is flushed first, because the defaults notification that would have
+    /// captured it may not have been delivered yet.
+    private func restoreVisualizationSettings() {
+        captureVisualizationSettings()
+        let skin = importer.selectedSkinName ?? ""
+        visualizationSettingsSkin = skin
+        isCapturingVisualizationSettings = true
+        let selection = visualizationSettings.restore(skin: skin)
+        isCapturingVisualizationSettings = false
+        WMPEffectSelection.shared.restore(effect: selection.effect, preset: selection.preset)
+    }
+
     func reloadSelectedSkin() {
+        restoreVisualizationSettings()
         loadTask?.cancel()
         stopDispatcher()
         materializer.teardown()

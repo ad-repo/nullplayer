@@ -1239,6 +1239,28 @@ of these was invisible to the harness and visible in the first minute of live QA
   frame in pixels creates the engine at twice the surface it renders into. The readback is verified
   headlessly by `WMPPhase7Tests.testOffscreenEngineReadbackProducesAnImage`, which is the only thing
   in the suite that drives an `NSOpenGLView` outside a window.
+- **The effects slot's settings belong to the skin, not to the session (W157).** A `.wmz`'s
+  `<EFFECTS>` rect is part of its look — Cerulean's 103x75 frame and a full-width panel want
+  different effects — so `WMPVisualizationSettingsStore` files them against the installed skin name
+  (length-prefixed key, as `WMPViewFrameStore` does) and `WMPMainWindowController` restores them at
+  the top of `reloadSelectedSkin()`, before the scene and therefore before the surface is built.
+  **What is in scope is what WMP owns**: the effect and preset, plus the keys already namespaced to
+  the slot — `cava.wmpEffects.*` and `visClassic*.wmpEffects`, both asked of the subsystem that
+  names them (`CavaSettings.preferenceKeys(for:)`, `PreferenceScope.wmpEffects`) so a new key is
+  carried without a change here. ProjectM / Geiss / Tripex cycle and sensitivity are **not**: those
+  keys are shared with the standalone Visualizations window and the `.wal` surface by design, and
+  per-skin copies would rewrite that window's settings on every skin switch.
+  Three things it is built on. **A skin with no record restores the app's defaults** — every scoped
+  key is cleared, and `WMPEffectSelection.restore` falls back to the default effect where `select`
+  would change nothing — or the second skin silently inherits the first one's choices, which is the
+  half that regresses invisibly. **Capture is driven off `UserDefaults.didChangeNotification`**,
+  not off each menu item: the Cava and vis_classic controls in the slot's menu write their own keys
+  and offer no callback. That makes the write conditional — an unchanged record must not be
+  rewritten, or the observer feeds itself. And **a captured change is filed against the skin that
+  was showing when it was made**, held in `visualizationSettingsSkin`, because the defaults
+  notification is delivered on the main queue asynchronously: a change made just before a skin
+  switch would otherwise land in the record of the skin being switched *to*. `restoreVisualizationSettings`
+  flushes the outgoing skin first for the same reason.
 - **PCM arrives on the audio thread and an overlay must not hop to the main actor to take it.**
   `.audioPCMDataUpdated` is posted from inside `AudioEngine.processAudioBuffer`; a
   `MainActor.assumeIsolated` in that observer is a `dispatch_assert_queue` failure and the process

@@ -4,6 +4,12 @@
 
 ### New Features
 
+- **Media Player skins now remember their visual effect settings, per skin.** The effect showing in
+  a `.wmz` skin's own visualization panel — and its preset, along with the Cava and vis_classic
+  settings in that panel's right-click menu — is saved against the skin you set it on. Switch to
+  another skin and it starts fresh rather than inheriting the last one's choices; switch back and
+  everything is as you left it. NullPlayer's own Visualizations window is unaffected either way.
+
 - **Video now plays inside a Media Player skin's own screen.** Nearly every `.wmz` skin draws a
   video panel, and until now nothing was ever shown in it. A film now appears in that panel, scaled
   to the size the skin asked for and letterboxed to keep its shape, and steps aside again when the

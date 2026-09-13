@@ -4965,6 +4965,9 @@ class MenuActions: NSObject {
             do {
                 try await importer.removeSkin(named: name)
                 await MainActor.run {
+                    // The skin's per-skin effects-slot settings go with it; a later re-import
+                    // starts from the app's defaults rather than inheriting a stale record.
+                    WMPVisualizationSettingsStore(defaults: importer.defaults).forget(skin: name)
                     (WindowManager.shared.mainWindowController as? WMPMainWindowController)?.resetToUnskinned()
                 }
             } catch {
