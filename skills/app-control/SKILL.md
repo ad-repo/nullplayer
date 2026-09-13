@@ -225,6 +225,23 @@ cmp -s /tmp/t1.png /tmp/t2.png && echo "IDENTICAL" || echo "DIFFER"
 
 - **`-l <windowid>` captures the window's own content. `-R <rect>` captures whatever is on top**,
   which is routinely your terminal. A conclusion drawn from a `-R` capture is worthless.
+- **On a docked window, `-l` returns the whole docked group**, not the window you named. The
+  image spans the union of every docked member, and its origin is the group's, not the window's
+  — so a coordinate read off that capture is wrong by however far the window sits into the
+  group. **Check both dimensions**: a stack docked vertically has the group's height and the
+  window's width, so a width-only check passes while the capture is still the group and every
+  `y` you read is wrong. Divide each capture dimension by 2 (retina) and compare with the row
+  `winhelper windows` gives for that id; if **either** disagrees, map back through the group
+  origin — the smallest `x` and `y` among the docked rows, which is not necessarily one
+  window's corner:
+
+  ```bash
+  "$WH" windows | awk -F'\t' '$2==0 {if(gx==""||$3<gx)gx=$3; if(gy==""||$4<gy)gy=$4} END{print gx,gy}'
+  # screen point for a capture pixel (px,py):  x = gx + px/2 ,  y = gy + py/2
+  ```
+
+  Measured: main + Playlist docked, `winhelper` reports the Playlist as `344x145`, the capture
+  comes back `688x580` — 344 wide (agrees) and 290 tall (the group).
 - **Mark the log before acting and read from the mark.** The startup log is thousands of lines of
   server chatter; `grep -o "^[^{]*"` strips the JSON bodies.
 - **Take a control.** One capture of a thing that should change proves nothing.
