@@ -172,6 +172,34 @@ struct WMPSkinLoader {
             }
         }
 
+        // **A skin whose `.wms` names no `scriptFile` still has a script, and WMP finds it by
+        // name.** Seven corpus archives — `Colorchooser`, `Charlies_Angels_Full_Throttle`,
+        // `Cubist`, `cyberchannel`, `Kids`, `PowerToys` and `Tomb Raider 2` — ship exactly one
+        // `.js` whose basename is the skin definition's own, declare no `scriptFile` anywhere, and
+        // call into it from their handlers: `Colorchooser`'s `onLoad` is
+        // `… checkForContent();` and its three sliders commit through `changeColor(…)`, both
+        // defined only in `colorChooser.js`. With no program loaded the `onLoad` threw on its first
+        // statement, so the skin came up with none of its state applied and its colour panel inert
+        // — reported on 2026-09-14 as "colorchooser skin looks totally broken".
+        //
+        // Deliberately narrow: only when the skin declares **no** `scriptFile` at all, and only the
+        // companion whose basename matches the `.wms`. A skin that names its scripts has said what
+        // it wants loaded, and loading a stray `.js` beside it would run code WMP never runs.
+        if scripts.isEmpty {
+            let stem = (path as NSString).lastPathComponent
+            let base = (stem as NSString).deletingPathExtension
+            if let companion = archive.entries.first(where: {
+                let name = ($0.path as NSString).lastPathComponent
+                return (name as NSString).pathExtension.caseInsensitiveCompare("js") == .orderedSame
+                    && (name as NSString).deletingPathExtension.caseInsensitiveCompare(base) == .orderedSame
+            }), companion.uncompressedSize <= WMPPhase0Limits.scriptBytes {
+                scripts.append(WMPScriptRegistration(authoredPath: companion.path,
+                    resolvedPath: companion.path, declaringPath: path, status: .available))
+                scriptSources[companion.path] = try WMPTextDecoder.decode(
+                    archive.data(for: companion.path), path: companion.path).string
+            }
+        }
+
         return WMPLoadedSkin(archive: archive, definitionPath: path, definitionSource: decoded.string,
             textEncoding: decoded.encoding,
             document: document, graph: graph, views: views, resources: resources, scripts: scripts,

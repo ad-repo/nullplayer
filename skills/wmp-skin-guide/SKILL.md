@@ -281,6 +281,13 @@ with no mapping children, which dispatches nothing in any case.
   `WMPAttributeParser.color(from:)` for every role so named SDK colours stay consistent (W131).
 - Graph IDs and registry order are deterministic. Duplicate authored IDs are retained and warned,
   not silently collapsed.
+- **A skin that names no `scriptFile` still has a script, and it is found by name.** Seven archives
+  declare none and ship one `.js` whose basename is the skin definition's own; all seven call into it
+  from their handlers, so registering only what `scriptFile` names left each of them throwing on the
+  first statement of its first handler (W163). The fallback is narrowed to **both** conditions — no
+  `scriptFile` anywhere in the skin, and a basename match against the `.wms` — because a skin that
+  names its scripts has said what it wants loaded. See `reference/loading.md` § *The script a skin
+  never names*.
 
 Skin JScript runs in one persistent in-process `JSContext` per skin session, on a WMP-owned serial
 queue, with the object model as the security boundary — see Amendment 2 in
@@ -318,6 +325,46 @@ queue, with the object model as the security boundary — see Amendment 2 in
   resampling a filmstrip whole would bleed each sprite into the one beside it; `sourceRect` is part
   of the cache key for that reason. **Alpha is never sharpened** — the sharpen unpacks to planes and
   skips it — or a keyed silhouette grows a ringing halo.
+
+- **A `<VIEW>` anchors background artwork that is not its declared size; it never stretches to fill
+  (W164).** The image is the window's picture, and where the two disagree the author meant the
+  surplus to be empty — `transparencyColor` keys it out and the window simply is not there.
+  `Colorchooser` declares `width="300" height="200"` over a 246x202 bitmap, and stretched by 1.22 its
+  drawn box landed at x=87…299 while the opaque panel that belongs inside it stayed at the authored
+  77…241. **Scoped to a mismatch the markup states, not one a resize produced**: where the authored
+  size and the artwork agree, a canvas the user or a script grew still stretches the background as
+  before. 17 corpus views declare a literal size alongside a resolvable background image and exactly
+  4 disagree — `Colorchooser`, `Cubist`, `Radio`, `Tomb Raider 2`, each of which authors a band or a
+  plate rather than a full-window picture. `Ice` is what this deliberately does **not** settle: a
+  `<BUTTON>` sized against a background image is the natural-size rule (W122), not the root's art.
+
+- **A colour has three sources and the markup is only one of them (W165).** `mirroredColor` resolves
+  them in WMP's order: the value a handler assigned, then the authored attribute, then one hop
+  through `wmpprop:<element>.<property>` — the named element's own override first, then its markup.
+  One hop, like `mirroredVisibility`, because a mirror of a mirror is authored nowhere in the corpus.
+  `Colorchooser` is the **only archive that binds a colour with `wmpprop:`** and needs all three at
+  once; reading markup alone drew its caption white on a white panel, painted no fill behind its
+  transport, and left its three RGB sliders with nothing to change. **A write the colour parser
+  cannot read is no answer, not black** — `theme.loadPreference` answers WMP's `--` sentinel for an
+  unsaved key and skins assign it without checking, so an unparseable override leaves the authored
+  colour standing. The reach beyond that skin is the mechanism's, not a heuristic's: 8 further corpus
+  images moved, every one a colour the skin's own script had always assigned and nothing painted.
+
+- **A script owns paint order as much as the markup does (W166).** `zIndex` is an ordinary writable
+  property and seven archives animate it — 58 assignments across `Beck`, `Cablemusic`,
+  `Charlies_Angels_Full_Throttle`, `Colorchooser`, `Plus! Professional`, `Spider-man` and
+  `cyberchannel`. Reading only the markup left every one of those swaps drawing in its authored
+  order, and on `Colorchooser` it reached the window itself: `checkForContent()` raises
+  `viz.zIndex` from -5 to 5 to bring the visualizer forward, and with the node still sorted at -5
+  the opaque panel the player sits on counted as artwork *above* a **windowed** surface and was
+  punched out by `windowedEffectsRects` (W144). Below it the view's own artwork keys white to
+  transparent, so the result was a click-through hole through a borderless `isOpaque = false` window
+  for as long as a track played. **W144's rule is unchanged** — what belongs in a windowed rect is
+  still whatever the skin painted before the effects node — and so is `cerulean`'s: the number is
+  still sorted **among a node's own siblings**, never flat across the view. Only where it comes from
+  moved. **No headless probe and no corpus sweep can see this class**: the sweep runs a stopped
+  player, which is the one state in which the skin is correct, and `WMP_RENDER_HOST=playing` seeds
+  the snapshot without raising the `playstatechange` the write lives in.
 
 - **A one-shot GIF that ends on a degenerate `restore to background` frame ends showing nothing,
   and holding its last frame buries whatever it was drawn over (W161).** A `.wmz` opens its shutter

@@ -35,6 +35,30 @@
 
 ### Bug Fixes
 
+- **Media Player skins that keep their script in a file they never name now run it.** Seven skins —
+  Colorchooser, Charlie's Angels Full Throttle, Cubist, cyberchannel, Kids, PowerToys and Tomb
+  Raider 2 — ship their code in a file alongside the skin without pointing at it, the way Windows
+  Media Player expects to find it. None of that code was being loaded, so each one opened with
+  nothing set up: Charlie's Angels showed a bare speaker grille where its whole player should be,
+  and Colorchooser's colour sliders did nothing at all.
+
+- **A Media Player skin whose artwork is smaller than the window it asks for is no longer
+  stretched to fit.** Colorchooser, Cubist, Radio and Tomb Raider 2 all draw a frame that is meant to
+  sit at its own size in a larger window, and stretching it left the frame visibly out of line with
+  everything inside it.
+
+- **Colours a Media Player skin sets while running now appear.** Skins can tie one element's colour
+  to another's, or change a colour from their own code as you use them — a highlight on the source
+  you are playing from, a readout that matches the colour scheme you picked, the panel behind a
+  playlist. None of that was being drawn. Colorchooser is the clearest case: its "choose color..."
+  link was invisible, and its three sliders had nothing to recolour.
+
+- **A Media Player skin's window no longer goes see-through, and click-through, while a track
+  plays.** Skins that bring their visualizer to the front when playback starts were having the panel
+  behind it treated as decoration and removed, leaving a transparent hole through the window that
+  clicks fell straight through to whatever was behind it. Colorchooser was the skin this was reported
+  on; six others move their layers the same way.
+
 - **A Media Player skin's artwork no longer shows through the library browser's background.** When a
   `.wmz` skin lends its own window frame to the library, that frame is drawn around the list instead
   of across it. Skins whose borders are wide decorative artwork rather than thin edges — Scooby Doo's

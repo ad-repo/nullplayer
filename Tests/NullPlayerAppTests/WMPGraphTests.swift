@@ -64,6 +64,52 @@ final class WMPGraphTests: XCTestCase {
         XCTAssertEqual(loaded.diagnostics.map(\.code), [.unsupportedResource, .resourceMissing])
     }
 
+    /// **A skin that names no `scriptFile` still has a script, and WMP finds it by name.** Seven
+    /// corpus archives ship exactly one `.js` whose basename is the skin definition's own, declare
+    /// no `scriptFile` anywhere, and call into it from their handlers — `Colorchooser`,
+    /// `Charlies_Angels_Full_Throttle`, `Cubist`, `cyberchannel`, `Kids`, `PowerToys` and
+    /// `Tomb Raider 2`. With no program loaded their `onLoad` throws on its first call and the skin
+    /// comes up with none of its state applied (W163).
+    @MainActor
+    func testASkinThatNamesNoScriptFileLoadsItsSameNamedCompanion() async throws {
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("colorChooser.wms", data: Data("""
+            <THEME><VIEW id="main" width="100" height="100" onload="checkForContent();"/></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("colorChooser.js", data: Data("function checkForContent(){}".utf8))
+        ], filename: "Colorchooser.wmz")
+        let loaded = try await WMPSkinLoader().load(from: url)
+        XCTAssertEqual(loaded.scripts.map(\.authoredPath), ["colorChooser.js"])
+        XCTAssertEqual(loaded.scripts.map(\.status), [.available])
+        XCTAssertEqual(loaded.scriptSources["colorChooser.js"], "function checkForContent(){}")
+    }
+
+    /// Both halves of the narrowing, because the rule is a fallback and not a sweep of the archive.
+    /// A skin that names its scripts has said what it wants loaded, and a `.js` sitting beside a
+    /// `.wms` under a different name is not something WMP ever runs.
+    @MainActor
+    func testTheCompanionScriptFallbackIsNarrowedToBothOfItsConditions() async throws {
+        let declaring = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data("""
+            <THEME scriptFile="named.js"><VIEW id="main" width="10" height="10"/></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("named.js", data: Data("var a=1".utf8)),
+            WMPTestArchiveEntry("theme.js", data: Data("var b=2".utf8))
+        ])
+        let declared = try await WMPSkinLoader().load(from: declaring)
+        XCTAssertEqual(declared.scripts.map(\.authoredPath), ["named.js"],
+                       "a skin that names its scripts gets exactly those")
+
+        let unrelated = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data("""
+            <THEME><VIEW id="main" width="10" height="10"/></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("helper.js", data: Data("var c=3".utf8))
+        ])
+        let stray = try await WMPSkinLoader().load(from: unrelated)
+        XCTAssertTrue(stray.scripts.isEmpty, "a differently named .js is not the skin's program")
+    }
+
     func testFiftyLoadAndReleaseCyclesProduceTheSameDump() async throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/WMPSkin/widgets.wmz")

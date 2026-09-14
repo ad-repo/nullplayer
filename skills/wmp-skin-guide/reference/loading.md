@@ -220,6 +220,48 @@ Tag names, attribute names and element ids are all case-insensitive; the corpus 
 `caseInsensitiveCompare` for attribute lookup. `authoredTagName` exists only to be displayed or
 counted — never compare against it.
 
+## The script a skin never names
+
+A program is registered from a `scriptFile` attribute — on `<THEME>` or `<VIEW>`, `;`-separated,
+with `res://` entries recorded as `.unsupported` and a missing file fatal. **Seven corpus archives
+declare no `scriptFile` at all and still have a script**: `Colorchooser`,
+`Charlies_Angels_Full_Throttle`, `Cubist`, `cyberchannel`, `Kids`, `PowerToys` and `Tomb Raider 2`.
+Each ships exactly one `.js` whose basename is the skin definition's own, and each calls into it
+from its handlers — so with nothing registered every one of them threw on the first statement of its
+first handler and came up with none of its state applied (W163). `Charlies_Angels_Full_Throttle` is
+the visible case: its `onLoad` builds the face, so without the script it drew a blank speaker grille.
+
+The fallback is narrowed to **both** of its conditions, and both are load-bearing:
+
+- only when the skin declares **no** `scriptFile` anywhere — a skin that names its scripts has said
+  what it wants loaded, and 169 archives do;
+- only the companion whose **basename matches the `.wms`** — a `.js` sitting beside it under another
+  name is not something WMP ever runs.
+
+`WMPPhase0Limits.scriptBytes` still bounds it, and the entry is registered with its archive path as
+both the authored and the resolved path, so `SCRIPTS`/`SCRIPT` name it like any other program.
+
+Enumerate the class before changing the rule:
+
+```bash
+for f in "$HOME/Library/Application Support/NullPlayer/WMPSkins"/*.wmz; do
+  rm -rf /tmp/x; mkdir /tmp/x
+  unzip -oqq "$f" -d /tmp/x 2>/dev/null || continue
+  [ -z "$(find /tmp/x -iname '*.js')" ] && continue
+  if ! find /tmp/x -iname '*.wms' -print0 \
+       | xargs -0 -I{} sh -c 'LC_ALL=C tr -d "\000" < "{}" | LC_ALL=C grep -iq scriptfile' 2>/dev/null; then
+    echo "ORPHAN $(basename "$f")"
+  fi
+done
+```
+
+**Both halves of `LC_ALL=C tr -d "\000"` are load-bearing, and getting either wrong fails silently.**
+Stripping NULs is what lets `grep` see a UTF-16 definition at all — a bare `grep -a` misses every one
+of them and reports skins that *do* declare a `scriptFile` as orphans. And under the default UTF-8
+locale `tr` aborts with `Illegal byte sequence` on the Windows-1252 definitions, emitting nothing, so
+`grep` matches nothing and the same skins come back as false positives. Verified 2026-09-14: the form
+above prints exactly the seven named here.
+
 ## What loading does not prove
 
 All 14 archives load. Two of them (`claw`, `iconic`) still produce **zero** layouts, and nine views

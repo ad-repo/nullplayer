@@ -18,6 +18,27 @@ same change that closes them, so this file stays a list of work that is still op
 
 ### Top of the backlog
 
+**W163–W166 closed 2026-09-14, from one report — *"colorchooser skin looks totaly broken from the
+UI I do nto have a refrence image"*, plus a second observation in the same session, *"the window has
+no backing when a track plays and it clicks through to the background"*.** Four unrelated engine
+rules, none of them about that skin. **W163**: a program was registered only from a `scriptFile`
+attribute, and **7 archives declare none** while shipping a same-named `.js` they call into — all
+seven threw on their first handler. **W164**: a `<VIEW>` stretched background artwork to its declared
+canvas; **4 of the 17 views that declare both** author a size the artwork does not have, and
+stretching puts the frame out of register with its own contents. **W165**: a colour was read from the
+markup and nowhere else, so neither a `wmpprop:` mirror nor a script assignment painted — the reach
+was 8 further corpus images, every one a colour a skin's own script had always set. **W166**: a
+script-assigned `zIndex` was ignored, which on `Colorchooser` left the opaque panel the player sits
+on classified as artwork *above* a **windowed** visualizer; `windowedEffectsRects` punched it out and
+the window had a 164x130 click-through hole for as long as a track played.
+
+**W166 is the row to read for process.** No headless probe and no corpus sweep can see it: the sweep
+runs a stopped player, which is the one state in which that skin is correct, and
+`WMP_RENDER_HOST=playing` seeds the snapshot without raising the `playstatechange` the write lives
+in. `reference/harness.md` § *A sweep runs a stopped player* is the general form. Closure notes in
+[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md); dossier in
+[`reference/skins/colorchooser.md`](skills/wmp-skin-guide/reference/skins/colorchooser.md).
+
 **W161 and W162 closed 2026-09-14, from one report — *"the 2 windows_xp skins the eq does not
 work"*.** Neither was an equaliser defect. **W161**: a finished one-shot GIF held its last frame, so
 `Windows_XP_Media_Center_Edition`'s opening shutter — an opaque plate — stayed over the display and

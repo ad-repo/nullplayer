@@ -66,6 +66,20 @@ beside the correct 376. The mix, for calibration: 153 UTF-16-with-BOM, 143 cp125
 UTF-8-with-BOM. **A scan of script text that did not print its own encoding breakdown has not earned
 its number.**
 
+**Three counts landed with W163–W166 came from scans of that shape**, and each states its own
+denominator because none of them is a tag the census can match:
+
+| Count | What it enumerates |
+|---|---|
+| **7 archives, 0 `scriptFile`** | archives shipping a `.js` that no `scriptFile` names — the shell form, and the two ways it fails silently (`LC_ALL=C`, and stripping NULs), are in `reference/loading.md` § *The script a skin never names* |
+| **1 archive, 3 attributes** | `wmpprop:` bound to a colour, matching `([A-Za-z]+[Cc]olor)\s*=\s*"\s*wmpprop:` over every `.wms` — `Colorchooser` and nothing else |
+| **17 views, 4 mismatched** | views declaring a literal `width`/`height` **and** a resolvable background image, with the BMP/PNG header read for its real size — the 4 are `Colorchooser`, `Cubist`, `Radio`, `Tomb Raider 2` |
+| **7 archives, 58 assignments** | `\.\s*zIndex\s*=` over `.wms` **and** `.js` together, because the write is as often in an inline handler as in a program |
+
+The last is the one to copy the shape of: a property a skin writes from script is not findable by
+scanning markup alone, and scanning only `.js` would have missed `Colorchooser`, whose whole
+`openstatechange` handler is inline.
+
 **Views are the one thing the census does not count**, so the per-view numbers in `SKILL.md`
 § *Ask what the skin provides* (595 views across 179 archives; which surface lives in which view;
 `openView` targets by name) came from splitting each `.wms` on `<VIEW` with that decoder. Re-derive
@@ -429,6 +443,24 @@ never the sum across frames — see the `sample` aggregation rule.
 Whenever a change makes work happen on **more** commands, more nodes or more often, the sweep's
 green is about correctness only. Time a repeated render of one heavy view before believing it is
 free: twenty renders after a warm pass took 173.1 ms each before the cache and 0.3 ms after.
+
+### A sweep runs a stopped player, and a skin can be correct only while stopped
+
+W166 is the worked example and it is the sharpest form of the rule above. `Colorchooser`'s
+`checkForContent()` reorders its scene from `playstatechange`, so the defect — an opaque panel
+reclassified as artwork over a windowed visualizer, and punched out of a non-opaque window as a
+click-through hole — exists **only while a track is playing**. The corpus sweep draws every one of
+its 535 images against the default stopped host, which is the one state in which that skin is right.
+A clean sweep said nothing at all about it, and would have said the same after the fix.
+
+**`WMP_RENDER_HOST=playing` is not the escape hatch it looks like.** It seeds the snapshot, so every
+readout bound to a transport path answers as if a track were open — but it does not raise the
+skin's `playstatechange`, and that is where the write lives. The headless capture rendered the panel
+correctly while the running window did not, and the gap between those two is what named the cause.
+
+So: **a defect the reporter describes with a verb — *when a track plays*, *after I click*, *once it
+opens* — is a live measurement**, and the sweep's role is only to say that nothing else moved.
+`NULLPLAYER_PLAY` plus `screencapture` of the window is the instrument; see § *Driving the app*.
 
 ### A named skin outranks a corpus sweep
 

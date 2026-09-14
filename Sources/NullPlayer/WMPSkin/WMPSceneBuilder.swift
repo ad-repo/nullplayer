@@ -95,6 +95,31 @@ struct WMPSceneBuilder: @unchecked Sendable {
         // The builder still invents no geometry; the honest size of empty content is empty.
         let width = authoredWidth ?? 0
         let height = authoredHeight ?? 0
+        // **A `<VIEW>` that states a size its own background artwork does not have anchors that
+        // artwork at the origin; it does not stretch to fill.** The image is the window's picture,
+        // and where the two disagree the author meant the surplus to be empty — WMP keys the view's
+        // `transparencyColor` out of it and the window simply is not there. `Colorchooser` declares
+        // `width="300" height="200"` over a 246x202 `colorBack.bmp`: stretched to the canvas its
+        // drawn box landed at x=87…299 while `mainBackground`, the white panel that belongs inside
+        // it, stayed at the authored 77…241 — the frame and its contents visibly out of register,
+        // which is most of what "totally broken" was. `Cubist` (508x189 art in a 508x350 view) and
+        // `Radio` (265x128 in 265x167) author a top band and are the same shape vertically;
+        // `Tomb Raider 2` is both axes at once.
+        //
+        // Scoped to a mismatch the **markup** states, not one a resize produced: 17 corpus views
+        // declare literal `width`/`height` alongside a resolvable background image and exactly
+        // those 4 disagree with it. Where the authored size and the artwork agree, a canvas the
+        // user or a script grew still stretches the background exactly as before.
+        var rootBackgroundSize: WMPSize?
+        if authoredWidth != nil, authoredHeight != nil,
+           let (_, backgroundPath) = try resolveResource(view, names: ["backgroundImage", "background"],
+                                                         overrides: overrides,
+                                                         warn: { diagnostics.append($0) }),
+           let intrinsic = try? imageStore.image(for: backgroundPath).size,
+           intrinsic.width > 0, intrinsic.height > 0,
+           intrinsic.width != width || intrinsic.height != height {
+            rootBackgroundSize = intrinsic
+        }
         // **The size a script assigned the view is the window's; the size the markup authored stays
         // the baseline every child's alignment delta is measured against.** They are two different
         // questions and reading one value for both broke each in turn. A `.wmz` compact mode is a
@@ -203,6 +228,81 @@ struct WMPSceneBuilder: @unchecked Sendable {
             guard let mirrored = target.attribute(named: property) else { return nil }
             guard case let .literal(value) = mirrored.value else { return nil }
             return value.caseInsensitiveCompare("false") != .orderedSame && !value.isEmpty
+        }
+
+        /// The colour a node draws with, which is not always the one its markup states.
+        ///
+        /// Three sources, in the order WMP answers them: a value the script assigned the property,
+        /// the authored attribute, and — for `<attr>="wmpprop:<element>.<property>"` — the value
+        /// that other element currently holds. `Colorchooser` needs all three at once and is the
+        /// only archive in the corpus that binds a colour this way: its caption takes
+        /// `foregroundColor="wmpprop:style.foregroundColor"` from an invisible `<TEXT id="style">`
+        /// held purely as a palette, its transport strip takes
+        /// `backgroundColor="wmpprop:mainBackground.backgroundColor"`, and its three RGB sliders
+        /// drive `mainBackground.backgroundColor` from script. Reading markup alone drew the
+        /// caption in the unset-colour white on a white panel — invisible — painted no fill at all
+        /// behind the transport, and left the sliders with nothing to change.
+        ///
+        /// One hop, like `mirroredVisibility`, and for the same reason: a mirror of a mirror is not
+        /// authored anywhere in the corpus.
+        func mirroredColor(of node: WMPNode, names: [String]) -> WMPColor? {
+            for name in names {
+                if let override = overrides.properties[
+                        WMPScenePropertyAddress(stableID: node.stableID, property: name.lowercased())],
+                   let text = override.string,
+                   let parsed = WMPAttributeParser.color(from: text) {
+                    return parsed
+                }
+                guard let attribute = node.attribute(named: name) else { continue }
+                if case let .color(value) = attribute.value { return value }
+                if case let .binding(kind, path) = attribute.value, kind == .property {
+                    let parts = path.split(separator: ".", maxSplits: 1)
+                    guard parts.count == 2,
+                          let target = idToNode[String(parts[0]).lowercased()] else { continue }
+                    let property = String(parts[1])
+                    if let override = overrides.properties[
+                            WMPScenePropertyAddress(stableID: target.stableID,
+                                                    property: property.lowercased())],
+                       let text = override.string,
+                       let parsed = WMPAttributeParser.color(from: text) {
+                        return parsed
+                    }
+                    if let mirrored = target.attribute(named: property) {
+                        if case let .color(value) = mirrored.value { return value }
+                        if let parsed = WMPAttributeParser.color(from: mirrored.rawValue) { return parsed }
+                    }
+                    continue
+                }
+                if let parsed = WMPAttributeParser.color(from: attribute.rawValue) { return parsed }
+            }
+            return nil
+        }
+
+        /// A node's paint order, which the **script** owns as much as the markup does.
+        ///
+        /// `zIndex` is an ordinary writable property and seven archives animate it — 58 assignments
+        /// across `Beck`, `Cablemusic`, `Charlies_Angels_Full_Throttle`, `Colorchooser`,
+        /// `Plus! Professional`, `Spider-man` and `cyberchannel`. Reading only the markup left every
+        /// one of those swaps drawing in its authored order, and on `Colorchooser` that reached the
+        /// window itself: its `checkForContent()` raises `viz.zIndex` from -5 to 5 to bring the
+        /// visualizer out in front, and with the node still sorted at -5 everything the skin painted
+        /// after it — including `mainBackground`, the opaque white panel the whole player sits on —
+        /// counted as artwork *above* the surface and was punched out by `windowedEffectsRects`.
+        /// The result was a transparent, click-through hole through a non-opaque window wherever the
+        /// visualizer was, for as long as a track played. Reported on 2026-09-14 as "the window has
+        /// no backing when a track plays and it clicks through to the background".
+        func zIndex(of node: WMPNode) -> Int {
+            if let override = overrides.properties[
+                    WMPScenePropertyAddress(stableID: node.stableID, property: "zindex")],
+               let number = override.number, number.isFinite {
+                return Int(number)
+            }
+            return Int(literal(node, "zIndex") ?? 0)
+        }
+
+        func paintOrder(_ lhs: WMPNode, _ rhs: WMPNode) -> Bool {
+            let leftZ = zIndex(of: lhs), rightZ = zIndex(of: rhs)
+            return leftZ == rightZ ? lhs.stableID < rhs.stableID : leftZ < rightZ
         }
 
         func recordUnresolved(_ node: WMPNode, attribute: String, value: String) {
@@ -331,7 +431,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 return
             }
             if isNonLayout(node) {
-                for child in node.children.sorted(by: nodeOrder) {
+                for child in node.children.sorted(by: paintOrder) {
                     try walk(child, parentFrame: parentFrame, parentAuthoredSize: parentAuthoredSize,
                              inheritedClip: inheritedClip, parentAlpha: parentAlpha,
                              parentNode: parentNode, parentNodeFrame: parentNodeFrame)
@@ -410,7 +510,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     let partial = WMPRect(x: parentFrame.x + left, y: parentFrame.y + top,
                         width: width ?? 0, height: height ?? 0)
                     let partialAuthored = WMPSize(width: width ?? 0, height: height ?? 0)
-                    for child in node.children.sorted(by: nodeOrder) {
+                    for child in node.children.sorted(by: paintOrder) {
                         try walk(child, parentFrame: partial, parentAuthoredSize: partialAuthored,
                                  inheritedClip: inheritedClip, parentAlpha: parentAlpha,
                                  parentNode: node, parentNodeFrame: partial)
@@ -531,7 +631,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             geometries[node.stableID] = WMPResolvedGeometry(localFrame: local,
                 absoluteFrame: frame, visibleFrame: visible, clipRect: inheritedClip)
             resolvedNodes.insert(node.stableID)
-            let z = Int(literal(node, "zIndex") ?? 0)
+            let z = zIndex(of: node)
             let alpha = inheritedAlpha(node, parentAlpha)
             let slider = isSlider(node.kind) ? sliderMetrics(node) : nil
             let positionMap = try node.kind == .customSlider
@@ -597,9 +697,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // keyed out of it, over `<effects zIndex="-1">` and `<button id="bEye" zIndex="-2">` —
             // and 32 `<EFFECTS>` across 30 skins use the same mechanism. Siblings are already
             // sorted by zIndex, so the eye still lands under the visualizer.
-            let orderedChildren = node.children.sorted(by: nodeOrder)
+            let orderedChildren = node.children.sorted(by: paintOrder)
             let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
-            let behindOwnArtwork = orderedChildren.prefix { Int(literal($0, "zIndex") ?? 0) < 0 }
+            let behindOwnArtwork = orderedChildren.prefix { zIndex(of: $0) < 0 }
             for child in behindOwnArtwork {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip, parentAlpha: alpha,
@@ -634,13 +734,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
             let backgroundNames = visualState == .hover && isText(node.kind)
                 ? ["hoverBackgroundColor", "backgroundColor"]
                 : ["backgroundColor"]
-            if let background = color(node, names: backgroundNames), !frame.isEmpty, !isCeruleanFace {
+            if let background = mirroredColor(of: node, names: backgroundNames), !frame.isEmpty, !isCeruleanFace {
                 emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .fill(background), alpha: alpha))
             }
             if let path = backgroundPath, !frame.isEmpty {
-                emit(imageCommand(node: node, path: path, frame: frame,
+                let backgroundFrame = isRoot ? (rootBackgroundSize.map {
+                    WMPRect(x: frame.x, y: frame.y, width: $0.width, height: $0.height)
+                } ?? frame) : frame
+                emit(imageCommand(node: node, path: path, frame: backgroundFrame,
                     clip: inheritedClip, z: z, background: true, alpha: alpha,
                     clippingPath: clippingPath))
             }
@@ -859,7 +962,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     bold: style.contains("bold"), italic: style.contains("italic"),
                     underline: style.contains("underline"),
                     smoothed: literalString(node, "fontSmoothing")?.caseInsensitiveCompare("false") != .orderedSame,
-                    color: color(node, names: textColorNames)
+                    color: mirroredColor(of: node, names: textColorNames)
                         ?? WMPColor(red: 255, green: 255, blue: 255), alignment: alignment,
                     scrolling: literalString(node, "scrolling")?.caseInsensitiveCompare("true")
                         == .orderedSame,
@@ -1347,11 +1450,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
     /// takes its real top end from the implicit `max` binding on the track's duration.
     private static func defaultRange(for kind: WMPElementKind) -> (minimum: Double, maximum: Double) {
         kind == .balanceSlider ? (-100, 100) : (0, 100)
-    }
-
-    private func nodeOrder(_ lhs: WMPNode, _ rhs: WMPNode) -> Bool {
-        let leftZ = Int(literal(lhs, "zIndex") ?? 0), rightZ = Int(literal(rhs, "zIndex") ?? 0)
-        return leftZ == rightZ ? lhs.stableID < rhs.stableID : leftZ < rightZ
     }
 
 }

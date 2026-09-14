@@ -1365,3 +1365,130 @@ side: `9SeriesDefault`, `corona` (two views each), `Alpine7618_v09`, `Asimov_Rad
 Live: `Windows_XP_Media_Center_Edition` reads `Playing` and flips to `Paused` on the transport, and
 `corona`'s green line now rotates `Playing → NullPlayer 20-minute sweep`, which is what WMP 9's own
 skin does — `player.status` is literally the first entry in its rotating `MetaDataObject` list.
+
+## W163 — a skin that names no `scriptFile` had no script at all
+
+**Closed 2026-09-14.** Opened by *"colorchooser skin looks totaly broken from the UI"*.
+
+`WMPSkinLoader` registered a program only from a `scriptFile` attribute. **Seven corpus archives
+declare none** and ship exactly one `.js` whose basename is the skin definition's own:
+`Colorchooser`, `Charlies_Angels_Full_Throttle`, `Cubist`, `cyberchannel`, `Kids`, `PowerToys` and
+`Tomb Raider 2`. All seven call into that file from their handlers — `Colorchooser`'s `onLoad` ends
+in `checkForContent();` and its three RGB sliders commit through `changeColor(…)`, both defined only
+in `colorChooser.js` — so each one threw on the first statement of its first handler and came up
+with none of its state applied.
+
+The fallback is deliberately narrowed to **both** of its conditions: only when the skin declares no
+`scriptFile` anywhere, and only the companion whose basename matches the `.wms`. A skin that names
+its scripts has said what it wants loaded, and a stray `.js` beside a `.wms` is not something WMP
+ever runs. `WMPPhase0Limits.scriptBytes` still bounds it.
+
+**Verification.** `SCRIPTS programs=0 → programs=1` on exactly those seven archives and no others,
+diffed across the whole corpus sweep. The visible one is `Charlies_Angels_Full_Throttle`, which went
+from a blank speaker grille to its full player — transport, `EQ`/`PL`/`WEBLINKS`/`PREVIEW`/
+`VISUALISER`/`GALLERY` buttons and a readout — because its `onLoad` builds the face. Pinned by
+`WMPGraphTests.testASkinThatNamesNoScriptFileLoadsItsSameNamedCompanion` and
+`…testTheCompanionScriptFallbackIsNarrowedToBothOfItsConditions`.
+
+The command that enumerates the class, and the two ways it fails silently, are in
+`skills/wmp-skin-guide/reference/loading.md` § *The script a skin never names*.
+
+## W164 — a `<VIEW>` stretched background artwork to a size the artwork does not have
+
+**Closed 2026-09-14.** Part of the same report.
+
+`Colorchooser` declares `width="300" height="200"` over a 246x202 `colorBack.bmp`, and the root's
+background was drawn into the whole canvas. Stretched by 1.22 its drawn box landed at x=87…299 while
+`mainBackground` — the opaque white panel that belongs *inside* that box — stayed at the authored
+77…241. The frame and its contents were visibly out of register, which is most of what "totally
+broken" was. Root background artwork is now anchored at the origin at its own size.
+
+**Scoped to a mismatch the markup states, not one a resize produced.** Where the authored size and
+the artwork agree, a canvas the user or a script grew still stretches the background exactly as
+before. **17 corpus views declare a literal `width`/`height` alongside a resolvable background
+image and exactly 4 disagree with it**: `Colorchooser`, `Cubist` (508x189 art in a 508x350 view),
+`Radio` (265x128 in 265x167) and `Tomb Raider 2` (343x351 in 543x551). The last three all author a
+band or a plate rather than a full-window picture, so stretching was wrong on every one.
+
+`Ice` is the counter-evidence this does **not** settle and was not asked to: its `videoView` is
+about a `<BUTTON>` sized against a background image, which is the natural-size rule (W122), not the
+root's own artwork.
+
+**Verification.** Corpus sweep moved exactly those four images. Pinned by
+`WMPPaintOrderAndColorTests.testAViewDrawsBackgroundArtworkAtItsOwnSizeWhenTheMarkupDisagrees` and
+its mirror, `…testAViewWhoseArtworkMatchesItsAuthoredSizeStillStretchesWithTheCanvas`.
+
+## W165 — a colour was read from the markup and nowhere else
+
+**Closed 2026-09-14.** Part of the same report.
+
+`WMPSceneBuilder.color` consulted only the authored attribute, so two of the three places a WMP
+colour comes from answered nothing: a `wmpprop:<element>.<property>` mirror, and a value the script
+assigned. `mirroredColor` now resolves all three in WMP's order — the script's write, the authored
+attribute, then one hop through the named element (its own override first, then its markup). One
+hop, like `mirroredVisibility`, and for the same reason: a mirror of a mirror is authored nowhere in
+the corpus.
+
+`Colorchooser` needs all three at once and is the **only archive in the corpus that binds a colour
+with `wmpprop:`** — three attributes, measured over the installed corpus. Its caption takes
+`foregroundColor="wmpprop:style.foregroundColor"` from an invisible `<TEXT id="style">` held purely
+as a palette, so it was drawn in the unset-colour white on a white panel and the one affordance the
+skin has was invisible; its transport strip takes `backgroundColor="wmpprop:mainBackground.background
+Color"` and painted no fill at all; and its three sliders drive `mainBackground.backgroundColor`
+from script, which nothing repainted.
+
+**A write the colour parser cannot read is no answer, not black.** `theme.loadPreference` returns
+WMP's `--` sentinel for a key that was never saved and skins assign it without checking, so an
+unparseable override leaves the authored colour standing.
+
+**Verification.** This is the half of the change with reach beyond the report, and it is the reach of
+the mechanism rather than of a heuristic: the corpus sweep moved **8 further images, every one a
+colour the skin's own script had always assigned and nothing painted** — `amped2`'s time readout to
+its scheme colour `#d1d9e3`, `Thomas`'s and `holiday_skin`'s active-source label lighting up,
+`Batman Begins`'s EQ bars, `springflower`'s readouts, `Plus! Professional`'s video backdrop, and
+script-set playlist backdrops on `Halo 2`, `Rave-MP`, `LostPlanet`, `WoW` and `STALKER`. Every one
+was checked by cropping its diff bbox. **No `RENDER-DUMP` count went down anywhere in the corpus**;
+the plView rows gain one command each, which is the fill that was missing. Pinned by three tests in
+`WMPPaintOrderAndColorTests`.
+
+## W166 — a script-assigned `zIndex` was ignored, and on a windowed visualizer that punched a hole through the window
+
+**Closed 2026-09-14.** Reported live, separately from the rest of the same session, as *"the window
+has no backing when a track plays and it clicks through to the background"*.
+
+`WMPSceneBuilder.nodeOrder` read `zIndex` from the markup only, so a handler that reorders the scene
+reordered nothing. **Seven archives assign it from script — 58 assignments** across `Beck`,
+`Cablemusic`, `Charlies_Angels_Full_Throttle`, `Colorchooser`, `Plus! Professional`, `Spider-man`
+and `cyberchannel`.
+
+On `Colorchooser` it reached the window itself. Its `checkForContent()` raises `viz.zIndex` from -5
+to 5 to bring the visualizer out in front of the player body. With the node still sorted at its
+authored -5, everything the skin painted after it — including `mainBackground`, the opaque white
+panel the whole player sits on — counted as artwork *above* the surface, and `windowedEffectsRects`
+punched it out of the overlay (W144). The view's own artwork keys white to transparent, so below the
+surface there was nothing: a transparent, click-through region 164x130 through a borderless
+`isOpaque = false` window, for as long as a track played. Stopped, the skin was correct.
+
+**W144's rule is unchanged and `xsn_sports` is untouched** — what belongs in a windowed rect is
+still whatever the skin painted *before* the effects node, and that skin paints `visMask`'s own
+black there. The defect was never the punch; it was that the node the punch is measured from was in
+the wrong place in the list.
+
+`cerulean` is the counter-evidence to check beside this: `zIndex` is ordered **among siblings**, not
+flat across the view, and that is unchanged — `paintOrder` still sorts a node's own children and
+`behindOwnArtwork` still splits them at zero. Only where the number comes from moved.
+
+**Verification.** Corpus sweep moved exactly one image, `Charlies_Angels_Full_Throttle`, which is one
+of the seven; the other six swap `zIndex` on play state and the sweep runs stopped. Live:
+`NULLPLAYER_PLAY` with `Colorchooser`, `screencapture` of the window before and after — the
+visualizer drawn over an opaque white panel instead of over the desktop. Pinned by
+`WMPPaintOrderAndColorTests.testAScriptAssignedZIndexReordersTheSceneAndKeepsTheWindowBacked`, which
+asserts on the **split index** because that is the fact the punch is derived from, and by
+`…testAScriptAssignedZIndexReordersOrdinarySiblings` so the rule is not read as an `<EFFECTS>`
+special case.
+
+**No headless probe saw this class**, and the reason is worth keeping: the sweep runs a stopped
+player, and stopped is the one state in which this skin is correct. `WMP_RENDER_HOST=playing` is not
+enough on its own either — it seeds the snapshot but the `zIndex` write arrives from
+`playstatechange`, so the headless capture rendered the panel and the live window did not. The
+instrument that settled it was `screencapture` of the running window with a track playing.
