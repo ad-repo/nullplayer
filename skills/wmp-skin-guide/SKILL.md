@@ -1542,6 +1542,60 @@ of these was invisible to the harness and visible in the first minute of live QA
   author a non-empty one and every one of them declares a `clippingColor` beside it, which is what
   the mask keys out. Before it, `TDK`, `elvis`, `Secura`, `portals` and the six `US *` service skins
   all drew a black or grey rectangle behind their round artwork.
+  - **`clippingColor` keys the *clipping image*, never the node's own artwork (W169).** The two keys
+    were read as one list, which is harmless while they name the same colour and destructive when
+    they do not — and it is the largest single defect this engine has had by reach. A JPEG keys with
+    `WMPColorKey.jpegComponentTolerance`, so on the skins writing `clippingColor="white"` every tone
+    within 64 components of white was deleted from the picture: **`Plus! Plasma Ball`'s
+    `eq_panel_normal.jpg` 85.7% of its pixels, `Plus! HueShifter`'s `hueshifter_top.bmp` 76%,
+    `Plus! SlimLine`'s `perfect_body_normal.jpg` 47.5%, `TDK`'s `info_bg.jpg` 52.1%, `elvis`'s
+    `elvis_tray.jpg` 39%, and `Plus! Hard Boiled`'s `Egg_Body_Normal.jpg` 27%.** Reported as *"you
+    made the high res graphics low res"* and then *"fix the other skins that were addressed with plus
+    egg commit"*, and **W160 had already chased the same pixels as a resampling defect** — a quarter
+    of the egg was not being upscaled badly, it was being erased. A node with no `clippingImage`
+    keeps the old reading, because there `clippingColor` is the only thing shaping it. Measure the
+    class by keying each node's artwork against its own declared clipping colour at the format's
+    tolerance and reporting the share hit; 13 of 535 corpus views move and every one is a gain.
+  - **`clippingColor="auto"` is a colour, not an absence (W167).** Four declarations across three
+    archives — `Plus! Plasma Ball` twice, `Compact` and `digitaldj` once each — and the parser
+    rejecting the word is not the same thing as the author declaring no key. `Plus! Plasma Ball`'s
+    `mainButtons` states `clippingImage="screen_MASK.gif" clippingColor="auto"` over a mask with
+    **zero** transparent pixels, so an unresolved key cut nothing and the whole 242x299
+    `screen_normal.jpg` drew opaque over the plasma globe — reported as *"a gray box background"*.
+    WMP takes it from the bitmap the declaration governs and the corner is where all four authors
+    put it: `screen_MASK.gif` and `playlist_vid_panel_MASK.gif` are white at 0,0, the same
+    `clippingColor="white"` their four sibling layers in the same file state by hand, and
+    `digitaldj/preview.bmp` is `#FF0000` there over 10% of the file. `clippingColor` reads the
+    clipping image, every other key the node's own artwork; `WMPImageStore.cornerColor` is nil for a
+    corner that is already transparent, because a file that authored its own alpha has said what is
+    see-through and there is no matte to infer.
+- **A clipping shape shapes the element's *contents*, not only the element (W168).** A `<SUBVIEW>`
+  or `<VIEW>` in WMP is a window region and its children are inside it, so every paint command in
+  the subtree carries its ancestors' shapes (`WMPSceneClipMask`, applied against the *container's*
+  frame rather than the command's). `Combat_Flight_Simulator_3` hangs its whole 584x321 body off
+  `<subview id="mainBody" backgroundImage="main_bg_mask.png" clippingColor="#ffffff">` and draws
+  `main_bg.jpg` inside it as a child that declares **no key of its own** — so the flat `#88A4B9`
+  matte filling 67% of that JPEG had nothing to cut it away and the window was a rectangular slab.
+  `Melvin` is the same rule seen the other way: its two eye sockets are `clip.gif` subviews, and
+  before the shape reached their children a head-coloured sibling covered both eyes.
+  - **Only `clippingColor` shapes, never `transparencyColor`, and Cerulean is why.** `face.bmp` keys
+    `#FF0000` as the window matte *and* `#FF00FF` as a hole its `zIndex="-1"` visualizer and
+    `zIndex="-2"` eye show through. Keying the hole into the shape as well clips those two away,
+    which is the W147 inversion arriving by a second route.
+  - **A `backgroundImage` is a shape only when it is untiled, authored at the node's own size, and
+    two-toned.** 84 `<SUBVIEW>`s across 38 archives and 26 `<VIEW>`s across 17 declare a
+    `clippingColor` with no `clippingImage`, and they are two authoring idioms the attribute cannot
+    tell apart. *A mask*: `main_bg_mask.png` is 584x321 in three colours — 71% white, 29% black, one
+    stray pixel. *Artwork with a keyed hole*: `YIL!OMA2K`'s `yMain Body.bmp` is 530x440 in **34,688**
+    colours with a 246x179 rectangle of `#6699FF` cut out for the video and a `<subview zIndex="-2">`
+    of solid black parked behind the body to show through it — shaping children by that clips the
+    backdrop away and leaves the display empty. `WMPImageStore.isShapeMask` asks the question as a
+    *share* rather than a colour count, because a mask's own edges are antialiased:
+    `main_vismask.png` is 10 colours at 100.0% in its top two. The size and tiling test is
+    `Gorillaz`: its `noodle` view is 781x467 over a `background.gif` that is a 50x28 swatch of solid
+    `#33CC66` with `backgroundTiled="true"`, and its `clippingColor="#33CC66"` says *my ground is
+    invisible*, not *my window is empty* — reading the tile as a shape erased the whole skin, all
+    143,248 px of it, and it was the only total loss this rule produced anywhere in the corpus.
 - **A mask buffer's row zero is the authored top row.** A `CGImage` drawn into a bitmap context
   arrives that way round — `WMPMappingImage` says so in as many words — so "correcting for
   CoreGraphics" by reversing the rows mirrors the mask and clips the half it should keep. That is

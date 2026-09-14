@@ -142,6 +142,9 @@ final class WMPImageStore: @unchecked Sendable {
     private var clipEntries: [String: ClipEntry] = [:]
     private var clipBytes = 0
     private var regionShapeEntries: [String: Bool] = [:]
+    private var shapeMaskEntries: [String: Bool] = [:]
+    /// One `WMPColor?` per bitmap for `cornerColor`; smaller than a decoded frame, so never evicted.
+    private var cornerColorEntries: [String: WMPColor?] = [:]
     /// `filmstripIsDescending` answers, keyed by path, frame count and axis. One bool each:
     /// no eviction, because the whole map is smaller than one decoded frame.
     private var descendingStripEntries: [String: Bool] = [:]
@@ -225,6 +228,8 @@ final class WMPImageStore: @unchecked Sendable {
         positionBytes = 0
         clipEntries.removeAll(keepingCapacity: false)
         regionShapeEntries.removeAll(keepingCapacity: false)
+        shapeMaskEntries.removeAll(keepingCapacity: false)
+        cornerColorEntries.removeAll(keepingCapacity: false)
         descendingStripEntries.removeAll(keepingCapacity: false)
         clipBytes = 0
         animationEntries.removeAll(keepingCapacity: false)
@@ -755,6 +760,56 @@ final class WMPImageStore: @unchecked Sendable {
     /// 58% transparent and 5% paint (it ships in two archives, so 2 of 30 rows). Nothing else in
     /// the corpus, Plus! or otherwise, mixes the two. So the predicate is *has transparent pixels
     /// alongside keyed ones*, not a threshold and not a skin name.
+    /// The colour a `clippingColor="auto"` / `transparencyColor="auto"` declaration means.
+    ///
+    /// **`auto` cannot mean "no key".** Four declarations across three archives write it —
+    /// `Plus! Plasma Ball` twice, `Compact` and `digitaldj` once each — and rejecting the value is
+    /// what W167 was: `Plasma Ball`'s `mainButtons` carries `clippingImage="screen_MASK.gif"`
+    /// beside it, that mask is 242x299 with **zero** transparent pixels, so an unresolved key left
+    /// the whole 242x299 `screen_normal.jpg` opaque over the player and the window showed as a flat
+    /// `#9FA8AD` box. WMP derives the key from the bitmap the declaration governs, and its corner
+    /// is where every one of the four authors put it: `screen_MASK.gif` and
+    /// `playlist_vid_panel_MASK.gif` are white at 0,0 — the same `clippingColor="white"` their four
+    /// sibling layers in the same file state by hand — and `digitaldj/preview.bmp` is `#FF0000`
+    /// there, a matte colour covering 10% of the file.
+    func cornerColor(for path: String) throws -> WMPColor? {
+        let canonical = provider.canonicalPath(for: path) ?? path
+        lock.lock()
+        if let cached = cornerColorEntries[canonical] { lock.unlock(); return cached }
+        lock.unlock()
+        let answer = Self.topLeftColor(of: try image(for: canonical).image)
+        lock.lock()
+        cornerColorEntries[canonical] = answer
+        lock.unlock()
+        return answer
+    }
+
+    /// Un-premultiplied, and nil for a corner that is already transparent — a bitmap that authored
+    /// its own alpha has said what is see-through and there is no matte colour to infer.
+    private static func topLeftColor(of image: CGImage) -> WMPColor? {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        pixel.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: 1, height: 1,
+                bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            // Draw the whole bitmap into a 1x1 window on its own top-left pixel: the CTM is
+            // y-flipped relative to the bitmap's row zero, so the origin offset carries the height.
+            context.translateBy(x: 0, y: 1 - CGFloat(image.height))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        let alpha = pixel[3]
+        guard alpha > 0 else { return nil }
+        return WMPColor(red: unpremultiply(pixel[0], alpha: alpha),
+                        green: unpremultiply(pixel[1], alpha: alpha),
+                        blue: unpremultiply(pixel[2], alpha: alpha))
+    }
+
+    private static func unpremultiply(_ value: UInt8, alpha: UInt8) -> UInt8 {
+        guard alpha < 255, alpha > 0 else { return value }
+        return UInt8(min(255, Int(value) * 255 / Int(alpha)))
+    }
+
     func shapesChildrenByRegion(for path: String, keyedOut: [WMPColor]) throws -> Bool {
         guard !keyedOut.isEmpty else { return false }
         let canonical = provider.canonicalPath(for: path) ?? path
@@ -782,6 +837,59 @@ final class WMPImageStore: @unchecked Sendable {
         }
         for index in stride(from: 3, to: pixels.count, by: 4) where pixels[index] == 0 { return true }
         return false
+    }
+
+    /// Whether a bitmap is a **shape mask** rather than artwork: is it two-toned?
+    ///
+    /// This is the licence for a container's `backgroundImage` to shape its children, and the
+    /// corpus forced it. 84 `<SUBVIEW>`s in 38 archives and 26 `<VIEW>`s in 17 declare a
+    /// `clippingColor` with no `clippingImage`, and they are two different authoring idioms that
+    /// the attribute cannot tell apart:
+    ///
+    /// - *A mask.* `Combat_Flight_Simulator_3`'s `main_bg_mask.png` is 584x321 in exactly three
+    ///   colours — 71% white, 29% black and one stray `#D4D4D4` pixel — and the black is the
+    ///   aeroplane its `main_bg.jpg` child is cut to (W168).
+    /// - *Artwork with a keyed hole.* `YIL!OMA2K`'s `yMain Body.bmp` is 530x440 in **34,688**
+    ///   colours with a 246x179 rectangle of `#6699FF` cut out of it for the video, and a
+    ///   `<subview zIndex="-2">` of solid black parked behind the body to show through that hole.
+    ///   Shaping children by it clips the backdrop away and leaves the display empty — which is the
+    ///   W147/Cerulean inversion arriving through `clippingColor` instead of `transparencyColor`.
+    ///
+    /// Two tones or many is the whole question, and it separates the two populations cleanly: the
+    /// mask idiom is 3 and 10 colours, the artwork idiom 2,181 to 34,688. The threshold is a share
+    /// rather than a count because a mask's own edges are antialiased — `main_vismask.png` is 10
+    /// colours at 100.0% in its top two.
+    func isShapeMask(for path: String) throws -> Bool {
+        let canonical = provider.canonicalPath(for: path) ?? path
+        lock.lock()
+        if let cached = shapeMaskEntries[canonical] { lock.unlock(); return cached }
+        lock.unlock()
+        let answer = Self.isTwoToned(try image(for: canonical).image)
+        lock.lock()
+        shapeMaskEntries[canonical] = answer
+        lock.unlock()
+        return answer
+    }
+
+    private static func isTwoToned(_ image: CGImage) -> Bool {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0 else { return false }
+        var counts: [UInt32: Int] = [:]
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let value = UInt32(pixels[index]) << 24 | UInt32(pixels[index + 1]) << 16
+                | UInt32(pixels[index + 2]) << 8 | UInt32(pixels[index + 3])
+            counts[value, default: 0] += 1
+        }
+        let top = counts.values.sorted(by: >).prefix(2).reduce(0, +)
+        return Double(top) >= 0.99 * Double(width * height)
     }
 
     func regionMask(for path: String, keyedOut: [WMPColor]) throws -> CGImage {

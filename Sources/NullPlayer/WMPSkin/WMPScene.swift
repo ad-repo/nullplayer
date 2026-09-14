@@ -216,6 +216,31 @@ struct WMPWidget: Hashable, Codable {
     }
 }
 
+/// A container's clipping shape, inherited by every paint command *inside* it.
+///
+/// **A clipping shape shapes the element and everything it contains** — a `<SUBVIEW>` or `<VIEW>`
+/// in WMP is a window region, and its children are inside that region. `WMPSceneImage`'s
+/// `clippingMaskPath` shapes one draw against its own frame, which is the whole of the rule for a
+/// leaf and none of it for a container: `Combat_Flight_Simulator_3` hangs its entire 584x321 body
+/// off `<subview id="mainBody" backgroundImage="main_bg_mask.png" clippingColor="#ffffff">` and
+/// then draws `main_bg.jpg` inside it as a child that declares **no key of its own**, so the flat
+/// `#88A4B9` matte filling 67% of that JPEG had nothing to cut it away and the window showed as a
+/// rectangular slab (W168).
+///
+/// `frame` is the *container's* frame, not the command's: the mask covers the shape's own bitmap
+/// wherever that lands in scene coordinates, and a child is clipped by the part of it the child
+/// overlaps.
+struct WMPSceneClipMask: Hashable, Codable {
+    let resourcePath: String
+    /// `clippingColor` alone, never `transparencyColor` — the two mean opposite things on a
+    /// container and Cerulean is the case that proves it. `face.bmp` keys `#FF0000` as the window
+    /// matte *and* `#FF00FF` as a hole its `zIndex="-1"` visualizer and `zIndex="-2"` eye show
+    /// through; keying the hole into the shape as well clips those two away, which is the W147
+    /// inversion arriving by a second route.
+    let keyedOut: [WMPColor]
+    let frame: WMPRect
+}
+
 struct WMPPaintCommand: Hashable, Codable {
     let stableID: Int
     let nodeID: String?
@@ -224,13 +249,17 @@ struct WMPPaintCommand: Hashable, Codable {
     let zIndex: Int
     let documentOrder: Int
     let paint: WMPPaint
+    /// Every ancestor clipping shape this command is inside, outermost first. Empty for all but
+    /// the containers that declare one; see `WMPSceneClipMask`.
+    let inheritedClipMasks: [WMPSceneClipMask]
     /// WMP's `alphaBlend`, 0-255 normalized to 0-1 and inherited down the subtree. 38 corpus skins
     /// author it and 717 of those uses are `alphaBlend="0"` — an element the skin means to be
     /// invisible until a script fades it in. Drawing those opaque paints a slab over the artwork.
     let alpha: CGFloat
 
     init(stableID: Int, nodeID: String?, frame: WMPRect, clipRect: WMPRect?, zIndex: Int,
-         documentOrder: Int, paint: WMPPaint, alpha: CGFloat = 1) {
+         documentOrder: Int, paint: WMPPaint, alpha: CGFloat = 1,
+         inheritedClipMasks: [WMPSceneClipMask] = []) {
         self.stableID = stableID
         self.nodeID = nodeID
         self.frame = frame
@@ -239,6 +268,14 @@ struct WMPPaintCommand: Hashable, Codable {
         self.documentOrder = documentOrder
         self.paint = paint
         self.alpha = alpha
+        self.inheritedClipMasks = inheritedClipMasks
+    }
+
+    func inside(_ masks: [WMPSceneClipMask]) -> WMPPaintCommand {
+        guard !masks.isEmpty else { return self }
+        return WMPPaintCommand(stableID: stableID, nodeID: nodeID, frame: frame, clipRect: clipRect,
+                               zIndex: zIndex, documentOrder: documentOrder, paint: paint,
+                               alpha: alpha, inheritedClipMasks: masks + inheritedClipMasks)
     }
 }
 

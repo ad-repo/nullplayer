@@ -1094,6 +1094,33 @@ spots each made a real defect look absent. Four checks run on every plain `swift
 `compare` was checked the same way on 2026-09-07: a one-pixel **colour-only** change (alpha
 untouched) to one dumped PNG and a one-character change to one invariant line, each reported.
 
+**Measuring an over-keyed artwork: key each bitmap against its own declared colour (W169).** The
+instrument that found the largest defect this engine has had was not a probe flag and not the sweep.
+For every node declaring both a `clippingImage` and a `clippingColor`, decode its artwork, count the
+pixels matching that colour at the *format's* tolerance (64 components for a JPEG,
+`WMPColorKey.jpegComponentTolerance`; exact otherwise), and report the share. It ranks the class in
+one pass: `Plus! Plasma Ball/eq_panel_normal.jpg` 85.7%, `Plus! HueShifter/hueshifter_top.bmp` 76%,
+`TDK/info_bg.jpg` 52.1%, `Plus! SlimLine/perfect_body_normal.jpg` 47.5%, `elvis/elvis_tray.jpg` 39%,
+`Plus! Hard Boiled/Egg_Body_Normal.jpg` 27%. **A render dump shows the hole and names nothing**, and
+the hole reads as bad artwork or a bad upscale — W160 spent a phase on the second reading. Reach for
+this shape whenever a skin looks *degraded* rather than *misplaced*: ask what the engine is deleting
+before asking how well it is resampling.
+
+**Two capture traps, both paid for on 2026-09-14.**
+
+* **A 1x render dump is not evidence about Retina sharpness.** The sweep captures at 1x by design,
+  so a dump posted beside a reporter's 2x window capture is two different scales compared as if they
+  were one — it sent a whole round of this report down a resampling path that had nothing wrong with
+  it. For anything about crispness, capture the *same window frame* at 2x before and after, from a
+  baseline built in a worktree. `plus-family.md` says "never from a 1x render dump" and it means it.
+* **`first process whose name is "NullPlayer"` picks the wrong window when two are running.** The
+  user's own build is usually up, both restore the same window frame, and three captures in a row
+  came back showing the stale one. Get the pid (`pgrep -n -f "uiMode wmp"`), then raise and query by
+  `unix id`: `tell application "System Events" to set frontmost of (first process whose unix id is
+  <pid>) to true`, read `{position, size}` of its `window 1`, and `screencapture -o -x -R` that rect.
+  A bare-binary worktree build also needs `VLCKit.framework` and the vendored dylibs symlinked into
+  `.build/arm64-apple-macosx/debug/` beside the binary, or dyld kills it on launch.
+
 **Measuring a transparency key: read the keys out of the markup.** The class W8 counted is scored by
 scanning every dumped PNG for *opaque* pixels holding a key colour and reporting any view over 5% of
 its area — a census column cannot see it, because a view that draws its key is structurally perfect.

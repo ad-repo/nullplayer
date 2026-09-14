@@ -165,9 +165,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
         // list at all. Leaving it there put invisible artwork inside `visibleBounds` and every
         // dirty rect derived from it. Filtering here rather than after the walk is what keeps an
         // index into `commands` captured *during* the walk (`WMPWidget.commandSplitIndex`) exact.
+        /// The clipping shapes of every container this walk is currently *inside*, outermost
+        /// first. A node's own artwork is emitted before its own shape is pushed, so a container
+        /// never clips itself twice: `WMPSceneImage.clippingMaskPath` already shapes its own draw.
+        var clipMaskStack: [WMPSceneClipMask] = []
         func emit(_ command: WMPPaintCommand) {
             guard command.alpha > 0 else { return }
-            commands.append(command)
+            commands.append(command.inside(clipMaskStack))
         }
         var geometries: [Int: WMPResolvedGeometry] = [:]
         var unresolved: [WMPUnresolvedGeometry] = []
@@ -351,6 +355,39 @@ struct WMPSceneBuilder: @unchecked Sendable {
         func resource(_ node: WMPNode, names: [String]) throws -> (String, String)? {
             try resolveResource(node, names: names, overrides: overrides,
                                 warn: { diagnostics.append($0) })
+        }
+
+        /// The clipping shape this node imposes on its own contents, or nil for the overwhelming
+        /// majority of nodes that impose none.
+        ///
+        /// The bitmap is the `clippingImage` where one is declared and the node's own background
+        /// artwork otherwise — 84 `<SUBVIEW>`s across 38 archives and 26 `<VIEW>`s across 17 state
+        /// the shape that second way, with a `clippingColor` and no `clippingImage`, and
+        /// `Combat_Flight_Simulator_3` is the archive that showed what it costs to ignore them.
+        /// A childless node needs no mask: its own draw already carries one.
+        func clipMask(_ node: WMPNode, frame: WMPRect) throws -> WMPSceneClipMask? {
+            guard !node.children.isEmpty, !frame.isEmpty else { return nil }
+            let keys = colors(node, names: ["clippingColor"])
+            guard !keys.isEmpty else { return nil }
+            if let path = try resource(node, names: ["clippingImage"])?.1 {
+                return WMPSceneClipMask(resourcePath: path, keyedOut: keys, frame: frame)
+            }
+            // **A background image is only a shape when it is authored at the node's own size.**
+            // `Gorillaz` is why: its `noodle` view is 781x467 over a `background.gif` that is a
+            // 50x28 swatch of solid `#33CC66` with `backgroundTiled="true"`, and its
+            // `clippingColor="#33CC66"` says "my ground is invisible" — not "my window is empty".
+            // Reading the tile as a shape clipped away the whole skin, all 143,248 px of it, and it
+            // is the corpus's only total loss under this rule. The same test is what W160 landed on
+            // for resampling: a bitmap standing in for a frame it does not cover is not that frame.
+            // …and only when it is a mask rather than a picture with a keyed hole in it, which is
+            // `isShapeMask` and is where `YIL!OMA2K` holds the rule down.
+            guard let path = try resource(node, names: ["backgroundImage", "background"])?.1,
+                  literalString(node, "backgroundTiled")?.caseInsensitiveCompare("true") != .orderedSame,
+                  let decoded = try? imageStore.image(for: path),
+                  CGFloat(decoded.image.width) == frame.width,
+                  CGFloat(decoded.image.height) == frame.height,
+                  try imageStore.isShapeMask(for: path) else { return nil }
+            return WMPSceneClipMask(resourcePath: path, keyedOut: keys, frame: frame)
         }
 
         /// A slider's numbers, from the same three places every other property comes from: a live
@@ -699,12 +736,19 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // sorted by zIndex, so the eye still lands under the visualizer.
             let orderedChildren = node.children.sorted(by: paintOrder)
             let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
+            // **A clipping shape shapes the element's contents, not only the element.** The mask
+            // covers this node's frame and every descendant's paint is cut to it; see
+            // `WMPSceneClipMask` for the two archives that state the rule and the one that guards
+            // the key list.
+            let ownClipMask = try clipMask(node, frame: frame)
             let behindOwnArtwork = orderedChildren.prefix { zIndex(of: $0) < 0 }
+            if let ownClipMask { clipMaskStack.append(ownClipMask) }
             for child in behindOwnArtwork {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip, parentAlpha: alpha,
                          parentNode: node, parentNodeFrame: frame)
             }
+            if ownClipMask != nil { clipMaskStack.removeLast() }
 
             // `clippingImage` shapes an element by a bitmap the way `clippingColor` shapes it by a
             // colour — 25 corpus skins author a non-empty one, and every one of them declares a
@@ -1048,11 +1092,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     toolTip: toolTip(node, state: visualState, literal: literalString)))
             }
 
+            if let ownClipMask { clipMaskStack.append(ownClipMask) }
             for child in orderedChildren.dropFirst(behindOwnArtwork.count) {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip, parentAlpha: alpha,
                          parentNode: node, parentNodeFrame: frame)
             }
+            if ownClipMask != nil { clipMaskStack.removeLast() }
         }
 
         try walk(view, parentFrame: canvasRect,
@@ -1107,7 +1153,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
         // keys anything has said what it wants and is left alone, including one whose only key is
         // a colour the parser rejected: `Alpine7618_v09` writes `transparencyColor="FF00FF"` with
         // no `#`, which resolves to nothing here and therefore falls to the same default.
-        let declared = colors(node, names: ["transparencyColor", "clippingColor"])
+        //
+        // **And `clippingColor` keys the *clipping image*, not the artwork, whenever the node
+        // declares one.** The two attributes were read as one list here, which is harmless while
+        // they name the same colour and destructive when they do not: `Plus! Plasma Ball`'s
+        // `mainButtons` states `clippingImage="screen_MASK.gif" clippingColor="auto"`, so once
+        // `auto` resolved (W167) the mask's white was also keyed out of `screen_normal.jpg` — a
+        // JPEG, so with `jpegComponentTolerance` 64 — and every light tone in the player's button
+        // plates and glyph highlights went transparent. Reported as *"you made the high res
+        // graphics low res"*: the artwork was not resampled worse, it was being eaten.
+        let declared = colors(node, names: clippingPath == nil
+            ? ["transparencyColor", "clippingColor"] : ["transparencyColor"])
         let image = WMPSceneImage(resourcePath: path, sourceRect: source,
             colorKeys: declared,
             tiled: literalString(node, tiledName)?.caseInsensitiveCompare("true") == .orderedSame,
@@ -1195,8 +1251,24 @@ struct WMPSceneBuilder: @unchecked Sendable {
             guard let attribute = node.attribute(named: name) else { continue }
             if case let .color(value) = attribute.value { return value }
             if let value = WMPAttributeParser.color(from: attribute.rawValue) { return value }
+            if attribute.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare("auto") == .orderedSame,
+               let derived = autoColorKey(node, attribute: name) { return derived }
         }
         return nil
+    }
+
+    /// `auto` on a colour key means "take it from the bitmap", and the bitmap is the one that
+    /// attribute governs: `clippingColor` keys the `clippingImage` where a node declares one and
+    /// the node's own artwork otherwise, every other key the artwork itself. The corner is where
+    /// the value comes from — see `WMPImageStore.cornerColor`, which carries the corpus measurement
+    /// and the reason a rejected `auto` is not the same thing as no key at all (W167).
+    private func autoColorKey(_ node: WMPNode, attribute name: String) -> WMPColor? {
+        let artwork = ["image", "backgroundImage", "background", "normalImage"]
+        let names = name.caseInsensitiveCompare("clippingColor") == .orderedSame
+            ? ["clippingImage"] + artwork : artwork
+        guard let path = (try? resolveResource(node, names: names))?.1 else { return nil }
+        return (try? imageStore.cornerColor(for: path)) ?? nil
     }
 
     private func isSlider(_ kind: WMPElementKind) -> Bool {

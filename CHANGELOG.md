@@ -35,6 +35,22 @@
 
 ### Bug Fixes
 
+- **Media Player skins no longer have parts of their artwork erased.** A `.wmz` skin names one colour
+  as the shape of its window and another as the see-through colour inside it, and NullPlayer was
+  treating the first as if it were the second — so on skins whose artwork is mostly light, every pale
+  tone in the picture was deleted. Plus! Hard Boiled's egg lost a quarter of itself and its drop
+  shadow showed through the gap; TDK's dial had black holes punched through it and none of its
+  transport buttons; Elvis's "30 #1 HITS" was unreadable and his shirt and shoes were missing; and
+  Plus! HueShifter, Plus! SlimLine and Plus! Plasma Ball all opened with their panels and progress
+  bars part-dissolved. All of them now draw complete.
+
+- **Two Media Player skins no longer open inside a grey box.** Combat Flight Simulator 3 and
+  Plus! Plasma Ball both shape their window with a stencil, and the artwork the stencil was meant to
+  cut away was being drawn anyway — a flat grey rectangle behind the player instead of a transparent
+  surround. Combat Flight Simulator is now the aeroplane it is supposed to be, and Plasma Ball shows
+  the green plasma globe its player floats in, which had never appeared at all. Melvin's eyes, cut
+  out of its head by the same mechanism, are now drawn as well.
+
 - **Media Player skins that keep their script in a file they never name now run it.** Seven skins —
   Colorchooser, Charlie's Angels Full Throttle, Cubist, cyberchannel, Kids, PowerToys and Tomb
   Raider 2 — ship their code in a file alongside the skin without pointing at it, the way Windows

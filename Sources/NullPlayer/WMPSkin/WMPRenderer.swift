@@ -209,6 +209,14 @@ struct WMPRenderer: @unchecked Sendable {
             context.saveGState()
             if command.alpha < 1 { context.setAlpha(command.alpha) }
             if let clip = command.clipRect { context.clip(to: clip.cgRect) }
+            // An ancestor's clipping shape, against the *container's* frame rather than this
+            // command's. Applied before the paint switch because a container shapes everything it
+            // holds — a fill and a `<TEXT>` as much as an image. See `WMPSceneClipMask`.
+            for shape in command.inheritedClipMasks {
+                let mask = try imageStore.clippingMask(for: shape.resourcePath,
+                                                       keyedOut: shape.keyedOut)
+                clip(to: shape.frame, mask: mask, context: context)
+            }
             switch command.paint {
             case let .fill(color):
                 context.setFillColor(red: CGFloat(color.red) / 255,

@@ -183,14 +183,67 @@ neither problem. Then the sharpen kernel was first written with a divisor of 1, 
 of *four*, and Hard Boiled came back ringing with white halos on every bevel. It is now 3/16;
 6/16 still speckled the smooth light band, which is JPEG noise being amplified.
 
+### W167 / W168 / W169 — the gray box, and a quarter of the egg
+
+Three independent defects in one report, opened *"combat flight simulator and plus plasma ball have
+a gray box background I suspect should not be showing"* and closed *"this is a huge improvement"*.
+The rules are in `../../SKILL.md` § *Drawing the skin's own controls*; what the family contributes is
+the reach, and the reason two of the three were invisible for a whole phase.
+
+**W167 — `clippingColor="auto"`.** `Plus! Plasma Ball`'s `mainButtons` and `playListPanel` are two of
+the corpus's four `auto` declarations. The parser rejected the word, so `screen_MASK.gif` cut
+nothing, and `screen_normal.jpg` — the whole player drawn against a flat `#9FA8AD` surround — was
+painted opaque over the plasma globe. **The globe had never been on screen.** The skin's four other
+layers state `clippingColor="white"` by hand over masks that are white at 0,0; the two that write
+`auto` sit over masks that are white at 0,0 as well, which is what makes the corner rule measurable
+rather than a guess.
+
+**W168 — a container's shape did not reach its children.** Not a Plus! defect —
+`Combat_Flight_Simulator_3` is the archive that showed it — but `Melvin`'s eye sockets are the same
+rule, and the two guards on it (`Gorillaz`, `YIL!OMA2K`) are in the README's counter-evidence table.
+
+**W169 — `clippingColor` was keyed out of the artwork too, and this is the family's own defect.**
+Share of each bitmap turned transparent, measured by keying every node's artwork against its own
+declared clipping colour at the format's tolerance:
+
+| Skin | bitmap | eaten |
+|---|---|---:|
+| `Plus! Plasma Ball` | `eq_panel_normal.jpg` | 85.7% |
+| `Plus! HueShifter` | `hueshifter_top` / `_right` / `_left.bmp` | 76% / 75.7% / 75.5% |
+| `Plus! Plasma Ball` | `playlist_vid_panel.jpg` | 57.6% |
+| `Plus! SlimLine` | `perfectV_progressbar.jpg` | 54.3% |
+| `Plus! SlimLine` | `perfect_body_normal.jpg` | 47.5% |
+| `Plus! Hard Boiled` | `Egg_Arm.jpg` | 39.5% |
+| `Plus! Hard Boiled` | **`Egg_Body_Normal.jpg`** | **27%** |
+| `Plus! HueShifter` | `eq_tray_normal.jpg` | 26% |
+
+The reporter's list for W160 — *"plus hard boiled, plus hue shifter, plus slimline"* — is exactly the
+list here, and **it was never a resampling problem.** `Egg_Body_Normal.jpg` is the bitmap that commit
+is named after. Outside the family the same defect held `TDK`'s transport buttons (`info_bg.jpg`
+52.1%, `main_bg.jpg` 20.8% — its dial had black holes punched through it) and `elvis`'s
+`elvis_tray.jpg` (39%; "30 #1 HITS" was unreadable and his shirt and shoes were gone).
+
+**What this cost, and the process lesson.** W160 measured the clipping masks, found their *edges*
+clean, and wrote the masks off in `Ruled out` — and the attribute went on deleting a quarter of the
+egg for another two days. A mechanism cleared is not an attribute cleared. The instrument that
+finally named it was neither a probe nor the sweep: it was decoding each archive's artwork and
+counting how much of it matched its own declared key.
+
 ## Ruled out — do not chase these again
 
-- **The clipping masks were not the cause, and neither was interpolation *quality*.** Both were
-  measured and both are clean. The silhouette of a `clippingImage` skin is already antialiased —
-  6,512 partial-alpha pixels in a live 1350x1200 capture of Hard Boiled — so the stair-stepping that
-  looks like a hard mask edge in a zoomed screenshot is a colour boundary inside the artwork, not the
-  mask. And `.low` vs `.high` at 2x is **byte-identical** on this path, so any fix phrased as raising
-  the interpolation quality is a no-op. Only `.none` differs (max delta 44), and it is worse. W160.
+- **Interpolation *quality* was not the cause.** `.low` vs `.high` at 2x is **byte-identical** on
+  this path, so any fix phrased as raising the interpolation quality is a no-op. Only `.none` differs
+  (max delta 44), and it is worse. W160.
+
+- ~~**The clipping masks were not the cause.**~~ **This was wrong, and W169 is the correction.** The
+  reasoning held for the masks' *edges* — the silhouette of a `clippingImage` skin is already
+  antialiased, 6,512 partial-alpha pixels in a live 1350x1200 capture of Hard Boiled, so the
+  stair-stepping in a zoomed screenshot is a colour boundary inside the artwork. But the family's
+  `clippingColor="white"` was also being keyed out of the *artwork*, at a JPEG's 64-component
+  tolerance, and `Egg_Body_Normal.jpg` was losing **27% of its pixels** to it. Two lessons, and the
+  second is the sharper one: **a "low res" report about a photo-real skin is not necessarily about
+  resampling**, and **a clearing measurement scoped to one mechanism does not clear the attribute**.
+  See *W169* below.
 
 - **The dancer is not ours and is not in the archive.** Reference screenshots of Bionic Dot show a
   dancing figure standing in the lens. That is **Plus! Dancer**, a separate Microsoft *Plus! for

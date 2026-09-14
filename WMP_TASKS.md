@@ -18,6 +18,32 @@ same change that closes them, so this file stays a list of work that is still op
 
 ### Top of the backlog
 
+**W167–W169 closed 2026-09-14, from one report — *"combat flight simulator and plus plasma ball have
+a gray box background I suspect should not be showing"*, then *"look how bad the controls look in the
+new version"*, then *"fix the other skins that were addressed with plus egg commit"*.** Three
+unrelated rules about one attribute pair. **W167**: `clippingColor="auto"` resolved to no key at all,
+so `Plus! Plasma Ball`'s `screen_MASK.gif` cut nothing and the whole player drew opaque over a plasma
+globe that had never been on screen; the value comes from the corner of the bitmap the declaration
+governs, which is where all four `auto` authors in the corpus put it. **W168**: a container's
+clipping shape did not reach its children, so `Combat_Flight_Simulator_3`'s keyless `main_bg.jpg`
+child kept the 67% matte its parent's mask existed to remove — guarded by `Gorillaz` (a tiled swatch
+is a ground, not a shape) and `YIL!OMA2K` (artwork with a keyed hole is not a mask). **W169** is the
+big one: `clippingColor` was keyed out of the *artwork* as well as the mask, at a JPEG's
+64-component tolerance, deleting **85.7%** of `Plus! Plasma Ball`'s `eq_panel_normal.jpg`, **52.1%**
+of `TDK`'s `info_bg.jpg`, **39%** of `elvis`'s `elvis_tray.jpg` and **27%** of
+`Plus! Hard Boiled`'s `Egg_Body_Normal.jpg`. Sweep: 522 identical, 13 moved, every one a gain.
+
+**W169 is the row to read for process.** W160 measured the clipping masks two days earlier, found
+their *edges* clean, and wrote them off in `plus-family.md` § *Ruled out* — then landed Lanczos
+resampling on the same pixels the attribute was erasing. **A mechanism cleared is not an attribute
+cleared**, and a *"low res"* report about photo-real artwork is not necessarily about resampling. The
+instrument that named it was neither a probe nor the sweep: decode each archive's artwork and count
+how much of it matches its own declared key at the format's tolerance. Two further notes, both paid
+for in this session: a **1x render dump is not evidence about Retina sharpness** — comparing one
+against the reporter's 2x window capture sent a whole round down the wrong path — and a second
+NullPlayer already running makes `first process whose name is "NullPlayer"` pick the wrong window, so
+raise and capture by `unix id`.
+
 **W163–W166 closed 2026-09-14, from one report — *"colorchooser skin looks totaly broken from the
 UI I do nto have a refrence image"*, plus a second observation in the same session, *"the window has
 no backing when a track plays and it clicks through to the background"*.** Four unrelated engine
