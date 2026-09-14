@@ -35,6 +35,13 @@
 
 ### Bug Fixes
 
+- **A Media Player skin's artwork no longer shows through the library browser's background.** When a
+  `.wmz` skin lends its own window frame to the library, that frame is drawn around the list instead
+  of across it. Skins whose borders are wide decorative artwork rather than thin edges — Scooby Doo's
+  side panels and its title strip, for instance — were painting that art behind every row, where it
+  clashed with the text and with the cover art the browser shows there. The frame, its corners and
+  the title bar are unchanged, and cover art behaves exactly as before.
+
 - **A Media Player skin's opening animation no longer covers the player it just opened.** Several
   `.wmz` skins start by sliding a shutter off the display, and the last frame of that animation was
   being held forever — so on both Windows XP Media Center Edition skins a blank plate sat over the

@@ -2601,6 +2601,19 @@ class PlexBrowserView: NSView {
             context.setFillColor(style.background.cgColor)
             context.fill(content)
             context.saveGState()
+            // The ring is the frame *around* the list, never wallpaper behind it. Several rings in
+            // the corpus are decorative rather than thin — `Scooby Doo`'s side tiles are wide
+            // half-transparent artwork and its top piece carries the film's title — and drawn over
+            // the whole window that art lands under every row and behind the cover art the browser
+            // paints there. So the client hole is cut out of the ring: the palette owns it, as the
+            // fill above already assumes. Everything else — corners, edges, the caption band — is
+            // untouched, and a window with no borrowed ring never reaches here.
+            if !content.isEmpty {
+                context.beginPath()
+                context.addRect(bounds)
+                context.addRect(content)
+                context.clip(using: .evenOdd)
+            }
             context.translateBy(x: 0, y: bounds.height)
             context.scaleBy(x: 1, y: -1)
             context.interpolationQuality = artwork.wasScaledToFit ? .high : .none

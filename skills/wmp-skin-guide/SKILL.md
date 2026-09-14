@@ -97,6 +97,15 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   bitmaps are 190px wide on a 406px window and mostly transparent. Only the ring is borrowed: the
   donor's buttons and playlist are the skin's window, not ours. The title and close control keep the
   *window's* own coordinates, because every hosted view hit-tests its close box at `width - 25`.
+  **The client hole is cut out of the ring before it is drawn, not merely filled behind it.** The
+  artwork is one image the size of the whole window, so painting it over the palette fill puts the
+  ring's own interior under our content — invisible while the donor's edges are thin, and wallpaper
+  when they are not: `Scooby Doo`'s side tiles are wide half-transparent art and its top piece
+  carries the film's title, and all of it was landing behind the library's rows and behind the cover
+  art drawn there. `PlexBrowserView.drawWinampModernChrome` clips even-odd against `contentRect`.
+  The other hosted windows still draw the full image (`SkinnedSurfaceChrome.drawSkinFrame`); they
+  paint over their whole client area, so nothing shows through — a new one that does not should
+  take the same clip.
 
 **The donor view is ranked, not taken.** Several skins wrap the *same* ring around an `upgradeView`
 — the "your Windows Media Player is too old" nag panel — and declare it before the real one, so
