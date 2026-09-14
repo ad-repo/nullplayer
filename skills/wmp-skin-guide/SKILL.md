@@ -280,6 +280,36 @@ queue, with the object model as the security boundary — see Amendment 2 in
 
 ## Static scene and image contracts
 
+- **A `.wmz` is 1x artwork and this app draws it on a 2x display, so the upscale is done by Lanczos
+  ahead of the draw — never by CoreGraphics' own filter.** This is the one rendering rule that is
+  about *resolution* rather than geometry, and it is settled:
+  `WMPBitmapInterpolationPolicy.decision` says whether a draw qualifies, and
+  `WMPImageStore.upscaledImage` does the resample once and caches it in the same LRU as every
+  decoded image. **`.low` and `.high` are byte-identical on the draw path** — measured on
+  `Plus! Hard Boiled/Egg_Body_Normal.jpg` at 2x — so the interpolation *quality* is not a lever and
+  changing it is a no-op; the only choices CoreGraphics offers are bilinear, which blurs, and
+  `.none`, which blocks. A reporter rejected both in turn (W160).
+
+  Three conditions must all hold before a bitmap is resampled, and each one exists because the
+  version without it moved artwork nothing was wrong with:
+
+  1. the skin draws the bitmap at its **authored size** — a stretched gradient is asking to be
+     interpolated, and resampling it as artwork changes a picture nobody complained about;
+  2. the device scale is a **whole multiple**;
+  3. the destination lands **on the pixel grid** — a fractional origin has no whole-pixel
+     destination, and snapping it is a shift, not a sharpening.
+
+  Everything else keeps `.low`, which is what the engine has always passed. **A corpus render sweep
+  cannot see any of this**: `WMPRenderer.dump` renders at 1x, where the device scale is 1 and no
+  draw qualifies, so a clean sweep here proves only that nothing *else* moved. The measurement is a
+  `screencapture` of the live window on a Retina display — see `reference/skins/plus-family.md`
+  § *W160*.
+
+  **The crop happens before the scale, never after.** Lanczos reads a ~3px neighbourhood, so
+  resampling a filmstrip whole would bleed each sprite into the one beside it; `sourceRect` is part
+  of the cache key for that reason. **Alpha is never sharpened** — the sharpen unpacks to planes and
+  skips it — or a keyed silhouette grows a ringing halo.
+
 - **A view is sized like any other node: authored literal, then script override, then the natural
   size of its own `backgroundImage`.** WMP skins routinely author `<VIEW backgroundImage="...">` with
   no width or height — the window *is* the bitmap — and demanding a positive literal at the root was

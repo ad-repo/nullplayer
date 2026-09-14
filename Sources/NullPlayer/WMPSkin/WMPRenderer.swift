@@ -242,16 +242,18 @@ struct WMPRenderer: @unchecked Sendable {
                             var x = command.frame.x
                             while x < command.frame.maxX {
                                 let tile = WMPRect(x: x, y: y, width: tileWidth, height: tileHeight)
-                                setInterpolation(specification.interpolation, context: context)
-                                drawImage(sourceImage, in: tile, context: context)
+                                let image = try resampled(sourceImage, of: specification,
+                                                          frame: frame, in: tile, context: context)
+                                drawImage(image, in: tile, context: context)
                                 x += tileWidth
                             }
                             y += tileHeight
                         }
                     }
                 } else {
-                    setInterpolation(specification.interpolation, context: context)
-                    drawImage(sourceImage, in: command.frame, context: context)
+                    let image = try resampled(sourceImage, of: specification, frame: frame,
+                                              in: command.frame, context: context)
+                    drawImage(image, in: command.frame, context: context)
                 }
             case let .text(text):
                 draw(text, in: command.frame, context: context, clock: clock)
@@ -307,12 +309,37 @@ struct WMPRenderer: @unchecked Sendable {
         context.restoreGState()
     }
 
-    private func setInterpolation(_ policy: WMPImageInterpolation, context: CGContext) {
-        switch policy {
-        case .none: context.interpolationQuality = .none
-        case .low: context.interpolationQuality = .low
-        case .medium: context.interpolationQuality = .medium
-        case .high: context.interpolationQuality = .high
+    /// The bitmap to blit, and the filter to blit it through, set on `context` as a side effect.
+    ///
+    /// A `.wmz` is 1x artwork on a 2x display, and neither filter CoreGraphics offers upscales it
+    /// acceptably — so when the draw qualifies, the artwork is resampled by Lanczos once, cached,
+    /// and blitted 1:1 here. See `WMPBitmapInterpolationPolicy` for what qualifies and why.
+    ///
+    /// A resample that cannot be produced returns the authored bitmap, which then draws exactly as
+    /// it did before: the store answers with the unscaled image past its own pixel ceiling, and the
+    /// size check below catches that without having to ask it what it did.
+    private func resampled(_ image: CGImage, of specification: WMPSceneImage, frame: Int,
+                           in destination: WMPRect, context: CGContext) throws -> CGImage {
+        let decision = WMPBitmapInterpolationPolicy.decision(
+            sourcePixelSize: CGSize(width: image.width, height: image.height),
+            destination: destination.cgRect, in: context)
+        switch decision {
+        case let .filter(quality):
+            context.interpolationQuality = quality
+            return image
+        case let .prescale(scale):
+            let upscaled = try imageStore.upscaledImage(
+                for: specification.resourcePath, colorKeys: specification.colorKeys,
+                implicitKey: specification.implicitColorKey, frame: frame,
+                sourceRect: specification.sourceRect, scale: scale)
+            guard upscaled.image.width == image.width * scale,
+                  upscaled.image.height == image.height * scale else {
+                context.interpolationQuality = .low
+                return image
+            }
+            // 1:1 in device pixels, so the filter never runs — but `.none` is what says so.
+            context.interpolationQuality = .none
+            return upscaled.image
         }
     }
 

@@ -35,6 +35,12 @@
 
 ### Bug Fixes
 
+- **Media Player skin artwork is no longer blurry on a Retina display.** A `.wmz` skin is drawn from
+  artwork authored at single density, and it was being stretched to fit a Retina screen with a filter
+  that softens every edge — most visible on the photo-real Plus! skins (Hard Boiled, HueShifter,
+  SlimLine), where the fine detail baked into the artwork turned to mush. The artwork is now
+  resampled properly and sharpened once, so bevels, glyphs and outlines stay crisp. Skins drawn at
+  single density are unaffected, as are skins that deliberately stretch a piece of artwork.
 - **Raising a Media Player skin's WOW slider no longer just turns the music down.** WOW widened the
   stereo image by cancelling the centre of the mix, and a mix keeps most of its level in the centre,
   so the slider worked as a volume fader: at full strength a centred track lost 80% of its level, and

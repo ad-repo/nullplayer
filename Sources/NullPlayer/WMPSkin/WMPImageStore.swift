@@ -1,3 +1,4 @@
+import Accelerate
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -360,6 +361,212 @@ final class WMPImageStore: @unchecked Sendable {
                frame: Int) throws -> WMPDecodedImage {
         guard frame > 0 else { return try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey) }
         return try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey, frameSuffix: frame)
+    }
+
+    /// Artwork resampled up to the device's own pixel grid, so the renderer can blit it 1:1.
+    ///
+    /// **This is the only way a 1x `.wmz` gets crisp edges on a 2x display.** CoreGraphics offers
+    /// bilinear (`.low`/`.high`, which are byte-identical on the draw path) and nearest (`.none`);
+    /// the first blurs the artwork and the second blocks it, and a reporter looking at
+    /// `Plus! Hard Boiled` rejected both. Lanczos reconstructs an edge instead of smearing or
+    /// replicating it, and a light luminance sharpen restores the acutance the resample costs.
+    /// `CISharpenLuminance` is chosen over `CIUnsharpMask` deliberately: it leaves alpha alone, so a
+    /// keyed silhouette cannot grow a ringing halo.
+    ///
+    /// **The caller crops before it scales, never after.** Lanczos reads a ~3px neighbourhood, so
+    /// upscaling a filmstrip whole would bleed each sprite into the one beside it — a volume slider
+    /// picking up a sliver of the next frame. `sourceRect` is therefore part of the key.
+    ///
+    /// Cached in the same LRU and under the same byte bound as every decoded image, because that is
+    /// what keeps a skin that animates from running Core Image at its repaint cadence.
+    func upscaledImage(for path: String, colorKeys: [WMPColor] = [], implicitKey: WMPColor? = nil,
+                       frame: Int = 0, sourceRect: WMPRect?, scale: Int) throws -> WMPDecodedImage {
+        let base = try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey, frame: frame)
+        let cropped = Self.crop(sourceRect, from: base.image)
+        guard scale > 1 else {
+            return WMPDecodedImage(image: cropped,
+                                   size: WMPSize(width: CGFloat(cropped.width),
+                                                 height: CGFloat(cropped.height)),
+                                   decodedBytes: cropped.width * cropped.height * 4)
+        }
+        let canonical = provider.canonicalPath(for: path) ?? path
+        var cacheKey = canonical
+        cacheKey += colorKeys.map { "|key=\($0)" }.joined()
+        if let implicitKey { cacheKey += "|implicit=\(implicitKey)" }
+        if frame > 0 { cacheKey += "|frame=\(frame)" }
+        if let sourceRect {
+            cacheKey += "|crop=\(sourceRect.x),\(sourceRect.y)"
+            cacheKey += ",\(sourceRect.width)x\(sourceRect.height)"
+        }
+        cacheKey += "|up=\(scale)"
+        lock.lock()
+        if var entry = entries[cacheKey] {
+            clock &+= 1
+            entry.access = clock
+            entries[cacheKey] = entry
+            lock.unlock()
+            return entry.image
+        }
+        lock.unlock()
+
+        // Past the renderer's own ceiling there is nothing to gain and a throw to lose: hand back
+        // the unscaled bitmap and let the draw filter it as it always did.
+        let pixels = UInt64(cropped.width * cropped.height) * UInt64(scale * scale)
+        guard pixels <= WMPPhase0Limits.imagePixels,
+              let scaled = Self.lanczosUpscale(cropped, scale: scale) else {
+            return WMPDecodedImage(image: cropped,
+                                   size: WMPSize(width: CGFloat(cropped.width),
+                                                 height: CGFloat(cropped.height)),
+                                   decodedBytes: cropped.width * cropped.height * 4)
+        }
+        let decoded = WMPDecodedImage(image: scaled,
+                                      size: WMPSize(width: CGFloat(scaled.width),
+                                                    height: CGFloat(scaled.height)),
+                                      decodedBytes: scaled.width * scaled.height * 4)
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = entries[cacheKey] { return existing.image }
+        guard decoded.decodedBytes <= limits.cacheBytes else { return decoded }
+        while currentBytes + decoded.decodedBytes > limits.cacheBytes,
+              let victim = entries.min(by: { $0.value.access < $1.value.access }) {
+            currentBytes -= victim.value.image.decodedBytes
+            entries.removeValue(forKey: victim.key)
+            evictions += 1
+        }
+        clock &+= 1
+        entries[cacheKey] = Entry(image: decoded, access: clock)
+        currentBytes += decoded.decodedBytes
+        peakBytes = max(peakBytes, currentBytes)
+        return decoded
+    }
+
+    /// How hard the post-resample sharpen bites, over `sharpenDivisor`. The effective amount is
+    /// `sharpenStrength / sharpenDivisor` per neighbour, so 6/16 is a light touch.
+    ///
+    /// **This is the number that has to stay small.** The first version wrote the kernel with a
+    /// divisor of 1, which is an amount of *four*, and the reporter's skin came back ringing —
+    /// white halos around every bevel and the artwork barely readable. A 3x3 sharpen is a strong
+    /// filter and the resample it is correcting is a gentle one. 6/16 still speckled the smooth
+    /// light band of `Plus! Hard Boiled`, which is JPEG noise being amplified; 3/16 is the most
+    /// this artwork takes cleanly. Plain Lanczos with no sharpen at all (`0`) is the conservative
+    /// setting and is still a clear improvement on the bilinear draw.
+    private static let sharpenStrength: Int32 = 3
+    private static let sharpenDivisor: Int32 = 16
+
+    /// Lanczos-class upscale, in vImage rather than Core Image.
+    ///
+    /// **Core Image was the first implementation and both of its failures were real.** A
+    /// `CILanczosScaleTransform` treats everything outside the source extent as transparent black
+    /// and bleeds it inward, which turned the opaque red corner of the render fixture into
+    /// `alpha=155` and would have put a soft halo around every sprite in the corpus; and a retained
+    /// `CIContext` costs a file descriptor for the life of the process, which
+    /// `testHundredRapidLoadsViewsResizesAndCacheTeardownRemainBounded` counts. vImage has neither
+    /// problem: `kvImageEdgeExtend` replicates the border instead of inventing transparency, and
+    /// there is no device context to retain.
+    private static func lanczosUpscale(_ image: CGImage, scale: Int) -> CGImage? {
+        var format = vImage_CGImageFormat(
+            bitsPerComponent: 8, bitsPerPixel: 32,
+            colorSpace: Unmanaged.passRetained(CGColorSpaceCreateDeviceRGB()),
+            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue),
+            version: 0, decode: nil, renderingIntent: .defaultIntent)
+
+        var source = vImage_Buffer()
+        guard vImageBuffer_InitWithCGImage(&source, &format, nil, image,
+                                           vImage_Flags(kvImageNoFlags)) == kvImageNoError else {
+            return nil
+        }
+        defer { free(source.data) }
+
+        var scaled = vImage_Buffer()
+        guard vImageBuffer_Init(&scaled, source.height * UInt(scale), source.width * UInt(scale),
+                                32, vImage_Flags(kvImageNoFlags)) == kvImageNoError else {
+            return nil
+        }
+        defer { free(scaled.data) }
+        // `kvImageHighQualityResampling` is the Lanczos path; `kvImageEdgeExtend` is what keeps the
+        // sprite's own border out of the transparent surround.
+        let scaleFlags = vImage_Flags(kvImageHighQualityResampling | kvImageEdgeExtend)
+        guard vImageScale_ARGB8888(&source, &scaled, nil, scaleFlags) == kvImageNoError else {
+            return nil
+        }
+
+        sharpen(&scaled)
+
+        var error = kvImageNoError
+        let cgImage = vImageCreateCGImageFromBuffer(&scaled, &format, nil, nil,
+                                                    vImage_Flags(kvImageNoFlags), &error)
+        guard error == kvImageNoError, let cgImage else { return nil }
+        return cgImage.takeRetainedValue()
+    }
+
+    /// A 3x3 sharpen over the colour channels only.
+    ///
+    /// **Alpha is deliberately left alone**, which is why this unpacks to planes rather than
+    /// convolving the interleaved buffer: sharpening a silhouette's alpha is what produces a ringing
+    /// halo around a keyed sprite. The data is unpremultiplied first for the same reason — a
+    /// convolution over premultiplied colour pulls the background through every soft edge.
+    ///
+    /// Every step here is best-effort: a failure leaves `buffer` holding the un-sharpened resample,
+    /// which is still the Lanczos result and still far better than what the draw filter produced.
+    private static func sharpen(_ buffer: inout vImage_Buffer) {
+        guard vImageUnpremultiplyData_RGBA8888(&buffer, &buffer,
+                                               vImage_Flags(kvImageNoFlags)) == kvImageNoError else {
+            return
+        }
+        defer {
+            _ = vImagePremultiplyData_RGBA8888(&buffer, &buffer, vImage_Flags(kvImageNoFlags))
+        }
+
+        var planes = [vImage_Buffer](repeating: vImage_Buffer(), count: 4)
+        for index in planes.indices {
+            guard vImageBuffer_Init(&planes[index], buffer.height, buffer.width, 8,
+                                    vImage_Flags(kvImageNoFlags)) == kvImageNoError else {
+                for freed in planes.indices where freed < index { free(planes[freed].data) }
+                return
+            }
+        }
+        defer { for plane in planes { free(plane.data) } }
+
+        // The converter is named for ARGB but is channel-order agnostic: it splits the four
+        // interleaved channels in the order given, so for this RGBA buffer plane 0 is red and
+        // plane 3 is alpha.
+        guard vImageConvert_ARGB8888toPlanar8(&buffer, &planes[0], &planes[1], &planes[2],
+                                              &planes[3],
+                                              vImage_Flags(kvImageNoFlags)) == kvImageNoError else {
+            return
+        }
+        // Weights sum to `sharpenDivisor`, so the filter preserves overall brightness.
+        let centre = sharpenDivisor + 4 * sharpenStrength
+        let kernel: [Int16] = [0, Int16(-sharpenStrength), 0,
+                               Int16(-sharpenStrength), Int16(centre), Int16(-sharpenStrength),
+                               0, Int16(-sharpenStrength), 0]
+        // Index 3 is alpha and is not convolved.
+        for index in 0..<3 {
+            var plane = planes[index]
+            var destination = vImage_Buffer()
+            guard vImageBuffer_Init(&destination, plane.height, plane.width, 8,
+                                    vImage_Flags(kvImageNoFlags)) == kvImageNoError else { return }
+            let flags = vImage_Flags(kvImageEdgeExtend)
+            let status = kernel.withUnsafeBufferPointer { pointer in
+                vImageConvolve_Planar8(&plane, &destination, nil, 0, 0, pointer.baseAddress!,
+                                       3, 3, sharpenDivisor, 0, flags)
+            }
+            guard status == kvImageNoError else { free(destination.data); return }
+            free(planes[index].data)
+            planes[index] = destination
+        }
+
+        _ = vImageConvert_Planar8toARGB8888(&planes[0], &planes[1], &planes[2], &planes[3],
+                                            &buffer, vImage_Flags(kvImageNoFlags))
+    }
+
+    private static func crop(_ rect: WMPRect?, from image: CGImage) -> CGImage {
+        guard let rect else { return image }
+        let bounds = WMPRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height))
+        guard let clipped = rect.intersection(bounds) else { return image }
+        return image.cropping(to: CGRect(x: clipped.x, y: clipped.y,
+                                         width: clipped.width, height: clipped.height)) ?? image
     }
 
     /// A `CUSTOMSLIDER`'s greyscale position map, cached under the same byte bound as every other

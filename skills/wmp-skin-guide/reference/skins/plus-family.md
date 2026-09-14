@@ -48,6 +48,11 @@ to `.unknown` and were never widgets (W101).
   `Plus! Bionic Dot`'s `main_vis_back.png` and `Plus! Professional`'s `vis_mask_s.png`. The family
   names the asset outright: `Egg_Body_Mask.gif`, `body_Mask.gif`, `green_body_MASK.gif`,
   `perfect_tray_shape_mask.gif`, `vis_mask_s.png`.
+- **Photo-real bodies whose detail is baked in at a few pixels each.** This is why the family is
+  the corpus's test case for *resampling* rather than layout (W160): flat cartoon art survives a bad
+  upscale and a specular highlight does not. The reporter's list — Hard Boiled, HueShifter,
+  SlimLine — is the same list any resampling change should be re-checked against, on a Retina
+  display and never from a 1x render dump.
 - **Stacked full-body colour variants cross-faded by script.** Bionic Dot carries seven complete
   `main_body_<colour>.png` bodies plus matching button sets and frame rings, switched by
   `switchThemes(themeID++)` writing `alphaBlend` on each. This is the same mechanism `xsn_sports`
@@ -132,7 +137,60 @@ this**, and most of the corpus binds — reach for an unbound one when testing t
 
 **The two arcs are mirror images, so check volume whenever seek moves**, and vice versa.
 
+### W160 — the artwork looked low resolution
+
+*"several of the plus skins have a low res look to the grapics, plus hard boiled, plus hue shifter,
+plus slimline"*, and then, against the first fix: *"it does not look better. can the lines be
+crisp?"*
+
+**Not a property of these skins' artwork, and not a resolution problem at all.** Their art is 1x
+like the whole corpus — `Plus! Hard Boiled`'s `Egg_Body_Normal.jpg` is 190x253 drawn into a 190x253
+subview, and `New Super Mario Bros`, which the reporter had open beside it and did not complain
+about, is 582x435 art in a 582x435 view. Identical density. What separates them is *content*: the
+Plus! family's bodies are photo-real JPEGs with specular highlights and glyphs baked in at a few
+pixels each, and a 2x bilinear upscale destroys exactly that. Flat cartoon art survives it.
+
+**The engine's side of it** was one hardcoded constant: `WMPSceneBuilder` passed
+`interpolation: .low` for every image, so on a Retina display every bitmap took a bilinear 2x
+upscale. Classic (`SkinRenderer`) and Winamp Modern (`WasabiBitmapInterpolationPolicy`) had both
+already decided this question for their own 1x artwork; the WMP engine was the only one that had
+not. The fix and its three conditions are in `../../SKILL.md` § *Static scene and image contracts*.
+
+**The first fix was wrong and the reporter's second sentence is why.** Matching the other two
+engines means `.none` — crisp pixel-doubling, which is right for the pixel art those engines were
+built for and merely *blocky* on a photograph. Neither filter CoreGraphics offers is acceptable
+here, which is what moved the resample out of the draw and into Lanczos.
+
+**Three numbers worth keeping**, each of which corrected a version of the fix that looked right:
+
+| Version | Views moved at 1x, of 535 |
+|---|---|
+| `.none` at any integer scale, `.high` otherwise | 159 |
+| same, fallback left at `.low` | 148 |
+| + destination must be the bitmap's authored size | 146 |
+| + destination must land on the pixel grid | **8** |
+
+The last 8 are four at `maxdelta=1` over 2–5 px, `Scooby-Doo_2/infoView` (nondeterministic by
+construction — see the README's counter-evidence table), and three genuine sharpenings with no
+geometry shift (`Television`, `Erektorset`, `Crystalball`).
+
+**Two implementation traps, both paid for.** Core Image was the first backend and failed twice for
+real reasons: `CILanczosScaleTransform` treats everything outside the source extent as transparent
+black and bleeds it inward — it turned the render fixture's opaque corner to `alpha=155` and would
+have haloed every sprite in the corpus — and a retained `CIContext` costs a file descriptor, which
+`testHundredRapidLoadsViewsResizesAndCacheTeardownRemainBounded` counts and failed on. vImage has
+neither problem. Then the sharpen kernel was first written with a divisor of 1, an effective amount
+of *four*, and Hard Boiled came back ringing with white halos on every bevel. It is now 3/16;
+6/16 still speckled the smooth light band, which is JPEG noise being amplified.
+
 ## Ruled out — do not chase these again
+
+- **The clipping masks were not the cause, and neither was interpolation *quality*.** Both were
+  measured and both are clean. The silhouette of a `clippingImage` skin is already antialiased —
+  6,512 partial-alpha pixels in a live 1350x1200 capture of Hard Boiled — so the stair-stepping that
+  looks like a hard mask edge in a zoomed screenshot is a colour boundary inside the artwork, not the
+  mask. And `.low` vs `.high` at 2x is **byte-identical** on this path, so any fix phrased as raising
+  the interpolation quality is a no-op. Only `.none` differs (max delta 44), and it is worse. W160.
 
 - **The dancer is not ours and is not in the archive.** Reference screenshots of Bionic Dot show a
   dancing figure standing in the lens. That is **Plus! Dancer**, a separate Microsoft *Plus! for

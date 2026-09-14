@@ -1257,3 +1257,36 @@ resize hands the axis back — on the reading that nothing else would carry a sc
 the new size. Alignment is what carries it, so the case now asserts the script's value survives, and
 `WMPAlignmentTests.testAScriptedCoordinateReanchorsFromTheCanvasItWasAssignedAt` pins the half it
 hands off to, including the un-aligned node that correctly stays put.
+
+## W160 — the Plus! artwork looked low resolution on Retina
+
+**Closed 2026-09-14.** Reported live as *"several of the plus skins have a low res look to the
+grapics, plus hard boiled, plus hue shifter, plus slimline"*, and after the first fix landed, *"it
+does not look better. can the lines be crisp?"* — which is the sentence that decided the
+implementation.
+
+`WMPSceneBuilder` passed `interpolation: .low` for every image, so a `.wmz`'s 1x artwork took a
+bilinear 2x upscale on a Retina display. Not a property of these skins: their density is identical
+to skins nobody complained about (`Plus! Hard Boiled` 190x253 art in a 190x253 subview,
+`New Super Mario Bros` 582x435 in 582x435). Photo-real JPEG bodies simply do not survive bilinear
+where flat cartoon art does.
+
+**Neither CoreGraphics filter is acceptable.** `.low` and `.high` are byte-identical on this path
+(measured at 2x on `Egg_Body_Normal.jpg`), and `.none` — which is what Classic and Winamp Modern
+already do for their own 1x artwork — is crisp on pixel art and *blocky* on a photograph, which is
+what the second report rejected. The resample therefore moved out of the draw:
+`WMPImageStore.upscaledImage` runs a Lanczos upscale (vImage `kvImageHighQualityResampling`) plus a
+3/16 luminance sharpen once per bitmap and caches it in the existing LRU, and the renderer blits it
+1:1.
+
+`WMPBitmapInterpolationPolicy.decision` gates it on three conditions — authored size, whole-number
+device scale, pixel-grid-aligned destination — each added after a corpus sweep showed the version
+without it moving artwork nothing was wrong with: **159 → 148 → 146 → 8** of 535 views at 1x.
+
+**Verification.** Corpus sweep 527/535 byte-identical (the 8 are four at `maxdelta=1`, the
+nondeterministic `Scooby-Doo_2/infoView`, and three genuine sharpenings with no geometry shift);
+`swift test` 2254 tests, 0 failures; live before/after captures on all three reported skins. A 1x
+render dump cannot see this defect at all — the device scale is 1 there and no draw qualifies.
+
+Full account, including the two Core Image traps and the over-sharpened first kernel, in
+`skills/wmp-skin-guide/reference/skins/plus-family.md` § *W160*.
