@@ -16,17 +16,65 @@ final class WMPWOWTests: XCTestCase {
         return (l, r)
     }
 
-    func testButterflyPreservesSideAndBoundsPeaks() {
+    /// Raising WOW must not turn the slider into a volume fader: the centre is what
+    /// carries most of a mix's level, so the mid stays put and the side grows.
+    /// Width is measured as energy over the block, not per sample — the addition is
+    /// filtered, so an individual sample's difference may narrow in passing.
+    private func widthRatio(frequency: Double, target: Float, amplitude: Float = 0.4) -> Double {
+        var kernel = WMPWOWKernel()
+        let rate = 48000.0
+        let count = 8192
+        let l = (0..<count).map { Float(Double(amplitude) * sin(2 * .pi * frequency * Double($0) / rate)) }
+        let r: [Float] = l.map { -$0 } // pure side content at one frequency
+        let (outL, outR) = process(l, r, target: target, kernel: &kernel)
+        var dry: Double = 0, wet: Double = 0
+        for i in (count / 2)..<count {
+            let dryDifference = Double(l[i] - r[i])
+            let wetDifference = Double(outL[i] - outR[i])
+            dry += dryDifference * dryDifference
+            wet += wetDifference * wetDifference
+            XCTAssertEqual(outL[i] + outR[i], l[i] + r[i], accuracy: 0.000001)
+        }
+        return (wet / dry).squareRoot()
+    }
+
+    func testButterflyPreservesMidWidensSideAndBoundsPeaks() {
+        // Above the cutoff the side reaches close to the full ceiling.
+        let ceiling = 1 + Double(WMPWOWController.maximumWidening)
+        XCTAssertEqual(widthRatio(frequency: 1000, target: WMPWOWController.maximumWidening),
+                       ceiling, accuracy: 0.05)
+        XCTAssertGreaterThan(widthRatio(frequency: 300, target: WMPWOWController.maximumWidening), 1.8)
+        // Deep bass keeps its place in the image instead of spending the headroom.
+        XCTAssertLessThan(widthRatio(frequency: 30, target: WMPWOWController.maximumWidening), 1.2)
+        // Half travel is audibly narrower than full travel.
+        XCTAssertLessThan(widthRatio(frequency: 1000, target: WMPWOWController.maximumWidening / 2),
+                          widthRatio(frequency: 1000, target: WMPWOWController.maximumWidening) - 0.5)
+
+        // Full-scale input cannot acquire a peak, and the mid still survives exactly.
         var kernel = WMPWOWKernel()
         let l = (0..<4096).map { Float(sin(Double($0) * 0.13)) }
         let r = (0..<4096).map { Float(cos(Double($0) * 0.21)) }
-        let (outL, outR) = process(l, r, target: 0.8, kernel: &kernel)
+        let (outL, outR) = process(l, r, target: WMPWOWController.maximumWidening, kernel: &kernel)
         for i in l.indices {
-            XCTAssertEqual(outL[i] - outR[i], l[i] - r[i], accuracy: 0.000001)
+            XCTAssertEqual(outL[i] + outR[i], l[i] + r[i], accuracy: 0.000001)
             XCTAssertLessThanOrEqual(abs(outL[i]), 1.000001)
             XCTAssertLessThanOrEqual(abs(outR[i]), 1.000001)
         }
-        XCTAssertEqual(outL.last! + outR.last!, 0.2 * (l.last! + r.last!), accuracy: 0.000001)
+        XCTAssertEqual(WMPWOWKernel.boundedWidening(0.5, left: 0.9, right: -0.8), 0.1, accuracy: 0.000001)
+        XCTAssertEqual(WMPWOWKernel.boundedWidening(-0.5, left: -0.9, right: 0.8), -0.1, accuracy: 0.000001)
+        XCTAssertEqual(WMPWOWKernel.boundedWidening(0.5, left: 1.4, right: 0), 0)
+    }
+
+    /// The defect this replaced: mono was attenuated by the full WOW amount while
+    /// gaining no width at all, because there is no side signal to widen.
+    func testMonoKeepsItsLevelAtEveryWOWLevel() {
+        for target in [Float(0.2), 0.5, 0.8] {
+            var kernel = WMPWOWKernel()
+            let mono = (0..<4096).map { Float(0.8 * sin(Double($0) * 0.05)) }
+            let (outL, outR) = process(mono, mono, target: target, kernel: &kernel)
+            XCTAssertEqual(outL, mono)
+            XCTAssertEqual(outR, mono)
+        }
     }
 
     func testOffIsExactAndRampsBackToDry() {
@@ -73,6 +121,62 @@ final class WMPWOWTests: XCTestCase {
         for _ in 0..<48000 { XCTAssertEqual(silence.sample(mid: 0, target: 1, speaker: 0), 0) }
         XCTAssertEqual(WMPTruBassDSP.boundedAddition(0.5, left: 0.9, right: 0.8), 0.1, accuracy: 0.000001)
         XCTAssertEqual(WMPTruBassDSP.boundedAddition(-0.5, left: -0.9, right: -0.8), -0.1, accuracy: 0.000001)
+    }
+
+    /// TruBass distorted below half strength on loud material. Fitting the addition
+    /// into the headroom by clamping each sample flat-tops the bass wherever the mix
+    /// is loud, and over-range input dropped it to zero outright — switching the bass
+    /// on and off sample by sample around a hot master's peaks. The gain moves instead.
+    func testTruBassDoesNotDistortLoudOrOverRangeMaterial() {
+        let rate = 48000.0
+        func distortion(peak: Double, target: Float) -> Double {
+            var dsp = WMPTruBassDSP(sampleRate: rate)
+            var out: [Double] = []
+            for i in 0..<Int(rate * 2) {
+                let t = Double(i) / rate
+                let raw = 0.55 * sin(2 * .pi * 50 * t) + 0.45 * sin(2 * .pi * 1000 * t)
+                let mid = Float(raw * peak)
+                let bass = dsp.sample(mid: mid, target: target, speaker: 1)
+                let added = dsp.limitedAddition(bass, left: mid, right: mid)
+                if peak <= 1 { XCTAssertLessThanOrEqual(abs(mid + added), 1.000001) }
+                if i > Int(rate) { out.append(Double(mid + added)) }
+            }
+            func magnitude(_ frequency: Double) -> Double {
+                let w = 2 * Double.pi * frequency / rate
+                let c = 2 * cos(w)
+                var s1 = 0.0, s2 = 0.0
+                for v in out { let s = v + c * s1 - s2; s2 = s1; s1 = s }
+                return (s1 * s1 + s2 * s2 - c * s1 * s2).squareRoot() / Double(out.count) * 2
+            }
+            var harmonics = 0.0
+            for h in 2...8 { let v = magnitude(50 * Double(h)); harmonics += v * v }
+            return harmonics.squareRoot() / magnitude(50) * 100
+        }
+        // Hard-clamping each sample measured 1.0% here, and 1.4%/2.6% over range.
+        XCTAssertLessThan(distortion(peak: 0.99, target: 0.4), 0.6)
+        XCTAssertLessThan(distortion(peak: 1.02, target: 0.4), 0.6)
+        XCTAssertLessThan(distortion(peak: 1.15, target: 0.4), 0.6)
+    }
+
+    /// The limiter must duck and recover, not latch: a loud passage cannot leave the
+    /// enhancement permanently turned down once the level drops again.
+    func testTruBassLimiterRecoversAfterLoudPassage() {
+        let rate = 48000.0
+        var dsp = WMPTruBassDSP(sampleRate: rate)
+        func run(peak: Float, seconds: Double) -> Float {
+            var last: Float = 0
+            for i in 0..<Int(rate * seconds) {
+                let mid = peak * Float(sin(2 * .pi * 50 * Double(i) / rate))
+                last = dsp.limitedAddition(dsp.sample(mid: mid, target: 0.4, speaker: 1),
+                                           left: mid, right: mid)
+            }
+            return abs(last)
+        }
+        _ = run(peak: 0.3, seconds: 1)
+        let quiet = run(peak: 0.3, seconds: 0.25)
+        _ = run(peak: 1.2, seconds: 1)
+        let recovered = run(peak: 0.3, seconds: 1)
+        XCTAssertGreaterThan(recovered, quiet * 0.9)
     }
 
     func testAuthoredWOWScriptAndSpeakerWrap() async throws {
@@ -197,9 +301,13 @@ final class WMPWOWTests: XCTestCase {
                     try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4096)
                     let input = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16384)!
                     input.frameLength = input.frameCapacity
+                    // Above the widening cutoff: DC and deep bass are deliberately
+                    // left centred, so a constant test signal would prove nothing.
                     for channel in 0..<Int(channels) {
                         for i in 0..<Int(input.frameLength) {
-                            input.floatChannelData![channel][i] = channel == 0 ? 0.75 : 0.25
+                            let phase = 2 * Double.pi * 1000 * Double(i) / rate
+                            input.floatChannelData![channel][i] = Float(channel == 0
+                                ? 0.5 * sin(phase) : 0.2 * sin(phase))
                         }
                     }
                     player.scheduleBuffer(input)
@@ -208,14 +316,27 @@ final class WMPWOWTests: XCTestCase {
                     player.play()
                     let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096)!
                     XCTAssertEqual(try engine.renderOffline(4096, to: output), .success)
-                    XCTAssertEqual(output.floatChannelData![0][4095], channels == 2 ? 0.35 : 0.75, accuracy: 0.00001)
-                    if channels > 1 {
-                        XCTAssertEqual(output.floatChannelData![1][4095], channels == 2 ? -0.15 : 0.25, accuracy: 0.00001)
+                    // The node is in the graph and widening: the mid survives sample
+                    // for sample while the side grows by close to the full ceiling.
+                    var midError: Float = 0, dryWidth: Double = 0, wetWidth: Double = 0
+                    for i in 2048..<4096 {
+                        let l = output.floatChannelData![0][i], r = output.floatChannelData![1][i]
+                        let phase = 2 * Double.pi * 1000 * Double(i) / rate
+                        let dryL = Float(0.5 * sin(phase)), dryR = Float(0.2 * sin(phase))
+                        midError = max(midError, abs((l + r) - (dryL + dryR)))
+                        dryWidth += Double((dryL - dryR) * (dryL - dryR))
+                        wetWidth += Double((l - r) * (l - r))
+                        XCTAssertLessThanOrEqual(abs(l), 1.000001)
                     }
+                    XCTAssertLessThan(midError, 0.0001)
+                    let widening = (wetWidth / dryWidth).squareRoot()
+                    XCTAssertGreaterThan(widening, 2.2)
+                    XCTAssertLessThan(widening, 1 + Double(WMPWOWController.maximumWidening) + 0.01)
                     controller.setActive(false)
                     XCTAssertEqual(try engine.renderOffline(4096, to: output), .success)
-                    XCTAssertEqual(output.floatChannelData![0][4095], 0.75)
-                    if channels > 1 { XCTAssertEqual(output.floatChannelData![1][4095], 0.25) }
+                    let tail = 2 * Double.pi * 1000 * 8191 / rate
+                    XCTAssertEqual(output.floatChannelData![0][4095], Float(0.5 * sin(tail)), accuracy: 0.00001)
+                    XCTAssertEqual(output.floatChannelData![1][4095], Float(0.2 * sin(tail)), accuracy: 0.00001)
                     engine.stop()
                     engine.detach(node)
                 }

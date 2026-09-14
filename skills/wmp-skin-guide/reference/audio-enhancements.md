@@ -5,7 +5,8 @@ approximations, not the licensed SRS algorithms shipped in Windows Media Player.
 
 ## Sources and intended sound
 
-- [Stereo butterfly discussion](https://forum.pdpatchrepo.info/topic/9645/stereo-butterfly-effect-aka-the-wmp-srs-wow-effect): the requested WOW model mixes inverted mono back into stereo. This changes the mid/side ratio. It does not synthesize spatial information from mono.
+- [Stereo butterfly discussion](https://forum.pdpatchrepo.info/topic/9645/stereo-butterfly-effect-aka-the-wmp-srs-wow-effect): the originally requested WOW model mixes inverted mono back into stereo. It changes the mid/side ratio, and it does not synthesize spatial information from mono. **We no longer implement it that way** — taken literally it is a volume fader; see *Butterfly DSP*.
+- [FFmpeg `af_extrastereo`](https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/af_extrastereo.c) (LGPL) is the arithmetic we do use, and [Airwindows Srsly3](https://github.com/airwindows/airwindows) (MIT) is the closest open model of an actual SRS box. NullPlayer is GPL-3.0-only, so both are license-compatible to borrow from; [Calf](https://github.com/calf-studio-gear/calf)'s bass enhancer is GPL-2.1-**only** and therefore read-only for us.
 - [SRS low-frequency enhancement design, US6285767B1](https://patents.google.com/patent/US6285767B1/en), especially figures 12–15: a low-bass envelope controls enhancement of existing mid-bass content; speaker size changes the filter bank. This is the basis for our TruBass approximation. No exact WMP source or tuning was found.
 - [Microsoft EQUALIZERSETTINGS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/equalizersettings-element) defines the skin API. [speakerSize](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/equalizersettings-speakersize) is **0 headphones, 1 normal, 2 large**. Do not infer this order from the pictures. [truBassLevel](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/wmp/equalizersettings-trubasslevel) ranges from 0 to 100, defaults to 50, and is gated by enhancedAudio.
 
@@ -65,20 +66,41 @@ streams, not remote speakers or VLC video sound.
 
 ## Butterfly DSP
 
-With `a = 0.8 * wowLevel / 100` and `M = (L + R) / 2`:
+Widening **adds the side signal**; it does not subtract the mid. With
+`a = 1.4 * wowLevel / 100` and `S = (L - R) / 2`:
 
 ```
-Lout = L - a*M
-Rout = R - a*M
+Lout = L + a*S
+Rout = R - a*S
 ```
 
-The side signal is unchanged; the centre is attenuated by `1-a`. The 0.8 ceiling is our tuning choice,
-leaving 20% of the centre at maximum instead of cancelling vocals outright. This can reduce perceived
-volume and centred bass. Identical stereo channels stay centred and get quieter; a true one-channel
-bus skips widening. There is no claim of exact SRS response or added mono width.
-Each output's coefficient magnitudes sum to one, so this operation cannot increase a bounded input's
-sample peak. WOW alone needs no clipping or automatic gain compensation. The target slews at
-`1/(0.020*sampleRate)` per sample; returning to zero restores exact dry values.
+`Lout + Rout == L + R` for every sample, so the centre — where a mix keeps most of its level —
+survives the whole slider travel, and mono passes through bit-exact. Side gain reaches `1 + a`,
+2.4x at WOW 100. FFmpeg's `af_extrastereo` (LGPL) is the same arithmetic and defaults to 2.5;
+Airwindows' MIT-licensed Srsly/Srsly2/Srsly3 model SRS boxes with narrow mid and side EQ bands
+instead, and stage `gainM`/`gainS` so widening cannot decay into a level change. Both are worth
+reading before retuning this. No open-source implementation of the actual SRS WOW exists — it was
+licensed IP, and the `srs-audio-sandbox` GitHub org is promotional, not source.
+
+**The original implementation widened by cancelling the centre** (`Lout = L - a*M`), which raises
+the mid/side ratio purely by discarding mid: at WOW 100 a centred mix lost 80% of its level and
+mono was attenuated 80% for no width at all. The slider was a volume fader. If a future change
+proposes reaching width by touching the mid, that is this defect returning.
+
+Only side content above `WMPWOWKernel.wideningCutoff` (180 Hz, one-pole) is added. Deep bass carries
+no usable image, and widening it spends the headroom that bounds everything above it. The coefficient
+is recomputed only when the sample rate changes, never inside the sample loop.
+
+Unlike the old kernel, coefficient magnitudes no longer sum to one, so the addition **is** clamped —
+`WMPWOWKernel.boundedWidening` mirrors `boundedAddition`, but the addition is antisymmetric so both
+channels constrain it. Zero always lies inside that interval for in-range input, so clamping can only
+shorten the widening, never invert the image; over-range input is widened not at all. Raising the
+ceiling further trades reach for how often loud, already-wide frames hit that clamp.
+
+Because the addition is filtered, it is phase-shifted rather than a scaled copy: **an individual
+sample's L-R may narrow in passing.** Width is an energy property of a block here, and tests must
+measure it that way. The target slews at `1/(0.020*sampleRate)` per sample; returning to zero
+restores exact dry values and clears the filter state so no stale bass returns after a bypass.
 
 ## TruBass DSP choices
 
@@ -98,10 +120,21 @@ after widening. Thus WOW does not starve TruBass's detector. Mono can receive ba
 multichannel buses pass through. This design reinforces existing content rather than synthesizing a
 complete harmonic series from a pure sub-bass tone.
 
-Only the added bass contribution is restricted to the available shared L/R headroom. Existing
-out-of-range input receives no additional bass. The original signal is not globally limited and the
-L−R difference stays intact. At high levels this bounds the enhancement nonlinearly and may alter its
-timbre; it is not a transparent mastering limiter. Off/zero bass contributes exactly zero. Filter
+Only the added bass contribution is restricted to the available shared L/R headroom, and it is
+restricted by **moving a gain, not by reshaping the waveform** — `limitedAddition`, not the raw
+`boundedAddition`. The gain falls immediately to whatever the current sample allows, so the hard
+bound still holds exactly for in-range input, and recovers over 150 ms. The original signal is not
+globally limited and the L−R difference stays intact; it is not a transparent mastering limiter, and
+a loud passage audibly ducks the enhancement rather than distorting it.
+
+**This is the fix for "TruBass distorts below half strength."** Applying the bound per sample is a
+clipper: it flat-topped the added bass wherever the mix was loud, and over-range input — a hot master,
+or a graphic-EQ boost ahead of us — dropped the addition to zero outright, switching the bass on and
+off sample by sample around every peak. Measured on 50 Hz under a 1 kHz tone at TruBass 40, THD was
+1.0% at 0.99 peak and 2.6% at 1.15; with the gain limiter all three cases sit under 0.5%. The drive is
+what makes this reachable so early: on a kick the addition peaks near 36% of the input peak at TruBass
+40, roughly +3 dB of bass into a master with none to spare. If the enhancement ever needs to be
+stronger on loud material, the drive is the number to revisit — clamping harder is what caused this. Off/zero bass contributes exactly zero. Filter
 state is cleared on the fully dry path to prevent stale bass from returning after a long bypass.
 
 ## Render and verification invariants
@@ -129,7 +162,7 @@ reached the host in a single drag. Both fixes are in `SKILL.md` — the `eq.enha
 never re-settling after the skin's own `setSrsEffect()`, and the filmstrip indexed from the wrong
 end. Check the command and the drawn frame before the filters.
 
-Validation on 2026-09-12: the full suite completed 2,221 tests with 18 opt-in skips and no failures.
+Validation on 2026-09-13: the full suite completed 2,251 tests with 18 opt-in skips and no failures.
 The eight enhancement tests include owned-buffer mono/5.1 passthrough and rendered bass decay with
 upstream silence flags. The installed `9SeriesDefault.wmz` passed graph loading and script geometry
 at three sizes. Its separate optional transport-map pixel test failed (hit 75 versus expected 70);

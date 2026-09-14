@@ -2,21 +2,48 @@ import AVFoundation
 import os
 
 /// WMP-only approximation of the forum's stereo butterfly, not licensed SRS DSP.
-/// Adding an inverted mid signal reduces the centre relative to the sides.
-/// Coefficients have absolute sum one, so bounded input cannot acquire new peaks.
+/// Widening adds the side signal rather than subtracting the mid: the two reach the
+/// same mid/side ratio, but only this one leaves a centred mix at its original level.
+/// Only side content above `wideningCutoff` is added — low bass carries no usable
+/// image, and widening it spends the headroom that limits everything above it.
 struct WMPWOWKernel {
+    /// Side content below this stays where the mix put it. Airwindows' SRS models
+    /// place their widening bands in the kilohertz; this is the same idea, coarser.
+    static let wideningCutoff: Double = 180
+
     private(set) var amount: Float = 0
+    private var lowSide: Float = 0
+    private var cutoffCoefficient: Float = 0
+    private var coefficientRate: Double = 0
+
+    /// Reserve headroom for the added side signal, mirroring `boundedAddition`.
+    /// The addition is antisymmetric, so both channels constrain it. Zero always
+    /// lies in the interval for in-range input, so clamping can only shorten the
+    /// widening, never invert it. Already over-range input is widened not at all.
+    static func boundedWidening(_ side: Float, left: Float, right: Float) -> Float {
+        guard abs(left) <= 1, abs(right) <= 1 else { return 0 }
+        return max(max(-1 - left, right - 1), min(min(1 - left, 1 + right), side))
+    }
 
     mutating func process(left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
                           frames: Int, target: Float, sampleRate: Double) {
         let step = Float(1 / (0.02 * sampleRate)) // 20 ms full-scale ramp
+        if sampleRate != coefficientRate { // once per rate, never in the sample loop
+            coefficientRate = sampleRate
+            cutoffCoefficient = Float(min(0.5, 2 * Double.pi * Self.wideningCutoff / sampleRate))
+        }
         for frame in 0..<frames {
             amount += max(-step, min(step, target - amount))
-            if amount == 0 { continue } // exact dry samples after the ramp
+            if amount == 0 { // exact dry samples after the ramp, and no stale bass
+                lowSide = 0
+                continue
+            }
             let l = left[frame], r = right[frame]
-            let mid = (l * 0.5 + r * 0.5) * amount
-            left[frame] = l - mid
-            right[frame] = r - mid
+            let side = (l - r) * 0.5
+            lowSide += cutoffCoefficient * (side - lowSide)
+            let widening = Self.boundedWidening((side - lowSide) * amount, left: l, right: r)
+            left[frame] = l + widening
+            right[frame] = r - widening
         }
     }
 }
@@ -51,7 +78,7 @@ final class WMPWOWAudioUnit: AUAudioUnit, @unchecked Sendable {
 
     func setAmount(_ amount: Float, bass: Float = 0, speaker: Int = 0) {
         control.withLock {
-            $0.wow = amount.isFinite ? max(0, min(0.8, amount)) : 0
+            $0.wow = amount.isFinite ? max(0, min(WMPWOWController.maximumWidening, amount)) : 0
             $0.bass = bass.isFinite ? max(0, min(1, bass)) : 0
             $0.speaker = max(0, min(2, speaker))
         }
@@ -121,7 +148,7 @@ final class WMPWOWAudioUnit: AUAudioUnit, @unchecked Sendable {
                                        target: renderTarget.wow, sampleRate: renderSampleRate)
                     }
                     let l = left[i], r = right?[i] ?? l
-                    let addition = WMPTruBassDSP.boundedAddition(bass, left: l, right: r)
+                    let addition = bassDSP.limitedAddition(bass, left: l, right: r)
                     if addition != 0 {
                         // Filter decay may produce audio after the upstream source goes silent.
                         flags.pointee.remove(.unitRenderAction_OutputIsSilence)
@@ -138,6 +165,11 @@ final class WMPWOWAudioUnit: AUAudioUnit, @unchecked Sendable {
 /// Mirrors PitchTuningController's ownership: independent nodes for primary and
 /// crossfade streams, driven from one state, with no changes to the ordinary EQ.
 final class WMPWOWController {
+    /// Side gain at WOW 100 is `1 + maximumWidening`. FFmpeg's `extrastereo` ships
+    /// 2.5 as its default; this sits just under it, and the headroom clamp keeps the
+    /// loud, already-wide frames the extra reach would otherwise push over full scale.
+    static let maximumWidening: Float = 1.4
+
     let localNode = WMPWOWAudioUnit.makeNode()
     private class WeakNode {
         weak var node: AVAudioUnitEffect?
@@ -173,7 +205,7 @@ final class WMPWOWController {
     }
     private func configure(_ node: AVAudioUnitEffect) {
         (node.auAudioUnit as? WMPWOWAudioUnit)?.setAmount(
-            active && enabled ? Float(level / 100 * 0.8) : 0,
+            active && enabled ? Float(level / 100 * Double(WMPWOWController.maximumWidening)) : 0,
             bass: active && enabled ? Float(bassLevel / 100) : 0, speaker: speakerSize)
     }
     private func apply() {

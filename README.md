@@ -67,6 +67,7 @@ All visualization choices persist across launches.
 ### General Features
 
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
+- WOW stereo widening and TruBass low-frequency enhancement, driven from a Windows Media Player skin's own enhancement controls (on/off, both strengths, and headphone/normal/large speaker profiles). Independent approximations of the SRS effects, not the licensed algorithms; they apply to local files and HTTP streams, and are unavailable while casting
 - Intelligent radio mix generation for all sources
 - Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
 - Sonos content filtering for unsupported lossless formats and improved playlist support

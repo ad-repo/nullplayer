@@ -31,7 +31,9 @@ struct WMPTruBassDSP {
     private var subEnvelope: Double = 0
     private var lowerWeight: Double = 0
     private var level: Double = 0
+    private var limiterGain: Double = 1
     private let attack: Double, release: Double, step: Double
+    private let limiterRelease: Double
 
     init(sampleRate: Double) {
         sub = Filter(frequency: 100, rate: sampleRate, lowpass: true)
@@ -39,10 +41,12 @@ struct WMPTruBassDSP {
         attack = 1 - exp(-1 / (0.01 * sampleRate))
         release = 1 - exp(-1 / (0.1 * sampleRate))
         step = 1 / (0.02 * sampleRate)
+        limiterRelease = 1 - exp(-1 / (0.15 * sampleRate))
     }
 
     var isDry: Bool { level == 0 }
     mutating func reset() {
+        limiterGain = 1
         sub.z1 = 0; sub.z2 = 0; subEnvelope = 0
         for i in bands.indices { bands[i].z1 = 0; bands[i].z2 = 0; envelopes[i] = 0 }
     }
@@ -70,8 +74,30 @@ struct WMPTruBassDSP {
 
     /// Reserve headroom for the added centre signal without clipping the dry path
     /// or changing the L-R image. Already over-range input receives no extra boost.
+    ///
+    /// Applied per sample this is a clipper: it flat-tops the added bass wherever the
+    /// mix is loud, and drops it to zero outright on over-range input, which around a
+    /// hot master's peaks means switching the bass on and off sample by sample. Use it
+    /// as the ceiling, not as the operator — `limitedAddition` is what the graph calls.
     static func boundedAddition(_ bass: Float, left: Float, right: Float) -> Float {
         guard abs(left) <= 1, abs(right) <= 1 else { return 0 }
         return max(-1 - min(left, right), min(1 - max(left, right), bass))
+    }
+
+    /// Fit the added bass into the headroom by moving a *gain*, not by reshaping the
+    /// waveform. The gain falls immediately to whatever this sample allows — so the
+    /// hard bound above still holds exactly — and recovers over 150 ms, so a loud
+    /// passage ducks the enhancement smoothly instead of clipping it every cycle.
+    mutating func limitedAddition(_ bass: Float, left: Float, right: Float) -> Float {
+        let magnitude = abs(Double(bass))
+        guard magnitude > 1e-9 else {
+            limiterGain += limiterRelease * (1 - limiterGain)
+            return 0
+        }
+        // Headroom in the direction this sample pushes; negative when already over range.
+        let available = bass > 0 ? 1 - Double(max(left, right)) : 1 + Double(min(left, right))
+        let ceiling = min(1, max(0, available) / magnitude)
+        limiterGain = ceiling < limiterGain ? ceiling : limiterGain + limiterRelease * (ceiling - limiterGain)
+        return Float(Double(bass) * limiterGain)
     }
 }

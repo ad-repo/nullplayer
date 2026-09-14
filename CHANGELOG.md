@@ -35,6 +35,20 @@
 
 ### Bug Fixes
 
+- **Raising a Media Player skin's WOW slider no longer just turns the music down.** WOW widened the
+  stereo image by cancelling the centre of the mix, and a mix keeps most of its level in the centre,
+  so the slider worked as a volume fader: at full strength a centred track lost 80% of its level, and
+  a mono recording was made quieter while gaining no width at all. Width now comes from raising the
+  sides instead, so the level holds steady across the whole travel and mono is left untouched. The
+  effect also reaches considerably further than before, and it no longer widens deep bass, which
+  carries no stereo image and was spending the headroom the rest of the effect needs.
+
+- **TruBass no longer distorts at low strengths.** The added bass was being squeezed into whatever
+  headroom the track had left one sample at a time, which flattens the shape of the bass wherever the
+  music is loud — and on a loud master it switched the bass off and back on around every peak. Both
+  showed up as a buzz well below half strength. Loud passages now ease the enhancement down and let it
+  come back as the music opens up, instead of breaking it up.
+
 - **A Media Player skin's visualization window is no longer a black box.** Some skins paint their
   own backdrop behind the visualizer — usually plain black — and that backdrop was being drawn back
   over the top of it, so the window showed its frame and its buttons around an empty hole. The
