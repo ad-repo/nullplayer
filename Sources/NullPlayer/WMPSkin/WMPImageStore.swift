@@ -66,14 +66,27 @@ struct WMPImageAnimation: Hashable, Codable {
     /// 61-frame `m_anim_coolant.gif` are `0`.
     let loopCount: Int
 
+    /// **The animation ends by drawing nothing**, because its final frame is the *terminator*
+    /// idiom: a degenerate image block — one or two pixels — whose disposal method is
+    /// `restore to background`. See `WMPGIFTerminator`.
+    let clearsWhenFinished: Bool
+
     var frameCount: Int { delays.count }
     var duration: TimeInterval { delays.reduce(0, +) }
     /// When the animation stops moving, or `nil` while it never does.
     var endOfPlayback: TimeInterval? { loopCount > 0 ? duration * TimeInterval(loopCount) : nil }
 
-    init(delays: [TimeInterval], loopCount: Int = 0) {
+    init(delays: [TimeInterval], loopCount: Int = 0, clearsWhenFinished: Bool = false) {
         self.delays = delays
         self.loopCount = max(0, loopCount)
+        self.clearsWhenFinished = clearsWhenFinished
+    }
+
+    /// Whether the element has nothing left to draw at `clock`. Only a finite animation can reach
+    /// it — an endless one has no end to hold.
+    func isCleared(at clock: TimeInterval) -> Bool {
+        guard clearsWhenFinished, let end = endOfPlayback, clock.isFinite else { return false }
+        return clock >= end
     }
 
     /// The frame showing at `clock` seconds in. A zero-duration animation — every delay unreadable
@@ -329,7 +342,8 @@ final class WMPImageStore: @unchecked Sendable {
             return nil
         }
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithData(try provider.data(for: canonical) as CFData, options) else {
+        let data = try provider.data(for: canonical)
+        guard let source = CGImageSourceCreateWithData(data as CFData, options) else {
             lock.lock(); animationEntries[canonical] = .some(nil); lock.unlock()
             return nil
         }
@@ -351,7 +365,8 @@ final class WMPImageStore: @unchecked Sendable {
         // Absent means "play once" in the GIF grammar — only the NETSCAPE2.0 extension asks for a
         // loop — and that is what ImageIO's `1` means here as well.
         let loopCount = (gifProperties?[kCGImagePropertyGIFLoopCount] as? Int) ?? 1
-        let animation = WMPImageAnimation(delays: delays, loopCount: loopCount)
+        let animation = WMPImageAnimation(delays: delays, loopCount: loopCount,
+                                          clearsWhenFinished: WMPGIFTerminator.clearsWhenFinished(data))
         lock.lock(); animationEntries[canonical] = .some(animation); lock.unlock()
         return animation
     }

@@ -35,6 +35,18 @@
 
 ### Bug Fixes
 
+- **A Media Player skin's opening animation no longer covers the player it just opened.** Several
+  `.wmz` skins start by sliding a shutter off the display, and the last frame of that animation was
+  being held forever — so on both Windows XP Media Center Edition skins a blank plate sat over the
+  screen and hid the track name, the status line, the clock, the seek bar, and the whole equalizer
+  panel the skin opens in the same place. The equalizer was working the entire time; nothing was
+  visible. The shutter now finishes and gets out of the way, as it does in Windows Media Player.
+  Around thirty other skins open the same way, including Age of Mythology, MechAssault, Blinx,
+  Crimson Skies, Harry Potter, T3 and the Xbox Music Mixer.
+- **A Media Player skin's status line now says what the player is doing.** Skins that show a
+  "Status" readout — or that put the player state in front of the track name — were showing nothing
+  at all there. It now reads Playing, Paused, Stopped or Ready, and follows along as you use the
+  transport.
 - **Media Player skin artwork is no longer blurry on a Retina display.** A `.wmz` skin is drawn from
   artwork authored at single density, and it was being stretched to fit a Retina screen with a filter
   that softens every edge — most visible on the photo-real Plus! skins (Hard Boiled, HueShifter,

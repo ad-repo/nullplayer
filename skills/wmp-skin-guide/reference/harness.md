@@ -579,6 +579,26 @@ had been half its window's width). "Every one I opened looks better" is the clai
 only worth anything if the ten were chosen before they were looked at. Neither check is the PNG
 count, and the count is what both fixes have in common.
 
+### A sweep has two nondeterministic outputs, and one of them is an image
+
+Measured 2026-09-14 by capturing the **same build twice** and comparing the pair — which is the
+cheap move that turns "my change did this" into "the harness does this", and costs one 45-second
+capture.
+
+- **`Scooby-Doo_2/infoView` differs run to run.** Its `loadInfoPrefs` calls `randomPic()`, which is
+  `parseInt(Math.random() * 10)` over five character PNGs. It is the only image in the 535 that
+  moves on its own, and it will read as collateral damage from whatever you just changed.
+- **The invariants half is mostly noise.** A no-op change reports hundreds of "changed lines" that
+  are entirely `loadms` timings and `SCRIPT inline:` tally **ordering** — the same counts printed in
+  a different sequence, from unstable dictionary iteration. W143's note above already says this; it
+  is repeated here because a first-time reader sees `DIFFER — 516 changed lines` and stops. Read the
+  counts (`RENDER-DUMP … commands/hits/unresolved`), never the line total.
+
+**Predict the diff before running the compare.** For W162 the prediction was "7 archives, the ones
+with a markup `wmpprop:player.status` binding"; the answer was 14, and the extra 7 were skins whose
+`onLoad` reaches a metadata updater. A prediction that is wrong in the *smaller* direction is
+information; being unable to predict at all means the change's reach was never measured.
+
 ### A baseline worktree needs the vendored frameworks linked in
 
 `capture` refuses a dirty tree and tells you to use a worktree, which is right — but `Frameworks/`

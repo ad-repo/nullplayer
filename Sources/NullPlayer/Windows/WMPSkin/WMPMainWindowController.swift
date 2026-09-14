@@ -1377,10 +1377,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // transaction. What it must not do is raise the skin's *authored* handler: `status_onchange`
         // is authored by **70 of the 177 measurable archives and every one of its 75 sources is a
         // metadata updater**, 35 of them `updateMetadata()`, whose whole body is
-        // `metadata.value = player.status`. `player.status` is inert and empty here (there is no
-        // status string behind it), so raising it on every tick overwrote the track readout with ""
-        // ten times a second: `9SeriesDefault` runs `ShowStatus(player.status)` and drew an empty
-        // metadata line beside a correct clock, reported as no track information. It also ran a
+        // `metadata.value = player.status`, so raising it on every tick ran that updater ten times
+        // a second: `9SeriesDefault` runs `ShowStatus(player.status)` and drew an empty metadata
+        // line beside a correct clock, reported as no track information. **`player.status` is a
+        // real sentence since 2026-09-14 and the trap is unchanged** — the cost was the rate, not
+        // the emptiness, and a status string that moves with the clock is still not a thing. It also ran a
         // whole script transaction, scene rebuild and render at 10 Hz in every skin, cancelling
         // whatever click or `onTimer` transaction was still in flight.
         //
@@ -1395,7 +1396,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // unbound (the transaction carries no target), which is a whole script transaction per tick
         // per slider for a handler whose only correct trigger is a drag. A duration that changes is
         // a media that opened rather than a clock that ticked, so that keeps the status raise.
-        if previous?.metadata != snapshot.metadata || previous?.duration != snapshot.duration {
+        // The status *string* changing is the event's own subject, and it moves only on a state
+        // transition — `WMPHostSnapshot.statusText` is derived from `state` and whether anything is
+        // open, so this is bounded by the same edges `playstatechange` already rides and can never
+        // become a tick. It was missing only because the string was empty in every state.
+        if previous?.metadata != snapshot.metadata || previous?.duration != snapshot.duration
+            || previous?.statusText != snapshot.statusText {
             events.append("status_onchange")
         }
         // **A control the user is holding is the user's.** `Plus! Pulsar` authors
@@ -1589,9 +1595,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// events that carry it: an open state (`os*`) in `openstatechange` and a play state (`ps*`) in
     /// `playstatechange`. Both are answered from the same members `player.openState` and
     /// `player.playState` answer, so the argument and the property can never disagree. `status` is
-    /// `player.status`, which this engine has nothing behind and answers as the empty string.
-    private static func arguments(for event: String,
-                                  _ snapshot: WMPHostSnapshot) -> [String: WMPJSONValue] {
+    /// `player.status` and rides `WMPHostSnapshot.statusText` for exactly that reason — an
+    /// argument that disagreed with the property the same handler can read is worse than none.
+    static func arguments(for event: String,
+                          _ snapshot: WMPHostSnapshot) -> [String: WMPJSONValue] {
         switch event {
         case "openstatechange":
             return ["NewState": .number(Double(snapshot.playlistCount > 0
@@ -1599,7 +1606,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         case "playstatechange":
             return ["NewState": .number(Double(WMPScriptConstants.playState(for: snapshot.state)))]
         case "status_onchange":
-            return ["status": .string("")]
+            return ["status": .string(snapshot.statusText)]
         // **An ambient handler reads the attribute that changed by its own name** — the SDK's
         // per-handler argument, and the whole of what these two handlers are made of: 68 of the
         // corpus's 77 `currentEffectType_onchange` uses are

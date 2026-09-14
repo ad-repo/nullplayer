@@ -108,6 +108,30 @@ struct WMPHostSnapshot: Hashable, Codable {
     var elapsedText: String { Self.timeString(currentTime) }
     var durationText: String { Self.timeString(duration) }
 
+    /// **`player.status` — WMP's status-bar sentence, and 69 of the 180 archives read it.**
+    ///
+    /// It was inert and empty for eight phases, which left the readout those skins dedicate to it
+    /// blank: `Windows_XP_Media_Center_Edition` paints a `STATUS:` label beside
+    /// `<TEXT value="wmpprop:player.status">` and showed the label alone. **Not one of the corpus's
+    /// 128 uses compares it against a literal** — every one prints it, either straight into a
+    /// readout or prepended to the track name the way the Alienware family's `updateMetadata`
+    /// does — so the string is free to be the sentence WMP shows rather than a token, and no
+    /// handler can branch on the wording.
+    ///
+    /// **There is deliberately no `Buffering (n%)` here.** WMP spells one, but `bufferingProgress`
+    /// is 0-100 with 100 meaning *full* and nothing in this app ever writes it — the field stays at
+    /// its `0` default outside the harness — so a `< 100` test would report every skin permanently
+    /// buffering. The honest status is the one derived from state the engine actually has.
+    var statusText: String {
+        switch state {
+        case .playing: return "Playing"
+        case .paused: return "Paused"
+        // WMP says `Ready` before anything is open and `Stopped` once something is and is not
+        // running, which is the same split `isEnabled(.play)` already makes.
+        case .stopped: return playlistCount > 0 ? "Stopped" : "Ready"
+        }
+    }
+
     func isEnabled(_ action: WMPTransportAction) -> Bool {
         switch action {
         case .play: return playlistCount > 0 && state != .playing

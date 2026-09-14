@@ -215,8 +215,11 @@ struct WMPRenderer: @unchecked Sendable {
                     green: CGFloat(color.green) / 255, blue: CGFloat(color.blue) / 255, alpha: 1)
                 context.fill(command.frame.cgRect)
             case let .image(specification):
-                let frame = (try? imageStore.animation(for: specification.resourcePath))
-                    .flatMap { $0?.frameIndex(at: clock) } ?? 0
+                let animation = (try? imageStore.animation(for: specification.resourcePath)) ?? nil
+                // A finished terminator animation has nothing left to draw, and holding its last
+                // frame buries whatever it was drawn over — see `WMPGIFTerminator`.
+                if animation?.isCleared(at: clock) == true { context.restoreGState(); continue }
+                let frame = animation?.frameIndex(at: clock) ?? 0
                 let decoded = try imageStore.image(for: specification.resourcePath,
                                                    colorKeys: specification.colorKeys,
                                                    implicitKey: specification.implicitColorKey,

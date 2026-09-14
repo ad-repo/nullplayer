@@ -101,7 +101,26 @@ Three rules, each of which was a live defect first:
    The image store keys its cache on the canonical resource path, so a scripted swap is a different
    key and a different decode; the scene owns no image state of its own.
 
-5. **`WMPImage_AlbumArtLarge` and `WMPImage_AlbumArtSmall` are WMP-owned pseudo-resources.** They
+6. **A host path has more than one resolution, and a member being live does not make the binding
+   live (W162).** `player.status` reaches the skin three ways — the object-model member
+   (`metadata.value = player.status`), the `wmpprop:player.status` binding a `<TEXT>` authors, and
+   the `status_onchange` argument — answered by `WMPObjectModel.readPlayer`,
+   `WMPObservablePropertyRegistry.value(path:kind:snapshot:)` and
+   `WMPMainWindowController.arguments(for:_:)` respectively. All three read
+   `WMPHostSnapshot.statusText`, which is where a new host string belongs: it was possible for the
+   member to answer and the readout to stay blank because the registry had no case for the path, and
+   that is exactly how `Windows_XP_Media_Center_Edition`'s `STATUS:` line shipped empty. **Adding a
+   host property means checking all three**, and any new one has to state whether an event argument
+   exists for it at all.
+
+   The wording is WMP's status-bar sentence — `Playing`, `Paused`, `Stopped`, and `Ready` before
+   anything is open — and it is free to be a sentence because **not one of the corpus's 128 uses
+   compares it against a literal**. Every one prints it, either into a readout or in front of the
+   track name. **There is no `Buffering (n%)` case** although WMP spells one:
+   `snapshot.bufferingProgress` is 0-100 with 100 meaning *full* and nothing outside the harness
+   writes it, so a `< 100` test would report every skin permanently buffering on the default `0`.
+
+7. **`WMPImage_AlbumArtLarge` and `WMPImage_AlbumArtSmall` are WMP-owned pseudo-resources.** They
    resolve before archive lookup and are backed only by the current track's artwork, asynchronously
    loaded by the WMP session from local tags, supported servers, or a stream artwork URL. They are
    200px and 75px square respectively, preserve aspect ratio, and draw transparent until artwork
@@ -449,7 +468,7 @@ instead of failing honestly.
 |---|---|---|
 | `openstatechange` | `NewState` | the `os*` open state, the same number `player.openState` answers |
 | `playstatechange` | `NewState` | the `ps*` play state, the same number `player.playState` answers |
-| `status_onchange` | `status` | `player.status`, which is inert and empty here |
+| `status_onchange` | `status` | `player.status`, the same sentence `WMPHostSnapshot.statusText` answers |
 | `currenteffecttype_onchange` | `currentEffectType` | the selected effect's stable id, the same string `<EFFECTS>.currentEffectType` answers |
 | `currentposition_onchange` | `currentPosition` | the playback position in seconds, the same number `player.controls.currentPosition` answers |
 | `currentpreset_onchange` | `currentPreset` | the selected effect preset's index, the same number `<EFFECTS>.currentPreset` answers |

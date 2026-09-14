@@ -94,13 +94,19 @@ enum WMPSkinTestSupport {
     ///
     /// `loops` is the NETSCAPE2.0 loop count — `nil` writes no extension at all, which is the GIF
     /// grammar's "play once", and `0` is the endless loop 88 of those corpus GIFs declare.
-    static func animatedGIF(frameCount: Int, delayCentiseconds: Int, loops: Int? = nil) -> Data {
+    ///
+    /// `canvas` is the logical screen size; every frame stays a 1x1 image block at the origin, which
+    /// GIF allows and which keeps the LZW payload one hand-written literal. `terminator` appends the
+    /// idiom `WMPGIFTerminator` exists for — a further 1x1 block whose disposal is *restore to
+    /// background*, which 79 files across 33 corpus archives write after their last real frame.
+    static func animatedGIF(frameCount: Int, delayCentiseconds: Int, loops: Int? = nil,
+                            canvas: Int = 1, terminator: Bool = false) -> Data {
         precondition(frameCount > 1)
         func le16(_ value: Int) -> [UInt8] { [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF)] }
         var bytes: [UInt8] = Array("GIF89a".utf8)
-        // 1x1, a 2-entry global colour table, no background, no aspect ratio.
-        bytes += le16(1)
-        bytes += le16(1)
+        // A 2-entry global colour table, no background, no aspect ratio.
+        bytes += le16(canvas)
+        bytes += le16(canvas)
         bytes += [0x80, 0x00, 0x00]
         bytes += [0, 0, 0, 255, 255, 255]
         if let loops {
@@ -127,6 +133,18 @@ enum WMPSkinTestSupport {
             // between the table's two colours so consecutive frames genuinely differ.
             let pixel = frame % 2
             bytes += [0x02, 0x02, UInt8(4 | (pixel << 3) | 0x40), 0x01, 0x00]
+        }
+        if terminator {
+            bytes += [0x21, 0xF9, 0x04, 0x08]           // disposal 2 — restore to background
+            bytes += le16(delayCentiseconds)
+            bytes += [0x00, 0x00]
+            bytes += [0x2C]
+            bytes += le16(0)
+            bytes += le16(0)
+            bytes += le16(1)
+            bytes += le16(1)
+            bytes += [0x00]
+            bytes += [0x02, 0x02, 0x44, 0x01, 0x00]
         }
         bytes += [0x3B]
         return Data(bytes)

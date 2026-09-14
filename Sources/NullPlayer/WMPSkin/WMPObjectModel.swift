@@ -309,7 +309,11 @@ final class WMPObjectModel {
         case "openstate":
             return .value(.number(Double(snapshot.playlistCount > 0
                 ? WMPScriptConstants.osMediaOpen : WMPScriptConstants.osUndefined)))
-        case "status": inert(); return .value(.string(""))
+        // Live since 2026-09-14 — see `WMPHostSnapshot.statusText` for the wording and for why
+        // there is no buffering case. It must stay out of `inert()`: a member the runtime answers
+        // has to leave the demand tally, which is how `alphaBlendTo` came to be ranked as the
+        // largest open row while it worked.
+        case "status": return .value(.string(snapshot.statusText))
         case "isonline": inert(); return .value(.bool(true))
         case "enabled": inert(); return .value(.bool(true))
         case "versioninfo": inert(); return .value(.string("12.0.0.0"))

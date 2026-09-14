@@ -222,6 +222,10 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         case "player.settings.mute": return .bool(snapshot.muted)
         case "player.currentplaylist.count": return .number(Double(snapshot.playlistCount))
         case "player.playstate": return .string(snapshot.state.rawValue)
+        // `<TEXT value="wmpprop:player.status">` is how a skin paints the status line without a
+        // handler, and the binding has to resolve here or the readout stays empty however live the
+        // object model's member is — the two are separate resolutions of the same path.
+        case "player.status": return .string(snapshot.statusText)
         // 41 skins bind a seek bar's `foregroundProgress` to one of these, which is how a `.wmz`
         // draws its buffer bar. Both names appear; WMP scales them 0-100.
         case "player.network.downloadprogress", "player.network.bufferingprogress":

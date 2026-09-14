@@ -310,6 +310,38 @@ queue, with the object model as the security boundary — see Amendment 2 in
   of the cache key for that reason. **Alpha is never sharpened** — the sharpen unpacks to planes and
   skips it — or a keyed silhouette grows a ringing halo.
 
+- **A one-shot GIF that ends on a degenerate `restore to background` frame ends showing nothing,
+  and holding its last frame buries whatever it was drawn over (W161).** A `.wmz` opens its shutter
+  by assigning an animated GIF to a `<SUBVIEW>` over the player's face and never hides that subview
+  again — the *closed* state is held by a separate static child the same handler toggles, which only
+  makes sense if the animation leaves nothing behind. On `Windows_XP_Media_Center_Edition` the held
+  frame is an opaque blue plate, so the metadata, `STATUS:`, elapsed readout, seek slider **and the
+  equaliser panel the skin opens in the same rectangle** were all drawn and then covered — reported
+  as *"the eq does not work"*. `WMPGIFTerminator` is the rule and only `WMPRenderer` consults it, so
+  hit testing and coverage still read the sprite.
+
+  **Disposal alone is not the test, and reading it that way erases artwork.** 379 corpus GIFs are
+  one-shot with a full-size disposal-2 final frame, `ALXMorph`'s six-frame idle logo among them. The
+  **degenerate final block** — 1x1, disposing to background, on a canvas larger than that — is what
+  separates them: **79 files across 33 archives**. `Age_of_Mythology` settles the shape inside one
+  skin: `open_shutter.gif` carries the terminator and `close_shutter.gif` does not, ending instead on
+  a full-size 80%-opaque closed shutter that has to persist. `Halo 2` says the same thing the other
+  way — its `m_shutter_open.gif` ends on a full-size frame that is *entirely the key colour*, so it
+  was already invisible and this rule changes nothing there. **A corpus render sweep cannot see any
+  of this**: it draws at clock 0, before any animation has finished, so a clean sweep here proves
+  only that nothing else moved — the measurement is the live window.
+
+- **`player.status` is a sentence, not a token (W162).** `Playing` / `Paused` / `Stopped`, and
+  `Ready` before anything is open — `WMPHostSnapshot.statusText`, read by the object-model member,
+  by the `wmpprop:player.status` binding **and** by the `status_onchange` argument, which are three
+  separate resolutions of one path and were not all present. It was inert and empty for eight
+  phases, so the readout 69 of the 180 archives dedicate to it painted nothing. Safe to word freely
+  because **not one of the corpus's 128 uses compares it against a literal**; every one prints it.
+  **There is deliberately no `Buffering (n%)`** — `bufferingProgress` is 0-100 with 100 meaning full
+  and nothing outside the harness writes it, so a `< 100` test would report every skin permanently
+  buffering. W119's trap is unchanged and is about the *rate*: a status string must never be raised
+  from a clock tick.
+
 - **A view is sized like any other node: authored literal, then script override, then the natural
   size of its own `backgroundImage`.** WMP skins routinely author `<VIEW backgroundImage="...">` with
   no width or height — the window *is* the bitmap — and demanding a positive literal at the root was

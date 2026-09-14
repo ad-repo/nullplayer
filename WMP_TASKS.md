@@ -18,6 +18,24 @@ same change that closes them, so this file stays a list of work that is still op
 
 ### Top of the backlog
 
+**W161 and W162 closed 2026-09-14, from one report — *"the 2 windows_xp skins the eq does not
+work"*.** Neither was an equaliser defect. **W161**: a finished one-shot GIF held its last frame, so
+`Windows_XP_Media_Center_Edition`'s opening shutter — an opaque plate — stayed over the display and
+buried the metadata, the status line, the clock, the seek arc **and the equaliser panel the skin
+opens in the same rectangle**. The rule is the *degenerate terminator block*, not the disposal
+method: reading disposal alone matches **379 corpus files** and erases artwork, the terminator
+matches **79 across 33 archives**, and `Age_of_Mythology` holds both halves down inside one skin.
+**W162**, opened by W161 uncovering a blank `STATUS:` line: `player.status` was inert *and* missing
+from the binding registry *and* empty as an event argument — three resolutions of one path, none
+answering, for **69 of the 180 archives**. **A host path has more than one resolution and a live
+member does not make a live binding** — `reference/object-model.md` § *What a property read answers*
+rule 6 is the general form, and it is the thing to check when the next host property is added.
+Closure notes in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md);
+dossier in
+[`reference/skins/windows-xp-media-center.md`](skills/wmp-skin-guide/reference/skins/windows-xp-media-center.md).
+**No headless probe can see W161's class**, which is the process note it leaves: the equaliser was
+correct in the scene graph the whole time and every flag said so.
+
 **Tier 1a has no remaining open row.** **W156 closed 2026-09-13** — a `.wmz` seek is committed once,
 on release, and no longer per mouse-move. Its closure note carries the measurement the row demanded
 and the answer it was waiting on: `corona` and `New Super Mario Bros` are **identical** here, 21
@@ -211,8 +229,10 @@ from the Plex browser, and the queue reached the engine; what was missing was an
 here could render a playing player.** "The timer display and seek/progress are broken in wmp for all
 skins" was **W119** — a 100 ms position tick dispatched as `status_onchange`, which is WMP's *status
 string changed* event, so 70 of the 177 measurable archives re-ran their metadata handler ten times
-a second (all 75 authored sources are metadata updaters; 35 of them blank the readout with the inert
-`player.status`) and every script timer in the skin was cancelled inside 100 ms of pressing play —
+a second (all 75 authored sources are metadata updaters; 35 of them re-ran the readout off
+`player.status`, which was then inert and empty — it is a live sentence since W162 and the trap is
+unchanged, because it was always the *rate*) and every script timer in the skin was cancelled
+inside 100 ms of pressing play —
 and **W120**, a seek slider whose `max` is the media duration and whose `value` no skin states,
 which is 73 sliders across 61 archives sitting on frame 0 for the length of the track. Both are in
 [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 14 (fifth

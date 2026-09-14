@@ -1290,3 +1290,78 @@ render dump cannot see this defect at all — the device scale is 1 there and no
 
 Full account, including the two Core Image traps and the over-sharpened first kernel, in
 `skills/wmp-skin-guide/reference/skins/plus-family.md` § *W160*.
+
+## W161 — a finished intro animation buried the player it opened
+
+**Closed 2026-09-14.** Reported live as *"the 2 windows_xp skins the eq does not work. I suspect
+there may be other issues"*.
+
+The equaliser was never the defect. Both `Windows_XP_Media_Center_Edition` archives open with
+`introAnim()` assigning `shutter_open.gif` to a `zIndex="20"` `<SUBVIEW>` over the display and never
+hide that subview again; `WMPImageAnimation` held the finished animation's last frame, which in
+these files is an opaque blue plate at `29,32 176x135`. `eqBack` is `47,45 140x108` — entirely
+inside it — so the panel opened, its ten sliders built and drew, and every pixel was covered. So
+were the metadata, the `STATUS:` line, the elapsed readout and the seek arc.
+
+**The skin's own markup is the argument for the rule**: the *closed* state is held by a separate
+static child (`shutterStatic`) the same handler toggles, which only makes sense if the animation
+leaves nothing behind. `WMPGIFTerminator` reads the GIF block stream for the final image block's own
+size and the disposal method of the extension that introduced it; a **degenerate** final block (1x1,
+on a larger canvas) that **disposes to background** means the animation ends drawing nothing, and
+only `WMPRenderer` consults it — hit testing and coverage still read the sprite.
+
+**Disposal alone is not the test**, and that is most of what this row measured. One-shot with a
+full-size disposal-2 final frame matches **379 corpus files** including `ALXMorph`'s six-frame idle
+logo; the degenerate final block matches **79 files across 33 archives**, almost all named
+`shutter_open`, `shutter_close` or `intro_anim`. `Age_of_Mythology` settles it inside one skin —
+`open_shutter.gif` carries the terminator and `close_shutter.gif` does not, ending on a full-size
+80%-opaque closed shutter that has to persist. `Halo 2` is the null case: its `m_shutter_open.gif`
+ends on a full-size frame that is entirely the key colour, so it was already invisible.
+
+**Verification.** Corpus render sweep: 520 identical / 15 differing, **none of them from this
+change** — a sweep draws at clock 0, before any animation has finished, so it proves only that
+nothing else moved. The measurement is live: `screencapture` of the window before and after, with the
+display restored, the equaliser panel visible, a band dragged to +14 and holding across later host
+settles, and the shutter closing to its static plate and reopening. `WMPGIFTerminatorTests` pins the
+walker, both halves of the discrimination, the endless-animation guard, the `Data`-slice index trap
+and the end-to-end "the face shows again" render.
+
+**No headless probe can see this class.** `WMP_RENDER_CLICK` reported the EQ opening with
+`unrecognised=[]` and 12 widgets, and a `DRAG` on `eq1` reported
+`value 1.273 -> 14 follows-pointer=yes` — the scene graph was correct throughout. Dossier:
+`skills/wmp-skin-guide/reference/skins/windows-xp-media-center.md`.
+
+## W162 — `player.status` was inert, so 69 archives painted a blank readout
+
+**Closed 2026-09-14.** Opened by W161: the `STATUS:` line it uncovered was empty.
+
+`player.status` answered `inert()` and the empty string in `WMPObjectModel`, was **absent entirely**
+from `WMPObservablePropertyRegistry`, and the `status_onchange` argument bound `""`. Three
+resolutions of one path and none of them answered — a skin could not reach it any way it tried.
+All three now read `WMPHostSnapshot.statusText`: `Playing` / `Paused` / `Stopped`, and `Ready`
+before anything is open, which is the same split `isEnabled(.play)` already makes.
+`status_onchange` is additionally raised when the string itself changes, which is bounded by the
+state transitions `playstatechange` already rides and so does not reopen W119's trap — that was
+about the *rate*, a clock tick raising a status event 10 times a second.
+
+**There is deliberately no `Buffering (n%)`** although WMP spells one: `bufferingProgress` is 0-100
+with 100 meaning *full* and nothing outside the harness ever writes it, so a `< 100` test would
+report every skin permanently buffering on the default `0`.
+
+**Why the wording is free.** Of the corpus's **128 uses across 69 of the 180 archives, not one
+compares it against a literal** — every one prints it, either straight into a readout or prepended
+to the track name (`metadata.value = player.status; if (metadata.value != "") …`, the Alienware
+family's idiom). No handler can branch on it, so no handler can be broken by it.
+
+**Verification.** Corpus render sweep, baseline worktree at HEAD: **534 identical, 15 differing**,
+of which `Scooby-Doo_2/infoView` is the harness's own `Math.random()` (proved by a curr-vs-curr
+capture pair). The remaining **14 are all the same change** — a readout that painted nothing now
+painting `Ready` in the skin's own font — checked by cropping every diff bbox and comparing side by
+side: `9SeriesDefault`, `corona` (two views each), `Alpine7618_v09`, `Asimov_Radio`,
+`Charlies_Angels_Full_Throttle`, `Classic`, `Compact`, `aoe`, `circle`, `pharaoh` (two),
+`springflower`. The prediction beforehand was 7 — the archives with a markup binding — and the extra
+7 are skins whose `onLoad` reaches a metadata updater.
+
+Live: `Windows_XP_Media_Center_Edition` reads `Playing` and flips to `Paused` on the transport, and
+`corona`'s green line now rotates `Playing → NullPlayer 20-minute sweep`, which is what WMP 9's own
+skin does — `player.status` is literally the first entry in its rotating `MetaDataObject` list.
