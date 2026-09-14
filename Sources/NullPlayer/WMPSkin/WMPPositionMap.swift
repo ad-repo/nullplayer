@@ -96,6 +96,32 @@ struct WMPPositionMap: Hashable, Codable {
         return Double(luminance[index]) / 255
     }
 
+    /// Which way the map's own fraction increases: the axis its ramp runs along, and whether it
+    /// rises with the coordinate. `nil` for a map with no mapped pixels either side.
+    ///
+    /// This is what lets a *moving-thumb* strip be read: coverage says nothing about one, but where
+    /// the thumb sits in the first and last frame does — measured against the direction the map
+    /// says is "more". See `WMPImageStore.filmstripIsDescending`.
+    func gradient() -> (horizontal: Bool, positive: Bool)? {
+        func difference(horizontal: Bool) -> Double? {
+            var lowSum = 0.0, lowCount = 0, highSum = 0.0, highCount = 0
+            let limit = horizontal ? width / 2 : height / 2
+            for y in 0..<height {
+                for x in 0..<width where mapped[y * width + x] {
+                    let value = Double(luminance[y * width + x])
+                    if (horizontal ? x : y) < limit { lowSum += value; lowCount += 1 }
+                    else { highSum += value; highCount += 1 }
+                }
+            }
+            guard lowCount > 0, highCount > 0 else { return nil }
+            return highSum / Double(highCount) - lowSum / Double(lowCount)
+        }
+        let across = difference(horizontal: true), down = difference(horizontal: false)
+        guard across != nil || down != nil else { return nil }
+        let horizontal = abs(across ?? 0) >= abs(down ?? 0)
+        return (horizontal, (horizontal ? across ?? 0 : down ?? 0) > 0)
+    }
+
     /// The control's region, for hit testing: mapped where the map claims the pixel, keyed-out and
     /// alpha-zero pixels excluded. `nil` when the map claims everything, which needs no mask.
     func coverage() -> WMPHitCoverage? {
@@ -108,11 +134,14 @@ struct WMPPositionMap: Hashable, Codable {
     /// Returns nil when the artwork is not a whole multiple of the map on either axis — a single
     /// frame the same size as the map, or art that simply does not match. The caller then draws it
     /// as an ordinary image rather than cropping a frame out of something that is not a strip.
-    func frame(for fraction: Double, in artwork: WMPSize) -> WMPRect? {
+    /// `descending` is for a strip authored **maximum first** — 13 of the corpus's 342 stripped
+    /// `CUSTOMSLIDER`s are, and nothing but the art says so. `WMPImageStore.filmstripIsDescending`
+    /// is what measures it; this only counts back from the other end.
+    func frame(for fraction: Double, in artwork: WMPSize, descending: Bool = false) -> WMPRect? {
         guard width > 0, height > 0, artwork.width > 0, artwork.height > 0 else { return nil }
         let horizontal = Int(artwork.width) / width
         let vertical = Int(artwork.height) / height
-        let clamped = max(0, min(1, fraction))
+        let clamped = max(0, min(1, descending ? 1 - fraction : fraction))
         if horizontal > 1, Int(artwork.width) % width == 0, Int(artwork.height) == height {
             let index = min(horizontal - 1, Int((Double(horizontal - 1) * clamped).rounded()))
             return WMPRect(x: CGFloat(index * width), y: 0,
@@ -122,6 +151,20 @@ struct WMPPositionMap: Hashable, Codable {
             let index = min(vertical - 1, Int((Double(vertical - 1) * clamped).rounded()))
             return WMPRect(x: 0, y: CGFloat(index * height),
                            width: CGFloat(width), height: CGFloat(height))
+        }
+        return nil
+    }
+
+    /// The strip's frame count and axis for `artwork`, or nil when it is not a strip of this map.
+    func stripLayout(in artwork: WMPSize) -> (frames: Int, vertical: Bool)? {
+        guard width > 0, height > 0 else { return nil }
+        let horizontal = Int(artwork.width) / width
+        let vertical = Int(artwork.height) / height
+        if horizontal > 1, Int(artwork.width) % width == 0, Int(artwork.height) == height {
+            return (horizontal, false)
+        }
+        if vertical > 1, Int(artwork.height) % height == 0, Int(artwork.width) == width {
+            return (vertical, true)
         }
         return nil
     }

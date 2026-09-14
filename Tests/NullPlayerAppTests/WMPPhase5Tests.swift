@@ -295,6 +295,59 @@ final class WMPPhase5ControlsTests: XCTestCase {
         XCTAssertNil(map.frame(for: 0.5, in: WMPSize(width: 2, height: 2)))
     }
 
+    func testADescendingFilmstripIsIndexedFromTheOtherEnd() throws {
+        // `Halo 2/srs_slider.png`: fourteen frames, frame 0 all thirteen segments lit and frame 13
+        // empty, against a left-to-right `0…251` map and `min="0" max="100"`. Indexed forwards it
+        // drew one segment for a TruBass of 95 and the whole bar for 0.
+        let ramp = try WMPSkinTestSupport.encodedImage(width: 2, height: 1,
+            rgba: [0, 0, 0, 255, 255, 255, 255, 255])
+        let map = try WMPPositionMap(image: XCTUnwrap(decode(ramp)))
+        let strip = WMPSize(width: 2, height: 3)
+        XCTAssertEqual(map.stripLayout(in: strip)?.frames, 3)
+        XCTAssertEqual(map.stripLayout(in: strip)?.vertical, true)
+        XCTAssertNil(map.stripLayout(in: WMPSize(width: 2, height: 1)),
+                     "art the size of the map is not a strip")
+        XCTAssertEqual(map.frame(for: 1, in: strip, descending: true),
+                       WMPRect(x: 0, y: 0, width: 2, height: 1), "the maximum is frame 0")
+        XCTAssertEqual(map.frame(for: 0, in: strip, descending: true),
+                       WMPRect(x: 0, y: 2, width: 2, height: 1), "the minimum is the last frame")
+        XCTAssertEqual(map.frame(for: 1, in: strip), WMPRect(x: 0, y: 2, width: 2, height: 1),
+                       "an ascending strip is unchanged")
+        let gradient = try XCTUnwrap(map.gradient())
+        XCTAssertTrue(gradient.horizontal)
+        XCTAssertTrue(gradient.positive)
+    }
+
+    func testTheFilmstripDirectionIsMeasuredFromTheArtwork() throws {
+        // Two 1x3 strips over the same 1x1 map: one fill bar drawn full in frame 0 and one drawn
+        // empty in frame 0. Nothing in the markup separates them — the corpus authors both, and
+        // `Catwoman`'s TruBass is the ascending twin of `Halo 2`'s.
+        func strip(_ luminances: [UInt8]) throws -> Data {
+            try WMPSkinTestSupport.encodedImage(width: 1, height: luminances.count,
+                rgba: luminances.flatMap { [$0, $0, $0, 255] })
+        }
+        let store = WMPImageStore(provider: WMPMemoryResourceProvider([
+            "descending.png": try strip([255, 128, 0]),
+            "ascending.png": try strip([0, 128, 255]),
+            "thumb-back.png": try WMPSkinTestSupport.encodedImage(width: 3, height: 3,
+                rgba: [0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255,
+                       0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 0,
+                       255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0])
+        ]))
+        let rising: (horizontal: Bool, positive: Bool) = (true, true)
+        XCTAssertTrue(try store.filmstripIsDescending(for: "descending.png", frameCount: 3,
+                                                      vertical: true, gradient: rising))
+        XCTAssertFalse(try store.filmstripIsDescending(for: "ascending.png", frameCount: 3,
+                                                       vertical: true, gradient: rising))
+        // A moving thumb is flat under coverage, so its travel decides: this one starts at the map's
+        // "more" end and walks back, which is `Halo 2`'s balance slider.
+        XCTAssertTrue(try store.filmstripIsDescending(for: "thumb-back.png", frameCount: 3,
+                                                      vertical: true, gradient: rising))
+        XCTAssertFalse(try store.filmstripIsDescending(for: "thumb-back.png", frameCount: 3,
+                                                       vertical: true, gradient: (true, false)),
+                       "read against a map that falls left to right, the same travel is ascending")
+    }
+
     func testACustomSliderIsSizedByItsMapAndNotByItsFilmstrip() async throws {
         // The bug this pins is quantitative: sizing from `image` makes ALXMorph's volume control
         // 2,232 pixels wide inside a 400-pixel window.

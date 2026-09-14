@@ -1345,6 +1345,35 @@ of these was invisible to the harness and visible in the first minute of live QA
   horizontally. So the strip's axis comes from whichever one is a whole multiple of the map, the
   value picks the frame, and a drag reads its value out of the map — which is the whole point of the
   element: its track need not be a straight line. Sizing one from `image` makes it 2,232 px wide.
+- **Which end of a filmstrip is the minimum is a property of the art, not of the markup.** The
+  corpus authors both orders against identical markup: `Catwoman/srs_slider.png` fills downward
+  across 18 frames and `Halo 2/srs_slider.png` — the same control, the same left-to-right `0…251`
+  map, the same `min="0" max="100"` — runs the other way, frame 0 all thirteen segments lit and
+  frame 13 empty. So the *map* answers which end of the control is the minimum and the *art*
+  answers which end of the strip is, separately. `WMPImageStore.filmstripIsDescending` measures it
+  two ways — lit coverage for a fill bar, centre-of-mass travel along `WMPPositionMap.gradient()`
+  for a moving thumb — and selects **19 of the 342 stripped `CUSTOMSLIDER`s across 7 skins**, every
+  one of the 6 travel-selected ones a Halo 2 or STALKER control. Indexing Halo 2 forwards drew one
+  segment for a TruBass of 95 and the full bar for 0 while the audio followed the pointer: reported
+  as *"the SRS WOW effect and TruBass level controls do not fire correctly"*.
+- **A host change the skin drove through its own command still has to settle its own bindings.**
+  `eq.*` is the one host surface a `.wmz` both writes and binds. Halo 2's SRS button posts
+  `eq.enhancedAudio = !eq.enhancedAudio` and its TruBass and WOW sliders carry
+  `enabled="wmpprop:eq.enhancedAudio"`, so the transaction that flipped it resolved that binding
+  against the snapshot it started with — `false` — and nothing re-resolved it: the sliders drew and
+  hit testing refused every click on them. With a track playing the clock tick settled them a tenth
+  of a second later and they worked, which is what "sometimes" meant in the report.
+  `refreshHostState` now diffs `equalizer`, and `dispatchScriptTransaction` re-settles at scope exit
+  when its own commands moved the snapshot. Every other host surface was already covered because
+  each of its edges is an event there.
+- **The binding-only host tick is `hostsettle`, and it used to be `positionchange`, which was not
+  free.** `onPositionChange` is the `CUSTOMSLIDER` handler WMP raises when the **user** moves the
+  control, and **24 of the 180 installed archives author 71 of them** — every `srs_slider` and `eq`
+  slider in the Halo 2, STALKER, Catwoman, Alienware and Plus! families. `handlers(in:event:)`
+  strips the `on` prefix, so the name a clock tick raised was the name those handlers answer to. It
+  was inert only because `onpositionchange` is not in `WMPAttributeValue.handlerNames`; registering
+  it without renaming the tick would have run all 71 ten times a second with `value` unbound. Pick a
+  tick name no archive authors, and check that it is one.
 - **`clippingImage` shapes an element, and it is what makes a shaped window shaped.** 25 skins
   author a non-empty one and every one of them declares a `clippingColor` beside it, which is what
   the mask keys out. Before it, `TDK`, `elvis`, `Secura`, `portals` and the six `US *` service skins

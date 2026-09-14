@@ -1381,10 +1381,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // whole script transaction, scene rebuild and render at 10 Hz in every skin, cancelling
         // whatever click or `onTimer` transaction was still in flight.
         //
-        // `positionchange` is a name **no corpus archive authors** (measured: 0 uses), which is the
-        // point — it resolves to no handler anywhere, so the transaction it raises is the
-        // binding-only one `dispatchScriptTransaction` already documents. A duration that changes
-        // is a media that opened rather than a clock that ticked, so that keeps the status raise.
+        // `hostsettle` is a name **no corpus archive authors**, which is the point — it resolves to
+        // no handler anywhere, so the transaction it raises is the binding-only one
+        // `dispatchScriptTransaction` already documents. It used to be spelled `positionchange` on
+        // the claim that nothing authored *that* either, and that was wrong: `onPositionChange` is
+        // the CUSTOMSLIDER handler WMP raises when the **user** moves the control, and **24 of the
+        // 180 installed archives author 71 of them** — every `srs_slider`/`eq` slider in the
+        // Halo 2, STALKER, Catwoman, Alienware and Plus! families. `handlers(in:event:)` strips the
+        // `on` prefix, so a clock tick was raising all of them ten times a second with `value`
+        // unbound (the transaction carries no target), which is a whole script transaction per tick
+        // per slider for a handler whose only correct trigger is a drag. A duration that changes is
+        // a media that opened rather than a clock that ticked, so that keeps the status raise.
         if previous?.metadata != snapshot.metadata || previous?.duration != snapshot.duration {
             events.append("status_onchange")
         }
@@ -1396,8 +1403,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // was — measured live: dragged to 36s, committed 79s. The clock stops updating for the
         // length of the drag, which is what WMP does and what a scrub looks like everywhere else.
         if previous?.currentTime != snapshot.currentTime, !sliderCaptureActive {
-            events.append("positionchange")
+            events.append("hostsettle")
         }
+        // **A host change the skin drove through a command still has to settle its own bindings.**
+        // `eq.*` is the one host surface a `.wmz` both writes and binds: Halo 2's SRS button posts
+        // `eq.enhancedAudio = !eq.enhancedAudio` and its TruBass and WOW sliders carry
+        // `enabled="wmpprop:eq.enhancedAudio"`, so the transaction that flipped it resolved that
+        // binding against the snapshot it started with — `false` — and no later event re-resolved
+        // it. The two sliders drew, and hit-testing refused every click on them because the scene
+        // said disabled; with a track playing the clock tick settled them a tenth of a second later
+        // and they worked, which is what "sometimes" meant in the report. Volume, transport and the
+        // rest never showed this because every one of their edges is already an event above.
+        if previous?.equalizer != snapshot.equalizer { events.append("hostsettle") }
         // **The host half of the SDK's ambient `<attribute>_onchange` mechanism (W129).** The
         // element half is raised inside the transaction that wrote the attribute
         // (`WMPScriptContext.raiseAttributeChangeHandlers`); these four are attributes of the
@@ -1493,7 +1510,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private static let hostEventOrder = ["openstatechange", "playstatechange", "videostart", "videoend", "status_onchange",
                                          "currentmedia_onchange", "currentplaylist_onchange",
                                          "currenteffecttype_onchange", "currentpreset_onchange",
-                                         "positionchange", "currentposition_onchange", "modechange",
+                                         "hostsettle", "currentposition_onchange", "modechange",
                                          "buffering_onchange", "reception_onchange"]
 
     private func renderInteraction(_ presentation: WMPViewPresentation,
@@ -1644,6 +1661,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // A command that switches this window's view owns everything after it, exactly as on
             // initial load, so this transaction's scene is abandoned rather than drawn over the new
             // view's.
+            // **A command this transaction posted changes what its own bindings resolve to, and
+            // nothing else was going to notice.** `refreshHostState` diffs the snapshot and raises
+            // the settle, so taking the reading either side of the commands is all this needs. It
+            // runs at scope exit, so the scene this transaction is already building is the one
+            // presented; a pass whose commands moved nothing costs nothing, because the diff is
+            // empty and `refreshHostState` returns before it dispatches anything.
+            let hostStateBeforeCommands = host.snapshot
+            defer { if host.snapshot != hostStateBeforeCommands { refreshHostState() } }
             let switchedView = applyHostCommands(output.hostCommands, from: presentation)
             if let assigned = output.viewSize, !switchedView {
                 presentation.scriptViewSize = assigned
@@ -1759,7 +1784,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // site cannot raise one name and miss the other.
         let accepted: Set<String>
         switch wanted {
-        case "change", "onchange": accepted = ["change", "valueonchange"]
+        // `positionchange` rides `change` because it is the same edge: WMP raises a
+        // `CUSTOMSLIDER`'s `onPositionChange` when the user moves it, which is exactly where
+        // `value_onchange` is raised, and the corpus's `eq.truBassLevel`/`eq.wowLevel` writes are
+        // authored in that spelling rather than the other. The event carries the element, so the
+        // bare `value` those handlers read is bound.
+        case "change", "onchange": accepted = ["change", "valueonchange", "positionchange"]
         case "openstatechange": accepted = ["openstatechange", "openstateonchange"]
         case "playstatechange": accepted = ["playstatechange", "playstateonchange"]
         default: accepted = []

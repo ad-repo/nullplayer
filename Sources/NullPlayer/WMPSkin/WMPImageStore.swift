@@ -128,6 +128,9 @@ final class WMPImageStore: @unchecked Sendable {
     private var clipEntries: [String: ClipEntry] = [:]
     private var clipBytes = 0
     private var regionShapeEntries: [String: Bool] = [:]
+    /// `filmstripIsDescending` answers, keyed by path, frame count and axis. One bool each:
+    /// no eviction, because the whole map is smaller than one decoded frame.
+    private var descendingStripEntries: [String: Bool] = [:]
     /// `.some(nil)` is "checked, not animated" — a still must not be re-probed on every frame.
     private var animationEntries: [String: WMPImageAnimation??] = [:]
     /// Artwork belongs to the WMP session, not to the archive. The transparent defaults preserve
@@ -208,6 +211,7 @@ final class WMPImageStore: @unchecked Sendable {
         positionBytes = 0
         clipEntries.removeAll(keepingCapacity: false)
         regionShapeEntries.removeAll(keepingCapacity: false)
+        descendingStripEntries.removeAll(keepingCapacity: false)
         clipBytes = 0
         animationEntries.removeAll(keepingCapacity: false)
         lock.unlock()
@@ -394,6 +398,92 @@ final class WMPImageStore: @unchecked Sendable {
         positionEntries[cacheKey] = PositionEntry(map: map, access: clock)
         positionBytes += map.decodedBytes
         return map
+    }
+
+    /// Whether a `CUSTOMSLIDER`'s filmstrip is authored **maximum first**, so the frame index has
+    /// to count back from the end.
+    ///
+    /// **The corpus authors both orders with identical markup, so the direction is a property of
+    /// the art and nothing else can say which way round it runs.** `ALXMorph/seek.png` steps its
+    /// thumb left to right across sixty frames and `Catwoman/srs_slider.png` fills downward across
+    /// eighteen — frame 0 is the minimum in both. `Halo 2/srs_slider.png` is the same control as
+    /// Catwoman's, against the same left-to-right `0…251` position map and the same `min="0"
+    /// max="100"`, and its fourteen frames run the other way: frame 0 is all thirteen segments lit
+    /// and frame 13 is empty. Indexing it forwards drew *one* segment for a TruBass of 95 and the
+    /// whole bar for 0 — reported as "the SRS WOW effect and TruBass level controls do not fire
+    /// correctly", because the audio followed the pointer while the bar ran backwards under it.
+    ///
+    /// So the *map* says which end of the control is the minimum and the *art* says which end of
+    /// the strip is, and they are answered separately. Two readings, because the corpus draws these
+    /// two ways: a **fill bar** is read by lit coverage — alpha times luminance summed over the
+    /// frame, first against last, descending when the first carries half again the last's — and a
+    /// **moving thumb**, which is flat under coverage, by where its centre of mass sits in the two
+    /// frames, measured along the axis the map's own ramp increases on (`WMPPositionMap.gradient`)
+    /// and needing 15% of the frame's travel before it counts.
+    ///
+    /// Measured over the 180 installed archives this selects **19 of the 342 stripped
+    /// `CUSTOMSLIDER`s, in 7 skins**: 13 by coverage — Halo 2's and STALKER's TruBass and WOW,
+    /// `Plus! Mecha`'s, `Rave-MP`'s and `Xbox Live Skin`'s seek, `Secura`'s pair, `XBOX`'s and
+    /// `Xbox Live Skin`'s volume — and 6 by travel, every one of them Halo 2's or STALKER's balance
+    /// and the four video sliders beside it. Nothing outside those two families is reached by the
+    /// second reading, which is what says it is picking up one authoring habit rather than firing
+    /// on art in general.
+    func filmstripIsDescending(for path: String, frameCount: Int, vertical: Bool,
+                               gradient: (horizontal: Bool, positive: Bool)?) throws -> Bool {
+        guard frameCount > 1 else { return false }
+        let canonical = provider.canonicalPath(for: path) ?? path
+        let axis = gradient.map { "\($0.horizontal)|\($0.positive)" } ?? "-"
+        let cacheKey = "\(canonical)|\(frameCount)|\(vertical)|\(axis)"
+        lock.lock()
+        if let cached = descendingStripEntries[cacheKey] { lock.unlock(); return cached }
+        lock.unlock()
+        let image = try self.image(for: canonical).image
+        let width = image.width, height = image.height
+        let frameWidth = vertical ? width : width / frameCount
+        let frameHeight = vertical ? height / frameCount : height
+        guard frameWidth > 0, frameHeight > 0 else { return false }
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        bytes.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        // Row zero is the authored top row, as everywhere else this store reads pixels back. The
+        // centre of mass rides the map's own axis, so a thumb's travel is measured in the direction
+        // the map calls "more" rather than in raw pixels.
+        let alongX = gradient?.horizontal ?? true
+        func measure(frame index: Int) -> (coverage: Double, centre: Double?) {
+            let originX = vertical ? 0 : index * frameWidth
+            let originY = vertical ? index * frameHeight : 0
+            var total = 0.0, moment = 0.0
+            for y in originY..<(originY + frameHeight) {
+                for x in originX..<(originX + frameWidth) {
+                    let offset = (y * width + x) * 4
+                    // Premultiplied, so the three channels already carry the alpha weighting.
+                    let weight = Double(Int(bytes[offset]) + Int(bytes[offset + 1])
+                                        + Int(bytes[offset + 2])) / 765
+                    total += weight
+                    moment += weight * Double(alongX ? x - originX : y - originY)
+                }
+            }
+            return (total, total > 0 ? moment / total : nil)
+        }
+        let first = measure(frame: 0), last = measure(frame: frameCount - 1)
+        let answer: Bool
+        if first.coverage > last.coverage * 1.5 { answer = true }
+        else if last.coverage > first.coverage * 1.5 { answer = false }
+        else if let start = first.centre, let end = last.centre,
+                abs(start - end) > Double(alongX ? frameWidth : frameHeight) * 0.15 {
+            // A thumb that ends up *behind* where it started, read along the map's own direction,
+            // is a strip authored the other way round.
+            answer = (gradient?.positive ?? true) ? start > end : start < end
+        } else { answer = false }
+        lock.lock()
+        descendingStripEntries[cacheKey] = answer
+        lock.unlock()
+        return answer
     }
 
     /// A `clippingImage` as an alpha mask: opaque where the artwork shows through, transparent

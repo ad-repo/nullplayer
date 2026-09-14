@@ -122,6 +122,13 @@ not subjective equivalence to WMP; listen to stereo and mono music when tuning t
 For a control defect visible only in the running skin, follow the owning skill's **Debugging a live
 defect** route and `reference/harness.md`. Inspect the script command and snapshot before changing DSP.
 
+**Neither of the two defects found live in Halo 2's equaliser was in this DSP, and the trace that
+said so is `WMP_SEEK_TRACE=1`**: it prints one `performSlider` per drag point and the host command
+each one posted, so a bar that disagrees with the sound is separated from a control that never
+reached the host in a single drag. Both fixes are in `SKILL.md` — the `eq.enhancedAudio` binding
+never re-settling after the skin's own `setSrsEffect()`, and the filmstrip indexed from the wrong
+end. Check the command and the drawn frame before the filters.
+
 Validation on 2026-09-12: the full suite completed 2,221 tests with 18 opt-in skips and no failures.
 The eight enhancement tests include owned-buffer mono/5.1 passthrough and rendered bass decay with
 upstream silence flags. The installed `9SeriesDefault.wmz` passed graph loading and script geometry

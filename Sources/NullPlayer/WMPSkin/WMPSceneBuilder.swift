@@ -712,7 +712,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // value picks the frame. `frame(for:in:)` returns nil for art that is not a
                     // whole multiple of the map, and then this is an ordinary image again.
                     let artwork = try imageStore.image(for: path).size
-                    let strip = slider.flatMap { positionMap?.frame(for: $0.fraction, in: artwork) }
+                    // **Which end of the strip is the minimum is a property of the art.** The
+                    // corpus authors both orders against identical markup — see
+                    // `WMPImageStore.filmstripIsDescending`, which measures it and which 13 of the
+                    // 342 stripped `CUSTOMSLIDER`s select.
+                    let descending = try positionMap?.stripLayout(in: artwork).map { layout in
+                        try imageStore.filmstripIsDescending(for: path, frameCount: layout.frames,
+                                                             vertical: layout.vertical,
+                                                             gradient: positionMap?.gradient())
+                    } ?? false
+                    let strip = slider.flatMap {
+                        positionMap?.frame(for: $0.fraction, in: artwork, descending: descending)
+                    }
                     // **An element's own artwork is drawn at its own size, anchored top-left, and
                     // the box it does not fill is left to whatever is under it.** WMP never scales
                     // a `<BUTTON>`'s `image` to the authored frame, and a skin that swaps the image
