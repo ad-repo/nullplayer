@@ -1113,3 +1113,147 @@ named view element — `vFull` ×2, `ballview`, `ErectorView`, `KidsView`, `mili
 skin's own chrome. `maximize`, `restore` and `size` remain the unimplemented `<VIEW>` methods and
 the corpus calls none of them; `restore` took this name's place as the census exemplar in
 `WMPScriptRuntimeTests`.
+
+## W157 — the host refresh that fed itself
+
+**Closed 2026-09-13.** Reported as *"the nvidia skin is very clunky moving between the video window,
+playlist and the main window"*, and it was never NVIDIA's: with a track playing, **every** `.wmz`
+skin was rebuilding and re-rendering its whole view about 40 times a second, forever.
+
+`dispatchScriptTransaction` ended on
+
+```swift
+let hostStateBeforeCommands = host.snapshot
+defer { if host.snapshot != hostStateBeforeCommands { refreshHostState() } }
+```
+
+which is right about what it is for — a command the transaction posted changes what its own bindings
+resolve to, and nothing else was going to notice — and wrong about how to detect it.
+`WMPAudioEngineHost.snapshot` is **computed live off the engine and carries `currentTime`**, so the
+two readings are taken ~10 ms apart on a moving clock and *always* differ. The diff was therefore
+non-empty on every pass, including the overwhelming majority that posted no command at all;
+`refreshHostState` then raised `currentposition_onchange`, which dispatched another transaction,
+whose own `defer` raised another. A loop with no governor but the pipeline's own speed.
+
+**Measured live, release build, `NVIDIA`, one local MP3, audio mode:** `refreshHostState` called
+**39.9x/s from the defer against 9.9x/s from the real 10 Hz clock tick**, and every one of those
+transactions posted **zero** host commands. Roughly three quarters of all repaint work in the engine
+was the loop chasing its own tail. The guard is now taken only when `output.hostCommands` is
+non-empty: a pass with no commands cannot have moved the host, and the tick that genuinely moved is
+already delivered by `updateTime`.
+
+**Before → after, same skin, same track, measured with a temporary transaction trace** (release,
+`mainView`; the trace was removed in the same change):
+
+| | before | after |
+|---|---|---|
+| audio mode 285x301, playing | 39.8 transactions/s, 32 presents/s, 45% CPU | 17.7/s, 15.4 presents/s, 30% CPU |
+| playlist mode 730x574, playing | 30 transactions/s, 22 presents/s, 56% CPU | 17.8/s, 13.6 presents/s, 28% CPU |
+| click → first correctly-sized frame | +40 ms | +18 ms |
+
+**Debug builds are where this was reported from and they are 6x worse, which is worth knowing before
+reading a bug report against one.** A debug scene build is ~31 ms against release's ~4.6 ms, so in
+debug the arrival rate (33/s) beat the completion time (49 ms) and almost every transaction was
+cancelled mid-flight: playlist mode ran at **0.8 presents/s and 130-160% CPU** — literally about one
+frame a second — against 9.2 presents/s after the fix. See `reference/harness.md`; a perf claim from
+a debug build is a claim about debug.
+
+## W158 — a transaction whose script moved nothing still redrew everything
+
+**Closed 2026-09-13**, alongside W157 and found by the same trace. Every script transaction rebuilt
+the scene and re-rendered the whole window, whatever its handler had done — and a skin's own
+`onTimer` is a transaction per tick. `NVIDIA` authors `timerInterval="100"` and its handler only
+pokes `btnEq.down`, so it spent 17 ms of build-and-render ten times a second (release, playlist mode)
+redrawing an identical picture; **442 `timerInterval`/`onTimer` uses across 91 archives** are in the
+same position.
+
+`transact` returns the view's **cumulative** committed overrides, not a delta, so an output equal to
+the ones the presented scene was built from is a statement that every geometry value, every property
+and every `wmpprop:` binding resolved exactly as it already had — the readouts included, because a
+clock that advanced moves `currentPositionString` and a bound slider's `value` through the same
+registry. There is no third source: `WMPSceneBuilder.build` takes no host snapshot, only these. So
+the transaction returns before building when the overrides, the list items and the canvas size are
+all unchanged and no `view.width`/`view.height` was assigned. `presentedListItems` is new on
+`WMPViewPresentation` for the one input that is not an override — a `LISTBOX` is filled from script.
+
+**What it does and does not reach, measured.** Stopped, after its intro, `NVIDIA`'s 9.5 timer
+transactions/s are **all** skipped: 0 presents, CPU 22% → 9.5%. *Playing*, it skips nothing, and that
+is correct rather than a shortfall — the trace names what moves, and it is `seek.value` at 16/s (the
+position binding) plus the metadata marquee's `left` at 10/s. Something really did change; what is
+still wrong there is that a moved clock digit repaints the entire view, which is the dirty-region
+work `dispatchScriptTransaction` documents itself as not doing and is not this row.
+
+Hover and press artwork are untouched — those never come through here, they come through
+`renderInteraction` on its own task — and animation is untouched too: `startAnimation` runs its own
+loop, and a *skipped* rebuild is one fewer epoch rewind (W85), not a frozen GIF. Full suite green
+(2253 tests, 0 failures, 18 skipped).
+
+## W159 — an authored expression taking back a property the script assigned
+
+**Closed 2026-09-13.** Reported live on `NVIDIA` as *"the timer in the playlist draws at the wrong
+location"*. The digits were the symptom; the defect is one line of layout policy, and it took two
+corpus A/Bs to get the policy right.
+
+**What the skin does.** `setModesMinWidth('playlist')` assigns `mainModeMetadata.left = 220` and
+`mainModeMetadata.width = view.width-266`, then resizes the view from 285 to 700 in the same handler.
+The element authors `left="55"` — a literal, which yields to a script assignment permanently — and
+`width="jscript:view.width-101"`, which does not: W144 re-applied an expression whenever *its own*
+value changed, and the resize changed it. Measured in the running app with a temporary frame trace:
+`mainModeMetadata` settled at `left=220 width=629` — the script's left beside the *expression's*
+width — giving it a frame of `220,468 629x25` in a 730-wide window, 119 px past the right edge and
+clipped to 510. The time group hangs off `left="jscript:mainModeMetadata.width-80"`, resolved against
+629 instead of 464, and drew at `x=769`: off-window. Audio mode was correct throughout, which is why
+it read as a playlist-only defect.
+
+**Reach: 18 of 180 archives, 86 element/property pairs** — a script assigning `left`/`top`/`width`/
+`height` on an element whose markup authors that attribute as `jscript:…`. `Plus! Nature` 16,
+`Plus! Space` 14, `Plus! da Vinci` 14, `Plus! Aquarium` 12, `WALL-E` 8, `digitaldj` 6, `Halo 2` 3,
+then singles. Measured by decoding each archive and matching `id="X"` + expression attribute against
+an `X.prop =` assignment.
+
+**The rule is two halves, and each half was found by measurement after the previous form was wrong.**
+
+1. *Retire the expression.* `WMPScriptRuntime` records every geometry address the script writes and
+   skips the authored expression for it — in `WMPScriptContext.resolveExpressions` too, not only on
+   the way to the overrides. That second place is load-bearing and was missed on the first attempt:
+   the expression still wrote its answer into the element model so dependants could read it, so
+   `metadata.width` and the time group went on resolving against 629 while the bar itself sat at the
+   script's value. The live trace is what showed it — the bar corrected and the digits did not move.
+2. *Anchor it at the canvas it was assigned against.* Retiring alone freezes a script-placed node in
+   absolute terms, and the corpus A/B at a forced `WMP_RENDER_SIZE=900x700` drew `xsn_sports`'s
+   drawer **floating in the middle of `visView`** — the one skin W144 was reported against. A script
+   assignment is a plain number written at whatever size the view had at the time, so
+   `WMPSceneBuilder` treats it as a literal for `right`/`bottom`/`stretch` and re-anchors it by the
+   growth **since the assignment**. `visDrawer.moveTo(0, view.height-73, 400)` on a
+   `verticalAlignment="bottom"` node then stays 73 up from the bottom at any size, and `NVIDIA`'s bar
+   is 19 + the 445 the view grew = 464, which is `view.width-266` at the new size.
+
+**Measuring that growth from the *authored* size instead is the trap, and the sweep caught it.**
+That form moved 15 default-state views — `Catwoman`'s video settings drawer, the Alienware/ALX
+`videoView` family, `Windows_XP_Media_Center_Edition`, `Scooby-Doo_2`'s info panel — because those
+skins size their own view by script at load, so the authored-size delta is not zero for them and
+their panels slid open on sight.
+
+**Verification.**
+
+- **Corpus render sweep, default state: 535/535 images byte-identical** for half 1 alone; with both
+  halves, **13 views change and 0 structural invariant lines do** (the 498 flagged lines are all
+  `loadms=` timings and unordered tally ordering; normalising both leaves zero).
+- **The 13 are the same defect being fixed, checked by reading the skins rather than by eye.**
+  `Catwoman`'s `onLoadVid()` calls `toggleVidDrawer('0')` with `drawerStatus` false, which takes the
+  branch that sets `vidDrawerFrame.visible = true` and `btnVidDrawer.down = true`: its drawer is
+  *meant* to be out, and the authored `top="jscript:view.height-242"` was pulling it back behind the
+  picture. `Scooby-Doo_2`'s info art lands where its script puts it.
+- **Live**: `NVIDIA` in playlist mode, frame trace — `mainModeMetadata` `220,468 464x25` fully
+  visible, the time group's left override `384`, digits at `604/621/643/660` each clipped to their
+  15-px slot, and the readout reads `00:29` inside the bar where audio mode puts it.
+- **Headless**: `WMP_RENDER_CLICK='mainView@200,95'` still reports `viewSize=700x480`, so the mode
+  switch dispatches unchanged.
+- Full suite green: **2254 tests, 0 failures, 18 skipped**.
+
+**One test changed meaning and was rewritten rather than deleted.**
+`testAResizeStillLetsTheExpressionOverrideTheScriptedPosition` asserted the *old* policy — that a
+resize hands the axis back — on the reading that nothing else would carry a script-placed element to
+the new size. Alignment is what carries it, so the case now asserts the script's value survives, and
+`WMPAlignmentTests.testAScriptedCoordinateReanchorsFromTheCanvasItWasAssignedAt` pins the half it
+hands off to, including the un-aligned node that correctly stays put.

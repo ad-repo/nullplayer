@@ -130,6 +130,53 @@ final class WMPAlignmentTests: XCTestCase {
                        "a stretch tile covers the growth; centring must not have changed this")
     }
 
+    // MARK: - W159: a script's coordinate is anchored at the canvas it was written at
+
+    /// **A script assignment is a plain number, and alignment carries it forward from the canvas it
+    /// was written at — not from the authored one.**
+    ///
+    /// This is the half `WMPScriptRuntime`'s retirement rule hands off to. The runtime stops an
+    /// authored `jscript:` expression taking back an address the script wrote; without a way to
+    /// re-anchor, a drawer a skin slid by script would then freeze in absolute terms whenever the
+    /// window resized. `xsn_sports` is the case — `visDrawer.moveTo(0, view.height-73, 400)` on a
+    /// node authoring `verticalAlignment="bottom"` means "73 up from the bottom", and the corpus
+    /// A/B drew that panel floating in the middle of `visView` until this landed.
+    ///
+    /// **Measured from the assignment, not from the markup.** Taking the delta from the authored
+    /// size instead moved 15 default-state views that had no business moving — `Catwoman`'s video
+    /// settings drawer, the Alienware/ALX `videoView` family, `Scooby-Doo_2`'s info panel — because
+    /// those skins size their own view by script at load, so the authored-size delta is not zero
+    /// there and their panels slid open on sight.
+    func testAScriptedCoordinateReanchorsFromTheCanvasItWasAssignedAt() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="drawer" left="0" top="127" width="140" height="130"
+                     verticalAlignment="bottom" backgroundColor="#FF0000"/>
+            <SUBVIEW id="pinned" left="0" top="127" width="140" height="10"
+                     backgroundColor="#00FF00"/>
+        </VIEW></THEME>
+        """)
+        let view = try XCTUnwrap(skin.views.first { $0.id == "main" }?.node.stableID)
+        let drawer = try stableID(skin, "drawer")
+        let pinned = try stableID(skin, "pinned")
+        var overrides = WMPSceneOverrides.empty
+        // The view is 300 tall now; both coordinates were written by script while it was 200.
+        overrides.geometry[.init(stableID: view, property: "height")] = 300
+        for id in [drawer, pinned] {
+            overrides.geometry[.init(stableID: id, property: "top")] = 127
+            overrides.scriptAssignedGeometry[.init(stableID: id, property: "top")] =
+                WMPSize(width: 200, height: 200)
+        }
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+        XCTAssertEqual(try frame(skin, scene, "drawer").y, 227,
+                       "127 + the 100 the view grew by since the assignment: still 73 up from the "
+                       + "bottom, which is what the handler asked for")
+        XCTAssertEqual(try frame(skin, scene, "pinned").y, 127,
+                       "no alignment, so nothing re-anchors it — a script number behaves as a "
+                       + "markup literal would")
+    }
+
     /// **Nothing outranks centring on the centred axis — not an expression, and not a coordinate
     /// a script assigned.** The `isComputed` guard was carried onto `center` alongside the other
     /// three values when W143 landed, justified by WoW's `left="JScript:view.width-202"` beside an

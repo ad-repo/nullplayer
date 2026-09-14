@@ -322,12 +322,14 @@ final class WMPScriptContext: @unchecked Sendable {
     func run(plan: WMPScriptViewPlan, size: WMPSize, snapshot: WMPHostSnapshot,
              preferences: [String: String], event: WMPJScriptEvent?,
              geometry: [Int: WMPRect],
-             boundValues: [Int: WMPJSONValue] = [:]) async -> WMPScriptRunResult {
+             boundValues: [Int: WMPJSONValue] = [:],
+             retiredGeometry: Set<WMPScenePropertyAddress> = []) async -> WMPScriptRunResult {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(returning: perform(plan: plan, size: size, snapshot: snapshot,
                                                        preferences: preferences, event: event,
-                                                       geometry: geometry, boundValues: boundValues))
+                                                       geometry: geometry, boundValues: boundValues,
+                                                       retiredGeometry: retiredGeometry))
             }
         }
     }
@@ -368,7 +370,8 @@ final class WMPScriptContext: @unchecked Sendable {
     private func perform(plan: WMPScriptViewPlan, size: WMPSize, snapshot: WMPHostSnapshot,
                          preferences: [String: String], event: WMPJScriptEvent?,
                          geometry: [Int: WMPRect], currentViewID: String? = nil,
-                         boundValues: [Int: WMPJSONValue] = [:]) -> WMPScriptRunResult {
+                         boundValues: [Int: WMPJSONValue] = [:],
+                         retiredGeometry: Set<WMPScenePropertyAddress> = []) -> WMPScriptRunResult {
         model.beginTransaction(snapshot: snapshot, preferences: preferences,
                                viewID: currentViewID ?? plan.viewID)
         pendingTimers.removeAll()
@@ -403,7 +406,8 @@ final class WMPScriptContext: @unchecked Sendable {
         }
 
         var result = WMPScriptRunResult()
-        let ordered = resolveExpressions(plan: plan, into: &result)
+        let ordered = resolveExpressions(plan: plan, into: &result,
+                                         retiredGeometry: retiredGeometry)
         result.expressionOrder = ordered
 
         if let event {
@@ -609,7 +613,8 @@ final class WMPScriptContext: @unchecked Sendable {
     /// ordered list when any single expression failed, so one `ReferenceError` in one attribute left
     /// a whole skin with no computed geometry at all (W21).
     private func resolveExpressions(plan: WMPScriptViewPlan,
-                                    into result: inout WMPScriptRunResult) -> [String] {
+                                    into result: inout WMPScriptRunResult,
+                                    retiredGeometry: Set<WMPScenePropertyAddress> = []) -> [String] {
         guard !plan.expressions.isEmpty else { return [] }
         var dependencies: [String: Set<String>] = [:]
         // Every read, not only the ones that happen to be expressions themselves: the ordering
@@ -653,7 +658,19 @@ final class WMPScriptContext: @unchecked Sendable {
                let address = plan.expressionAddresses[key] {
                 // Commit before the dependents run: an expression reading a sibling's geometry must
                 // see the value that sibling landed at, never its markup.
-                model.element(Self.owner(of: key))?.properties[address.property] = .number(number)
+                //
+                // **Except where the script has taken the address over (W159)** — then the value
+                // the sibling landed at is the script's, which the geometry sync at the top of the
+                // transaction has already put in the model, and writing the expression's answer
+                // here would hand it to every dependent even though nothing draws it.
+                // `NVIDIA`'s time readout is the case: retiring `mainModeMetadata.width` kept the
+                // bar itself at the script's 464, and its children — `metadata.width` and the time
+                // group's `left="jscript:mainModeMetadata.width-80"` — went on resolving against
+                // the expression's 629 and drew 119 px past the window's right edge, which is the
+                // defect this was supposed to close.
+                if !retiredGeometry.contains(address) {
+                    model.element(Self.owner(of: key))?.properties[address.property] = .number(number)
+                }
             }
             result.expressions.append(.init(key: expression.key, value: value,
                                             dependencies: reads[key] ?? [],

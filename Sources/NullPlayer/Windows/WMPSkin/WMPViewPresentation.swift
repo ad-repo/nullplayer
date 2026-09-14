@@ -38,6 +38,10 @@ final class WMPViewPresentation {
     var mainView: WMPMainView?
     var activeScene: WMPScene?
     var sceneOverrides = WMPSceneOverrides.empty
+    /// The list contents last handed to this window's widgets. Paired with `sceneOverrides` it is
+    /// what a script transaction compares its own output against before deciding it has anything to
+    /// redraw (W158) — a `LISTBOX` is filled from script and its rows are not scene overrides.
+    var presentedListItems: [Int: [String]] = [:]
     var activeLimits: WMPResizeLimits?
     /// The window's size in the skin's own pixels — the size the scene is built and clamped at.
     /// UI Size never enters it; only the window frame and the rasterization scale carry that.

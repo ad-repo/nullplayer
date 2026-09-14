@@ -348,6 +348,9 @@ actor WMPScriptRuntime {
     /// The value each authored geometry expression produced the last time it was evaluated, per
     /// view scope. An expression re-applies only when this changes — see `transact`.
     private var committedExpressions: [String: [WMPScenePropertyAddress: CGFloat]] = [:]
+    /// Geometry addresses the script has explicitly assigned, per view scope. An authored
+    /// `jscript:` expression never re-applies to one of these again (W159).
+    private var scriptAssignedGeometry: [String: [WMPScenePropertyAddress: WMPSize]] = [:]
     private var recentTransactionTimes: [Date] = []
     /// The dispatcher view's plan, built once. Building one walks the whole graph, and a dispatcher
     /// runs at the period its markup authored — 100 ms in every corpus skin that has one.
@@ -424,7 +427,8 @@ actor WMPScriptRuntime {
         }
         let result = await context.run(plan: plan, size: size, snapshot: snapshot,
                                        preferences: preferences.values(), event: event,
-                                       geometry: geometry, boundValues: boundValues)
+                                       geometry: geometry, boundValues: boundValues,
+                                       retiredGeometry: Set((scriptAssignedGeometry[scope] ?? [:]).keys))
 
         var diagnostics = startupDiagnostics + result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
@@ -455,6 +459,7 @@ actor WMPScriptRuntime {
         // differs only where something else has since written the address — which is exactly the
         // assignment that must stand.
         var expressionValues = committedExpressions[scope] ?? [:]
+        var scriptAssigned = scriptAssignedGeometry[scope] ?? [:]
         for expression in result.expressions {
             guard expression.error == nil, let value = expression.value?.number, value.isFinite,
                   let address = plan.expressionAddresses[expression.key.lowercased()] else {
@@ -470,6 +475,28 @@ actor WMPScriptRuntime {
             }
             let resolved = CGFloat(value)
             defer { expressionValues[address] = resolved }
+            // **A script assignment retires the authored expression for that address (W159).**
+            //
+            // W144 above stops an expression overwriting a script assignment *when its own value has
+            // not moved*, which is the case it was reported on. It is not the whole of it: an
+            // expression reading `view.width` moves precisely when the view resizes, and a handler
+            // that assigns a geometry property and then resizes the view is doing both in one
+            // breath. `NVIDIA`'s `setModesMinWidth('playlist')` sets `mainModeMetadata.left = 220`
+            // and `width = view.width-266` and then takes the view from 285 to 700; the element
+            // authors `left="55"` — a literal, which yields to the script permanently — and
+            // `width="jscript:view.width-101"`, which came back on the next transaction with 629 and
+            // took the property back. Measured in the running app: the node ended up
+            // `left=220 width=629` in a 730-wide window, 119 px past its right edge, and the time
+            // readout hanging off `left="jscript:mainModeMetadata.width-80"` resolved against 629
+            // and drew at x=769, off the window entirely. Reported as "the timer in the playlist
+            // draws at the wrong location".
+            //
+            // So an address the script has explicitly written is the script's from then on, and the
+            // expression is only ever a starting value for it. The value is still recorded above, so
+            // nothing re-fires spuriously if the address is ever released; `discardView` drops the
+            // set with the rest of the view's scope, because a view that stops existing has no
+            // assignments to honour.
+            guard scriptAssigned[address] == nil else { continue }
             guard expressionValues[address] != resolved else { continue }
             overrides.geometry[address] = resolved
         }
@@ -482,6 +509,7 @@ actor WMPScriptRuntime {
                let value = mutation.value.number, value.isFinite,
                !((address.property == "width" || address.property == "height") && value < 0) {
                 overrides.geometry[address] = CGFloat(value)
+                scriptAssigned[address] = size
             } else {
                 overrides.properties[address] = mutation.value
             }
@@ -508,6 +536,8 @@ actor WMPScriptRuntime {
             }
         }
         let repaint = Set(result.repaintHints.compactMap { plan.idToStableID[WMPPath.fold($0)] })
+        scriptAssignedGeometry[scope] = scriptAssigned
+        overrides.scriptAssignedGeometry = scriptAssigned
         committedOverrides[scope] = overrides
         return WMPScriptOutput(overrides: overrides, hostCommands: result.hostCommands,
                                diagnostics: diagnostics, repaintNodeIDs: repaint,
@@ -685,6 +715,7 @@ actor WMPScriptRuntime {
         let scope = WMPPath.fold(viewID)
         committedOverrides.removeValue(forKey: scope)
         committedExpressions.removeValue(forKey: scope)
+        scriptAssignedGeometry.removeValue(forKey: scope)
         propertyRegistries.removeValue(forKey: scope)
         context?.discardElements(for: viewID)
         if contextViewID?.caseInsensitiveCompare(viewID) == .orderedSame { contextViewID = nil }
@@ -699,6 +730,7 @@ actor WMPScriptRuntime {
         contextViewID = nil
         committedOverrides.removeAll()
         committedExpressions.removeAll()
+        scriptAssignedGeometry.removeAll()
         propertyRegistries.removeAll()
     }
 }

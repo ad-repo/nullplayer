@@ -902,7 +902,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentation.sceneOverrides = resolvedOverrides
                 presentation.activeScene = scene
                 self.startAnimation(presentation, for: scene)
-                if let scriptOutput { presentation.mainView?.updateListItems(scriptOutput.listItems) }
+                if let scriptOutput {
+                    presentation.presentedListItems = scriptOutput.listItems
+                    presentation.mainView?.updateListItems(scriptOutput.listItems)
+                }
                 presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene)
                 presentation.mainView?.refreshHostState(self.host.snapshot)
                 if let scriptOutput {
@@ -1665,10 +1668,28 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // nothing else was going to notice.** `refreshHostState` diffs the snapshot and raises
             // the settle, so taking the reading either side of the commands is all this needs. It
             // runs at scope exit, so the scene this transaction is already building is the one
-            // presented; a pass whose commands moved nothing costs nothing, because the diff is
-            // empty and `refreshHostState` returns before it dispatches anything.
-            let hostStateBeforeCommands = host.snapshot
-            defer { if host.snapshot != hostStateBeforeCommands { refreshHostState() } }
+            // presented.
+            //
+            // **Only a transaction that posted a command takes the reading at all (W157).**
+            // `host.snapshot` is computed live off the engine and carries `currentTime`
+            // (`WMPAudioEngineHost.snapshot`), so with a track playing the two readings differ by
+            // however long the transaction took — the diff was non-empty on *every* pass, whether
+            // or not a command had been applied. `refreshHostState` then raised
+            // `currentposition_onchange`, which dispatched another transaction, whose own `defer`
+            // raised another: a self-feeding loop that ran as fast as the pipeline could rebuild
+            // and re-render the whole view. Measured live on `NVIDIA` in a release build with one
+            // local MP3 playing: `refreshHostState` called **39.9x/s from here against 9.9x/s from
+            // the real 10 Hz clock tick**, and every one of those transactions posted **zero**
+            // commands — roughly three quarters of all repaint work in the engine was this loop
+            // chasing its own tail. A pass with no commands cannot have moved the host, so there is
+            // nothing for it to notice; the clock tick that genuinely moved is already delivered by
+            // `updateTime`.
+            let hostStateBeforeCommands = output.hostCommands.isEmpty ? nil : host.snapshot
+            defer {
+                if let hostStateBeforeCommands, host.snapshot != hostStateBeforeCommands {
+                    refreshHostState()
+                }
+            }
             let switchedView = applyHostCommands(output.hostCommands, from: presentation)
             if let assigned = output.viewSize, !switchedView {
                 presentation.scriptViewSize = assigned
@@ -1681,6 +1702,31 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             }
             recordScriptDiagnostics(output.diagnostics)
             guard !switchedView, !Task.isCancelled else { return }
+            // **A transaction whose script moved nothing has nothing to draw (W158).**
+            //
+            // `transact` returns the view's *cumulative* committed overrides, not a delta, so an
+            // output equal to the ones the presented scene was built from is a statement that every
+            // geometry value, every property and every `wmpprop:` binding resolved exactly as it
+            // already had — including the readouts, because a clock that advanced moves
+            // `currentPositionString` and a bound slider's `value` through the same registry. There
+            // is no third source: `WMPSceneBuilder.build` takes no host snapshot, only these.
+            //
+            // Without this, a skin's own `onTimer` cost a full scene rebuild and a full-window
+            // re-render per tick no matter what its handler did. `NVIDIA` authors
+            // `timerInterval="100"` and its handler only pokes `btnEq.down`, so its playlist mode
+            // burned 17 ms of build-and-render ten times a second — measured in release — to
+            // redraw an identical picture; **442 `timerInterval`/`onTimer` uses across 91 archives**
+            // are in the same position. Hover and press artwork are not affected: those never come
+            // through here, they come through `renderInteraction`, which presents on its own task.
+            // Animation is likewise untouched — `startAnimation` runs its own loop and a *skipped*
+            // rebuild is one fewer epoch rewind (W85), not a frozen GIF.
+            if output.viewSize == nil,
+               output.overrides == presentation.sceneOverrides,
+               output.listItems == presentation.presentedListItems,
+               let presented = presentation.activeScene,
+               presented.canvasSize == (presentation.scriptViewSize ?? presented.canvasSize) {
+                return
+            }
             do {
                 // No `dirtyNodeIDs`: a script transaction repaints in full.
                 //
@@ -1707,6 +1753,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentation.sceneOverrides = output.overrides
                 presentation.activeScene = scene
                 self.startAnimation(presentation, for: scene)
+                presentation.presentedListItems = output.listItems
                 presentation.mainView?.updateListItems(output.listItems)
                 presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene)
                 self.arbitrateVideoSurface()

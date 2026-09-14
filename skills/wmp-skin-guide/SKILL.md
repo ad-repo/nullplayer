@@ -198,6 +198,32 @@ a dispatch defect — it is a control the pointer never reached at all.
   authored `enabled="false"` is not this case and still drags**, because those never reach the hit
   tester at all — which is what keeps `portals`' own 305x400 decorative `main_button` backdrop
   movable, and is the distinction to preserve if this is ever touched again.
+- **`host.snapshot` is computed live and carries the clock, so never diff it across a transaction
+  (W157).** `WMPAudioEngineHost.snapshot` reads `engine.currentTime` on every access; two readings
+  taken either side of a 10 ms transaction always differ while a track plays. `dispatchScriptTransaction`
+  used to end on `if host.snapshot != hostStateBeforeCommands { refreshHostState() }` to notice a
+  host its own commands had moved, and with playback that fired on **every** pass — raising
+  `currentposition_onchange`, which dispatched another transaction, whose defer raised another.
+  Measured live on `NVIDIA`, release: **39.9 refreshes/s from that defer against 9.9/s from the real
+  10 Hz tick**, every one of them from a transaction that posted zero commands. It is now taken only
+  when `output.hostCommands` is non-empty. Anything that wants "did the host move" must compare the
+  fields it cares about, never the whole snapshot.
+- **A transaction whose overrides are unchanged has nothing to draw, and must not build a scene
+  (W158).** `transact` returns the view's **cumulative** committed overrides, so equality with
+  `presentation.sceneOverrides` means every geometry value, property and `wmpprop:` binding resolved
+  as it already had — `WMPSceneBuilder.build` takes no host snapshot, so there is no third input
+  except a `LISTBOX`'s script-filled rows (`presentation.presentedListItems`). Without the skip, a
+  skin's own `onTimer` cost a full rebuild and full-window re-render per tick whatever its handler
+  did: **442 `timerInterval`/`onTimer` uses across 91 archives**, and `NVIDIA`'s 100 ms timer alone
+  redrew an identical 730x574 playlist ten times a second. Stopped, all of its ticks now skip (CPU
+  22% → 9.5%); *playing*, none of them do, and that is correct — the trace names what moves and it is
+  the seek slider's bound `value` at 16/s. **Repainting the whole view because one clock digit moved
+  is the remaining cost and it is a dirty-region problem, not this one.**
+- **Measure a `.wmz` perf claim in release, and say which build it came from.** A debug scene build
+  is ~31 ms where release is ~4.6 ms, which is the difference between "the playlist runs at 1 fps"
+  (debug, arrivals beating completion so nearly every transaction is cancelled mid-flight) and "it
+  runs at 22" (release, same code, same skin, same track). Both readings above are real; only one of
+  them is what a user sees.
 - **Two ordering traps live in `dispatchScriptTransaction`, and both give plausible wrong answers.**
   It **cancels the presentation's previous script task**, so dispatching two events back to back
   loses the first — put both handler sets in one event. And it only *creates* a task, so anything
@@ -386,12 +412,32 @@ queue, with the object model as the security boundary — see Amendment 2 in
   an `onTimer` therefore undid its own script within one tick**: `xsn_sports` slides its drawers with
   `visDrawer.moveTo(0, view.height-73, 400)` against `timerInterval="500"`, and half a second after
   every click the drawer was back where the markup put it. Reported as "it still does not open".
-  Comparing against the value the expression last produced is what keeps the resize case working,
-  and an expression reading an element the script moved (`top="wmpprop:plLeftCenter.top"`) with it.
+  Comparing against the value the expression last produced was the first form of this rule and it
+  is **superseded by W159 below**: an expression never takes back an address the script has written,
+  changed value or not.
   This is the same distinction `WMPScriptRuntime.assignedViewSize` already drew for the root: an
   expression that re-resolves is a layout reading the current size, not a fresh request. **A plain
   render sweep cannot see this class** — it renders one transaction per view, and base-vs-change came
   out identical either side of the fix. `WMP_RENDER_SETTLE` is the instrument.
+- **A script assignment retires the authored expression for that address, and alignment is what
+  carries the value forward (W159).** Two halves, and the second is not optional. `WMPScriptRuntime`
+  keeps the geometry addresses a script wrote (with the **canvas each was written at**) and skips the
+  authored `jscript:` expression for them — in `WMPScriptContext.resolveExpressions` too, or the
+  dependants go on resolving against a value nothing draws. `WMPSceneBuilder` then treats such an
+  address as a literal for `right`/`bottom`/`stretch` and re-anchors it by the growth **since the
+  assignment**, never since the authored size. Reported on `NVIDIA`: `setModesMinWidth('playlist')`
+  writes `mainModeMetadata.width = view.width-266` while the view is still 285 — the number is 19 —
+  and resizes the view in the same handler, so `width="jscript:view.width-101"` answered 629 on the
+  next transaction and took the property back; the bar drew 119 px past the window's right edge and
+  the time readout on `jscript:mainModeMetadata.width-80` went off-window entirely. With the rule the
+  bar is the script's 464 (19 + the 445 the view grew) and the digits sit where audio mode puts them.
+  **Reach: 18 of 180 archives, 86 element/property pairs.** Both halves were found by corpus A/B, not
+  by reasoning: retiring alone froze `xsn_sports`'s drawer floating in the middle of `visView`, and
+  anchoring at the *authored* size instead of the assignment slid open 15 default-state panels
+  (`Catwoman`'s video settings, the Alienware/ALX `videoView` family, `Scooby-Doo_2`'s info panel).
+  The 13 views that legitimately change are the same defect being fixed — `Catwoman`'s `onLoadVid`
+  calls `toggleVidDrawer('0')`, so its drawer is *meant* to be out. `WMPAlignmentTests` and
+  `WMPScriptRuntimeTests` pin the two halves.
 - **`onClose` is a view's last transaction, and it is where a `.wmz` saves its state (W144).** It had
   **no dispatch site at all**: `discardView` dropped the view's scope and its live elements and the
   handler never ran, so **373 `onClose` handlers across 133 of the 180 archives** were dead. What

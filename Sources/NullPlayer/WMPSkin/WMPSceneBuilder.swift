@@ -237,8 +237,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// read (`left="view.width-10"`, which the corpus writes without the prefix). Only a plain
         /// finite number, or an absent attribute, is geometry alignment is entitled to move.
         func isComputed(_ node: WMPNode, _ name: String) -> Bool {
-            if overrides.geometry[WMPScenePropertyAddress(stableID: node.stableID,
-                                                          property: name.lowercased())] != nil {
+            let address = WMPScenePropertyAddress(stableID: node.stableID,
+                                                  property: name.lowercased())
+            if overrides.geometry[address] != nil {
                 return true
             }
             guard let attribute = node.attribute(named: name) else { return false }
@@ -467,17 +468,58 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 let vertical = WMPAxisAlignment(vertical: literalString(node, "verticalAlignment"))
                 let deltaWidth = parentFrame.width - parentAuthoredSize.width
                 let deltaHeight = parentFrame.height - parentAuthoredSize.height
+                // **A coordinate a script wrote is anchored at the canvas it was written at (W159).**
+                //
+                // `isComputed` says "an expression owns this, so alignment must not move it" — an
+                // expression has already re-read `view.width`/`view.height` and adding the parent's
+                // growth would count the resize twice. A script assignment is neither that nor a
+                // markup literal: the handler wrote a plain number against whatever the view
+                // measured *at that moment*, so what carries its intent forward is the growth
+                // **since the assignment**, not the growth since the markup was authored.
+                //
+                // Both skins in this story need exactly that reading. `NVIDIA`'s
+                // `setModesMinWidth('playlist')` sets `mainModeMetadata.width = view.width-266`
+                // while the view is still 285 — the number is 19 — and then takes the view to 730;
+                // 19 plus the 445 it grew by is 464, which is `view.width-266` at the new size and
+                // the width the bar visibly wants. `xsn_sports` writes
+                // `visDrawer.moveTo(0, view.height-73, 400)` and is *already* at that canvas, so its
+                // delta is zero and the drawer stays exactly where the script put it — and grows
+                // only if the user later resizes the window, which is the re-anchoring that keeps a
+                // retracted drawer retracted.
+                //
+                // Measuring it from the *authored* size instead moved 15 views that had no business
+                // moving: `Catwoman`'s video settings drawer, the whole Alienware/ALX `videoView`
+                // family and `Scooby-Doo_2`'s info panel all opened their panels into view, because
+                // those skins size their view by script at load and the authored-size delta is not
+                // zero there. The corpus render sweep is what caught it.
+                let anchor = overrides.scriptAssignedGeometry
+                func scriptDelta(_ name: String, _ fallback: CGFloat, _ axis: KeyPath<WMPSize, CGFloat>,
+                                 _ parentExtent: CGFloat) -> CGFloat {
+                    guard isRoot || parentNode == nil || parentNode?.kind == .view,
+                          let canvas = anchor[WMPScenePropertyAddress(stableID: node.stableID,
+                                                                      property: name)]
+                    else { return fallback }
+                    return parentExtent - canvas[keyPath: axis]
+                }
+                func aligns(_ name: String) -> Bool {
+                    anchor[WMPScenePropertyAddress(stableID: node.stableID, property: name)] != nil
+                        || !isComputed(node, name)
+                }
                 var x = left, y = top
                 switch horizontal {
                 case .center: x = (parentFrame.width - width) / 2
-                case .trailing where !isComputed(node, "left"): x += deltaWidth
-                case .stretch where !isComputed(node, "width"): width = max(0, width + deltaWidth)
+                case .trailing where aligns("left"):
+                    x += scriptDelta("left", deltaWidth, \.width, parentFrame.width)
+                case .stretch where aligns("width"):
+                    width = max(0, width + scriptDelta("width", deltaWidth, \.width, parentFrame.width))
                 default: break
                 }
                 switch vertical {
                 case .center: y = (parentFrame.height - height) / 2
-                case .trailing where !isComputed(node, "top"): y += deltaHeight
-                case .stretch where !isComputed(node, "height"): height = max(0, height + deltaHeight)
+                case .trailing where aligns("top"):
+                    y += scriptDelta("top", deltaHeight, \.height, parentFrame.height)
+                case .stretch where aligns("height"):
+                    height = max(0, height + scriptDelta("height", deltaHeight, \.height, parentFrame.height))
                 default: break
                 }
                 frame = WMPRect(x: parentFrame.x + x, y: parentFrame.y + y, width: width, height: height)
@@ -1322,6 +1364,12 @@ struct WMPScenePropertyAddress: Hashable, Codable, Sendable {
 struct WMPSceneOverrides: Hashable, Codable, Sendable {
     var geometry: [WMPScenePropertyAddress: CGFloat]
     var properties: [WMPScenePropertyAddress: WMPJSONValue]
+    /// The geometry addresses in `geometry` a **script assigned**, each against the view canvas it
+    /// was assigned at (W159). An authored `jscript:` expression re-reads `view.width`/`view.height`
+    /// and is therefore always expressed at the current size; a script wrote a plain number at
+    /// whatever size the view had when the handler ran, so the canvas is what makes it meaningful
+    /// later. Alignment is where the difference shows — see `isComputed` and `scriptAnchorDelta`.
+    var scriptAssignedGeometry: [WMPScenePropertyAddress: WMPSize] = [:]
 
     static let empty = WMPSceneOverrides(geometry: [:], properties: [:])
 }

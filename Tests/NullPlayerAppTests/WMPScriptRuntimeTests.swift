@@ -1295,10 +1295,23 @@ final class WMPScriptRuntimeTests: XCTestCase {
                        "the timer touched nothing, so `view.height-123` must not put it back to 77")
     }
 
-    /// The other half, which is why the rule is "when its value changes" and not "never again":
-    /// a resize *does* change what the expression answers, and it has to win then. This is also
-    /// how an expression reading an element the script moved keeps working.
-    func testAResizeStillLetsTheExpressionOverrideTheScriptedPosition() async throws {
+    /// **A resize does not hand the axis back either — the script owns it from the assignment on
+    /// (W159).**
+    ///
+    /// This case used to assert the opposite, on the reading that "when its value changes" had to
+    /// mean a resize wins, because otherwise nothing would carry a script-placed element to the new
+    /// size. What carries it is **alignment**, which is the half this rule hands off to and is
+    /// covered in `WMPAlignmentTests`: a script assignment is a plain number written against the
+    /// canvas of the moment, so a `bottom`/`right`/`stretch` node re-anchors by the growth since
+    /// then and a node with no alignment stays put — exactly as an authored literal behaves.
+    ///
+    /// The old reading cost `NVIDIA` its playlist layout. `setModesMinWidth('playlist')` assigns
+    /// `mainModeMetadata.width = view.width-266` and then resizes the view in the same handler, so
+    /// `width="jscript:view.width-101"` answered something new on the very next transaction and
+    /// took the property back: the bar resolved 119 px past the window's right edge and the time
+    /// readout hanging off `jscript:mainModeMetadata.width-80` drew off-window. Reported as "the
+    /// timer in the playlist draws at the wrong location".
+    func testAResizeDoesNotHandTheAxisBackToTheExpression() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="200" height="200">
             <SUBVIEW id="drawer" left="0" top="jscript:view.height-123" width="140" height="130"/>
@@ -1321,8 +1334,12 @@ final class WMPScriptRuntimeTests: XCTestCase {
         let resized = await runtime.transact(skin: skin, viewID: "main",
                                              size: WMPSize(width: 200, height: 300),
                                              snapshot: WMPHostSnapshot(), event: nil)
-        XCTAssertEqual(resized.overrides.geometry[top], 177,
-                       "300 - 123: the expression answers something new, so it takes the axis back")
+        XCTAssertEqual(resized.overrides.geometry[top], 5,
+                       "the script wrote this axis, so `view.height-123` never gets it back; this "
+                       + "node authors no alignment, so it stays where a literal 5 would stay")
+        XCTAssertEqual(resized.overrides.scriptAssignedGeometry[top], WMPSize(width: 200, height: 200),
+                       "and it is anchored at the canvas it was assigned against, which is what "
+                       + "lets an aligned node re-anchor by the growth since then")
     }
 
     /// **`onClose` is where a `.wmz` saves its state, and it had no dispatch site at all.**
