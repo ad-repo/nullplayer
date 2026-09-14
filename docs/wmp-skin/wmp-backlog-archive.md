@@ -1492,3 +1492,49 @@ player, and stopped is the one state in which this skin is correct. `WMP_RENDER_
 enough on its own either — it seeds the snapshot but the `zIndex` write arrives from
 `playstatechange`, so the headless capture rendered the panel and the live window did not. The
 instrument that settled it was `screencapture` of the running window with a track playing.
+
+## W170 — `openstatechange` rode the play state, so pausing restarted playback
+
+**Closed 2026-09-14.** Reported live as *"in hue pressing pause does not pause the stream and play is
+not responsive at all"*, then, in the same session, *"stop does not stop"*.
+
+`refreshHostState` raised both state events off one comparison —
+`if previous?.state != snapshot.state { events += ["openstatechange", "playstatechange"] }` — so a
+pause, a resume and a stop each told every open view that the **open** state had changed. It had
+not: `player.openState` is derived from whether anything is open (`playlistCount > 0`), which a
+transport gesture never touches.
+
+**109 of the 180 installed archives author `OpenState_onchange`**, and three answer it by playing:
+`Plus! HueShifter`, `Plus! Plasma Ball` and `Plus! SlimLine` share one handler whose `osMediaOpen`
+arm is `UpdateMetadata(); Play();`, and `Play()` ends in `player.controls.play()`. The transaction
+is dispatched 16 ms after the edge, which is exactly the gap in the log:
+
+```
+16:32:56.431  StreamingAudioPlayer: State changed from playing to paused
+16:32:56.455  play(): Starting streaming playback via AudioStreaming (state: paused)
+```
+
+After a **stop** the same re-play found the player stopped, so it took the reload branch and
+restarted the track from 0:00 — which is why "stop does not stop" and "play is not responsive" are
+the same defect: playback never actually stopped, so there was nothing for play to resume.
+
+**The fix** is `WMPMainWindowController.stateEdgeEvents`: `playstatechange` compares `state`,
+`openstatechange` compares `openState` — the same `playlistCount > 0` derivation the object model
+and `arguments(for:)` already use, so the edge and the `NewState` argument can never disagree. It
+only ever *removes* raises; a track change never raised this event before either (state is unchanged
+across one), and media opening and the queue emptying still do.
+
+**Verification.** `swift test --filter WMP`: 382 tests, 0 failures, including
+`WMPHostEventEdgeTests` — the pause/stop/resume edges, the open/close edges, and the agreement
+between the edge and the argument. Live, `Plus! HueShifter` with a Plex track: pause logs
+`State changed from playing to paused` and nothing follows; play resumes from the pause point; stop
+logs `playing to stopped` with no reload. The other two archives share the handler and were not
+separately driven.
+
+**Why nothing here saw it, and it is the sharpest case on file.** The same session's corpus click
+audit drove 284 decoded play/pause points across 149 skins in two host states and reported the
+transport healthy — correctly. The defect is in what the engine raises *after* the click, and a
+sweep seeds one host snapshot and never transitions, so the edge is never computed. Worse, the first
+live pass used `NULLPLAYER_PLAY` with a local file and **cleared the skin**: on an already-loaded
+local engine the spurious re-play is invisible, and only the streaming path turns it into a real
+restart. Reproduce a transport report on the source the reporter uses.

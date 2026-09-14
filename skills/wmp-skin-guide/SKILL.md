@@ -1262,6 +1262,25 @@ of these was invisible to the harness and visible in the first minute of live QA
   the delta as well — the WMP idiom is a callback that ends by registering the next step, and
   dropping that made a chain fire once. **Before ranking a "it works until you press play" defect,
   ask what the host refresh is dispatching ten times a second.**
+- **An open state and a play state are two different quantities, and pausing changes only one of
+  them (W170).** `openstatechange` and `playstatechange` were raised together off `snapshot.state`,
+  so every pause told the skin a media had just opened. **109 of the 180 installed archives author
+  `OpenState_onchange`** and three answer it by playing — `Plus! HueShifter`, `Plus! Plasma Ball` and
+  `Plus! SlimLine` share an `OnOpenStateChange` whose `osMediaOpen` arm ends in
+  `player.controls.play()` — so 16 ms after every pause the skin restarted playback, and after a
+  stop the re-play found the player stopped and **reloaded the track from zero**. Reported live as
+  *"pressing pause does not pause the stream"*, then *"stop does not stop"*. Each event now rides its
+  own quantity: `WMPMainWindowController.stateEdgeEvents` compares `state` for one and
+  `openState` — derived from whether anything is open, the same derivation `arguments(for:)` and the
+  object model use — for the other. **Raising an event for a quantity that did not change is not a
+  harmless extra**: the handler behind it is written to act, and here it acted by playing.
+  **It is also the sharpest case yet of what a corpus sweep cannot see**, and the reason the rule is
+  extracted as a static rather than left inline: the harness seeds *one* host snapshot and never
+  transitions, so this edge is never computed headlessly, and the click sweep reported `action=pause`
+  dispatched correctly in all 149 skins it drove. The measurement is the app's own log — a
+  `pause` immediately followed by `play(): Starting streaming playback`. It reproduces only through
+  the streaming path (a Plex/Jellyfin track); with a local file the same re-play lands on an
+  already-loaded engine and is invisible, which is how a first live pass cleared it wrongly.
 - **Hover is two events and a gate.** Crossing from one control to another raises `onMouseOut` on
   the node left *before* `onMouseOver` on the node reached — a skin that fades a readout in on entry
   never fades it back out otherwise — and nothing is raised while the pointer stays inside the same

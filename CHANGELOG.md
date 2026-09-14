@@ -35,6 +35,14 @@
 
 ### Bug Fixes
 
+- **Pause and stop now work in Media Player skins that watch the player's state.** On Plus!
+  HueShifter, Plus! Plasma Ball and Plus! SlimLine, pressing pause started the music again a moment
+  later and pressing stop restarted the track from the beginning — so play appeared to do nothing,
+  because nothing had ever stopped. NullPlayer was telling every skin that a new track had just been
+  opened each time playback was paused or stopped, and these three answer that by playing. They now
+  pause, resume and stop the way they look like they should. It showed up on music streamed from a
+  server or the internet, where the restart is audible.
+
 - **Media Player skins no longer have parts of their artwork erased.** A `.wmz` skin names one colour
   as the shape of its window and another as the see-through colour inside it, and NullPlayer was
   treating the first as if it were the second — so on skins whose artwork is mostly light, every pale

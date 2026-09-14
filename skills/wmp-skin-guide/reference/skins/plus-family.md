@@ -53,6 +53,10 @@ to `.unknown` and were never widgets (W101).
   upscale and a specular highlight does not. The reporter's list — Hard Boiled, HueShifter,
   SlimLine — is the same list any resampling change should be re-checked against, on a Retina
   display and never from a 1x render dump.
+- **A player state handler that answers by *playing*.** The single-view sub-shape's
+  `OnOpenStateChange` ends its `osMediaOpen` arm in `player.controls.play()`, so this family is the
+  corpus's detector for a host event raised on the wrong edge: everywhere else a spurious
+  `openstatechange` repaints a readout and nobody notices. Three archives (W170).
 - **Stacked full-body colour variants cross-faded by script.** Bionic Dot carries seven complete
   `main_body_<colour>.png` bodies plus matching button sets and frame rings, switched by
   `switchThemes(themeID++)` writing `alphaBlend` on each. This is the same mechanism `xsn_sports`
@@ -228,6 +232,46 @@ clean, and wrote the masks off in `Ruled out` — and the attribute went on dele
 egg for another two days. A mechanism cleared is not an attribute cleared. The instrument that
 finally named it was neither a probe nor the sweep: it was decoding each archive's artwork and
 counting how much of it matched its own declared key.
+
+### W170 — pause did not pause, and stop reloaded the track
+
+*"in hue pressing pause does not pause the stream and play is not responsive at all"*, then *"stop
+does not stop"*. Reported 2026-09-14 against `Plus! HueShifter`; the cause was engine-wide and this
+family is the only place in the corpus it could show. The rule is in `../../SKILL.md` § *Phase 4
+input and transport contracts*.
+
+`openstatechange` was raised off the **play** state, so every pause told the skin a media had just
+opened. Three archives here share the handler that answers that by playing:
+
+```js
+function OnOpenStateChange() {
+    switch (player.OpenState) {
+    case osUndefined: break;
+    case osMediaOpen: UpdateMetadata(); Play(); break;   // Play() ends in player.controls.play()
+    }
+}
+```
+
+`Plus! HueShifter`, `Plus! Plasma Ball`, `Plus! SlimLine` — the family's single-view sub-shape, all
+three from the same template. 109 of the 180 archives author `OpenState_onchange`; these are the
+three whose handler *acts* on it. After a pause, playback resumed 16 ms later; after a stop, the
+re-play found the player stopped and reloaded the track from 0:00.
+
+**Three things this cost, all of them process:**
+
+- **The corpus click sweep said the transport was fine, and it was right.** 284 decoded play/pause
+  points across 149 skins, driven in both host states: `action=pause` dispatched everywhere. The
+  defect is not in the click, it is in what the engine raises 16 ms *after* it — and a sweep seeds
+  one snapshot and never transitions, so no probe here can compute that edge.
+- **A local file cannot reproduce it.** The first live pass used `NULLPLAYER_PLAY` with
+  `audio-long.mp3`, watched the clock freeze, and cleared the skin. Through the streaming path the
+  re-play is a real restart; on an already-loaded local engine it is invisible. **Reproduce a
+  transport report on the source the reporter uses** — here a Plex track, reached through the
+  Library Browser's Radio tab.
+- **The app's own log named it in one gesture**, where two rounds of probe work had not:
+  `AudioEngine.pause()` immediately followed by `play(): Starting streaming playback via
+  AudioStreaming (state: paused)`. For a "the control does nothing" report on this engine, read the
+  playback log before reaching for a WMP probe.
 
 ## Ruled out — do not chase these again
 

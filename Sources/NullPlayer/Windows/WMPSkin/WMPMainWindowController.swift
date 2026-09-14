@@ -1345,6 +1345,32 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func windowVisibilityDidChange() {}
     func setNeedsDisplay() { window?.contentView?.needsDisplay = true }
 
+    /// The `os*` value `player.openState` answers — the same derivation the object model and
+    /// `arguments(for:)` use. A nil snapshot is the state before anything was open.
+    static func openState(_ snapshot: WMPHostSnapshot?) -> Int {
+        guard let snapshot, snapshot.playlistCount > 0 else { return WMPScriptConstants.osUndefined }
+        return WMPScriptConstants.osMediaOpen
+    }
+
+    /// The two events that ride a host *state* edge, as a rule a test can drive.
+    ///
+    /// **An open state and a play state are two different quantities, and pausing changes only one
+    /// of them.** These were raised together off `state`, so a pause told every skin that a media
+    /// had just opened when none had. Reported live as *"pressing pause does not pause the
+    /// stream"* and *"stop does not stop"*: `Plus! HueShifter`, `Plus! Plasma Ball` and
+    /// `Plus! SlimLine` share an `OnOpenStateChange` whose `osMediaOpen` arm ends in
+    /// `player.controls.play()`, so 16 ms after every pause the skin started playback again — and
+    /// after a stop, the re-play found the player stopped and reloaded the track from zero. **109
+    /// of the 180 installed archives author this handler**, so the wrong edge reached all of them;
+    /// those three are the ones that answer it by playing. Invisible to every headless probe,
+    /// because a sweep's host snapshot never transitions — W73's class.
+    static func stateEdgeEvents(previous: WMPHostSnapshot?, current: WMPHostSnapshot) -> [String] {
+        var events: [String] = []
+        if previous?.state != current.state { events.append("playstatechange") }
+        if openState(previous) != openState(current) { events.append("openstatechange") }
+        return events
+    }
+
     /// **The comparison happens once; the dispatch fans out to every open window.**
     ///
     /// The snapshot is the session's, so deciding what changed twice would be wrong as well as
@@ -1369,7 +1395,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         lastScriptSnapshot = snapshot
         var events: [String] = []
         events += WMPVideoPresentation.events(previous: previous?.videoEvent, current: snapshot.videoEvent)
-        if previous?.state != snapshot.state { events += ["openstatechange", "playstatechange"] }
+        events += Self.stateEdgeEvents(previous: previous, current: snapshot)
         // **`status_onchange` is WMP's "the status string changed", and a clock tick is not that
         // (W119).** The bindings do have to settle ten times a second — the elapsed readout of 108
         // archives is `<TEXT value="wmpprop:player.controls.currentPositionString">` and 89 hang a

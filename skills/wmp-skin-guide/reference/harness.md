@@ -1564,3 +1564,51 @@ as progress without re-measuring the rest of the table in the same capture.**
 A useful cheap instrument for the third case: count non-transparent pixels per differing PNG and
 sort. It separates "gained a background" from "hid a pane" in one pass and points at the handful
 worth opening.
+
+## The transport audit (180-archive corpus, 2026-09-14)
+
+Run from *"button test these skins"*, and the baseline for any later claim about the transport.
+It is the § *Auditing one authored control across the whole corpus* route applied to play/pause,
+and its headline number is a **negative** one worth keeping: the transport is healthy, and the
+defect the same session found (W170) is invisible to every line of it.
+
+**Method.** `WMP_RENDER_PROBE=all` over the corpus for resolved frames; then, per skin, decode each
+`<PLAYELEMENT>`/`<PAUSEELEMENT>`/`<PLAYBUTTON>`/`<PAUSEBUTTON>` (and the `player.controls.play()` /
+`pause()` button elements) to a click point — a drawn node's frame centre, or the **median pixel**
+of a `<BUTTONELEMENT>`'s `mappingColor` inside its group's mapping bitmap, plus the group's probed
+origin. Drive them with `WMP_RENDER_CLICK`, once against `WMP_RENDER_HOST=playing` (pause must
+answer) and once against `state=paused` (play must answer). 284 points across 149 skins per state.
+
+| | playing host | paused host |
+|---|---|---|
+| point answers `pause` | 139 | 46 |
+| point answers `play` | 54 | 138 |
+| the *other* transport answers (overlapping controls) | 79 | 89 |
+| `MISS` | 10 | 9 |
+
+**Every `MISS` was explained and none was an engine defect.** Play disabled while playing and pause
+disabled while paused are the bulk; `digitaldj`'s whole strip is `refused=… disabled` by its own
+splash gate. **Two traps in the point decode produced the rest, and both look exactly like a dead
+control:**
+
+- **A frame centre can be a transparent pixel.** `Cubist`'s `cubist_pause.bmp` is 18.2% white and
+  `transparencyColor="white"` — its centre is the gap *between* the two bars, so the centre click
+  returns `refused=… not-drawn-here` while every pixel a user aims at hits. **`WMP_RENDER_OCCLUDED`
+  is the authority on reachability** (it samples a 17x17 grid and did not flag Cubist); a single
+  driven point is the authority on *what the click does*. Use both, in that order.
+- **A median over a non-contiguous colour region lands between the blobs.** That is what the two
+  `unmapped-pixel` rows (`Utomjording`, `activate`) are. The median rule in § *Auditing one authored
+  control* fixes the first-scanline trap and not this one.
+
+**What it did find**, beyond confirming the population: `Colorchooser`'s transport. Its five buttons
+are `<TEXT>` nodes chained `left="jscript:<prev>.left+<prev>.width"`, and a text node that measures
+itself from its own glyphs reports `width` as **0** to the expression evaluator — so `stopbutton`,
+`pausebutton`, `nextbutton` and `prevbutton` all resolve to `103,29 12x12`, the glyphs overprint,
+and every one of those clicks fires **previous**. `WMP_RENDER_EXPR` prints it as four `live=16`
+rows where 16/28/40/52 was authored. It is the only skin in the corpus that chains off a text
+node's width (8 expressions, all here), which is why it survived every earlier expression sweep.
+
+**And the thing it could not see.** The same session's report — *"pressing pause does not pause the
+stream"* — was true while every row above was green, because the defect is in the event the engine
+raises 16 ms *after* the click (W170) and a sweep seeds one host snapshot and never transitions.
+A click audit proves a control dispatches. It says nothing about what the host does next.
