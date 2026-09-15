@@ -68,6 +68,7 @@ final class SensitiveURLRedactionTests: XCTestCase {
         }
         let encodedName = try XCTUnwrap(URL(string: "https://music.example/stream?%61pi_key=secret-token"))
         XCTAssertFalse(encodedName.redacted.contains("secret-token"))
+        XCTAssertFalse("https://music.example/stream?%61pi_key=secret-token".redactingSensitiveURLQueryItems.contains("secret-token"))
         let nested = try XCTUnwrap(URL(string: messages[2]))
         XCTAssertFalse(nested.redacted.contains("secret-token"))
     }
@@ -101,6 +102,8 @@ final class SensitiveURLRedactionTests: XCTestCase {
         XCTAssertEqual(url.redacted, url.absoluteString)
         let message = "HTTP 503 for https://music.example/Audio/42/stream?id=42"
         XCTAssertEqual(message.redactingSensitiveURLQueryItems, message)
+        let emailQuery = "https://host.example?email=user@example.test"
+        XCTAssertEqual(emailQuery.redactingSensitiveURLQueryItems, emailQuery)
         let file = URL(fileURLWithPath: "/tmp/My Music/song.flac")
         XCTAssertEqual(file.redacted, file.absoluteString)
     }

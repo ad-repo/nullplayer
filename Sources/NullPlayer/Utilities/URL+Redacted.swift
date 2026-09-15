@@ -40,6 +40,17 @@ extension URL {
 }
 
 extension String {
+    private static let sensitiveQueryItemNames: Set<String> = [
+        "u", "t", "s", "p", "password", "x-plex-token", "x-emby-token",
+        "token", "access_token", "auth_token", "apikey", "api_key", "auth",
+        "signature", "sig"
+    ]
+
+    /// Matches query-like values while retaining the encoded query-name capture.
+    private static let encodedSensitiveQueryNamePattern = try? NSRegularExpression(
+        pattern: #"(?i)((?:[?&]|&amp;|%3f|%26)((?:%[0-9a-f]{2}|[a-z0-9_-])+)(?:=|%3d))[^&\s"'<>\\]+"#
+    )
+
     /// Compiled once and reused across log and error presentation calls.
     private static let sensitiveURLRedactionPatterns: [(NSRegularExpression?, String)] = {
         // Also match XML-escaped separators and percent-encoded nested URLs.
@@ -50,7 +61,7 @@ extension String {
             (#"(?i)("(?:AccessToken|access_token|auth_token|api_key|apikey|X-Plex-Token|X-Emby-Token|token|password)"\s*:\s*")(?:\\.|[^"\\])*"#, "$1<redacted>"),
             (#"(?im)((?:Authorization|X-Plex-Token|X-Emby-Token):[ \t]*)[^\r\n]+"#, "$1<redacted>"),
             // User info can carry a basic-auth password, including in radio URLs.
-            (#"(?i)([a-z][a-z0-9+.-]*://)[^/\s<>"]+@(?=[^/\s<>"]+)"#, "$1<redacted>@"),
+            (#"(?i)([a-z][a-z0-9+.-]*://)[^/?#\s<>"]+@(?=[^/?#\s<>"]+)"#, "$1<redacted>@"),
             // LocalMediaServer issues 16-hex capability tokens in these paths.
             (#"(?i)(/(?:stream|media|artwork)/)[a-f0-9]{16}(?=[./?&#\s"'<>\\]|$)"#, "$1<redacted>")
         ]
@@ -63,7 +74,8 @@ extension String {
     var redactingSensitiveURLQueryItems: String {
         // JSON may escape the slashes in URLs embedded in error descriptions.
         let message = replacingOccurrences(of: #"\/"#, with: "/")
-        return Self.sensitiveURLRedactionPatterns.reduce(message) { message, rule in
+        let encodedNameRedacted = Self.redactingPercentEncodedSensitiveQueryNames(in: message)
+        return Self.sensitiveURLRedactionPatterns.reduce(encodedNameRedacted) { message, rule in
             guard let regex = rule.0 else {
                 return "<redacted>"
             }
@@ -72,6 +84,30 @@ extension String {
                 range: NSRange(message.startIndex..<message.endIndex, in: message),
                 withTemplate: rule.1
             )
+        }
+    }
+
+    /// Redacts query values whose percent-decoded names are credentials.
+    private static func redactingPercentEncodedSensitiveQueryNames(in message: String) -> String {
+        guard let regex = encodedSensitiveQueryNamePattern else { return "<redacted>" }
+        let range = NSRange(message.startIndex..<message.endIndex, in: message)
+        let replacements = regex.matches(in: message, range: range).compactMap { match -> (Range<String.Index>, String)? in
+            guard
+                let nameRange = Range(match.range(at: 2), in: message),
+                let matchRange = Range(match.range, in: message),
+                let prefixRange = Range(match.range(at: 1), in: message),
+                let decodedName = String(message[nameRange]).removingPercentEncoding?.lowercased(),
+                sensitiveQueryItemNames.contains(decodedName)
+            else {
+                return nil
+            }
+            return (matchRange, String(message[prefixRange]) + "<redacted>")
+        }
+
+        return replacements.reversed().reduce(message) { result, replacement in
+            var redacted = result
+            redacted.replaceSubrange(replacement.0, with: replacement.1)
+            return redacted
         }
     }
 }
