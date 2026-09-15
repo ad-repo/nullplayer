@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Fixed
+
+- **A Media Player skin's buttons no longer go dead behind an intro that never finishes.** Many
+  `.wmz` skins hide their transport while the player is stopped and bring it back from a timer, and
+  that timer usually asks whether the skin's own intro panel is still showing. NullPlayer was
+  answering "yes" forever for any panel whose markup never said otherwise, so the intro was never
+  dismissed and the whole face stayed inert — on *Combat Flight Simulator 3* none of the buttons on
+  the main window could be clicked at all. Anything a skin never explicitly hid or disabled now
+  reads as visible and enabled, which is what Media Player itself reports.
+
+- **A Media Player skin's animations now play from the beginning, every time.** A skin that swaps in
+  an animation after its window has opened — most shutter and intro sequences do exactly that — was
+  having it started from wherever the window's own clock had already reached, so *AlienMorph*'s
+  opening sequence would sometimes play only part way through, and closing its shutter again later
+  snapped shut with no animation at all. Each animation now runs on its own clock, so it plays in
+  full whenever it starts and however long the window has been open.
+
+- **Two skins drawing the same animation now play it at the same speed.** *ALXMorph* and *ALXVortex*
+  ran their shutter sequence in under four seconds where *AlienMorph* and *Alienware Teleport* take
+  ten, even though it is the same animation — the files just spell "as fast as possible" two
+  different ways. They now agree. A handful of other skins' quickest animations (*Constantine*,
+  *Plus! Mecha*, the Xbox skins' equaliser arrows) play a little more deliberately for the same
+  reason.
+
 ### New Features
 
 - **Media Player skins now remember their visual effect settings, per skin.** The effect showing in

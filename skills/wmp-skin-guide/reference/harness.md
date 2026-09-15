@@ -445,6 +445,35 @@ Whenever a change makes work happen on **more** commands, more nodes or more oft
 green is about correctness only. Time a repeated render of one heavy view before believing it is
 free: twenty renders after a warm pass took 173.1 ms each before the cache and 0.3 ms after.
 
+### A dump cannot see *when* a GIF was entered, and `WMP_RENDER_CLOCK` cannot either
+
+`WMP_RENDER_CLOCK` is what makes an animation falsifiable at all, and it still answers only "what is
+drawn at the clock I named". The question it cannot take is whether the engine handed that GIF the
+right clock in the first place — which is a whole defect class, because `animationClock` is per
+**view** and a skin that assigns a `backgroundImage` GIF from script enters it at whatever the view's
+clock already reads (**W182**).
+
+`AlienMorph` is the worked case. Its scene is correct at every settle value — `WMP_RENDER_SETTLE` at
+1, 3, 5 and 8s all hold `m_anim_shutter_open.gif`, the view timer does not re-fire — and the
+animation still plays from 1.1s in, or not at all, depending on whether anything animated in that
+view first. Every instrument on this page reports it healthy.
+
+**Drive the app and measure the span of motion**, not the frames: screen-capture the window's rect
+in a tight loop, diff consecutive crops of the animated region, and read the first and last interval
+above the noise floor. A full run and a truncated one are 9.80s against 1.73s and unmistakable.
+Matching a capture back to a GIF frame index is the tempting version and it misreports — the closing
+shutter's last dozen frames are visually identical, so a run that had plainly animated came back as
+"frame 91 throughout". The recipe is in `reference/skins/alienmorph.md` § *How to drive it*.
+
+**Closed as W182 on 2026-09-15** — the clock is now per slot (node + resource), and an empty slot
+table still renders at the scene clock, which is why every flag on this page is unaffected. The
+section stays because the *method* is the reusable part: a timing defect is invisible to everything
+here, and the before/after that settles one is a motion span off the running app.
+
+`WMP_ANIM_TRACE=1` is next to this and answers a different question — the rate the loop *achieved*
+once it was running (`want=25.0fps got=24.1fps … restarts=1`). It says nothing about which frame the
+loop started on, and a truncated animation traces as a perfectly healthy one.
+
 ### A sweep runs a stopped player, and a skin can be correct only while stopped
 
 W166 is the worked example and it is the sharpest form of the rule above. `Colorchooser`'s

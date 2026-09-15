@@ -27,7 +27,7 @@ final class WMPAnimationRateTests: XCTestCase {
     /// This is the one that made the corpus look slow: `AlienMorph`'s shutter is 119 frames and
     /// 108 of them author 0, so at 0.1s it took 11.9 seconds to open.
     func testZeroAndOneCentisecondDelaysUseTheEngineFloorRatherThanTheBrowsers100ms() throws {
-        for centiseconds in [0, 1] {
+        for centiseconds in [0, 1, 2] {
             let gif = WMPSkinTestSupport.animatedGIF(frameCount: 4, delayCentiseconds: centiseconds)
             let animation = try XCTUnwrap(store(gif).animation(for: "a.gif"))
             XCTAssertEqual(animation.delays, [WMPImageStore.animationFloor], count: 4,
@@ -38,7 +38,7 @@ final class WMPAnimationRateTests: XCTestCase {
     /// The floor is a floor. An authored delay at or above it is the skin's own answer and is never
     /// rewritten — 1,112 of the corpus's multi-frame GIFs state 4 or 5 cs and mean it.
     func testAnAuthoredDelayIsNeverRewritten() throws {
-        for centiseconds in [2, 4, 5, 7, 10, 100] {
+        for centiseconds in [3, 4, 5, 7, 10, 100] {
             let gif = WMPSkinTestSupport.animatedGIF(frameCount: 3, delayCentiseconds: centiseconds)
             let animation = try XCTUnwrap(store(gif).animation(for: "a.gif"))
             XCTAssertEqual(animation.delays, [TimeInterval(centiseconds) / 100], count: 3,
@@ -46,13 +46,33 @@ final class WMPAnimationRateTests: XCTestCase {
         }
     }
 
-    /// The floor is only ever applied downward-bounded: 2 cs is *faster* than the floor and stays
-    /// 2 cs. Reading the rule as "nothing runs faster than the floor" would slow those down, which
-    /// is a different change and not this one.
-    func testTheFloorDoesNotSlowDownAnAuthoredDelayBelowIt() throws {
-        let gif = WMPSkinTestSupport.animatedGIF(frameCount: 2, delayCentiseconds: 2)
-        let animation = try XCTUnwrap(store(gif).animation(for: "a.gif"))
-        XCTAssertLessThan(animation.delays[0], WMPImageStore.animationFloor)
+    /// **The boundary is between 2 and 3 cs, and the corpus is what put it there.**
+    ///
+    /// The Alienware family ships the same shutter animation authored twice —
+    /// `AlienMorph`/`AlienwareTeleport` at 0 cs, `ALXMorph`/`ALXVortex` at 2 cs — so with the
+    /// trigger at 1 cs one ran 9.8s and the other 3.9s, reported as "ALXMorph's animation runs so
+    /// quickly, it is basically the same animation". Both spellings mean "every frame anything will
+    /// draw": 2 cs is 50 fps. 3 cs is outside the rule on purpose — 62 corpus GIFs author it as a
+    /// real rate — so this test pins both sides rather than the floored one alone.
+    func testTheAsFastAsPossibleBoundarySitsBetweenTwoAndThreeCentiseconds() throws {
+        let floored = WMPSkinTestSupport.animatedGIF(frameCount: 2, delayCentiseconds: 2)
+        XCTAssertEqual(try XCTUnwrap(store(floored).animation(for: "a.gif")).delays[0],
+                       WMPImageStore.animationFloor, accuracy: 0.0001,
+                       "2 cs is 50 fps — the same request as 0, and it takes the floor")
+        let authored = WMPSkinTestSupport.animatedGIF(frameCount: 2, delayCentiseconds: 3)
+        XCTAssertEqual(try XCTUnwrap(store(authored).animation(for: "a.gif")).delays[0], 0.03,
+                       accuracy: 0.0001, "3 cs is a rate 62 corpus GIFs state and mean")
+    }
+
+    /// The pair that set the boundary, at their real frame counts: the two files draw the same
+    /// shutter and must now take the same time. Measured live at 9.80s and 10.05s of motion.
+    func testTheAlienwareFamilysTwoShuttersRunAtTheSameRate() throws {
+        let zeroAuthored = WMPSkinTestSupport.animatedGIF(frameCount: 119, delayCentiseconds: 0)
+        let twoAuthored = WMPSkinTestSupport.animatedGIF(frameCount: 138, delayCentiseconds: 2)
+        let a = try XCTUnwrap(store(zeroAuthored).animation(for: "a.gif")).duration
+        let b = try XCTUnwrap(store(twoAuthored).animation(for: "a.gif")).duration
+        XCTAssertEqual(a / Double(119), b / Double(138), accuracy: 0.0001,
+                       "same per-frame rate; the files differ only in how they spell 'as fast as possible'")
     }
 
     /// The floor sets how long a **transition** takes — 679 of the 768 affected GIFs play once —
@@ -62,6 +82,89 @@ final class WMPAnimationRateTests: XCTestCase {
         let animation = try XCTUnwrap(store(shutter).animation(for: "a.gif"))
         XCTAssertEqual(animation.duration, 7.93, accuracy: 0.05,
                        "119 frames at the floor: 7.9s, against 11.9s at the browser clamp")
+    }
+
+    // MARK: - W182: the clock belongs to the slot, not to the view
+
+    /// A scene built with two elements drawing different GIFs, so a slot can be addressed.
+    private func twoSlotScene(_ first: Data, _ second: Data) async throws -> (WMPScene, WMPImageStore) {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="40" height="20" backgroundColor="#000000">
+              <SUBVIEW id="one" left="0" top="0" backgroundImage="a.gif"/>
+              <SUBVIEW id="two" left="20" top="0" backgroundImage="b.gif"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("a.gif", data: first),
+            WMPTestArchiveEntry("b.gif", data: second)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        return (try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main"),
+                WMPImageStore(provider: skin.archive))
+    }
+
+    /// Each animated image in the scene is its own slot, keyed by the node **and** the resource.
+    ///
+    /// Both halves matter. Keyed by node alone, a script assigning a new GIF to an element it
+    /// already drew would inherit the old clock, which is the defect. Keyed by resource alone, two
+    /// elements drawing the same GIF would share one.
+    func testEveryAnimatedImageIsItsOwnSlot() async throws {
+        let (scene, store) = try await twoSlotScene(
+            WMPSkinTestSupport.animatedGIF(frameCount: 4, delayCentiseconds: 4),
+            WMPSkinTestSupport.animatedGIF(frameCount: 6, delayCentiseconds: 4))
+        let slots = WMPRenderer(imageStore: store).animatedSlots(in: scene)
+        XCTAssertEqual(slots.count, 2, "two animated elements are two clocks")
+        XCTAssertEqual(Set(slots.keys.map(\.resourcePath)), ["a.gif", "b.gif"])
+        XCTAssertEqual(Set(slots.keys.map(\.stableID)).count, 2, "two distinct nodes")
+        XCTAssertEqual(slots.values.map(\.frameCount).sorted(), [4, 6])
+    }
+
+    /// **The defect, at the level the renderer can be asked about it.** A slot given its own clock
+    /// draws the frame *that* clock names, and one the caller says nothing about falls back to the
+    /// scene clock — which is what every render dump and `WMP_RENDER_CLOCK` relies on.
+    ///
+    /// `AlienMorph` is the case: its shutter GIF is assigned a second after the view loads, so
+    /// under one clock for the whole view it was entered a second in, and a later toggle of the
+    /// same shutter was entered past its own last frame and never moved at all.
+    func testASlotClockSelectsTheFrameIndependentlyOfTheSceneClock() async throws {
+        let gif = WMPSkinTestSupport.animatedGIF(frameCount: 10, delayCentiseconds: 10)
+        let (scene, store) = try await scene(gif: gif)
+        let renderer = WMPRenderer(imageStore: store)
+        let slot = try XCTUnwrap(renderer.animatedSlots(in: scene).keys.first)
+        let animation = try XCTUnwrap(store.animation(for: slot.resourcePath))
+
+        // The scene clock says "0.75s in" — frame 7 — while the slot says it has just started.
+        // The fixture alternates two colours per frame, so an odd frame is the one that differs
+        // from frame zero; comparing against an even one would pass on identical pixels.
+        XCTAssertEqual(animation.frameIndex(at: 0.75), 7)
+        XCTAssertEqual(animation.frameIndex(at: 0), 0)
+        let atSceneClock = try await renderer.render(scene: scene, clock: 0.75)
+        let atSlotClock = try await renderer.render(scene: scene, clock: 0.75,
+                                                    slotClocks: [slot: 0])
+        let atZero = try await renderer.render(scene: scene, clock: 0)
+        XCTAssertNotEqual(Self.pixels(atSceneClock.image), Self.pixels(atSlotClock.image),
+                          "the slot's own clock must decide the frame, not the scene's")
+        XCTAssertEqual(Self.pixels(atSlotClock.image), Self.pixels(atZero.image),
+                       "a slot clocked at zero draws frame zero whatever the scene clock says")
+    }
+
+    /// The rendered pixels, for comparing two renders of the same scene.
+    private static func pixels(_ image: CGImage) -> Data {
+        (image.dataProvider?.data as Data?) ?? Data()
+    }
+
+    /// The fallback is the whole reason the harness is unaffected: name no slots and every image
+    /// is drawn at the scene clock, exactly as before W182.
+    func testAnEmptySlotTableRendersExactlyAsTheSceneClockAlone() async throws {
+        let gif = WMPSkinTestSupport.animatedGIF(frameCount: 10, delayCentiseconds: 10)
+        let (scene, store) = try await scene(gif: gif)
+        let renderer = WMPRenderer(imageStore: store)
+        for clock in [0.0, 0.25, 0.75] {
+            let withTable = try await renderer.render(scene: scene, clock: clock, slotClocks: [:])
+            let without = try await renderer.render(scene: scene, clock: clock)
+            XCTAssertEqual(Self.pixels(withTable.image), Self.pixels(without.image),
+                           "an empty slot table changes nothing at clock \(clock)")
+        }
     }
 
     // MARK: - The cadence is the loop's identity (a rebuild must not restart it)

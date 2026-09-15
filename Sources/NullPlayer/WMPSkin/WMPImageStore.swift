@@ -325,7 +325,7 @@ final class WMPImageStore: @unchecked Sendable {
 
     /// The frame timing of an animated image, or nil when it has one frame.
     ///
-    /// GIF delays are authored in hundredths of a second, and 0 or 1 cs means "as fast as
+    /// GIF delays are authored in hundredths of a second, and 0, 1 or 2 cs means "as fast as
     /// possible". That still needs a floor — nothing here may spin the repaint loop — but the
     /// floor a **browser** uses for it (0.1s, 10 fps) is not this corpus's answer and was the
     /// largest single cause of "the animations are slow": **768 of the corpus's 2,166 multi-frame
@@ -341,11 +341,35 @@ final class WMPImageStore: @unchecked Sendable {
     /// corpus is short enough for the rate to read as a flicker (`Creed`'s 3-frame `CloseGates`).
     ///
     /// 0.1s was too slow (`AlienMorph`'s 119-frame shutter took 11.9s, `Blinx`'s 4.7s) and 0.04s
-    /// was then reported too fast on sight. 0.0667s is where it sits: the alien shutter runs 7.9s,
+    /// was then reported too fast on sight. 0.0667s is where it sits: the alien shutter runs 9.8s,
     /// `Blinx` 3.1s, a 9-frame hover glow 0.6s. Every duration scales linearly with this number,
     /// so it is the one dial — and it is a judgement, not a finding. Do not "correct" it against
     /// the corpus's authored delays; that argument produced 0.04.
     static let animationFloor: TimeInterval = 0.0667
+
+    /// **What counts as "as fast as possible", and why it is 2 cs rather than a browser's 1.**
+    ///
+    /// The corpus contains the one experiment that can settle this: the Alienware family ships the
+    /// *same shutter animation* authored twice. `AlienMorph`/`AlienwareTeleport` write 108 of their
+    /// 119 frames as 0 cs; `ALXMorph`/`ALXVortex` write 134 of their 138 as 2 cs. With the trigger
+    /// at 1 cs only the first pair was floored, so one ran 9.8s and the other 3.9s — reported as
+    /// "ALXMorph's animation runs so quickly, it is basically the same animation". A 282x282 GIF at
+    /// 2 cs is 50 fps, which is "every frame anything will draw" exactly as 0 is; both authors
+    /// asked for the same thing and only the spelling differed.
+    ///
+    /// Measured over the installed corpus by parsing every GIF's Graphic Control Extension blocks
+    /// (2,170 multi-frame GIFs across 91 archives): the minimum authored delay is 0 cs for 494,
+    /// 1 cs for 278 and **2 cs for 28**, then 3 cs for 62 and 5 cs for 859. So moving the trigger
+    /// from 1 to 2 reaches **28 GIFs across 9 archives** and leaves the 772 already floored exactly
+    /// where they were — `ALXMorph`/`ALXVortex` to 10.14s against `AlienMorph`'s 9.82s, `Constantine`
+    /// and `Plus! Mecha`'s shutters to 2.3s and 1.8s, and eighteen Xbox/QuantumRedshift hover glows
+    /// to 0.13–0.40s, which is the median of the cohort the floor was tuned on. 3 cs is deliberately
+    /// outside it: 62 GIFs author it as a real rate.
+    ///
+    /// This is a departure from the browser convention, which floors 1 cs and honours 2. It is
+    /// taken on the strength of the A/B above and nothing else, so **re-run that comparison before
+    /// moving this number** rather than re-deriving it from authored delays in aggregate.
+    static let asFastAsPossibleCentiseconds: TimeInterval = 0.021
 
     func animation(for path: String) throws -> WMPImageAnimation? {
         let canonical = provider.canonicalPath(for: path) ?? path
@@ -374,7 +398,8 @@ final class WMPImageStore: @unchecked Sendable {
             let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
             let unclamped = (gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double)
                 ?? (gif?[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
-            delays.append(unclamped <= 0.011 ? Self.animationFloor : unclamped)
+            delays.append(unclamped <= Self.asFastAsPossibleCentiseconds
+                          ? Self.animationFloor : unclamped)
         }
         let properties = CGImageSourceCopyProperties(source, options) as? [CFString: Any]
         let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]

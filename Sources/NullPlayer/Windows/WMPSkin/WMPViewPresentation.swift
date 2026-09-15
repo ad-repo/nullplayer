@@ -103,10 +103,65 @@ final class WMPViewPresentation {
     /// **Every render of a view that is already animating has to pass this.** Preserving the epoch
     /// alone does not stop the flicker: a rebuilt scene renders at `clock: 0` by default, so a
     /// transaction paints frame zero and the loop only catches up a frame later.
+    ///
+    /// This is the view-wide clock, and after W182 it drives only what genuinely belongs to the
+    /// view: a marquee's scroll position. Animated artwork is clocked per slot by
+    /// `animationSlotClocks(for:)`.
     func animationClock(for viewID: String?) -> TimeInterval {
         guard let viewID, animationEpochViewID == viewID else { return 0 }
         return Date().timeIntervalSince(animationEpoch)
     }
+
+    /// When each animated slot in this window started playing. See `WMPRenderer.WMPAnimationSlot`.
+    private var animationSlotEpochs: [WMPRenderer.WMPAnimationSlot: Date] = [:]
+
+    /// Seconds elapsed for each animated slot in `slots`, seeding any that has not been seen.
+    ///
+    /// **A slot's clock starts when the slot first appears, not when the view did** (W182). A GIF a
+    /// skin assigns from script therefore plays from its own frame zero, instead of being entered
+    /// wherever the view's clock had already reached — which is what truncated `AlienMorph`'s
+    /// shutter intro by however long anything else in the view had been animating, and reduced a
+    /// later toggle of the same shutter to a single jump to its final frame.
+    ///
+    /// Slots absent from `slots` are dropped, so an element that stops drawing a GIF and later
+    /// draws it again starts it over, and the table cannot grow across a session's rebuilds.
+    /// A slot still present keeps its epoch, which is what makes a rebuild free (W142).
+    func animationSlotClocks(
+        for slots: [WMPRenderer.WMPAnimationSlot: WMPImageAnimation], now: Date = Date()
+    ) -> [WMPRenderer.WMPAnimationSlot: TimeInterval] {
+        animationSlotEpochs = animationSlotEpochs.filter { slots.keys.contains($0.key) }
+        var clocks: [WMPRenderer.WMPAnimationSlot: TimeInterval] = [:]
+        clocks.reserveCapacity(slots.count)
+        for slot in slots.keys {
+            let epoch = animationSlotEpochs[slot] ?? now
+            animationSlotEpochs[slot] = epoch
+            clocks[slot] = now.timeIntervalSince(epoch)
+        }
+        return clocks
+    }
+
+    /// When every animation in `slots` has played out, or `nil` while any of them loops forever.
+    ///
+    /// Each slot ends its own duration after **its own** epoch, which is the half of W182 the
+    /// repaint loop reads: a scalar end measured from the view's epoch stopped the loop while a
+    /// late-arriving GIF still had frames to draw, and took the early-return path for one that had
+    /// not started at all.
+    func animationsEnd(
+        for slots: [WMPRenderer.WMPAnimationSlot: WMPImageAnimation], now: Date = Date()
+    ) -> Date? {
+        guard !slots.isEmpty else { return nil }
+        var latest = Date.distantPast
+        for (slot, animation) in slots {
+            guard let end = animation.endOfPlayback else { return nil }
+            let epoch = animationSlotEpochs[slot] ?? now
+            latest = max(latest, epoch.addingTimeInterval(end))
+        }
+        return latest
+    }
+
+    /// The end the running repaint loop was started with, so a scene whose cadence compares equal
+    /// but whose animations now finish at a different moment still restarts it.
+    var animationEndsAt: Date?
 
     /// The script's timers — what a handler asked for with `setTimeout`/`setInterval` — and nothing
     /// else. The view timer and the animation loop are stopped by `stopAllTimers`.
@@ -125,6 +180,7 @@ final class WMPViewPresentation {
         viewTimerMilliseconds = 0
         stopAnimation()
         animationEpochViewID = nil
+        animationSlotEpochs.removeAll()
     }
 
     /// Stop the repaint loop and forget the cadence it was pacing to, so the next `startAnimation`
@@ -133,6 +189,7 @@ final class WMPViewPresentation {
         animationTask?.cancel()
         animationTask = nil
         animationCadence = nil
+        animationEndsAt = nil
     }
 
     /// Stop everything and release the drawing. The window itself is the materializer's to order out

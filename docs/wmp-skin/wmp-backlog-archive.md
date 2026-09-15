@@ -1913,3 +1913,156 @@ sweep seeds one host snapshot and never transitions, so the edge is never comput
 live pass used `NULLPLAYER_PLAY` with a local file and **cleared the skin**: on an already-loaded
 local engine the spurious re-play is invisible, and only the streaming path turns it into a real
 restart. Reproduce a transport report on the source the reporter uses.
+
+## W180 — `Half-Life_2`'s shutter intro, closed as authored behaviour
+
+Reported 2026-09-15 as "in half life the skin animation triggers the opening on load, i think it
+should be closed and you click the open button to open it". **No code changed.**
+
+The row said the thing to prove was not "it opens" but **"it settles"** — an intro that opens the
+player and then hands its button over is the skin's own design, and the failure mode worth ruling
+out was the scripted `view.timerInterval = 0` not taking, which would re-enter the sequence forever
+and never enable the button. It settles. `WMP_RENDER_PROBE=mainView` at three settle values:
+
+| `WMP_RENDER_SETTLE` | `topShutterSub` | `centerShutterSub` |
+|---|---|---|
+| 3 | `shutter_f02.png` | `shutter_static.png` |
+| 11 | `shutter_f09.png` | `shutter_open.gif` |
+| 20 | `shutter_f09.png` | `shutter_open.gif` |
+
+It animates frame 2 → 9 and stops; 11s and 20s are byte-identical, so the timer is genuinely off and
+nothing re-enters. `WMP_RENDER_CLICK 'mainView@201,55'` after settling reports
+`hit=shutterButton#14 … handlers=1`, with `shutterButton.enabled=true` and `mainBackFrame.visible=true`
+in the changed set — the frame-9 branch handing the button over — and the click steps the shutter
+back to `shutter_f08.png` at `setViewTimerInterval value=100`. Opens on load, settles, button works,
+exactly as `hl2_se.wms:17`/`:31` author it.
+
+**What it produced instead.** Verifying it established that no render dump can see an animation's
+*timing*, only its scene, which is what sent the next report to the running app — see **W182**, the
+per-view animation clock, still open.
+
+Original row:
+
+| W180 | `Half-Life_2` plays its shutter-opening sequence on load — **probably authored, verify before fixing** | 1 skin, reported 2026-09-15 | Reported as "in half life the skin animation triggers the opening on load, i think it should be closed and you click the open button to open it". **The markup says WMP does this too.** `mainView` declares `timerInterval="1500" onTimer="toggleShutter()"` and authors `shutterButton` `enabled="false"` (`hl2_se.wms:17`, `:31`), and `toggleShutter()` (`hl2.js:120`) walks `shutter_out_open.gif` → `shutter_f01..f09.png` → `shutter_open.gif` with a sound per stage, then at frame 9 sets `view.timerInterval = 0`, `centerShutterSubStatic.visible = false`, `mainBackFrame.visible = true` and `shutterButton.enabled = true`. An intro that opens the player and *then* hands the button over is the skin's own design, so the row to prove is not "it opens" but **"it settles"**: if the scripted `view.timerInterval = 0` does not stop the view timer, or a scene rebuild re-enters the sequence, the shutter re-opens forever and the button never becomes clickable — which is what this report would look like from the outside, and is the shape of the animation defect already closed on 2026-09-08 (§ *Phase 7*). Reproduce with `WMP_SKIN=…/Half-Life_2.wmz`, watch whether `mainBackFrame` ever appears and whether the shutter button takes a click; close as authored behaviour if it does. |
+
+---
+
+## W181 — an unauthored `visible`/`enabled` read **false**, and a whole main face stayed inert
+
+Reported 2026-09-15 as "the subwindow buttons on the main window face do not work" against
+`Combat_Flight_Simulator_3`. Closed the same day.
+
+`WMPObjectModel.readElement` answered `""` — falsy — for any standard property the markup never
+authored and no script had written. `Combat_Flight_Simulator_3`'s markup declares `mainIntro`
+without a `visible` attribute and its 5s view timer tests exactly that property, so `mainTimer()`
+took the `!visible` branch on every tick, `hideIntro()` never ran, and the buttons `disableButtons()`
+hides while the player is stopped never came back. The face was inert forever.
+
+**The fix is one line**, beside the `alphaBlend` default in the same function: an unset `visible` or
+`enabled` answers `true`, which is what WMP answers and what this engine's renderer already drew —
+the two halves disagreed and only the script side was wrong. Authored values and script writes both
+still win, because the read reaches the default only after `element.properties[name]` misses.
+
+**Measured before it was written**, over the 184 installed archives — 399 script files decoded BOM-
+first then positional UTF-16 then cp1252, breakdown 155 UTF-16-BOM / 146 cp1252 / 89 UTF-8 / 9
+UTF-8-BOM, with `Need_for_Speed_Underground` and `SplinterCellWMPSkin` refusing their `.wms` as
+always:
+
+| Property | Reads | Reads of an element whose markup authors no such attribute |
+|---|---|---|
+| `.visible` | 513 across 67 archives | **81 across 21** |
+| `.enabled` | 35 across 9 archives | **25 across 5** |
+
+**Three measurements of reach, because the default-state sweep cannot see this one.** The full
+183-skin corpus sweep against a baseline worktree at `7ce0adf6` is **byte-identical** in its
+invariants once `loadms` timings and the hash-ordered `SCRIPT inline:` tallies are removed, and
+546 of 547 images are identical — the one that differs is `Scooby-Doo_2/infoView`, the known
+`randomPic()` nondeterminism. That is the correct result and not a null one: these reads happen on
+timers and handlers, never at load. Driving the timers is what shows the change — a
+`WMP_RENDER_SETTLE=6` pass over the 25 archives the scan flagged, baseline against current, moves
+**exactly one line in 142**:
+
+```
+- RENDER-DUMP mainView: 584x321, 13 nodes,  7 commands, 2 hits, 2 widgets, 1 unresolved
++ RENDER-DUMP mainView: 584x321, 18 nodes, 11 commands, 6 hits, 4 widgets, 1 unresolved
+```
+
+and it is `Combat_Flight_Simulator_3`. The row's own evidence point flipped with it:
+`WMP_RENDER_CLICK 'mainView@252,92'` with `WMP_RENDER_SETTLE=11` was `MISS` and now reads
+`hit=wbuttonsInfo#45 → command=openView contentView`, with `mainIntro.visible=false` and
+`wbuttons.visible=true` in the changed set.
+
+**The trap in the corpus scan, recorded because the first pass fell into it.** Filtering out every
+target the script also assigns somewhere — a reasonable-looking way to find reads that must precede
+a write — removed `Combat_Flight_Simulator_3:mainIntro` itself, since `hideIntro()` assigns it. The
+question is which runs *first*, and no static scan answers that. Count both populations and say
+which is which: 37 element+skin pairs read an unauthored `.visible`, 28 of them also assigned.
+
+Original row:
+
+| W181 | An unauthored `visible`/`enabled` reads **false** from script, so `Combat_Flight_Simulator_3`'s whole main face stays hidden | 1 skin confirmed headlessly and live 2026-09-15; **unmeasured across the corpus**, and the property is read by every skin that scripts its own layout | Reported as *"the subwindow buttons on the main window face do not work"*. Not the buttons: `mainStartUp()` calls `disableButtons()`, which hides `wbuttons` (close, minimize, full mode, shutter, info, playlist, EQ), the seek dial, the volume dial and the pin-up button whenever the player is stopped, and only `hideIntro()` or playback brings them back. The 5s view timer runs and `mainTimer()` reads `mainIntro.visible` — an attribute the markup never authors — and `WMPObjectModel.readElement` answers `""` for any unset standard property (`SkinnedSurfaceChrome`-style defaults are held there for `alphaBlend` and the video flags only), so the handler takes the `!visible` branch and `hideIntro()` is never called. The face is inert forever. **Evidence**: `WMP_RENDER_CLICK 'mainView@252,92'` is `MISS` stopped and after `WMP_RENDER_SETTLE=11`; with `WMP_RENDER_HOST=playing` the same point resolves `hit=wbuttonsInfo → command=openView contentView`. WMP's own default for both `visible` and `enabled` is **true** — which is what the renderer already draws — so the fix is a default in `readElement`, and the reach number is a corpus scan of `\.visible`/`\.enabled` reads against the attributes the markup authors. **Measure before fixing**: this flips a value every scripted skin can read. |
+
+---
+
+## W182 — the animation clock belonged to the view, so a GIF assigned later started part way in
+
+Reported 2026-09-15 as "why does the AlienMorph skin animation sometimes not fully run when first
+opened — it runs what appears to be half of the animation". Closed the same day.
+
+`WMPViewPresentation.animationEpoch` was set **once per view**, on the first scene containing any
+animated GIF, and `animationClock` handed `now - epoch` to every GIF in that view for
+`WMPImageAnimation.frameIndex(at:)` to index its own delay table. A skin animates by assigning a new
+GIF to an element it already drew, so any animation that arrived after the first one was entered by
+exactly the gap between them — and `cadence.endsAt`, measured from the same epoch, decided when the
+repaint loop stopped.
+
+`AlienMorph` walks into it because `mainView` is authored `timerInterval="1000"
+onTimer="introStart()"` and `introStart()` → `toggleShutter()` is what assigns
+`m_anim_shutter_open.gif`, a second after the view loads. So whether the intro played in full
+depended on whether anything else had animated first — which is why it was intermittent rather than
+broken.
+
+**The fix is a clock per slot**, where a slot is `WMPRenderer.WMPAnimationSlot(stableID:resourcePath:)`
+— the node **and** the resource. Node alone keeps the stale epoch across the script's assignment,
+which is the defect; resource alone makes two elements drawing one GIF share a clock and restarts an
+animation whenever a rebuild moves it between nodes. Together, the same picture in the same place
+keeps running and anything else starts now, which is also what preserves W142's no-flicker property:
+a scene rebuilt unchanged produces identical slots.
+
+Three seams:
+
+* `WMPRenderer.render` takes `slotClocks:` and falls back to the scene clock per image. **An empty
+  table renders exactly as before**, which is what leaves every render dump and `WMP_RENDER_CLOCK`
+  untouched — they name one clock for the whole scene and still get it.
+* `WMPViewPresentation.animationSlotClocks(for:)` seeds a slot's epoch the first time it is drawn
+  and drops slots the scene no longer has, so the table cannot grow across a session.
+* `cadence.endsAt` still decides *whether* the scene ends — it is the half that knows about a
+  marquee, which never does — and `animationsEnd(for:)` decides *when*, from each slot's own epoch.
+
+**Measured live, before and after, by frame-differencing a `screencapture` series** (see
+`reference/harness.md` § *A dump cannot see when a GIF was entered* — no headless instrument here
+can see this class, and the scene was correct at every settle value throughout):
+
+| Case | Before | After |
+|---|---|---|
+| `AlienMorph` cold open, pointer away | 9.80s | **9.81s** (unchanged, the control) |
+| `AlienMorph` cold open, pointer on the button group | 8.69s | **9.86s** |
+| `ALXMorph` shutter toggled 6s after launch | 2.04s | **8.49s** |
+| `ALXMorph` shutter toggled 12s after launch | a single 110ms interval | **8.52s** |
+
+The two `ALXMorph` rows are the proof, and it is that they now **agree with each other**: the
+animation no longer depends on when the click happened. `WMP_ANIM_TRACE` reports `restarts=0` for 21
+of 23 trace seconds afterwards, so the loop is still not restarting per rebuild.
+
+**How it was found, and the reporting order that mattered.** The floor change landed first
+(`asFastAsPossibleCentiseconds`, making the Alienware family's two shutters the same length) and the
+reporter came back with "this fix made W182 worse". It had not: it removed W182's camouflage. While
+`ALXMorph`'s close animation was 4.69s the view clock was almost always past the whole thing, so the
+early return fired and the shutter snapped shut in one frame — a 100% truncation, which reads as
+"it just closed". At 9.64s the clock lands *inside* the animation and it visibly starts from the
+middle — an 80% truncation, which reads as broken. **A defect that is total can be invisible, and
+making it partial is what exposed it.**
+
+Original row:
+
+| W182 | The animation clock is per **view**, not per image, so a GIF a skin assigns later starts part way through — and a one-shot is cut off at the same offset | **1 skin measured live 2026-09-15 across 8 runs; unmeasured across the corpus**, and every skin that assigns a `backgroundImage` GIF from script is a candidate — count them | Reported as "why does the AlienMorph skin animation sometimes not fully run when first opened, it runs what appears to be half of the animation". `WMPViewPresentation.animationEpoch` is set **once per view**, on the first scene containing any animated GIF (`WMPMainWindowController.swift:2201`), and `animationClock` then hands `now - epoch` to every GIF in that view for `WMPImageAnimation.frame(at:)` to index its own delay table. A GIF that enters the scene later is therefore entered by exactly the gap between the two, and `cadence.endsAt` is measured from the same epoch so the tail is lost as well. `AlienMorph` walks into it because its `mainView` is authored `timerInterval="1000" onTimer="introStart()"` and `introStart()` → `toggleShutter()` is what assigns `m_anim_shutter_open.gif` — one second *after* the view loads. **Measured in the running debug build** by frame-differencing the 282x282 shutter region of a `screencapture` series (the harness renders at an explicit clock and is blind to this whole class): pointer away from the window, motion runs 1.10s→10.91s, span **9.80s**, the GIF's full duration, reproduced 5/5; pointer parked on the player's button group, span **8.69s** — `m_set1_hov.gif` is 10 frames at 40ms with `loop=0`, so hovering starts the epoch ~1.1s early and the intro loses precisely that much at the head. A later toggle is worse and is the same defect: clicking `btnShutter` 4s after launch runs **1.73s** of the 8.46s close animation, and clicking it at 12s moves for a **single 110ms interval** — the scene renders once at a clock already past `endsAt` and snaps to the last frame. So "sometimes" is "whenever anything animated in that view first". **The fix is an epoch per image slot rather than per view**; before taking it, count the archives that assign a GIF to `backgroundImage` from script — the W128 scan shape in `reference/harness.md` § *Counting a tag across the corpus* is the one to copy, because the write is as often in an inline handler as in a program. Reproduce with the recipe in `reference/skins/alienmorph.md` § *How to drive it*. |

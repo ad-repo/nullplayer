@@ -40,6 +40,8 @@ window's *title bar* and the top of its *inner border*, not just a corner.
 | "the playlist and eq windows are not properly constructed and the window border and details are not correct and there are large gaps" | `verticalAlignment="center"` was read as a margin, so both side columns of all five windows collapsed to `top=0` and painted over the corner pieces that carry the title bar and inner border | W143 |
 | "ALXMorph does nothing — no animation and nothing reacts" | The `mainView` starvation class; `alphaBlendTo` (W38), `backgroundImage` from script (W75) and an unset-preference default (W76) were each load-bearing | W68 (open) |
 | "in all the alien type skins the numeric display is illegible" | A `<BUTTON>`'s `image` was scaled to its authored frame, blowing one tenth of one digit up ten times | W122 |
+| "the animation sometimes does not fully run when first opened — it runs what appears to be half" | The animation clock was per **view**, not per image: the epoch was set on the first animated GIF in the view and `AlienMorph` assigns its shutter a second later from `timerInterval="1000"`, so anything that animated first stole that much off the head | W182 (closed 2026-09-15) |
+| "ALXMorph's animation runs so quickly, it is basically the same animation as AlienMorph" | Not the engine — the two archives author the same shutter at 0 cs and 2 cs, and only 0/1 cs was being floored | closed 2026-09-15, `WMPImageStore.asFastAsPossibleCentiseconds` |
 
 ## What was ruled out
 
@@ -54,6 +56,36 @@ window's *title bar* and the top of its *inner border*, not just a corner.
   drawing it at its natural size is correct — everything below the bar is black, over a black
   `plFrame`, and WMP composites the same way. It reads as a defect in a screenshot and is not one.
 - **Not `mainView`.** Byte-identical across W143; a non-resizable player authors no centred pieces.
+- **Not the view timer re-firing, for W182.** The obvious reading of "runs half" is `introStart()`
+  being raised twice and `toggleShutter()` toggling back — the shape of the `Alienware Invader`
+  defect in `SKILL.md`. It is not that: `WMP_RENDER_SETTLE` at 1, 3, 5 and 8s all hold
+  `m_anim_shutter_open.gif`, so the scripted `view.timerInterval = 0` sticks and the scene is
+  correct at every value. The scene was never the defect; the clock was.
+
+**And the floor change is what exposed it, which is the lesson worth keeping.** Slowing `ALXMorph`'s
+shutter from 3.9s to 10.1s was reported as making W182 *worse*. It did not: at 4.69s the close
+animation was shorter than the view clock's head start almost always, so the loop took its
+already-played-out early return and the shutter snapped shut in one frame — a total truncation, which
+looks deliberate. At 9.64s the clock lands inside the animation and it visibly starts from the
+middle. **A defect that is total can be invisible; making it partial is what surfaced it.**
+
+## The pair that sets the animation floor's boundary
+
+**This family is the corpus's only A/B of one animation authored twice**, and it is why
+`WMPImageStore.asFastAsPossibleCentiseconds` is 2 cs rather than a browser's 1. `AlienMorph` and
+`AlienwareTeleport` ship `m_anim_shutter_open.gif` as 119 frames with 108 of them authored **0 cs**;
+`ALXMorph` and `ALXVortex` ship the same shutter as 138 frames with 134 authored **2 cs**. With the
+trigger at 1 cs only the first pair was floored, so one ran 9.8s and the other 3.9s.
+
+Measured 2026-09-15 by parsing every corpus GIF's Graphic Control Extension blocks — 2,170
+multi-frame GIFs across 91 archives, which agrees with the 2,166/90 already in `WMPImageStore`, so
+the parser is cross-checked. Minimum authored delay: **0 cs 494, 1 cs 278, 2 cs 28, 3 cs 62, 5 cs
+859**. Moving the trigger reaches 28 GIFs across 9 archives and leaves the 772 already floored
+untouched; 3 cs stays outside it because 62 GIFs author it as a real rate.
+
+**Do not re-derive that boundary from authored delays in aggregate** — that argument produced 0.04
+and was rejected by eye. Re-run *this comparison*: the two files draw the same shutter, so whatever
+the rule is, they have to come out the same length. Verified live at 9.80s and 10.05s of motion.
 
 ## How to drive it
 
@@ -64,6 +96,24 @@ WMP_SKIN=~/Library/Application\ Support/NullPlayer/WMPSkins/AlienMorph.wmz \
   swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus
 WMP_SKIN=…/AlienMorph.wmz WMP_RENDER_SIZE=700x450 WMP_RENDER_DUMP=/tmp/wmp/alien-big …
 ```
+
+**To measure an animation you must drive the app** — a render dump is a still and `WMP_RENDER_CLOCK`
+pins a clock you chose, so neither can see when a GIF was *entered*. The W182 numbers came from
+frame-differencing a `screencapture` series over the shutter's own 282x282 region:
+
+```bash
+# park the pointer off the window (or on the button group, which is the failing case), then:
+defaults write NullPlayer wmpSkinName -string "AlienMorph"
+defaults delete NullPlayer wmpSkinViewID
+./scripts/kill_build_run.sh --debug -- -uiMode wmp
+# poll `winhelper windows` for the 368x426 window, then screencapture -R its rect in a tight loop
+# and diff consecutive crops: the span of intervals above the noise floor is the animation's length.
+```
+
+Read the **span**, not the frame indices — matching a capture back to a GIF frame is unreliable on
+the closing shutter, whose last dozen frames are visually identical, and it reported "frame 91" for
+a run that had plainly animated. The span is assumption-free and was what separated a full 9.80s run
+from a truncated 1.73s one.
 
 The frame pieces to read in a `PROBE` capture, in `plView` (`389x247`): `f_top_left.png` at `0,0
 175x76`, `f_top_right.png` at `214,0`, `plLeftCenter` at `0,77 175x92` and `plRightCenter` at

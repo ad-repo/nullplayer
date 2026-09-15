@@ -54,15 +54,42 @@ struct WMPRenderer: @unchecked Sendable {
     /// not a rebuild — a rebuild runs the skin's script transaction, which is not something to do
     /// ten times a second.
     func render(scene: WMPScene, backingScale: CGFloat = 1,
-                clock: TimeInterval = 0) async throws -> WMPRenderResult {
+                clock: TimeInterval = 0,
+                slotClocks: [WMPAnimationSlot: TimeInterval] = [:]) async throws -> WMPRenderResult {
         try await Task.detached(priority: .userInitiated) {
-            try renderOffMain(scene: scene, backingScale: backingScale, clock: clock)
+            try renderOffMain(scene: scene, backingScale: backingScale, clock: clock,
+                              slotClocks: slotClocks)
         }.value
     }
 
     /// What a repaint loop needs to drive this scene's animated artwork, and nothing more: the
     /// shortest frame delay anything in it uses, and the union of the frames that move. Answered
     /// from the image store, so a still scene costs one cached lookup per resource and returns nil.
+    /// **One animated image in one place in the scene — the thing that owns an animation clock.**
+    ///
+    /// An animation belongs to the *slot* it is drawn in, not to the view it is drawn in (W182).
+    /// A skin animates by assigning a new GIF to an element it already drew — `AlienMorph`'s
+    /// `toggleShutter()` writes `shutterSub.backgroundImage` a second after the view loaded — and a
+    /// clock shared by the whole view starts that GIF wherever the view had already got to, which
+    /// is anywhere from "a second in" to "past its last frame".
+    ///
+    /// The identity is the node **and** the resource, and both halves are load-bearing. The node
+    /// alone would keep the old epoch when the script swapped the image, which is the defect. The
+    /// resource alone would make two elements drawing the same GIF share one clock, and would
+    /// restart the animation whenever a rebuild moved it between nodes. Together they mean: the
+    /// same picture in the same place keeps running, and anything else is a new animation starting
+    /// now — which is also what makes a rebuild free, since a scene rebuilt with no change produces
+    /// exactly the same slots (W142's no-flicker property).
+    struct WMPAnimationSlot: Hashable {
+        let stableID: Int
+        let resourcePath: String
+
+        init(stableID: Int, resourcePath: String) {
+            self.stableID = stableID
+            self.resourcePath = resourcePath
+        }
+    }
+
     struct WMPAnimationCadence: Equatable {
         let shortestDelay: TimeInterval
         /// Only the animated commands. Repainting the whole window at 10 fps for one blinking LED
@@ -73,6 +100,23 @@ struct WMPRenderer: @unchecked Sendable {
         /// frame lands, or the loop re-renders a still picture at the GIF's frame rate for as long
         /// as the view is open — `Halo 2`'s shutter is 34 frames of a 327x294 window.
         let endsAt: TimeInterval?
+    }
+
+    /// Every animated image in the scene, by slot, with the animation it is playing.
+    ///
+    /// The caller owns the epochs — this only says what there is to clock. A slot appears once even
+    /// if the same command is rasterized into both layers of a split scene, because the key is the
+    /// node and the resource rather than the draw.
+    func animatedSlots(in scene: WMPScene) -> [WMPAnimationSlot: WMPImageAnimation] {
+        var slots: [WMPAnimationSlot: WMPImageAnimation] = [:]
+        for command in scene.commands {
+            guard case let .image(specification) = command.paint,
+                  let animation = try? imageStore.animation(for: specification.resourcePath)
+            else { continue }
+            slots[WMPAnimationSlot(stableID: command.stableID,
+                                   resourcePath: specification.resourcePath)] = animation
+        }
+        return slots
     }
 
     func animationCadence(for scene: WMPScene) -> WMPAnimationCadence? {
@@ -149,6 +193,7 @@ struct WMPRenderer: @unchecked Sendable {
     /// byte-identical to what it was before the split existed.
     private func renderOffMain(scene: WMPScene, backingScale: CGFloat,
                                clock: TimeInterval = 0,
+                               slotClocks: [WMPAnimationSlot: TimeInterval] = [:],
                                splitAtEffects: Bool = true) throws -> WMPRenderResult {
         guard backingScale > 0, backingScale.isFinite,
               scene.canvasSize.width > 0, scene.canvasSize.height > 0 else {
@@ -177,7 +222,7 @@ struct WMPRenderer: @unchecked Sendable {
         // rare one a corpus sweep can arbitrate. See `WMPEffectsGround`.
         let image = try rasterize(below, scene: scene, pixelWidth: pixelWidth,
                                   pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
-                                  grounds: scene.effectsGrounds)
+                                  slotClocks: slotClocks, grounds: scene.effectsGrounds)
         // **A windowed visualization is not something the skin can draw over.** Its rects are
         // punched out of the overlay after it is rasterized, so the surface hosted underneath shows
         // through and whatever the skin painted *before* the effects node stands where the
@@ -185,7 +230,7 @@ struct WMPRenderer: @unchecked Sendable {
         let overlay = try split.map {
             try rasterize(Array(scene.commands[$0...]), scene: scene, pixelWidth: pixelWidth,
                           pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
-                          punchingOut: scene.windowedEffectsRects)
+                          slotClocks: slotClocks, punchingOut: scene.windowedEffectsRects)
         }
         return WMPRenderResult(image: image, overlayImage: overlay,
             renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
@@ -196,7 +241,9 @@ struct WMPRenderer: @unchecked Sendable {
     /// One layer of the scene, on its own transparent canvas.
     private func rasterize(_ commands: [WMPPaintCommand], scene: WMPScene,
                            pixelWidth: Int, pixelHeight: Int, backingScale: CGFloat,
-                           clock: TimeInterval, punchingOut: [WMPRect] = [],
+                           clock: TimeInterval,
+                           slotClocks: [WMPAnimationSlot: TimeInterval] = [:],
+                           punchingOut: [WMPRect] = [],
                            grounds: [WMPEffectsGround] = []) throws -> CGImage {
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
             | CGImageAlphaInfo.premultipliedLast.rawValue
@@ -255,10 +302,16 @@ struct WMPRenderer: @unchecked Sendable {
                 context.fill(command.frame.cgRect)
             case let .image(specification):
                 let animation = (try? imageStore.animation(for: specification.resourcePath)) ?? nil
+                // **This slot's own clock, falling back to the view's** (W182). A caller that
+                // names one clock for the whole scene — every render dump, and `WMP_RENDER_CLOCK` —
+                // gets exactly what it asked for, because it supplies no slot table.
+                let slotClock = slotClocks[WMPAnimationSlot(stableID: command.stableID,
+                                                            resourcePath: specification.resourcePath)]
+                    ?? clock
                 // A finished terminator animation has nothing left to draw, and holding its last
                 // frame buries whatever it was drawn over — see `WMPGIFTerminator`.
-                if animation?.isCleared(at: clock) == true { context.restoreGState(); continue }
-                let frame = animation?.frameIndex(at: clock) ?? 0
+                if animation?.isCleared(at: slotClock) == true { context.restoreGState(); continue }
+                let frame = animation?.frameIndex(at: slotClock) ?? 0
                 let decoded = try imageStore.image(for: specification.resourcePath,
                                                    colorKeys: specification.colorKeys,
                                                    implicitKey: specification.implicitColorKey,

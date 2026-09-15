@@ -546,6 +546,17 @@ final class WMPObjectModel {
         // unset-numeric default of 0 would tell a skin reading its own element that it is invisible,
         // and a fade written as `x.alphaBlendTo(x.alphaBlend + 32, 200)` would never leave zero.
         if name == "alphablend" { return .value(.number(255)) }
+        // WMP's own defaults for both are **true**, which is already what the renderer draws: an
+        // element the markup never hid is on screen and a control it never disabled takes a click.
+        // Answering the unset-standard `""` told a skin reading back its own layout the opposite,
+        // and `Combat_Flight_Simulator_3` is what that costs: `mainTimer()` tests
+        // `mainIntro.visible` — an attribute its markup never authors — takes the `!visible`
+        // branch every tick, never calls `hideIntro()`, and leaves the whole main face inert
+        // behind the buttons `disableButtons()` hid at startup (W181). Measured over the 184
+        // installed archives: `.visible` is read 513 times in 67 of them and `.enabled` 35 times
+        // in 9, and the reads this default reaches are the 81 / 21 and 25 / 5 that name an
+        // element whose markup authors no such attribute.
+        if name == "visible" || name == "enabled" { return .value(.bool(true)) }
         // The view is also a host object: `view.close()` and `view.width` reach the same receiver.
         if element.kind == .view, let host = readViewHost(name) { return host }
         if element.authored.contains(name) || Self.standardElementProperties.contains(name) {

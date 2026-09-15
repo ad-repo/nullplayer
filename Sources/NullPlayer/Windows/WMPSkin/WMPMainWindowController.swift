@@ -948,7 +948,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: self?.renderScale(for: scene.canvasSize) ?? 1,
-                    clock: presentation?.animationClock(for: scene.viewID) ?? 0)
+                    clock: presentation?.animationClock(for: scene.viewID) ?? 0,
+                    slotClocks: Self.slotClocks(presentation, for: scene, store: store))
                 try Task.checkCancellation()
                 guard let self, let presentation else { return }
                 presentation.sceneOverrides = resolvedOverrides
@@ -1120,7 +1121,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                            overrides: output.overrides)
                 let rendered = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderScale(for: scene.canvasSize),
-                    clock: existing?.animationClock(for: scene.viewID) ?? 0)
+                    clock: existing?.animationClock(for: scene.viewID) ?? 0,
+                    slotClocks: Self.slotClocks(existing, for: scene, store: store))
                 try Task.checkCancellation()
                 let size = NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height)
                 guard let presentation = existing ?? materializer.materialize(
@@ -1616,7 +1618,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                            overrides: overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: self?.renderBackingScale(for: presentation) ?? 1,
-                    clock: presentation?.animationClock(for: scene.viewID) ?? 0)
+                    clock: presentation?.animationClock(for: scene.viewID) ?? 0,
+                    slotClocks: Self.slotClocks(presentation, for: scene, store: store))
                 try Task.checkCancellation()
                 guard let presentation else { return }
                 presentation.activeScene = scene
@@ -1833,7 +1836,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                            overrides: output.overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderBackingScale(for: presentation),
-                    clock: presentation.animationClock(for: scene.viewID))
+                    clock: presentation.animationClock(for: scene.viewID),
+                    slotClocks: Self.slotClocks(presentation, for: scene, store: store))
                 guard !Task.isCancelled else { return }
                 presentation.sceneOverrides = output.overrides
                 presentation.activeScene = scene
@@ -2126,7 +2130,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                            overrides: output.overrides)
                 let rendered = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: self.renderBackingScale(for: presentation),
-                    clock: presentation.animationClock(for: scene.viewID))
+                    clock: presentation.animationClock(for: scene.viewID),
+                    slotClocks: Self.slotClocks(presentation, for: scene, store: store))
                 presentation.sceneOverrides = output.overrides
                 presentation.activeScene = scene
                 self.startAnimation(presentation, for: scene)
@@ -2192,6 +2197,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     ///   `WMPImageAnimation.frame(at:)` picks the frame with — so a frame that runs late draws the
     ///   frame it was late for rather than putting the animation behind. Falling a whole period
     ///   behind skips to the next boundary instead of bursting to catch up.
+    /// Each animated slot's own clock for this render, seeding any slot that has just appeared.
+    ///
+    /// Static so the escaping render closures can call it without capturing the controller; the
+    /// state it advances belongs to the presentation.
+    private static func slotClocks(_ presentation: WMPViewPresentation?, for scene: WMPScene,
+                                   store: WMPImageStore) -> [WMPRenderer.WMPAnimationSlot: TimeInterval] {
+        guard let presentation else { return [:] }
+        return presentation.animationSlotClocks(
+            for: WMPRenderer(imageStore: store).animatedSlots(in: scene))
+    }
+
     private func startAnimation(_ presentation: WMPViewPresentation, for scene: WMPScene) {
         guard let store = imageStore,
               let cadence = WMPRenderer(imageStore: store).animationCadence(for: scene) else {
@@ -2203,21 +2219,31 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             presentation.animationEpoch = Date()
             presentation.animationEpochViewID = scene.viewID
         }
+        // **When the last animation in the scene stops, measured from each one's own epoch** (W182).
+        // `cadence.endsAt` still decides *whether* there is an end at all — it is the half that
+        // knows about a marquee, which never ends and is not an image slot — and the per-slot walk
+        // decides *when*. A single end measured from the view's epoch stopped the loop while a
+        // GIF the script had just assigned still had frames to draw.
+        let slots = WMPRenderer(imageStore: store).animatedSlots(in: scene)
+        let endsAt = cadence.endsAt == nil ? nil : presentation.animationsEnd(for: slots)
         // A one-shot that has already played out needs no loop: the caller rendered this scene at
         // the same clock, so its final frame is already on screen. Without this every rebuild after
         // the animation ended would still start a task to draw that one still frame again.
-        if let endsAt = cadence.endsAt,
-           Date().timeIntervalSince(presentation.animationEpoch) >= endsAt {
+        if let endsAt, Date() >= endsAt {
             presentation.animationTask?.cancel()
             presentation.animationTask = nil
             presentation.animationCadence = nil
+            presentation.animationEndsAt = nil
             return
         }
-        // The loop is already driving exactly this cadence. Restarting it here is what cost the
-        // frames; the scene it renders is read per frame, so there is nothing to hand it.
-        if presentation.animationTask != nil, presentation.animationCadence == cadence { return }
+        // The loop is already driving exactly this cadence, for animations that still finish when
+        // it was told they would. Restarting it here is what cost the frames; the scene it renders
+        // is read per frame, so there is nothing to hand it.
+        if presentation.animationTask != nil, presentation.animationCadence == cadence,
+           presentation.animationEndsAt == endsAt { return }
         presentation.animationTask?.cancel()
         presentation.animationCadence = cadence
+        presentation.animationEndsAt = endsAt
         let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds,
                          Int(cadence.shortestDelay * 1_000))
         let interval = TimeInterval(period) / 1_000
@@ -2246,7 +2272,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
                 // A scene of one-shot GIFs stops moving; keeping the loop alive would re-render
                 // the same still frame at the GIF's rate for as long as the view is open.
-                if let endsAt = cadence.endsAt, Date().timeIntervalSince(epoch) >= endsAt { return }
+                if let endsAt, Date() >= endsAt { return }
             }
         }
     }
@@ -2259,10 +2285,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // replaces it, and repainting the old one would undo what just landed.
         guard let scene = presentation.activeScene, let view = presentation.mainView else { return }
         let clock = Date().timeIntervalSince(presentation.animationEpoch)
+        let slotClocks = Self.slotClocks(presentation, for: scene, store: store)
         let renderStarted = Date()
         guard let rendered = try? await WMPRenderer(imageStore: store)
             .render(scene: scene, backingScale: renderBackingScale(for: presentation),
-                    clock: clock) else { return }
+                    clock: clock, slotClocks: slotClocks) else { return }
         let presentStarted = Date()
         guard presentation.activeScene == scene else { return }
         view.present(rendered.image, overlay: rendered.overlayImage, scene: scene, dirtyBounds: dirty)
