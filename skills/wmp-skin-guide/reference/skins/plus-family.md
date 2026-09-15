@@ -233,6 +233,54 @@ egg for another two days. A mechanism cleared is not an attribute cleared. The i
 finally named it was neither a probe nor the sweep: it was decoding each archive's artwork and
 counting how much of it matched its own declared key.
 
+### W171 / W172 / W173 — the green section, and the button the skin is named after
+
+Three defects behind one screenshot, opened *"Plus! HueShifter has a green section"* and then
+*"is it supposed to be green or not because it still is"*. **The reported colour was not one of
+them.** The rules are in `../../SKILL.md`; what the family contributes is the ground truth and the
+reason the answer took a measurement rather than an opinion.
+
+**The green is the artwork, and the skin ships the proof.** `hueshifter_final.jpg` is a 600x600
+picture of the skin drawn by its own authors, with every tray open. Cropped at the coordinates the
+markup puts `botCandy` in that state — `videoTray` 205,232 plus `botCandy` 3,222, so
+`(208,454)-(396,537)` — it is `hueshifter_bottom.bmp` pixel for pixel: the same saturated green, the
+same black wedges in the upper corners, the same yellow highlight at the bottom centre.
+`shift_parts.bmp` says it a second way, laying all four candies out in their assembled ring. **When
+a reporter asks whether a colour is intended, look for the skin's own self-portrait before
+reasoning about the markup** — eight of this family's thirteen archives ship one.
+
+**What was actually wrong, in the order it was found:**
+
+| | Defect | What it looked like |
+|---|---|---|
+| W171 | `body_lower.jpg` declares `clippingImage` and **no** `clippingColor` | A 213x66 lavender plate boxed hard-edged across the bottom of the player |
+| W172 | Its five subviews state their shape with `transparencyColor`, which `clipMask` did not read | The bottom candy hung 22 px below the silhouette; the body's edge was fringed with speckle |
+| W173 | `hueShift` unimplemented | The paintbrush button did nothing and the candies were frozen at green |
+
+**The speckle is worth its own line, because it looked like a resampling defect and was not — again.**
+`bodyNormalMask.gif` is a dithered **254-colour** GIF: its white region carries 2,108 px within 8 of
+white but not equal to it, 12.5% of that region, and each one survived the key and let the JPEG's
+`#8286AC` surround through. That reads on screen as noise around the body outline and invites a
+tolerance change; the actual fix was W172 letting `body_Mask.gif` shape the children, after which
+the edge is clean and the mask's dithering never matters. **This family has now produced three
+defects that presented as image quality and were none of them** — W160 (resampling, actually W169's
+key), this, and the W169 erosion itself.
+
+**W173's numbers.** `changeHue()` is `360.0 / 11` per press, ten stops: 33°, 65°, 98° … 327°.
+Driven live it prints `topCandy.hueshift=33 leftCandy.hueshift=33 botCandyFacade.hueshift=33
+botCandy.hueshift=33 rightCandy.hueshift=33` — five elements, one press. Rendered through the
+skin's own `loadPrefs()` restore path the ring walks green → teal → blue → magenta → red → orange
+while the player body stays byte-identical at `(73,201,222)`, which is the check worth keeping: only
+the five candies carry the property, and a body that moves means the rotation reached something it
+should not have.
+
+**`WMP_RENDER_CLICK` restarts the view per point, so N clicks do not accumulate.** Each point rebuilds
+the same `viewID` and the JSContext with it, so ten clicks all land on 33° rather than walking the
+spectrum. That is the harness, not the engine — `currHue` is a script global in the persistent
+per-session context and `changeHue()` also writes it through `theme.savePreference`. To render a
+specific angle, patch `loadPrefs()` in a copy of the archive to force `currHue`: that is the skin's
+own restore path and exercises script assignment → scene → image store → renderer end to end.
+
 ### W170 — pause did not pause, and stop reloaded the track
 
 *"in hue pressing pause does not pause the stream and play is not responsive at all"*, then *"stop

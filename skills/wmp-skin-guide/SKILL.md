@@ -338,6 +338,38 @@ queue, with the object model as the security boundary — see Amendment 2 in
   plate rather than a full-window picture. `Ice` is what this deliberately does **not** settle: a
   `<BUTTON>` sized against a background image is the natural-size rule (W122), not the root's art.
 
+- **`hueShift` rotates a node's artwork, and it is the property a skin is named after (W173).**
+  One archive in 180 uses it and all ten uses are script writes: `Plus! HueShifter`'s paintbrush is
+  `changeHue()`, which steps a JS global by `360.0 / 11` and assigns it to the five "candy" pieces
+  ringing the player — `topCandy`, `botCandy`, `leftCandy`, `rightCandy`, `botCandyFacade` — so the
+  ring cycles through the spectrum. Unimplemented, every write was inert and the candies were frozen
+  at their native green, reported as *"is it supposed to be green or not because it still is"*. The
+  green **is** the artwork — the skin ships a 600x600 self-portrait, `hueshifter_final.jpg`, and the
+  bottom clamshell is green in it at the coordinates the markup puts `botCandy` — and the defect was
+  that it could never be anything else.
+
+  **The unit is degrees, and the skin is the authority.** `changeHue()` offers ten stops at 33°,
+  65°, 98° … 327° and `savePrefs` clamps to `0…360`. Read as -1…1 every one of them would clamp to
+  the same value and the button would do nothing visible, which is not what Microsoft shipped.
+  `WMPImageStore.canonicalHueShift` wraps; 0 and 360 are both no shift and take the untouched decode.
+
+  **Use the standard `hue-rotate` matrix, not the NTSC YIQ constants.** The YIQ form rotates the
+  *other* way — 120° takes red to blue, `(24, 42, 255)`, where every other implementation gives
+  `(0, 113, 0)` — and its blue row carries coefficients of 1.25 and -1.05, which drive a saturated
+  pixel far out of gamut and then clamp it, costing the luminance the rotation exists to keep. The
+  SVG/CSS matrix turns the chroma about the luma axis: measured at all ten of the skin's stops on
+  in-gamut colours the worst luma drift is **0.45 of 255**, which is rounding, and a grey does not
+  move at any angle — which is what keeps the candies' black wedges and white specular highlight.
+  A fully saturated pixel always clips and always will; that is inherent to the operation.
+
+  **The rotation is folded into the decode, not applied at the draw**, and the angle is part of the
+  cache key — so the crop, the Lanczos upscale (W160) and every mask see the colour the skin asked
+  for, and five elements at five angles are five entries rather than one shared bitmap. `hueshift`
+  is in `standardNumericProperties` because it is *rendered*: stored inert it would never reach the
+  scene, which is exactly what the defect was. **A corpus sweep proves nothing here** — the property
+  defaults to 0, so 179 archives are byte-identical and the one that moves does so only after a
+  handler runs. Drive the button with `WMP_RENDER_CLICK` and read the `changed=` line.
+
 - **A colour has three sources and the markup is only one of them (W165).** `mirroredColor` resolves
   them in WMP's order: the value a handler assigned, then the authored attribute, then one hop
   through `wmpprop:<element>.<property>` — the named element's own override first, then its markup.
@@ -1557,10 +1589,20 @@ of these was invisible to the harness and visible in the first minute of live QA
   was inert only because `onpositionchange` is not in `WMPAttributeValue.handlerNames`; registering
   it without renaming the tick would have run all 71 ten times a second with `value` unbound. Pick a
   tick name no archive authors, and check that it is one.
-- **`clippingImage` shapes an element, and it is what makes a shaped window shaped.** 25 skins
-  author a non-empty one and every one of them declares a `clippingColor` beside it, which is what
+- **`clippingImage` shapes an element, and it is what makes a shaped window shaped.** 172 corpus
+  nodes author a non-empty one and 169 of them declare a `clippingColor` beside it, which is what
   the mask keys out. Before it, `TDK`, `elvis`, `Secura`, `portals` and the six `US *` service skins
   all drew a black or grey rectangle behind their round artwork.
+  - **A `clippingImage` with no key beside it takes the mask's own corner (W171).** The three
+    exceptions to the count above name a mask and no key at all — `Plus! HueShifter`'s
+    `body_lower.jpg` group, `Charlies_Angels_Full_Throttle`'s `visEffects`, `gnome`'s `myeffects2` —
+    and all three masks are **fully opaque**, so reading that as "no key" left `clippingMask`'s
+    source-alpha test keeping every pixel and the node drew its whole rectangle. On HueShifter that
+    was `body_lower.jpg`, a 213x66 lavender plate boxed hard-edged across the bottom of the player
+    with the skin's green bottom candy behind it. The colour is the mask's corner — the same
+    derivation `auto` uses, and white in all three files, which is the `clippingColor="white"` their
+    sibling layers state by hand. **Only for a mask with no transparency of its own**: one that
+    authored alpha has already said what it cuts, and a corner key would cut it twice.
   - **`clippingColor` keys the *clipping image*, never the node's own artwork (W169).** The two keys
     were read as one list, which is harmless while they name the same colour and destructive when
     they do not — and it is the largest single defect this engine has had by reach. A JPEG keys with
@@ -1597,10 +1639,29 @@ of these was invisible to the harness and visible in the first minute of live QA
   matte filling 67% of that JPEG had nothing to cut it away and the window was a rectangular slab.
   `Melvin` is the same rule seen the other way: its two eye sockets are `clip.gif` subviews, and
   before the shape reached their children a head-coloured sibling covered both eyes.
-  - **Only `clippingColor` shapes, never `transparencyColor`, and Cerulean is why.** `face.bmp` keys
-    `#FF0000` as the window matte *and* `#FF00FF` as a hole its `zIndex="-1"` visualizer and
-    `zIndex="-2"` eye show through. Keying the hole into the shape as well clips those two away,
-    which is the W147 inversion arriving by a second route.
+  - **`transparencyColor` states the shape too, on the background-image path only (W172).** A
+    `<SUBVIEW>` whose whole ground *is* a two-tone mask has said the same thing whichever attribute
+    names the key. `Plus! HueShifter` writes `transparencyColor` on all five of its subviews over
+    `body_Mask.gif`, `playlist_tray_wholemask.gif`, `eq_tray_wholemask.gif`,
+    `video_tray_wholeMASK.bmp` and `body_lower_wholeMASK.gif`, and reading only `clippingColor` left
+    every one of them a plain rectangle: its bottom candy hung 22 px below the player's silhouette
+    and the body's own edge was fringed with keying speckle, because `bodyNormalMask.gif` is a
+    dithered 254-colour GIF whose white region carries 2,108 px of near-white noise. **127 nodes
+    across 17 archives qualify**, every one naming a file `…mask`, under the same three guards —
+    untiled, authored at the node's own size, two-toned. `clippingImage` is deliberately **not**
+    widened the same way: a node that names a mask file outright has one key attribute for it.
+    **Cerulean is not this case and never was** — its `face.bmp` subview writes
+    `clippingColor="#FF0000"` beside `transparencyColor="#FF00FF"`, so the shape comes from the
+    clipping colour either way, and the bitmap is 18,601 colours, which `isShapeMask` rejects. The
+    rule that said otherwise cited Cerulean and was wrong on its own evidence.
+  - **A container's shape is a *region*, not a clipping image (W172).** `WMPSceneClipMask` renders
+    through `regionMask` — in the region wherever the pixel is not the key, **whatever its alpha**.
+    The two readings differ only on a mask that carries transparency of its own, and there the
+    difference is total: `Ice`'s `Clip.png` is 379x183 in exactly two values, 17,558 px of opaque
+    `#FF00FF` outside the player and 51,799 px of **alpha-zero** white over it, so honouring the
+    mask's own alpha cut the keep region and the key alike and both of its `Frost` layers vanished.
+    Every other mask in the corpus is opaque and reads the same either way. A `<BUTTONGROUP>`'s own
+    `clippingImage` still honours alpha — that is an authored mask bitmap, not a container's ground.
   - **A `backgroundImage` is a shape only when it is untiled, authored at the node's own size, and
     two-toned.** 84 `<SUBVIEW>`s across 38 archives and 26 `<VIEW>`s across 17 declare a
     `clippingColor` with no `clippingImage`, and they are two authoring idioms the attribute cannot

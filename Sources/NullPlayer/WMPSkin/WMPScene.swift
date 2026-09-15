@@ -25,11 +25,15 @@ struct WMPSceneImage: Hashable, Codable {
     /// The mask itself lives in the image store — the immutable scene owns no `CGImage`.
     let clippingMaskPath: String?
     let clippingMaskKeys: [WMPColor]
+    /// Degrees of hue rotation applied to this artwork, 0 for the overwhelming majority of draws.
+    /// A script property as much as an authored one — `Plus! HueShifter`'s "Change Skin Color"
+    /// button is `changeHue()` assigning it to five elements. See `WMPImageStore.hueRotated`.
+    let hueShift: Double
 
     init(resourcePath: String, sourceRect: WMPRect?, colorKeys: [WMPColor], tiled: Bool,
          interpolation: WMPImageInterpolation, mappingMask: WMPSceneMappingMask?,
          clippingMaskPath: String? = nil, clippingMaskKeys: [WMPColor] = [],
-         implicitColorKey: WMPColor? = nil) {
+         implicitColorKey: WMPColor? = nil, hueShift: Double = 0) {
         self.resourcePath = resourcePath
         self.sourceRect = sourceRect
         self.colorKeys = colorKeys
@@ -39,6 +43,7 @@ struct WMPSceneImage: Hashable, Codable {
         self.mappingMask = mappingMask
         self.clippingMaskPath = clippingMaskPath
         self.clippingMaskKeys = clippingMaskKeys
+        self.hueShift = hueShift
     }
 }
 

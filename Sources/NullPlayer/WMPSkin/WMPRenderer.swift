@@ -212,9 +212,19 @@ struct WMPRenderer: @unchecked Sendable {
             // An ancestor's clipping shape, against the *container's* frame rather than this
             // command's. Applied before the paint switch because a container shapes everything it
             // holds — a fill and a `<TEXT>` as much as an image. See `WMPSceneClipMask`.
+            // **A container's shape is a region, not a clipping image (W172).** The two differ
+            // only on a mask that carries transparency of its own, and there the difference is
+            // total: `Ice`'s `Clip.png` is 379x183 in exactly two values — 17,558 px of opaque
+            // `#FF00FF` outside the player and 51,799 px of **alpha-zero** white over it — so
+            // reading its own alpha as "cut away" cut the keep region and the key alike, and the
+            // two `Frost` layers it shapes disappeared. The colour is the whole statement here, as
+            // `regionMask` says: in the region wherever the pixel is not the key, whatever its
+            // alpha. An opaque mask, which is every other one in the corpus, reads the same either
+            // way. A `<BUTTONGROUP>`'s own `clippingImage` is unchanged and still honours alpha —
+            // that is an authored mask bitmap, not a container's ground.
             for shape in command.inheritedClipMasks {
-                let mask = try imageStore.clippingMask(for: shape.resourcePath,
-                                                       keyedOut: shape.keyedOut)
+                let mask = try imageStore.regionMask(for: shape.resourcePath,
+                                                     keyedOut: shape.keyedOut)
                 clip(to: shape.frame, mask: mask, context: context)
             }
             switch command.paint {
@@ -231,7 +241,8 @@ struct WMPRenderer: @unchecked Sendable {
                 let decoded = try imageStore.image(for: specification.resourcePath,
                                                    colorKeys: specification.colorKeys,
                                                    implicitKey: specification.implicitColorKey,
-                                                   frame: frame)
+                                                   frame: frame,
+                                                   hueShift: specification.hueShift)
                 let sourceImage = crop(specification.sourceRect, from: decoded.image)
                 if let mappingMask = specification.mappingMask,
                    let mask = imageStore.mappingMask(for: mappingMask) {
@@ -342,7 +353,8 @@ struct WMPRenderer: @unchecked Sendable {
             let upscaled = try imageStore.upscaledImage(
                 for: specification.resourcePath, colorKeys: specification.colorKeys,
                 implicitKey: specification.implicitColorKey, frame: frame,
-                sourceRect: specification.sourceRect, scale: scale)
+                sourceRect: specification.sourceRect, scale: scale,
+                hueShift: specification.hueShift)
             guard upscaled.image.width == image.width * scale,
                   upscaled.image.height == image.height * scale else {
                 context.interpolationQuality = .low

@@ -35,6 +35,20 @@
 
 ### Bug Fixes
 
+- **Plus! HueShifter's colour button works, and its artwork is no longer boxed in.** The paintbrush
+  at the top of the player is the whole point of this skin — it rotates the four coloured "candy"
+  pieces ringing the player through the spectrum — and it did nothing at all, so they were stuck on
+  green. They now cycle green, teal, blue, magenta, red and orange, and the skin remembers the
+  colour you left it on. Two things around them were wrong too: a grey-lavender rectangle was drawn
+  hard-edged across the bottom of the player, and the player's own outline was fringed with
+  speckled noise. Both are gone, and the artwork below the player now ends on the curve the skin
+  drew for it.
+
+- **Several Media Player skins no longer draw outside their own shape.** A skin says what shape its
+  window is, and for some of them NullPlayer was ignoring that and drawing a rectangle instead.
+  Secura's panel spilled past its round body, portals' equalizer ticks ran over the picture frame,
+  and Ice's frosted lenses were covered in speckle. Each now stops at the edge its author drew.
+
 - **Pause and stop now work in Media Player skins that watch the player's state.** On Plus!
   HueShifter, Plus! Plasma Ball and Plus! SlimLine, pressing pause started the music again a moment
   later and pressing stop restarted the track from the beginning — so play appeared to do nothing,

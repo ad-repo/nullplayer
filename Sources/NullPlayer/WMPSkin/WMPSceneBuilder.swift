@@ -365,13 +365,27 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// the shape that second way, with a `clippingColor` and no `clippingImage`, and
         /// `Combat_Flight_Simulator_3` is the archive that showed what it costs to ignore them.
         /// A childless node needs no mask: its own draw already carries one.
+        ///
+        /// **`transparencyColor` states the shape as often as `clippingColor` does, and only on the
+        /// background-image path (W172).** A `<SUBVIEW>` whose whole background *is* a two-tone
+        /// mask has said the same thing whichever attribute names the key — `Plus! HueShifter`'s
+        /// five subviews write `transparencyColor="white"` over `body_Mask.gif`,
+        /// `playlist_tray_wholemask.gif` and three siblings, and reading only `clippingColor` left
+        /// every one of them a plain rectangle: its bottom "candy" hung 22 px below the player's
+        /// silhouette in a colour nothing else on screen was, reported as *"has a green section"*.
+        /// 127 nodes across 17 archives qualify, every one of them naming a file `…mask`, and the
+        /// three guards below are what separate them from artwork — the mask is at the node's own
+        /// size, untiled, and two-toned. `clippingImage` is deliberately **not** widened the same
+        /// way: a node that names a mask file outright has one key attribute for it.
         func clipMask(_ node: WMPNode, frame: WMPRect) throws -> WMPSceneClipMask? {
             guard !node.children.isEmpty, !frame.isEmpty else { return nil }
-            let keys = colors(node, names: ["clippingColor"])
-            guard !keys.isEmpty else { return nil }
+            let clipping = colors(node, names: ["clippingColor"])
             if let path = try resource(node, names: ["clippingImage"])?.1 {
-                return WMPSceneClipMask(resourcePath: path, keyedOut: keys, frame: frame)
+                guard !clipping.isEmpty else { return nil }
+                return WMPSceneClipMask(resourcePath: path, keyedOut: clipping, frame: frame)
             }
+            let keys = clipping.isEmpty ? colors(node, names: ["transparencyColor"]) : clipping
+            guard !keys.isEmpty else { return nil }
             // **A background image is only a shape when it is authored at the node's own size.**
             // `Gorillaz` is why: its `noodle` view is 781x467 over a `background.gif` that is a
             // 50x28 swatch of solid `#33CC66` with `backgroundTiled="true"`, and its
@@ -751,11 +765,23 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if ownClipMask != nil { clipMaskStack.removeLast() }
 
             // `clippingImage` shapes an element by a bitmap the way `clippingColor` shapes it by a
-            // colour — 25 corpus skins author a non-empty one, and every one of them declares a
-            // `clippingColor` beside it, which is what the mask keys out.
+            // colour, and the `clippingColor` beside it is what the mask keys out. 169 of the
+            // corpus's 172 declarations state one; the three that do not take the mask's own
+            // corner instead — see `clippingMaskKeys`.
             // Everything emitted from here to the hit registration below is this node's own
             // artwork, and that span is what `WMPHitCoverage` is built from.
             let ownPaintStart = commands.count
+            // **`hueShift` is a script property before it is an authored one (W173).** No corpus
+            // node writes it in markup; the one archive that uses it at all assigns it from a
+            // handler — `Plus! HueShifter`'s `changeHue()` steps five elements through the
+            // spectrum, and `loadPrefs()` restores the saved angle on load. Resolved here, where
+            // the overrides are, because `imageCommand` sees only the authored attributes.
+            let hueShift: Double = {
+                let address = WMPScenePropertyAddress(stableID: node.stableID,
+                                                      property: "hueshift")
+                if let value = overrides.properties[address]?.number, value.isFinite { return value }
+                return literal(node, "hueShift").map(Double.init) ?? 0
+            }()
             let clippingPath = try resource(node, names: ["clippingImage"])?.1
             let backgroundPath = try resource(node, names: ["backgroundImage", "background"])?.1
             let childStates = node.kind == .buttonGroup
@@ -789,7 +815,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 } ?? frame) : frame
                 emit(imageCommand(node: node, path: path, frame: backgroundFrame,
                     clip: inheritedClip, z: z, background: true, alpha: alpha,
-                    clippingPath: clippingPath))
+                    clippingPath: clippingPath, hueShift: hueShift))
             }
             // **An `<EFFECTS>` rect's own backdrop belongs under the visualizer, not over it.**
             // The split is taken when the node is visited, which is before the two emits above, so
@@ -882,7 +908,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                             mappingMask: showsBackground ? nil
                                 : WMPSceneMappingMask(mapping: mapping, nodeIDs: everyChild,
                                                         resourcePath: mappingPath),
-                            clippingPath: clippingPath))
+                            clippingPath: clippingPath, hueShift: hueShift))
                     }
                     // A group whose own artwork *is* the sheet swaps it wholesale, the way a
                     // `<BUTTON>` does. One with no artwork of its own and nothing lit draws
@@ -894,7 +920,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                             mappingMask: WMPSceneMappingMask(mapping: mapping,
                                 nodeIDs: activeIDs.isEmpty ? everyChild : activeIDs,
                                 resourcePath: mappingPath),
-                            clippingPath: clippingPath))
+                            clippingPath: clippingPath, hueShift: hueShift))
                     }
                 } else if let (_, path) = try resource(node, names: foregroundNames) {
                     // A `CUSTOMSLIDER`'s artwork is a strip of every position it can be in, and the
@@ -935,7 +961,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         : frame
                     emit(imageCommand(node: node, path: path, frame: drawn,
                         clip: inheritedClip, z: z, background: false, alpha: alpha,
-                        sourceOverride: strip, clippingPath: clippingPath))
+                        sourceOverride: strip, clippingPath: clippingPath, hueShift: hueShift))
                 }
             }
 
@@ -958,7 +984,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                              width: filled.width, height: filled.height)
                         emit(imageCommand(node: node, path: path, frame: filled,
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
-                            sourceOverride: source))
+                            sourceOverride: source, hueShift: hueShift))
                     }
                 }
                 let thumbNames: [String]
@@ -973,7 +999,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     let thumb = slider.thumbFrame(in: frame, thumbSize: size)
                     if !thumb.isEmpty {
                         emit(imageCommand(node: node, path: path, frame: thumb,
-                            clip: inheritedClip, z: z, background: false, alpha: alpha))
+                            clip: inheritedClip, z: z, background: false, alpha: alpha, hueShift: hueShift))
                     }
                 }
             }
@@ -1136,7 +1162,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                               clip: WMPRect?, z: Int, background: Bool, alpha: CGFloat = 1,
                               mappingMask: WMPSceneMappingMask? = nil,
                               sourceOverride: WMPRect? = nil,
-                              clippingPath: String? = nil) -> WMPPaintCommand {
+                              clippingPath: String? = nil,
+                              hueShift: Double = 0) -> WMPPaintCommand {
         let prefix = background ? "background" : ""
         let sourceX = literal(node, prefix + "CropLeft") ?? literal(node, "cropLeft")
         let sourceY = literal(node, prefix + "CropTop") ?? literal(node, "cropTop")
@@ -1169,10 +1196,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
             tiled: literalString(node, tiledName)?.caseInsensitiveCompare("true") == .orderedSame,
             interpolation: .low, mappingMask: mappingMask,
             clippingMaskPath: clippingPath,
-            clippingMaskKeys: clippingPath == nil ? []
-                : colors(node, names: ["clippingColor", "transparencyColor"]),
+            clippingMaskKeys: clippingPath.map { clippingMaskKeys(node, path: $0) } ?? [],
             implicitColorKey: declared.isEmpty && WMPBuiltInImage.named(path) == nil
-                ? WMPColorKey.implicitTransparency : nil)
+                ? WMPColorKey.implicitTransparency : nil,
+            hueShift: hueShift)
         return WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID, frame: frame,
             clipRect: clip, zIndex: z, documentOrder: node.stableID, paint: .image(image),
             alpha: alpha)
@@ -1269,6 +1296,30 @@ struct WMPSceneBuilder: @unchecked Sendable {
             ? ["clippingImage"] + artwork : artwork
         guard let path = (try? resolveResource(node, names: names))?.1 else { return nil }
         return (try? imageStore.cornerColor(for: path)) ?? nil
+    }
+
+    /// What a node's `clippingImage` keys out, and where the colour comes from when the node names
+    /// none (W171).
+    ///
+    /// `clippingColor` is the answer wherever it is written, and 169 of the corpus's 172
+    /// `clippingImage` declarations write it. The other three name a mask and no key at all —
+    /// `Plus! HueShifter`'s `body_lower.jpg` group, `Charlies_Angels_Full_Throttle`'s `visEffects`
+    /// and `gnome`'s `myeffects2` — and reading that as "no key" makes the mask a no-op: all three
+    /// bitmaps are **fully opaque**, so `clippingMask`'s source-alpha test keeps every pixel and the
+    /// node draws its whole rectangle. On HueShifter that is `body_lower.jpg`, a 213x66 lavender
+    /// plate carrying two wings, painted as a hard-edged box across the bottom of the player with
+    /// the skin's green bottom candy behind it.
+    ///
+    /// The colour is the mask's own corner, which is the derivation `clippingColor="auto"` already
+    /// uses (W167) and is white in all three files — the same `clippingColor="white"` their sibling
+    /// layers state by hand. **Only for a mask with no transparency of its own**: one that authored
+    /// alpha has said what it cuts, and a corner key would cut it a second time.
+    private func clippingMaskKeys(_ node: WMPNode, path: String) -> [WMPColor] {
+        let declared = colors(node, names: ["clippingColor", "transparencyColor"])
+        guard declared.isEmpty else { return declared }
+        guard (try? imageStore.carriesOwnTransparency(for: path)) == false,
+              let corner = (try? imageStore.cornerColor(for: path)) ?? nil else { return [] }
+        return [corner]
     }
 
     private func isSlider(_ kind: WMPElementKind) -> Bool {

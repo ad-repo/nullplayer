@@ -232,11 +232,19 @@ final class WMPClippingShapeTests: XCTestCase {
         XCTAssertTrue(body.inheritedClipMasks.isEmpty)
     }
 
-    /// **`transparencyColor` never shapes the contents, and Cerulean is why.** `face.bmp` keys
-    /// `#FF0000` as the window matte *and* `#FF00FF` as a hole its `zIndex="-1"` visualizer and
-    /// `zIndex="-2"` eye show through. Reading both into the shape clips those two away, which is
-    /// the W147 inversion arriving by a second route.
-    func testTransparencyColourAloneShapesNothing() async throws {
+    /// **`transparencyColor` states the shape too, on the background-image path only (W172).** A
+    /// `<SUBVIEW>` whose whole ground *is* a two-tone mask has said the same thing whichever
+    /// attribute names the key — `Plus! HueShifter`'s five subviews write `transparencyColor` over
+    /// `body_Mask.gif`, `playlist_tray_wholemask.gif` and three siblings, and reading only
+    /// `clippingColor` left every one of them a plain rectangle: its bottom "candy" hung 22 px
+    /// below the player's silhouette in a colour nothing else on screen was. 127 nodes across 17
+    /// archives qualify, and the same three guards separate them from artwork.
+    ///
+    /// **Cerulean is not this case and never was.** Its `face.bmp` subview writes
+    /// `clippingColor="#FF0000"` beside `transparencyColor="#FF00FF"`, so the shape comes from the
+    /// clipping colour either way; and the bitmap is 18,601 colours, which `isShapeMask` rejects.
+    /// `testArtworkWithAKeyedHoleIsNotAShape` is where that guard lives.
+    func testTransparencyColourShapesTheContentsToo() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="8" height="8">
             <SUBVIEW id="body" left="0" top="0" width="8" height="8"
@@ -247,8 +255,116 @@ final class WMPClippingShapeTests: XCTestCase {
         """, images: ["mask.png": try shapeMask(), "slab.png": try flat([10, 120, 200, 255])])
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
 
+        let slab = try XCTUnwrap(scene.commands.first { $0.nodeID == "slab" })
+        XCTAssertEqual(slab.inheritedClipMasks.count, 1, "the child carries its container's shape")
+        XCTAssertEqual(slab.inheritedClipMasks.first?.keyedOut,
+                       [WMPColor(red: 255, green: 255, blue: 255)])
+
+        let rendered = try await renderer(for: skin).render(scene: scene).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 1, yFromTop: 1),
+                       [10, 120, 200, 255], "the slab draws inside the shape")
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 6, yFromTop: 6)[3], 0,
+                       "and not a pixel of it outside")
+    }
+
+    /// **A node that names a `clippingImage` has one attribute for its key, and it is
+    /// `clippingColor`.** The widening above is scoped to the background-image path on purpose: an
+    /// authored mask file is not a container's ground, and no corpus node pairs a `clippingImage`
+    /// with a `transparencyColor` meant for it.
+    func testAClippingImageIsNotShapedByTransparencyColour() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8">
+            <SUBVIEW id="body" left="0" top="0" width="8" height="8"
+                     clippingImage="mask.png" transparencyColor="white">
+                <BUTTON id="slab" left="0" top="0" width="8" height="8" image="slab.png"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, images: ["mask.png": try shapeMask(), "slab.png": try flat([10, 120, 200, 255])])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
         XCTAssertTrue(try XCTUnwrap(scene.commands.first { $0.nodeID == "slab" })
                         .inheritedClipMasks.isEmpty)
+    }
+
+    /// **A container's shape is a region, not a clipping image (W172).** The two differ only on a
+    /// mask that carries transparency of its own, and there the difference is total: `Ice`'s
+    /// `Clip.png` is 379x183 in exactly two values — opaque `#FF00FF` outside the player and
+    /// **alpha-zero** white over it — so honouring the mask's own alpha cut the keep region and the
+    /// key alike, and the two `Frost` layers it shapes disappeared. The colour is the whole
+    /// statement: in the region wherever the pixel is not the key, whatever its alpha.
+    func testAContainersShapeIgnoresItsMasksOwnAlpha() async throws {
+        var rgba: [UInt8] = []
+        for row in 0..<8 {
+            for column in 0..<8 {
+                // Inside the shape the mask is *fully transparent*, as `Clip.png` is; outside it is
+                // the opaque key. Nothing in the file is opaque paint.
+                rgba += Self.inShape(row: row, column: column)
+                    ? [255, 255, 255, 0] : [255, 0, 255, 255]
+            }
+        }
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8">
+            <SUBVIEW id="body" left="0" top="0" width="8" height="8"
+                     backgroundImage="clip.png" transparencyColor="#FF00FF">
+                <BUTTON id="slab" left="0" top="0" width="8" height="8" image="slab.png"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, images: [
+            "clip.png": try WMPSkinTestSupport.encodedImage(width: 8, height: 8, rgba: rgba),
+            "slab.png": try flat([10, 120, 200, 255])])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        let rendered = try await renderer(for: skin).render(scene: scene).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 1, yFromTop: 1),
+                       [10, 120, 200, 255], "the alpha-zero region is the shape, not a cut")
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 6, yFromTop: 6)[3], 0,
+                       "and the opaque key is still outside it")
+    }
+
+    /// **A `clippingImage` with no key beside it takes the mask's own corner (W171).** 169 of the
+    /// corpus's 172 declarations write a `clippingColor`; the three that do not —
+    /// `Plus! HueShifter`'s `body_lower.jpg` group, `Charlies_Angels_Full_Throttle`'s `visEffects`
+    /// and `gnome`'s `myeffects2` — name a **fully opaque** mask, so reading that as "no key" left
+    /// the source-alpha test keeping every pixel and the node drew its whole rectangle. On
+    /// HueShifter that was a 213x66 lavender plate boxed across the bottom of the player.
+    func testAClippingImageWithNoKeyTakesItsOwnCorner() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8">
+            <BUTTON id="body" left="0" top="0" width="8" height="8" image="body.png"
+                    clippingImage="mask.png"/>
+        </VIEW></THEME>
+        """, images: ["mask.png": try shapeMask(), "body.png": try flat([10, 120, 200, 255])])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        XCTAssertEqual(try imageCommand(scene, nodeID: "body").clippingMaskKeys,
+                       [WMPColor(red: 255, green: 255, blue: 255)], "the mask's 0,0")
+
+        let rendered = try await renderer(for: skin).render(scene: scene).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 1, yFromTop: 1), [10, 120, 200, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 6, yFromTop: 6)[3], 0,
+                       "the mask cuts, rather than passing the whole rectangle through")
+    }
+
+    /// The other half of W171: a mask that authored its own alpha has already said what it cuts,
+    /// and a corner key would cut it a second time.
+    func testAClippingImageWithItsOwnAlphaTakesNoCorner() async throws {
+        var rgba: [UInt8] = []
+        for row in 0..<8 {
+            for column in 0..<8 {
+                rgba += Self.inShape(row: row, column: column) ? Self.black : [0, 0, 0, 0]
+            }
+        }
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8">
+            <BUTTON id="body" left="0" top="0" width="8" height="8" image="body.png"
+                    clippingImage="mask.png"/>
+        </VIEW></THEME>
+        """, images: [
+            "mask.png": try WMPSkinTestSupport.encodedImage(width: 8, height: 8, rgba: rgba),
+            "body.png": try flat([10, 120, 200, 255])])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        XCTAssertTrue(try imageCommand(scene, nodeID: "body").clippingMaskKeys.isEmpty)
     }
 
     /// **Guard one: `Gorillaz`.** Its `noodle` view is 781x467 over a `background.gif` that is a

@@ -1158,7 +1158,12 @@ final class WMPObjectModel {
         // rather than be stored inert; see `scrolling` below.
         "scrollingdelay", "scrollingamount",
         // Rendered, and numeric: an unset read answers 0 like every other number here.
-        "fontsize"
+        "fontsize",
+        // **The property `Plus! HueShifter` is named after (W173).** Degrees of hue rotation on
+        // the element's artwork. Rendered, so a write must commit as a mutation rather than be
+        // stored inert — `changeHue()` assigns it to five candies per press and nothing else in
+        // the handler would tell the scene anything moved. Unset reads 0, which is no shift.
+        "hueshift"
     ]
 
     static let standardElementProperties: Set<String> = standardNumericProperties.union([

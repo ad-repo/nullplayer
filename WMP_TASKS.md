@@ -18,6 +18,41 @@ same change that closes them, so this file stays a list of work that is still op
 
 ### Top of the backlog
 
+**W171–W173 closed 2026-09-15, from one report — *"Plus! HueShifter has a green section"*, then
+*"is it supposed to be green or not because it still is"*.** Three independent defects behind one
+screenshot, and the reported colour was not one of them: the green is the skin's own artwork, which
+its shipped `hueshifter_final.jpg` settles.
+
+- **W171 — a `clippingImage` with no `clippingColor` clipped nothing.** 169 of the corpus's 172
+  declarations write one; the three that do not name a **fully opaque** mask, so the source-alpha
+  test kept every pixel. HueShifter drew `body_lower.jpg` — a 213x66 lavender plate — as a
+  hard-edged box across the bottom of the player. The key is now the mask's own corner, which is
+  the `auto` derivation (W167) and white in all three files.
+- **W172 — `transparencyColor` states a container's shape, and a container's shape is a region.**
+  `clipMask` read only `clippingColor`, so HueShifter's five mask-backed subviews were plain
+  rectangles; **127 nodes across 17 archives** qualify under the existing three guards. Fixing it
+  broke `Ice`, whose `Clip.png` marks its keep region with **alpha-zero** pixels — so
+  `WMPSceneClipMask` now renders through `regionMask` rather than `clippingMask`. **The test that
+  said `transparencyColor` never shapes cited `cerulean` and was wrong on its own evidence**: that
+  skin writes `clippingColor` beside it and its `face.bmp` is 18,601 colours, which `isShapeMask`
+  rejects twice over.
+- **W173 — `hueShift` was unimplemented, and it is the property the skin is named after.** Ten
+  writes, one archive, all from script. Implemented as a luma-preserving rotation folded into the
+  decode and keyed on the angle. **The NTSC YIQ matrix is the trap**: it rotates the opposite way
+  and clips saturated pixels out of gamut; use the standard `hue-rotate` matrix.
+
+Corpus sweep across all three: **4 of 180 archives moved** — `Plus! HueShifter`, `Secura`,
+`portals`, `elvis` — every one toward the skin's own artwork, plus `Scooby-Doo_2`'s
+nondeterministic `randomPic()`. Closure notes in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md); the family's side is
+`skills/wmp-skin-guide/reference/skins/plus-family.md`.
+
+**W171–W173 are the row to read for what a render sweep cannot rank.** W172 looked like a clean
+win at 5 archives until `Ice` was opened and read: the frost overlay it erased was **invisible in
+the diff count** and only a before/after pair, looked at, showed it. And W173 is invisible to a
+sweep outright — the property defaults to 0, so 179 archives are byte-identical and the one that
+moves does so only after a handler runs.
+
 **W170 closed 2026-09-14, from a live report — *"in hue pressing pause does not pause the stream and
 play is not responsive at all"*, then *"stop does not stop"*.** `openstatechange` was raised off the
 **play** state, so every pause told the skin a media had just opened. **109 of the 180 archives

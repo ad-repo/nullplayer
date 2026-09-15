@@ -172,22 +172,25 @@ final class WMPImageStore: @unchecked Sendable {
     /// artwork": a mapping image, position map or clipping mask must never receive one, or a
     /// `#FF00FF` mapping colour would vanish from its own map.
     func image(for path: String, colorKeys: [WMPColor] = [],
-               implicitKey: WMPColor? = nil) throws -> WMPDecodedImage {
-        try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey, frameSuffix: 0)
+               implicitKey: WMPColor? = nil, hueShift: Double = 0) throws -> WMPDecodedImage {
+        try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey,
+                  frameSuffix: 0, hueShift: hueShift)
     }
 
     private func image(for path: String, colorKeys: [WMPColor], implicitKey: WMPColor? = nil,
-                       frameSuffix frame: Int) throws -> WMPDecodedImage {
+                       frameSuffix frame: Int, hueShift: Double = 0) throws -> WMPDecodedImage {
         if let builtIn = WMPBuiltInImage.named(path) {
             lock.lock()
             let image = builtInImages[builtIn]!
             lock.unlock()
             return image
         }
+        let degrees = Self.canonicalHueShift(hueShift)
         let canonical = provider.canonicalPath(for: path) ?? path
         let cacheKey = canonical + colorKeys.map { "|key=\($0)" }.joined()
             + (implicitKey.map { "|implicit=\($0)" } ?? "")
             + (frame > 0 ? "|frame=\(frame)" : "")
+            + (degrees > 0 ? "|hue=\(degrees)" : "")
         lock.lock()
         if var entry = entries[cacheKey] {
             clock &+= 1
@@ -198,8 +201,16 @@ final class WMPImageStore: @unchecked Sendable {
         }
         lock.unlock()
 
-        let decoded = try decode(path: canonical, colorKeys: colorKeys,
+        var decoded = try decode(path: canonical, colorKeys: colorKeys,
                                  implicitKey: implicitKey, frame: frame)
+        // The rotation is folded into the decode rather than applied at the draw, so everything
+        // downstream — the crop, the Lanczos upscale, the mapping and clipping masks — sees the
+        // colour the skin asked for. See `hueRotated`.
+        if degrees > 0, let rotated = Self.hueRotated(decoded.image, degrees: degrees) {
+            decoded = WMPDecodedImage(image: rotated,
+                                      size: decoded.size,
+                                      decodedBytes: rotated.width * rotated.height * 4)
+        }
         lock.lock()
         defer { lock.unlock() }
         if let existing = entries[cacheKey] { return existing.image }
@@ -378,9 +389,104 @@ final class WMPImageStore: @unchecked Sendable {
 
     /// One frame of an animated image, color-keyed and cached exactly like a still.
     func image(for path: String, colorKeys: [WMPColor] = [], implicitKey: WMPColor? = nil,
-               frame: Int) throws -> WMPDecodedImage {
-        guard frame > 0 else { return try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey) }
-        return try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey, frameSuffix: frame)
+               frame: Int, hueShift: Double = 0) throws -> WMPDecodedImage {
+        guard frame > 0 else {
+            return try image(for: path, colorKeys: colorKeys,
+                             implicitKey: implicitKey, hueShift: hueShift)
+        }
+        return try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey,
+                         frameSuffix: frame, hueShift: hueShift)
+    }
+
+    /// `hueShift` in degrees, normalised the way the one skin that writes it does.
+    ///
+    /// **It is degrees, and `Plus! HueShifter` is the authority** — `changeHue()` steps
+    /// `360.0 / 11` per press and `savePrefs` clamps to `0…360`, so the ten stops it offers are
+    /// 33°, 65°, 98° … 327°. A -1…1 reading would clamp every one of them to the same value and
+    /// the button the skin is named after would do nothing visible, which is not what Microsoft
+    /// shipped. 0 and 360 are both "no shift" and take the untouched decode.
+    static func canonicalHueShift(_ value: Double) -> Int {
+        guard value.isFinite else { return 0 }
+        let wrapped = value.truncatingRemainder(dividingBy: 360)
+        return Int((wrapped < 0 ? wrapped + 360 : wrapped).rounded())  % 360
+    }
+
+    /// Rotate every pixel's hue by `degrees`, leaving saturation, luminance and **alpha** alone.
+    ///
+    /// This is what the `hueShift` property means, and one archive in the corpus needs it: the
+    /// whole premise of `Plus! HueShifter` is a paintbrush button whose `changeHue()` assigns the
+    /// same value to its five "candy" pieces — `topCandy`, `botCandy`, `leftCandy`, `rightCandy`
+    /// and `botCandyFacade` — so the ring around the player cycles through the spectrum. Without
+    /// it the property write was inert and the candies were frozen at their native green.
+    ///
+    /// **A luma-preserving matrix, not a round trip through HSB.** Rotating the chroma about the
+    /// luma axis is what a hue rotation is defined as, and it keeps the artwork's shading, its
+    /// black wedges and its white specular highlight exactly where they were — a grey has no hue
+    /// and does not move at any angle. Going via HSB instead would quantise every pixel twice and
+    /// drift the greys, which on artwork this soft reads as banding.
+    ///
+    /// Alpha is untouched and the pixels are un-premultiplied before the matrix and re-premultiplied
+    /// after. Rotating premultiplied colour scales the result by its own alpha and fringes every
+    /// keyed silhouette — the same trap `unpremultiply` exists for.
+    static func hueRotated(_ image: CGImage, degrees: Int) -> CGImage? {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0 else { return nil }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: bitmapInfo) else { return }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+
+        let radians = Double(degrees) * .pi / 180
+        let cosine = cos(radians), sine = sin(radians)
+        // The SVG/CSS `hue-rotate` matrix: luma column, plus a chroma rotation about it. Using the
+        // standard one rather than the NTSC YIQ constants is deliberate — the YIQ form rotates the
+        // *other* way (120 degrees takes red to blue, where every other implementation takes it to
+        // green) and its blue row has coefficients of 1.25 and -1.05, which drive a saturated pixel
+        // far out of gamut and then clamp it, costing the luminance the rotation is supposed to
+        // keep. Measured on one flat red: YIQ gave (24, 42, 255), this gives (0, 113, 0).
+        let matrix = [
+            0.213 + 0.787 * cosine - 0.213 * sine,
+            0.715 - 0.715 * cosine - 0.715 * sine,
+            0.072 - 0.072 * cosine + 0.928 * sine,
+            0.213 - 0.213 * cosine + 0.143 * sine,
+            0.715 + 0.285 * cosine + 0.140 * sine,
+            0.072 - 0.072 * cosine - 0.283 * sine,
+            0.213 - 0.213 * cosine - 0.787 * sine,
+            0.715 - 0.715 * cosine + 0.715 * sine,
+            0.072 + 0.928 * cosine + 0.072 * sine
+        ]
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let alpha = pixels[index + 3]
+            guard alpha > 0 else { continue }
+            let red = Double(unpremultiply(pixels[index], alpha: alpha))
+            let green = Double(unpremultiply(pixels[index + 1], alpha: alpha))
+            let blue = Double(unpremultiply(pixels[index + 2], alpha: alpha))
+            let out = (
+                matrix[0] * red + matrix[1] * green + matrix[2] * blue,
+                matrix[3] * red + matrix[4] * green + matrix[5] * blue,
+                matrix[6] * red + matrix[7] * green + matrix[8] * blue
+            )
+            pixels[index] = premultiply(out.0, alpha: alpha)
+            pixels[index + 1] = premultiply(out.1, alpha: alpha)
+            pixels[index + 2] = premultiply(out.2, alpha: alpha)
+        }
+
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: bitmapInfo), provider: provider,
+                       decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
+
+    private static func premultiply(_ value: Double, alpha: UInt8) -> UInt8 {
+        let clamped = min(255, max(0, value))
+        guard alpha < 255 else { return UInt8(clamped.rounded()) }
+        return UInt8(min(255, (clamped * Double(alpha) / 255).rounded()))
     }
 
     /// Artwork resampled up to the device's own pixel grid, so the renderer can blit it 1:1.
@@ -400,8 +506,10 @@ final class WMPImageStore: @unchecked Sendable {
     /// Cached in the same LRU and under the same byte bound as every decoded image, because that is
     /// what keeps a skin that animates from running Core Image at its repaint cadence.
     func upscaledImage(for path: String, colorKeys: [WMPColor] = [], implicitKey: WMPColor? = nil,
-                       frame: Int = 0, sourceRect: WMPRect?, scale: Int) throws -> WMPDecodedImage {
-        let base = try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey, frame: frame)
+                       frame: Int = 0, sourceRect: WMPRect?, scale: Int,
+                       hueShift: Double = 0) throws -> WMPDecodedImage {
+        let base = try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey,
+                             frame: frame, hueShift: hueShift)
         let cropped = Self.crop(sourceRect, from: base.image)
         guard scale > 1 else {
             return WMPDecodedImage(image: cropped,
@@ -419,6 +527,10 @@ final class WMPImageStore: @unchecked Sendable {
             cacheKey += ",\(sourceRect.width)x\(sourceRect.height)"
         }
         cacheKey += "|up=\(scale)"
+        // The rotation happens before the resample, so the upscale of a shifted sprite is its own
+        // entry — two candies at different hues must not share one cached bitmap.
+        let degrees = Self.canonicalHueShift(hueShift)
+        if degrees > 0 { cacheKey += "|hue=\(degrees)" }
         lock.lock()
         if var entry = entries[cacheKey] {
             clock &+= 1
@@ -808,6 +920,25 @@ final class WMPImageStore: @unchecked Sendable {
     private static func unpremultiply(_ value: UInt8, alpha: UInt8) -> UInt8 {
         guard alpha < 255, alpha > 0 else { return value }
         return UInt8(min(255, Int(value) * 255 / Int(alpha)))
+    }
+
+    /// Whether a bitmap carries transparency of its own.
+    ///
+    /// This is what decides whether a `clippingImage` declared with **no** key beside it needs one
+    /// derived. A mask that authored its own alpha has already said what it cuts, and
+    /// `clippingMask(for:keyedOut:)` honours that alpha; a fully opaque mask has said nothing and
+    /// clips nothing at all unless a colour makes it a shape — see
+    /// `WMPSceneBuilder.clippingMaskKeys`.
+    func carriesOwnTransparency(for path: String) throws -> Bool {
+        let canonical = provider.canonicalPath(for: path) ?? path
+        lock.lock()
+        if let cached = regionShapeEntries[canonical] { lock.unlock(); return cached }
+        lock.unlock()
+        let answer = Self.hasTransparentPixels(try image(for: canonical).image)
+        lock.lock()
+        regionShapeEntries[canonical] = answer
+        lock.unlock()
+        return answer
     }
 
     func shapesChildrenByRegion(for path: String, keyedOut: [WMPColor]) throws -> Bool {
