@@ -112,7 +112,7 @@ class EmbyPlaybackReporter {
                     let ticks = Int64(self.lastKnownPosition * 10_000_000)
                     try await client.reportPlaybackProgress(itemId: trackId, positionTicks: ticks, isPaused: true)
                 } catch {
-                    NSLog("EmbyPlaybackReporter: Failed to report pause: %@", error.localizedDescription)
+                    NSLog("EmbyPlaybackReporter: Failed to report pause: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         }
@@ -148,7 +148,7 @@ class EmbyPlaybackReporter {
                 try await client.reportPlaybackStart(itemId: trackId)
                 NSLog("EmbyPlaybackReporter: Reported 'now playing' for track %@", trackId)
             } catch {
-                NSLog("EmbyPlaybackReporter: Failed to report 'now playing': %@", error.localizedDescription)
+                NSLog("EmbyPlaybackReporter: Failed to report 'now playing': %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -186,7 +186,7 @@ class EmbyPlaybackReporter {
             do {
                 try await client.reportPlaybackStopped(itemId: trackId, positionTicks: positionTicks)
             } catch {
-                NSLog("EmbyPlaybackReporter: Failed to report stopped: %@", error.localizedDescription)
+                NSLog("EmbyPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -225,7 +225,7 @@ class EmbyPlaybackReporter {
                 try await client.scrobble(itemId: trackId)
                 NSLog("EmbyPlaybackReporter: Scrobbled track %@", trackId)
             } catch {
-                NSLog("EmbyPlaybackReporter: Failed to scrobble: %@", error.localizedDescription)
+                NSLog("EmbyPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 // Reset flag so we can try again
                 hasScrobbled = false
             }

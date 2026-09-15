@@ -221,7 +221,7 @@ class PlexPlaybackReporter {
                 )
                 NSLog("PlexPlaybackReporter: Reported state '%@' at %dms", state.rawValue, positionMs)
             } catch {
-                NSLog("PlexPlaybackReporter: Failed to report state: %@", error.localizedDescription)
+                NSLog("PlexPlaybackReporter: Failed to report state: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -237,7 +237,7 @@ class PlexPlaybackReporter {
                 try await client.scrobble(ratingKey: ratingKey)
                 NSLog("PlexPlaybackReporter: Scrobbled track (key: %@)", ratingKey)
             } catch {
-                NSLog("PlexPlaybackReporter: Failed to scrobble: %@", error.localizedDescription)
+                NSLog("PlexPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 // Reset flag so we can try again
                 hasScrobbled = false
             }
@@ -277,7 +277,7 @@ class PlexPlaybackReporter {
                 )
             } catch {
                 // Silently fail timeline updates - they're not critical
-                NSLog("PlexPlaybackReporter: Timeline update failed: %@", error.localizedDescription)
+                NSLog("PlexPlaybackReporter: Timeline update failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }

@@ -110,7 +110,7 @@ class JellyfinPlaybackReporter {
                     let ticks = Int64(self.lastKnownPosition * 10_000_000)
                     try await client.reportPlaybackProgress(itemId: trackId, positionTicks: ticks, isPaused: true)
                 } catch {
-                    NSLog("JellyfinPlaybackReporter: Failed to report pause: %@", error.localizedDescription)
+                    NSLog("JellyfinPlaybackReporter: Failed to report pause: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         }
@@ -146,7 +146,7 @@ class JellyfinPlaybackReporter {
                 try await client.reportPlaybackStart(itemId: trackId)
                 NSLog("JellyfinPlaybackReporter: Reported 'now playing' for track %@", trackId)
             } catch {
-                NSLog("JellyfinPlaybackReporter: Failed to report 'now playing': %@", error.localizedDescription)
+                NSLog("JellyfinPlaybackReporter: Failed to report 'now playing': %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -184,7 +184,7 @@ class JellyfinPlaybackReporter {
             do {
                 try await client.reportPlaybackStopped(itemId: trackId, positionTicks: positionTicks)
             } catch {
-                NSLog("JellyfinPlaybackReporter: Failed to report stopped: %@", error.localizedDescription)
+                NSLog("JellyfinPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -223,7 +223,7 @@ class JellyfinPlaybackReporter {
                 try await client.scrobble(itemId: trackId)
                 NSLog("JellyfinPlaybackReporter: Scrobbled track %@", trackId)
             } catch {
-                NSLog("JellyfinPlaybackReporter: Failed to scrobble: %@", error.localizedDescription)
+                NSLog("JellyfinPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 // Reset flag so we can try again
                 hasScrobbled = false
             }

@@ -514,3 +514,21 @@ For detailed information, see:
 | File validation | `Audio/AudioFileValidator.swift` |
 | ProjectM | `Visualization/ProjectMWrapper.swift`, `Windows/ProjectM/` |
 | Reporters | `Plex/PlexPlaybackReporter.swift`, `Plex/PlexVideoPlaybackReporter.swift`, `Subsonic/SubsonicPlaybackReporter.swift`, `Jellyfin/JellyfinPlaybackReporter.swift`, `Jellyfin/JellyfinVideoPlaybackReporter.swift`, `Emby/EmbyPlaybackReporter.swift`, `Emby/EmbyVideoPlaybackReporter.swift` |
+
+
+## Credential-safe logging
+
+Use `URL.redacted` from `Utilities/URL+Redacted.swift` whenever logging a media,
+artwork, radio, or casting URL. Use `String.redactingSensitiveURLQueryItems` for
+error descriptions and strings containing URLs, including optional diagnostics.
+These helpers are for log output only: requests, track URLs, and persistence
+must retain the original values.
+
+The shared helper covers Plex, Subsonic/Navidrome, Jellyfin/Emby, common radio
+auth/signature parameters, URL user info, nested/escaped query delimiters, JSON
+credential fields, auth headers, and LocalMediaServer capability paths.
+Never log standalone capability tokens or raw server response bodies; retain
+status, endpoint, byte count, and parsed non-sensitive error details instead.
+UPnP's gated logger redacts the formatted message before emitting it.
+
+Regression coverage lives in `Tests/NullPlayerAppTests/SensitiveURLRedactionTests.swift`.

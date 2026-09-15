@@ -138,12 +138,11 @@ class PlexServerClient {
             }
             
             guard httpResponse.statusCode == 200 else {
-                // Log the error response body for debugging
-                let errorBody = String(data: data, encoding: .utf8) ?? "(non-UTF8 data)"
-                NSLog("PlexServerClient: HTTP %d error for %@: %@", 
+                // Keep status and size diagnostics without exposing response credentials.
+                NSLog("PlexServerClient: HTTP %d error for %@: %d bytes",
                       httpResponse.statusCode, 
                       request.url?.path ?? "unknown",
-                      String(errorBody.prefix(500)))
+                      data.count)
                 
                 if httpResponse.statusCode == 401 {
                     throw PlexServerError.unauthorized
@@ -154,9 +153,7 @@ class PlexServerClient {
             // Debug: Log response for troubleshooting
             #if DEBUG
             let endpoint = request.url?.path ?? "unknown"
-            if let jsonString = String(data: data, encoding: .utf8) {
-                NSLog("PlexServerClient: Response for %@: %@", endpoint, String(jsonString.prefix(1000)))
-            }
+            NSLog("PlexServerClient: Response for %@: %d bytes", endpoint, data.count)
             #endif
             
             // First try direct decoding
@@ -175,7 +172,7 @@ class PlexServerClient {
                             NSLog("PlexServerClient: Retrying decode after UTF-8 sanitization (replaced invalid chars with ?)")
                             return try JSONDecoder().decode(T.self, from: sanitizedData)
                         } catch {
-                            NSLog("PlexServerClient: UTF-8 sanitization didn't help: %@", error.localizedDescription)
+                            NSLog("PlexServerClient: UTF-8 sanitization didn't help: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                         }
                     }
                 }
@@ -191,9 +188,9 @@ class PlexServerClient {
                     case .keyNotFound(let key, let context):
                         NSLog("PlexServerClient: Key not found: %@, path: %@", key.stringValue, context.codingPath.map { $0.stringValue }.joined(separator: "."))
                     case .dataCorrupted(let context):
-                        NSLog("PlexServerClient: Data corrupted: %@, path: %@", context.debugDescription, context.codingPath.map { $0.stringValue }.joined(separator: "."))
+                        NSLog("PlexServerClient: Data corrupted: %@, path: %@", context.debugDescription.redactingSensitiveURLQueryItems, context.codingPath.map { $0.stringValue }.joined(separator: "."))
                     @unknown default:
-                        NSLog("PlexServerClient: Unknown decoding error: %@", initialError.localizedDescription)
+                        NSLog("PlexServerClient: Unknown decoding error: %@", initialError.localizedDescription.redactingSensitiveURLQueryItems)
                     }
                 }
                 
@@ -800,7 +797,7 @@ class PlexServerClient {
             sanitized.queryItems = sanitized.queryItems?.map {
                 $0.name == "X-Plex-Token" ? URLQueryItem(name: $0.name, value: "<redacted>") : $0
             }
-            NSLog("PlexServerClient: Final smart playlist URL: %@", sanitized.url?.absoluteString ?? "?")
+            NSLog("PlexServerClient: Final smart playlist URL: %@", sanitized.url?.redacted ?? "?")
         }
         #endif
 
@@ -1094,7 +1091,7 @@ class PlexServerClient {
                 let tracks = trackResponse.mediaContainer.metadata?.map { $0.toTrack() } ?? []
                 allTracks.append(contentsOf: tracks)
             } catch {
-                NSLog("PlexServerClient: Failed to get tracks for artist %@: %@", artist.ratingKey, error.localizedDescription)
+                NSLog("PlexServerClient: Failed to get tracks for artist %@: %@", artist.ratingKey, error.localizedDescription.redactingSensitiveURLQueryItems)
             }
             
             if allTracks.count >= limit {
@@ -1503,7 +1500,7 @@ class PlexServerClient {
             guard let httpResponse = response as? HTTPURLResponse else { return false }
             return httpResponse.statusCode == 200
         } catch {
-            NSLog("PlexServerClient: Connection check failed: %@", error.localizedDescription)
+            NSLog("PlexServerClient: Connection check failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return false
         }
     }

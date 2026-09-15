@@ -128,9 +128,7 @@ class SubsonicServerClient {
             
             // Debug: Print response for troubleshooting
             #if DEBUG
-            if let jsonString = String(data: data, encoding: .utf8) {
-                NSLog("SubsonicServerClient: Response for %@: %@", request.url?.lastPathComponent ?? "unknown", String(jsonString.prefix(500)))
-            }
+            NSLog("SubsonicServerClient: Response for %@: %d bytes", request.url?.lastPathComponent ?? "unknown", data.count)
             #endif
             
             // Parse the response
@@ -214,7 +212,7 @@ class SubsonicServerClient {
             return subsonicResponse.subsonicResponse.isOk
             
         } catch {
-            NSLog("SubsonicServerClient: Connection check failed: %@", error.localizedDescription)
+            NSLog("SubsonicServerClient: Connection check failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return false
         }
     }

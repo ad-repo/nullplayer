@@ -6527,7 +6527,7 @@ class ModernLibraryBrowserView: NSView {
                     let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
                     let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
                     if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription) }
+                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
             }
         }
     }
@@ -6542,7 +6542,7 @@ class ModernLibraryBrowserView: NSView {
                     let results = try await SubsonicManager.shared.search(query: song.artist ?? "")
                     let tracks = results.songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
                     if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription) }
+                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
             }
         }
     }
@@ -6574,7 +6574,7 @@ class ModernLibraryBrowserView: NSView {
                     let (_, songs) = try await JellyfinManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
                     let tracks = JellyfinManager.shared.convertToTracks(songs)
                     if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription) }
+                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
             }
         }
     }
@@ -6589,7 +6589,7 @@ class ModernLibraryBrowserView: NSView {
                     let results = try await JellyfinManager.shared.search(query: song.artist ?? "")
                     let tracks = JellyfinManager.shared.convertToTracks(results.songs)
                     if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription) }
+                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
             }
         }
     }
@@ -6661,7 +6661,7 @@ class ModernLibraryBrowserView: NSView {
             } catch is CancellationError { }
             catch where Task.isCancelled { }
             catch {
-                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription)
+                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
         rebuildCurrentModeItems(); needsDisplay = true
@@ -6700,7 +6700,7 @@ class ModernLibraryBrowserView: NSView {
                 } catch is CancellationError {
                     // Superseded by a newer download request; skip side effects.
                 } catch {
-                    NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                    NSLog("Failed to download YouTube video: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         }
@@ -6814,7 +6814,7 @@ class ModernLibraryBrowserView: NSView {
                     let (_, songs) = try await EmbyManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
                     let tracks = EmbyManager.shared.convertToTracks(songs)
                     if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription) }
+                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
             }
         }
     }
@@ -6829,7 +6829,7 @@ class ModernLibraryBrowserView: NSView {
                     let results = try await EmbyManager.shared.search(query: song.artist ?? "")
                     let tracks = EmbyManager.shared.convertToTracks(results.songs)
                     if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription) }
+                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
             }
         }
     }
@@ -6854,7 +6854,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
                 WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(tracks))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayArtistAndReplace(_ sender: NSMenuItem) {
@@ -6863,7 +6863,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let all = try await self.fetchTracksForPlexArtistGroup(artist)
                 WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(all))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayLocalTrackAndReplace(_ sender: NSMenuItem) {
@@ -6901,7 +6901,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
                 WindowManager.shared.audioEngine.loadTracks(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlaySubsonicArtistAndReplace(_ sender: NSMenuItem) {
@@ -6915,7 +6915,7 @@ class ModernLibraryBrowserView: NSView {
                     all.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
                 }
                 WindowManager.shared.audioEngine.loadTracks(all)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlaySubsonicPlaylistAndReplace(_ sender: NSMenuItem) {
@@ -6924,7 +6924,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
                 WindowManager.shared.audioEngine.loadTracks(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayJellyfinSongAndReplace(_ sender: NSMenuItem) {
@@ -6938,7 +6938,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
                 WindowManager.shared.audioEngine.loadTracks(JellyfinManager.shared.convertToTracks(songs))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayJellyfinArtistAndReplace(_ sender: NSMenuItem) {
@@ -6952,7 +6952,7 @@ class ModernLibraryBrowserView: NSView {
                     all.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
                 }
                 WindowManager.shared.audioEngine.loadTracks(all)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayJellyfinPlaylistAndReplace(_ sender: NSMenuItem) {
@@ -6961,7 +6961,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let (_, songs) = try await JellyfinManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
                 WindowManager.shared.audioEngine.loadTracks(JellyfinManager.shared.convertToTracks(songs))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayEmbySongAndReplace(_ sender: NSMenuItem) {
@@ -6975,7 +6975,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
                 WindowManager.shared.audioEngine.loadTracks(EmbyManager.shared.convertToTracks(songs))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayEmbyArtistAndReplace(_ sender: NSMenuItem) {
@@ -6989,7 +6989,7 @@ class ModernLibraryBrowserView: NSView {
                     all.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
                 }
                 WindowManager.shared.audioEngine.loadTracks(all)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayEmbyPlaylistAndReplace(_ sender: NSMenuItem) {
@@ -6998,7 +6998,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let (_, songs) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
                 WindowManager.shared.audioEngine.loadTracks(EmbyManager.shared.convertToTracks(songs))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayPlexPlaylistAndReplace(_ sender: NSMenuItem) {
@@ -7007,7 +7007,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let tracks = try await PlexManager.shared.fetchPlaylistTracks(playlistID: playlist.id, smartContent: playlist.smart ? playlist.content : nil)
                 WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(tracks))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -7109,7 +7109,7 @@ class ModernLibraryBrowserView: NSView {
                 let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
                 let converted = PlexManager.shared.convertToTracks(tracks)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
-            } catch { NSLog("Failed to play album next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddAlbumToQueue(_ sender: NSMenuItem) {
@@ -7122,7 +7122,7 @@ class ModernLibraryBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(converted)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add album to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayLocalAlbumNext(_ sender: NSMenuItem) {
@@ -7145,7 +7145,7 @@ class ModernLibraryBrowserView: NSView {
                 let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
                 let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play subsonic album next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play subsonic album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddSubsonicAlbumToQueue(_ sender: NSMenuItem) {
@@ -7158,7 +7158,7 @@ class ModernLibraryBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(tracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add subsonic album to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add subsonic album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayArtistNext(_ sender: NSMenuItem) {
@@ -7168,7 +7168,7 @@ class ModernLibraryBrowserView: NSView {
                 let allTracks = try await self.fetchTracksForPlexArtistGroup(artist)
                 let converted = PlexManager.shared.convertToTracks(allTracks)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
-            } catch { NSLog("Failed to play artist next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddArtistToQueue(_ sender: NSMenuItem) {
@@ -7181,7 +7181,7 @@ class ModernLibraryBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(converted)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add artist to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayLocalArtistNext(_ sender: NSMenuItem) {
@@ -7222,7 +7222,7 @@ class ModernLibraryBrowserView: NSView {
                     allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
                 }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play subsonic artist next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play subsonic artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddSubsonicArtistToQueue(_ sender: NSMenuItem) {
@@ -7239,7 +7239,7 @@ class ModernLibraryBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(allTracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add subsonic artist to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add subsonic artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayJellyfinSongNext(_ sender: NSMenuItem) {
@@ -7262,7 +7262,7 @@ class ModernLibraryBrowserView: NSView {
                 let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
                 let tracks = JellyfinManager.shared.convertToTracks(songs)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play jellyfin album next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play jellyfin album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddJellyfinAlbumToQueue(_ sender: NSMenuItem) {
@@ -7275,7 +7275,7 @@ class ModernLibraryBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(tracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add jellyfin album to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add jellyfin album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayJellyfinArtistNext(_ sender: NSMenuItem) {
@@ -7289,7 +7289,7 @@ class ModernLibraryBrowserView: NSView {
                     allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
                 }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play jellyfin artist next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play jellyfin artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddJellyfinArtistToQueue(_ sender: NSMenuItem) {
@@ -7306,7 +7306,7 @@ class ModernLibraryBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(allTracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add jellyfin artist to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add jellyfin artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayEmbySongNext(_ sender: NSMenuItem) {
@@ -7329,7 +7329,7 @@ class ModernLibraryBrowserView: NSView {
                 let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
                 let tracks = EmbyManager.shared.convertToTracks(songs)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play emby album next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play emby album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddEmbyAlbumToQueue(_ sender: NSMenuItem) {
@@ -7342,7 +7342,7 @@ class ModernLibraryBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(tracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add emby album to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add emby album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayEmbyArtistNext(_ sender: NSMenuItem) {
@@ -7356,7 +7356,7 @@ class ModernLibraryBrowserView: NSView {
                     allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
                 }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play emby artist next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play emby artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddEmbyArtistToQueue(_ sender: NSMenuItem) {
@@ -7373,7 +7373,7 @@ class ModernLibraryBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(allTracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add emby artist to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add emby artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
 
@@ -7887,7 +7887,7 @@ class ModernLibraryBrowserView: NSView {
                 catch where Task.isCancelled { return }
                 catch {
                     loadingChannelIds.remove(ch.id)
-                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
+                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         }
@@ -8366,7 +8366,7 @@ class ModernLibraryBrowserView: NSView {
 
                 try await Task.sleep(nanoseconds: 300_000_000)
                 await MainActor.run { hideRatingOverlay() }
-            } catch is CancellationError { } catch { NSLog("Rating failed: %@", error.localizedDescription) }
+            } catch is CancellationError { } catch { NSLog("Rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -8557,7 +8557,7 @@ class ModernLibraryBrowserView: NSView {
                     }
                     updateCachedPlexRating(ratingKey: ratingKey, rating: rating)
                 }
-            } catch { NSLog("Plex rating failed: %@", error.localizedDescription) }
+            } catch { NSLog("Plex rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -8576,7 +8576,7 @@ class ModernLibraryBrowserView: NSView {
                     // Update the cached song in displayItems
                     updateCachedSubsonicRating(songId: songId, rating: subsonicRating)
                 }
-            } catch { NSLog("Subsonic rating failed: %@", error.localizedDescription) }
+            } catch { NSLog("Subsonic rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -8594,7 +8594,7 @@ class ModernLibraryBrowserView: NSView {
                     }
                     updateCachedJellyfinRating(itemId: itemId, rating: rating)
                 }
-            } catch { NSLog("Jellyfin rating failed: %@", error.localizedDescription) }
+            } catch { NSLog("Jellyfin rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
 
@@ -8612,7 +8612,7 @@ class ModernLibraryBrowserView: NSView {
                     }
                     updateCachedEmbyRating(itemId: itemId, rating: rating)
                 }
-            } catch { NSLog("Emby rating failed: %@", error.localizedDescription) }
+            } catch { NSLog("Emby rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
 
@@ -9750,7 +9750,7 @@ class ModernLibraryBrowserView: NSView {
                 await MainActor.run { self.jellyfinAlbumWarmTask = nil }
             } catch {
                 await MainActor.run { self.jellyfinAlbumWarmTask = nil }
-                NSLog("ModernLibraryBrowser: Jellyfin album cache warm failed: %@", error.localizedDescription)
+                NSLog("ModernLibraryBrowser: Jellyfin album cache warm failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -11538,7 +11538,7 @@ class ModernLibraryBrowserView: NSView {
                             }
                             rebuildCurrentModeItems()
                         } catch {
-                            NSLog("ModernLibraryBrowser: Failed to load albums for artist group '%@' (key=%@): %@", artist.title, groupKey, error.localizedDescription)
+                            NSLog("ModernLibraryBrowser: Failed to load albums for artist group '%@' (key=%@): %@", artist.title, groupKey, error.localizedDescription.redactingSensitiveURLQueryItems)
                             expandedArtists.remove(groupKey)
                             rebuildCurrentModeItems()
                         }
@@ -11553,7 +11553,7 @@ class ModernLibraryBrowserView: NSView {
                     Task { @MainActor in
                         do { let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album); albumTracks[album.id] = tracks; rebuildCurrentModeItems() }
                         catch {
-                            NSLog("ModernLibraryBrowser: Failed to load tracks for album '%@' (id=%@): %@", album.title, album.id, error.localizedDescription)
+                            NSLog("ModernLibraryBrowser: Failed to load tracks for album '%@' (id=%@): %@", album.title, album.id, error.localizedDescription.redactingSensitiveURLQueryItems)
                             expandedAlbums.remove(album.id)
                             rebuildCurrentModeItems()
                         }
@@ -11568,7 +11568,7 @@ class ModernLibraryBrowserView: NSView {
                     Task { @MainActor in
                         do { let seasons = try await PlexManager.shared.fetchSeasons(forShow: show); showSeasons[show.id] = seasons; rebuildCurrentModeItems() }
                         catch {
-                            NSLog("ModernLibraryBrowser: Failed to load seasons for show '%@' (id=%@): %@", show.title, show.id, error.localizedDescription)
+                            NSLog("ModernLibraryBrowser: Failed to load seasons for show '%@' (id=%@): %@", show.title, show.id, error.localizedDescription.redactingSensitiveURLQueryItems)
                             expandedShows.remove(show.id)
                             rebuildCurrentModeItems()
                         }
@@ -11583,7 +11583,7 @@ class ModernLibraryBrowserView: NSView {
                     Task { @MainActor in
                         do { let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season); seasonEpisodes[season.id] = episodes; rebuildCurrentModeItems() }
                         catch {
-                            NSLog("ModernLibraryBrowser: Failed to load episodes for season '%@' (id=%@): %@", season.title, season.id, error.localizedDescription)
+                            NSLog("ModernLibraryBrowser: Failed to load episodes for season '%@' (id=%@): %@", season.title, season.id, error.localizedDescription.redactingSensitiveURLQueryItems)
                             expandedSeasons.remove(season.id)
                             rebuildCurrentModeItems()
                         }
@@ -11616,7 +11616,7 @@ class ModernLibraryBrowserView: NSView {
                         subsonicExpandTask = Task.detached { @MainActor [weak self] in
                             guard let self = self else { return }
                             do { let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist); subsonicArtistAlbums[id] = albums; rebuildCurrentModeItems() }
-                            catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                            catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                         }; return
                     }
                 }
@@ -11630,7 +11630,7 @@ class ModernLibraryBrowserView: NSView {
                     subsonicExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album); subsonicAlbumSongs[id] = songs; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11643,7 +11643,7 @@ class ModernLibraryBrowserView: NSView {
                     subsonicExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let (_, tracks) = try await SubsonicManager.shared.serverClient?.fetchPlaylist(id: id) ?? (playlist, []); subsonicPlaylistTracks[id] = tracks; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11661,7 +11661,7 @@ class ModernLibraryBrowserView: NSView {
                         jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                             guard let self = self else { return }
                             do { let albums = try await JellyfinManager.shared.fetchAlbums(forArtist: artist); jellyfinArtistAlbums[id] = albums; rebuildCurrentModeItems() }
-                            catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                            catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                         }; return
                     }
                 }
@@ -11675,7 +11675,7 @@ class ModernLibraryBrowserView: NSView {
                     jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album); jellyfinAlbumSongs[id] = songs; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11688,7 +11688,7 @@ class ModernLibraryBrowserView: NSView {
                     jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let (_, tracks) = try await JellyfinManager.shared.serverClient?.fetchPlaylist(id: id) ?? (playlist, []); jellyfinPlaylistTracks[id] = tracks; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11701,7 +11701,7 @@ class ModernLibraryBrowserView: NSView {
                     jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let seasons = try await JellyfinManager.shared.fetchSeasons(forShow: show); jellyfinShowSeasons[id] = seasons; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedJellyfinShows.remove(id); rebuildCurrentModeItems(); NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedJellyfinShows.remove(id); rebuildCurrentModeItems(); NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11714,7 +11714,7 @@ class ModernLibraryBrowserView: NSView {
                     jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let episodes = try await JellyfinManager.shared.fetchEpisodes(forSeason: season); jellyfinSeasonEpisodes[id] = episodes; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedJellyfinSeasons.remove(id); rebuildCurrentModeItems(); NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedJellyfinSeasons.remove(id); rebuildCurrentModeItems(); NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11731,7 +11731,7 @@ class ModernLibraryBrowserView: NSView {
                         embyExpandTask = Task.detached { @MainActor [weak self] in
                             guard let self = self else { return }
                             do { let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist); embyArtistAlbums[id] = albums; rebuildCurrentModeItems() }
-                            catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                            catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                         }; return
                     }
                 }
@@ -11745,7 +11745,7 @@ class ModernLibraryBrowserView: NSView {
                     embyExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album); embyAlbumSongs[id] = songs; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11758,7 +11758,7 @@ class ModernLibraryBrowserView: NSView {
                     embyExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let (_, tracks) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: id) ?? (playlist, []); embyPlaylistTracks[id] = tracks; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11771,7 +11771,7 @@ class ModernLibraryBrowserView: NSView {
                     embyExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let seasons = try await EmbyManager.shared.fetchSeasons(forShow: show); embyShowSeasons[id] = seasons; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedEmbyShows.remove(id); rebuildCurrentModeItems(); NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedEmbyShows.remove(id); rebuildCurrentModeItems(); NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11784,7 +11784,7 @@ class ModernLibraryBrowserView: NSView {
                     embyExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let episodes = try await EmbyManager.shared.fetchEpisodes(forSeason: season); embySeasonEpisodes[id] = episodes; rebuildCurrentModeItems() }
-                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedEmbySeasons.remove(id); rebuildCurrentModeItems(); NSLog("Failed: \(error)") }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedEmbySeasons.remove(id); rebuildCurrentModeItems(); NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11797,7 +11797,7 @@ class ModernLibraryBrowserView: NSView {
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
                         do { let tracks = try await PlexManager.shared.fetchPlaylistTracks(playlistID: id, smartContent: smartContent); plexPlaylistTracks[id] = tracks; rebuildCurrentModeItems() }
-                        catch { NSLog("Failed: \(error)") }
+                        catch { NSLog("Failed: %@", String(describing: error).redactingSensitiveURLQueryItems) }
                     }; return
                 }
             }
@@ -11848,7 +11848,7 @@ class ModernLibraryBrowserView: NSView {
                         } catch is CancellationError { }
                         catch where Task.isCancelled { }
                         catch {
-                            NSLog("Failed to load YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
+                            NSLog("Failed to load YouTube videos for channel '%@': %@", ch.title, error.localizedDescription.redactingSensitiveURLQueryItems)
                         }
                     }; rebuildCurrentModeItems(); needsDisplay = true; return
                 }
@@ -12173,7 +12173,7 @@ class ModernLibraryBrowserView: NSView {
     private func playAlbum(_ album: PlexAlbum) {
         Task { @MainActor in
             do { let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album); WindowManager.shared.audioEngine.playNow(PlexManager.shared.convertToTracks(tracks)) }
-            catch { NSLog("Failed: %@", error.localizedDescription) }
+            catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playArtist(_ artist: PlexArtist) {
@@ -12181,7 +12181,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let all = try await fetchTracksForPlexArtistGroup(artist)
                 WindowManager.shared.audioEngine.playNow(PlexManager.shared.convertToTracks(all))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playMovie(_ movie: PlexMovie) { WindowManager.shared.playMovie(movie) }
@@ -12194,7 +12194,7 @@ class ModernLibraryBrowserView: NSView {
     private func playEmbyAlbum(_ album: EmbyAlbum) {
         Task { @MainActor in
             do { let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album); WindowManager.shared.audioEngine.playNow(EmbyManager.shared.convertToTracks(songs)) }
-            catch { NSLog("Failed: %@", error.localizedDescription) }
+            catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playEmbyArtist(_ artist: EmbyArtist) {
@@ -12204,7 +12204,7 @@ class ModernLibraryBrowserView: NSView {
                 var all: [Track] = []
                 for album in albums { let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album); all.append(contentsOf: EmbyManager.shared.convertToTracks(songs)) }
                 WindowManager.shared.audioEngine.playNow(all)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playEmbyPlaylist(_ playlist: EmbyPlaylist) {
@@ -12212,7 +12212,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let (_, songs) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
                 WindowManager.shared.audioEngine.playNow(EmbyManager.shared.convertToTracks(songs))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playEmbyMovie(_ movie: EmbyMovie) { WindowManager.shared.playEmbyMovie(movie) }
@@ -12312,7 +12312,7 @@ class ModernLibraryBrowserView: NSView {
     private func playSubsonicAlbum(_ album: SubsonicAlbum) {
         Task { @MainActor in
             do { let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album); WindowManager.shared.audioEngine.playNow(songs.compactMap { SubsonicManager.shared.convertToTrack($0) }) }
-            catch { NSLog("Failed: %@", error.localizedDescription) }
+            catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playSubsonicArtist(_ artist: SubsonicArtist) {
@@ -12322,7 +12322,7 @@ class ModernLibraryBrowserView: NSView {
                 var all: [Track] = []
                 for album in albums { let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album); all.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) }) }
                 WindowManager.shared.audioEngine.playNow(all)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playSubsonicPlaylist(_ playlist: SubsonicPlaylist) {
@@ -12330,7 +12330,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
                 WindowManager.shared.audioEngine.playNow(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playJellyfinSong(_ song: JellyfinSong) {
@@ -12339,7 +12339,7 @@ class ModernLibraryBrowserView: NSView {
     private func playJellyfinAlbum(_ album: JellyfinAlbum) {
         Task { @MainActor in
             do { let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album); WindowManager.shared.audioEngine.playNow(JellyfinManager.shared.convertToTracks(songs)) }
-            catch { NSLog("Failed: %@", error.localizedDescription) }
+            catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playJellyfinArtist(_ artist: JellyfinArtist) {
@@ -12349,7 +12349,7 @@ class ModernLibraryBrowserView: NSView {
                 var all: [Track] = []
                 for album in albums { let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album); all.append(contentsOf: JellyfinManager.shared.convertToTracks(songs)) }
                 WindowManager.shared.audioEngine.playNow(all)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playJellyfinPlaylist(_ playlist: JellyfinPlaylist) {
@@ -12357,7 +12357,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let (_, songs) = try await JellyfinManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
                 WindowManager.shared.audioEngine.playNow(JellyfinManager.shared.convertToTracks(songs))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playPlexPlaylist(_ playlist: PlexPlaylist) {
@@ -12365,7 +12365,7 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let tracks = try await PlexManager.shared.fetchPlaylistTracks(playlistID: playlist.id, smartContent: playlist.smart ? playlist.content : nil)
                 WindowManager.shared.audioEngine.playNow(PlexManager.shared.convertToTracks(tracks))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     private func playRadioStation(_ station: RadioStation) { RadioManager.shared.play(station: station) }
@@ -12585,7 +12585,7 @@ class ModernLibraryBrowserView: NSView {
                     } catch is CancellationError {
                         // Superseded by a newer download request; skip side effects.
                     } catch {
-                        NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                        NSLog("Failed to download YouTube video: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     }
                 }
             }

@@ -9,7 +9,8 @@ private let upnpLoggingEnabled = ProcessInfo.processInfo.environment["NULLPLAYER
 /// A free function (like `NSLog`) so call sites inside closures don't need `self`.
 private func upnpLog(_ format: String, _ args: CVarArg...) {
     guard upnpLoggingEnabled else { return }
-    withVaList(args) { NSLogv(format, $0) }
+    let message = String(format: format, arguments: args).redactingSensitiveURLQueryItems
+    NSLog("%@", message)
 }
 
 /// UPnP/DLNA manager for discovering and controlling Sonos speakers and DLNA TVs
@@ -1944,7 +1945,7 @@ class UPnPManager {
                 }
             }
             
-            upnpLog("UPnPManager: SetAVTransportURI SOAP error %d: %@", httpResponse.statusCode, errorBody)
+            upnpLog("UPnPManager: SetAVTransportURI SOAP error %d: %@", httpResponse.statusCode, "<response body omitted>")
             throw CastError.soapError(statusCode: httpResponse.statusCode, detail: "SOAP error \(httpResponse.statusCode)")
         }
         
@@ -2338,16 +2339,14 @@ class UPnPManager {
                 }
                 
                 if httpResponse.statusCode >= 400 {
-                    let errorBody = String(data: data, encoding: .utf8) ?? ""
-                    
                     // Check if this is a transient error worth retrying
                     if isTransientError(httpResponse.statusCode) && attempt < effectiveMaxRetries {
-                        upnpLog("UPnPManager: RenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        upnpLog("UPnPManager: RenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, "<response body omitted>")
                         lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                         continue
                     }
                     
-                    upnpLog("UPnPManager: RenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
+                    upnpLog("UPnPManager: RenderingControl SOAP error %d: %@", httpResponse.statusCode, "<response body omitted>")
                     throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                 }
                 
@@ -2428,15 +2427,13 @@ class UPnPManager {
                 }
 
                 if httpResponse.statusCode >= 400 {
-                    let errorBody = String(data: data, encoding: .utf8) ?? ""
-
                     if isTransientError(httpResponse.statusCode) && attempt < effectiveMaxRetries {
-                        upnpLog("UPnPManager: GroupRenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        upnpLog("UPnPManager: GroupRenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, "<response body omitted>")
                         lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                         continue
                     }
 
-                    upnpLog("UPnPManager: GroupRenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
+                    upnpLog("UPnPManager: GroupRenderingControl SOAP error %d: %@", httpResponse.statusCode, "<response body omitted>")
                     throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
                 }
 
@@ -2556,14 +2553,14 @@ class UPnPManager {
                     
                     // Check if this is a transient error worth retrying
                     if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
-                        upnpLog("UPnPManager: AVTransport %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        upnpLog("UPnPManager: AVTransport %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, "<response body omitted>")
                         lastError = CastError.playbackFailed(errorDetail)
                         continue
                     }
                     
                     // Always log SOAP errors with full detail for debugging
                     upnpLog("UPnPManager: SOAP ERROR for %@ - Status: %d, Detail: %@", action, httpResponse.statusCode, errorDetail)
-                    upnpLog("UPnPManager: SOAP ERROR body: %@", errorBody)
+                    upnpLog("UPnPManager: SOAP ERROR body: %@", "<response body omitted>")
                     throw CastError.soapError(statusCode: httpResponse.statusCode, detail: errorDetail)
                 }
                 

@@ -365,3 +365,10 @@ NULLPLAYER_UPNP_LOG=1 ./.build/arm64-apple-macosx/debug/NullPlayer > /tmp/upnp.l
 - [Google Cast SDK Documentation](https://developers.google.com/cast/docs/developers)
 - [OpenCastSwift](https://github.com/mhmiles/OpenCastSwift) - Reference implementation
 - [node-castv2](https://github.com/thibauts/node-castv2) - Node.js implementation
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs, credentials, or server response bodies.

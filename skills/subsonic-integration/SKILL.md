@@ -121,3 +121,10 @@ Subsonic streaming URLs contain auth query parameters which Sonos cannot handle.
 - **Library selector in browser**: The "Lib:" click zone in both `ModernLibraryBrowserView` and classic `PlexBrowserView` opens an "All Folders" + folders picker for Subsonic/Navidrome sources. `SubsonicManager` tracks `musicFolders: [SubsonicMusicFolder]` and `currentMusicFolder: SubsonicMusicFolder?` (nil = all folders). Posts `musicFolderDidChangeNotification` on change; persisted via `SubsonicCurrentMusicFolderID` UserDefaults key.
 - **Expand task lifetime**: Library-browser expand tasks in `ModernLibraryBrowserView` and classic `PlexBrowserView` must use `Task.detached { @MainActor ... }`. Plain `Task {}` can inherit cancellation state from the main-actor context.
 - **Streaming URL content type (Sonos)**: Subsonic stream URLs (`/rest/stream?id=...`) have no file extension, so `detectAudioContentType(for:)` defaults to `audio/mpeg`. This breaks Sonos casting for non-MP3 formats and can let high-resolution lossless tracks bypass format filtering. Prefer `Track.contentType` set by the server client from API metadata. Preserve `samplingRate` too: strict Sonos compatibility rejects extensionless FLAC/WAV above 48 kHz, and rejects unknown-rate FLAC/WAV conservatively when no sample rate is available.
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs, credentials, or server response bodies.

@@ -359,7 +359,7 @@ class ModernEQView: NSView {
                 NSLog("Auto EQ: Plex track '%@' has no genre even in detailed metadata", trackTitle)
             }
         } catch {
-            NSLog("Auto EQ: Failed to fetch Plex track details: %@", error.localizedDescription)
+            NSLog("Auto EQ: Failed to fetch Plex track details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
     
@@ -377,7 +377,7 @@ class ModernEQView: NSView {
                 NSLog("Auto EQ: Subsonic track '%@' has no genre", trackTitle)
             }
         } catch {
-            NSLog("Auto EQ: Failed to fetch Subsonic song details: %@", error.localizedDescription)
+            NSLog("Auto EQ: Failed to fetch Subsonic song details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
     
@@ -388,7 +388,7 @@ class ModernEQView: NSView {
                 await MainActor.run { self.applyPresetForGenre(genre) }
             }
         } catch {
-            NSLog("Auto EQ: Failed to fetch Jellyfin track details: %@", error.localizedDescription)
+            NSLog("Auto EQ: Failed to fetch Jellyfin track details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
     

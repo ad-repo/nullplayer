@@ -256,7 +256,7 @@ class JellyfinVideoPlaybackReporter {
                 try await client.reportPlaybackStart(itemId: itemId)
                 NSLog("JellyfinVideoPlaybackReporter: Reported playback start for %@", self.currentTitle ?? "unknown")
             } catch {
-                NSLog("JellyfinVideoPlaybackReporter: Failed to report start: %@", error.localizedDescription)
+                NSLog("JellyfinVideoPlaybackReporter: Failed to report start: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -287,7 +287,7 @@ class JellyfinVideoPlaybackReporter {
                 try await client.reportPlaybackStopped(itemId: itemId, positionTicks: positionTicks)
                 NSLog("JellyfinVideoPlaybackReporter: Reported stopped for %@", self.currentTitle ?? "unknown")
             } catch {
-                NSLog("JellyfinVideoPlaybackReporter: Failed to report stopped: %@", error.localizedDescription)
+                NSLog("JellyfinVideoPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -304,7 +304,7 @@ class JellyfinVideoPlaybackReporter {
                 NSLog("JellyfinVideoPlaybackReporter: Scrobbled video (id: %@, title: %@)",
                       itemId, self.currentTitle ?? "unknown")
             } catch {
-                NSLog("JellyfinVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription)
+                NSLog("JellyfinVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 hasScrobbled = false
             }
         }
@@ -336,7 +336,7 @@ class JellyfinVideoPlaybackReporter {
             do {
                 try await client.reportPlaybackProgress(itemId: itemId, positionTicks: positionTicks)
             } catch {
-                NSLog("JellyfinVideoPlaybackReporter: Timeline update failed: %@", error.localizedDescription)
+                NSLog("JellyfinVideoPlaybackReporter: Timeline update failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }

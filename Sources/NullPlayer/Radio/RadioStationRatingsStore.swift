@@ -32,7 +32,7 @@ final class RadioStationRatingsStore {
             try createTableIfNeeded(connection)
             NSLog("RadioStationRatingsStore: Database ready at %@", dbPath)
         } catch {
-            NSLog("RadioStationRatingsStore: Failed to open database: %@", error.localizedDescription)
+            NSLog("RadioStationRatingsStore: Failed to open database: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -58,7 +58,7 @@ final class RadioStationRatingsStore {
             guard let row = try db.pluck(query) else { return 0 }
             return clamp(row[colRating])
         } catch {
-            NSLog("RadioStationRatingsStore: Failed to fetch rating for %@: %@", stationURL.absoluteString, error.localizedDescription)
+            NSLog("RadioStationRatingsStore: Failed to fetch rating for %@: %@", stationURL.redacted, error.localizedDescription.redactingSensitiveURLQueryItems)
             return 0
         }
     }
@@ -78,7 +78,7 @@ final class RadioStationRatingsStore {
                 colUpdatedAt <- Date().timeIntervalSince1970
             ))
         } catch {
-            NSLog("RadioStationRatingsStore: Failed to set rating for %@: %@", stationURL.absoluteString, error.localizedDescription)
+            NSLog("RadioStationRatingsStore: Failed to set rating for %@: %@", stationURL.redacted, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -96,7 +96,7 @@ final class RadioStationRatingsStore {
         do {
             try db.run(table.filter(colStationURL == stationURL.absoluteString).delete())
         } catch {
-            NSLog("RadioStationRatingsStore: Failed to remove rating for %@: %@", stationURL.absoluteString, error.localizedDescription)
+            NSLog("RadioStationRatingsStore: Failed to remove rating for %@: %@", stationURL.redacted, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 }

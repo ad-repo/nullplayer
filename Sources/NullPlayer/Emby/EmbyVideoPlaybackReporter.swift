@@ -256,7 +256,7 @@ class EmbyVideoPlaybackReporter {
                 try await client.reportPlaybackStart(itemId: itemId)
                 NSLog("EmbyVideoPlaybackReporter: Reported playback start for %@", self.currentTitle ?? "unknown")
             } catch {
-                NSLog("EmbyVideoPlaybackReporter: Failed to report start: %@", error.localizedDescription)
+                NSLog("EmbyVideoPlaybackReporter: Failed to report start: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -287,7 +287,7 @@ class EmbyVideoPlaybackReporter {
                 try await client.reportPlaybackStopped(itemId: itemId, positionTicks: positionTicks)
                 NSLog("EmbyVideoPlaybackReporter: Reported stopped for %@", self.currentTitle ?? "unknown")
             } catch {
-                NSLog("EmbyVideoPlaybackReporter: Failed to report stopped: %@", error.localizedDescription)
+                NSLog("EmbyVideoPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -304,7 +304,7 @@ class EmbyVideoPlaybackReporter {
                 NSLog("EmbyVideoPlaybackReporter: Scrobbled video (id: %@, title: %@)",
                       itemId, self.currentTitle ?? "unknown")
             } catch {
-                NSLog("EmbyVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription)
+                NSLog("EmbyVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 hasScrobbled = false
             }
         }
@@ -336,7 +336,7 @@ class EmbyVideoPlaybackReporter {
             do {
                 try await client.reportPlaybackProgress(itemId: itemId, positionTicks: positionTicks)
             } catch {
-                NSLog("EmbyVideoPlaybackReporter: Timeline update failed: %@", error.localizedDescription)
+                NSLog("EmbyVideoPlaybackReporter: Timeline update failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }

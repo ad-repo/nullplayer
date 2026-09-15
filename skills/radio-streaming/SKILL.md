@@ -537,3 +537,10 @@ Ratings and folder membership are keyed by station URL (not station UUID). `Radi
 ### Playlist URL Resolution — Check `isCasting` Inside Async Callback
 
 When resolving `.pls`/`.m3u` URLs, check `CastManager.shared.isCasting` fresh inside the async callback, not captured before the network request (up to 10s timeout). User may start casting during resolution.
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs, credentials, or server response bodies.

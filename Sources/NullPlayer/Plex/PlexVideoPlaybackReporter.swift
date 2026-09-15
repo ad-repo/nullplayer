@@ -288,7 +288,7 @@ class PlexVideoPlaybackReporter {
                 NSLog("PlexVideoPlaybackReporter: Reported state '%@' at %dms for %@", 
                       state.rawValue, positionMs, self.currentTitle ?? "unknown")
             } catch {
-                NSLog("PlexVideoPlaybackReporter: Failed to report state: %@", error.localizedDescription)
+                NSLog("PlexVideoPlaybackReporter: Failed to report state: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -305,7 +305,7 @@ class PlexVideoPlaybackReporter {
                 NSLog("PlexVideoPlaybackReporter: Scrobbled video (key: %@, title: %@)", 
                       ratingKey, self.currentTitle ?? "unknown")
             } catch {
-                NSLog("PlexVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription)
+                NSLog("PlexVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 // Reset flag so we can try again
                 hasScrobbled = false
             }
@@ -346,7 +346,7 @@ class PlexVideoPlaybackReporter {
                 )
             } catch {
                 // Silently fail timeline updates - they're not critical
-                NSLog("PlexVideoPlaybackReporter: Timeline update failed: %@", error.localizedDescription)
+                NSLog("PlexVideoPlaybackReporter: Timeline update failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }

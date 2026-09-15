@@ -221,3 +221,10 @@ The "Lib:" click zone in both `ModernLibraryBrowserView` and classic `PlexBrowse
 ### Streaming URL Content Type (Sonos)
 
 Jellyfin streaming URLs (`/Audio/{id}/stream`) have no file extension, so `detectAudioContentType(for:)` defaults to `audio/mpeg`. This breaks Sonos casting for non-MP3 formats and can let high-resolution lossless tracks bypass format filtering. Always prefer `Track.contentType` (set by the server client from API metadata) or upstream HEAD detection via `prepareProxyURL()`. Preserve `sampleRate` from Jellyfin metadata too: strict Sonos compatibility rejects extensionless FLAC/WAV above 48 kHz, and rejects unknown-rate FLAC/WAV conservatively when no sample rate is available. The `SavedTrack.contentType` field preserves MIME type across app restarts.
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs, credentials, or server response bodies.

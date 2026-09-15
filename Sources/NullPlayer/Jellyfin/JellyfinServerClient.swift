@@ -198,9 +198,7 @@ class JellyfinServerClient {
             }
             
             #if DEBUG
-            if let jsonString = String(data: data, encoding: .utf8) {
-                NSLog("JellyfinServerClient: Response for %@: %@", request.url?.lastPathComponent ?? "unknown", String(jsonString.prefix(500)))
-            }
+            NSLog("JellyfinServerClient: Response for %@: %d bytes", request.url?.lastPathComponent ?? "unknown", data.count)
             #endif
             
             let decoder = JSONDecoder()
@@ -213,7 +211,7 @@ class JellyfinServerClient {
             if retryCount < maxRetries && isRetryableError(error) {
                 let elapsedMs = Date().timeIntervalSince(startTime) * 1000
                 NSLog("JellyfinServerClient: Retryable request error after %.0fms for %@: %@",
-                      elapsedMs, request.url?.path ?? "unknown", error.localizedDescription)
+                      elapsedMs, request.url?.path ?? "unknown", error.localizedDescription.redactingSensitiveURLQueryItems)
                 try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(retryCount)) * 1_000_000_000))
                 return try await performRequest(request, retryCount: retryCount + 1)
             }
@@ -284,7 +282,7 @@ class JellyfinServerClient {
             guard let httpResponse = response as? HTTPURLResponse else { return false }
             return httpResponse.statusCode == 200
         } catch {
-            NSLog("JellyfinServerClient: Connection check failed: %@", error.localizedDescription)
+            NSLog("JellyfinServerClient: Connection check failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return false
         }
     }
@@ -910,7 +908,7 @@ class JellyfinServerClient {
         guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId) else {
             throw JellyfinClientError.invalidURL
         }
-        NSLog("JellyfinServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("JellyfinServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: JellyfinQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as JellyfinSong? }
     }
@@ -919,7 +917,7 @@ class JellyfinServerClient {
         guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, genre: genre) else {
             throw JellyfinClientError.invalidURL
         }
-        NSLog("JellyfinServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("JellyfinServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: JellyfinQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as JellyfinSong? }
     }
@@ -929,7 +927,7 @@ class JellyfinServerClient {
         guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, years: years) else {
             throw JellyfinClientError.invalidURL
         }
-        NSLog("JellyfinServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("JellyfinServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: JellyfinQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as JellyfinSong? }
     }
@@ -938,7 +936,7 @@ class JellyfinServerClient {
         guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, filters: "IsFavorite") else {
             throw JellyfinClientError.invalidURL
         }
-        NSLog("JellyfinServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("JellyfinServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: JellyfinQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as JellyfinSong? }
     }
@@ -947,7 +945,7 @@ class JellyfinServerClient {
         guard let request = makeRadioInstantMixRequest(path: "/Items/\(itemId)/InstantMix", limit: limit) else {
             throw JellyfinClientError.invalidURL
         }
-        NSLog("JellyfinServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("JellyfinServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: JellyfinQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as JellyfinSong? }
     }
@@ -956,7 +954,7 @@ class JellyfinServerClient {
         guard let request = makeRadioInstantMixRequest(path: "/Artists/\(artistId)/InstantMix", limit: limit) else {
             throw JellyfinClientError.invalidURL
         }
-        NSLog("JellyfinServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("JellyfinServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: JellyfinQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as JellyfinSong? }
     }
@@ -965,7 +963,7 @@ class JellyfinServerClient {
         guard let request = makeRadioInstantMixRequest(path: "/Items/\(albumId)/InstantMix", limit: limit) else {
             throw JellyfinClientError.invalidURL
         }
-        NSLog("JellyfinServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("JellyfinServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: JellyfinQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as JellyfinSong? }
     }
