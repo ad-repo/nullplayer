@@ -35,6 +35,16 @@
 
 ### Bug Fixes
 
+- **A Media Player skin's window frame no longer covers the visualizer inside it.** In a skin that
+  draws its own panel borders — Half-Life 2 among them — the Cava window showed a still picture of
+  the skin's artwork instead of moving bars, because the borrowed frame was being painted over the
+  whole window rather than around it. The frame is now drawn only where a frame belongs, so the
+  spectrum analyzer, audio analyzer, PeppyMeter, Flow, Cava, waveform and visualizer windows all
+  show what they are meant to show inside it. Their titles are readable on that frame too: the
+  lettering is now chosen against the skin's own artwork where the title lands, and where that
+  artwork is too busy for any one colour — Half-Life 2 runs a dark pipe across a bright orange
+  strip — the title is outlined so it stays legible across both.
+
 - **The XBOX Music Mixer skin opens on its player again, with its equalizer beside it.** The skin
   was opening straight onto its equalizer panel, and nothing on screen could get you back to the
   controller itself — there was no route to it at all. Skins like this one start on a hidden window

@@ -9,6 +9,12 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W177 — the Half-Life 2 Cava report
+
+| ID | Item | Landed |
+|---|---|---|
+| W177 | A borrowed ring is painted over the Cava window's bars, so the visualiser is a still picture | Closed 2026-09-15. Reported as *"in half life skin the cava window does not show cava, there is a static image there"*. **A borrowed ring is the frame *around* a hosted surface, never wallpaper behind it.** `SkinnedSurfaceChrome.drawSkinFrame` drew the ring bitmap across the whole window with nothing cut out of it, and all seven spectrum-family windows call `drawSpectrumFamilyWindow` as an overlay **after** their content — so every opaque ring in the corpus painted a still picture over a running visualiser. `Half-Life_2` builds its panels out of solid `f_*.png` strips, which is why the bars vanished rather than dimmed. The fix is the even-odd clip `PlexBrowserView.drawWinampModernChrome` had been cutting for the library since the rings arrived, moved into the shared painter where it serves all seven windows: the client hole is cut out of the ring, and corners, edges and the caption band are untouched. The `fillBackground` fill still runs first, so the windows that rely on the chrome to paint their ground are unchanged. **Measured live, not reasoned about**: debug build, `-uiMode wmp`, `wmpSkinName=Half-Life_2`, a sweep playing, Cava opened from the Windows menu, two `screencapture -l` shots 3 s apart — green bars inside the skin's ring and the peak moved between them. The reporter confirmed the other six windows the same day. Pinned by `WinampModernChromeTests.testABorrowedRingIsNotPaintedOverTheSurfaceItFrames`, which drives an opaque synthetic ring over a sentinel-filled surface and asserts the client hole survives while the sides, caption and bottom still carry the artwork. **What it did not settle**: the caption band's own legibility — the title is drawn in the palette's lettering over whatever the ring's top piece happens to be, and over `Half-Life_2`'s orange strip it is barely readable. That is W178's contrast question, seen from the other six windows rather than from the library. |
+
 ## W175 — the XBOX Music Mixer report
 
 | ID | Item | Landed |

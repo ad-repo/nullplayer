@@ -474,7 +474,7 @@ class EQView: NSView {
             context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
             context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
             context.restoreGState()
-            SkinnedSurfaceChrome(style: style).drawBorrowedCaption(
+            SkinnedSurfaceChrome(style: style, artwork: artwork).drawBorrowedCaption(
                 in: context, bounds: bounds, captionHeight: max(0, content.minY),
                 title: "EQUALIZER", isActive: window?.isKeyWindow ?? true,
                 isClosePressed: pressedButton == .close,

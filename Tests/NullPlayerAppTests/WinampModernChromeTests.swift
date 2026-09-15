@@ -97,6 +97,129 @@ final class WinampModernChromeTests: XCTestCase {
         assert(pixel(in: bitmap, x: 70, y: 5), matches: style.pressedFill)
     }
 
+    /// W177: a borrowed `.wmz` ring is the frame *around* a hosted surface, never wallpaper behind
+    /// it. The seven spectrum-family windows draw their content first and this chrome over it, and
+    /// several rings in the corpus are solid rather than keyed — `Half-Life_2` builds its panels out
+    /// of opaque `f_*.png` strips — so an uncut ring painted a still picture over a running Cava.
+    func testABorrowedRingIsNotPaintedOverTheSurfaceItFrames() throws {
+        let style = WinampModernSurfaceStyle.fallback
+        let bitmap = try XCTUnwrap(CGContext(
+            data: nil,
+            width: 80,
+            height: 50,
+            bitsPerComponent: 8,
+            bytesPerRow: 320,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let sentinel = NSColor(deviceRed: 0.95, green: 0.10, blue: 0.65, alpha: 1)
+        bitmap.setFillColor(sentinel.cgColor)
+        bitmap.fill(CGRect(x: 0, y: 0, width: 80, height: 50))
+
+        // An opaque ring: the worst case, and the one the corpus actually ships.
+        let ringColor = NSColor(deviceRed: 1.0, green: 0.45, blue: 0.0, alpha: 1)
+        let ring = try XCTUnwrap(CGContext(
+            data: nil,
+            width: 80,
+            height: 50,
+            bitsPerComponent: 8,
+            bytesPerRow: 320,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        ring.setFillColor(ringColor.cgColor)
+        ring.fill(CGRect(x: 0, y: 0, width: 80, height: 50))
+        let artwork = SkinnedSurfaceFrameArtwork(
+            image: try XCTUnwrap(ring.makeImage()),
+            size: CGSize(width: 80, height: 50),
+            contentRect: CGRect(x: 12, y: 20, width: 56, height: 23),
+            wasScaledToFit: false
+        )
+
+        WinampModernChrome(style: style, artwork: artwork).drawSpectrumFamilyWindow(
+            in: bitmap,
+            bounds: CGRect(x: 0, y: 0, width: 80, height: 50),
+            metrics: .spectrumFamily,
+            isActive: false,
+            isClosePressed: false,
+            controlScale: 1,
+            title: "",
+            fillBackground: false
+        )
+
+        // Inside the client hole the surface's own content survives untouched...
+        assert(pixel(in: bitmap, x: 40, y: 31), matches: sentinel)
+        assert(pixel(in: bitmap, x: 13, y: 21), matches: sentinel)
+        assert(pixel(in: bitmap, x: 67, y: 42), matches: sentinel)
+        // ...and everywhere else the ring is drawn exactly as before: sides, caption band, bottom.
+        assert(pixel(in: bitmap, x: 2, y: 31), matches: ringColor)
+        assert(pixel(in: bitmap, x: 78, y: 31), matches: ringColor)
+        assert(pixel(in: bitmap, x: 40, y: 3), matches: ringColor)
+        assert(pixel(in: bitmap, x: 40, y: 47), matches: ringColor)
+    }
+
+    /// W178: the caption's lettering is guarded against the ring it lands on, not against the
+    /// palette's own ground. `Half-Life_2`'s caption is a bright orange strip; a label checked for
+    /// contrast against a dark palette and then drawn over that strip clears the threshold on paper
+    /// and is unreadable on screen.
+    func testBorrowedCaptionLetteringFollowsTheRingUnderIt() throws {
+        func title(overCaption caption: NSColor) throws -> NSColor {
+            let bitmap = try XCTUnwrap(CGContext(
+                data: nil, width: 80, height: 50, bitsPerComponent: 8, bytesPerRow: 320,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            let ring = try XCTUnwrap(CGContext(
+                data: nil, width: 80, height: 50, bitsPerComponent: 8, bytesPerRow: 320,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            ring.setFillColor(NSColor.gray.cgColor)
+            ring.fill(CGRect(x: 0, y: 0, width: 80, height: 50))
+            // The caption band is the image's *top* 20 rows, which is the bitmap's last 20 rows.
+            ring.setFillColor(caption.cgColor)
+            ring.fill(CGRect(x: 0, y: 30, width: 80, height: 20))
+            let artwork = SkinnedSurfaceFrameArtwork(
+                image: try XCTUnwrap(ring.makeImage()),
+                size: CGSize(width: 80, height: 50),
+                contentRect: CGRect(x: 12, y: 20, width: 56, height: 23),
+                wasScaledToFit: false
+            )
+
+            // `SkinnedSurfaceStyle.drawText` lays its glyphs through `NSString.draw`, which paints
+            // into the *current* `NSGraphicsContext` and not into the `CGContext` it is handed — so
+            // without this the chrome draws and the lettering silently does not.
+            let previous = NSGraphicsContext.current
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: bitmap, flipped: false)
+            defer { NSGraphicsContext.current = previous }
+
+            SkinnedSurfaceChrome(style: .fallback, artwork: artwork).drawSpectrumFamilyWindow(
+                in: bitmap, bounds: CGRect(x: 0, y: 0, width: 80, height: 50),
+                metrics: .spectrumFamily, isActive: true, isClosePressed: false,
+                controlScale: 1, title: "III", fillBackground: false
+            )
+            // The glyph colour is whatever in the label band is furthest from the ring behind it.
+            var found = caption
+            var distance: CGFloat = 0
+            for y in 4..<16 {
+                for x in 20..<60 {
+                    let sample = pixel(in: bitmap, x: x, y: y)
+                    let delta = abs(SkinnedSurfaceStyle.relativeLuminance(sample)
+                                    - SkinnedSurfaceStyle.relativeLuminance(caption))
+                    if delta > distance { distance = delta; found = sample }
+                }
+            }
+            return found
+        }
+
+        let overWhite = try title(overCaption: .white)
+        let overBlack = try title(overCaption: .black)
+        XCTAssertLessThan(SkinnedSurfaceStyle.relativeLuminance(overWhite), 0.4,
+                          "a title over a bright ring must be drawn dark")
+        XCTAssertGreaterThan(SkinnedSurfaceStyle.relativeLuminance(overBlack), 0.2,
+                             "a title over a dark ring must be drawn light")
+    }
+
     func testPeppyMeterRetainsItsLargerRegisteredGeometry() throws {
         let peppy = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .peppyMeter))
         let spectrum = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .spectrum))

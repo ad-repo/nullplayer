@@ -183,6 +183,20 @@ struct SkinnedSurfaceChrome {
         // Top-left origin, like every other path here: the caller has already flipped the context,
         // so the image is drawn through a local flip rather than upside down.
         context.saveGState()
+        // The ring is the frame *around* the surface, never wallpaper behind it (W177). It is drawn
+        // at the window's full size because that is how its eight pieces were laid out, so the
+        // client hole is cut out of it before it lands: several rings in this corpus are opaque
+        // rather than keyed — `Half-Life_2` builds its panels out of solid `f_*.png` strips — and
+        // these windows draw their content *first* and this chrome over it, so an uncut ring paints
+        // a still picture over a running visualiser. Only the hole is protected; corners, edges and
+        // the caption band are untouched, and a window with no borrowed ring never reaches here.
+        // `PlexBrowserView` has cut the same hole for the library since the rings arrived.
+        if !content.isEmpty {
+            context.beginPath()
+            context.addRect(bounds)
+            context.addRect(content)
+            context.clip(using: .evenOdd)
+        }
         context.translateBy(x: bounds.minX, y: bounds.minY + bounds.height)
         context.scaleBy(x: 1, y: -1)
         context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
@@ -201,8 +215,16 @@ struct SkinnedSurfaceChrome {
     /// **Both keep the window's own geometry, not the ring's.** Every caller hit-tests its close box
     /// at `width - 25` and its title bar by `titleHeight`, so moving the glyph inside the skin's
     /// client hole would draw a button some pixels from where clicking one is. The frame changes what
-    /// is *under* these two; it does not move them. Drawn in the palette's lettering rather than
-    /// sampled from the artwork behind it — the same colour the surface inside the frame uses.
+    /// is *under* these two; it does not move them.
+    ///
+    /// **Each is guarded against what it actually lands on.** The palette's own background is the
+    /// right ground for a flat frame and the wrong one for a borrowed ring: `Half-Life_2`'s caption
+    /// is a bright orange strip, and a label checked for contrast against a dark palette and then
+    /// drawn over that strip clears the threshold on paper and is unreadable on screen — the same
+    /// mistake B48 fixed for the derived title bar. So where a ring is lent, the ground is sampled
+    /// from the artwork under each of the two, separately: the title sits mid-caption and the close
+    /// glyph sits in the corner piece, which is routinely a different colour. Where no ring is lent,
+    /// or where it is keyed out and the window shows through, this is exactly as it was.
     func drawBorrowedCaption(in context: CGContext, bounds: CGRect, captionHeight: CGFloat,
                              title: String, isActive: Bool, isClosePressed: Bool,
                              controlScale: CGFloat) {
@@ -210,23 +232,128 @@ struct SkinnedSurfaceChrome {
         context.saveGState()
         context.setShouldAntialias(false)
         let caption = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: captionHeight)
-        let labelColor = isActive ? style.legibleText(style.text, on: style.background)
-                                  : style.legibleDimText(on: style.background)
         let scale = max(controlScale, 0.01)
         let titleWidth = SkinnedSurfaceStyle.measuredWidth(title, scale: scale)
         let closeRegionWidth = min(25, bounds.width)
         let labelLimit = max(bounds.minX, bounds.maxX - closeRegionWidth)
         let labelX = max(bounds.minX, min(labelLimit - titleWidth, bounds.midX - titleWidth / 2))
-        let labelY = caption.minY
-            + max(0, (caption.height - SkinnedSurfaceStyle.classicCharHeight * scale) / 2)
-        SkinnedSurfaceStyle.drawText(title, at: NSPoint(x: labelX, y: labelY),
-                                     scale: scale, color: labelColor, in: context)
-        drawCloseButton(in: context,
-                        rect: CGRect(x: bounds.maxX - closeRegionWidth, y: caption.minY,
-                                     width: closeRegionWidth, height: caption.height),
-                        pressed: isClosePressed,
-                        color: labelColor)
+        let labelHeight = SkinnedSurfaceStyle.classicCharHeight * scale
+        let labelY = caption.minY + max(0, (caption.height - labelHeight) / 2)
+        let labelRect = CGRect(x: labelX, y: labelY, width: titleWidth, height: labelHeight)
+        let closeRect = CGRect(x: bounds.maxX - closeRegionWidth, y: caption.minY,
+                               width: closeRegionWidth, height: caption.height)
+
+        let labelGround = ringGround(under: labelRect, in: bounds)
+        let labelColor = lettering(on: labelGround.tone, isActive: isActive)
+        if labelGround.isBusy {
+            // Nothing single-coloured can be read over artwork this varied — `Half-Life_2`'s title
+            // sits half on a bright orange strip and half on the dark pipe crossing it, and the
+            // colour that clears the guard against one half vanishes into the other. So the glyphs
+            // get a one-pixel halo in the opposite extreme, which is what a caption drawn over a
+            // picture needs and what a flat frame never does.
+            let halo = SkinnedSurfaceStyle.relativeLuminance(labelColor) > 0.5
+                ? NSColor.black : NSColor.white
+            for offset in [CGPoint(x: -1, y: 0), CGPoint(x: 1, y: 0),
+                           CGPoint(x: 0, y: -1), CGPoint(x: 0, y: 1)] {
+                SkinnedSurfaceStyle.drawText(title,
+                                             at: NSPoint(x: labelX + offset.x, y: labelY + offset.y),
+                                             scale: scale, color: halo, in: context)
+            }
+        }
+        SkinnedSurfaceStyle.drawText(title, at: NSPoint(x: labelX, y: labelY), scale: scale,
+                                     color: labelColor, in: context)
+
+        let closeGround = isClosePressed ? Ground(tone: style.pressedFill, isBusy: false)
+                                         : ringGround(under: closeRect, in: bounds)
+        drawCloseButton(in: context, rect: closeRect, pressed: isClosePressed,
+                        color: lettering(on: closeGround.tone, isActive: isActive))
         context.restoreGState()
+    }
+
+    /// The palette's lettering, guarded against the ground it is about to be drawn on.
+    private func lettering(on ground: NSColor, isActive: Bool) -> NSColor {
+        isActive ? style.legibleText(style.text, on: ground) : style.legibleDimText(on: ground)
+    }
+
+    /// What is behind a piece of the caption once the ring has been drawn.
+    private struct Ground {
+        /// The average tone there — the ground the contrast guard is run against.
+        let tone: NSColor
+        /// True when the artwork under it spans too much of the luminance range for any one colour
+        /// to be read against all of it.
+        let isBusy: Bool
+    }
+
+    /// The artwork's own pixels behind `rect`, or the palette's background where no ring is lent or
+    /// the ring is transparent there.
+    ///
+    /// Averaged rather than sampled at a point because these captions are artwork — a gradient, a
+    /// bevel, a logo — and one pixel is as likely to be a highlight as the band. The spread is
+    /// carried beside the average because the average alone is a trap: half a bright strip and half
+    /// a dark pipe average to a mid tone that flatters a colour neither half can show. Mostly
+    /// transparent artwork answers the palette instead — the window is `isOpaque = false` there and
+    /// what shows through is the surface's own ground, which is what the palette describes.
+    private func ringGround(under rect: CGRect, in bounds: CGRect) -> Ground {
+        let flat = Ground(tone: style.background, isBusy: false)
+        guard let artwork, bounds.width > 0, bounds.height > 0,
+              rect.width >= 1, rect.height >= 1 else { return flat }
+        let image = artwork.image
+        // The ring is drawn into `bounds` from its own top-left origin, so a rect in the caller's
+        // (already flipped) space maps straight onto the image's pixels.
+        let scaleX = CGFloat(image.width) / bounds.width
+        let scaleY = CGFloat(image.height) / bounds.height
+        let crop = CGRect(x: (rect.minX - bounds.minX) * scaleX,
+                          y: (rect.minY - bounds.minY) * scaleY,
+                          width: rect.width * scaleX, height: rect.height * scaleY)
+            .integral
+            .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard !crop.isEmpty, let region = image.cropping(to: crop) else { return flat }
+
+        // Resampled down to at most one cell per glyph rather than read pixel by pixel: this runs on
+        // every chrome redraw, and what it needs is the band's tones, not its detail.
+        let width = min(Int(crop.width), 32)
+        let height = min(Int(crop.height), 8)
+        guard width > 0, height > 0 else { return flat }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let sampled: Ground? = pixels.withUnsafeMutableBytes { buffer -> Ground? in
+            guard let small = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                        bitsPerComponent: 8, bytesPerRow: width * 4,
+                                        space: CGColorSpaceCreateDeviceRGB(),
+                                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                return nil
+            }
+            small.interpolationQuality = .medium
+            small.draw(region, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0
+            var covered = 0
+            var darkest = CGFloat.greatestFiniteMagnitude
+            var lightest = -CGFloat.greatestFiniteMagnitude
+            for index in stride(from: 0, to: width * height * 4, by: 4) {
+                let alpha = CGFloat(buffer[index + 3]) / 255
+                guard alpha >= 0.5 else { continue }
+                // Premultiplied: undo the alpha so a half-transparent ring answers its own colour
+                // rather than a darkened one.
+                let color = NSColor(deviceRed: min(1, CGFloat(buffer[index]) / 255 / alpha),
+                                    green: min(1, CGFloat(buffer[index + 1]) / 255 / alpha),
+                                    blue: min(1, CGFloat(buffer[index + 2]) / 255 / alpha),
+                                    alpha: 1)
+                red += color.redComponent
+                green += color.greenComponent
+                blue += color.blueComponent
+                let luminance = SkinnedSurfaceStyle.relativeLuminance(color)
+                darkest = min(darkest, luminance)
+                lightest = max(lightest, luminance)
+                covered += 1
+            }
+            // Half-covered artwork is the surface showing through, not a ground of its own.
+            guard covered * 2 >= width * height else { return nil }
+            let count = CGFloat(covered)
+            return Ground(tone: NSColor(deviceRed: red / count, green: green / count,
+                                        blue: blue / count, alpha: 1),
+                          isBusy: lightest - darkest > 0.25)
+        }
+        return sampled ?? flat
     }
 
     private func drawCloseButton(in context: CGContext, rect: CGRect, pressed: Bool, color: NSColor) {
