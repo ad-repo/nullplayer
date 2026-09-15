@@ -454,7 +454,7 @@ When audio isn't playing:
 ### Local Playback (AVAudioEngine)
 MP3, M4A, AAC, WAV, AIFF, FLAC, ALAC, OGG
 
-Route-change graph rebuilds catch Objective-C exceptions from disconnect/connect via `ObjCExceptionCatcher`; Swift `do/catch` cannot catch them. An exception can leave a partially mutated graph (including persistent `-10868` failures after long idle periods). Recovery replaces the engine and **all local nodes**, including the controller's local pitch node, then restores output selection, EQ layout/gains/preamp/bypass, pitch/rate, volume, and balance. Streaming pitch nodes remain independent. Configuration observers move to the new engine; stale notifications from the retired engine are ignored. Invalidate playback completion generations before stopping old players.
+Route-change graph rebuilds catch Objective-C exceptions from disconnect/connect via `ObjCExceptionCatcher`; Swift `do/catch` cannot catch them. `AudioGraphRecoveryCoordinator` owns the typed deferred/retry lifecycle and pending playback intent; `AudioEngine` owns only AVFoundation graph mutation and playback restoration. An exception can leave a partially mutated graph (including persistent `-10868` failures after long idle periods). Recovery replaces the engine and **all local nodes**, including the controller's local pitch node, then restores output selection, EQ layout/gains/preamp/bypass, pitch/rate, volume, and balance. Streaming pitch nodes remain independent. Configuration observers move to the new engine; stale notifications from the retired engine are ignored. Invalidate playback completion generations before stopping old players.
 
 If replacement cannot recover the device, deferred retries back off from 250 ms to 4 seconds and stop after six retries. A fresh Play request or device-change notification permits another recovery cycle. Stop/Pause clear deferred playback intent so recovery cannot restart canceled playback. Tests in `AudioEngineGraphRecoveryTests` inject Objective-C exceptions into disconnect/connect to exercise replacement and persistent-failure exhaustion without waiting days.
 
@@ -511,7 +511,7 @@ For detailed information, see:
 
 | Area | Files |
 |------|-------|
-| Core | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
+| Core | `Audio/AudioEngine.swift`, `Audio/AudioGraphRecoveryCoordinator.swift`, `Audio/StreamingAudioPlayer.swift` |
 | EQ | EQ node configuration in AudioEngine, StreamingAudioPlayer |
 | Spectrum | `Audio/AudioEngine.swift` (FFT processing) |
 | BPM | `Audio/BPMDetector.swift` |

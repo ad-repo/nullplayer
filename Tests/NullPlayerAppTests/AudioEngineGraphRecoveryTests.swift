@@ -5,25 +5,26 @@ import XCTest
 final class AudioEngineGraphRecoveryTests: XCTestCase {
     func testDisconnectAndReconnectExceptionsReplaceGraphAndPreserveSettings() {
         for failedStage in ["disconnect", "connect"] {
-            let engine = AudioEngine()
+            let recovery = AudioGraphRecoveryCoordinator()
+            let engine = AudioEngine(audioGraphRecovery: recovery)
             engine.setEQEnabled(true)
             engine.setEQBand(0, gain: 4)
             engine.tuningController.applyPreset(.hz432)
             engine.tuningController.setRate(1.5)
             let oldPitch = engine.tuningController.localPitchNode
             var injected = false
-            engine.debugAudioGraphFault = { stage in
+            recovery.setFaultInjectorForTesting { stage in
                 if stage == failedStage && !injected {
                     injected = true
                     NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
                 }
             }
 
-            engine.debugRebuildAudioGraphForTesting()
+            engine.rebuildAudioGraphForTesting()
 
             XCTAssertTrue(injected)
-            XCTAssertFalse(engine.debugAudioGraphRecoveryState.deferred)
-            XCTAssertFalse(engine.debugAudioGraphRecoveryState.scheduled)
+            XCTAssertFalse(recovery.isDeferred)
+            XCTAssertFalse(recovery.hasScheduledWork)
             XCTAssertFalse(oldPitch === engine.tuningController.localPitchNode)
             XCTAssertTrue(engine.isEQEnabled())
             XCTAssertEqual(engine.getEQBand(0), 4)
@@ -47,37 +48,39 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
             try output.write(from: silence)
         }
         for initialState in [PlaybackState.playing, .paused] {
-            let engine = AudioEngine()
+            let recovery = AudioGraphRecoveryCoordinator()
+            let engine = AudioEngine(audioGraphRecovery: recovery)
             let file = try AVAudioFile(forReading: url)
-            engine.debugSetAudioGraphFileForTesting(file, state: initialState, position: 3)
-            engine.debugAudioGraphFault = { stage in
+            engine.setAudioGraphFileForTesting(file, state: initialState, position: 3)
+            recovery.setFaultInjectorForTesting { stage in
                 if stage == "disconnect" {
                     NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
                 }
             }
-            engine.debugRebuildAudioGraphForTesting()
-            XCTAssertFalse(engine.debugAudioGraphRecoveryState.deferred)
+            engine.rebuildAudioGraphForTesting()
+            XCTAssertFalse(recovery.isDeferred)
             XCTAssertEqual(engine.state, initialState)
             XCTAssertEqual(engine.currentTime, 3, accuracy: 0.25)
-            XCTAssertEqual(engine.debugLocalGraphIsPlaying, initialState == .playing)
+            XCTAssertEqual(engine.isLocalGraphPlayingForTesting, initialState == .playing)
             engine.pauseLocalOnly()
         }
     }
 
     func testPersistentFailureStopsSchedulingAndLaterRecoverySucceeds() {
-        let engine = AudioEngine()
-        engine.debugAudioGraphFault = { _ in
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        recovery.setFaultInjectorForTesting { _ in
             NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
         }
         // Run attempts synchronously so the test does not wait for the backoff timers.
-        for _ in 0..<7 { engine.debugRebuildAudioGraphForTesting() }
-        XCTAssertTrue(engine.debugAudioGraphRecoveryState.deferred)
-        XCTAssertEqual(engine.debugAudioGraphRecoveryState.retries, 6)
-        XCTAssertFalse(engine.debugAudioGraphRecoveryState.scheduled)
+        for _ in 0..<7 { engine.rebuildAudioGraphForTesting() }
+        XCTAssertTrue(recovery.isDeferred)
+        XCTAssertEqual(recovery.retryCount, 6)
+        XCTAssertFalse(recovery.hasScheduledWork)
 
-        engine.debugAudioGraphFault = nil
-        engine.debugRebuildAudioGraphForTesting()
-        XCTAssertFalse(engine.debugAudioGraphRecoveryState.deferred)
-        XCTAssertFalse(engine.debugAudioGraphRecoveryState.scheduled)
+        recovery.setFaultInjectorForTesting(nil)
+        engine.rebuildAudioGraphForTesting()
+        XCTAssertFalse(recovery.isDeferred)
+        XCTAssertFalse(recovery.hasScheduledWork)
     }
 }
