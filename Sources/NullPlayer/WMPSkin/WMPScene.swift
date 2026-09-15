@@ -185,6 +185,10 @@ struct WMPWidget: Hashable, Codable {
     /// authored one. See `WMPWidgetRegionMask`.
     let regionMask: WMPWidgetRegionMask?
 
+    /// Set for `.effects` only: the backdrop this surface paints behind the visualizer where the
+    /// skin painted nothing of its own. See `WMPEffectsGround`.
+    let effectsGround: WMPEffectsGround?
+
     /// `<EFFECTS windowed="true">`: the visualization is a **windowed** control, and in WMP a
     /// windowed control is a real child window that the skin's own painting cannot draw over.
     /// `windowed="false"` (106 skins) and an absent attribute (46, Cerulean among them) are
@@ -197,7 +201,7 @@ struct WMPWidget: Hashable, Codable {
          value: Double? = nil, direction: WMPSliderDirection? = nil, borderSize: CGFloat = 0,
          thumbSize: WMPSize? = nil, valueBindingPath: String? = nil,
          videoPresentation: WMPVideoPresentation? = nil, alpha: CGFloat = 1,
-         regionMask: WMPWidgetRegionMask? = nil,
+         regionMask: WMPWidgetRegionMask? = nil, effectsGround: WMPEffectsGround? = nil,
          commandSplitIndex: Int? = nil, isWindowedEffects: Bool = false) {
         self.stableID = stableID
         self.nodeID = nodeID
@@ -216,9 +220,57 @@ struct WMPWidget: Hashable, Codable {
         self.videoPresentation = videoPresentation
         self.alpha = alpha
         self.regionMask = regionMask
+        self.effectsGround = effectsGround
         self.commandSplitIndex = commandSplitIndex
         self.isWindowedEffects = isWindowedEffects
     }
+}
+
+/// The backdrop an `<EFFECTS>` paints behind the visualizer, where the skin painted nothing.
+///
+/// **A `<VIEW>` that declares both `clippingColor` and `transparencyColor` has said two different
+/// things, and only the first one is "the window is not here" (W174).** The clipping colour is the
+/// matte around the silhouette; the transparency colour is a hole *inside* it, and what a hole
+/// inside the window shows is the control behind it — which over an `<EFFECTS>` rect is WMP's
+/// visualization control, and that control has a ground of its own. `Ovoid` is the reported case:
+/// `background.bmp` is a 153x200 oval whose 11,400 magenta pixels are the screen and whose 6,468
+/// red ones are the corners outside it, and with both keyed straight out of the artwork the screen
+/// was a hole through a borderless `isOpaque = false` window — *"missing its backing in the center,
+/// it clicks through to the desktop"*.
+///
+/// **The ground is drawn under everything in the below layer, never over it.** A skin that paints
+/// its own backdrop behind the rect — `visMask`'s black, Cerulean's face — still covers this
+/// completely, which is what keeps W9's rule: the 78 of the corpus's 95 effects rects that are
+/// already fully backed render byte-identically.
+///
+/// **`shape` is what stops it becoming a black slab, and it is the skin's own statement rather
+/// than a guess.** Only a container that declares a `clippingColor` over a background image at its
+/// own size contributes one, and the ground is clipped to that image minus the clipping colour —
+/// so the ground can never reach a pixel the skin said the window does not cover. Without one
+/// there is no ground at all — `Plus! BubbleSkin` shapes itself with `transparencyColor` alone, and
+/// a rect-sized fill there would take 44% of its rect black outside the silhouette.
+///
+/// **The shape must come from a container *above* the rect, and `circle` is why that is not a
+/// limitation to relax.** Its `vMain` declares the `<EFFECTS>` and the vis field that keys a hole
+/// in it as **siblings**, so no ancestor states a shape and the rect takes no ground — which is the
+/// right answer twice over: `visfield.bmp`'s 1,122 magenta pixels are a one-pixel antialias fringe
+/// between the grey field and the red matte, not a screen, and grounding them draws a black halo
+/// round the skin.
+///
+/// Measured over the corpus by rendering rather than from the markup — dump every view and count
+/// the fully transparent pixels inside each effects frame: **17 of the 95 rects are partly
+/// transparent, and the clipping-colour gate narrows that to the 5 that gain a ground** — `Ovoid`,
+/// `rad`, `Goo`, `digitaldj/DigitalDJMini` and 20 pinholes in `cerulean`.
+struct WMPEffectsGround: Hashable, Codable {
+    let frame: WMPRect
+    /// The `<EFFECTS>` node's own authored `backgroundColor` where it has one, and black
+    /// otherwise. Black is WMP's own: two corpus rects restate it as `backgroundColor="#000000"`
+    /// and none names another colour.
+    let color: WMPColor
+    /// The window shape the ground is confined to: the nearest ancestor's background artwork with
+    /// its `clippingColor` keyed out. Never `transparencyColor` — that is the hole this ground
+    /// exists to fill.
+    let shape: WMPSceneClipMask
 }
 
 /// A container's clipping shape, inherited by every paint command *inside* it.
@@ -430,6 +482,12 @@ struct WMPScene: Hashable, Codable {
     ///
     var effectsCommandSplitIndex: Int? {
         widgets.filter { $0.kind == .effects }.compactMap(\.commandSplitIndex).min()
+    }
+
+    /// The backdrops the scene's `<EFFECTS>` rects paint behind their visualizers, drawn beneath
+    /// every command in the below layer. See `WMPEffectsGround`.
+    var effectsGrounds: [WMPEffectsGround] {
+        widgets.filter { $0.kind == .effects }.compactMap(\.effectsGround)
     }
 
     /// The rects a **windowed** visualization occupies, in which the skin's own overlay artwork is

@@ -398,6 +398,39 @@ queue, with the object model as the security boundary — see Amendment 2 in
   player, which is the one state in which the skin is correct, and `WMP_RENDER_HOST=playing` seeds
   the snapshot without raising the `playstatechange` the write lives in.
 
+- **A `<VIEW>` that declares both `clippingColor` and `transparencyColor` has said two different
+  things, and an `<EFFECTS>` rect over the second one is not a hole (W174).** The clipping colour is
+  the matte outside the window's silhouette; the transparency colour is a hole *inside* it, and what
+  a hole inside the window shows is the control behind it. Both were keyed straight out of the
+  artwork, so `Ovoid`'s screen — 11,400 magenta pixels in the middle of a 153x200 oval whose 6,468
+  red ones are its corners — was a hole through a borderless `isOpaque = false` window: *"missing its
+  backing in the center, it click through to the desktop"*. Behind it is
+  `<EFFECTS zIndex="-1" left="24" top="29" width="105" height="142">`, and **an `<EFFECTS>` that
+  authors no backdrop of its own still has one, and in WMP it is black** — two corpus rects restate
+  it as `backgroundColor="#000000"` and none names another colour. `WMPEffectsGround` is the rule.
+
+  **The ground goes under everything in the below layer, never over it**, so a skin that paints its
+  own backdrop behind the rect covers it completely and W9 is intact: 78 of the corpus's 95 effects
+  rects are already fully backed and render byte-identically. **The shape it is clipped to comes
+  from `clippingColor` alone** — the nearest *ancestor*'s background artwork with that colour keyed
+  out, at the container's own size (the `Gorillaz` guard). This is the one place the W172 widening to
+  `transparencyColor` must not reach: a container that shapes itself with the transparency key alone
+  has not distinguished the outside from a hole, and `Plus! BubbleSkin` would take 44% of its rect
+  black outside the silhouette. **`circle` holds down the other half — the ancestor.** Its `vMain`
+  declares the `<EFFECTS>` and the vis field that keys a hole in it as *siblings*, so no shape is in
+  scope and the rect takes no ground; and that is the right answer, because `visfield.bmp`'s 1,122
+  magenta pixels are a one-pixel antialias fringe between the grey field and the red matte rather
+  than a screen. Relaxing either half draws a black halo round that skin.
+
+  **This class a corpus sweep can arbitrate, and the ground is drawn in the flat dump for that
+  reason** — it is the *skin's* backdrop, not the hosted surface. Sweep over 184 archives: **5 images
+  move and every changed pixel is a former hole becoming opaque black** — `rad` 27,090 px, `Ovoid`
+  11,400, `Goo` 2,993 (through its `bigGoo` subview), `digitaldj/DigitalDJMini` 1,973, and
+  `cerulean` 20 isolated pinholes along its vis hole's antialiased curve. Nothing already painted
+  moved. **The reach is measured by rendering, not by the markup**: dump the corpus, then count the
+  fully transparent pixels inside each `WIDGET … effects` frame — that is the whole population, and
+  it is 17 rects of 95 before the clipping-colour gate takes it to 5.
+
 - **A one-shot GIF that ends on a degenerate `restore to background` frame ends showing nothing,
   and holding its last frame buries whatever it was drawn over (W161).** A `.wmz` opens its shutter
   by assigning an animated GIF to a `<SUBVIEW>` over the player's face and never hides that subview

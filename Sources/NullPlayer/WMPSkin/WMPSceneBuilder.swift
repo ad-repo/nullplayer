@@ -169,6 +169,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// first. A node's own artwork is emitted before its own shape is pushed, so a container
         /// never clips itself twice: `WMPSceneImage.clippingMaskPath` already shapes its own draw.
         var clipMaskStack: [WMPSceneClipMask] = []
+        /// The window shapes the containers above the current node have stated, innermost last.
+        /// Only a `clippingColor` contributes one; see `WMPEffectsGround` and `groundShape`.
+        var groundShapeStack: [WMPSceneClipMask] = []
         func emit(_ command: WMPPaintCommand) {
             guard command.alpha > 0 else { return }
             commands.append(command.inside(clipMaskStack))
@@ -402,6 +405,36 @@ struct WMPSceneBuilder: @unchecked Sendable {
                   CGFloat(decoded.image.height) == frame.height,
                   try imageStore.isShapeMask(for: path) else { return nil }
             return WMPSceneClipMask(resourcePath: path, keyedOut: keys, frame: frame)
+        }
+
+        /// The window shape a container states for an `<EFFECTS>` ground beneath it: its clipping
+        /// artwork with its own `clippingColor` keyed out, and nothing else.
+        ///
+        /// **`clippingColor` only — never `transparencyColor`, and never a fallback to it.** This
+        /// is the one place the W172 widening must not reach: a container that shapes itself with
+        /// `transparencyColor` alone has not distinguished the matte outside its silhouette from a
+        /// hole inside it, and a ground keyed off that would paint black outside the skin
+        /// (`Plus! BubbleSkin`'s 44% of its rect, `circle`'s `vVid`). Where a container writes both
+        /// — `backgroundColor="none" clippingColor="#FF0000" transparencyColor="#FF00FF"`, the
+        /// corpus's house idiom — it has said exactly which one is which. See `WMPEffectsGround`.
+        ///
+        /// The background path takes the same size guard `clipMask` does and for the same reason:
+        /// a bitmap standing in for a frame it does not cover is not that frame (`Gorillaz`).
+        /// `isShapeMask` is deliberately *not* required — this artwork is a picture with keys cut
+        /// out of it, which is exactly the population that guard excludes.
+        func groundShape(_ node: WMPNode, frame: WMPRect) throws -> WMPSceneClipMask? {
+            guard !frame.isEmpty else { return nil }
+            let clipping = colors(node, names: ["clippingColor"])
+            guard !clipping.isEmpty else { return nil }
+            if let path = try resource(node, names: ["clippingImage"])?.1 {
+                return WMPSceneClipMask(resourcePath: path, keyedOut: clipping, frame: frame)
+            }
+            guard let path = try resource(node, names: ["backgroundImage", "background"])?.1,
+                  literalString(node, "backgroundTiled")?.caseInsensitiveCompare("true") != .orderedSame,
+                  let decoded = try? imageStore.image(for: path),
+                  CGFloat(decoded.image.width) == frame.width,
+                  CGFloat(decoded.image.height) == frame.height else { return nil }
+            return WMPSceneClipMask(resourcePath: path, keyedOut: clipping, frame: frame)
         }
 
         /// A slider's numbers, from the same three places every other property comes from: a live
@@ -709,6 +742,19 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 }
             }
 
+            // **An `<EFFECTS>` that authors no backdrop of its own still has one, and in WMP it is
+            // black (W174).** Only where the skin painted nothing does it show: the ground is laid
+            // under every command in the below layer. A rect whose node declares its own
+            // `backgroundImage` is excluded — that backdrop is already emitted and already moves
+            // the split index past itself.
+            var effectsGround: WMPEffectsGround?
+            if node.kind == .effects, let shape = groundShapeStack.last, !frame.isEmpty,
+               try resource(node, names: ["backgroundImage", "background"]) == nil {
+                let authored = color(node, names: ["backgroundColor"])
+                effectsGround = WMPEffectsGround(frame: frame,
+                    color: authored ?? WMPColor(red: 0, green: 0, blue: 0), shape: shape)
+            }
+
             // Patched once this node's own background is emitted — see `effectsWidgetIndex` below.
             var effectsWidgetIndex: Int?
             if let kind = widgetKind(node.kind), visible != nil {
@@ -733,7 +779,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // The same inherited `alphaBlend` `emit` filters paint on. A hosted surface
                     // obeys its container's fade or it draws over artwork the fade removed.
                     alpha: alpha,
-                    regionMask: regionMask,
+                    regionMask: regionMask, effectsGround: effectsGround,
                     commandSplitIndex: commands.count,
                     isWindowedEffects: kind == .effects
                         && literalString(node, "windowed")?.lowercased() == "true"))
@@ -755,14 +801,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // `WMPSceneClipMask` for the two archives that state the rule and the one that guards
             // the key list.
             let ownClipMask = try clipMask(node, frame: frame)
+            let ownGroundShape = try groundShape(node, frame: frame)
             let behindOwnArtwork = orderedChildren.prefix { zIndex(of: $0) < 0 }
             if let ownClipMask { clipMaskStack.append(ownClipMask) }
+            if let ownGroundShape { groundShapeStack.append(ownGroundShape) }
             for child in behindOwnArtwork {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip, parentAlpha: alpha,
                          parentNode: node, parentNodeFrame: frame)
             }
             if ownClipMask != nil { clipMaskStack.removeLast() }
+            if ownGroundShape != nil { groundShapeStack.removeLast() }
 
             // `clippingImage` shapes an element by a bitmap the way `clippingColor` shapes it by a
             // colour, and the `clippingColor` beside it is what the mask keys out. 169 of the
@@ -1119,12 +1168,14 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
 
             if let ownClipMask { clipMaskStack.append(ownClipMask) }
+            if let ownGroundShape { groundShapeStack.append(ownGroundShape) }
             for child in orderedChildren.dropFirst(behindOwnArtwork.count) {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip, parentAlpha: alpha,
                          parentNode: node, parentNodeFrame: frame)
             }
             if ownClipMask != nil { clipMaskStack.removeLast() }
+            if ownGroundShape != nil { groundShapeStack.removeLast() }
         }
 
         try walk(view, parentFrame: canvasRect,

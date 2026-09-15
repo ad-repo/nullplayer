@@ -35,6 +35,13 @@
 
 ### Bug Fixes
 
+- **The Ovoid skin's screen has a backing again.** The oval window's centre was empty — you could
+  see the desktop through it, and clicks went straight past the player to whatever was behind. The
+  screen is now black when nothing is playing and shows the visualization when something is, which
+  is what the skin was drawn around. The corners outside the oval are still see-through, as they
+  should be. rad, Goo, digitaldj's small window and a few pinholes in cerulean's visualizer are
+  fixed by the same change.
+
 - **Plus! HueShifter's colour button works, and its artwork is no longer boxed in.** The paintbrush
   at the top of the player is the whole point of this skin — it rotates the four coloured "candy"
   pieces ringing the player through the spectrum — and it did nothing at all, so they were stuck on

@@ -169,8 +169,15 @@ struct WMPRenderer: @unchecked Sendable {
         // split and this is one pass over the same list as before.
         let split = splitAtEffects ? scene.effectsCommandSplitIndex : nil
         let below = split.map { Array(scene.commands[..<$0]) } ?? scene.commands
+        // **The visualizer's own backdrop goes under the below layer, never over it** — so a skin
+        // that paints its own ground behind the rect still covers this completely and renders
+        // byte-identically, and one that paints nothing there stops being a hole (W174). It is
+        // drawn whether or not the list is split, because it is the *skin's* backdrop and not the
+        // hosted surface: a flat render dump has to show it, and that is what makes this class the
+        // rare one a corpus sweep can arbitrate. See `WMPEffectsGround`.
         let image = try rasterize(below, scene: scene, pixelWidth: pixelWidth,
-                                  pixelHeight: pixelHeight, backingScale: backingScale, clock: clock)
+                                  pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
+                                  grounds: scene.effectsGrounds)
         // **A windowed visualization is not something the skin can draw over.** Its rects are
         // punched out of the overlay after it is rasterized, so the surface hosted underneath shows
         // through and whatever the skin painted *before* the effects node stands where the
@@ -189,7 +196,8 @@ struct WMPRenderer: @unchecked Sendable {
     /// One layer of the scene, on its own transparent canvas.
     private func rasterize(_ commands: [WMPPaintCommand], scene: WMPScene,
                            pixelWidth: Int, pixelHeight: Int, backingScale: CGFloat,
-                           clock: TimeInterval, punchingOut: [WMPRect] = []) throws -> CGImage {
+                           clock: TimeInterval, punchingOut: [WMPRect] = [],
+                           grounds: [WMPEffectsGround] = []) throws -> CGImage {
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
             | CGImageAlphaInfo.premultipliedLast.rawValue
         guard let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight,
@@ -201,6 +209,19 @@ struct WMPRenderer: @unchecked Sendable {
         context.scaleBy(x: backingScale, y: backingScale)
         context.translateBy(x: 0, y: scene.canvasSize.height)
         context.scaleBy(x: 1, y: -1)
+
+        for ground in grounds {
+            guard let mask = try? imageStore.regionMask(for: ground.shape.resourcePath,
+                                                        keyedOut: ground.shape.keyedOut)
+            else { continue }
+            context.saveGState()
+            clip(to: ground.shape.frame, mask: mask, context: context)
+            context.setFillColor(red: CGFloat(ground.color.red) / 255,
+                green: CGFloat(ground.color.green) / 255,
+                blue: CGFloat(ground.color.blue) / 255, alpha: 1)
+            context.fill(ground.frame.cgRect)
+            context.restoreGState()
+        }
 
         for command in commands {
             // `alphaBlend="0"` means invisible, and 717 of the corpus's 778 uses are exactly that.

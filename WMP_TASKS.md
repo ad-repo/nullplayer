@@ -18,6 +18,29 @@ same change that closes them, so this file stays a list of work that is still op
 
 ### Top of the backlog
 
+**W174 closed 2026-09-15, from one report — *"ovoid skin is missing its backing in the center, it
+click through to the desktop"*.** A `<VIEW>` that declares both `clippingColor` and
+`transparencyColor` has said two different things, and only the first is *the window is not here*.
+Both were keyed out of the artwork alike, so `Ovoid`'s screen — 11,400 magenta pixels inside a
+153x200 oval whose 6,468 red ones are its corners — was a hole through a borderless
+`isOpaque = false` window, with nothing to see and nothing to click. Behind it is an `<EFFECTS>`,
+and **a rect that authors no backdrop of its own still has one, and in WMP it is black**. The ground
+is laid under everything in the below layer and clipped to the shape the nearest container states
+with its `clippingColor` — never `transparencyColor`, which is the hole it exists to fill. Sweep:
+**5 of 184 images move, every changed pixel a former hole becoming opaque black.** Closure notes in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md).
+
+**W174 is the row to read for a class the sweep *can* rank, and for how to ask it.** The reach is
+not in the markup — it is 17 partly transparent rects of 95, found by dumping the corpus and
+counting fully transparent pixels inside each `WIDGET … effects` frame, and narrowed to 5 by the
+clipping-colour gate. The gate is the whole design: `circle` and `Plus! BubbleSkin` are in the 17
+and must stay untouched, and both are in
+`skills/wmp-skin-guide/reference/skins/README.md`'s counter-evidence table for it. **The same
+sentence has now been reported twice about two different mechanisms** — W166 was
+*"the window has no backing when a track plays and it clicks through to the background"* on
+`Colorchooser`, and that was a script-assigned `zIndex` reaching `windowedEffectsRects`. A hole in a
+`.wmz` window is a symptom, not a defect; find which layer left it.
+
 **W171–W173 closed 2026-09-15, from one report — *"Plus! HueShifter has a green section"*, then
 *"is it supposed to be green or not because it still is"*.** Three independent defects behind one
 screenshot, and the reported colour was not one of them: the green is the skin's own artwork, which
