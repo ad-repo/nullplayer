@@ -112,6 +112,21 @@ struct WMPProbe {
     /// permission, and the diff against the renderer's own image says which half a defect is in.
     var wantsAppKit: Bool { env["WMP_RENDER_APPKIT"] != nil }
 
+    /// `WMP_HOSTED_FRAME=<W>x<H>` — the window frame this skin lends **NullPlayer's own** windows
+    /// (`WMPHostedFrameTemplate`), measured at that window size.
+    ///
+    /// Every other flag here measures a view of the skin's. This one measures what a skin gives a
+    /// window it never authored, and the numbers that decides are not visible in any of them: the
+    /// ring's client hole is derived from the donor's stretched subview, so the caption band above
+    /// it — where our title and close control go — is whatever that subview's top happens to be,
+    /// and a donor whose panel starts at the very top of its window lends a band with no room in it.
+    var hostedFrameSize: CGSize? {
+        guard let spec = env["WMP_HOSTED_FRAME"] else { return nil }
+        let parts = spec.lowercased().split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+        return CGSize(width: parts[0], height: parts[1])
+    }
+
     var requestedSize: WMPSize? {
         guard let spec = env["WMP_RENDER_SIZE"] else { return nil }
         let parts = spec.lowercased().split(separator: "x").compactMap { Double($0) }
@@ -768,6 +783,9 @@ enum WMPHarness {
             WMPHarnessOutput.emit("SCRIPTS programs=\(skin.scripts.count) runtime=unavailable (\(reason))")
         }
         if probe.wantsScripts { for line in scriptLines(skin: skin, pass: pass) { WMPHarnessOutput.emit(line) } }
+        if let size = probe.hostedFrameSize {
+            WMPHarnessOutput.emit(await hostedFrameLine(skin: skin, size: size))
+        }
 
         let store = WMPImageStore(provider: skin.archive)
         let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
@@ -780,6 +798,42 @@ enum WMPHarness {
             }
         }
         if let session = pass.session { await session.teardown() }
+    }
+
+    /// `HOSTED-FRAME` — the ring this skin lends one of NullPlayer's own windows, at one window
+    /// size, and the four insets our chrome lays that window out from.
+    ///
+    /// `caption=` is the number this exists for. The title and close control of a hosted window are
+    /// drawn in the band above the borrowed client hole, so a donor whose stretched subview starts
+    /// at the top of its own window lends a band that cannot hold them — and that is a property of
+    /// the skin, not of the window, so it is measurable only by deriving the frame the way the app
+    /// does. The player view is ranked last by `derive`, and the app ranks the view it is
+    /// presenting; here that is the skin's declared startup view, falling back to document order,
+    /// which is where the app's own candidate walk starts.
+    static func hostedFrameLine(skin: WMPLoadedSkin, size: CGSize) async -> String {
+        let player = WMPDeclaredHostState.authoredStartupViewID(in: skin) ?? skin.views.first?.id
+        guard let template = WMPHostedFrameTemplate.derive(from: skin, playerViewID: player) else {
+            return "HOSTED-FRAME none"
+        }
+        let store = WMPImageStore(provider: skin.archive)
+        let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+        let renderer = WMPRenderer(imageStore: store)
+        let backing = CGFloat(Double(ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_SCALE"] ?? "") ?? 1)
+        let artwork = try? await template.artwork(builder: builder, renderer: renderer, size: size,
+                                                  backingScale: backing)
+        let head = "HOSTED-FRAME view=\(template.viewID) ring=\(template.ringNodeIDs.count) "
+            + "size=\(WMPNumber.format(size.width))x\(WMPNumber.format(size.height)) "
+            + "min=\(WMPNumber.format(template.minimumSize.width))x\(WMPNumber.format(template.minimumSize.height))"
+        guard let artwork else { return head + " artwork=none" }
+        let metrics = artwork.metrics
+        return head + " caption=\(WMPNumber.format(artwork.captionHeight))"
+            + " strip=\(artwork.captionStrip.map { "\(WMPNumber.format($0.top))+\(WMPNumber.format($0.height))" } ?? "none")"
+            + " left=\(WMPNumber.format(metrics.leftBorder))"
+            + " right=\(WMPNumber.format(metrics.rightBorder))"
+            + " bottom=\(WMPNumber.format(metrics.bottomBorder))"
+            + " content=\(WMPNumber.format(artwork.contentRect.minX)),\(WMPNumber.format(artwork.contentRect.minY))"
+            + " \(WMPNumber.format(artwork.contentRect.width))x\(WMPNumber.format(artwork.contentRect.height))"
+            + " scaled=\(artwork.wasScaledToFit ? "yes" : "no")"
     }
 
     private static func measure(view viewID: String, skin: WMPLoadedSkin, builder: WMPSceneBuilder,

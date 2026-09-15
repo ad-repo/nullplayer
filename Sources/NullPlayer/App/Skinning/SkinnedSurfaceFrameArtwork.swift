@@ -28,6 +28,25 @@ struct SkinnedSurfaceFrameArtwork {
     /// nothing about where content can go; the skin's stretched client subview says it exactly.
     let contentRect: CGRect
 
+    /// Where the skin's own title bar sits inside that band, when it paints a distinct one.
+    ///
+    /// **It is not the whole band.** `Half-Life_2` leaves 46px above its client hole and paints an
+    /// orange bar across the middle of it; the rest is the frame's dark inner shadow. Controls
+    /// centred in the 46 land below the bar a user reads as the title bar. Nil where the ring's
+    /// caption is one flat tone, and then the whole band is used, as it always was.
+    struct CaptionStrip: Equatable {
+        /// Distance from the top of the window to the top of the bar, in points.
+        let top: CGFloat
+        /// The bar's own height, in points.
+        let height: CGFloat
+
+        func scaled(by factor: CGFloat) -> CaptionStrip {
+            CaptionStrip(top: top * factor, height: height * factor)
+        }
+    }
+
+    var captionStrip: CaptionStrip? = nil
+
     /// True when the window is smaller than the donor view's own declared minimum and the frame had
     /// to be scaled down to fit it. Kept as a fact about the artwork rather than hidden, because it
     /// is the one case where the ring is not drawn at the proportions its author chose.
@@ -35,6 +54,27 @@ struct SkinnedSurfaceFrameArtwork {
 
     /// The band the window title and close control are drawn in: everything above the client panel.
     var captionHeight: CGFloat { max(0, contentRect.minY) }
+
+    /// Where those two are actually laid out: the skin's own title bar where it paints one, and the
+    /// whole band where it does not.
+    var captionBandRect: CGRect {
+        let band = CGRect(x: 0, y: 0, width: size.width, height: captionHeight)
+        guard let captionStrip, captionStrip.height > 0 else { return band }
+        let bar = CGRect(x: 0, y: captionStrip.top, width: size.width,
+                         height: captionStrip.height).intersection(band)
+        guard !bar.isNull, bar.height > 0 else { return band }
+        // **Half way between the bar's centre and the band's.** Centred on the lit bar alone the
+        // controls read top-heavy — measured on `Half-Life_2`: its bar is the window's first 29px
+        // and our plate landed at 5.5-21.5, centred on it to within a point, and the reporter's
+        // answer was *"now its just flipped to the top being too close"*. The band below the bar is
+        // not empty: the frame's own lit lower edge is part of what a reader calls the title bar,
+        // and it is as far below the bar as the window's edge is above it. Splitting the two
+        // centres is bounded by both — a stray highlight deep in the band cannot drag the title
+        // down, and a bar flush against the window's top edge cannot pin it there.
+        let centre = (bar.midY + band.midY) / 2
+        return CGRect(x: 0, y: centre - bar.height / 2, width: size.width, height: bar.height)
+            .intersection(band)
+    }
 
     /// The same four numbers `SkinnedSurfaceChrome` already lays a window out from, so a view that
     /// asks the chrome for its metrics gets the skin's insets wherever a frame is available and its

@@ -312,6 +312,12 @@ class SpectrumView: NSView {
     
     // MARK: - Hit Testing
     
+    /// The close box, from the one place that decides where it goes — inset by a borrowed ring's
+    /// own right border so the glyph the chrome draws is the glyph a click lands on (W178).
+    private var closeButtonRect: NSRect {
+        SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: Layout.titleBarHeight)
+    }
+
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
         if isFullscreen { return false }
         if WindowManager.shared.hideTitleBars {
@@ -319,15 +325,13 @@ class SpectrumView: NSView {
             return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
         }
         return skinPoint.y < Layout.titleBarHeight &&
-               skinPoint.x < bounds.width - 25
+               skinPoint.x < closeButtonRect.minX
     }
     
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
         if isFullscreen { return false }
         if WindowManager.shared.hideTitleBars { return false }
-        let titleHeight = Layout.titleBarHeight
-        let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
-        return closeRect.contains(skinPoint)
+        return closeButtonRect.contains(skinPoint)
     }
     
     // MARK: - Mouse Events

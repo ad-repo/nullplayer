@@ -455,18 +455,21 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         }
         // Title bar is at the top, leave room for close button on the right
         return skinPoint.y < Layout.titleBarHeight &&
-               skinPoint.x < bounds.width - 25  // Leave room for close button area
+               skinPoint.x < closeButtonRect.minX  // Leave room for close button area
     }
     
+    /// The close box, from the one place that decides where it goes — inset by a borrowed ring's
+    /// own right border so the glyph the chrome draws is the glyph a click lands on (W178).
+    private var closeButtonRect: NSRect {
+        SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: Layout.titleBarHeight)
+    }
+
     /// Check if point hits close button
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
         if WindowManager.shared.hideTitleBars { return false }
-        // Close button is in the right corner of the title bar
-        // The titlebar image is scaled to fit window width, so use a generous hit area
-        // in the top-right corner (entire title bar height, last 25px of width)
-        let titleHeight = Layout.titleBarHeight
-        let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
-        return closeRect.contains(skinPoint)
+        // A generous hit area: the whole title bar height, the last 25px of width, moved inside a
+        // borrowed ring's right border where one is lent.
+        return closeButtonRect.contains(skinPoint)
     }
     
     // MARK: - Mouse Events

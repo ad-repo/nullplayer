@@ -107,6 +107,50 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   paint over their whole client area, so nothing shows through — a new one that does not should
   take the same clip.
 
+**The caption band is the donor's, and it is never too short to draw in.** Measured 2026-09-15 with
+`WMP_HOSTED_FRAME=550x464` — the library's own default size — over the installed corpus: **87 of 184
+archives lend a ring**, and their captions run **7px to 104px**, median ~37, with nothing below one
+character. So the `captionHeight >= classicCharHeight` guard both painters carried never fired on a
+real skin, and the case that does exist is the opposite one: a band shorter than the lettering
+*asked for* — `The_Sentinel_v.1.0` lends 7px, `TheUnit` and `The` 9px, and the library asks for 1.6x
+glyphs 9.6px tall. Dropping the caption there would take the window's only close control with it, so
+`SkinnedSurfaceChrome.drawBorrowedCaption` scales the lettering down to the band instead, and the
+library draws through that same painter rather than a copy of it.
+
+**Our two controls sit on plates, and the close column is inset by the ring's right border.** Both
+came from the reporter, and neither is visible headlessly. Sampling the ring per glyph and outlining
+against it — the W177 rule — reads as mess on artwork as varied as `Half-Life_2`'s orange strip, so
+the title and the close glyph each get a plate in a palette tone the ring behind them cannot be
+confused with. And a ring's corner routinely carries the skin's **own painted** close button:
+`Combat_Flight_Simulator_3` draws a round × there and ours was landing 15px to its right, so the
+control the user reached for was artwork. `SkinnedSurfaceChrome.closeButtonRect` is the one place
+that decides where the box goes, and **every close hit test reads it** — except `EQView` and
+`WaveformView`, which still hit-test 9x9 classic boxes of their own (their own backlog row).
+
+**And the band they are centred in is the ring's title bar, not the gap above the client hole.**
+`Half-Life_2` leaves 46px there and paints its orange bar across 12 of them, so centring in the 46
+draws both controls below the bar (reported 2026-09-15 as *"you are not vertically centering"*).
+**No markup states where the bar ends** — the ring pieces are decorative and overlap the client area
+(Half-Life's top edge node is 77px tall on a 46px band) — so `WMPHostedFrameTemplate.titleStrip`
+reads it off the frame it just rendered: the **widest** run of rows, in a profile smoothed over 3px,
+that stays a third of the way up from the band's darkest tone. Two rules were wrong before that one,
+and both looked right in the harness. Row-to-row continuity answers "the whole band" for every skin
+that gradients its frame, which is most of them. Growing the run from the **brightest** row answered
+`5+12` at 1x and `none` at 2x, because a one-pixel specular highlight below the bar averages away at
+1x and outshines the bar at 2x — **the harness renders at 1x and the app at the screen's backing
+scale**, so a strip change is measured at both (`WMP_HOSTED_FRAME_SCALE`) and their agreement is the
+check. Measured with `WMP_HOSTED_FRAME` at 2x: **55 of 87** ring-lending archives resolve a bar
+shorter than their band at 550x464, the other 32 are one flat caption and use all of it.
+
+**And the controls centre half way between the bar's centre and the band's**, not on the bar itself.
+Centred on the bar alone they read top-heavy — Half-Life's bar is the window's first 29px, our plate
+landed at 5.5-21.5, which is its centre to within a point, and the answer was *"now its just flipped
+to the top being too close"*. The band under the bar is not empty: the frame's own lit lower edge is
+part of what a reader calls the title bar. Splitting the two centres is bounded by both — a stray
+highlight deep in the band cannot drag the title down, and a bar flush against the window's top edge
+cannot pin it there. `WMP_CAPTION_TRACE=1` prints the band, plate and close rects the painter
+resolved, which is the only way to check this without lining a screenshot up by hand.
+
 **The donor view is ranked, not taken.** Several skins wrap the *same* ring around an `upgradeView`
 — the "your Windows Media Player is too old" nag panel — and declare it before the real one, so
 document order borrows the frame of a window nothing was ever meant to look at (`xsn_sports`,

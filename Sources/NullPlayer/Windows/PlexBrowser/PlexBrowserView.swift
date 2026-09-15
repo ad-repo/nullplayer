@@ -2619,7 +2619,7 @@ class PlexBrowserView: NSView {
             context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
             context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
             context.restoreGState()
-            drawBorrowedFrameCaption(style: style, context: context, bounds: bounds,
+            drawBorrowedFrameCaption(style: style, artwork: artwork, context: context, bounds: bounds,
                                      captionHeight: max(0, content.minY), isActive: isActive)
             return
         }
@@ -2677,36 +2677,24 @@ class PlexBrowserView: NSView {
 
     /// The title and close control over a borrowed ring, in the band above its client hole.
     ///
-    /// Both keep the window's own coordinates — `hitTestCloseButton` owns the top-right 20×14 box —
-    /// so the ring changes what is behind them and not where they are.
-    private func drawBorrowedFrameCaption(style: WinampModernSurfaceStyle, context: CGContext,
-                                          bounds: NSRect, captionHeight: CGFloat, isActive: Bool) {
-        guard captionHeight >= WinampModernSurfaceStyle.classicCharHeight else { return }
-        let titleColor = isActive ? style.legibleText(style.currentText, on: style.background)
-                                  : style.legibleDimText(on: style.background)
-        let titleScale = WindowManager.shared.playlistChromeScale * 1.6
-        let title = "LIBRARY"
-        let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: titleScale)
-        WinampModernSurfaceStyle.drawText(
-            title,
-            at: NSPoint(x: (bounds.width - titleWidth) / 2,
-                        y: (captionHeight - WinampModernSurfaceStyle.classicCharHeight * titleScale) / 2),
-            scale: titleScale, color: titleColor, in: context)
-
-        let closeHit = NSRect(x: bounds.width - 20, y: 0, width: 20, height: 14)
-        if pressedButton == .close {
-            context.setFillColor(style.pressedFill.cgColor)
-            context.fill(closeHit)
-        }
-        let glyph = closeHit.insetBy(dx: 7, dy: 4)
-        context.setStrokeColor(titleColor.cgColor)
-        context.setLineWidth(1)
-        context.beginPath()
-        context.move(to: CGPoint(x: glyph.minX, y: glyph.minY))
-        context.addLine(to: CGPoint(x: glyph.maxX, y: glyph.maxY))
-        context.move(to: CGPoint(x: glyph.maxX, y: glyph.minY))
-        context.addLine(to: CGPoint(x: glyph.minX, y: glyph.maxY))
-        context.strokePath()
+    /// **One painter, shared with the other seven hosted windows** (`SkinnedSurfaceChrome`). The
+    /// library had a copy of this, and the copy is what W178 was: it guarded the lettering's
+    /// contrast against the *palette's* background while drawing it over the ring's own artwork, so
+    /// on `Half-Life_2` — whose 46px band is a bright orange strip crossed by a dark pipe — the
+    /// title and close glyph cleared the threshold on paper and were unreadable on screen. The
+    /// shared painter samples the ring behind each of the two separately and haloes them where the
+    /// band is too varied for any one colour. Only two numbers are this window's own: it asks for
+    /// 1.6x lettering, and its close control lives in the 20px-wide column `hitTestCloseButton`
+    /// owns rather than the 25px one every other hosted window uses.
+    private func drawBorrowedFrameCaption(style: WinampModernSurfaceStyle,
+                                          artwork: SkinnedSurfaceFrameArtwork,
+                                          context: CGContext, bounds: NSRect,
+                                          captionHeight: CGFloat, isActive: Bool) {
+        SkinnedSurfaceChrome(style: style, artwork: artwork).drawBorrowedCaption(
+            in: context, bounds: bounds, captionHeight: captionHeight, title: "LIBRARY",
+            isActive: isActive, isClosePressed: pressedButton == .close,
+            controlScale: WindowManager.shared.playlistChromeScale, titleScale: 1.6,
+            closeRegionWidth: 20)
     }
 
     /// Show the server-link sheet: the classic window's controller presents it, an embedded browser
@@ -8273,7 +8261,13 @@ class PlexBrowserView: NSView {
         if isEmbeddedInSkin { return false }
         if hidesClassicTitleBar { return false }
         let originalSize = originalWindowSize
-        let closeRect = NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
+        // 20x14 in our own flat chrome. Under a borrowed ring the column spans the skin's caption
+        // band — 7px to 104px across the corpus — and sits inside its right border, which is where
+        // the shared painter draws the glyph: what is clickable is what is drawn (W178).
+        let closeRect = hostedFrame == nil
+            ? NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
+            : SkinnedSurfaceChrome.closeButtonRect(in: NSRect(origin: .zero, size: originalSize),
+                                                   captionHeight: Layout.titleBarHeight, width: 20)
         return closeRect.contains(skinPoint)
     }
     

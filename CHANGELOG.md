@@ -40,10 +40,26 @@
   the skin's artwork instead of moving bars, because the borrowed frame was being painted over the
   whole window rather than around it. The frame is now drawn only where a frame belongs, so the
   spectrum analyzer, audio analyzer, PeppyMeter, Flow, Cava, waveform and visualizer windows all
-  show what they are meant to show inside it. Their titles are readable on that frame too: the
-  lettering is now chosen against the skin's own artwork where the title lands, and where that
-  artwork is too busy for any one colour — Half-Life 2 runs a dark pipe across a bright orange
-  strip — the title is outlined so it stays legible across both.
+  show what they are meant to show inside it.
+
+- **The title and close button on a borrowed Media Player frame are legible, in the right place, and
+  they close the window.** When a `.wmz` skin lends its own window frame to the library, playlist,
+  equalizer or a visualizer window, NullPlayer draws that window's name and its close control on the
+  skin's artwork — and on a busy frame both used to disappear into it. Half-Life 2 runs a dark pipe
+  across a bright orange strip, and a colour picked to be readable on one half vanished into the
+  other. Each now sits on a small plate in a colour the artwork behind it cannot be confused with, so
+  the name reads and the close control looks like a button. Both also sit in the skin's own title
+  bar rather than in the gap above the window's contents, which on some skins put them well below the
+  bar they belong on.
+
+  The close button had a worse problem: many of these frames paint a close button of their *own* in
+  the corner — Combat Flight Simulator 3 draws a round ×, Half-Life 2 a row of buttons — and ours was
+  landing beside it, at the very edge of the window. Clicking the one the skin drew did nothing,
+  because it is a picture. Ours now sits where that artwork is, and the same measurement drives both
+  what is drawn and what a click lands on, in every window that wears a borrowed frame. Skins whose
+  frame leaves only a sliver of room above their contents — The Sentinel leaves 7 pixels — keep a
+  smaller title and a working close button instead of losing both: previously nothing at all was
+  drawn there, and the window could not be closed from its own frame.
 
 - **The XBOX Music Mixer skin opens on its player again, with its equalizer beside it.** The skin
   was opening straight onto its equalizer panel, and nothing on screen could get you back to the

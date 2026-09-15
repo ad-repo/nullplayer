@@ -1182,7 +1182,13 @@ class PlaylistView: NSView {
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
         if isEmbedded || WindowManager.shared.hideTitleBars { return false }  // embedded/docked-hidden: no close button
         let effectiveSize = effectiveWindowSize
-        let closeRect = NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
+        // 20x14 in our own chrome; under a borrowed ring the column spans the skin's caption band
+        // and sits inside its right border, which is where the shared painter draws it (W178).
+        let bounds = NSRect(origin: .zero, size: effectiveSize)
+        let closeRect = WindowManager.shared.hostedSurfaceFrameArtwork(for: effectiveSize) == nil
+            ? NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
+            : SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: Layout.titleBarHeight,
+                                                   width: 20)
         return closeRect.contains(skinPoint)
     }
 
