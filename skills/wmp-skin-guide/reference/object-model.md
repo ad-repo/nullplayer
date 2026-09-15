@@ -367,10 +367,13 @@ view had to be simulated.
 and collapsing them in the object model would erase the distinction before the controller could act
 on it — one opens a window, the other replaces one.
 
-Initial load treats `openView` and `setCurrentView` identically in one place only: the windowless-view
-redirect. A view that never becomes a window can honour neither as a window operation, and both are
-a request for which view to show next. A windowless view reached through `openView` at any other time
-is the same case: it never becomes a window, and its host commands run against whoever asked for it.
+Initial load keeps them apart too, and W175 is what it cost when it did not. A view that never
+becomes a window can honour neither as a window operation, and both do say which view to show next —
+but only `setCurrentView` is a *replacement*, so the last one wins and nothing beside it can be the
+player. `openView` is a window each: `WMPMainWindowController.windowlessSuccessors` makes the
+earliest of them in the skin's declaration order the player and replays the rest against it once it
+is on screen. A windowless view reached through `openView` at any other time is the same case: it
+never becomes a window, and its host commands run against whoever asked for it.
 
 ## `theme.loadPreference`
 

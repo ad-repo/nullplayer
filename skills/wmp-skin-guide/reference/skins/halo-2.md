@@ -69,6 +69,17 @@ So this one skin exercises, in a single launch: the dispatcher (W89), a windowle
 itself and redirects, up to five windows opened before anything is on screen, close-by-name, and
 `view.minimize()` addressed at a window that is not the one the handler is running in.
 
+**And it is where `openView('mainView')` comes *last*, which hid W175 for four phases.** The walk
+took the last window command a windowless view posted as its single successor, and for Halo 2 that
+is the player — so it opened correctly while the four panels its own preferences said were open were
+silently never opened at all. `XBOX Music Mixer` authors the same function with `openView('eqView')`
+after the player and opened on its equaliser; see
+[`xbox-music-mixer.md`](xbox-music-mixer.md). Measured live on the fix, 2026-09-15: Halo 2 goes from
+one window to **five** — player 327x294 plus `plView`, `eqView`, `visView` and `infoView`. **Read
+that as a warning about this skin as a test case**: it is the corpus's purest dispatcher and it is
+*not* sensitive to how the successor is chosen. Use it to check that a change did not break the
+common shape, never to prove the choice is right.
+
 ## Defects it found
 
 - **"Halo 2 has no UI at all"** (reported 2026-09-08). It opens on `previewView` — the skin-chooser

@@ -292,6 +292,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 var visited = Set<String>()
                 var index = 0
                 var presented = false
+                // The panels a windowless dispatcher asked for that did not become the player.
+                // They are opened beside it once it is on screen — see the collapsed branch below.
+                var deferredWindowCommands: [WMPJScriptHostCommand] = []
+                let declarationOrder = skin.views.map(\.id)
                 while index < candidates.count {
                     let candidate = candidates[index]
                     index += 1
@@ -332,17 +336,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     }
                     guard scene.canvasSize.width > 0, scene.canvasSize.height > 0, !collapsed else {
                         recordScriptDiagnostics(output.diagnostics)
-                        // The only host command a view with no window can honour is where to go
-                        // next; the rest need the presented controller state this view never gets.
-                        // A windowless `controlView` opens the real player with `openView`
-                        // exactly as often as it redirects with `currentViewID`; both are a
-                        // request for which view to show next, and neither can do more than that
-                        // from a view that never becomes a window.
-                        if let next = output.hostCommands.last(where: {
-                            $0.action == "setCurrentView" || $0.action.hasPrefix("openView")
-                        })?.value?.string {
-                            candidates.insert(next, at: index)
-                        }
+                        let successors = Self.windowlessSuccessors(
+                            of: output.hostCommands, declarationOrder: declarationOrder)
+                        deferredWindowCommands += successors.opened
+                        candidates.insert(contentsOf: successors.next, at: index)
                         continue
                     }
                     if pendingRestoredFrame != nil, !restoredViewMatches {
@@ -370,6 +367,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     // it had open; `show` on a view that is already open is a raise, so whichever
                     // of the two runs first wins and the other is a no-op.
                     restoreOpenAuxiliaryViews(skin: skin, store: store, runtime: runtime)
+                    // Everything the dispatcher opened that is not the player itself. Replayed
+                    // through the ordinary command path, so `openViewRelative`'s displacement and
+                    // the open-view bound both still apply, and a panel already restored above is
+                    // a raise rather than a second window.
+                    applyHostCommands(deferredWindowCommands.filter {
+                        $0.value?.string?.caseInsensitiveCompare(resolved.viewID) != .orderedSame
+                    }, from: presentation)
                     let switchedView = applyHostCommands(output.hostCommands, from: presentation)
                     if !switchedView {
                         applyTimerDelta(presentation, registered: output.timerRequests,
@@ -390,6 +394,54 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentUnskinned(message: error.localizedDescription)
             }
         }
+    }
+
+    /// What a view with **no window** asked for next.
+    ///
+    /// The only host command such a view can honour is where to go next; the rest need the
+    /// presented controller state it never gets. A windowless `controlView` opens the real player
+    /// with `theme.openView` exactly as often as it redirects with `theme.currentViewID`.
+    ///
+    /// **The two are not the same request and must not be collapsed into one `last` (W175).**
+    /// `currentViewID` is a redirect and the last write wins. `openView` is not a redirect at all —
+    /// WMP opens a window per call and leaves the caller alone — so a dispatcher that opens its
+    /// player, its playlist and its equaliser is asking for three windows. Taking the last of them
+    /// opened `XBOX Music Mixer` on the equaliser its `onLoadSkin()` opens *after* `mainView`, and
+    /// the player it never presented is the only one of its views with a route back to the others.
+    ///
+    /// **The player is the earliest of them in the skin's own declaration order** — every one of the
+    /// 21 corpus archives that declares both a `mainView` and a panel view declares `mainView`
+    /// first (`reference/skins/xbox-music-mixer.md` carries the scan) — and the rest are opened
+    /// beside it once it is on screen. Every one of them stays
+    /// in `next`, so a player that turns out to be windowless in its turn still falls through to the
+    /// one after it.
+    ///
+    /// - Returns: `next`, the view ids to try presenting, in order; and `opened`, the `openView`
+    ///   commands to replay against the player once there is one. A view id appears in both: the
+    ///   caller drops the one that became the player.
+    static func windowlessSuccessors(of commands: [WMPJScriptHostCommand],
+                                     declarationOrder: [String])
+        -> (next: [String], opened: [WMPJScriptHostCommand]) {
+        func order(of viewID: String) -> Int {
+            declarationOrder.firstIndex { $0.caseInsensitiveCompare(viewID) == .orderedSame }
+                ?? Int.max
+        }
+        let opened = commands
+            .filter { $0.action.hasPrefix("openView") && $0.value?.string?.isEmpty == false }
+            .enumerated()
+            // `sorted(by:)` is not stable, and document order ties on every id the skin does not
+            // declare: the authored call order is the tiebreak.
+            .sorted {
+                let (lhs, rhs) = (order(of: $0.element.value?.string ?? ""),
+                                  order(of: $1.element.value?.string ?? ""))
+                return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
+            }
+            .map(\.element)
+        if let redirect = commands.last(where: { $0.action == "setCurrentView" })?.value?.string,
+           !redirect.isEmpty {
+            return ([redirect], opened)
+        }
+        return (opened.compactMap { $0.value?.string }, opened)
     }
 
     /// Re-open the panels the user last had open, following `.wal`'s rule that **what the user last

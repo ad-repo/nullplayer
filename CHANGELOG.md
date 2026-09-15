@@ -35,6 +35,14 @@
 
 ### Bug Fixes
 
+- **The XBOX Music Mixer skin opens on its player again, with its equalizer beside it.** The skin
+  was opening straight onto its equalizer panel, and nothing on screen could get you back to the
+  controller itself — there was no route to it at all. Skins like this one start on a hidden window
+  that says which of their windows to open, and where a skin asked for several the last one was
+  winning instead of the player. Skins that ask for their panels this way now get all of them: Halo
+  2, xsn_sports, Plus! Mecha and XBOX Live Skin open their playlist, equalizer, visualization and
+  info panels beside the player again, as they did in Windows Media Player.
+
 - **The Ovoid skin's screen has a backing again.** The oval window's centre was empty — you could
   see the desktop through it, and clicks went straight past the player to whatever was behind. The
   screen is now black when nothing is playing and shows the visualization when something is, which
