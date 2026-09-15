@@ -16,235 +16,7 @@ same change that closes them, so this file stays a list of work that is still op
 
 ## Ranking
 
-### Top of the backlog
-
-**W175 closed 2026-09-15, from one report — *"xbox music player skin is not showing the main window.
-it opens to the playlist and there is no route to get to the main window"*.** A view with no window
-can honour `theme.currentViewID` and `theme.openView` only as "which view next", and the initial-load
-walk read both off one `hostCommands.last`. **They are not the same request.** A redirect replaces the
-view and the last write wins; `openView` opens a *window per call* and leaves the caller alone, so
-`XBOX Music Mixer`'s `controlView`, whose `onLoadSkin()` ends
-`theme.openView('mainView'); theme.openView('eqView');`, was read as "go to `eqView`" — and `mainView`
-is the only one of its seven views whose buttons reach the others. `windowlessSuccessors` now ranks
-the opened views by the skin's **own declaration order**, makes the earliest the player, keeps the
-rest in the candidate list, and replays them against the player through `applyHostCommands` once it
-is on screen. Closure notes in [the archive](docs/wmp-skin/wmp-backlog-archive.md).
-
-**W175 is the row to read for a defect a sweep is structurally blind to, and for a fix that hides
-behind a persisted preference.** No flag in `harness.md` performs the candidate walk — it renders
-each view independently — so every probe said this skin was healthy, and it was: the engine simply
-presented the wrong one of its healthy views. **The old rule was right by luck wherever a skin opened
-its player last**, which is why `Halo 2` never showed it while sharing the architecture exactly. The
-measurement is a window list per launch, and it is one `osascript` line:
-
-```bash
-defaults write NullPlayer wmpSkinName -string "XBOX Music Mixer"
-defaults delete NullPlayer wmpSkinViewID   # written on every present — a wrong player is sticky
-nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
-osascript -e 'tell application "System Events" to get {name, size} of every window \
-  of (first process whose name is "NullPlayer")'
-```
-
-**Delete `wmpSkinViewID` before believing any launch here.** It is written on every present, so the
-engine's own wrong answer outranks the fix on the next launch (W153), and the same walk then stops at
-the player and never reaches the dispatcher at all.
-
-**W174 closed 2026-09-15, from one report — *"ovoid skin is missing its backing in the center, it
-click through to the desktop"*.** A `<VIEW>` that declares both `clippingColor` and
-`transparencyColor` has said two different things, and only the first is *the window is not here*.
-Both were keyed out of the artwork alike, so `Ovoid`'s screen — 11,400 magenta pixels inside a
-153x200 oval whose 6,468 red ones are its corners — was a hole through a borderless
-`isOpaque = false` window, with nothing to see and nothing to click. Behind it is an `<EFFECTS>`,
-and **a rect that authors no backdrop of its own still has one, and in WMP it is black**. The ground
-is laid under everything in the below layer and clipped to the shape the nearest container states
-with its `clippingColor` — never `transparencyColor`, which is the hole it exists to fill. Sweep:
-**5 of 184 images move, every changed pixel a former hole becoming opaque black.** Closure notes in
-[the archive](docs/wmp-skin/wmp-backlog-archive.md).
-
-**W174 is the row to read for a class the sweep *can* rank, and for how to ask it.** The reach is
-not in the markup — it is 17 partly transparent rects of 95, found by dumping the corpus and
-counting fully transparent pixels inside each `WIDGET … effects` frame, and narrowed to 5 by the
-clipping-colour gate. The gate is the whole design: `circle` and `Plus! BubbleSkin` are in the 17
-and must stay untouched, and both are in
-`skills/wmp-skin-guide/reference/skins/README.md`'s counter-evidence table for it. **The same
-sentence has now been reported twice about two different mechanisms** — W166 was
-*"the window has no backing when a track plays and it clicks through to the background"* on
-`Colorchooser`, and that was a script-assigned `zIndex` reaching `windowedEffectsRects`. A hole in a
-`.wmz` window is a symptom, not a defect; find which layer left it.
-
-**W171–W173 closed 2026-09-15, from one report — *"Plus! HueShifter has a green section"*, then
-*"is it supposed to be green or not because it still is"*.** Three independent defects behind one
-screenshot, and the reported colour was not one of them: the green is the skin's own artwork, which
-its shipped `hueshifter_final.jpg` settles.
-
-- **W171 — a `clippingImage` with no `clippingColor` clipped nothing.** 169 of the corpus's 172
-  declarations write one; the three that do not name a **fully opaque** mask, so the source-alpha
-  test kept every pixel. HueShifter drew `body_lower.jpg` — a 213x66 lavender plate — as a
-  hard-edged box across the bottom of the player. The key is now the mask's own corner, which is
-  the `auto` derivation (W167) and white in all three files.
-- **W172 — `transparencyColor` states a container's shape, and a container's shape is a region.**
-  `clipMask` read only `clippingColor`, so HueShifter's five mask-backed subviews were plain
-  rectangles; **127 nodes across 17 archives** qualify under the existing three guards. Fixing it
-  broke `Ice`, whose `Clip.png` marks its keep region with **alpha-zero** pixels — so
-  `WMPSceneClipMask` now renders through `regionMask` rather than `clippingMask`. **The test that
-  said `transparencyColor` never shapes cited `cerulean` and was wrong on its own evidence**: that
-  skin writes `clippingColor` beside it and its `face.bmp` is 18,601 colours, which `isShapeMask`
-  rejects twice over.
-- **W173 — `hueShift` was unimplemented, and it is the property the skin is named after.** Ten
-  writes, one archive, all from script. Implemented as a luma-preserving rotation folded into the
-  decode and keyed on the angle. **The NTSC YIQ matrix is the trap**: it rotates the opposite way
-  and clips saturated pixels out of gamut; use the standard `hue-rotate` matrix.
-
-Corpus sweep across all three: **4 of 180 archives moved** — `Plus! HueShifter`, `Secura`,
-`portals`, `elvis` — every one toward the skin's own artwork, plus `Scooby-Doo_2`'s
-nondeterministic `randomPic()`. Closure notes in
-[the archive](docs/wmp-skin/wmp-backlog-archive.md); the family's side is
-`skills/wmp-skin-guide/reference/skins/plus-family.md`.
-
-**W171–W173 are the row to read for what a render sweep cannot rank.** W172 looked like a clean
-win at 5 archives until `Ice` was opened and read: the frost overlay it erased was **invisible in
-the diff count** and only a before/after pair, looked at, showed it. And W173 is invisible to a
-sweep outright — the property defaults to 0, so 179 archives are byte-identical and the one that
-moves does so only after a handler runs.
-
-**W170 closed 2026-09-14, from a live report — *"in hue pressing pause does not pause the stream and
-play is not responsive at all"*, then *"stop does not stop"*.** `openstatechange` was raised off the
-**play** state, so every pause told the skin a media had just opened. **109 of the 180 archives
-author `OpenState_onchange`** and three answer it by playing — `Plus! HueShifter`,
-`Plus! Plasma Ball` and `Plus! SlimLine` share a handler whose `osMediaOpen` arm ends in
-`player.controls.play()` — so playback restarted 16 ms after every pause, and after a stop the
-re-play reloaded the track from 0:00. Each event now rides its own quantity
-(`WMPMainWindowController.stateEdgeEvents`). Closure notes in
-[the archive](docs/wmp-skin/wmp-backlog-archive.md); the family's side is
-`skills/wmp-skin-guide/reference/skins/plus-family.md`.
-
-**W170 is the row to read for what a corpus sweep cannot do.** The same session drove a full
-transport audit — 284 decoded play/pause points across 149 skins, both host states — and reported
-the transport healthy, correctly: the defect is in the event raised 16 ms *after* the click, and the
-harness seeds one host snapshot and never transitions. The first live pass then cleared the skin
-too, because it used a local file: only the streaming path turns the spurious re-play into a real
-restart. The numbers and the two point-decode traps that produce a convincing false "dead control"
-are in `skills/wmp-skin-guide/reference/harness.md` § *The transport audit*.
-
-**W167–W169 closed 2026-09-14, from one report — *"combat flight simulator and plus plasma ball have
-a gray box background I suspect should not be showing"*, then *"look how bad the controls look in the
-new version"*, then *"fix the other skins that were addressed with plus egg commit"*.** Three
-unrelated rules about one attribute pair. **W167**: `clippingColor="auto"` resolved to no key at all,
-so `Plus! Plasma Ball`'s `screen_MASK.gif` cut nothing and the whole player drew opaque over a plasma
-globe that had never been on screen; the value comes from the corner of the bitmap the declaration
-governs, which is where all four `auto` authors in the corpus put it. **W168**: a container's
-clipping shape did not reach its children, so `Combat_Flight_Simulator_3`'s keyless `main_bg.jpg`
-child kept the 67% matte its parent's mask existed to remove — guarded by `Gorillaz` (a tiled swatch
-is a ground, not a shape) and `YIL!OMA2K` (artwork with a keyed hole is not a mask). **W169** is the
-big one: `clippingColor` was keyed out of the *artwork* as well as the mask, at a JPEG's
-64-component tolerance, deleting **85.7%** of `Plus! Plasma Ball`'s `eq_panel_normal.jpg`, **52.1%**
-of `TDK`'s `info_bg.jpg`, **39%** of `elvis`'s `elvis_tray.jpg` and **27%** of
-`Plus! Hard Boiled`'s `Egg_Body_Normal.jpg`. Sweep: 522 identical, 13 moved, every one a gain.
-
-**W169 is the row to read for process.** W160 measured the clipping masks two days earlier, found
-their *edges* clean, and wrote them off in `plus-family.md` § *Ruled out* — then landed Lanczos
-resampling on the same pixels the attribute was erasing. **A mechanism cleared is not an attribute
-cleared**, and a *"low res"* report about photo-real artwork is not necessarily about resampling. The
-instrument that named it was neither a probe nor the sweep: decode each archive's artwork and count
-how much of it matches its own declared key at the format's tolerance. Two further notes, both paid
-for in this session: a **1x render dump is not evidence about Retina sharpness** — comparing one
-against the reporter's 2x window capture sent a whole round down the wrong path — and a second
-NullPlayer already running makes `first process whose name is "NullPlayer"` pick the wrong window, so
-raise and capture by `unix id`.
-
-**W163–W166 closed 2026-09-14, from one report — *"colorchooser skin looks totaly broken from the
-UI I do nto have a refrence image"*, plus a second observation in the same session, *"the window has
-no backing when a track plays and it clicks through to the background"*.** Four unrelated engine
-rules, none of them about that skin. **W163**: a program was registered only from a `scriptFile`
-attribute, and **7 archives declare none** while shipping a same-named `.js` they call into — all
-seven threw on their first handler. **W164**: a `<VIEW>` stretched background artwork to its declared
-canvas; **4 of the 17 views that declare both** author a size the artwork does not have, and
-stretching puts the frame out of register with its own contents. **W165**: a colour was read from the
-markup and nowhere else, so neither a `wmpprop:` mirror nor a script assignment painted — the reach
-was 8 further corpus images, every one a colour a skin's own script had always set. **W166**: a
-script-assigned `zIndex` was ignored, which on `Colorchooser` left the opaque panel the player sits
-on classified as artwork *above* a **windowed** visualizer; `windowedEffectsRects` punched it out and
-the window had a 164x130 click-through hole for as long as a track played.
-
-**W166 is the row to read for process.** No headless probe and no corpus sweep can see it: the sweep
-runs a stopped player, which is the one state in which that skin is correct, and
-`WMP_RENDER_HOST=playing` seeds the snapshot without raising the `playstatechange` the write lives
-in. `reference/harness.md` § *A sweep runs a stopped player* is the general form. Closure notes in
-[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md); dossier in
-[`reference/skins/colorchooser.md`](skills/wmp-skin-guide/reference/skins/colorchooser.md).
-
-**W161 and W162 closed 2026-09-14, from one report — *"the 2 windows_xp skins the eq does not
-work"*.** Neither was an equaliser defect. **W161**: a finished one-shot GIF held its last frame, so
-`Windows_XP_Media_Center_Edition`'s opening shutter — an opaque plate — stayed over the display and
-buried the metadata, the status line, the clock, the seek arc **and the equaliser panel the skin
-opens in the same rectangle**. The rule is the *degenerate terminator block*, not the disposal
-method: reading disposal alone matches **379 corpus files** and erases artwork, the terminator
-matches **79 across 33 archives**, and `Age_of_Mythology` holds both halves down inside one skin.
-**W162**, opened by W161 uncovering a blank `STATUS:` line: `player.status` was inert *and* missing
-from the binding registry *and* empty as an event argument — three resolutions of one path, none
-answering, for **69 of the 180 archives**. **A host path has more than one resolution and a live
-member does not make a live binding** — `reference/object-model.md` § *What a property read answers*
-rule 6 is the general form, and it is the thing to check when the next host property is added.
-Closure notes in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md);
-dossier in
-[`reference/skins/windows-xp-media-center.md`](skills/wmp-skin-guide/reference/skins/windows-xp-media-center.md).
-**No headless probe can see W161's class**, which is the process note it leaves: the equaliser was
-correct in the scene graph the whole time and every flag said so.
-
-**Tier 1a has no remaining open row.** **W156 closed 2026-09-13** — a `.wmz` seek is committed once,
-on release, and no longer per mouse-move. Its closure note carries the measurement the row demanded
-and the answer it was waiting on: `corona` and `New Super Mario Bros` are **identical** here, 21
-commits apiece, so the reported difference between them was never structural.
-
-**Tier 1b has no remaining open row.** W103, W104, and W105 are deferred. **W124 closed 2026-09-10** — `<VIDEO>` readiness now keeps its
-event state across a same-media output rebuild while leaving the live surface state empty, so the
-skin receives a matching `videostart` after a transient teardown without losing button input.
-**W102 closed 2026-09-10** — `<VIDEO>` is hosted, the picture is
-parked in the authored rect at the authored scale, and W105's `.video` routing went in with it, so
-the Windows-menu item no longer opens our window over a skin that declares its own box. What it left
-behind is ranked here: W103 is now answerable: the video path exists, so `<VIDEOSETTINGS>`'s four
-sliders are a decision about what to bind, not a question about whether there is anything to bind to.
-
-**Tier 0 is empty and the magenta class is closed.** W78 landed on 2026-09-08, **W78a closed the
-same day**, and W125 closed the one remaining declared-key JPEG rounding case on 2026-09-11. The
-former residual was `portals/mode1` (829 px, 0.38%) — **actually closed by W154 on 2026-09-13**,
-not by W116: that patch was its `sysbuttons_group` sheet's magenta surround, and a
-`<BUTTONGROUP>`'s sheet is painted through its mapping mask. The corpus residual is now
-`Plus! Pulsar/mainView` alone (49 px, 0.04%), a button that declares
-`transparencyColor="#ffffff"`, where standing aside is correct. **Do not open another magenta row without a screen to point at.** Their closure notes are
-in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md).
-
-**W129 closed 2026-09-11 and it closes the largest row of the SDK conformance audit.** It also
-produced the rule that should govern every remaining row of that audit: *reading a handler's reach
-is not reading its result*. Of its four host attributes only `currentEffectType_onchange` moves a
-pixel — 96 of the 105 `currentPosition_onchange` uses write a number **W120 already supplies**, and
-all 9 `currentMedia_onchange` uses are the album-art call that became W137. The census delta,
-the corpus sweep and the live verification are in
-[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md).
-
-**W144 closed 2026-09-12 and it is four rules, not one defect.** One live report against
-`xsn_sports`' settings drawer produced four unrelated engine defects — centring beaten by a scripted
-`left`, an authored `JScript:` geometry expression re-applying every transaction and undoing the
-script that moved the node, skin artwork drawn over a **windowed** `<EFFECTS>`, and `onClose` having
-no dispatch site at all (**373 handlers across 133 of 180 archives**, all dead). The last two are
-capability rows in their own right and neither was on this page. Its two process lessons are in
-[`reference/harness.md`](skills/wmp-skin-guide/reference/harness.md): a render dump is flat and
-cannot answer a layering question, and a single-transaction sweep cannot measure a per-transaction
-rule. Closure note and the ruled-out list are in
-[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 20*; dossier
-at [`reference/skins/xsn-sports.md`](skills/wmp-skin-guide/reference/skins/xsn-sports.md).
-
-**W128 closed 2026-09-11 and it is the row the rest of the SDK conformance audit hangs off.** That
-audit is the first time this engine was read against Microsoft's Skin Programming Reference as a
-*specification* rather than against a corpus sweep, and its point is that a corpus scan can only
-find what some skin already calls. W128 brought `elementMethodVocabulary` up to the SDK's
-element-method list, which changed what every later measurement can see: an unimplemented SDK method
-was being counted `INERT` — Tier 2b, the tier you do not take runtime work from — and is now
-`UNRECOGNISED` where it belongs. **W136 and W132–W133/W135 are that audit's remaining rows, ranked
- in that order** (W136 in § 2a; W132–W133 and W135 in Tier 3), and § *2c-note* is its
-disproved list: read that before opening a row that came from reading the SDK against a scan. The
-closure note, with the census delta and the render-sweep result, is in
-[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md).
+### How a row is ranked
 
 Reach is corpus demand across the 14-skin corpus installed in
 `~/Library/Application Support/NullPlayer/WMPSkins/`, not severity. Every Reach number must be
@@ -315,32 +87,12 @@ differing `.wms` and `.js`, and are kept deliberately as separate test cases.
 Tier 1a held the loading rejections and is **empty**: W33 closed the last of them and moved to the
 archive. Nothing goes back in this tier unless a *new* archive is rejected.
 
-### 1b. Views that load and then draw nothing
+**No view in the corpus fails to lay out and no row remains open here** — W8 and W6, the last two
+that could, closed on 2026-09-07. A view that draws nothing is indistinguishable from a rejection to
+anyone using the app, so a new one belongs in this tier.
 
-Indistinguishable from a rejection to anyone using the app. W8, the largest entry this tier ever
-held, closed on 2026-09-07, and W6 — the last entry that could reject a view outright — closed the
-same day. **No view in the corpus now fails to lay out, and no Tier 1b row remains open.**
-
-| ID | Item | Reach | Notes |
-|---|---|---|---|
 
 ## Tier 1c — live-reported, not yet reproduced headlessly
-
-**Six of the reporter's defects were captured, reproduced and closed on 2026-09-08** — a borderless
-window that was never key (so no `hoverImage` in the corpus ever drew), a script repaint that erased
-hover artwork, `<TEXT>` rows that were not hit targets, a tooltip showing the view's `description`,
-`Halo 2` opening on a thumbnail view its own `onLoad` blanks, and every GIF looping forever over a
-view timer that had never once fired. All six are in
-[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 7*, and the
-instrument that found all of them is `WMP_TRACE_INPUT=1`.
-
-**A seventh closed on 2026-09-08, and it was made visible by the sixth.** Once the view timers ran,
-every animation restarted from frame zero on every scene rebuild — reported as "the animations keep
-opening and closing constantly… when you try to interact they are just opening and closing all the
-time". `startAnimation` rewound its epoch on every call and is called by every rebuild, so a view
-declaring `timerInterval="100"` restarted a 2.16s one-shot intro ten times a second, and a hover
-crossing did it again. Archived as **W85** in § *Phase 8*; the mechanism and the `INPUT animation` trace line
-that found it are in `reference/harness.md` § *The one probe that is not in the test binary*.
 
 **Live QA of Phase 5 on 2026-09-08 found multiple defects that are not yet written down.** The
 reporter drove the app and reported "tons of issues"; the list was not captured before the session
@@ -369,38 +121,6 @@ W74. So whatever the reporter saw is, on this evidence, mostly *scene*-side (the
 W68 sits in, now ranked automatically by W70) or driven by a hover, a timer or live playback, which
 W73 records as still unreachable. That narrows the gap; it does not substitute for the list.
 
-**Three more closed on 2026-09-09, all from one report on `WoW`** — "wow skin is empty and shows no
-player or skin windows", then "adding to the playlist does not work", then "why does the now playing
-look like this? it should fit and marquee". They were three unrelated engine defects, each of which
-hid the other two: a panel opened with `theme.openView` was persisted as the session's view (**W96**),
-an unanswerable `wmpprop:` on `visible` deleted the playlist control outright (**W95**), and a
-`<TEXT>` was drawn unclipped while no skin in the corpus could turn its marquee on (**W94**). All
-three are in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md)
-§ *Phase 12*, with the sweep that bounded the second. One thing the report did **not** turn out to be:
-"launching a track from library does not play it" did not reproduce — playback started every time
-from the Plex browser, and the queue reached the engine; what was missing was any way to *see* it.
-
-**Two more closed on 2026-09-09, and the reason neither had ever been captured is that no probe
-here could render a playing player.** "The timer display and seek/progress are broken in wmp for all
-skins" was **W119** — a 100 ms position tick dispatched as `status_onchange`, which is WMP's *status
-string changed* event, so 70 of the 177 measurable archives re-ran their metadata handler ten times
-a second (all 75 authored sources are metadata updaters; 35 of them re-ran the readout off
-`player.status`, which was then inert and empty — it is a live sentence since W162 and the trap is
-unchanged, because it was always the *rate*) and every script timer in the skin was cancelled
-inside 100 ms of pressing play —
-and **W120**, a seek slider whose `max` is the media duration and whose `value` no skin states,
-which is 73 sliders across 61 archives sitting on frame 0 for the length of the track. Both are in
-[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 14 (fifth
-pass)*. **The instruments came first and they are the transferable part**: `WMP_RENDER_HOST` seeds a
-playing host for a whole sweep and `NULLPLAYER_PLAY` starts a debug launch on a track, so the
-playback half of W73 is now measurable rather than argued about. With the first of them seeded, 88 of
-the 89 measurable archives that author the elapsed binding draw the right string, which is what moved
-the search out of the scene and into the app's event dispatch. **The clock half of the same report closed the same
-day as W51** — a control is bound both ways, so the host moving it raises `value_onchange` too, and
-`Catwoman`'s digit strips now count the track down. That one carries new measured demand with it: 42
-handlers that had never run now run, and 30 abort on an **`event` object in a handler** that nothing
-binds on either direction of `change`.
-
 **Four more reported 2026-09-15, and three of them are not about the skin's own windows.** The
 Cava window, the library window and `Combat_Flight_Simulator_3`'s library are all NullPlayer surfaces
 wearing a borrowed `.wmz` ring (`WMPHostedFrameTemplate`), so W177-W179 sit in
@@ -424,23 +144,7 @@ result and the reason the other two are legible as defects rather than as the en
 | W99 | A drawer's own toggle button drifts out from under the pointer once the view's timer runs | `xsn_sports` confirmed both live and headlessly; **every skin with a timer and a moved drawer is a candidate — count it** | Reported live 2026-09-09 as "it opens and closes right away, it is resistant to opening", and **reproduced against a baseline worktree at the parent commit, where it behaves identically** — so it is not W55, which only made it visible by correctly hiding a shut drawer's contents. `vidDrawerButton` in `xsn_sports/videoView` is drawn at `61,291` on the first frame and at `61,271` after `WMP_RENDER_SETTLE=2` runs the view's own 500 ms timer; a click at the first position returns `CLICK … MISS`, and a click at the settled one hits and opens the drawer to `4 widgets[slider×4]`. So the drawer works and the *target moves*. Twenty pixels, on a rebuild driven by a timer that only calls `htcpVid()` — which alpha-blends artwork and moves nothing — so find what re-resolves that subtree's geometry between ticks before assuming the handler did it. The old scripted-`view.height` theory is closed by W113; reproduce with `WMP_SKIN=…/xsn_sports.wmz WMP_RENDER_SETTLE=2 WMP_RENDER_PROBE=videoView`. |
 | W74 | A playlist overlay paints below the view it lives in | **2 views / 1 skin** (`Revert.wmz` and `Revert (1).wmz`, two releases of the same skin), the *only* two in the corpus, measured 2026-09-08 by `WMP_RENDER_APPKIT` over the 545 hosted views of the 179-archive sweep | 4,000 px at delta 196, in a 250x4 band at `3,256` of a 260-tall view. `ctrlPlaylist` is authored `3,14 250x257`, which ends at y=271 — eleven pixels past the view's own bottom edge — and `WMPMainView.layout()` positions the overlay from that frame without clipping it to `bounds`, so the `NSView` paints where the scene has nothing. **This is the whole W43 class in the corpus's default state**: 543 of the 545 hosted views agree with their scene exactly. Establish what WMP does with a control authored past its view's edge before choosing between clipping the overlay to `bounds` and clipping it to the widget's own `clipRect` — the scene already carries a `clipRect` the overlay ignores, which is the cheaper of the two and may be the correct one. Reproduce with `WMP_SKIN=…/Revert.wmz WMP_RENDER_APPKIT=1`, and `WMP_RENDER_APPKIT_DUMP=<dir>` to see both bitmaps. |
 
-**The Phase 3 `corona` live-QA pair is closed and both are in the archive** (§ *Phase 13*). W43 —
-the player going black while a track played — was fixed when the two overlay views were found
-filling `dirtyRect` rather than `bounds`. W44 — four buttons in the top cluster all opening the file
-dialog — was closed on the test the row itself nominated: `WMP_RENDER_CLICK="vPlayer@366,12;400,12;420,12;444,12"`
-now resolves `bOpenFile`, `bPlaylist`, `bVis` and `bEq` distinctly with **`handlers=1` each**, and
-only `bOpenFile` posts `openFileDialog`. That disproves the row's own suspicion of a `nil`
-`targetID` fanning one click out across every `onClick` in the view: dispatch carries the exact
-`targetStableID` from both the app and the harness, and an exact node beats an authored id.
-
 ## Tier 1d — what the Phase 6 instruments do and do not reach
-
-**W71, W72 and W70 landed and are in the archive.** The harness now hosts every scene in the real
-`NSView` stack and diffs it (`WMP_RENDER_APPKIT`), drives a captured drag along a slider's own axis
-(`WMP_RENDER_CLICK` with a `>`-joined path), and ranks every view by how much of it failed to
-resolve (`starved.tsv`, every census run). What they measured on their first run is in
-`skills/wmp-skin-guide/reference/harness.md` § *After Phase 6*; the two findings are W74 and the
-re-ranking of W68.
 
 **Manual testing still does not scale to this corpus.** 179 skins times sliders, drawers, drags and
 animation is not a human-scale job, and Phase 5 shipped its AppKit half unmeasured because of it.
@@ -451,25 +155,6 @@ What is left of that gap is one row.
 | W73 | A clean sweep still proves only the default state | every skin | **The playback half is now instrumented, 2026-09-09**: `WMP_RENDER_HOST` seeds a playing host for a whole sweep (and `NULLPLAYER_PLAY` starts a live debug launch on a track), which is what found W119 and W120 — two defects in the one state every transport readout in the corpus is authored for and no capture here had ever entered. Read the `HOST` line of such a capture before anything else in it. Narrowed by W71 and W72, not closed by them. The AppKit *overlay* class is now measured — 545 hosted views, two defects, both in W74 — and every slider in the corpus is drivable. What no sweep here still says anything about: a tab, a setting, a **hover**, a drawer, the window's shape and its shadow (those live in the window server and stay a short, genuinely manual list), and anything driven by live playback. W69's flicker is in that remainder, which is why it needs its own instrumentation rather than another sweep. |
 
 ## Tier 1f — the residue of the starvation classes
-
-**W112-W116 closed 2026-09-09 too**, from the second report on the same skin — a tween endpoint
-readable by the handler that started it, a script that could not resize its own window, a `fontSize`
-that never reached the drawing beside a baseline that sat above its own box, and two host members
-that aborted the handler filling every readout, and a `BUTTONGROUP` painting its whole hover
-sheet over the window. **Two of the four were reachable headlessly and two
-were not**: no sweep here has a host snapshot, so nothing but `INPUT script-diag` in the running app
-could see a `psPlaying` branch dying on its first statement. They are in
-[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 14 (third
-pass)*.
-
-**W107-W110 closed 2026-09-09** and are in
-[`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) § *Phase 14*: an
-unsized `<TEXT>`, an unsized `<BUTTONGROUP>`, a mapping-region `<…ELEMENT>` laid out as a control,
-and half of WMP's transport vocabulary missing from `WMPElementKind`. Together they were **83% of
-the corpus's 2,380 unresolved nodes**, and closing them took the corpus to **1,067** while adding
-689 nodes, 611 paint commands, 253 hit targets and 609 widgets. The evidence, the sweep and the two
-rules that came back narrower are in `skills/wmp-skin-guide/reference/harness.md` § *After the
-starvation classes*. What is left of the class is one row.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
@@ -503,8 +188,6 @@ across the corpus* is the trap that rule exists for.
 | `<VIDEOSETTINGS>` | 94 | 94 | 93 | no | **W103** |
 | `<NETWORK>` | 6 | 4 | 4 | object-only, correctly | **W104** |
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
 
 ## Tier 2 — the script runtime, after Phase 3
 
@@ -533,13 +216,6 @@ containing `SKIN` block. The queue behaved exactly as `reference/object-model.md
 would: closing the biggest row let handlers run further and **raised** the rows behind it, so the
 numbers below are the post-W37 ones and the pre-W37 ones are void.
 
-**W38 then closed against the same 179 archives and did it again.** `WMP: unimplemented` calls
-corpus-wide fall **83 → 43** — the 42 that went are its own 40 `alphaBlendTo` and 2
-`setColumnWidth` — while `Can't find variable` / `TypeError` stays at 45, because this row was never
-a name the runtime could not find. Thirty views changed on screen and none of them is a fade: they
-are the rest of those `onLoad` handlers running. The rows below are otherwise unmoved; the
-scripted-size path it exposed later closed as W113.
-
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | W39 | `eq.speakerSize` | 18 skins | Plus `eq.enableSplineTension` and `eq.enhancedAudio` at 1 each. WMP's speaker/spatial settings; the engine has no equivalent, so this is an honest `inert()` candidate rather than a feature. |
@@ -566,11 +242,6 @@ list because it closed in the same change that added the instrument; `value_onch
 events this engine dispatches. The distinct-name count reads 140 → 142 rather than 140 → 137: **36
 blocks were damaged in both captures** (W35), so the *edges* of that vocabulary move between runs and
 the uses figure is the one to quote.
-
-**W55 closed 2026-09-09 and took 438 of those uses with it** — `onEndMove` 247, `onDragEnd` 141,
-`onEndAlphaBlend` 50 — so the 4,114 above is stale by that much and the rows below are otherwise
-unmoved. It also settled the shape of a *negative* answer: `onEndResize` is **zero uses corpus-wide**
-and was deliberately left unimplemented rather than added for symmetry.
 
 An entry here is markup asking for something. Two things make it work: classification (one line) and
 a dispatch site (the real cost, and different per event). Do not add a name to `handlerNames` or
@@ -657,7 +328,6 @@ close, and both are blocked on something other than drawing.
 | W135 | Small, real, individually cheap — the SDK audit's S4 table as one row | Per item below, measured 2026-09-11 over the 177 archives | Kept as one row because each item is an `inert()` or a read-through of a few lines, and splitting them would rank nine one-line changes above work that moves a screen. `<AUTOMENU>` (own element, **4 skins**) — the Quick Access Panel, no counterpart here, so `inert` rather than `unknown`. `authorVersion` on `THEME` (16) — metadata the skin chooser could show. `toolbarMargin` on `PLAYLIST` (14) — rides with W133. `scrollingDirection` on `TEXT` (13) — the marquee axis; W94 implemented one direction. `wordWrap` on `TEXT` (10) — W94 deliberately left the vertical clip open, so decide these two together. `effectCanGoFullScreen` on `EFFECTS` (10) — no full screen for the hosted rect, `inert`. `fontWeight` on `TEXT` (10) — the engine reads `fontStyle` only. `textLimit` and `editStyle` on `EDITBOX` (8 each) — one EDITBOX use case in the corpus, `plSearchEdit`. `showBackground` on `EFFECTS` (7) — interacts with W101's "do not fill the widget's rectangle". |
 | W145 | A borrowed window frame is rendered from markup, so it never follows the theme the skin is *set* to | **xsn_sports** measured 2026-09-12; the pattern is stacked variants, unmeasured across the corpus | `WMPHostedFrameTemplate` lends NullPlayer's own windows the skin's eight-piece ring (86 of 180 archives declare one), built through `WMPSceneBuilder` from markup alone. A skin whose colour scheme is a *script* decision therefore always gets its opening one. `xsn_sports` stacks all eight frame variants in `plView` (`pl1_1`…`pl1_8`, 2-8 at `alphaBlend="0"`) and cross-fades between them from `htcpStartupPl()`, reading the `htcpID`/`winAlpha` preferences in the view's own `onLoad` — "Hyper-Transient Color Phasing", per the notice in `xsn.js`. Reported as "the NullPlayer window does not follow the colour theme selected in xsn". **The fix is to run the donor view's `load` off-screen** (`WMPScriptRuntime.transact`, whose overrides `dispatch` deliberately discards) and build the ring with the overrides it commits, re-running when the skin's preferences change; the template must then keep *every* candidate per ring role rather than the first declaration. It settles on the chosen colour and does not animate the phase — running a closed window's timer to match a cross-fade is out of proportion to what it buys. |
 | W67 | `.cur` and `.ani` cursors | **~70 uses**, a handful of skins (`resize.cur` 26, `over.ani` 23, `sizetopright.cur` 12, `size2_m.cur` 6) | The remainder after the named cursors landed: Windows cursor formats, which no macOS decoder reads. They resolve to no cursor rather than to a wrong one. Worth doing only with a `.cur`/`.ani` decoder, and worth almost nothing without one. |
-
 
 | W149 | Controls still unreachable after W148, each for a different reason | `Sports` 7, `anime`, `STALKER`, `T3-Skynet_Media_Player`, `Plus! Professional` (container) — **11 total**, re-measured 2026-09-12 after W150 (was 16; `Gold`'s five containers and four others were the position-map half) | **Opened by W148 closing**, and it is the residue that rule does not explain rather than a regression from it: reproduce with `WMP_SKIN=<corpus> WMP_RENDER_HOST=playing WMP_RENDER_OCCLUDED=1` and read the `reached=rect-only` lines. **10 of the 16 are `<BUTTONGROUP>` *containers* with no mapping children** (`Gold`'s five stacked `drawerButton*` at one 144x123 rect, `The_Doobie_Brothers`, `Plus! SlimLine`, `Plus! Professional`), and a group with no `<BUTTONELEMENT>` dispatches nothing however it is ranked — **decide whether those should be hit targets at all before counting them as work**. The six that are real: `Sports`'s `eq2`–`eq8` sliders answer to `pl2`/`pl3`/`pl4` `<TEXT>` nodes drawn over them, which is the same question in reverse (a `<TEXT>` keeps its box because glyphs are not a hit shape — see `WMPHitCoverageBuilder`), and that skin trades 7 sliders for the 3 texts it gained; `anime`'s `plHandle` answers to `closepl`; `STALKER`'s `blankRate4` to a plain `<BUTTON>` while its other four stars work; `T3-Skynet_Media_Player`'s `timeSign` is authored at `x=-25` and is mostly off its own canvas. **Name the node before ranking the count** — the same rule `../harness.md` states for `unresolved`. |
 
