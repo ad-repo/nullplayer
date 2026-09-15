@@ -160,10 +160,10 @@ class AudioEngine {
     weak var delegate: AudioEngineDelegate?
     
     /// The AVAudioEngine instance
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     
     /// Audio player node
-    private let playerNode = AVAudioPlayerNode()
+    private var playerNode = AVAudioPlayerNode()
     
     /// Active EQ layout. Classic mode keeps the legacy 10-band layout; modern mode uses 21 bands.
     /// The underlying `eqNode` is always a fixed 21-band node; this describes which layout's
@@ -177,11 +177,11 @@ class AudioEngine {
     /// the first time it is used.
     private var canonicalGains: [String: [Float]] = [:]
 
-    /// Equalizer — a fixed 21-band node that hosts either layout (never rebuilt).
-    private let eqNode: AVAudioUnitEQ
+    /// Equalizer — a fixed 21-band layout; replaced only during graph failure recovery.
+    private var eqNode: AVAudioUnitEQ
     
     /// Mixer node to combine player nodes (class property for graph rebuilding)
-    private let mixerNode = AVAudioMixerNode()
+    private var mixerNode = AVAudioMixerNode()
 
     /// Reference Tuning controller. Owns the pitch-shift nodes used in both the
     /// local AVAudioEngine graph and the AudioStreaming graph.
@@ -401,7 +401,7 @@ class AudioEngine {
     private var crossfadeTimer: Timer?
     
     /// Secondary player node for crossfade (local files)
-    private let crossfadePlayerNode = AVAudioPlayerNode()
+    private var crossfadePlayerNode = AVAudioPlayerNode()
     
     /// Audio file for crossfade player
     private var crossfadeAudioFile: AVAudioFile?
@@ -684,6 +684,24 @@ class AudioEngine {
     /// devices, Zoom routes, AirPlay/Sonos, or Wi-Fi-backed outputs.
     private var pendingAudioConfigChangeWorkItem: DispatchWorkItem?
     private var audioGraphRebuildDeferredForCast = false
+    private var audioGraphRetryCount = 0
+    private var isRebuildingAudioGraph = false
+    private var audioGraphNeedsReplacement = false
+
+    // Fault injection exercises the real Objective-C exception/recovery path in tests.
+    var debugAudioGraphFault: ((String) -> Void)?
+
+    func debugRebuildAudioGraphForTesting() { rebuildAudioGraph() }
+    func debugSetAudioGraphFileForTesting(_ file: AVAudioFile, state: PlaybackState, position: TimeInterval) {
+        audioFile = file
+        self.state = state
+        _currentTime = position
+        playbackStartDate = nil
+    }
+    var debugLocalGraphIsPlaying: Bool { engine.isRunning && playerNode.isPlaying }
+    var debugAudioGraphRecoveryState: (deferred: Bool, retries: Int, scheduled: Bool) {
+        (audioGraphRebuildDeferredForCast, audioGraphRetryCount, pendingAudioConfigChangeWorkItem != nil)
+    }
     private var pendingDeferredAudioGraphPlaybackIntent: DeferredAudioGraphPlaybackIntent?
     
     /// Whether audio casting is currently active (playback controlled by CastManager)
@@ -1240,11 +1258,15 @@ class AudioEngine {
     /// Handle audio configuration changes (device format changes)
     /// Called when AVAudioEngine detects a configuration change (e.g., device sample rate changed)
     @objc private func handleAudioConfigChange(_ notification: Notification) {
+        guard !isRebuildingAudioGraph,
+              let notifyingEngine = notification.object as? AVAudioEngine,
+              notifyingEngine === engine else { return }
         NSLog("AudioEngine: Configuration change detected")
 
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, notifyingEngine === self.engine else { return }
 
+            self.audioGraphRetryCount = 0
             self.pendingAudioConfigChangeWorkItem?.cancel()
 
             let workItem = DispatchWorkItem { [weak self] in
@@ -1280,12 +1302,20 @@ class AudioEngine {
     }
 
     private func deferPlaybackIntentUntilAudioGraphReady(_ intent: DeferredAudioGraphPlaybackIntent) {
+        audioGraphRetryCount = 0
         pendingDeferredAudioGraphPlaybackIntent = intent
         scheduleDeferredAudioGraphRebuildRetry()
     }
 
     private func scheduleDeferredAudioGraphRebuildRetry() {
         pendingAudioConfigChangeWorkItem?.cancel()
+        pendingAudioConfigChangeWorkItem = nil
+        guard audioGraphRetryCount < 6 else {
+            pendingDeferredAudioGraphPlaybackIntent = nil
+            NSLog("AudioEngine: Audio graph recovery exhausted; waiting for Play or a device change")
+            return
+        }
+        audioGraphRetryCount += 1
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -1293,7 +1323,9 @@ class AudioEngine {
 
             guard self.audioGraphRebuildDeferredForCast else { return }
             guard self.rebuildAudioGraphIfDeferredAfterCast(clearPendingIntentOnSuccess: false) else {
-                self.scheduleDeferredAudioGraphRebuildRetry()
+                if self.pendingAudioConfigChangeWorkItem == nil && self.audioGraphRetryCount < 6 {
+                    self.scheduleDeferredAudioGraphRebuildRetry()
+                }
                 return
             }
 
@@ -1301,7 +1333,7 @@ class AudioEngine {
         }
 
         pendingAudioConfigChangeWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + min(4.0, 0.25 * pow(2.0, Double(audioGraphRetryCount - 1))), execute: workItem)
     }
 
     private func replayPendingDeferredAudioGraphPlaybackIntent() {
@@ -1336,6 +1368,7 @@ class AudioEngine {
     private func reconnectAudioGraph(format mixerFormat: AVAudioFormat) -> Bool {
         var exceptionError: NSError?
         let connected = NPObjCExceptionCatch({
+            self.debugAudioGraphFault?("connect")
             // Re-attach the pitch node if a previous rebuild detached it
             // (AVAudioEngine.attach is idempotent for already-attached nodes — checked via engine.attachedNodes).
             if !self.engine.attachedNodes.contains(self.tuningController.localPitchNode) {
@@ -1363,6 +1396,7 @@ class AudioEngine {
     private func disconnectAudioGraphForRebuild() -> Bool {
         var exceptionError: NSError?
         let disconnected = NPObjCExceptionCatch({
+            self.debugAudioGraphFault?("disconnect")
             self.engine.disconnectNodeOutput(self.playerNode)
             self.engine.disconnectNodeOutput(self.crossfadePlayerNode)
             self.engine.disconnectNodeOutput(self.mixerNode)
@@ -1384,12 +1418,68 @@ class AudioEngine {
         return true
     }
 
+    /// Replace every local node; none of the failed graph's audio units are reused.
+    private func replaceFailedAudioGraph() -> Bool {
+        audioGraphNeedsReplacement = true
+        audioGraphRebuildDeferredForCast = true
+        NSLog("AudioEngine: Replacing failed local audio graph")
+        let outputVolume = engine.mainMixerNode.outputVolume
+        let bypass = eqNode.bypass
+        let preamp = eqNode.globalGain
+        canonicalGains[activeEQConfiguration.name] = Array(eqNode.bands.prefix(activeEQConfiguration.bandCount)).map(\.gain)
+        NotificationCenter.default.removeObserver(self, name: .AVAudioEngineConfigurationChange, object: engine)
+        engine.stop()
+        engine = AVAudioEngine()
+        playerNode = AVAudioPlayerNode()
+        crossfadePlayerNode = AVAudioPlayerNode()
+        mixerNode = AVAudioMixerNode()
+        eqNode = AVAudioUnitEQ(numberOfBands: EQBandProgram.physicalBandCount)
+        tuningController.replaceLocalPitchNode()
+        programEQNode(for: activeEQConfiguration)
+        eqNode.bypass = bypass
+        eqNode.globalGain = preamp
+
+        defer {
+            NotificationCenter.default.addObserver(self, selector: #selector(handleAudioConfigChange),
+                                                  name: .AVAudioEngineConfigurationChange, object: engine)
+        }
+        var exceptionError: NSError?
+        let attached = NPObjCExceptionCatch({
+            self.engine.attach(self.playerNode)
+            self.engine.attach(self.crossfadePlayerNode)
+            self.engine.attach(self.mixerNode)
+            self.engine.attach(self.eqNode)
+            self.engine.attach(self.tuningController.localPitchNode)
+        }, &exceptionError)
+        guard attached else { return false }
+        playerNode.volume = 1
+        crossfadePlayerNode.volume = 0
+        playerNode.pan = balance
+        crossfadePlayerNode.pan = balance
+        engine.mainMixerNode.outputVolume = outputVolume
+
+        // Restore routing without changing the user's persisted device preference.
+        if var deviceID = currentOutputDeviceID {
+            guard let unit = engine.outputNode.audioUnit,
+                  AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                                       kAudioUnitScope_Global, 0, &deviceID,
+                                       UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr else { return false }
+        }
+        let format = engine.outputNode.inputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0,
+              reconnectAudioGraph(format: format) else { return false }
+        audioGraphNeedsReplacement = false
+        return true
+    }
+
     /// Rebuild the audio graph with the new output format
     /// Called after a device change that affects the audio format
     private func rebuildAudioGraph() {
         pendingAudioConfigChangeWorkItem?.cancel()
         pendingAudioConfigChangeWorkItem = nil
         audioGraphRebuildDeferredForCast = false
+        isRebuildingAudioGraph = true
+        defer { isRebuildingAudioGraph = false }
 
         let wasPlaying = state == .playing
         let wasPaused = state == .paused
@@ -1414,9 +1504,13 @@ class AudioEngine {
 
         let tapWasInstalled = wasPlaying && !isStreamingPlayback
         mixerNode.removeTap(onBus: 0)
+        playbackGeneration += 1 // Invalidate callbacks before stop releases scheduled buffers.
         playerNode.stop()
         crossfadePlayerNode.stop()
         if !isStreamingPlayback {
+            gaplessPreparationToken &+= 1
+            nextScheduledFile = nil
+            nextScheduledTrackIndex = -1
             crossfadeTimer?.invalidate()
             crossfadeTimer = nil
             isCrossfading = false
@@ -1428,28 +1522,24 @@ class AudioEngine {
             playerNode.volume = 1.0
         }
 
-        // Disconnect all nodes. AVAudioEngine raises NSException for some
-        // route-change graph states, so Swift do/catch is not enough and the
-        // teardown must be guarded exactly like the reconnect below.
-        guard disconnectAudioGraphForRebuild() else {
-            moveToNonPlayingStateAfterGraphRebuildFailure(
-                position: resumePosition,
-                fallbackState: wasStopped ? .stopped : .paused
-            )
-            scheduleDeferredAudioGraphRebuildRetry()
-            return
+        // A caught exception can leave the graph partially disconnected. Retrying
+        // mutations on that same graph indefinitely cannot repair its audio units.
+        if audioGraphNeedsReplacement || !disconnectAudioGraphForRebuild() || !reconnectAudioGraph(format: mixerFormat) {
+            guard replaceFailedAudioGraph() else {
+                if wasPlaying && !isStreamingPlayback && pendingDeferredAudioGraphPlaybackIntent == nil {
+                    pendingDeferredAudioGraphPlaybackIntent = .play
+                }
+                if !isStreamingPlayback {
+                    moveToNonPlayingStateAfterGraphRebuildFailure(
+                        position: resumePosition,
+                        fallbackState: wasStopped ? .stopped : .paused
+                    )
+                }
+                scheduleDeferredAudioGraphRebuildRetry()
+                return
+            }
         }
-
-        // Reconnect all nodes with new format. AVAudioEngine raises NSException
-        // for some route-change graph states, so Swift do/catch is not enough.
-        guard reconnectAudioGraph(format: mixerFormat) else {
-            moveToNonPlayingStateAfterGraphRebuildFailure(
-                position: resumePosition,
-                fallbackState: wasStopped ? .stopped : .paused
-            )
-            scheduleDeferredAudioGraphRebuildRetry()
-            return
-        }
+        audioGraphRebuildDeferredForCast = false
 
         if tapWasInstalled {
             installSpectrumTap(format: nil)
@@ -1512,21 +1602,14 @@ class AudioEngine {
                 NSLog("AudioEngine: Re-scheduled local playback from %.2fs after config change (playing=%d)", resumePosition, wasPlaying ? 1 : 0)
             } catch {
                 NSLog("AudioEngine: Failed to restart after config change: %@", error.localizedDescription)
+                audioGraphNeedsReplacement = true
+                if wasPlaying && pendingDeferredAudioGraphPlaybackIntent == nil {
+                    pendingDeferredAudioGraphPlaybackIntent = .play
+                }
                 moveToNonPlayingStateAfterGraphRebuildFailure(
                     position: resumePosition,
                     fallbackState: wasStopped ? .stopped : .paused
                 )
-                audioGraphRebuildDeferredForCast = true
-                scheduleDeferredAudioGraphRebuildRetry()
-            }
-        } else if wasPlaying && isStreamingPlayback {
-            // For streaming, just restart the engine - StreamingAudioPlayer manages its own state
-            do {
-                try engine.start()
-                NSLog("AudioEngine: Restarted engine for streaming after config change")
-            } catch {
-                NSLog("AudioEngine: Failed to restart engine for streaming: %@", error.localizedDescription)
-                moveToNonPlayingStateAfterGraphRebuildFailure(position: currentPosition)
                 audioGraphRebuildDeferredForCast = true
                 scheduleDeferredAudioGraphRebuildRetry()
             }
@@ -2316,6 +2399,7 @@ class AudioEngine {
     
     /// Pause local playback only (used internally when casting takes over)
     func pauseLocalOnly() {
+        pendingDeferredAudioGraphPlaybackIntent = nil
         // Save current position before pausing
         let pausePosition = currentTime
         _currentTime = pausePosition
@@ -2377,6 +2461,7 @@ class AudioEngine {
     /// Stop local playback without affecting cast session
     /// Used when loading new tracks while casting - we want to keep the cast session active
     private func stopLocalOnly() {
+        pendingDeferredAudioGraphPlaybackIntent = nil
         // Invalidate any in-flight deferred local loads so they cannot restart playback after stop.
         deferredLocalTrackLoadToken &+= 1
 

@@ -93,11 +93,11 @@ Main audio controller managing:
 
 **Key Properties:**
 ```swift
-private let engine = AVAudioEngine()
-private let playerNode = AVAudioPlayerNode()
-private let crossfadePlayerNode = AVAudioPlayerNode()
+private var engine = AVAudioEngine()
+private var playerNode = AVAudioPlayerNode()
+private var crossfadePlayerNode = AVAudioPlayerNode()
 private let activeEQConfiguration: EQConfiguration
-private let eqNode: AVAudioUnitEQ
+private var eqNode: AVAudioUnitEQ
 private var streamingPlayer: StreamingAudioPlayer?
 private var crossfadeStreamingPlayer: StreamingAudioPlayer?
 var gaplessPlaybackEnabled: Bool
@@ -454,7 +454,13 @@ When audio isn't playing:
 ### Local Playback (AVAudioEngine)
 MP3, M4A, AAC, WAV, AIFF, FLAC, ALAC, OGG
 
-Route-change graph rebuilds must catch Objective-C exceptions from `AVAudioEngine.connect(_:to:format:)` via the `ObjCExceptionCatcher` bridge. If reconnect raises `AVAudioEngineGraph::UpdateGraphAfterReconfig`, defer the rebuild and retry through the existing cast/route-stabilization path instead of relying on Swift `do/catch`.
+Route-change graph rebuilds catch Objective-C exceptions from disconnect/connect via `ObjCExceptionCatcher`; Swift `do/catch` cannot catch them. An exception can leave a partially mutated graph (including persistent `-10868` failures after long idle periods). Recovery replaces the engine and **all local nodes**, including the controller's local pitch node, then restores output selection, EQ layout/gains/preamp/bypass, pitch/rate, volume, and balance. Streaming pitch nodes remain independent. Configuration observers move to the new engine; stale notifications from the retired engine are ignored. Invalidate playback completion generations before stopping old players.
+
+If replacement cannot recover the device, deferred retries back off from 250 ms to 4 seconds and stop after six retries. A fresh Play request or device-change notification permits another recovery cycle. Stop/Pause clear deferred playback intent so recovery cannot restart canceled playback. Tests in `AudioEngineGraphRecoveryTests` inject Objective-C exceptions into disconnect/connect to exercise replacement and persistent-failure exhaustion without waiting days.
+
+### Debugging a live defect
+
+For a screen-only audio defect, read `skills/live-ui-testing/SKILL.md` and `skills/winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* before diagnosis. For graph failures, capture the disconnect/connect failure and subsequent replacement/retry logs; preserve the affected process until its route and engine state have been inspected.
 
 ### Streaming Playback (AudioStreaming)
 HTTP/HTTPS URLs with MP3, AAC, Ogg Vorbis
