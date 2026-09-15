@@ -1465,7 +1465,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Cast Failed"
-                    alert.informativeText = error.localizedDescription
+                    alert.informativeText = "Unable to start casting. Check that the device is available and try again."
                     alert.alertStyle = .warning
                     alert.runModal()
                     self.clearVideoCastState()

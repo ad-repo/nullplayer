@@ -12209,7 +12209,7 @@ class PlexBrowserView: NSView {
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "Cast Failed"
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = error.localizedDescription.redactingSensitiveURLQueryItems
                 alert.alertStyle = .warning
                 alert.runModal()
             }
@@ -13283,7 +13283,7 @@ class PlexBrowserView: NSView {
                 NSLog("PlexBrowserView: Failed to cast movie: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 let alert = NSAlert()
                 alert.messageText = "Cast Failed"
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = error.localizedDescription.redactingSensitiveURLQueryItems
                 alert.alertStyle = .warning
                 alert.runModal()
             }
@@ -13314,7 +13314,7 @@ class PlexBrowserView: NSView {
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Cast Failed"
-                    alert.informativeText = error.localizedDescription
+                    alert.informativeText = error.localizedDescription.redactingSensitiveURLQueryItems
                     alert.alertStyle = .warning
                     alert.runModal()
                 }
@@ -18416,7 +18416,7 @@ class PlexBrowserView: NSView {
                 NSLog("Failed to play Plex playlist '%@' (id=%@): %@", playlist.title, playlist.id, error.localizedDescription.redactingSensitiveURLQueryItems)
                 isLoading = false
                 stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
                 needsDisplay = true
             }
         }
@@ -18831,7 +18831,7 @@ class PlexBrowserView: NSView {
                 NSLog("Failed to play subsonic playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 isLoading = false
                 stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
                 needsDisplay = true
             }
         }
@@ -18897,7 +18897,7 @@ class PlexBrowserView: NSView {
                 NSLog("Failed to play Emby playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 isLoading = false
                 stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
                 needsDisplay = true
             }
         }
@@ -18973,7 +18973,7 @@ class PlexBrowserView: NSView {
                 NSLog("Failed to play Jellyfin playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 isLoading = false
                 stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
                 needsDisplay = true
             }
         }

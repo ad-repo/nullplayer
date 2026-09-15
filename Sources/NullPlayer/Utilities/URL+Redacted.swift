@@ -40,8 +40,8 @@ extension URL {
 }
 
 extension String {
-    /// Redacts known auth query parameters from log/error strings that may contain URLs.
-    var redactingSensitiveURLQueryItems: String {
+    /// Compiled once and reused across log and error presentation calls.
+    private static let sensitiveURLRedactionPatterns: [(NSRegularExpression?, String)] = {
         // Also match XML-escaped separators and percent-encoded nested URLs.
         // Stop at a log/XML/JSON delimiter so surrounding diagnostics survive.
         let patterns: [(String, String)] = [
@@ -54,10 +54,17 @@ extension String {
             // LocalMediaServer issues 16-hex capability tokens in these paths.
             (#"(?i)(/(?:stream|media|artwork)/)[a-f0-9]{16}(?=[./?&#\s"'<>\\]|$)"#, "$1<redacted>")
         ]
+        return patterns.map { pattern, template in
+            (try? NSRegularExpression(pattern: pattern), template)
+        }
+    }()
+
+    /// Redacts known credentials from log/error strings that may contain URLs.
+    var redactingSensitiveURLQueryItems: String {
         // JSON may escape the slashes in URLs embedded in error descriptions.
         let message = replacingOccurrences(of: #"\/"#, with: "/")
-        return patterns.reduce(message) { message, rule in
-            guard let regex = try? NSRegularExpression(pattern: rule.0) else {
+        return Self.sensitiveURLRedactionPatterns.reduce(message) { message, rule in
+            guard let regex = rule.0 else {
                 return "<redacted>"
             }
             return regex.stringByReplacingMatches(
