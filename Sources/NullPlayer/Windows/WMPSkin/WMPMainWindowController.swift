@@ -277,6 +277,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let skinData = try await Task.detached { try Data(contentsOf: skin.archive.sourceURL) }.value
                 let runtime = WMPScriptRuntime(
                     preferences: WMPPreferenceStore(skinData: skinData, defaults: importer.defaults))
+                await runtime.setScreen(Self.screenSize(for: window))
                 var candidates: [String] = []
                 if let preferred = importer.selectedViewID { candidates.append(preferred) }
                 // The skin's own `<THEME currentViewID>` outranks `vPlayer` and document order and
@@ -1322,10 +1323,39 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
     func windowDidMove(_ notification: Notification) {
         guard let window else { return }
+        // A window dragged to another display changes what `event.screenWidth` means, and a skin
+        // reads it to decide how far it may grow itself — `Compact`'s drawers do it on every open.
+        if let scriptRuntime {
+            let size = Self.screenSize(for: window)
+            Task { await scriptRuntime.setScreen(size) }
+        }
         let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: origin)
         persistViewFrame(for: window)
     }
+    /// What a skin means by `event.screenWidth`: the resolution of the display its window is on,
+    /// in points, falling back to the main display and then to the harness default so the number is
+    /// never zero — a skin divides by it and clamps its own window against it.
+    /// The modifiers held right now, for WMP's `event.shiftKey` and its siblings. Read at dispatch
+    /// rather than carried up from the `NSEvent`, because the script events that need it arrive
+    /// from widget callbacks — an `<EDITBOX>`'s text, a slider's value — which have no event of
+    /// their own by the time they reach here.
+    static func currentEventModifiers() -> WMPEventModifiers {
+        let flags = NSEvent.modifierFlags
+        var modifiers: WMPEventModifiers = []
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.control) { modifiers.insert(.control) }
+        if flags.contains(.option) { modifiers.insert(.alt) }
+        return modifiers
+    }
+
+    static func screenSize(for window: NSWindow?) -> WMPSize {
+        guard let frame = (window?.screen ?? NSScreen.main)?.frame else {
+            return WMPObjectModel.defaultScreen
+        }
+        return WMPSize(width: frame.width, height: frame.height)
+    }
+
     func windowWillMiniaturize(_ notification: Notification) {
         if let window { WindowManager.shared.attachDockedWindowsForMiniaturize(mainWindow: window) }
     }
@@ -1650,9 +1680,26 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // still in flight). So `onmouseover`/`onmouseout` dispatch only where the markup carries a
         // handler for them; the hover *artwork* never went through here and is unaffected.
         if onlyWhenAuthored, handlers.isEmpty { return }
+        // **A `<RETURNBUTTON>` is WMP's route back to the library, and it carries no handler.**
+        // The element *is* the command — 15 of the 19 in the corpus author no `onClick` at all —
+        // so with the kind treated as an ordinary button the control was a hit target that did
+        // nothing: `Compact`'s toggle, `corona`'s and `9SeriesDefault`'s two system-bar buttons,
+        // `cerulean`, `claw`, `circle`, `polygon`, `aoe`, `bluegrid`, `Cubist`, `Optik`,
+        // `digitaldj` and `Plus! Professional`. Reported as "the library button does not call the
+        // library" (W191). **Only when the markup authored nothing**: `anemone` and `modernblue`
+        // spell `onClick="view.returnToMediaCenter();"` on theirs, and posting the command here as
+        // well would toggle the library open and shut again on one click.
+        if name == "click", handlers.isEmpty, let targetStableID,
+           presentation.activeScene?.hits.first(where: { $0.stableID == targetStableID })?
+               .kind.caseInsensitiveCompare("returnButton") == .orderedSame {
+            _ = applyHostCommands([WMPJScriptHostCommand(action: "toggleLibrary", value: nil)],
+                                  from: presentation)
+            return
+        }
         dispatchScriptTransaction(presentation,
                                   WMPJScriptEvent(name: name, targetID: targetID,
-                                                  handlers: handlers))
+                                                  handlers: handlers,
+                                                  modifiers: Self.currentEventModifiers()))
     }
 
     private func dispatchHostEvents(_ presentation: WMPViewPresentation, _ names: [String]) {
@@ -1779,11 +1826,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 }
             }
             let switchedView = applyHostCommands(output.hostCommands, from: presentation)
-            if let assigned = output.viewSize, !switchedView {
-                presentation.scriptViewSize = assigned
-                setWindowSize(presentation,
-                              NSSize(width: assigned.width, height: assigned.height))
-            }
+            // **The window is resized with the picture that fits it, not ahead of it.** The size
+            // is recorded here — `rebuildSize` below needs it to build the scene the skin asked
+            // for — but the frame itself is set in the same main-actor turn as `present`, further
+            // down. Setting it here instead resized the window around the *old* image, which
+            // AppKit then stretched to fill until the new one arrived a frame or two later:
+            // `Compact`'s player visibly ballooned to 601 wide and snapped back to 422 every time
+            // a drawer opened. Reported as "a big UI flash when the drawer opens" (W190).
+            let assignedWindowSize = switchedView ? nil : output.viewSize
+            if let assignedWindowSize { presentation.scriptViewSize = assignedWindowSize }
             if !switchedView {
                 applyTimerDelta(presentation, registered: output.timerRequests,
                                 cleared: output.clearedTimerTokens)
@@ -1808,11 +1859,22 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // through here, they come through `renderInteraction`, which presents on its own task.
             // Animation is likewise untouched — `startAnimation` runs its own loop and a *skipped*
             // rebuild is one fewer epoch rewind (W85), not a frozen GIF.
+            // **The size to rebuild at is the window's, not the last scene's.** `activeScene` is
+            // only a proxy for the window and it goes stale exactly when the window moved without
+            // a script transaction — a user resize. A transaction already in flight across that
+            // resize (or the view's own 4 s timer afterwards) then re-presented the pre-resize
+            // canvas *and* stored it as `activeScene`, so every later transaction read the stale
+            // size back and the window never recovered: `Compact` drawn 750 wide inside a 601
+            // window, its player body stretched over the drawer it had just opened (W187).
+            let windowSize = WMPSize(
+                width: presentation.window.contentLayoutRect.width / uiScale,
+                height: presentation.window.contentLayoutRect.height / uiScale)
+            let rebuildSize = presentation.scriptViewSize ?? windowSize
             if output.viewSize == nil,
                output.overrides == presentation.sceneOverrides,
                output.listItems == presentation.presentedListItems,
                let presented = presentation.activeScene,
-               presented.canvasSize == (presentation.scriptViewSize ?? presented.canvasSize) {
+               presented.canvasSize == rebuildSize {
                 return
             }
             do {
@@ -1831,7 +1893,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // with two hundred empty pixels around it.
                 let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID,
-                           requestedSize: presentation.scriptViewSize ?? activeScene.canvasSize,
+                           requestedSize: rebuildSize,
                            interactionState: presentation.interactionState,
                            overrides: output.overrides)
                 let result = try await WMPRenderer(imageStore: store).render(
@@ -1839,6 +1901,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     clock: presentation.animationClock(for: scene.viewID),
                     slotClocks: Self.slotClocks(presentation, for: scene, store: store))
                 guard !Task.isCancelled else { return }
+                // Frame and picture together: see `assignedWindowSize` above.
+                if let assignedWindowSize {
+                    setWindowSize(presentation, NSSize(width: assignedWindowSize.width,
+                                                       height: assignedWindowSize.height))
+                }
                 presentation.sceneOverrides = output.overrides
                 presentation.activeScene = scene
                 self.startAnimation(presentation, for: scene)

@@ -323,13 +323,15 @@ final class WMPScriptContext: @unchecked Sendable {
              preferences: [String: String], event: WMPJScriptEvent?,
              geometry: [Int: WMPRect],
              boundValues: [Int: WMPJSONValue] = [:],
-             retiredGeometry: Set<WMPScenePropertyAddress> = []) async -> WMPScriptRunResult {
+             retiredGeometry: Set<WMPScenePropertyAddress> = [],
+             screen: WMPSize = WMPObjectModel.defaultScreen) async -> WMPScriptRunResult {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(returning: perform(plan: plan, size: size, snapshot: snapshot,
                                                        preferences: preferences, event: event,
                                                        geometry: geometry, boundValues: boundValues,
-                                                       retiredGeometry: retiredGeometry))
+                                                       retiredGeometry: retiredGeometry,
+                                                       screen: screen))
             }
         }
     }
@@ -348,7 +350,8 @@ final class WMPScriptContext: @unchecked Sendable {
     /// `theme.currentViewID` from a dispatcher means the window, and answering `controlView` would
     /// name something that is not on screen.
     func runBackground(plan: WMPScriptViewPlan, currentViewID: String, snapshot: WMPHostSnapshot,
-                       preferences: [String: String], event: WMPJScriptEvent) async -> WMPScriptRunResult {
+                       preferences: [String: String], event: WMPJScriptEvent,
+                       screen: WMPSize = WMPObjectModel.defaultScreen) async -> WMPScriptRunResult {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 let presented = model.captureElements()
@@ -359,7 +362,7 @@ final class WMPScriptContext: @unchecked Sendable {
                 }
                 let result = perform(plan: plan, size: WMPSize(width: 0, height: 0),
                                      snapshot: snapshot, preferences: preferences, event: event,
-                                     geometry: [:], currentViewID: currentViewID)
+                                     geometry: [:], currentViewID: currentViewID, screen: screen)
                 viewRegistries[WMPPath.fold(plan.viewID)] = model.captureElements()
                 model.restoreElements(presented)
                 continuation.resume(returning: result)
@@ -371,9 +374,11 @@ final class WMPScriptContext: @unchecked Sendable {
                          preferences: [String: String], event: WMPJScriptEvent?,
                          geometry: [Int: WMPRect], currentViewID: String? = nil,
                          boundValues: [Int: WMPJSONValue] = [:],
-                         retiredGeometry: Set<WMPScenePropertyAddress> = []) -> WMPScriptRunResult {
+                         retiredGeometry: Set<WMPScenePropertyAddress> = [],
+                         screen: WMPSize = WMPObjectModel.defaultScreen) -> WMPScriptRunResult {
         model.beginTransaction(snapshot: snapshot, preferences: preferences,
-                               viewID: currentViewID ?? plan.viewID)
+                               viewID: currentViewID ?? plan.viewID, screen: screen,
+                               modifiers: event?.modifiers ?? [])
         pendingTimers.removeAll()
         pendingClearedTimers.removeAll()
         // Sync the element state to the layout the skin is drawn at. The scene was built with the
@@ -795,6 +800,10 @@ final class WMPScriptContext: @unchecked Sendable {
         bind(global: "theme", to: "theme")
         bind(global: "network", to: "player.network")
         bind(global: "mediacenter", to: "mediacenter")
+        // WMP's `event` is a global object, not a handler argument: `Compact`'s drawer handlers
+        // read `event.screenWidth` from a plain function call, and its view root reads it from a
+        // `jscript:` attribute where no event exists at all.
+        bind(global: "event", to: "event")
     }
 
     private func bind(global name: String, to path: String) {

@@ -591,6 +591,55 @@ queue, with the object model as the security boundary — see Amendment 2 in
   **A window bigger than the compact artwork is not a defect here**: `corona`'s `viewTiny` is authored 596x498 and
   draws a 346x103 mini player into it, exactly as its markup asks — WMP shapes that window with the transparency
   key and this engine leaves it transparent, which looks the same. Measure the window, not the ink.
+- **A script resizing its own window is four separate claims, and `Compact.wmz`'s drawers needed all
+  four (W184-W192, 2026-09-16).** They are listed here because each one *renders perfectly* in a
+  capture and does nothing on screen: the builder takes its canvas from the script's overrides, so
+  every headless probe agrees with the skin while the window stays where it was. **Read `viewSize=`
+  on the `CLICK` line, never the picture.**
+  1. **One axis is a resize.** `assignedViewSize` demanded an override for *both* `width` and
+     `height`; this skin grows only the width for one drawer and only the height for the other, so
+     it answered nil and the window never moved (W186).
+  2. **The axis the transaction did not assign is the *window's*, not the one left in the
+     overrides.** Those are cumulative, so a handler touching only the height re-asserted a width
+     from ten minutes ago and undid the user's stretch (W188).
+  3. **A script-assigned alignment is anchored at the canvas it was assigned at, and the canvas moves
+     *within* the transaction.** `SetAlignment(false)` → `view.width += rightMove` →
+     `SetAlignment(true)` is how a skin says *the body keeps its size and the space I just added is
+     the drawer's*; measured from the authored size instead, the body stretched over the drawer it
+     had opened (W185).
+  4. **A piece pinned to an edge rides it through a resize in the same handler.** The same idiom
+     with `right`/`bottom` instead — `SnapToVideoSize` — must move the piece, because this engine
+     lays out once per transaction and the middle state otherwise never exists. Without it the
+     drawer stays put while the window grows past it and **its tab ends up outside the window, where
+     nothing can ever click it again** (W192). One archive in the corpus assigns an alignment from
+     script, so 3 and 4 can move nothing else.
+  Two more from the same report are about *when* the window moves, not what size it takes: a script
+  transaction rebuilds at the **window's current size**, never the last scene's (a transaction in
+  flight across a user resize otherwise re-presents the stale canvas and stores it, permanently —
+  W187); and the frame is set in the **same main-actor turn as `present`**, because resizing ahead
+  of the render leaves AppKit stretching the old picture into the new frame — reported as "a big UI
+  flash when the drawer opens" (W190). See `reference/skins/compact.md`.
+- **WMP's `event` object is a global, and 84 of 185 archives read it (W184).** `Compact`'s drawer
+  handlers open `view.maxWidth = event.screenWidth` from a plain function call, and its view root
+  reads the same thing from a `jscript:` attribute where no event exists at all — so it is bound
+  like `player` and `theme`, not like a handler argument. `screenWidth`/`screenHeight` answer the
+  window's display (a fixed 1920x1080 headlessly, so a sweep reads the same on every machine) and
+  `shiftKey`/`ctrlKey`/`altKey` answer the dispatching event. **`keyCode` stays unrecognised on
+  purpose** — 433 uses across 79 archives, and nothing here dispatches `onKeyDown`, so answering `0`
+  would tell every one of those handlers that a key it never saw was pressed. A member that cannot
+  be answered honestly belongs in the demand tally, not in a default.
+- **`res://wmploc.dll/RT_STRING/#<id>` is a string, and drawing the URL is not a layout defect
+  (W189).** 133 uses of 50 distinct ids across 6 archives. `Compact` labels its settings tab and both
+  on/off switches this way, and the raw URL was 200 px of text in a box authored 110 wide for the
+  word *On* — reported as *"the srs text is misaligned"*, which it was, because of the string.
+  `WMPResourceStrings` holds only ids the corpus itself names and answers the empty string for the
+  rest; it is wired into all three routes a skin reaches them by — a readout's `value`, a tooltip,
+  and `theme.loadString`. **Add a row only when something in the corpus states the text.**
+- **`<RETURNBUTTON>` is the command, not a button that happens to be there (W191).** 19 uses across
+  15 archives and **15 author no `onClick` at all** — the element's own behaviour is the return to
+  the media centre, so treating the kind as an ordinary button left the library unreachable from
+  those skins. It posts `toggleLibrary` only when the markup authored nothing: `anemone` and
+  `modernblue` spell `view.returnToMediaCenter()` themselves, and doing both toggles it twice.
 - **A `.wmz` compact mode is a script resizing its own window, and it is the script's output rather
   than the drawing's (W113).** `SwitchSmall()` writes `view.width = 475; view.height = 373` and
   swaps one shell for another. Three separate things had to hold and none of them did:
@@ -1170,6 +1219,17 @@ defects in the compact-mode report were app-path defects a render sweep can neve
 one launch once the loop existed. The same section carries the two things that decided those fixes:
 how to reduce a skin's own script to a standalone `JSContext` repro, and why a fix that closes the
 report while moving images elsewhere in the corpus is the wrong fix.
+
+**The sharpest version of that class is a defect in the *window* rather than in the scene, and
+W184-W192 is three of them in one report.** A render dump rebuilds from the script's overrides, so
+the canvas grows there whether or not the window ever moves: a one-axis resize that the app ignored
+(W186), a stale canvas re-asserted after a user resize (W187) and a window resized ahead of its own
+picture (W190) each rendered *perfectly* in every capture. **The measurement is
+`CGWindowListCopyWindowInfo` filtered on owner `NullPlayer`, read before the gesture and after it** —
+and for anything that flashes, a series of `screencapture -o -x -l <id>` started at staggered offsets
+around the click, which is what showed the old artwork stretched into the new frame. Headlessly, the
+one line that separates "the drawer opened" from "the window followed" is `viewSize=` on the `CLICK`
+line; the picture cannot tell you. See `reference/skins/compact.md`.
 
 **When the report is about a control rather than one skin — "every skin has this button and it does
 nothing" — the route is `reference/harness.md` § *Auditing one authored control across the whole

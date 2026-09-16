@@ -650,8 +650,24 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // edge of the playlist and visualisation windows and now sits under them.
                 let horizontal = WMPAxisAlignment(horizontal: literalString(node, "horizontalAlignment"))
                 let vertical = WMPAxisAlignment(vertical: literalString(node, "verticalAlignment"))
-                let deltaWidth = parentFrame.width - parentAuthoredSize.width
-                let deltaHeight = parentFrame.height - parentAuthoredSize.height
+                // **A script-assigned alignment is anchored at the canvas it was assigned at.**
+                // Writing the attribute is WMP re-measuring the element's margins there and then,
+                // so the growth that counts afterwards is the growth *since the write* — the same
+                // reading `scriptDelta` gives a script-assigned coordinate, for the same reason.
+                // Only a child of the view root can be anchored this way: the anchor is a view
+                // canvas, and a deeper node's parent grew by an amount the canvas does not state.
+                func alignmentBaseline(_ property: String, _ authored: CGFloat,
+                                       _ axis: KeyPath<WMPSize, CGFloat>) -> CGFloat {
+                    guard isRoot || parentNode == nil || parentNode?.kind == .view,
+                          let canvas = overrides.scriptAssignedAlignment[
+                            WMPScenePropertyAddress(stableID: node.stableID, property: property)]
+                    else { return authored }
+                    return canvas[keyPath: axis]
+                }
+                let deltaWidth = parentFrame.width
+                    - alignmentBaseline("horizontalalignment", parentAuthoredSize.width, \.width)
+                let deltaHeight = parentFrame.height
+                    - alignmentBaseline("verticalalignment", parentAuthoredSize.height, \.height)
                 // **A coordinate a script wrote is anchored at the canvas it was written at (W159).**
                 //
                 // `isComputed` says "an expression owns this, so alignment must not move it" — an
@@ -1053,7 +1069,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 }
             }
             if isText(node.kind), !frame.isEmpty,
-               let value = literalString(node, "value") {
+               // A skin writes WMP's own resource strings straight into a readout; what the user
+               // sees is the string, never the URL. See `WMPResourceStrings` (W189).
+               let value = WMPResourceStrings.resolved(literalString(node, "value")) {
                 let alignment: WMPTextAlignment
                 switch literalString(node, "justification")?.lowercased() {
                 case "center": alignment = .center
@@ -1431,7 +1449,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
     private func toolTip(_ node: WMPNode, state: WMPVisualInteractionState,
                          literal: (WMPNode, String) -> String?) -> String? {
         let stateTip = state == .down ? literal(node, "downToolTip") : literal(node, "upToolTip")
-        return stateTip ?? literal(node, "toolTip")
+        // `transport.js` sets the play button's tooltip to `res://wmploc.dll/RT_STRING/#1800` on
+        // the same swap that sets its artwork, so a tooltip carries these as often as a readout.
+        guard let tip = WMPResourceStrings.resolved(stateTip ?? literal(node, "toolTip")),
+              !tip.isEmpty else { return nil }
+        return tip
     }
 
     private func isInteractive(_ kind: WMPElementKind) -> Bool {
@@ -1642,6 +1664,17 @@ struct WMPSceneOverrides: Hashable, Codable, Sendable {
     /// whatever size the view had when the handler ran, so the canvas is what makes it meaningful
     /// later. Alignment is where the difference shows — see `isComputed` and `scriptAnchorDelta`.
     var scriptAssignedGeometry: [WMPScenePropertyAddress: WMPSize] = [:]
+    /// **The canvas an alignment was on when a script assigned it.** WMP re-anchors an element the
+    /// moment its `horizontalAlignment`/`verticalAlignment` is written: the margins a `stretch`
+    /// keeps are the ones it has right then, not the ones its markup was authored with. A skin
+    /// grows its own window against exactly that — `Compact`'s drawer handlers pin `playerView` to
+    /// `left`/`top`, widen the view by 179, then set it back to `stretch`, so the player body keeps
+    /// its 422 and the 179 it did not take is the drawer. Measuring from the authored size instead
+    /// stretched the body over the whole new window and the drawer opened *underneath* it —
+    /// reported as "the drawers do not slide out, they change the size/shape of the player" (W185).
+    /// Only a script-assigned alignment is anchored, and `Compact` is the corpus's only skin that
+    /// assigns one (20 writes, 1 of 185 archives), so nothing else in the corpus can move.
+    var scriptAssignedAlignment: [WMPScenePropertyAddress: WMPSize] = [:]
 
     static let empty = WMPSceneOverrides(geometry: [:], properties: [:])
 }

@@ -183,7 +183,12 @@ and nothing happens".
   while the app was working perfectly. Live traces write to **stderr** — `WMP_PLACE_TRACE` and
   `WMP_ANIM_TRACE` are read on a terminal, which is why they get away with `print`.
 - **The first click on an inactive window is consumed activating it**, so the first whole drag
-  raises nothing. `AXRaise` the window, drive one throwaway gesture, then the real one.
+  raises nothing. `AXRaise` the window, drive one throwaway gesture, then the real one. **And when
+  the reporter is at the machine, a posted `CGEvent` reaches nothing at all while their app is
+  frontmost** — it fails silently and reads exactly like a dead control, which cost several rounds
+  on 2026-09-16. `set frontmost to true` on the debug build's pid immediately before each gesture,
+  and re-read the window origin every time: a session shared with a live reporter moves the window
+  under you, and a click computed from a stale origin lands on the desktop.
 - **A short track cannot show a seek.** Pair it with `NULLPLAYER_PLAY` and something long.
 - **`NULLPLAYER_SKIN` does not select a `.wmz`.** `AppDelegate` hands it to `WindowManager.loadSkin`, which is the **classic** `.wsz` loader, so a `.wmz` path there loads nothing and the launch comes up on the unskinned WMP view (440x170) — which reads as the skin failing to load. A `.wmz` is selected the way step 1 of the live loop says, `defaults write NullPlayer wmpSkinName`, and **session restoration overwrites that key from the saved state before the window opens**, so a launch that keeps coming up on the wrong skin wants `defaults write NullPlayer rememberStateEnabled -bool false` for the duration. Both cost a launch each on 2026-09-12. Put the user's values back afterwards.
 

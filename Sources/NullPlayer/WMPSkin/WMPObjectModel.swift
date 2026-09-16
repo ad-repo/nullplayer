@@ -74,6 +74,25 @@ final class WMPObjectModel {
     var snapshot = WMPHostSnapshot()
     var preferences: [String: String] = [:]
     var currentViewID = ""
+    /// **The display the skin is on, for WMP's `event` object.** `event.screenWidth` /
+    /// `event.screenHeight` are the one part of that object that has an answer outside a live
+    /// input event, and a skin reads them to decide how far its own window may grow:
+    /// `Compact.wmz` opens both of its drawers with `view.maxWidth = event.screenWidth` before it
+    /// widens the view, so with `event` undefined the assignment threw a `ReferenceError` and took
+    /// the rest of `TogglePlaylist`/`ToggleSettings` — the growth and the slide — with it. Reported
+    /// as "drawer controls don't work in compact wmp skin" (W184). Set per transaction from the
+    /// window's own screen; the default is the harness's, so a headless sweep answers the same
+    /// numbers on every machine.
+    var screen = WMPObjectModel.defaultScreen
+
+    /// What a transaction with no window behind it answers. Deliberately a constant rather than
+    /// `NSScreen.main`: the corpus sweep compares captures across machines, and a screen-derived
+    /// number would move every `max`-clamped layout with the display it was measured on.
+    static let defaultScreen = WMPSize(width: 1920, height: 1080)
+
+    /// The modifiers the transaction's own input event carried, answered as `event.shiftKey` and
+    /// its two siblings. Empty outside an input transaction.
+    var eventModifiers: WMPEventModifiers = []
     var elements: [String: WMPScriptElement] = [:]
     private var elementOrder: [String] = []
     /// The preset the skin last selected. WMP tracks one; the engine has no notion of a current
@@ -105,10 +124,14 @@ final class WMPObjectModel {
 
     // MARK: Transaction lifecycle
 
-    func beginTransaction(snapshot: WMPHostSnapshot, preferences: [String: String], viewID: String) {
+    func beginTransaction(snapshot: WMPHostSnapshot, preferences: [String: String], viewID: String,
+                          screen: WMPSize = WMPObjectModel.defaultScreen,
+                          modifiers: WMPEventModifiers = []) {
         self.snapshot = snapshot
         self.preferences = preferences
         currentViewID = viewID
+        self.screen = screen
+        eventModifiers = modifiers
         calls.removeAll(keepingCapacity: true)
         mutations.removeAll(keepingCapacity: true)
         hostCommands.removeAll(keepingCapacity: true)
@@ -286,6 +309,7 @@ final class WMPObjectModel {
         case "player.dvd": return readDVD(name)
         case "eq": return readEqualizer(name)
         case "theme": return readTheme(name)
+        case "event": return readEvent(name)
         case "mediacenter": return readMediaCenter(name)
         default: return .unrecognised("unknown host object")
         }
@@ -421,6 +445,12 @@ final class WMPObjectModel {
         case "speakersize": return .value(.number(Double(snapshot.equalizer.speakerSize)))
         case "currentspeakername": return .value(.string(snapshot.equalizer.currentSpeakerName))
         case "enabled": return .value(.bool(snapshot.equalizer.enabled))
+        // **`bypass` is `enabled` inverted, and it is how a skin's equaliser on/off switch is
+        // authored.** `Compact`'s is `down="wmpprop:eq.bypass" onClick="eq.bypass=down"` with a
+        // `down_onchange` that relabels it, so with the member unrecognised the button in its
+        // settings drawer did nothing, its `UpdateEQOnOff()` aborted, and the "On"/"Off" label
+        // beside it never moved. 46 uses across 7 archives.
+        case "bypass": return .value(.bool(!snapshot.equalizer.enabled))
         case "presetcount": return .value(.number(Double(EQPreset.allPresets.count)))
         case "currentpreset": return .value(.number(Double(currentPresetIndex)))
         case "currentpresettitle":
@@ -429,6 +459,23 @@ final class WMPObjectModel {
         case "presettitle", "nextpreset", "previouspreset", "reset": return .function
         case "bands": return .value(.number(10))
         default: return .unrecognised("eq member")
+        }
+    }
+
+    /// **WMP's `event` object: the two display members, and the three modifier flags the
+    /// dispatching event actually carries.** `keyCode` and the pointer coordinates are *not* here
+    /// and stay unrecognised, so `WMP_CALL_TRACE` tallies them as the demand they are (433 uses
+    /// across 79 archives for `keyCode` alone): this engine dispatches no `onKeyDown`, and
+    /// answering `keyCode = 0` would tell every one of those handlers that a key it never saw was
+    /// pressed. A modifier flag is different in kind — it is a state the dispatch knows.
+    private func readEvent(_ name: String) -> WMPMemberValue {
+        switch name {
+        case "screenwidth": return .value(.number(Double(screen.width)))
+        case "screenheight": return .value(.number(Double(screen.height)))
+        case "shiftkey": return .value(.bool(eventModifiers.contains(.shift)))
+        case "ctrlkey": return .value(.bool(eventModifiers.contains(.control)))
+        case "altkey": return .value(.bool(eventModifiers.contains(.alt)))
+        default: return .unrecognised("event member")
         }
     }
 
@@ -738,6 +785,10 @@ final class WMPObjectModel {
         case ("eq", "enabled"):
             hostCommand("setEQEnabled", .number(value.truth ? 1 : 0))
             return .value(value)
+        case ("eq", "bypass"):
+            snapshot.equalizer.enabled = !value.truth
+            hostCommand("setEQEnabled", .number(value.truth ? 0 : 1))
+            return .value(value)
         case ("eq", "currentpreset"):
             applyPreset(index: Int(value.number ?? 0))
             return .value(value)
@@ -988,10 +1039,11 @@ final class WMPObjectModel {
             return .value(.string(""))
         case ("theme", "loadstring"):
             // Every corpus use of this names a string inside `wmploc.dll`, which does not exist on
-            // macOS and never will. The empty string is the whole of what can be answered; it is
-            // counted as inert so the skins asking for it stay visible in the census.
+            // macOS and never will. `WMPResourceStrings` answers the handful of ids the corpus
+            // itself names (W189) and the empty string for the rest, which is what this returned
+            // for all of them before; still counted as inert so the skins asking stay in the census.
             inert()
-            return .value(.string(""))
+            return .value(.string(WMPResourceStrings.resolved(arguments.first?.string) ?? ""))
         case ("theme", "playsound"):
             // Sound effects are authored as part of state transitions.  NullPlayer does not play
             // a skin's bundled WAVs, but refusing the call aborts the rest of that handler:

@@ -117,6 +117,20 @@ struct WMPJScriptExpressionResult: Hashable, Codable {
     let error: String?
 }
 
+/// The modifier keys held while an input event was dispatched, which is the live half of WMP's
+/// `event` object this engine can answer honestly: the flags are read off the dispatching event
+/// rather than guessed. `Compact`'s ten equaliser sliders are all
+/// `value_onchange="if (!event.shiftKey) eq.gainLevel<n> = value;"` — every one of them aborted on
+/// the undefined global, so the sliders inside its settings drawer moved and changed nothing.
+struct WMPEventModifiers: OptionSet, Hashable, Codable, Sendable {
+    let rawValue: Int
+    init(rawValue: Int) { self.rawValue = rawValue }
+
+    static let shift = WMPEventModifiers(rawValue: 1 << 0)
+    static let control = WMPEventModifiers(rawValue: 1 << 1)
+    static let alt = WMPEventModifiers(rawValue: 1 << 2)
+}
+
 struct WMPJScriptEvent: Hashable, Codable, Sendable {
     /// One authored handler and the arguments WMP raises it with.
     ///
@@ -135,15 +149,22 @@ struct WMPJScriptEvent: Hashable, Codable, Sendable {
     let name: String
     let targetID: String?
     let handlers: [Handler]
+    /// The modifiers held when the input that raised this event was dispatched. Empty for the
+    /// transactions that are not input — a view timer, a host state change — which is what the
+    /// skin's own `if (!event.shiftKey)` guards read as *no modifier*, the ordinary path.
+    var modifiers: WMPEventModifiers = []
 
-    init(name: String, targetID: String?, handlers: [Handler]) {
+    init(name: String, targetID: String?, handlers: [Handler],
+         modifiers: WMPEventModifiers = []) {
         self.name = name; self.targetID = targetID; self.handlers = handlers
+        self.modifiers = modifiers
     }
 
     init(name: String, targetID: String?, handlers: [String],
-         arguments: [String: WMPJSONValue] = [:]) {
+         arguments: [String: WMPJSONValue] = [:], modifiers: WMPEventModifiers = []) {
         self.init(name: name, targetID: targetID,
-                  handlers: handlers.map { Handler(source: $0, arguments: arguments) })
+                  handlers: handlers.map { Handler(source: $0, arguments: arguments) },
+                  modifiers: modifiers)
     }
 }
 
@@ -180,7 +201,7 @@ enum WMPJScriptCompatibility {
                      "setColumnResizeMode", "setColumnWidth"],
         "network": ["bufferingProgress", "receptionQuality", "bandWidth", "bitRate", "framesSkipped",
                     "lostPackets", "receivedPackets"],
-        "eq": ["enhancedAudio", "wowLevel", "truBassLevel", "speakerSize", "currentSpeakerName", "enabled", "bands", "presetCount", "presetTitle", "currentPreset",
+        "eq": ["enhancedAudio", "wowLevel", "truBassLevel", "speakerSize", "currentSpeakerName", "enabled", "bypass", "bands", "presetCount", "presetTitle", "currentPreset",
                "currentPresetTitle", "nextPreset", "previousPreset", "reset",
                "gainLevel1", "gainLevel2", "gainLevel3", "gainLevel4", "gainLevel5",
                "gainLevel6", "gainLevel7", "gainLevel8", "gainLevel9", "gainLevel10"],
@@ -189,6 +210,9 @@ enum WMPJScriptCompatibility {
         // that is how `alphaBlendTo` came to be ranked as the largest open row while it worked.
         "theme": ["currentViewID", "loadPreference", "savePreference", "loadString", "openView",
                   "closeView", "openViewRelative"],
+        // The two members of WMP's `event` object that describe the display rather than a live
+        // input event. The rest of it stays off this list on purpose — see `readEvent`.
+        "event": ["screenWidth", "screenHeight", "shiftKey", "ctrlKey", "altKey"],
         // `backgroundImage` is on this list because the view root resolves it the way every other
         // node does — a script override before the authored attribute (W75). Every skin with a
         // store-thumbnail `previewView` writes it, and the tally must not call it unknown.
@@ -351,16 +375,29 @@ actor WMPScriptRuntime {
     /// Geometry addresses the script has explicitly assigned, per view scope. An authored
     /// `jscript:` expression never re-applies to one of these again (W159).
     private var scriptAssignedGeometry: [String: [WMPScenePropertyAddress: WMPSize]] = [:]
+    /// The canvas each script-assigned alignment was written at, per view scope. See
+    /// `WMPSceneOverrides.scriptAssignedAlignment`.
+    private var scriptAssignedAlignment: [String: [WMPScenePropertyAddress: WMPSize]] = [:]
     private var recentTransactionTimes: [Date] = []
     /// The dispatcher view's plan, built once. Building one walks the whole graph, and a dispatcher
     /// runs at the period its markup authored — 100 ms in every corpus skin that has one.
     private var dispatcherPlans: [String: WMPScriptViewPlan] = [:]
     private var torndown = false
+    /// The display the skin's windows are on, answered to the skin as `event.screenWidth` /
+    /// `event.screenHeight`. The controller sets it from the window's own screen and updates it
+    /// when the window moves to another one; headlessly it stays at the harness default so a
+    /// corpus sweep reads the same on every machine.
+    private var screen = WMPObjectModel.defaultScreen
 
     init(preferences: WMPPreferenceStore,
          executionSeconds: TimeInterval = WMPPhase0Limits.scriptExecutionSeconds) {
         self.preferences = preferences
         self.executionSeconds = executionSeconds
+    }
+
+    func setScreen(_ size: WMPSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        screen = size
     }
 
     /// `geometry` is the layout the skin is currently *drawn* at, keyed by stable id — the local
@@ -428,7 +465,8 @@ actor WMPScriptRuntime {
         let result = await context.run(plan: plan, size: size, snapshot: snapshot,
                                        preferences: preferences.values(), event: event,
                                        geometry: geometry, boundValues: boundValues,
-                                       retiredGeometry: Set((scriptAssignedGeometry[scope] ?? [:]).keys))
+                                       retiredGeometry: Set((scriptAssignedGeometry[scope] ?? [:]).keys),
+                                       screen: screen)
 
         var diagnostics = startupDiagnostics + result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
@@ -501,6 +539,17 @@ actor WMPScriptRuntime {
             overrides.geometry[address] = resolved
         }
         committedExpressions[scope] = expressionValues
+        var scriptAligned = scriptAssignedAlignment[scope] ?? [:]
+        // **The canvas each mutation was written at, which moves *within* the transaction.** A
+        // handler that grows its own window and then re-anchors something against the new size —
+        // `Compact`'s `view.width += rightMove` between two `SetAlignment` calls — does both in one
+        // transaction, so the incoming `size` is the right canvas for the writes before the resize
+        // and the wrong one for the writes after it. Tracked over the mutation list in order, which
+        // is the order the handlers made them in.
+        let rootStableID = skin.views.first {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        }?.node.stableID
+        var canvas = size
         for mutation in result.mutations {
             guard let stableID = plan.idToStableID[WMPPath.fold(mutation.targetID)] else { continue }
             let address = WMPScenePropertyAddress(stableID: stableID,
@@ -509,13 +558,29 @@ actor WMPScriptRuntime {
                let value = mutation.value.number, value.isFinite,
                !((address.property == "width" || address.property == "height") && value < 0) {
                 overrides.geometry[address] = CGFloat(value)
-                scriptAssigned[address] = size
+                scriptAssigned[address] = canvas
+                if stableID == rootStableID, value > 0 {
+                    let before = canvas
+                    if address.property == "width" { canvas.width = CGFloat(value) }
+                    if address.property == "height" { canvas.height = CGFloat(value) }
+                    Self.carryAlignedPieces(through: WMPSize(width: canvas.width - before.width,
+                                                             height: canvas.height - before.height),
+                                            at: canvas, aligned: &scriptAligned,
+                                            overrides: &overrides, assigned: &scriptAssigned,
+                                            geometry: geometry, skin: skin)
+                }
             } else {
                 overrides.properties[address] = mutation.value
+                if address.property == "horizontalalignment" || address.property == "verticalalignment" {
+                    scriptAligned[address] = canvas
+                }
             }
         }
+        scriptAssignedAlignment[scope] = scriptAligned
+        overrides.scriptAssignedAlignment = scriptAligned
         let assigned = Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
-                                             mutations: result.mutations, overrides: overrides)
+                                             mutations: result.mutations, overrides: overrides,
+                                             currentSize: size)
         let mediaDrivenResize = assigned.map {
             Self.isMediaDrivenViewResize(in: skin, viewID: viewID, assigned: $0,
                                          source: snapshot.video)
@@ -548,6 +613,73 @@ actor WMPScriptRuntime {
                                viewSize: mediaDrivenResize ? nil : assigned)
     }
 
+    /// **A script-assigned alignment is live *through* a resize the same handler makes.**
+    ///
+    /// The corpus idiom is three statements — pin the piece, change the view's size, pin it back —
+    /// and it is how `Compact` keeps a drawer glued to the edge it lives on while the window
+    /// changes size around it: `SnapToVideoSize` sets `playlistDrawer.horizontalAlignment="right"`,
+    /// writes `view.width`, and sets it back to `"left"`. This engine lays a view out **once per
+    /// transaction**, so the middle state never existed: the drawer stayed at the coordinate it had
+    /// while the window grew past it, which puts its tab — authored 184 px inside it — outside the
+    /// window, where nothing can ever click it again. Reported as "the drawers disappear … stuck in
+    /// a bad state that you cannot escape and get the drawers back" (W192).
+    ///
+    /// So the delta is applied here, at the moment the size changes, to every piece whose alignment
+    /// the script has set *so far in this transaction* — and each piece is re-anchored at the new
+    /// canvas, so the builder's own alignment pass adds nothing on top and a later `="left"` in the
+    /// same handler re-anchors to the same place. A **markup**-authored alignment is untouched: the
+    /// builder already measures those from the view's authored size, which includes this resize.
+    /// One archive in the corpus assigns an alignment from script, so nothing else can move.
+    private nonisolated static func carryAlignedPieces(
+        through delta: WMPSize, at canvas: WMPSize,
+        aligned: inout [WMPScenePropertyAddress: WMPSize],
+        overrides: inout WMPSceneOverrides,
+        assigned: inout [WMPScenePropertyAddress: WMPSize],
+        geometry: [Int: WMPRect], skin: WMPLoadedSkin
+    ) {
+        guard delta.width != 0 || delta.height != 0 else { return }
+        for (address, _) in aligned {
+            let horizontal = address.property == "horizontalalignment"
+            let amount = horizontal ? delta.width : delta.height
+            guard amount != 0,
+                  let alignment = overrides.properties[address]?.string.map({
+                      horizontal ? WMPAxisAlignment(horizontal: $0) : WMPAxisAlignment(vertical: $0)
+                  }) else { continue }
+            let origin = horizontal ? "left" : "top", extent = horizontal ? "width" : "height"
+            // The piece's coordinate now: what the script has already written this transaction,
+            // then the layout the view is currently drawn at, and finally the markup's own literal
+            // — which is the only one a headless caller that passes no `geometry` can answer from.
+            func current(_ property: String) -> CGFloat? {
+                let key = WMPScenePropertyAddress(stableID: address.stableID, property: property)
+                if let value = overrides.geometry[key] { return value }
+                if let frame = geometry[address.stableID] {
+                    switch property {
+                    case "left": return frame.x
+                    case "top": return frame.y
+                    case "width": return frame.width
+                    default: return frame.height
+                    }
+                }
+                guard let node = skin.graph.allNodes.first(where: { $0.stableID == address.stableID })
+                else { return nil }
+                return WMPNumber.literal(node.attribute(named: property))
+            }
+            func move(_ property: String, by amount: CGFloat) {
+                guard let value = current(property) else { return }
+                let key = WMPScenePropertyAddress(stableID: address.stableID, property: property)
+                overrides.geometry[key] = max(0, value + amount)
+                assigned[key] = canvas
+            }
+            switch alignment {
+            case .leading: break
+            case .center: move(origin, by: amount / 2)
+            case .trailing: move(origin, by: amount)
+            case .stretch: move(extent, by: amount)
+            }
+            aligned[address] = canvas
+        }
+    }
+
     /// The size a transaction's script gave the view, or nil when it gave it none.
     ///
     /// Keyed off the **mutations**, not off `overrides.geometry`: an expression-driven
@@ -556,24 +688,42 @@ actor WMPScriptRuntime {
     /// assignment counts, which is what a compact-mode toggle is. A non-positive result is not a
     /// size: 34 corpus skins collapse a store-thumbnail `previewView` with `view.width = 0` before
     /// redirecting, and that view is one the controller declines to make a window out of.
+    ///
+    /// **One axis is a resize.** This used to demand an override for *both*, so a handler that grew
+    /// only its width returned nil and the window never moved — and no headless probe could see it,
+    /// because a render dump rebuilds the scene straight from the overrides and the canvas grows
+    /// there whether or not this answers. `Compact`'s two drawers are exactly that shape
+    /// (`view.width += rightMove` for one, `view.height += bottomMove` for the other): both slid
+    /// open correctly in every capture and neither moved the window on screen (W186). The axis the
+    /// script left alone is the window's current one, which is the user's.
     nonisolated static func assignedViewSize(skin: WMPLoadedSkin, viewID: String,
                                              plan: WMPScriptViewPlan,
                                              mutations: [WMPJScriptMutation],
-                                             overrides: WMPSceneOverrides) -> WMPSize? {
+                                             overrides: WMPSceneOverrides,
+                                             currentSize: WMPSize) -> WMPSize? {
         guard let root = skin.views.first(where: {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
         })?.node else { return nil }
-        let assigned = mutations.contains { mutation in
-            plan.idToStableID[WMPPath.fold(mutation.targetID)] == root.stableID
-                && ["width", "height"].contains(mutation.property.lowercased())
+        var width: CGFloat?, height: CGFloat?
+        for mutation in mutations
+        where plan.idToStableID[WMPPath.fold(mutation.targetID)] == root.stableID {
+            guard let value = mutation.value.number, value.isFinite else { continue }
+            switch mutation.property.lowercased() {
+            case "width": width = CGFloat(value)
+            case "height": height = CGFloat(value)
+            default: continue
+            }
         }
-        guard assigned,
-              let width = overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
-                                                                     property: "width")],
-              let height = overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
-                                                                      property: "height")],
-              width > 0, height > 0 else { return nil }
-        return WMPSize(width: width, height: height)
+        guard width != nil || height != nil else { return nil }
+        // **The axis this transaction did not assign is the window's current one, never the one
+        // left in the overrides.** Those are cumulative: `Compact`'s playlist drawer writes 601 into
+        // the root's width and it stays there for the session, so a later handler that touched only
+        // the *height* — opening the settings drawer — re-asserted that stale 601 and yanked a
+        // window the user had since stretched back to it. Reported as "the right side drawer keeps
+        // stretching the window and releasing the stretch" (W188).
+        let size = WMPSize(width: width ?? currentSize.width, height: height ?? currentSize.height)
+        guard size.width > 0, size.height > 0 else { return nil }
+        return size
     }
 
     nonisolated static func isMediaDrivenViewResize(in skin: WMPLoadedSkin, viewID: String,
@@ -664,7 +814,8 @@ actor WMPScriptRuntime {
         }()
         let result = await context.runBackground(plan: plan, currentViewID: currentViewID,
                                                  snapshot: snapshot,
-                                                 preferences: preferences.values(), event: event)
+                                                 preferences: preferences.values(), event: event,
+                                                 screen: screen)
         var diagnostics = result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
         return WMPScriptOutput(overrides: .empty, hostCommands: result.hostCommands,
@@ -716,6 +867,7 @@ actor WMPScriptRuntime {
         committedOverrides.removeValue(forKey: scope)
         committedExpressions.removeValue(forKey: scope)
         scriptAssignedGeometry.removeValue(forKey: scope)
+        scriptAssignedAlignment.removeValue(forKey: scope)
         propertyRegistries.removeValue(forKey: scope)
         context?.discardElements(for: viewID)
         if contextViewID?.caseInsensitiveCompare(viewID) == .orderedSame { contextViewID = nil }
@@ -731,6 +883,7 @@ actor WMPScriptRuntime {
         committedOverrides.removeAll()
         committedExpressions.removeAll()
         scriptAssignedGeometry.removeAll()
+        scriptAssignedAlignment.removeAll()
         propertyRegistries.removeAll()
     }
 }

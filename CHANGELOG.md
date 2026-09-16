@@ -4,6 +4,38 @@
 
 ### Fixed
 
+- **A Media Player skin's drawers open again, and the player stops stretching over them.** The
+  *Compact* skin's playlist and settings drawers did nothing at all when you clicked their tabs —
+  seven separate faults, each hiding the next. The skin asks the screen how big it is before it
+  grows its own window, and NullPlayer had no answer for that question, so the handler stopped on
+  its first line; the equaliser sliders inside the settings drawer and the equaliser on/off switch
+  beside them stopped for related reasons. Once the handlers ran, the window still never moved,
+  because a skin that grows only its *width* (or only its height) was not being treated as asking
+  for a resize at all. And once it moved, the player body stretched across the whole new window and
+  covered the drawer it had just opened, instead of leaving that space to the drawer.
+
+- **A Media Player skin's window no longer flashes when a drawer opens or closes.** The window was
+  being resized before the new picture was ready, so the old artwork was stretched to fill it for a
+  moment and then snapped back. The size and the picture now change together.
+
+- **A stretched Media Player skin stays stretched.** Dragging the window wider and then opening a
+  drawer used to yank the width back to wherever the skin had last put it. Only the dimension the
+  skin actually asks for moves now; the other is left where you put it.
+
+- **The library button on a Media Player skin opens the library.** Skins with a *return to full
+  mode* control — *Compact*, *corona*, *cerulean*, *circle*, *claw*, *Cubist*, *Optik*,
+  *9SeriesDefault*, *Plus! Professional* and others — had a button there that did nothing at all.
+
+- **Media Player skins no longer print raw `res://wmploc.dll/...` text on screen.** Skins label some
+  controls with strings from Windows' own resource library, which does not exist on macOS, and the
+  URL itself was being drawn — a long line of it running across the SRS logo in *Compact*'s settings
+  drawer. The labels this app can name honestly now read as words, and the rest are blank.
+
+- **A Media Player drawer can no longer be stranded outside its own window.** Skins pin a panel to
+  an edge, resize the window and unpin it again, all in one step. NullPlayer only laid the window
+  out at the end, so the panel stayed behind while the window grew past it, leaving its tab off
+  screen where it could never be clicked again.
+
 - **A Media Player skin's own title bar is left alone, and its close button now works.** When a
   `.wmz` skin lends one of NullPlayer's windows its frame, NullPlayer was painting its own title and
   close button into the skin's header — landing in the wrong place on skin after skin, and on skins

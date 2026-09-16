@@ -204,6 +204,8 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         }
         switch path {
         case "eq.enabled", "eq.enable": return .bool(snapshot.equalizer.enabled)
+        // The inverse, which is what an equaliser on/off button binds its `down` state to.
+        case "eq.bypass": return .bool(!snapshot.equalizer.enabled)
         case "eq.enhancedaudio": return .bool(snapshot.equalizer.enhancedAudio)
         case "eq.wowlevel": return .number(snapshot.equalizer.wowLevel)
         case "eq.trubasslevel": return .number(snapshot.equalizer.truBassLevel)
