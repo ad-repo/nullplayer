@@ -9,6 +9,38 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W196-W197 — the NVIDIA playlist report, 2026-09-16
+
+**One report — *"the playlist library is opening very small size now and possibly distorting the
+aspect ratio"* — and it was two unrelated defects, neither of which any headless probe could see.**
+`WMP_RENDER_CLICK` answered `viewSize=700x480` on the playlist toggle throughout: the engine
+computed the right size and the *window* never wore it. Both were found by driving the debug build
+with `CGEvent` and reading the window list either side of the click, which is the same loop W186/W187
+needed and for the same reason — a sweep has no window.
+
+The reporter's screenshot was the whole diagnosis once it was measured: 582x614 pixels on a retina
+display is a 291x307-point window, and the layout inside it was the 730x574 one scaled unevenly onto
+it. A picture that does not match its frame is AppKit stretching, not a layout fault, and that split
+the report in two before any code was read.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W196 | A view's resize limits were read from the markup only, so a mode that raises its own floor never raised it | **3 of 185 archives** write a view limit from script — `Compact`, `Disney_Mix_Central`, `NVIDIA` — and **all three author every name they write** (decoded `.wms`+`.js` scan, 2026-09-16); the nine-skin Skins Factory playlist family is the reach on screen | **Closed 2026-09-16.** `minWidth`/`minHeight`/`maxWidth`/`maxHeight` are a resize *contract* and not a layout, and a multi-mode skin moves them as it switches: `NVIDIA`'s `setModesMinWidth('playlist')` raises the floor 285x301 → 700x480 before `autoSizeView` grows the window to it, and puts it back for audio mode. `WMPSceneBuilder` read `literal(view, …)`, so the floor stayed at the audio mode's for the whole session and the playlist could be dragged to a quarter of the size its own layout needs — `plListBoxSub`, `plExtraInfo`, `plNameText` and three more resolve to negative dimensions there, which is the pile-up in the screenshot. They arrive in `overrides.properties` and not `overrides.geometry`, because the runtime routes only `left`/`top`/`width`/`height` to geometry and a limit is not a frame. **`WMPObjectModel.writeElement` had a second half of the same hole**: a write to one of the four committed as a mutation only where the markup happened to author the same attribute, so the rule was about the markup rather than about the property. The corpus number above is what says closing it moves nothing today. |
+| W197 | The window resize a script asked for was lost with the task that carried it | engine-wide; certain rather than unlucky on any skin with a short view timer — **442 `timerInterval`/`onTimer` uses across 91 archives** | **Closed 2026-09-16, live-only.** W190 moved `setWindowSize` to after the render so the frame and the picture change together, and that opened a window between the two points where the assignment lives only on `presentation.scriptViewSize`: recorded before the build, applied after it. A transaction cancelled in between loses the frame and keeps the size. `NVIDIA` holds `timerInterval="100"` and its playlist switch takes ~45 ms to build and render, so the tick that lands inside is a certainty — traced as `enter assigned=730x574` → `CANCELLED` → every later transaction rebuilding a 730x574 picture and presenting it into the 285x301 window. The test is now the canvas against the **window**, not the assignment against nil, so any later transaction recovers the frame; the rebuild-skipping guard also requires the window to match the presented canvas, or a quiet tick would leave it stranded. **Do not narrow this back to `assignedWindowSize != nil`** — that is the version that shipped, and the race is the defect. |
+
+**What was ruled out, and it cost the most time here**: the white Media Library panel in the same
+screenshot, reported alongside. It is **the skin's own artwork** — the middle band of
+`pl_left_tile.png`, 185x11, tiled down the left column — and not a control this engine draws.
+Suppressing the `<LISTBOX>` background fill in the scene and having the empty control paint nothing
+were both built and both backed out: neither moved a pixel, because the box is white in the bitmap.
+It is white on screen because it is **empty**, which is W66 and still open.
+
+**The process lesson**: W197 reproduced only as a race, and the instrument that showed it was four
+`NSLog` lines around the transaction — enter, early-return, cancelled, applied — read against the
+window list. A cancelled task returns silently, so every probe either side of it reported a healthy
+engine, and the first two attempts at the fix were reasoning about which size to pass rather than
+about which of them had ever run.
+
 ## W184-W192 — the Compact drawer report, 2026-09-16
 
 **One report — *"drawer controls don't work in compact wmp skin"* — and it was nine unrelated engine

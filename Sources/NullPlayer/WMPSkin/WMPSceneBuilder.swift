@@ -132,9 +132,31 @@ struct WMPSceneBuilder: @unchecked Sendable {
         // covering, punching holes through the window frame.
         let defaultSize = WMPSize(width: viewOverride("width") ?? width,
                                   height: viewOverride("height") ?? height)
-        let minimum = WMPSize(width: literal(view, "minWidth") ?? defaultSize.width,
-                              height: literal(view, "minHeight") ?? defaultSize.height)
-        let maxWidth = literal(view, "maxWidth"), maxHeight = literal(view, "maxHeight")
+        // **A mode is a size floor the script writes, not one the markup states (W196).** Four of
+        // the view's attributes are a resize *contract* rather than a layout — `minWidth`,
+        // `minHeight`, `maxWidth`, `maxHeight` — and a skin with more than one mode moves them as
+        // it switches: `NVIDIA`'s `setModesMinWidth('playlist')` raises the floor from 285x301 to
+        // 700x480 before `autoSizeView` grows the window to it, and lowers it again for audio mode.
+        // Read only from the markup, the floor stayed at the audio mode's 285x301 for the whole
+        // session, so the playlist could be dragged — or left by a script that assigned one axis —
+        // down to a quarter of the size its own layout needs, where `plListBoxSub`, `plExtraInfo`
+        // and four more of its children resolve to negative heights and the library, the search box
+        // and the album badge draw on top of one another. Reported 2026-09-16 as "the playlist
+        // library is opening very small size now and possibly distorting the aspect ratio".
+        //
+        // These arrive in `overrides.properties` and not in `overrides.geometry`: the runtime
+        // routes only `left`/`top`/`width`/`height` to geometry, and a limit is not a frame. So it
+        // is `literalNumber`'s rule — a script write first, then the attribute — spelled here
+        // because the view root is sized before that helper is in scope.
+        func viewLimit(_ name: String) -> CGFloat? {
+            if let value = overrides.properties[WMPScenePropertyAddress(stableID: view.stableID,
+                                                                        property: name.lowercased())],
+               let number = value.number, number.isFinite, number >= 0 { return CGFloat(number) }
+            return literal(view, name)
+        }
+        let minimum = WMPSize(width: viewLimit("minWidth") ?? defaultSize.width,
+                              height: viewLimit("minHeight") ?? defaultSize.height)
+        let maxWidth = viewLimit("maxWidth"), maxHeight = viewLimit("maxHeight")
         let maximum: WMPSize? = maxWidth == nil && maxHeight == nil ? nil
             : WMPSize(width: maxWidth ?? .greatestFiniteMagnitude,
                       height: maxHeight ?? .greatestFiniteMagnitude)

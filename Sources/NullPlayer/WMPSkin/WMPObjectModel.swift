@@ -855,7 +855,17 @@ final class WMPObjectModel {
             inert()
             return .value(value)
         }
-        let rendered = videoProperty || element.authored.contains(name) || Self.standardElementProperties.contains(name)
+        // **A view's four resize limits are a contract the scene reads, so a write to one has to
+        // commit as a mutation (W196).** They are not on `standardElementProperties` because they
+        // mean nothing on any other element, and without this the write survived only where the
+        // markup happened to author the same attribute — the rule would then be about the markup
+        // rather than about the property. Measured over the 185 installed archives: **3 write a
+        // view limit from script** (`Compact`, `Disney_Mix_Central`, `NVIDIA`) and all three author
+        // every name they write, so this moves nothing in the corpus today and is here so the next
+        // skin that writes an unauthored one is not silently ignored.
+        let viewLimit = element.kind == .view && Self.viewResizeLimitProperties.contains(name)
+        let rendered = videoProperty || viewLimit || element.authored.contains(name)
+            || Self.standardElementProperties.contains(name)
             || element.properties[name] != nil
         // Same contract as the read side: the property surface is open, and one nothing draws is
         // stored and counted as inert rather than refused.
@@ -869,6 +879,12 @@ final class WMPObjectModel {
         }
         return .value(value)
     }
+
+    /// The `<VIEW>` attributes that bound a resize rather than describe a layout. See `writeElement`
+    /// and `WMPSceneBuilder`'s `viewLimit`.
+    static let viewResizeLimitProperties: Set<String> = [
+        "minwidth", "minheight", "maxwidth", "maxheight"
+    ]
 
     private static let inertEqualizerSettingsProperties: Set<String> = [
         "enablesplinetension", "splinetension", "bypass"

@@ -953,6 +953,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     slotClocks: Self.slotClocks(presentation, for: scene, store: store))
                 try Task.checkCancellation()
                 guard let self, let presentation else { return }
+                // The same rule the transaction path applies: a canvas the builder clamped away
+                // from what the window asked for is the skin's floor, and the window follows it.
+                // `windowWillResize` already holds a live drag inside the limits, so this is for
+                // the window that was already outside them when the limits moved (W196).
+                if scene.canvasSize != requested {
+                    self.setWindowSize(presentation, NSSize(width: scene.canvasSize.width,
+                                                            height: scene.canvasSize.height))
+                }
                 presentation.sceneOverrides = resolvedOverrides
                 presentation.activeScene = scene
                 self.startAnimation(presentation, for: scene)
@@ -1874,7 +1882,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                output.overrides == presentation.sceneOverrides,
                output.listItems == presentation.presentedListItems,
                let presented = presentation.activeScene,
-               presented.canvasSize == rebuildSize {
+               presented.canvasSize == rebuildSize,
+               // …and the window is already wearing that canvas. Skipping the rebuild is only safe
+               // while the picture on screen is the right size for the frame it is in; a frame that
+               // never caught up with a cancelled assignment (W197) must not be left there by a
+               // transaction that had nothing else to say.
+               presented.canvasSize == windowSize {
                 return
             }
             do {
@@ -1901,10 +1914,29 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     clock: presentation.animationClock(for: scene.viewID),
                     slotClocks: Self.slotClocks(presentation, for: scene, store: store))
                 guard !Task.isCancelled else { return }
-                // Frame and picture together: see `assignedWindowSize` above.
-                if let assignedWindowSize {
-                    setWindowSize(presentation, NSSize(width: assignedWindowSize.width,
-                                                       height: assignedWindowSize.height))
+                // Frame and picture together: see `assignedWindowSize` above. **The test is the
+                // canvas against the window, not the assignment against nil (W197).** A script's
+                // size assignment is recorded on `scriptViewSize` before the build and the frame is
+                // set after the render, and between those two points the task can be cancelled by
+                // the next transaction — which for `NVIDIA` is certain rather than unlucky: the skin
+                // holds `timerInterval="100"`, its playlist switch takes ~45 ms to build and render,
+                // and the tick that lands inside that window cancels it. The assignment survived on
+                // `scriptViewSize`, so every later transaction rebuilt a 730x574 picture and
+                // presented it into the 285x301 window it was still in, where AppKit stretched it —
+                // the reported "opening very small size now and possibly distorting the aspect
+                // ratio", and the exact shape of it. Asking whether the window matches the picture
+                // is a question any transaction can answer, so the *next* one recovers the frame
+                // instead of the assignment being lost with the task that carried it.
+                //
+                // `canvasSize` and not `assignedWindowSize` because `WMPSceneBuilder` clamps what it
+                // was handed against the view's resize limits, and since W196 those are the limits
+                // the script is holding right now rather than the ones the markup opened with.
+                // `windowSize` is read before the build, so a user resize that landed since is
+                // reconciled by that resize's own `renderCurrentSize` (W187) rather than fought
+                // over here — both paths agree that the window's size is the user's.
+                if scene.canvasSize != windowSize {
+                    setWindowSize(presentation, NSSize(width: scene.canvasSize.width,
+                                                       height: scene.canvasSize.height))
                 }
                 presentation.sceneOverrides = output.overrides
                 presentation.activeScene = scene

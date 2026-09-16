@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- **A Media Player skin's playlist opens at the size the skin asks for.** The *NVIDIA* skin's
+  playlist mode was opening in the little audio-mode window and stretching its own picture to fit —
+  the search box, the album badge and the Media Library panel drawn on top of one another. Two
+  separate faults. The skin raises its own minimum size when it switches into playlist mode (from
+  285x301 to 700x480) and lowers it again for audio mode, and only the size written in the skin's
+  markup was being read, so the floor never moved and the window could sit at a quarter of what the
+  layout needs. Separately, the resize the skin asked for was being lost whenever the skin's own
+  timer ticked during the switch — which on this skin is every time. The window now follows the
+  picture, and dragging a playlist window smaller stops at the skin's own limit. *Alienware
+  Invader*, *Batman Begins*, *Constantine*, *Disney Mix Central*, *LostPlanet*, *STALKER*,
+  *Star Wars* and *WoW* share the same playlist and are fixed with it.
+
 - **A Media Player skin's drawers open again, and the player stops stretching over them.** The
   *Compact* skin's playlist and settings drawers did nothing at all when you clicked their tabs —
   seven separate faults, each hiding the next. The skin asks the screen how big it is before it
