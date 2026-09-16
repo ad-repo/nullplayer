@@ -65,7 +65,7 @@ final class WMPEffectSelection {
         Effect(id: "ambience", title: "Ambience", style: .ambience),
         Effect(id: "cava", title: "Cava", style: .cava),
         Effect(id: "vis_classic", title: "vis_classic", style: .visClassic),
-        Effect(id: "projectm", title: "MilkDrop", style: .projectM),
+        Effect(id: "projectm", title: "projectM", style: .projectM),
         Effect(id: "geiss", title: "Geiss", style: .geiss),
         Effect(id: "tripex", title: "Tripex", style: .tripex)
     ]
