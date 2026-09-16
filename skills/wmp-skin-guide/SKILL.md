@@ -1144,6 +1144,19 @@ found by looking at the screen rather than by reasoning.
   roles. Leaving its historical hard-coded black/white colours produced a foreign black rectangle
   in Cerulean even though `ITEMSPLAYLIST backgroundColor="#9AACDB"` was declared. Do not route this
   through Classic or Winamp Modern state; it is WMP-owned surface state.
+- **The playlist highlight is ours, not the skin's, and it follows the playing track.** No `.wmz`
+  draws its own rows: `WMPMainView` substitutes `WMPPlaylistSurfaceView` for the skin's `PLAYLIST`
+  element and the skin contributes only the palette above, so one row renderer serves all 170
+  archives that declare one — a defect here is never one skin's. `WMPPlaylistSurfaceView` carries two
+  distinct marks: the highlight bar is `selectedIndex` (the user's selection) and the `▶` prefix plus
+  `currentText` colour is `snapshot.playlistIndex` (the playing track). Seeding `selectedIndex` from
+  `playlistIndex` once, at first update, left the bar parked on row 1 for the whole session while the
+  marker walked down on its own — reported 2026-09-16 against `nvidia`, but visible in every skin.
+  `update(_:)` now re-homes the highlight whenever `playlistIndex` changes (a click or an arrow key
+  still moves it; the next track change takes it back, as WMP's own playlist does) and
+  `scrollSelectionIntoView()` pulls `firstVisibleIndex` the minimum distance to keep that row on
+  screen, so a playing track past the visible rows no longer scrolls away. This surface has no
+  `NSScrollView` — `firstVisibleIndex` and the wheel handler are the whole of its scrolling.
 - **A `.wmz` main window's width is not a zoom.** `playlistChromeScale` is
   `mainWindow.width / Skin.baseMainSize.width` — true of a *classic* player, whose 275px grid means
   its width is the size the user chose. A `.wmz` main window is the skin's own canvas: Corona's is

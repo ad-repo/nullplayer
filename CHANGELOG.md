@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- **A Media Player skin's playlist highlights the track that is playing.** The highlight bar stayed on the first track for the whole session while the small arrow beside the track name moved down the list on its own, so the two disagreed from the second track onwards. Every Media Player skin shared the fault, because they all share one playlist list. The highlight now moves with the track, a track that plays below the visible rows scrolls into view instead of disappearing off the bottom, and clicking or arrowing through the list still moves the highlight wherever you want it until the next track starts.
+
 - **A Media Player skin's playlist opens at the size the skin asks for.** The *NVIDIA* skin's
   playlist mode was opening in the little audio-mode window and stretching its own picture to fit —
   the search box, the album badge and the Media Library panel drawn on top of one another. Two

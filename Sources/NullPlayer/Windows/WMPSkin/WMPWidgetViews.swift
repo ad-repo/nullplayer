@@ -5,6 +5,7 @@ final class WMPPlaylistSurfaceView: NSView {
     var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
     private var snapshot = WMPHostSnapshot()
     private var selectedIndex = -1
+    private var lastPlayingIndex = -1
     private var firstVisibleIndex = 0
     private let rowHeight: CGFloat = 18
     private var style = WMPSurfacePalette(viewID: "").surfaceStyle
@@ -14,8 +15,21 @@ final class WMPPlaylistSurfaceView: NSView {
 
     func update(_ snapshot: WMPHostSnapshot) {
         self.snapshot = snapshot
+        // The highlight follows the track that is playing. Seeding it once and leaving it there
+        // left every WMP skin's playlist highlighting row 1 for the whole session while the play
+        // marker walked down the list on its own — reported against `nvidia`, but this surface is
+        // shared by every skin that declares a `<PLAYLIST>`, so it was all of them. A click or an
+        // arrow key still moves the highlight; the next track change takes it back, the way WMP's
+        // own playlist does.
+        if snapshot.playlistIndex != lastPlayingIndex {
+            lastPlayingIndex = snapshot.playlistIndex
+            if snapshot.playlistItems.indices.contains(snapshot.playlistIndex) {
+                selectedIndex = snapshot.playlistIndex
+            }
+        }
         if selectedIndex < 0 { selectedIndex = snapshot.playlistIndex }
         selectedIndex = min(selectedIndex, snapshot.playlistItems.count - 1)
+        scrollSelectionIntoView()
         needsDisplay = true
         setAccessibilityValue(selectedIndex >= 0 ? selectedIndex + 1 : 0)
     }
@@ -26,6 +40,18 @@ final class WMPPlaylistSurfaceView: NSView {
         guard self.style != style else { return }
         self.style = style
         needsDisplay = true
+    }
+
+    /// Pull `firstVisibleIndex` the shortest distance that puts `selectedIndex` on screen, and
+    /// clamp it when the playlist shrinks under it.
+    private func scrollSelectionIntoView() {
+        let visibleRows = max(1, Int(bounds.height / rowHeight))
+        let maximum = max(0, snapshot.playlistItems.count - visibleRows)
+        if selectedIndex >= 0 {
+            firstVisibleIndex = max(firstVisibleIndex, selectedIndex - visibleRows + 1)
+            firstVisibleIndex = min(firstVisibleIndex, selectedIndex)
+        }
+        firstVisibleIndex = max(0, min(maximum, firstVisibleIndex))
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -83,6 +109,7 @@ final class WMPPlaylistSurfaceView: NSView {
         case 51, 117: if selectedIndex >= 0 { onAction?(.removePlaylistItem(selectedIndex), nil) }
         default: super.keyDown(with: event); return
         }
+        scrollSelectionIntoView()
         needsDisplay = true
     }
 }
