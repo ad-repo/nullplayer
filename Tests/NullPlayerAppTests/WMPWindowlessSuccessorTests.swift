@@ -144,4 +144,51 @@ final class WMPWindowlessSuccessorTests: XCTestCase {
         XCTAssertTrue(result.next.isEmpty)
         XCTAssertTrue(result.opened.isEmpty, "an openView with no view id names no window")
     }
+
+    // MARK: - A ghost opened by `theme.openView` owns the window it is asking for
+
+    /// **The other half of the same distinction, and it is where `pharaoh` trapped the user.**
+    /// W175 is about a windowless view reached at *launch*; this is about one reached at *runtime*
+    /// by `theme.openView`, and the rule is the same statement: `openView` opens a window beside
+    /// the opener and leaves the opener alone. A view with no canvas has no window to leave
+    /// anything in, so the window-scoped commands its `onLoad` posts belong to the window it was
+    /// asking for — never to the one that opened it.
+    ///
+    /// Reported 2026-09-16 as *"you can get trapped in the mini windows with no way back to the
+    /// main window"*. `pharaoh`'s transport calls
+    /// `theme.openView('vGhostAutoDetect')`, that 0x0 view's `onLoad` writes
+    /// `theme.currentViewID='vRos'`, and the redirect landed on the player: the 400x249 sphinx
+    /// **became** the 197x194 rosetta panel, whose own close button then closed the app's only
+    /// window. Driven live before the fix, two clicks left the process running with zero windows.
+    func testARedirectFromAGhostOpensItsOwnWindowRatherThanReplacingTheOpeners() throws {
+        let redirected = WMPMainWindowController.redirectedToOwnWindow(
+            [command("setCurrentView", "vRos")])
+        XCTAssertEqual(redirected, [command("openView", "vRos")],
+                       "a ghost's redirect is the window it was opened to be, so it opens beside "
+                       + "the player instead of replacing it")
+    }
+
+    /// The second half of `pharaoh`'s trap, and the one that made it survive a relaunch: `vGhost`
+    /// is opened from `OnLoad()` on **every** launch and its `onLoad` reads a preference the skin
+    /// itself saves — `if(theme.loadPreference('paneOpen')=='true')theme.currentViewID='vRos';
+    /// else view.close();`. With `paneOpen` false that `view.close()` closed the player before the
+    /// user ever saw it, so the skin came up with no window at all and stayed that way.
+    func testAGhostCannotCloseOrMinimiseAWindowItNeverHad() throws {
+        let redirected = WMPMainWindowController.redirectedToOwnWindow(
+            [WMPJScriptHostCommand(action: "closeView", value: nil),
+             WMPJScriptHostCommand(action: "minimizeWindow", value: nil)])
+        XCTAssertTrue(redirected.isEmpty,
+                      "`view.close()` and `view.minimize()` in a canvas-less view are about a "
+                      + "window that was never made — they must not reach the opener's")
+    }
+
+    /// **`theme.closeView('name')` is untouched, and the distinction is the whole reason the
+    /// filter reads the value rather than the action.** Naming a target is not the same as meaning
+    /// your own: 84 archives call the named form, and a ghost is as entitled to close a panel by
+    /// name as any other view. Host-level commands are likewise the opener's to run.
+    func testANamedCloseAndEveryHostLevelCommandStillReachTheOpener() throws {
+        let commands = [command("closeView", "plView"), command("play", ""),
+                        command("openView", "eqView"), command("setViewTimerInterval", "50")]
+        XCTAssertEqual(WMPMainWindowController.redirectedToOwnWindow(commands), commands)
+    }
 }

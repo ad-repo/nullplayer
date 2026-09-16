@@ -550,6 +550,25 @@ queue, with the object model as the security boundary — see Amendment 2 in
   cleared — which is also what selecting the skin again does (`WMPSkinImporter.select`).
   `WMPWindowlessSuccessorTests` holds the ranking down.
 - **`theme.openView` opens an additional window beside the opener; `theme.currentViewID` replaces the calling window's view. A skin's extra views are real windows.** 90 of the 180 archives call `openView`, 579 times. For four phases this engine had exactly one WMP window and the call was reduced to "present the view here and remember the one it covered" (`openedViewStack` / `CoveredView`) — and **that reduction was itself the cause of three reported defects**, not merely a deviation: W90 ("closing an interior window closes the whole UI"), W96 ("the skin is empty and shows no player") and W127 (the macOS close control stranding the user) each existed only because a covered view had to be *simulated*. `WMPViewWindowMaterializer` builds one borderless window per open view, all against **one shared script runtime**, modelled directly on `WinampModernHostedWindowMaterializer` — the only one of the three other families whose recipe transfers, because a `.wmz` view is an arbitrary authored canvas with no stack to join (Halo 2's panels are 406x209 against a 327x294 player). The first view presented binds the app's own window and is **the player**: the `MainWindowProviding` anchor, the restore anchor, the tiler's anchor, and the only presentation that writes `wmpSkinViewID` or is sampled for `WMPSurfacePalette`. **That window is the app's, not the skin's, and ordering it out is what a *close* means and nothing else** — a skin reload and a mode teardown drop its presentation without touching the window, because the caller is about to put a new skin (or the unskinned view) into it. Sharing one `remove` between close and teardown cost exactly that: `AppStateManager.restoreWindowFrames` calls `restoreFrame`, which reloads the skin when one is already loaded, so **every launch with a persisted `.wmz` and a saved frame ordered the main window off screen** with nothing anywhere to put it back. Reported as "main windows launch minimized". An *auxiliary* window is ordered out either way — it belongs to the skin, and a skin going away must not leave its panels behind. `theme.closeView(name)` closes the named window (84 skins, and every one of them had been aborting the handler that called it) and `openViewRelative` places the new window at its authored offset from the opener's top-left (W50 closed). **The drawer exception is what this does not touch**: Corona's sliding playlist and equaliser and NVIDIA's embedded modes are `<SUBVIEW>`s of the presented view's own canvas, never reach `openView`, and behave exactly as they did. See `reference/object-model.md`.
+- **A windowless view opened by `theme.openView` owns the window it was asking for, and its
+  window-scoped commands must never reach the opener (W200).** `openView` opens a window beside the
+  opener and leaves the opener alone; a view with no canvas has no window to leave anything in, and
+  running *every* command it posts against `existing ?? opener ?? player` is correct for the
+  host-level ones and destructive for the three that are about a window.
+  `WMPMainWindowController.redirectedToOwnWindow` rewrites `setCurrentView` to `openView` and drops
+  a valueless `closeView`/`minimizeWindow`, and it applies **only when there is no `existing`
+  window** — a view that becomes windowless in its own `onLoad` (`Halo 2`'s `previewView`) is
+  reached by a switch, has a window, and is unchanged. `theme.closeView('name')` is untouched:
+  naming a target is not the same as meaning your own, and 84 archives call the named form.
+  **`pharaoh` is the whole case and only 2 of 185 archives reach this at all** (its two ghosts, and
+  `cyberchannel`'s `playView`). Its transport calls `theme.openView('vGhostAutoDetect')`, that 0x0
+  view's `onLoad` writes `theme.currentViewID='vRos'`, and the redirect landed on the player — the
+  400x249 sphinx *became* the 197x194 rosetta panel, whose own close button then closed the app's
+  only window; two clicks left the process running with zero windows. Reported as *"you can get
+  trapped in the mini windows with no way back to the main window"*, and **it survived a relaunch**,
+  which is the half that matters: `OnLoad()` opens `vGhost` on every launch and its `onLoad` reads a
+  preference the skin itself saves, so one branch closed the player before it was seen and the other
+  replaced it. A defect that persists through a restart has no route out inside the skin.
 - **The app menu must open a skin-owned auxiliary surface through `openView`, never `switchView`.** The reason has changed and the rule has not: `openView` is the call the skin's *own* button makes, so routing a menu toggle through it means the panel behaves identically however it was opened — its own window, its own close. `switchView` would instead replace the player's view with the panel, which is what it means, and it is not what a menu item asking for a playlist means. `revealSkinSurface` routes every off-screen WMP surface through the `openView` host command. `WindowManager.wmpSkinShowsInActiveView` asks about **any open WMP window**, not the one presented view, so a toggle for a playlist already up reports checked-and-inert rather than opening it twice.
 - **Do not mistake an in-place mode for an auxiliary view.** NVIDIA is the counterexample: its playlist and video layouts live inside `mainView`, while its top-right control still calls `view.close()`. There is no window of its own to close, so treating that command like an EQ close hides the player and leaves its last embedded mode as the apparent main window. The guard used to read "nothing has been opened over the player" and now reads "this is the player and it is the only window open" — the same statement in the new vocabulary. NVIDIA's close route instead runs its authored audio transition, first clearing its `videoItem` preference because `audioModeToggle()` otherwise redirects back into video mode. The installed-skin key is `NVIDIA` — `WMPSkinImporter` removes `.wmz` — so a compatibility guard must compare the installed name, not the archive filename. `WMPPhase9Tests.testNVIDIAEmbeddedPlaylistCloseReturnsToAudioMode` holds the route down.
 - **A skin sound effect must not abort its state transition.** NullPlayer does not play bundled WMP skin sounds, but `theme.playSound(...)` is an inert host call rather than an unrecognised member: AlienMorph opens its shutter, plays `intro.wav`, then stops its intro timer. Throwing on the sound call skipped the stop and re-toggled the shutter every second.
@@ -1060,12 +1079,31 @@ queue, with the object model as the security boundary — see Amendment 2 in
   compression fringe per channel because lossy decoding turns authored `#FF00FF` into a
   blue-channel ramp (W125, Plus! Professional). Preserve the source alpha of every non-matching
   pixel.
-- **Do not generalize Cerulean's keyed-head correction.** Its `face.bmp` in the exact
-  `cerulean.wms` definition carries a blue `backgroundColor` that creates a visible rectangular
-  fill behind two keyed colours; the compatibility exception suppresses that one fill only. A
-  corpus sweep showed that applying the rule to every keyed background erased intentional interiors
-  in Claw, Gadget, and Pharaoh. The archive stays byte-for-byte untouched; the narrow renderer
-  exception is the compatibility boundary.
+- **A container's `backgroundColor` fill and its `backgroundImage` are one layer, and the
+  container's keys apply to the composite (W199).** Painting the fill as a bare rectangle under a
+  keyed image is two layers, and it fills in every hole the image cuts — the `clippingColor` matte
+  *outside* the silhouette, so the window is a slab rather than a shape, and the
+  `transparencyColor` hole *inside* it, which on this idiom is **always the visualizer's**.
+  `WMPSceneBuilder.backgroundFillMask` emits the fill inside a mask of the node's own artwork keyed
+  by both, and `backgroundColor="none"` — 639 corpus containers — already got this by having no
+  fill at all. **Both keys, unlike `groundShape`, and the difference is deliberate**: that one
+  answers *where the window is* and must never read a hole as a matte (W174, `Plus! BubbleSkin`);
+  this one answers *where the composite is opaque*, and there a hole is as transparent as the matte
+  around it. The population is **10 nodes in 9 archives** (`Asimov_Radio`, `Nautical`, `anime`,
+  `aoe`, `bluegrid`, `cerulean`, `claw`, `gadget`, `pharaoh` twice) and **five of them hang an
+  `<EFFECTS zIndex="-1">` under the hole** — `aoe`, `bluegrid`, `claw`, `gadget`, `pharaoh`, each
+  rect within 2 px of the hole's own bounds — so all five drew an opaque rectangle with a live,
+  hosted, invisible visualizer inside it. `pharaoh` states the control in its own archive: `vRos`
+  is the same markup with `backgroundColor="none"` and it clipped correctly throughout.
+  **This replaces a one-skin exemption whose stated reason was the opposite of the measurement.**
+  `isCeruleanFace` matched `cerulean.wms` + `face.bmp` + `#9AACDB` and suppressed that fill alone,
+  on the claim that a corpus sweep had shown the general rule "erased intentional interiors in
+  Claw, Gadget, and Pharaoh". Those interiors are the visualizer holes. The general rule moves
+  exactly five images, each by exactly its own skin's matte count, and cerulean's PNG is
+  byte-identical across it. **The guards are `clipMask`'s and they keep their counter-evidence** —
+  untiled, and authored at the node's own size, so `Gorillaz` is untouched; `isShapeMask` is
+  deliberately *not* required, for `groundShape`'s reason, so `YIL!OMA2K` is not in the population
+  at all. See `reference/skins/pharaoh.md`.
 - **A node that declares no key at all still gets one: magenta, whatever alpha the sprite carries.**
   WMP's implicit transparency colour (W78, W78a). The corpus is authored against it — 4,979 of its
   6,076 `transparencyColor` declarations (82%, 142 skins) are `#ff00ff`, `Halo 2` keys three
@@ -1548,9 +1586,13 @@ of these was invisible to the harness and visible in the first minute of live QA
   never `transparencyColor`** — a hole inside the silhouette is where the surface is *meant* to
   show, which is the same rule `groundShape` states and for the same reason.
   `WMP_RENDER_PROBE`'s `offshape=` is the only instrument that sees this class; `outside=` cannot,
-  because the leak is inside the widget's own rect. The counter-evidence is `pharaoh` and it is in
-  the W198 row: a container's `backgroundColor` fill is still **not** clipped by its own
-  `clippingColor` region, so its sky stays black where its window should not exist at all.
+  because the leak is inside the widget's own rect. `offshape>0` measures what the skin *authored*,
+  so it stays non-zero after the fix: it is a rect to check, not a defect. **`pharaoh` was the
+  counter-evidence and W199 is what it was pointing at** — five of the six skins W198 moved cut only
+  pixels the scene leaves fully transparent, and `pharaoh`'s 1,524 were opaque because its
+  container's `backgroundColor` fill was not clipped by its own keys. Confining the surface was
+  right and was never the whole of it; the fill was the other half, and the two together are what
+  give that window a pyramid instead of a slab and a visualizer instead of a black apex.
 - **A container shapes its windowless `<EFFECTS>` in one of two ways, and they read the colour key
   oppositely. Measure which before touching either.**
   - *Artwork with a keyed hole* — every pixel is the key or opaque paint. The key is the **opening**;

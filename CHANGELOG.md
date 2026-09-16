@@ -4,6 +4,26 @@
 
 ### Fixed
 
+- **A Media Player skin shaped like something other than a rectangle is that shape again, and the
+  visualization inside it is visible.** The *Pharaoh* skin is a sphinx in front of a pyramid, and
+  everything around it — the sky, the corners — is meant to be cut away; instead the whole 400x249
+  window was a solid black slab with the picture sitting in the middle of it. The same black also
+  filled the hole in the pyramid's apex where the visualization belongs, so the visualization drew
+  nothing at all even though it was running the whole time. Both are one fault: the flat colour a
+  skin paints behind its own artwork was being drawn as a plain rectangle rather than being cut to
+  the same shape as the artwork over it. *AOE*, *Bluegrid*, *Claw* and *Gadget* are the other four
+  skins built this way, and each of them gets back both its own outline and its visualization.
+  Switching Pharaoh to scarab mode now shows the gold scarab on its own instead of on a blue box.
+
+- **A Media Player skin can no longer trap you in one of its small panels.** On *Pharaoh*, the
+  transport button that opens the audio/playlist/video panel replaced the whole player with that
+  panel instead of opening it beside the player — and the panel's own close button then closed the
+  last window there was, leaving NullPlayer running with nothing on screen. Relaunching did not help,
+  because the skin remembers whether that panel was open and asks for it again at startup, so the
+  player either came back as the panel or never appeared. The panel now opens in its own window
+  beside the player, its close button closes only itself, and the startup case leaves the player
+  alone.
+
 - **A Media Player skin's visualization stays inside the skin.** On *Cerulean* the visualizer, which
   belongs in the blue head's left eye, hung a few pixels out past the right side of the face — a thin
   strip of spectrum floating beside the head with nothing behind it. The eye is a hole in the face

@@ -459,6 +459,45 @@ struct WMPSceneBuilder: @unchecked Sendable {
             return WMPSceneClipMask(resourcePath: path, keyedOut: clipping, frame: frame)
         }
 
+        /// The region a container's own `backgroundColor` fill is allowed to paint in: its
+        /// background artwork with **both** of its keys cut away.
+        ///
+        /// **A container's fill and its background image are one layer, and the container's keys
+        /// are applied to the composite** — which is what `backgroundColor="none"` already gets by
+        /// having no fill at all. Painting the fill as a bare rectangle under a keyed image is two
+        /// layers, and it fills in every hole the image cuts: the `clippingColor` matte outside the
+        /// silhouette, so the window is a slab rather than a shape, and the `transparencyColor`
+        /// hole inside it, which on this idiom is *always* the visualizer's (W199).
+        ///
+        /// **The measured population is 10 nodes in 9 archives** — a container declaring a
+        /// `backgroundColor` other than `none`, at least one key, and a background image
+        /// (`Asimov_Radio`, `Nautical`, `anime`, `aoe`, `bluegrid`, `cerulean`, `claw`, `gadget`,
+        /// and `pharaoh` twice) — and **five of them hang an `<EFFECTS zIndex="-1">` under the
+        /// keyed hole**: `aoe`, `bluegrid`, `claw`, `gadget` and `pharaoh`, each rect within 2 px
+        /// of the hole's own bounds. Every one of those five rendered a fully opaque rectangle with
+        /// no visualizer in it, and `pharaoh`'s own `vRos` is the control — same markup, same keys,
+        /// `backgroundColor="none"`, and it clips.
+        ///
+        /// Both keys, unlike `groundShape`, and the difference is deliberate: that one answers
+        /// *where the window is* and must never read a hole as a matte, while this one answers
+        /// *where the composite is opaque* and a hole is as transparent as the matte around it.
+        ///
+        /// The size and tiling guards are `clipMask`'s, for `clipMask`'s reason — a bitmap standing
+        /// in for a frame it does not cover is not that frame (`Gorillaz`). `isShapeMask` is not
+        /// required here for `groundShape`'s reason: this artwork is a picture with keys cut out of
+        /// it, which is exactly the population that guard excludes.
+        func backgroundFillMask(_ node: WMPNode, frame: WMPRect) throws -> WMPSceneClipMask? {
+            guard node.kind == .view || node.kind == .subview, !frame.isEmpty else { return nil }
+            let keys = colors(node, names: ["clippingColor", "transparencyColor"])
+            guard !keys.isEmpty else { return nil }
+            guard let path = try resource(node, names: ["backgroundImage", "background"])?.1,
+                  literalString(node, "backgroundTiled")?.caseInsensitiveCompare("true") != .orderedSame,
+                  let decoded = try? imageStore.image(for: path),
+                  CGFloat(decoded.image.width) == frame.width,
+                  CGFloat(decoded.image.height) == frame.height else { return nil }
+            return WMPSceneClipMask(resourcePath: path, keyedOut: keys, frame: frame)
+        }
+
         /// A slider's numbers, from the same three places every other property comes from: a live
         /// script/`wmpprop:` override first, then an authored literal, then WMP's own default.
         func sliderMetrics(_ node: WMPNode) -> WMPSliderMetrics {
@@ -891,23 +930,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
             else if childStates.contains(where: { $0.1 == .hover }) { visualState = .hover }
             else if !childStates.isEmpty && childStates.allSatisfy({ $0.1 == .disabled }) { visualState = .disabled }
             else { visualState = interactionState.visualState(for: node.stableID) }
-            // Cerulean's face art keys away both magenta and red. Its matching blue
-            // `backgroundColor` is an authored export artefact: WMP's rectangular fill is visible
-            // behind the transparent head. Restrict the compatibility correction to this exact
-            // shipped definition and element; the corpus confirms that the same general pattern is
-            // intentional in skins such as Claw, Gadget, and Pharaoh.
-            let isCeruleanFace = loadedSkin.definitionPath.caseInsensitiveCompare("cerulean.wms") == .orderedSame
-                && backgroundPath?.caseInsensitiveCompare("face.bmp") == .orderedSame
-                && node.kind == .subview
-                && color(node, names: ["backgroundColor"]) == WMPColor(red: 154, green: 172, blue: 219)
-                && colors(node, names: ["transparencyColor", "clippingColor"]).count == 2
             let backgroundNames = visualState == .hover && isText(node.kind)
                 ? ["hoverBackgroundColor", "backgroundColor"]
                 : ["backgroundColor"]
-            if let background = mirroredColor(of: node, names: backgroundNames), !frame.isEmpty, !isCeruleanFace {
+            if let background = mirroredColor(of: node, names: backgroundNames), !frame.isEmpty {
+                // The fill is under this node's own keyed artwork and is keyed with it — never a
+                // bare rectangle filling in the holes that artwork cuts. See `backgroundFillMask`;
+                // `Cerulean`'s face used to be a named exemption here and is now one of ten.
+                let fillMask = try backgroundFillMask(node, frame: frame)
                 emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
-                    documentOrder: node.stableID, paint: .fill(background), alpha: alpha))
+                    documentOrder: node.stableID, paint: .fill(background), alpha: alpha,
+                    inheritedClipMasks: fillMask.map { [$0] } ?? []))
             }
             if let path = backgroundPath, !frame.isEmpty {
                 let backgroundFrame = isRoot ? (rootBackgroundSize.map {

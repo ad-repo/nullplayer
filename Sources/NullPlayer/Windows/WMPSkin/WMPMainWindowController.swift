@@ -1119,9 +1119,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 guard base.canvasSize.width > 0, base.canvasSize.height > 0, !collapsed else {
                     recordScriptDiagnostics(output.diagnostics)
                     // A windowless view has no window to run the commands against, so they run
-                    // against whoever asked for it.
+                    // against whoever asked for it — **except the ones that are about a window**,
+                    // when the view was asked for by `theme.openView`. See `redirectedToOwnWindow`.
+                    let commands = existing == nil
+                        ? Self.redirectedToOwnWindow(output.hostCommands) : output.hostCommands
                     if let target = existing ?? opener ?? materializer.playerPresentation {
-                        _ = applyHostCommands(output.hostCommands, from: target)
+                        _ = applyHostCommands(commands, from: target)
                     }
                     return
                 }
@@ -1164,6 +1167,49 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             } catch is CancellationError {} catch { lastLoadDiagnostic = error.localizedDescription }
         }
         if let existing { existing.loadTask = task } else { pendingOpenTasks[key] = task }
+    }
+
+    /// A windowless view that was asked for by `theme.openView` is asking for **its own window**,
+    /// so the window-scoped commands its `onLoad` posts belong to that window — not to the one that
+    /// opened it.
+    ///
+    /// `theme.openView` opens a window beside the opener and leaves the opener alone; a view with no
+    /// canvas has no window to leave anything in, and running its commands against the *opener*
+    /// turns every one of them into something the skin never asked for. `pharaoh` is the whole
+    /// case and it states both halves:
+    ///
+    /// - `<view id="vGhostAutoDetect" width="0" height="0"
+    ///    onLoad="…theme.currentViewID='vRos';…">` — its transport's *Audio controls/Playlist/Video*
+    ///   button calls `theme.openView('vGhostAutoDetect')`, and the redirect landed on the player,
+    ///   so the 400x249 sphinx **became** the 197x194 rosetta panel. `CloseRos()`'s `vRos.close()`
+    ///   then closed the app's only window: reported as *"you can get trapped in the mini windows
+    ///   with no way back to the main window"*, and it is sticky, because the skin saves
+    ///   `paneOpen` and reads it back at the next launch.
+    /// - `<view id="vGhost" …  onLoad="…else view.close();">` — opened from `OnLoad()` on every
+    ///   launch, and with `paneOpen` false that `view.close()` closed the player before the user
+    ///   ever saw it.
+    ///
+    /// So a redirect becomes an `openView` of its own, and a close or a minimise of a window that
+    /// was never made is dropped. `theme.closeView('name')` is untouched: it names its target, and
+    /// naming one is not the same as meaning your own. Everything else — transport, preferences,
+    /// timers — is host-level and runs against the opener exactly as before.
+    ///
+    /// **Two archives reach this at all**: `pharaoh`'s two ghosts and `cyberchannel`'s `playView`
+    /// are the corpus's only `openView` targets with no canvas (scan of 185 installed archives,
+    /// decoded as `WMPTextDecoder` does: 158 UTF-16, 146 cp1252, 89 UTF-8, 9 UTF-8-BOM). A view
+    /// that *becomes* windowless in its own `onLoad` — `Halo 2`'s `previewView` — is reached by a
+    /// switch, has an `existing` window, and is not redirected.
+    static func redirectedToOwnWindow(_ commands: [WMPJScriptHostCommand]) -> [WMPJScriptHostCommand] {
+        commands.compactMap { command in
+            switch command.action {
+            case "setCurrentView":
+                return WMPJScriptHostCommand(action: "openView", value: command.value)
+            case "closeView" where command.value?.string == nil, "minimizeWindow":
+                return nil
+            default:
+                return command
+            }
+        }
     }
 
     /// **Close one window.** `view.close()`, `theme.closeView(name)` and the macOS close control all
