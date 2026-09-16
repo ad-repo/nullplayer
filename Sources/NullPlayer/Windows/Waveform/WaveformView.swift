@@ -237,8 +237,20 @@ class WaveformView: BaseWaveformView {
         return NSRect(x: 0, y: bounds.height - titleHeight, width: bounds.width, height: titleHeight)
     }
 
+    /// The close target: our own 9x9 box in the classic title bar, and the shared corner hit area
+    /// when a `.wmz` skin has lent this window its ring — nothing of ours is drawn over a ring, so
+    /// the thing the user clicks is the skin's own painted ×, and the target has to cover it
+    /// (`SkinnedSurfaceChrome.closeButtonRect`). The rect comes back in top-left chrome
+    /// coordinates; this view works bottom-left.
     private func closeButtonRect() -> NSRect {
         let titleHeight = SkinElements.Playlist.titleHeight
+        if let artwork = WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size) {
+            let corner = SkinnedSurfaceChrome.closeButtonRect(
+                in: bounds, captionHeight: artwork.scaled(to: bounds.size).captionHeight,
+                artwork: artwork)
+            return NSRect(x: corner.minX, y: bounds.height - corner.maxY,
+                          width: corner.width, height: corner.height)
+        }
         return NSRect(
             x: bounds.width - SkinElements.SpectrumWindow.TitleBarButtons.closeOffset,
             y: bounds.height - titleHeight + 3,

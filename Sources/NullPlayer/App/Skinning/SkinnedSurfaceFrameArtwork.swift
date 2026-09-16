@@ -28,24 +28,14 @@ struct SkinnedSurfaceFrameArtwork {
     /// nothing about where content can go; the skin's stretched client subview says it exactly.
     let contentRect: CGRect
 
-    /// Where the skin's own title bar sits inside that band, when it paints a distinct one.
+    /// How wide the ring's own top-right corner piece is, in points, where it declares one.
     ///
-    /// **It is not the whole band.** `Half-Life_2` leaves 46px above its client hole and paints an
-    /// orange bar across the middle of it; the rest is the frame's dark inner shadow. Controls
-    /// centred in the 46 land below the bar a user reads as the title bar. Nil where the ring's
-    /// caption is one flat tone, and then the whole band is used, as it always was.
-    struct CaptionStrip: Equatable {
-        /// Distance from the top of the window to the top of the bar, in points.
-        let top: CGFloat
-        /// The bar's own height, in points.
-        let height: CGFloat
-
-        func scaled(by factor: CGFloat) -> CaptionStrip {
-            CaptionStrip(top: top * factor, height: height * factor)
-        }
-    }
-
-    var captionStrip: CaptionStrip? = nil
+    /// **The close control is inset by this, not by the client hole's right border.** The hole says
+    /// where the donor's *content* goes and a panel with a side rack leaves a third of the window
+    /// outside it — `Star Wars`'s playlist view leaves 164 of 575pt — so a close aligned with the
+    /// hole lands mid-band with ring artwork either side (reported 2026-09-15). The corner bitmap is
+    /// the thing that has to be cleared, because that is where a skin paints its own close button.
+    var trailingCornerWidth: CGFloat? = nil
 
     /// True when the window is smaller than the donor view's own declared minimum and the frame had
     /// to be scaled down to fit it. Kept as a fact about the artwork rather than hidden, because it
@@ -55,30 +45,19 @@ struct SkinnedSurfaceFrameArtwork {
     /// The band the window title and close control are drawn in: everything above the client panel.
     var captionHeight: CGFloat { max(0, contentRect.minY) }
 
-    /// Where those two are actually laid out: the skin's own title bar where it paints one, and the
-    /// whole band where it does not.
-    var captionBandRect: CGRect {
-        let band = CGRect(x: 0, y: 0, width: size.width, height: captionHeight)
-        guard let captionStrip, captionStrip.height > 0 else { return band }
-        let bar = CGRect(x: 0, y: captionStrip.top, width: size.width,
-                         height: captionStrip.height).intersection(band)
-        guard !bar.isNull, bar.height > 0 else { return band }
-        // **Half way between the bar's centre and the band's.** Centred on the lit bar alone the
-        // controls read top-heavy — measured on `Half-Life_2`: its bar is the window's first 29px
-        // and our plate landed at 5.5-21.5, centred on it to within a point, and the reporter's
-        // answer was *"now its just flipped to the top being too close"*. The band below the bar is
-        // not empty: the frame's own lit lower edge is part of what a reader calls the title bar,
-        // and it is as far below the bar as the window's edge is above it. Splitting the two
-        // centres is bounded by both — a stray highlight deep in the band cannot drag the title
-        // down, and a bar flush against the window's top edge cannot pin it there.
-        let centre = (bar.midY + band.midY) / 2
-        return CGRect(x: 0, y: centre - bar.height / 2, width: size.width, height: bar.height)
-            .intersection(band)
-    }
-
     /// The same four numbers `SkinnedSurfaceChrome` already lays a window out from, so a view that
     /// asks the chrome for its metrics gets the skin's insets wherever a frame is available and its
     /// own classic constants everywhere else.
+    /// The close *hit area* in the ring's caption band — nothing is drawn there, so it is sized to
+    /// be easy to hit rather than to match a glyph: the corner of one of these bands is where the
+    /// skin paints its own close button, and that painted × is what the user aims at. Wider than it
+    /// is tall, reaching left from the corner (asked for on 2026-09-15), because a painted × is
+    /// rarely flush to the edge — `NVIDIA`'s sits 20-30pt in, behind a rounded corner. 40pt covers
+    /// it and stops short of the minimise its skin paints beside it. The height is capped by the
+    /// band, so a shallow one never puts the target over the window's content.
+    static let closeHitWidth: CGFloat = 40
+    static let closeHitHeight: CGFloat = 26
+
     var metrics: SkinnedSurfaceChrome.Metrics {
         SkinnedSurfaceChrome.Metrics(
             titleHeight: max(0, contentRect.minY),

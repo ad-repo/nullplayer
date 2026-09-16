@@ -2619,8 +2619,9 @@ class PlexBrowserView: NSView {
             context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
             context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
             context.restoreGState()
-            drawBorrowedFrameCaption(style: style, artwork: artwork, context: context, bounds: bounds,
-                                     captionHeight: max(0, content.minY), isActive: isActive)
+            SkinnedSurfaceChrome.traceBorrowedChrome(bounds: bounds, artwork: artwork,
+                                                     captionHeight: max(0, content.minY),
+                                                     closeWidth: 20)
             return
         }
 
@@ -2673,28 +2674,6 @@ class PlexBrowserView: NSView {
         context.move(to: CGPoint(x: glyph.maxX, y: glyph.minY))
         context.addLine(to: CGPoint(x: glyph.minX, y: glyph.maxY))
         context.strokePath()
-    }
-
-    /// The title and close control over a borrowed ring, in the band above its client hole.
-    ///
-    /// **One painter, shared with the other seven hosted windows** (`SkinnedSurfaceChrome`). The
-    /// library had a copy of this, and the copy is what W178 was: it guarded the lettering's
-    /// contrast against the *palette's* background while drawing it over the ring's own artwork, so
-    /// on `Half-Life_2` — whose 46px band is a bright orange strip crossed by a dark pipe — the
-    /// title and close glyph cleared the threshold on paper and were unreadable on screen. The
-    /// shared painter samples the ring behind each of the two separately and haloes them where the
-    /// band is too varied for any one colour. Only two numbers are this window's own: it asks for
-    /// 1.6x lettering, and its close control lives in the 20px-wide column `hitTestCloseButton`
-    /// owns rather than the 25px one every other hosted window uses.
-    private func drawBorrowedFrameCaption(style: WinampModernSurfaceStyle,
-                                          artwork: SkinnedSurfaceFrameArtwork,
-                                          context: CGContext, bounds: NSRect,
-                                          captionHeight: CGFloat, isActive: Bool) {
-        SkinnedSurfaceChrome(style: style, artwork: artwork).drawBorrowedCaption(
-            in: context, bounds: bounds, captionHeight: captionHeight, title: "LIBRARY",
-            isActive: isActive, isClosePressed: pressedButton == .close,
-            controlScale: WindowManager.shared.playlistChromeScale, titleScale: 1.6,
-            closeRegionWidth: 20)
     }
 
     /// Show the server-link sheet: the classic window's controller presents it, an embedded browser

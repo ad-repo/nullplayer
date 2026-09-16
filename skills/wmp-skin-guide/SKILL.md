@@ -117,39 +117,38 @@ glyphs 9.6px tall. Dropping the caption there would take the window's only close
 `SkinnedSurfaceChrome.drawBorrowedCaption` scales the lettering down to the band instead, and the
 library draws through that same painter rather than a copy of it.
 
-**Our two controls sit on plates, and the close column is inset by the ring's right border.** Both
-came from the reporter, and neither is visible headlessly. Sampling the ring per glyph and outlining
-against it — the W177 rule — reads as mess on artwork as varied as `Half-Life_2`'s orange strip, so
-the title and the close glyph each get a plate in a palette tone the ring behind them cannot be
-confused with. And a ring's corner routinely carries the skin's **own painted** close button:
-`Combat_Flight_Simulator_3` draws a round × there and ours was landing 15px to its right, so the
-control the user reached for was artwork. `SkinnedSurfaceChrome.closeButtonRect` is the one place
-that decides where the box goes, and **every close hit test reads it** — except `EQView` and
-`WaveformView`, which still hit-test 9x9 classic boxes of their own (their own backlog row).
+**Nothing of ours is drawn over a borrowed ring — no title, no close glyph.** The ring is the
+window's chrome, whole, and the only thing we add is a **hit area in its top-right corner**
+(`SkinnedSurfaceChrome.closeButtonRect`, 40x26pt, capped by the band), because that corner is where
+these skins paint their own close button and that painted × is what the user aims at. Every close
+hit test reads that rect, `EQView` and `WaveformView` included — their classic 9x9 boxes are the
+no-ring case now, not a separate answer.
 
-**And the band they are centred in is the ring's title bar, not the gap above the client hole.**
-`Half-Life_2` leaves 46px there and paints its orange bar across 12 of them, so centring in the 46
-draws both controls below the bar (reported 2026-09-15 as *"you are not vertically centering"*).
-**No markup states where the bar ends** — the ring pieces are decorative and overlap the client area
-(Half-Life's top edge node is 77px tall on a 46px band) — so `WMPHostedFrameTemplate.titleStrip`
-reads it off the frame it just rendered: the **widest** run of rows, in a profile smoothed over 3px,
-that stays a third of the way up from the band's darkest tone. Two rules were wrong before that one,
-and both looked right in the harness. Row-to-row continuity answers "the whole band" for every skin
-that gradients its frame, which is most of them. Growing the run from the **brightest** row answered
-`5+12` at 1x and `none` at 2x, because a one-pixel specular highlight below the bar averages away at
-1x and outshines the bar at 2x — **the harness renders at 1x and the app at the screen's backing
-scale**, so a strip change is measured at both (`WMP_HOSTED_FRAME_SCALE`) and their agreement is the
-check. Measured with `WMP_HOSTED_FRAME` at 2x: **55 of 87** ring-lending archives resolve a bar
-shorter than their band at 550x464, the other 32 are one flat caption and use all of it.
+**Four rules were tried in the band before this one and all four were wrong in the same way.** Guard
+the lettering's contrast against the ring (W178), plate each control in a palette tone the artwork
+cannot be confused with, centre them in the *lit* title bar found in the rendered pixels rather than
+in the whole gap above the client hole, inset the close by the ring's right border and then cap that
+inset at the band's height. Each was measured over the corpus, each shipped, and each had a
+counter-example in the next skin the reporter opened — because **all four are inferences about
+someone else's finished chrome, and `.wmz` markup states none of it**. `NVIDIA` is where the model
+broke rather than the tuning: an 84pt band with too little contrast to call a bar (`strip=none`), so
+the controls centred in the whole band and landed on the curve where its body starts, directly under
+the restore, minimise and close the skin paints there itself. Reported 2026-09-15 as *"issue after
+issue — what is the problem with your implementation"*, and the answer was that there was nothing
+left to tune.
 
-**And the controls centre half way between the bar's centre and the band's**, not on the bar itself.
-Centred on the bar alone they read top-heavy — Half-Life's bar is the window's first 29px, our plate
-landed at 5.5-21.5, which is its centre to within a point, and the answer was *"now its just flipped
-to the top being too close"*. The band under the bar is not empty: the frame's own lit lower edge is
-part of what a reader calls the title bar. Splitting the two centres is bounded by both — a stray
-highlight deep in the band cannot drag the title down, and a bar flush against the window's top edge
-cannot pin it there. `WMP_CAPTION_TRACE=1` prints the band, plate and close rects the painter
-resolved, which is the only way to check this without lining a screenshot up by hand.
+**This is the difference `.wal` makes, and it is worth stating.** A Winamp Modern skin has a real
+frame system: `<Wasabi:StandardFrame:*>` declares the frame, the client rect is measured from its
+resize strips, and its title bar and buttons are declared controls wired to actions — so a hosted
+window is *mounted* in the skin's frame and we draw no chrome at all. Nothing is inferred, and none
+of this class of defect exists there. A `.wmz` has no frame system: no title-bar element, no close
+element, no client rect. The ring is eight bitmaps recognised by their alignment, and everything
+else has to come from pixels. **When a `.wmz` question can only be answered by reading the artwork,
+that is the signal to stop answering it.**
+
+Placing the control *inside* the client hole was tried in between and rejected on sight — a close
+box a user has to hunt for is not an improvement on one drawn over artwork. `WMP_CAPTION_TRACE=1`
+prints the hit rect and the hole it was resolved against.
 
 **The donor view is ranked, not taken.** Several skins wrap the *same* ring around an `upgradeView`
 — the "your Windows Media Player is too old" nag panel — and declare it before the real one, so

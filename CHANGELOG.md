@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **A Media Player skin's own title bar is left alone, and its close button now works.** When a
+  `.wmz` skin lends one of NullPlayer's windows its frame, NullPlayer was painting its own title and
+  close button into the skin's header — landing in the wrong place on skin after skin, and on skins
+  like *NVIDIA* sitting underneath the close button the skin had already drawn there. The header is
+  now the skin's artwork exactly as its author made it, with no lettering or buttons of ours added,
+  and **the skin's own × in the corner is what closes the window**. Equalizer and waveform windows
+  answer to it too.
+
 - **A Media Player skin's buttons no longer go dead behind an intro that never finishes.** Many
   `.wmz` skins hide their transport while the player is stopped and bring it back from a timer, and
   that timer usually asks whether the skin's own intro panel is still showing. NullPlayer was

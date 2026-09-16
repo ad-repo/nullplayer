@@ -474,12 +474,6 @@ class EQView: NSView {
             context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
             context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
             context.restoreGState()
-            SkinnedSurfaceChrome(style: style, artwork: artwork).drawBorrowedCaption(
-                in: context, bounds: bounds, captionHeight: max(0, content.minY),
-                title: "EQUALIZER", isActive: window?.isKeyWindow ?? true,
-                isClosePressed: pressedButton == .close,
-                controlScale: WindowManager.shared.playlistChromeScale)
-
             context.translateBy(x: placement.origin.x, y: placement.origin.y)
             context.scaleBy(x: placement.scale, y: placement.scale)
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
@@ -738,6 +732,23 @@ class EQView: NSView {
         return true
     }
     
+    /// Whether a click landed on this window's close control.
+    ///
+    /// Our own enlarged box in the classic title bar, and the shared corner hit area when a `.wmz`
+    /// skin has lent the window its ring: nothing of ours is drawn over a ring, so what the user
+    /// clicks is the skin's own painted ×, and `SkinnedSurfaceChrome.closeButtonRect` is the target
+    /// that covers it. Its rect is in top-left chrome coordinates over the *window*, not in the
+    /// equalizer's own 275-wide skin space, so the view point is what it is tested against.
+    private func hitsCloseControl(viewPoint: NSPoint, skinPoint: NSPoint) -> Bool {
+        if let artwork = borrowedFrame {
+            let corner = SkinnedSurfaceChrome.closeButtonRect(
+                in: bounds, captionHeight: artwork.scaled(to: bounds.size).captionHeight,
+                artwork: artwork)
+            return corner.contains(NSPoint(x: viewPoint.x, y: bounds.height - viewPoint.y))
+        }
+        return Layout.closeHitRect.contains(skinPoint)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToOriginalCoordinates(viewPoint)
@@ -748,7 +759,7 @@ class EQView: NSView {
         // Close button (checked first for priority, enlarged hit area) - skip when title bars hidden,
         // and when the skin's own frame owns the chrome (B55).
         if hostedContext == nil && !WindowManager.shared.hideTitleBars
-            && Layout.closeHitRect.contains(skinPoint) {
+            && hitsCloseControl(viewPoint: viewPoint, skinPoint: skinPoint) {
             pressedButton = .close
             needsDisplay = true
             return
@@ -865,7 +876,7 @@ class EQView: NSView {
         if let pressed = pressedButton {
             switch pressed {
             case .close:
-                if Layout.closeHitRect.contains(skinPoint) {
+                if hitsCloseControl(viewPoint: viewPoint, skinPoint: skinPoint) {
                     window?.close()
                 }
             case .eqPresets:

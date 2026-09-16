@@ -827,7 +827,7 @@ enum WMPHarness {
         guard let artwork else { return head + " artwork=none" }
         let metrics = artwork.metrics
         return head + " caption=\(WMPNumber.format(artwork.captionHeight))"
-            + " strip=\(artwork.captionStrip.map { "\(WMPNumber.format($0.top))+\(WMPNumber.format($0.height))" } ?? "none")"
+            + " corner=\(artwork.trailingCornerWidth.map(WMPNumber.format) ?? "none")"
             + " left=\(WMPNumber.format(metrics.leftBorder))"
             + " right=\(WMPNumber.format(metrics.rightBorder))"
             + " bottom=\(WMPNumber.format(metrics.bottomBorder))"

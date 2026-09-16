@@ -132,7 +132,7 @@ extension SkinnedSurfaceFrameArtwork {
             size: target,
             contentRect: CGRect(x: contentRect.minX * scaleX, y: contentRect.minY * scaleY,
                                 width: contentRect.width * scaleX, height: contentRect.height * scaleY),
-            captionStrip: captionStrip?.scaled(by: scaleY),
+            trailingCornerWidth: trailingCornerWidth.map { $0 * scaleX },
             wasScaledToFit: true
         )
     }

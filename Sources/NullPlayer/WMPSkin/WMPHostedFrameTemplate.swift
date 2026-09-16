@@ -40,6 +40,16 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     let ringNodeIDs: Set<Int>
     /// The stretched client subview whose resolved frame is the content hole.
     let clientNodeID: Int
+    /// The ring's own top-right corner piece, where it declares one.
+    ///
+    /// **This is the width our close control has to clear, and the client hole is not.** A donor's
+    /// client hole says where the skin's *content* goes, and for a playlist panel with a side rack
+    /// — `Star Wars`'s `plView` leaves 164 of 575pt to the right of its list — that is a third of
+    /// the window, so a close control aligned with the hole's right edge lands in the middle of the
+    /// caption band with ring artwork either side of it (reported 2026-09-15: the fix put the x
+    /// nowhere near the corner). What the control must actually avoid is the corner bitmap, which
+    /// is where a skin paints its *own* close button.
+    let topRightNodeID: Int?
     /// The donor view's own declared floor. A window smaller than this cannot be built at its own
     /// size, because `WMPResizeLimits.clamp` is what every other consumer of this view obeys.
     let minimumSize: CGSize
@@ -121,6 +131,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             viewID: registration.id,
             ringNodeIDs: Set(ring.values.map(\.stableID)),
             clientNodeID: client.stableID,
+            topRightNodeID: ring[.topRight]?.stableID,
             minimumSize: CGSize(width: number(view, "minWidth") ?? number(view, "width") ?? 0,
                                 height: number(view, "minHeight") ?? number(view, "height") ?? 0)
         )
@@ -187,117 +198,45 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         // The scene may have been clamped up to the donor's floor; map it back onto the window.
         let scaleX = canvas.width > 0 ? size.width / canvas.width : 1
         let scaleY = canvas.height > 0 ? size.height / canvas.height : 1
-        let content = CGRect(x: client.x * scaleX, y: client.y * scaleY,
+        var content = CGRect(x: client.x * scaleX, y: client.y * scaleY,
                              width: client.width * scaleX, height: client.height * scaleY)
+        content = Self.reclaimingSideRacks(content, in: size)
+        // The corner piece our close control has to clear, mapped onto the window the same way.
+        let corner = topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }
         return SkinnedSurfaceFrameArtwork(
             image: rendered.image, size: size, contentRect: content,
-            captionStrip: Self.titleStrip(in: rendered.image, captionHeight: content.minY, size: size),
+            trailingCornerWidth: corner.map { $0.width * scaleX },
             wasScaledToFit: abs(scaleX - 1) > 0.001 || abs(scaleY - 1) > 0.001)
     }
 
-    /// Where the skin's own title strip sits inside the band above the client hole.
+    /// Widen the client hole back over a **side rack**: a donor panel's own furniture beside its
+    /// content, which is not a border and must not be charged to ours.
     ///
-    /// **The band is not the strip.** `Half-Life_2` leaves 46px there and paints an orange bar
-    /// across part of it; the rest is the frame's dark inner shadow, and our title and close control
-    /// centred in the 46 land below the bar a user reads as the title bar (reported 2026-09-15).
-    /// **Nothing in the markup says where the bar ends** — the ring pieces are decorative and
-    /// overlap the client area (Half-Life's top edge node is 77px tall on a 46px band,
-    /// `Combat_Flight_Simulator_3`'s is 120 on 37) — so the answer is in the pixels the ring just
-    /// drew.
+    /// A donor's client subview says where the *skin's* content goes, and for a playlist panel with
+    /// a rack down one side that leaves a third of the window outside it — `Star Wars`'s `plView`
+    /// 164 of 575pt on the right, `Ginger Man` 186 on the left, `QuickSilver` 225. A hosted window
+    /// laid out in the hole alone gives that third up to artwork with nothing in it, which is what
+    /// the reporter saw beside the library on 2026-09-15: *"reclaim it, we have no content for it"*.
+    /// The rack is still drawn — the ring is untouched — the surface simply runs under it, the same
+    /// way it runs under the frame's own decorative overlap everywhere else.
     ///
-    /// **The bar is the lit run, not a step in the tone.** Row-to-row continuity was the first rule
-    /// and it answers "the whole band" for every skin that bevels or gradients its frame, which is
-    /// most of them: Half-Life's own rows walk from 0.19 to 0.64 and back with no step wider than
-    /// the threshold. So the run is taken around the *brightest* row instead, out to where the tone
-    /// falls halfway to the band's darkest — which is the bar, and nothing else in this corpus.
-    /// A band with little contrast in it is one flat caption and answers nil, which is what every
-    /// ring did before this existed.
-    private static func titleStrip(in image: CGImage, captionHeight: CGFloat,
-                                   size: CGSize) -> SkinnedSurfaceFrameArtwork.CaptionStrip? {
-        guard captionHeight >= 12, size.height > 0 else { return nil }
-        let scale = CGFloat(image.height) / size.height
-        let rows = min(Int((captionHeight * scale).rounded()), 160)
-        guard rows >= 12, image.width > 8 else { return nil }
-        let crop = CGRect(x: CGFloat(image.width) * 0.2, y: 0,
-                          width: CGFloat(image.width) * 0.6, height: CGFloat(rows)).integral
-        guard let band = image.cropping(to: crop) else { return nil }
-
-        let columns = 8
-        var pixels = [UInt8](repeating: 0, count: columns * rows * 4)
-        let profile: [CGFloat?] = pixels.withUnsafeMutableBytes { buffer -> [CGFloat?] in
-            guard let context = CGContext(data: buffer.baseAddress, width: columns, height: rows,
-                                          bitsPerComponent: 8, bytesPerRow: columns * 4,
-                                          space: CGColorSpaceCreateDeviceRGB(),
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-            else { return [] }
-            context.interpolationQuality = .medium
-            context.draw(band, in: CGRect(x: 0, y: 0, width: columns, height: rows))
-            // A bitmap context's backing store is top-down: row 0 of the data is the top row of the
-            // image drawn into it, which is the top of the caption band.
-            return (0..<rows).map { row -> CGFloat? in
-                var total: CGFloat = 0
-                var covered = 0
-                for column in 0..<columns {
-                    let offset = (row * columns + column) * 4
-                    let alpha = CGFloat(buffer[offset + 3]) / 255
-                    guard alpha >= 0.5 else { continue }
-                    let color = NSColor(deviceRed: min(1, CGFloat(buffer[offset]) / 255 / alpha),
-                                        green: min(1, CGFloat(buffer[offset + 1]) / 255 / alpha),
-                                        blue: min(1, CGFloat(buffer[offset + 2]) / 255 / alpha),
-                                        alpha: 1)
-                    total += SkinnedSurfaceStyle.relativeLuminance(color)
-                    covered += 1
-                }
-                guard covered * 2 >= columns else { return nil }
-                return total / CGFloat(covered)
-            }
-        }
-
-        if ProcessInfo.processInfo.environment["WMP_STRIP_TRACE"] != nil {
-            print("STRIP-TRACE profile=" + profile.map { $0.map { String(format: "%.2f", $0) } ?? "-" }
-                .joined(separator: ","))
-        }
-
-        // **Smoothed first, and the widest run rather than the brightest.** A specular highlight is
-        // one pixel tall and outshines the bar it sits under: on `Half-Life_2` at 2x the peak row is
-        // a rivet below the caption, and a run grown from it is 2px wide and answers nothing. At 1x
-        // the same highlight averages away, which is how a rule measured only in the harness passed
-        // and the app drew the old layout (2026-09-15).
-        let window = max(1, Int((scale * 3).rounded()))
-        let smoothed: [CGFloat?] = (0..<rows).map { row in
-            let span = max(0, row - window)...min(rows - 1, row + window)
-            let values = span.compactMap { profile[$0] }
-            guard values.count * 2 >= span.count else { return nil }
-            return values.reduce(0, +) / CGFloat(values.count)
-        }
-        let lit = smoothed.compactMap { $0 }
-        guard lit.count >= 12, let brightest = lit.max(), let darkest = lit.min(),
-              brightest - darkest >= 0.2 else { return nil }
-        // A third of the way up from the band's darkest, not halfway: a bar is lit at its centre
-        // and falls off towards its edges, so a midpoint threshold keeps the core and drops the
-        // shoulders — `Half-Life_2`'s orange runs 0-29px and a midpoint cut calls it 3.5-19, which
-        // centres our controls in the top half of what a user sees. Compared at 0.5/0.35/0.25
-        // against the rendered captions of five skins on 2026-09-15.
-        let threshold = darkest + (brightest - darkest) * 0.35
-
-        var best: ClosedRange<Int>?
-        var start: Int?
-        for row in 0...rows {
-            let above = row < rows && (smoothed[row] ?? 0) >= threshold
-            if above, start == nil { start = row }
-            if !above, let first = start {
-                let run = first...(row - 1)
-                if best == nil || run.count > best!.count { best = run }
-                start = nil
-            }
-        }
-        guard let best else { return nil }
-
-        let top = CGFloat(best.lowerBound) / scale
-        let height = CGFloat(best.count) / scale
-        guard height >= SkinnedSurfaceStyle.classicCharHeight + 2, height < captionHeight else {
-            return nil
-        }
-        return SkinnedSurfaceFrameArtwork.CaptionStrip(top: top, height: height)
+    /// **A side is a rack when it is deeper than both the caption band and the opposite side.** That
+    /// is the shape of the distinction: a frame is roughly even all the way round and a rack is
+    /// one-sided, and the band is how thick this skin's own chrome runs. Measured over the installed
+    /// corpus at 575x464 on 2026-09-15: **88 archives lend a ring, 21 carry a right rack and 31 a
+    /// left one**, while `NVIDIA` — 44pt each side under an 84pt band — is a genuinely thick
+    /// *frame* and is left exactly as it was, as is every skin whose sides already agree.
+    private static func reclaimingSideRacks(_ content: CGRect, in size: CGSize) -> CGRect {
+        guard content.width > 0, content.minY > 0 else { return content }
+        let band = content.minY
+        let left = max(0, content.minX)
+        let right = max(0, size.width - content.maxX)
+        let reclaimedLeft = left > max(band, right) ? max(band, right) : left
+        let reclaimedRight = right > max(band, left) ? max(band, left) : right
+        guard reclaimedLeft != left || reclaimedRight != right else { return content }
+        return CGRect(x: reclaimedLeft, y: content.minY,
+                      width: max(0, size.width - reclaimedLeft - reclaimedRight),
+                      height: content.height)
     }
+
 }
