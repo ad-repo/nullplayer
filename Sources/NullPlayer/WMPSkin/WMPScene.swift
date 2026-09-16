@@ -189,6 +189,23 @@ struct WMPWidget: Hashable, Codable {
     /// skin painted nothing of its own. See `WMPEffectsGround`.
     let effectsGround: WMPEffectsGround?
 
+    /// Set for `.effects` only: the **window shape** of the nearest container that states one, i.e.
+    /// its artwork with its own `clippingColor` keyed out — `WMPSceneBuilder.groundShape`, the very
+    /// mask `effectsGround` is already painted through.
+    ///
+    /// **A hosted surface is confined by the window's shape, not only by the artwork drawn over
+    /// it.** `regionMask` covers the other idiom — a container that *shapes* its windowless child —
+    /// and Cerulean is deliberately not in it: its `face.bmp` is opaque artwork drawn over the
+    /// visualizer through `commandSplitIndex`. But artwork can only occlude where the window
+    /// exists, and `face.bmp`'s last three columns inside the `<EFFECTS>` rect are `#FF0000`, the
+    /// `clippingColor` — pixels the skin cut out of its own silhouette. Nothing is painted there,
+    /// so nothing hid the surface, and the visualizer stuck 3 px out of the right of the head
+    /// (measured 2026-09-16: 104 px at x 218-220, y 204-253 of a 237x412 window).
+    ///
+    /// `clippingColor` only, never `transparencyColor`, for exactly the reason `groundShape`
+    /// states: a hole *inside* the silhouette is where this surface is meant to show.
+    let clippingShape: WMPWidgetRegionMask?
+
     /// `<EFFECTS windowed="true">`: the visualization is a **windowed** control, and in WMP a
     /// windowed control is a real child window that the skin's own painting cannot draw over.
     /// `windowed="false"` (106 skins) and an absent attribute (46, Cerulean among them) are
@@ -202,6 +219,7 @@ struct WMPWidget: Hashable, Codable {
          thumbSize: WMPSize? = nil, valueBindingPath: String? = nil,
          videoPresentation: WMPVideoPresentation? = nil, alpha: CGFloat = 1,
          regionMask: WMPWidgetRegionMask? = nil, effectsGround: WMPEffectsGround? = nil,
+         clippingShape: WMPWidgetRegionMask? = nil,
          commandSplitIndex: Int? = nil, isWindowedEffects: Bool = false) {
         self.stableID = stableID
         self.nodeID = nodeID
@@ -221,6 +239,7 @@ struct WMPWidget: Hashable, Codable {
         self.alpha = alpha
         self.regionMask = regionMask
         self.effectsGround = effectsGround
+        self.clippingShape = clippingShape
         self.commandSplitIndex = commandSplitIndex
         self.isWindowedEffects = isWindowedEffects
     }

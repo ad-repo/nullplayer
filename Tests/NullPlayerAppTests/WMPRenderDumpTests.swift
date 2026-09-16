@@ -518,8 +518,9 @@ final class WMPRenderDumpTests: XCTestCase {
         """
         let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
         let skin = try await WMPSkinLoader().load(from: url)
-        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
-        let lines = WMPHarness.probeLines(scene: scene, skin: skin)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let lines = WMPHarness.probeLines(scene: scene, skin: skin, imageStore: store)
         let pane = try XCTUnwrap(lines.first { $0.contains("id=pane") })
         XCTAssertTrue(pane.contains("frame=4,2 20x10"), pane)
         XCTAssertTrue(pane.contains("paint=fill:#102030"), pane)
@@ -951,7 +952,9 @@ enum WMPHarness {
             + "\(scene.widgets.count) widgets, \(scene.metrics.unresolvedNodeCount) unresolved")
 
         if probe.probes(viewID) {
-            for line in probeLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
+            for line in probeLines(scene: scene, skin: skin, imageStore: imageStore) {
+                WMPHarnessOutput.emit(line)
+            }
         }
         if probe.wantsBitmaps {
             let tally = bitmapTally(scene: scene, skin: skin, imageStore: imageStore)
@@ -1046,7 +1049,8 @@ enum WMPHarness {
     /// Type, id, resolved frame, clip, paint and authored attributes for every node the scene
     /// actually placed. A node existing says nothing about where it is drawn; this is the line that
     /// says where.
-    static func probeLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
+    static func probeLines(scene: WMPScene, skin: WMPLoadedSkin,
+                           imageStore: WMPImageStore) -> [String] {
         var lines = scene.widgets.map { widget in
             "WIDGET \(scene.viewID)/\(widget.stableID) \(widget.kind) id=\(widget.nodeID ?? "-") "
                 + "frame=\(widget.frame) clip=\(widget.clipRect.map(String.init(describing:)) ?? "-") "
@@ -1061,9 +1065,52 @@ enum WMPHarness {
                 // the spectrum-slab defect this field exists to make visible.
                 + (widget.regionMask.map { " mask=\($0.resourcePath)"
                     + "@\($0.frame) keys=\($0.keyedOut.map(\.description).joined(separator: ","))" } ?? "")
+                // The window's own silhouette, and how much of this rect it removes. `mask=` above
+                // is the other idiom and the two are independent — a container that occludes by
+                // paint states no `mask=` at all, and `offshape=` is the only field that says the
+                // rect reaches past the skin. Cerulean is why: `face.bmp` hid its visualizer by
+                // painting over it, and paint stops at the pixels `clippingColor` cut away, so 104
+                // px of spectrum stood outside the right of the head with every other field clean.
+                + (widget.clippingShape.map { " shape=\($0.resourcePath)@\($0.frame)"
+                    + " keys=\($0.keyedOut.map(\.description).joined(separator: ","))"
+                    + " offshape=\(offShapePixels(widget: widget, shape: $0, imageStore: imageStore))" } ?? "")
         }
         lines += Self.paintProbeLines(scene: scene, skin: skin)
         return lines
+    }
+
+    /// How many pixels of a widget's own visible rect the container's silhouette cuts away — the
+    /// area a hosted surface paints into and the skin does not.
+    ///
+    /// Counted against the mask the app clips through (`WMPImageStore.regionMask`, 255 keeps), in
+    /// the mask's own pixels, so a `clippingImage` authored at a size other than its frame is
+    /// scaled the way the clip is. A widget entirely inside the silhouette reads `offshape=0`,
+    /// which is every skin that states a shape and respects it.
+    static func offShapePixels(widget: WMPWidget, shape: WMPWidgetRegionMask,
+                               imageStore: WMPImageStore) -> Int {
+        let rect = widget.clipRect.flatMap { widget.frame.intersection($0) } ?? widget.frame
+        guard !rect.isEmpty, !shape.frame.isEmpty,
+              let mask = try? imageStore.regionMask(for: shape.resourcePath,
+                                                    keyedOut: shape.keyedOut),
+              let data = mask.dataProvider?.data as Data?, mask.bitsPerPixel == 8 else { return 0 }
+        let width = mask.width, height = mask.height, stride = mask.bytesPerRow
+        guard width > 0, height > 0, data.count >= stride * height else { return 0 }
+        let xScale = CGFloat(width) / shape.frame.width, yScale = CGFloat(height) / shape.frame.height
+        let x0 = max(0, Int(((rect.x - shape.frame.x) * xScale).rounded(.down)))
+        let x1 = min(width, Int(((rect.maxX - shape.frame.x) * xScale).rounded(.up)))
+        let y0 = max(0, Int(((rect.y - shape.frame.y) * yScale).rounded(.down)))
+        let y1 = min(height, Int(((rect.maxY - shape.frame.y) * yScale).rounded(.up)))
+        guard x0 < x1, y0 < y1 else { return 0 }
+        return data.withUnsafeBytes { buffer -> Int in
+            var cut = 0
+            for y in y0..<y1 {
+                let row = y * stride
+                for x in x0..<x1 where buffer.load(fromByteOffset: row + x, as: UInt8.self) == 0 {
+                        cut += 1
+                    }
+            }
+            return cut
+        }
     }
 
     /// One line per node the scene could not place, in the order the builder gave up on them.

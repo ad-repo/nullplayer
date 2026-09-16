@@ -1536,6 +1536,21 @@ of these was invisible to the harness and visible in the first minute of live QA
   runs `visMask.alphaBlendTo(0,500)` whenever `player.controls.isAvailable("Stop")` is false — so a
   stopped player is *supposed* to show no visualizer and a disabled vis button. Six archives author
   the idiom, five of them Plus!.
+- **A hosted surface is confined by the window's own shape as well, and that is a third statement
+  (W198).** The two idioms below are about the *container's artwork*; this one is about whether the
+  window exists at all. `clippingColor` marks pixels the skin cut out of its own silhouette, nothing
+  is painted there, and therefore nothing occludes a surface that reaches into them — so a rect
+  confined "by paint" is not confined at the edges of the skin. Cerulean is the reported case and
+  the smallest of six: `face.bmp`'s last three columns inside the `<EFFECTS>` rect are `#FF0000`,
+  and 104 px of visualizer stood outside the right of the head. `WMPSceneBuilder.groundShape`
+  already computed that silhouette for `WMPEffectsGround`; `WMPWidget.clippingShape` now carries it
+  to the surface, which clips to it **and** to `regionMask`, intersected. **`clippingColor` only,
+  never `transparencyColor`** — a hole inside the silhouette is where the surface is *meant* to
+  show, which is the same rule `groundShape` states and for the same reason.
+  `WMP_RENDER_PROBE`'s `offshape=` is the only instrument that sees this class; `outside=` cannot,
+  because the leak is inside the widget's own rect. The counter-evidence is `pharaoh` and it is in
+  the W198 row: a container's `backgroundColor` fill is still **not** clipped by its own
+  `clippingColor` region, so its sky stays black where its window should not exist at all.
 - **A container shapes its windowless `<EFFECTS>` in one of two ways, and they read the colour key
   oppositely. Measure which before touching either.**
   - *Artwork with a keyed hole* — every pixel is the key or opaque paint. The key is the **opening**;

@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **A Media Player skin's visualization stays inside the skin.** On *Cerulean* the visualizer, which
+  belongs in the blue head's left eye, hung a few pixels out past the right side of the face — a thin
+  strip of spectrum floating beside the head with nothing behind it. The eye is a hole in the face
+  artwork and the artwork is what hides the rest of the visualizer, but the skin also cuts part of
+  itself away at that edge, and nothing is drawn there to hide anything. The visualization is now
+  confined to the shape of the skin itself as well as to the artwork over it. *DigitalDJ*,
+  *Headspace*, *Pharaoh* and *Raveworld* had the same fault and are fixed with it.
+
 - **A Media Player skin's playlist highlights the track that is playing.** The highlight bar stayed on the first track for the whole session while the small arrow beside the track name moved down the list on its own, so the two disagreed from the second track onwards. Every Media Player skin shared the fault, because they all share one playlist list. The highlight now moves with the track, a track that plays below the visible rows scrolls into view instead of disappearing off the bottom, and clicking or arrowing through the list still moves the highlight wherever you want it until the next track starts.
 
 - **A Media Player skin's playlist opens at the size the skin asks for.** The *NVIDIA* skin's

@@ -317,13 +317,20 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             guard let effects = view as? WMPEffectsSurfaceView else { continue }
             // The mask image covers its container's frame, which is not always the widget's own —
             // so the rect is the offset between the two, in this surface's scaled bounds.
-            guard let mask = widget.regionMask, let image = regionMaskProvider?(mask) else {
-                effects.applyRegionMask(nil, rect: .zero); continue
+            func placed(_ mask: WMPWidgetRegionMask) -> (CGImage, NSRect)? {
+                guard let image = regionMaskProvider?(mask) else { return nil }
+                return (image, NSRect(x: (mask.frame.x - widget.frame.x) * xScale,
+                                      y: (mask.frame.y - widget.frame.y) * yScale,
+                                      width: mask.frame.width * xScale,
+                                      height: mask.frame.height * yScale))
             }
-            effects.applyRegionMask(image, rect: NSRect(
-                x: (mask.frame.x - widget.frame.x) * xScale,
-                y: (mask.frame.y - widget.frame.y) * yScale,
-                width: mask.frame.width * xScale, height: mask.frame.height * yScale))
+            // Two independent confinements, and a skin can state either, both or neither: the
+            // container's *shape* for its windowless child (`regionMask`) and the window's own
+            // silhouette (`clippingShape`). Both are applied, so the surface is the intersection.
+            let region = widget.regionMask.flatMap(placed)
+            effects.applyRegionMask(region?.0, rect: region?.1 ?? .zero)
+            let clip = widget.clippingShape.flatMap(placed)
+            effects.applyClippingShape(clip?.0, rect: clip?.1 ?? .zero)
         }
         videoSurface?.update(in: self, scene: scene, video: currentSnapshot.video,
                              controller: videoController?())

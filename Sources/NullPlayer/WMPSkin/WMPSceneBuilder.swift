@@ -793,6 +793,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     color: authored ?? WMPColor(red: 0, green: 0, blue: 0), shape: shape)
             }
 
+            // **The window's own shape confines the surface too, and that is a separate statement
+            // from the artwork drawn over it.** `groundShapeStack.last` is the nearest container's
+            // `clippingColor` region — already what `effectsGround` is painted through — and a
+            // rect that reaches past the silhouette needs it whether or not that ground is emitted
+            // (a rect with its own `backgroundImage` has no ground). Cerulean is the reported case:
+            // `face.bmp` occludes by paint, and paint stops at the pixels the skin cut away.
+            var clippingShape: WMPWidgetRegionMask?
+            if node.kind == .effects, let shape = groundShapeStack.last {
+                clippingShape = WMPWidgetRegionMask(resourcePath: shape.resourcePath,
+                                                   keyedOut: shape.keyedOut, frame: shape.frame)
+            }
+
             // Patched once this node's own background is emitted — see `effectsWidgetIndex` below.
             var effectsWidgetIndex: Int?
             if let kind = widgetKind(node.kind), visible != nil {
@@ -818,6 +830,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // obeys its container's fade or it draws over artwork the fade removed.
                     alpha: alpha,
                     regionMask: regionMask, effectsGround: effectsGround,
+                    clippingShape: clippingShape,
                     commandSplitIndex: commands.count,
                     isWindowedEffects: kind == .effects
                         && literalString(node, "windowed")?.lowercased() == "true"))

@@ -50,6 +50,12 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// nothing above this view to hide the corners of its rect.
     private var regionMask: CGImage?
     private var regionMaskRect: CGRect = .zero
+    /// The window silhouette this surface also sits inside — the nearest container's
+    /// `clippingColor` region. Independent of `regionMask`: artwork drawn over the rect can only
+    /// occlude where the window exists, so a rect that overhangs the silhouette leaks past the
+    /// paint. See `WMPWidget.clippingShape`.
+    private var clippingShape: CGImage?
+    private var clippingShapeRect: CGRect = .zero
 
     override var isFlipped: Bool { true }
 
@@ -84,6 +90,15 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard regionMask !== mask || regionMaskRect != rect else { return }
         regionMask = mask
         regionMaskRect = rect
+        needsDisplay = true
+    }
+
+    /// As `applyRegionMask`, for the window's own shape. Both are applied and the surface is the
+    /// intersection.
+    func applyClippingShape(_ mask: CGImage?, rect: CGRect) {
+        guard clippingShape !== mask || clippingShapeRect != rect else { return }
+        clippingShape = mask
+        clippingShapeRect = rect
         needsDisplay = true
     }
 
@@ -287,19 +302,23 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         // below, the spectrum is a 169x160 slab across the face and over the transport controls.
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.clip(to: bounds)
-        if let regionMask, !regionMaskRect.isEmpty {
-            // The same counter-flip `WMPRenderer.clip(to:mask:)` performs, and for the same reason:
-            // this view is flipped, the mask's row zero is the authored *top*, and `clip(to:mask:)`
-            // maps the mask through the CTM. Skipping it mirrors the shape — which for this lens
-            // means clipping away the dome and keeping the arc that clears the play controls.
-            let centerY = regionMaskRect.midY
+        // The same counter-flip `WMPRenderer.clip(to:mask:)` performs, and for the same reason:
+        // this view is flipped, the mask's row zero is the authored *top*, and `clip(to:mask:)`
+        // maps the mask through the CTM. Skipping it mirrors the shape — which for Bionic Dot's
+        // lens means clipping away the dome and keeping the arc that clears the play controls.
+        func clip(to rect: CGRect, mask: CGImage) {
+            let centerY = rect.midY
             context.translateBy(x: 0, y: centerY)
             context.scaleBy(x: 1, y: -1)
             context.translateBy(x: 0, y: -centerY)
-            context.clip(to: regionMaskRect, mask: regionMask)
+            context.clip(to: rect, mask: mask)
             context.translateBy(x: 0, y: centerY)
             context.scaleBy(x: 1, y: -1)
             context.translateBy(x: 0, y: -centerY)
+        }
+        if let regionMask, !regionMaskRect.isEmpty { clip(to: regionMaskRect, mask: regionMask) }
+        if let clippingShape, !clippingShapeRect.isEmpty {
+            clip(to: clippingShapeRect, mask: clippingShape)
         }
         switch effect.style {
         case .bars: drawBars()

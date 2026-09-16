@@ -157,6 +157,69 @@ final class WMPEffectsRegionMaskTests: XCTestCase {
         XCTAssertNil(try effectsWidget(in: scene).regionMask)
     }
 
+    // MARK: - The window's own shape (W198)
+
+    /// **Cerulean's defect, as a fixture.** A container that occludes by paint takes no
+    /// `regionMask` — the test above — and until W198 that left it confining its surface with
+    /// nothing at all at the edges of the skin. The `clippingColor` region is the separate
+    /// statement: pixels the skin cut out of its own silhouette, where no artwork is painted and so
+    /// none can occlude. Here the right half of `lens.png` is the clipping key, and the container
+    /// is authored at the bitmap's own 4x4 size because a bitmap standing in for a frame it does not
+    /// cover is not that frame.
+    func testAContainerThatOccludesByPaintStillConfinesTheSurfaceToItsClippingRegion() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="face" left="20" top="30" width="4" height="4"
+                     backgroundImage="lens.png" clippingColor="#FF00FF">
+                <EFFECTS id="visEffects" left="0" top="0" width="4" height="4"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, images: ["lens.png": try containerImage(opening: .keyed)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let widget = try effectsWidget(in: scene)
+
+        XCTAssertNil(widget.regionMask, "still not a shape mask — that path is unchanged")
+        let shape = try XCTUnwrap(widget.clippingShape, "the silhouette is a separate statement")
+        XCTAssertEqual(shape.resourcePath.lowercased(), "lens.png")
+        XCTAssertEqual(shape.keyedOut, [WMPColor(red: 255, green: 0, blue: 255)],
+                       "clippingColor only — a transparencyColor hole is where it is meant to show")
+        XCTAssertEqual(shape.frame, WMPRect(x: 20, y: 30, width: 4, height: 4))
+    }
+
+    /// **`transparencyColor` alone must never become a silhouette.** A container that keys a hole
+    /// *inside* itself has not said where its window ends, and reading it as one clips the surface
+    /// away exactly where the skin means it to show — the W147/Cerulean inversion arriving by a
+    /// third route. `groundShape` states the same rule for the `<EFFECTS>` ground.
+    func testATransparencyColourAloneIsNotTheWindowShape() async throws {
+        let keyed = try effectsWidget(in: try await scene(opening: .keyed))
+        let threeState = try effectsWidget(in: try await scene(opening: .transparent))
+        XCTAssertNil(keyed.clippingShape)
+        XCTAssertNil(threeState.clippingShape)
+    }
+
+    /// The count the corpus sweep ranks on, against a fixture whose answer is arithmetic: the rect
+    /// is the container's whole 4x4 frame, and the fixture's right half is the key on every row but
+    /// the bottom one, which is opaque trim — so **6 of 16** pixels are cut. A container's artwork
+    /// only states a shape when it is authored at the node's own size (`Gorillaz`), which is why
+    /// both fixtures here are 4x4.
+    func testOffShapePixelsCountsWhatTheSilhouetteRemovesFromTheRect() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="face" left="0" top="0" width="4" height="4"
+                     backgroundImage="lens.png" clippingColor="#FF00FF">
+                <EFFECTS id="visEffects" left="0" top="0" width="4" height="4"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, images: ["lens.png": try containerImage(opening: .keyed)])
+        let store = try store(image: try containerImage(opening: .keyed))
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let widget = try effectsWidget(in: scene)
+        let shape = try XCTUnwrap(widget.clippingShape)
+
+        XCTAssertEqual(WMPHarness.offShapePixels(widget: widget, shape: shape, imageStore: store), 6,
+                       "the right half of the container, minus its opaque bottom row")
+    }
+
     // MARK: - The mask's own polarity
 
     private func store(image: Data) throws -> WMPImageStore {
