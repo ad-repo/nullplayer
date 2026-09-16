@@ -819,6 +819,53 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 }
             }
 
+            // **A skin can state the shape with the backdrop it parks behind the visualizer
+            // instead of with the container around it (W205).** `anemone`'s `<EFFECTS>` is a child
+            // of the `<VIEW>`, which has `backgroundColor="none"` and no artwork at all, so
+            // neither the container rule above nor `groundShape` has anything to read — and its
+            // own player art *cannot* be read as a shape, because `background.bmp` keys the lens
+            // hole and the matte outside the anemone in the same `#00FF00` (19,433 px of hole,
+            // 30,943 of matte). What does state it is the sibling immediately behind the surface:
+            // `<subview id="blback" zIndex="-1" backgroundImage="blback.bmp"
+            // transparencyColor="#00FF00">`, a 239x187 bitmap in exactly two colours — the black
+            // lens the visualizer draws on, and the key around it.
+            //
+            // **The nearest sibling behind, and only if it is a mask rather than a picture.** Both
+            // halves are load-bearing and `Mandalay` holds them down: its `<effects zIndex="-2">`
+            // has `displayback` (5,691 colours, a picture) directly behind it at the same rect and
+            // `black1.bmp` (two-toned, 531 black px) five layers further back at `zIndex="-7"`.
+            // Taking any two-toned sibling would clip its visualizer to a 135x204 strip; taking
+            // the nearest one finds the picture, which `isShapeMask` then rejects. Those two are
+            // the whole corpus population of a childless keyed container beside an `<EFFECTS>`
+            // (with `Vario` and `Military`, whose backdrops are pictures too).
+            if node.kind == .effects, regionMask == nil, let parentNode {
+                let behind = parentNode.children.sorted(by: paintOrder)
+                    .prefix { $0.stableID != node.stableID }
+                for sibling in behind.reversed() {
+                    guard sibling.kind == .subview || sibling.kind == .view,
+                          sibling.children.isEmpty,
+                          let maskFrame = geometries[sibling.stableID]?.absoluteFrame,
+                          !maskFrame.isEmpty,
+                          let (_, maskPath) = try resource(sibling,
+                                                           names: ["backgroundImage", "background"])
+                    else { continue }
+                    let keys = colors(sibling, names: ["transparencyColor", "clippingColor"])
+                    // The size and tiling guards are `clipMask`'s, for `clipMask`'s reason — a
+                    // bitmap standing in for a frame it does not cover is not that frame
+                    // (`Gorillaz`).
+                    guard !keys.isEmpty,
+                          literalString(sibling, "backgroundTiled")?
+                              .caseInsensitiveCompare("true") != .orderedSame,
+                          let decoded = try? imageStore.image(for: maskPath),
+                          CGFloat(decoded.image.width) == maskFrame.width,
+                          CGFloat(decoded.image.height) == maskFrame.height,
+                          try imageStore.isShapeMask(for: maskPath) else { break }
+                    regionMask = WMPWidgetRegionMask(resourcePath: maskPath, keyedOut: keys,
+                                                     frame: maskFrame)
+                    break
+                }
+            }
+
             // **An `<EFFECTS>` that authors no backdrop of its own still has one, and in WMP it is
             // black (W174).** Only where the skin painted nothing does it show: the ground is laid
             // under every command in the below layer. A rect whose node declares its own

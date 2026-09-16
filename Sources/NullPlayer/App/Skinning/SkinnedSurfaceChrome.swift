@@ -64,6 +64,30 @@ struct SkinnedSurfaceChrome {
         WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)?.metrics ?? fallback
     }
 
+    /// **The ground a hosted window paints: its content hole wherever a frame was lent, and the
+    /// whole window otherwise.**
+    ///
+    /// Every window in the spectrum family paints its own ground in its own `draw` — there is no
+    /// shared step that owns it — and `drawSkinFrame` deliberately fills *only* the client hole,
+    /// because a borrowed frame is authored against whatever is behind it and most of these bitmaps
+    /// are keyed-out shapes. So a view that fills its whole bounds first turns a shaped frame into a
+    /// black box with the skin drawn inside it, which is what `anemone`'s nine-sliced panel (W207)
+    /// exposed in three windows at once: cava, `flow` and PeppyMeter, each with its own
+    /// `NSColor.black.setFill(); bounds.fill()`. It was latent the whole time — every donor until
+    /// now was an eight-piece ring laid out to the window's own edges, so there were no cut-away
+    /// pixels for the slab to show through.
+    ///
+    /// The rule lives here, once, so a window added later inherits it instead of rediscovering it.
+    /// The library never had the defect for the same reason it has none of this family's chrome
+    /// bugs: it lays itself out from `metrics` and clips its content to the hole.
+    static func hostedGroundRect(in bounds: CGRect) -> CGRect {
+        guard let artwork = WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size) else {
+            return bounds
+        }
+        let hole = artwork.scaled(to: bounds.size).contentRect.offsetBy(dx: bounds.minX, dy: bounds.minY)
+        return hole.isEmpty ? bounds : hole
+    }
+
     /// Draws spectrum-family chrome in the same flipped, top-left coordinate system used by
     /// `SkinRenderer`. `fillBackground` distinguishes the old full-window and overlay entry points.
     func drawSpectrumFamilyWindow(

@@ -132,8 +132,11 @@ final class CavaView: NSView {
             return
         }
 
+        // The ground is the content hole wherever a skin lent this window a frame — see
+        // `SkinnedSurfaceChrome.hostedGroundRect`, which carries the rule and the three windows
+        // that reported it.
         NSColor.black.setFill()
-        bounds.fill()
+        SkinnedSurfaceChrome.hostedGroundRect(in: bounds).fill()
 
         drawCavaContent(in: contentRect)
 

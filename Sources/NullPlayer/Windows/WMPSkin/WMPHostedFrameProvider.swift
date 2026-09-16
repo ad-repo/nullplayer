@@ -40,6 +40,12 @@ final class WMPHostedFrameProvider {
     private var cache: [Key: SkinnedSurfaceFrameArtwork] = [:]
     private var order: [Key] = []
     private var inFlight: Set<Key> = []
+    /// Window sizes this skin's donor has **refused** (W207). A refusal is a real answer and it has
+    /// to be remembered: without it `artwork(for:)` re-scheduled the same build on every draw and
+    /// went on handing back `mostRecent` stretched onto the window, so a window the panel cannot
+    /// dress showed the *library's* frame squashed into it — reported 2026-09-16 as "you are
+    /// squashing the window borders to the window size".
+    private var refused: Set<Key> = []
     private var mostRecent: SkinnedSurfaceFrameArtwork?
     private var generation = 0
 
@@ -67,6 +73,7 @@ final class WMPHostedFrameProvider {
         cache.removeAll()
         order.removeAll()
         inFlight.removeAll()
+        refused.removeAll()
         mostRecent = nil
     }
 
@@ -75,14 +82,31 @@ final class WMPHostedFrameProvider {
     /// Never blocks: a size that has not been rendered yet schedules its render and is answered with
     /// the last frame scaled to fit, or with nil when nothing has been rendered at all.
     func artwork(for size: CGSize) -> SkinnedSurfaceFrameArtwork? {
-        guard template != nil, size.width > 0, size.height > 0 else { return nil }
+        guard let template, size.width > 0, size.height > 0 else { return nil }
         let key = Key(size)
         if let cached = cache[key] {
             touch(key)
             return cached
         }
+        // A size the donor has already turned down keeps the palette chrome it had before, and asks
+        // no second time.
+        if refused.contains(key) { return nil }
         schedule(key)
-        return mostRecent?.scaled(to: key.size)
+        // **The stand-in is for a resize, not for a different window.** A ring is laid out by its
+        // author at every size and stretching yesterday's by a few points is invisible for the frame
+        // or two before the real one lands. A *panel* is a nine-patch whose whole point is that its
+        // borders keep their thickness, so stretching one from 550x464 onto a 350x170 window is the
+        // squash the user sees — and it is the one thing the slice exists to avoid. Past 15% in
+        // either axis a panel answers nil instead and the window wears the palette for that frame.
+        guard let stale = mostRecent else { return nil }
+        if template.panelNodeID != nil {
+            let widthRatio = stale.size.width > 0 ? size.width / stale.size.width : 0
+            let heightRatio = stale.size.height > 0 ? size.height / stale.size.height : 0
+            guard (0.85...1.15).contains(widthRatio), (0.85...1.15).contains(heightRatio) else {
+                return nil
+            }
+        }
+        return stale.scaled(to: key.size)
     }
 
     private func schedule(_ key: Key) {
@@ -90,13 +114,38 @@ final class WMPHostedFrameProvider {
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let generation = self.generation
         Task { [weak self] in
-            let produced = try? await template.artwork(builder: builder, renderer: renderer,
-                                                       size: key.size, backingScale: scale)
+            var produced: SkinnedSurfaceFrameArtwork?
+            var unslicable = false
+            do {
+                produced = try await template.artwork(builder: builder, renderer: renderer,
+                                                     size: key.size, backingScale: scale)
+            } catch WMPHostedFrameRefusal.panelCannotBeSliced {
+                unslicable = true
+            } catch {
+                produced = nil
+            }
             guard let self else { return }
             await MainActor.run {
                 guard self.generation == generation else { return }
                 self.inFlight.remove(key)
-                guard let produced else { return }
+                guard let produced else {
+                    if !unslicable { self.refused.insert(key) }
+                    // **A panel that cannot be sliced lends nothing, and only the artwork pass
+                    // knows** (W207): the four slice lines come from the *resolved* hole, so a
+                    // donor whose list sits flush to an edge derives cleanly and then produces no
+                    // frame — 26 of the corpus's 72 panels. Dropped rather than retried per window
+                    // size, so the chrome settles on the palette it would have used anyway. Only
+                    // for a panel, and only while nothing has ever been produced: a ring's nil is
+                    // a degenerate window size, not a verdict on the skin.
+                    // Only the donor's own verdict drops it. A window too short for the panel's
+                    // borders is answered nil per size — dropping the template there would take
+                    // the frame off the *library* because a 150pt analyser asked first.
+                    if unslicable, self.template?.panelNodeID != nil, self.mostRecent == nil {
+                        self.template = nil
+                        NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
+                    }
+                    return
+                }
                 self.store(produced, for: key)
                 NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
             }

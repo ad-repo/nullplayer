@@ -1753,7 +1753,27 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         dispatchScriptTransaction(presentation,
                                   WMPJScriptEvent(name: name, targetID: targetID,
                                                   handlers: handlers,
-                                                  modifiers: Self.currentEventModifiers()))
+                                                  modifiers: Self.currentEventModifiers()),
+                                  stickyLatch: name == "click"
+                                      ? Self.stickyLatch(presentation, targetStableID) : nil)
+    }
+
+    /// The latch a `sticky="true"` button was left in by the press that is now raising its
+    /// `onClick`, or nil for every other control. **WMP flips it before the handler runs** and the
+    /// corpus's drawer idiom reads it straight back, so the handler has to see the pointer's answer
+    /// rather than the markup's — see `WMPScriptRuntime.setWidgetDown` (W206). The state is read
+    /// from the presentation rather than passed down from the view because `WMPMainView.mouseUp`
+    /// notifies the toggle before it raises the click.
+    private static func stickyLatch(_ presentation: WMPViewPresentation,
+                                    _ targetStableID: Int?) -> (stableID: Int, down: Bool)? {
+        guard let targetStableID, let scene = presentation.activeScene else { return nil }
+        let sticky = scene.hits.contains { hit in
+            (hit.stableID == targetStableID && hit.sticky)
+                || hit.mappingTargets.contains { $0.stableID == targetStableID && $0.sticky }
+        }
+        guard sticky else { return nil }
+        return (targetStableID,
+                presentation.interactionState.stickyDownNodes.contains(targetStableID))
     }
 
     private func dispatchHostEvents(_ presentation: WMPViewPresentation, _ names: [String]) {
@@ -1820,7 +1840,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var scriptDidCommitSeek = false
 
     private func dispatchScriptTransaction(_ presentation: WMPViewPresentation,
-                                           _ event: WMPJScriptEvent) {
+                                           _ event: WMPJScriptEvent,
+                                           stickyLatch: (stableID: Int, down: Bool)? = nil) {
         guard let skin = loadedSkin, let store = imageStore,
               let activeScene = presentation.activeScene, let scriptRuntime else { return }
         let viewID = presentation.viewID
@@ -1828,6 +1849,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         presentation.scriptTask?.cancel()
         presentation.scriptTask = Task { [weak self, weak presentation] in
             guard let self, let presentation else { return }
+            // Before the handlers, in the same task, so the two cannot be reordered: the latch is
+            // an input to the click it belongs to, not a consequence of it (W206).
+            if let stickyLatch {
+                await scriptRuntime.setWidgetDown(stableID: stickyLatch.stableID,
+                                                  down: stickyLatch.down, viewID: viewID)
+            }
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                 size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
                 geometry: activeScene.scriptGeometry)
@@ -1894,6 +1921,25 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                 cleared: output.clearedTimerTokens)
             }
             recordScriptDiagnostics(output.diagnostics)
+            // **The latch is the artwork's as well as the script's, and it is written from both
+            // ends (W206).** A sticky button drawn `down` by `WMPInteractionState` stays down until
+            // the pointer presses it again, so a handler that clears it by name — `anemone`'s
+            // `setVisibility('closePlaylist')`, raised by the × *inside* the tray, writes
+            // `plb.down=false` — left the player's own button lit over a closed drawer, and the
+            // next press on it toggled the stale latch to *false* and closed the drawer again
+            // rather than opening it. Only a control the markup made sticky: a `down` written to
+            // an ordinary button is state the skin keeps for itself.
+            if let view = presentation.mainView {
+                var latches: [Int: Bool] = [:]
+                for (address, value) in output.overrides.properties
+                where address.property.caseInsensitiveCompare("down") == .orderedSame {
+                    guard Self.stickyLatch(presentation, address.stableID) != nil else { continue }
+                    latches[address.stableID] = value.truth
+                }
+                if !latches.isEmpty {
+                    presentation.interactionState = view.applyScriptedStickyLatches(latches)
+                }
+            }
             guard !switchedView, !Task.isCancelled else { return }
             // **A transaction whose script moved nothing has nothing to draw (W158).**
             //

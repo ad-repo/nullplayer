@@ -106,6 +106,36 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   The other hosted windows still draw the full image (`SkinnedSurfaceChrome.drawSkinFrame`); they
   paint over their whole client area, so nothing shows through — a new one that does not should
   take the same clip.
+- **Shape, the second donor class — a *panel* (W207).** Over half the corpus lends no ring: measured
+  at the library's own 550x464 on 2026-09-16, **88 of 185 archives lend a ring and 97 lend nothing**.
+  But 77 of those 97 do state a window style, as **one fixed bitmap with the list inset inside it** —
+  `anemone`'s `<subview id="playlisttray" backgroundImage="trayplaylist.bmp">`, 328x261 with its
+  `<ITEMSPLAYLIST>` at 83,72 155x116 — which the ring rule rejected for having no edges to stretch.
+  None are needed: **the hole states the four slice lines**, so the panel is nine-sliced (corners
+  1:1, edge strips stretched, centre transparent) and resizes like any nine-patch. **32 archives lend
+  one**, and the ring's 88 lines are byte-identical either side of the change, because a panel is
+  only looked for when the skin states no ring anywhere. Three things the corpus forced, each of
+  which read as "the derivation is broken": a drawer is authored `visible="false"` and a node that is
+  not drawn **resolves no frame**, so the frame is built with the panel and its hole forced visible;
+  a drawer is **parked outside the window it slides into** (`anemone`'s tray is at `left="307"` in a
+  321-wide view), so the scene is built a second time on a canvas that contains it and the geometry
+  re-read there; and **a player body with a list in it is not a frame** — `Erektorset`'s panel is its
+  whole player, so a panel carrying the transport, the host sliders or the equaliser is refused, as
+  the ring path refuses the player view by scoring it -100. What a panel cannot exclude is the
+  donor's own *painted* controls: `Gorillaz` has a button strip in its bitmap, and those are pixels,
+  not nodes. **The open half is how the window and the border share the space** — see W207 in
+  `WMP_TASKS.md` before touching `panelArtwork`; three answers have already been tried and reported
+  wrong, and the row records all three.
+- **The ground a hosted window paints is its content hole, not the window**
+  (`SkinnedSurfaceChrome.hostedGroundRect`). Every window in the spectrum family paints its own
+  ground in its own `draw` and nothing shared owned that step, while `drawSkinFrame` deliberately
+  fills only the client hole — so a view doing `bounds.fill()` first turns a shaped frame into a
+  black box with the skin drawn inside it. Cava, `flow` and PeppyMeter each had one, and it was
+  latent for as long as every donor was a ring laid out to the window's own edges: a panel has a
+  silhouette, and the slab showed through everywhere the skin was cut away. The rule lives in one
+  place so a window added later inherits it; Waveform, Spectrum, AudioAnalysis and ProjectM never
+  filled the full bounds in the borrowed path, and Playlist, EQ and the library already filled
+  `contentRect` only.
 
 **The caption band is the donor's, and it is never too short to draw in.** Measured 2026-09-15 with
 `WMP_HOSTED_FRAME=550x464` — the library's own default size — over the installed corpus: **87 of 184

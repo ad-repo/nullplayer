@@ -295,6 +295,15 @@ final class WMPScriptContext: @unchecked Sendable {
         }
     }
 
+    /// A sticky button's latch, as the *pointer* left it. See `WMPScriptRuntime.setWidgetDown`.
+    func setElementDown(stableID: Int, down: Bool) {
+        queue.sync {
+            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            else { return }
+            element.properties["down"] = .bool(down)
+        }
+    }
+
     /// An `<EDITBOX>`'s text. `value` on an edit box is a string, not a number, and the skin's
     /// `onKeyUp` handler reads it straight back — `plSearchEdit.value` is what nine of the ten
     /// corpus edit boxes search on.

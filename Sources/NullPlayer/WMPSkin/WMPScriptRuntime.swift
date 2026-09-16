@@ -841,6 +841,23 @@ actor WMPScriptRuntime {
         context?.setElementValue(stableID: stableID, value: value)
     }
 
+    /// **A sticky button's latch, as the pointer left it (W206).** WMP flips a `sticky="true"`
+    /// button's `down` on mouse-up *before* it raises the `onClick`, and the corpus's drawer idiom
+    /// reads it straight back: `anemone`'s playlist and audio-controls buttons are
+    /// `onclick="setVisibility('openPlaylist')"` over `if(plb.down == true){…open…}else{…close…}`.
+    /// The latch lived only in `WMPInteractionState` — the artwork's state, never the script's — so
+    /// `plb.down` answered its authored value on every press, the handler took its `else` branch
+    /// every time, and neither drawer could be opened while both buttons drew themselves down.
+    /// Committed as an override as well as into the live element so the *artwork* follows a script
+    /// that writes the latch back (`setVisibility('closePlaylist')` clears it from inside the tray).
+    func setWidgetDown(stableID: Int, down: Bool, viewID: String) {
+        let scope = WMPPath.fold(viewID)
+        var stored = overrides(for: scope)
+        stored.properties[.init(stableID: stableID, property: "down")] = .bool(down)
+        committedOverrides[scope] = stored
+        context?.setElementDown(stableID: stableID, down: down)
+    }
+
     func setWidgetText(stableID: Int, text: String, viewID: String) {
         let scope = WMPPath.fold(viewID)
         var stored = overrides(for: scope)

@@ -822,10 +822,31 @@ enum WMPHarness {
         let backing = CGFloat(Double(ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_SCALE"] ?? "") ?? 1)
         let artwork = try? await template.artwork(builder: builder, renderer: renderer, size: size,
                                                   backingScale: backing)
-        let head = "HOSTED-FRAME view=\(template.viewID) ring=\(template.ringNodeIDs.count) "
-            + "size=\(WMPNumber.format(size.width))x\(WMPNumber.format(size.height)) "
-            + "min=\(WMPNumber.format(template.minimumSize.width))x\(WMPNumber.format(template.minimumSize.height))"
+        // **Which donor class lent it (W207).** `ring=` is the eight-piece ring's piece count;
+        // `panel=` is a one-piece panel nine-sliced at its own hole, and the two are different
+        // enough that a line reading `ring=0` would be a lie about what was borrowed. The slice
+        // lines are the `left=`/`right=`/`top=`/`bottom=` insets already on this line.
+        let donor = template.panelNodeID != nil ? "panel=sliced" : "ring=\(template.ringNodeIDs.count)"
+        // A panel has no donor floor to report — it is sliced, so it fits any window wider than its
+        // own borders, and those borders are the `left=`/`right=`/`caption=`/`bottom=` fields below.
+        let floor = template.panelNodeID != nil ? ""
+            : " min=\(WMPNumber.format(template.minimumSize.width))x\(WMPNumber.format(template.minimumSize.height))"
+        let head = "HOSTED-FRAME view=\(template.viewID) \(donor) "
+            + "size=\(WMPNumber.format(size.width))x\(WMPNumber.format(size.height))" + floor
         guard let artwork else { return head + " artwork=none" }
+        // **`WMP_HOSTED_FRAME_DUMP=<dir>` writes the borrowed frame as a PNG.** Nothing in a render
+        // dump contains it — the ring is assembled from pieces the donor draws for itself, and a
+        // nine-sliced panel (W207) is assembled by us — so the numbers on this line were the only
+        // evidence a frame was right, and they cannot see a seam landing in the wrong place.
+        if let directory = ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_DUMP"],
+           let destination = URL(string: "file://" + directory) {
+            try? FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            let file = destination.appendingPathComponent("\(template.viewID)-frame.png")
+            if let png = NSBitmapImageRep(cgImage: artwork.image)
+                .representation(using: .png, properties: [:]) {
+                try? png.write(to: file)
+            }
+        }
         let metrics = artwork.metrics
         return head + " caption=\(WMPNumber.format(artwork.captionHeight))"
             + " corner=\(artwork.trailingCornerWidth.map(WMPNumber.format) ?? "none")"
@@ -1460,6 +1481,11 @@ enum WMPHarness {
         var scene = scene
         let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
         var previous = WMPSceneOverrides.empty
+        // The sticky latches the pointer has set, in the order a user sets them: WMP flips a
+        // `sticky="true"` button's `down` on release *before* it raises the `onClick`, and the
+        // drawer idiom reads it back (W206). Without it this probe drove every such handler down
+        // its `else` branch, exactly as the app did.
+        var latched: Set<Int> = []
         for gesture in gestures {
             guard gesture.count == 1 else {
                 scene = await drag(path: gesture, on: scene, viewID: viewID, skin: skin,
@@ -1485,10 +1511,24 @@ enum WMPHarness {
                 + "action=\(target.action.map(String.init(describing:)) ?? "-") "
                 + "sticky=\(target.sticky) handlers=\(handlers.count)")
             guard let session = pass.session, !handlers.isEmpty else { continue }
+            if target.sticky {
+                latched.formSymmetricDifference([target.stableID])
+                await session.setWidgetDown(stableID: target.stableID,
+                                            down: latched.contains(target.stableID),
+                                            viewID: viewID)
+            }
             let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
                 snapshot: probe.hostSnapshot,
                 event: WMPJScriptEvent(name: "onClick", targetID: target.nodeID, handlers: handlers),
                 geometry: scene.scriptGeometry)
+            // A handler that writes a latch by name owns it from here, as in the app.
+            for (address, value) in output.overrides.properties
+            where address.property.caseInsensitiveCompare("down") == .orderedSame {
+                guard scene.hits.contains(where: { $0.stableID == address.stableID && $0.sticky })
+                else { continue }
+                if value.truth { latched.insert(address.stableID) }
+                else { latched.remove(address.stableID) }
+            }
             // Every attribute changed anywhere in the graph, not only on the object that was hit:
             // a skin's click handler routinely moves a sibling pane, and a probe that reported only
             // the target would call that click inert.

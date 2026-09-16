@@ -232,6 +232,15 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
     }
 
+    /// The sticky latches a script transaction wrote, applied to the artwork's own state and
+    /// returned so the caller's scene build sees them. No `notify`: the transaction that produced
+    /// them is already rebuilding this view, and a second render of the same frame is the W158
+    /// class. See `WMPScriptRuntime.setWidgetDown` (W206).
+    func applyScriptedStickyLatches(_ latches: [Int: Bool]) -> WMPInteractionState {
+        for (node, down) in latches { _ = interaction.setStickyDown(down, node: node) }
+        return interaction
+    }
+
     /// The items a `POPUP` or `LISTBOX` holds, from the last script transaction.
     func updateListItems(_ items: [Int: [String]]) {
         for (stableID, view) in widgetViews {

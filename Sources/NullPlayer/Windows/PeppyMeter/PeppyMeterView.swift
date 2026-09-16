@@ -93,8 +93,10 @@ final class PeppyMeterView: NSView {
                 drawMeterContent(in: bounds, presenter: presenter, context: context)
             }
         } else {
+            // The ground is the content hole wherever a skin lent this window a frame — see
+            // `SkinnedSurfaceChrome.hostedGroundRect`.
             NSColor.black.setFill()
-            bounds.fill()
+            SkinnedSurfaceChrome.hostedGroundRect(in: bounds).fill()
 
             if let presenter {
                 drawMeterContent(in: contentRect, presenter: presenter, context: context)

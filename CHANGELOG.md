@@ -4,6 +4,41 @@
 
 ### Fixed
 
+- **A Media Player skin's visualization stays inside the skin, even when the skin says so with the
+  backdrop behind it.** *Anemone* is a spiky sea urchin around a black lens, and its spectrum drew
+  out past the urchin on both sides — spikes of it hanging in mid-air below the blades of controls.
+  The skin does not shape the visualizer the way the engine knew how to read: it parks a
+  lens-shaped black backdrop directly behind it and lets that state the shape, while its own player
+  artwork cuts the lens and the space outside the urchin with the *same* colour and so cannot be
+  read as an outline at all. The visualization now takes the shape of the backdrop the skin put
+  behind it. It is the only skin in the collection authored this way, and *Mandalay*, which parks a
+  black panel of its own five layers further back, is unaffected.
+
+- **A Media Player skin's playlist and audio-control buttons open their drawers.** On *Anemone* the
+  two buttons on the upper blade lit up when pressed and did nothing else — no playlist, no
+  equaliser, and after the first press they stayed lit. These are latching buttons, and the skin's
+  own script asks whether the button is down to decide whether to open or close; the engine kept
+  that latch for the artwork only, so the script always read "up" and always chose *close*. The
+  latch is now the script's as well as the artwork's, in both directions: the drawer opens on the
+  first press, closes on the second, and closing it from the × inside the drawer un-lights the
+  button on the player instead of leaving it lit over a closed drawer.
+
+- **The windows NullPlayer draws itself now wear a Media Player skin that has no window frame to
+  lend.** Just over half the collection — 97 of 185 skins — builds no resizable border, so the
+  library, spectrum analyser, waveform, cava, flow and PeppyMeter windows took only the skin's
+  colours and were otherwise plain. But most of those skins *do* draw a window: as one fixed
+  picture of a drawer with the track list inset inside it. The inset says where the border ends, so
+  the picture is now cut into nine pieces at those edges and reassembled at whatever size the window
+  is — corners at their own size, edges stretched between them — which gives 32 more skins a real
+  frame around our windows. A skin whose panel is really its whole player, controls and all, is left
+  out rather than lent as a picture of a player.
+
+- **The cava, flow and PeppyMeter windows are no longer black boxes beside a shaped skin.** Each of
+  those three painted its whole window black before drawing the borrowed frame over it, so every
+  part of the frame the skin had cut away showed as a black slab — a black rectangle with the skin
+  sitting inside it. They now paint only the area their own content occupies, which is what the
+  library and playlist windows have always done.
+
 - **A Media Player skin shaped like something other than a rectangle is that shape again, and the
   visualization inside it is visible.** The *Pharaoh* skin is a sphinx in front of a pyramid, and
   everything around it — the sky, the corners — is meant to be cut away; instead the whole 400x249
