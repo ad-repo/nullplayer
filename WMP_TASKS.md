@@ -171,6 +171,32 @@ What is left of that gap is one row.
 |---|---|---|---|
 | W111 | Objects a skin declares inside `<PLAYER>` are laid out as controls, and count as starved | `<controls>` **103 nodes / 67 of 179 skins**, `<VIDEOSETTINGS>` 28 / 24, plus `durationText` 2 / 2 and `automenu` 4 / 3 as unknown tags, measured 2026-09-09 with `WMP_RENDER_UNRESOLVED=1` over the 179-archive sweep | **Costs no pixels and distorts the ranking**, which is the only reason it is a row: `starved.tsv` scores `unresolved / declared`, and ~154 of the 1,067 unresolved nodes left in the corpus are objects that were never boxes. `<controls>` is a child of `<PLAYER>` carrying nothing but `currentPosition_onchange` handlers — `aom.wms` is the worked case — and `WMPSceneBuilder.isNonLayout` already treats `.player` and `.network` exactly that way, so this is the same one-line rule applied to two more kinds. `STATUSTEXT` and `CURRENTPOSITIONTEXT` are no longer part of this row: both are implemented as native text controls. `durationText` and `automenu` remain separate questions and need a census before a kind: decide whether each is a `<TEXT>` WMP fills in for the skin (which is drawing work, not classification) or an object. Do **not** batch them with `<controls>`. |
 
+## Tier 1g — the window system, not the scene
+
+Opened 2026-09-16 by an audit of `.wmz` window placement against the `.wal` rules, and it holds one
+row. **The tier exists because every other tier on this page ranks a skin's own drawing, and nothing
+here is about a skin at all.** A row lands in Tier 1g when the defect is in `App/WindowManager.swift`
+or `App/AppStateManager.swift` — where a window is placed, restored, rescued and reset — and would
+reproduce identically on a skin that renders perfectly. Tier 1e is its nearest neighbour and is
+deliberately separate: that tier is about *which* window a surface belongs in, this one is about
+*where the window is*.
+
+Three consequences follow from that, and they are why these rows do not rank against a starved view:
+
+- **Reach is not a corpus number.** A gate on `uiMode.controllerFamily` affects every `.wmz` session
+  equally, so `scripts/wmp_skin_census.sh` says nothing about it and a Reach column quoting archives
+  would be measuring the wrong thing.
+- **No headless instrument reaches it.** `WMP_PLACE_TRACE` sees the one moment a window is *placed*;
+  a render dump has no screen, no second display and no restore. Every row here is verified by
+  driving the app — `skills/live-ui-testing`, and `reference/harness.md` § *Debugging a live defect*.
+- **The blast radius is the other three families.** These seams are shared code, so the binding rule
+  in `CLAUDE.md` applies at its strictest: a change here is gated on the mode, never justified as a
+  no-op, and Classic and Original must come out byte-identical.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W196 | `.wmz` shares the `.wal` *placement* seams but none of its *recovery* seams, so a stranded WMP window has no route back | **every `.wmz` session**; the four gaps are structural, not per-skin (code audit 2026-09-16, no corpus sweep needed) | Audit written to `~/.claude/plans/wmp-window-placement-compliance.md` — read it before taking this row; it carries the rule-by-rule table, the line numbers, and a four-step plan. **What already complies and must not be touched**: `WMPViewWindowMaterializer.place` is a faithful copy of the `.wal` recipe (`tiledOrigin` → `rescuedOrigin` backstop, placed once), WMP panels are in `managedWindowRecords` as snap targets, and every WMP resize is top-left anchored so growth cannot strand the reachable corner. **The four gaps**: (G1) `WMPWindowRestorePolicy.safeFrame` (`WMPMainWindowController.swift:2621`) is a second, weaker definition of "on screen" — an 80pt strip and a 24pt bottom margin rather than `WindowPlacement`'s top-left-corner rule, and `first(where: intersects)` rather than `hostScreen`; a borderless `.wmz` window's preserved strip can be artwork with no drag handle. (G2) `correctedRestoredFrames` is gated `appliesWinampModernPlacement` (`AppStateManager.swift:955`), so WMP never gets the whole-session group offset nor the `savedScreenIsMissing` force — a docked cluster restored onto a smaller desktop comes back overlapping instead of touching. (G3) `ensureAllWindowsOnScreen()` (`WindowManager.swift:5738`) returns early in WMP and all six call sites re-guard, so an unplugged display, a resolution change or a resized Dock strands WMP windows **permanently**. (G4) `snapToDefaultPositions()` branches only on `.winampModern`; `.wmp` falls through to the Classic stack, which measures against `screen.frame` not `visibleFrame`, builds its stack from the per-feature controllers the skin's own windows are not on, and has no final `isReachable` pass — **this is B81 verbatim**, in the one mode where the windows are borderless and cannot be dragged back. The `.wmp` case in `fallbackMainSize` makes it look supported. Take step 1 (the Snap To Default branch) first: highest impact, lowest risk, and the only recovery a borderless window can be given today. Two doc rows ride with it — `ui-guide/SKILL.md:1034` claims the sweep "runs in all three modes deliberately" and the code says the opposite, and `wmp-skin-guide` states no recovery contract at all. **Verify live** (`WMP_PLACE_TRACE=1`, `Halo 2` as the load case, `Corona` as the control); Classic and Original must be byte-identical across every step. |
+
 ## Tier 1e — a surface the skin owns and this engine does not host
 
 Opened 2026-09-09 by W93, emptied the same day by W97, and **re-opened 2026-09-09 with four
