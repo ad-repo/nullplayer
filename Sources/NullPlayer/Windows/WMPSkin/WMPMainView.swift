@@ -414,7 +414,15 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if !resizeEdges.isEmpty { resizeEdges = []; return }
+        if !resizeEdges.isEmpty {
+            resizeEdges = []
+            // **A grip the skin owns is still a control (W193).** An edge-band drag starts on bare
+            // artwork and has nothing to release, but `view.size('bottomright')` is called from a
+            // real element's `onMouseDown` — so the press is captured, and returning here would
+            // leave that element drawn pressed for good and skip its `onMouseUp`/`onClick`. With a
+            // target captured the release runs exactly as it does for any other control.
+            if capturedTarget == nil { return }
+        }
         if isDraggingWindow { finishWindowDrag(); return }
         guard let scene else { return }
         let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
@@ -743,6 +751,44 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // The view is flipped, so its y grows downward while the window's grows upward.
         if point.y <= band { edges.insert(.top) }
         if point.y >= bounds.maxY - band { edges.insert(.bottom) }
+        return edges
+    }
+
+    /// **The resize a skin asks for itself (W193).** `view.size('bottomright')` is the corpus's
+    /// standard grip — 235 calls in 88 of the 185 installed archives — and on a borderless `.wmz`
+    /// window it is the only resize there is: the user has no OS frame to grab, so a dead call
+    /// sends them to the macOS window edge, which skips whatever the skin wraps around its own
+    /// resize (`Compact`'s `DoSize()` pins both drawers for the duration).
+    ///
+    /// It runs the same drag the edge band runs, rather than a loop of its own, so the clamp
+    /// against the view's `minWidth`/`maxWidth`, the anchored edge and the relayout are one
+    /// implementation. Two gates are the whole of what it adds:
+    ///
+    /// - `scene.isResizable`, the permission the edge band already asks for. All 88 archives
+    ///   author `resizAble="true"`, so this costs the corpus nothing and stops a view with no
+    ///   authored maximum from being dragged open without one.
+    /// - **The button must still be down.** The call arrives from an asynchronous script
+    ///   transaction, so a quick click's command can land after the release; arming the drag then
+    ///   would resize the window on whatever the user pressed next.
+    func beginScriptResize(corner: String) {
+        guard resizeEdges.isEmpty, scene?.isResizable == true,
+              NSEvent.pressedMouseButtons & 1 != 0 else { return }
+        let edges = Self.edges(forCorner: corner)
+        guard !edges.isEmpty else { return }
+        beginWindowResize(edges)
+    }
+
+    /// The seven spellings the corpus authors, read as the substrings they are: `bottomright` (86
+    /// archives), `topright` (4), `right` (3), and `bottom`/`bottomleft`/`left`/`topleft` (2 each).
+    /// An edge word is matched rather than the whole string compared, so `bottomright` is both of
+    /// its halves and a corner WMP defines that nothing here has seen still resolves.
+    static func edges(forCorner corner: String) -> WMPWindowEdges {
+        let corner = corner.lowercased()
+        var edges: WMPWindowEdges = []
+        if corner.contains("left") { edges.insert(.left) }
+        if corner.contains("right") { edges.insert(.right) }
+        if corner.contains("top") { edges.insert(.top) }
+        if corner.contains("bottom") { edges.insert(.bottom) }
         return edges
     }
 

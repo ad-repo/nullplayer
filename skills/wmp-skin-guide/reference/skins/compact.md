@@ -21,7 +21,7 @@ fault sat behind the one before it.
 | **A one-axis window resize** | `view.width += rightMove` for one drawer, `view.height += bottomMove` for the other — never both (W186) |
 | **`res://wmploc.dll` strings written into readouts** | its settings tab title and both on/off switches; 133 uses of 50 ids across 6 archives (W189) |
 | **A `<RETURNBUTTON>` with no `onClick`** | `id="toggle"`, bottom right of the video. 19 uses across 15 archives and 15 author nothing (W191) |
-| **A resize grip that calls `view.size('bottomright')`** | `onmousedown="DoSize();"`. Still dead — see *Still open* |
+| **A resize grip that calls `view.size('bottomright')`** | `onmousedown="DoSize();"`. Live since W193, and this is the skin it was closed on |
 
 ## Defects it found
 
@@ -68,7 +68,7 @@ click is the window's origin plus the point.
 | Settings drawer tab | `221,365` | `frame=202,359 38x13`; unchanged by the playlist drawer |
 | Settings *next tab* (▶) | `120,437` | only while the settings drawer is open |
 | Library / return to full mode | `384,294` | `<RETURNBUTTON id="toggle">`; `horizontalAlignment="right"`, so add the playlist drawer's 179 when it is open |
-| Resize grip | `385,340` | `DoSize()` → `view.size('bottomright')`, still inert |
+| Resize grip | `385,340` | `DoSize()` → `view.size('bottomright')`. **Not drivable headlessly**: `WMP_RENDER_CLICK` raises `onClick` only and this is an `onMouseDown`, so it reports `handlers=0`. Drag it in the app (Route C) |
 
 ```bash
 # the whole report, headlessly
@@ -84,10 +84,10 @@ only headless evidence that the *window* follows.
 
 ## Still open
 
-- **`view.size(corner)` is unimplemented**, so the grip at `385,340` does nothing — and this skin's
-  window has no OS frame in WMP, so the grip is the only resize it was ever meant to have. 88 of 185
-  archives author it. Dragging the macOS window edge instead skips the alignment dance `DoSize()`
-  performs, which is why a stretch leaves the drawer behind.
+- **`DoSize()`'s brackets run before the drag, not around it.** W193 made the grip resize the window,
+  but WMP's `view.size` blocks until the drag ends and this engine's cannot: a script transaction
+  completes before its host commands are applied, so the pin *and* the unpin have both landed by the
+  time the first pixel moves. The resize is right; what the skin does around it is early.
 - **`moveTo(x, y, duration)` ignores the duration.** The endpoint is written at the end of the
   handler and `onEndMove` is raised immediately, so both drawers jump rather than slide. Reported as
   *"its not a smooth opening"*. Making it slide means moving `onEndMove` from *end of handler* to

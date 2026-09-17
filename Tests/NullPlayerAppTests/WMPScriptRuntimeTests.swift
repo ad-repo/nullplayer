@@ -346,6 +346,42 @@ final class WMPScriptRuntimeTests: XCTestCase {
         await session.teardown()
     }
 
+    /// W193. `view.size(corner)` is the corpus's resize grip — 235 calls in 88 of the 185 installed
+    /// archives — and on a borderless `.wmz` window it is the only resize there is. It posted
+    /// nothing until this, so the user reached for the macOS window edge and skipped whatever the
+    /// skin wraps around its own resize (`Compact`'s `DoSize()` pins both drawers for the drag).
+    ///
+    /// Three claims, and the last is the one the corpus depends on: the corner reaches the host
+    /// verbatim, the method is no longer counted as unmet demand, and **the handler continues past
+    /// the call** — `DoSize()` has four statements after it and every one of them is the drawer
+    /// bookkeeping the resize is for.
+    ///
+    /// Dispatched on the `<VIEW>` kind rather than the receiver's spelling, for the reason
+    /// `returnToMediaCenter` is: a skin names its own view as often as it says `view`.
+    func testViewSizePostsItsCornerToTheHost() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+          <SUBVIEW id="pane" left="0" top="45" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onMouseDown", targetID: "main",
+                         handlers: ["view.size('bottomright'); pane.width = 3;",
+                                    "main.size( 'topleft' );"]))
+        let sizes = output.hostCommands.filter { $0.action == "sizeWindow" }
+        XCTAssertEqual(sizes.map { $0.value?.string }, ["bottomright", "topleft"],
+                       "the corner rides the command's value, and a named view receiver reaches it too")
+        XCTAssertFalse(output.calls.contains { $0.path.hasSuffix("size") && !$0.recognised },
+                       "the method is implemented and must no longer be counted as unmet demand")
+        XCTAssertTrue(output.diagnostics.isEmpty, "the handler must not raise: \(output.diagnostics)")
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: pane.stableID, property: "width")], 3,
+                       "the handler must continue past the call — `DoSize()` unpins after it")
+        await session.teardown()
+    }
+
     /// The behavioural half of W128, on the two highest-reach names in the corpus scan:
     /// `plListBox1.deleteAll()` (10 skins) and `playlist2.copy()` (8), plus `view.restore()` for
     /// the `<VIEW>` kind. Each aborts its own handler exactly as before — the screen does not

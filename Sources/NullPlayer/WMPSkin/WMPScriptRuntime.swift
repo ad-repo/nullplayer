@@ -216,7 +216,7 @@ enum WMPJScriptCompatibility {
         // `backgroundImage` is on this list because the view root resolves it the way every other
         // node does — a script override before the authored attribute (W75). Every skin with a
         // store-thumbnail `previewView` writes it, and the tally must not call it unknown.
-        "view": ["left", "top", "width", "height", "close", "minimize", "visible",
+        "view": ["left", "top", "width", "height", "close", "minimize", "size", "visible",
                  "backgroundImage"],
         // Derived from the object model's own table rather than restated, so the static tally and
         // the runtime cannot disagree about what `mediacenter` answers. Every one of them is inert.

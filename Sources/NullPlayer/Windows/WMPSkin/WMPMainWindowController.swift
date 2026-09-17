@@ -1307,7 +1307,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             switch command.action {
             case "setCurrentView":
                 return WMPJScriptHostCommand(action: "openView", value: command.value)
-            case "closeView" where command.value?.string == nil, "minimizeWindow":
+            case "closeView" where command.value?.string == nil, "minimizeWindow", "sizeWindow":
                 return nil
             default:
                 return command
@@ -2432,6 +2432,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     switchedView = true
                 }
             case "minimizeWindow": presentation.window.miniaturize(nil)
+            // **The skin's own resize grip (W193).** A `.wmz` window is borderless and the macOS
+            // frame the user would otherwise drag is not the resize the skin authored, so the
+            // press that called `view.size(corner)` is handed straight to the same edge drag the
+            // window band runs — clamped by the view's `minWidth`/`maxWidth`, relaid out by
+            // `windowDidResize` like any other.
+            case "sizeWindow":
+                presentation.mainView?.beginScriptResize(corner: command.value?.string ?? "")
             // `view.returnToMediaCenter()` toggles the library beside the active skin.
             case "toggleLibrary": WindowManager.shared.togglePlexBrowser()
             case let action where action.hasPrefix("playPlaylistItem:"):

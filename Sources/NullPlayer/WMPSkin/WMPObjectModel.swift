@@ -638,7 +638,7 @@ final class WMPObjectModel {
 
     private func readViewHost(_ name: String) -> WMPMemberValue? {
         switch name {
-        case "close", "minimize", "returntomediacenter": return .function
+        case "close", "minimize", "returntomediacenter", "size": return .function
         default: return nil
         }
     }
@@ -650,7 +650,8 @@ final class WMPObjectModel {
         // way of cycling the surface, and the reason the selector never needed a menu (W101).
         case (.effects, "next"), (.effects, "previous"), (.effects, "nextpreset"): return name
         case (_, "moveto"), (_, "resizeto"), (_, "alphablendto"): return name
-        case (.view, "close"), (.view, "minimize"), (.view, "returntomediacenter"): return name
+        case (.view, "close"), (.view, "minimize"), (.view, "returntomediacenter"),
+             (.view, "size"): return name
         default:
             return Self.isPlaylist(element.kind)
                 && ["setcolumnresizemode", "setcolumnwidth"].contains(name) ? name : nil
@@ -663,7 +664,7 @@ final class WMPObjectModel {
     /// `alphaBlendTo` came to be measured as the largest row on the backlog while `moveTo`, which
     /// has been implemented since Phase 3, was counted beside it (W38).
     static let implementedElementMethods: Set<String> = [
-        "moveto", "resizeto", "alphablendto", "close", "minimize", "returntomediacenter",
+        "moveto", "resizeto", "alphablendto", "close", "minimize", "returntomediacenter", "size",
         "appenditem", "removeallitems", "getitem", "setcolumnresizemode", "setcolumnwidth",
         "next", "previous", "nextpreset"
     ]
@@ -1094,6 +1095,21 @@ final class WMPObjectModel {
         case (.effects, "nextpreset"): hostCommand("stepEffectPreset", .number(1)); return .value(.null)
         case (.view, "close"): hostCommand("closeView", nil); return .value(.null)
         case (.view, "minimize"): hostCommand("minimizeWindow", nil); return .value(.null)
+        // **The only resize a `.wmz` window has (W193).** A skin window is borderless and carries
+        // no OS frame, so `onMouseDown="view.size('bottomright')"` — 235 calls in 88 of the 185
+        // installed archives — *is* its resize grip, and WMP tracks the pointer from the press
+        // that called it until the button comes up. Inert, the user reaches for the macOS window
+        // edge instead and skips whatever the skin does around its own resize: `Compact`'s
+        // `DoSize()` pins both drawers to their edges for the duration of the drag and unpins them
+        // after, so a window widened any other way leaves the drawer behind.
+        //
+        // The corner rides the value because a host command carries exactly one: `bottomright`
+        // (86 archives), `topright` (4), `right` (3), `bottom`/`bottomleft`/`left`/`topleft` (2
+        // each). Every one of the 88 authors `resizAble="true"`, which is the same permission the
+        // window-edge band asks for, so the host gate costs the corpus nothing.
+        case (.view, "size"):
+            hostCommand("sizeWindow", .string(arguments.first?.string ?? ""))
+            return .value(.null)
         // **The most widely authored control in the corpus: 162 of 180 archives, 196 of them, and
         // 179 tooltipped "Return to full mode"** (W100). WMP leaves skin mode for the player's own
         // shell — menu bar, library, playlist — which this player has no single equivalent of, so

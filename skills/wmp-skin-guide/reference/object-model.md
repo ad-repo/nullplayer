@@ -251,7 +251,31 @@ Implemented today: `moveTo`, `resizeTo`, `alphaBlendTo` (endpoint applied immedi
 *not* drawn yet, but the **completion now fires**, see below),
 `appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` and `setColumnWidth` on the
 playlist kinds — `ITEMSPLAYLIST` among them, and it is a modelled `.playlist` kind since W97 —
-`next`/`previous`/`nextPreset` on `EFFECTS`, and `close`/`minimize` on the view.
+`next`/`previous`/`nextPreset` on `EFFECTS`, and `close`/`minimize`/`size` on the view.
+
+**`view.size(corner)` is the resize grip, and on a `.wmz` window it is the only resize there is**
+(W193). 235 calls in 88 of the 185 installed archives, authored as
+`onMouseDown="view.size('bottomright')"` on a small corner button: `bottomright` in 86 archives,
+`topright` in 4, `right` in 3, and `bottom`/`bottomleft`/`left`/`topleft` in 2 each — `Revert` is
+the only skin that authors all seven. The window is borderless and has no OS frame, so while this
+was inert the user reached for the macOS window edge instead, which skips whatever the skin wraps
+around its own resize: `Compact`'s `DoSize()` pins both drawers to their edges for the duration and
+unpins them after, and a window widened any other way leaves the drawer behind.
+
+It posts `sizeWindow` with the corner as its value, and `WMPMainView.beginScriptResize(corner:)`
+arms the **same** edge drag the window's own resize band runs — one clamp against the view's
+`minWidth`/`maxWidth`, one anchored edge, one relayout. Two gates are all it adds: `scene.isResizable`
+(the permission the band already asks for — all 88 archives author `resizAble="true"`, so it costs
+the corpus nothing), and the left button must still be down, because the call arrives from an
+asynchronous script transaction and a quick click's command can land after the release, where arming
+a drag would resize the window on whatever the user pressed next. `WMPMainView.mouseUp` no longer
+returns early while a target is captured: the grip is a real element, so it has an `onMouseUp` and
+an `onClick` to raise and a pressed state to drop.
+
+**What this cannot reproduce is WMP's blocking call.** In WMP `view.size` returns when the drag
+ends, so `DoSize()`'s unpin runs afterwards; here a transaction completes before its commands are
+applied, so both brackets have already landed when the drag starts. The drag is right, the
+bracketing is early, and no arrangement of this pipeline changes that.
 
 **A call that lands its endpoint completes in the same transaction (W55).** `WMPObjectModel` records
 `(stableID, event)` on every `moveTo` and `alphaBlendTo`; `WMPScriptContext.raiseCompletionHandlers`

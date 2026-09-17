@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **A Media Player skin's own resize grip now resizes the window.** Most of these skins draw a small
+  handle in a corner — *Compact* puts one at the bottom right — and in Media Player that handle is
+  the only way to resize the window at all, because a skin window has no ordinary window frame to
+  drag. Ours did nothing when pressed, so the only way to resize was to find the window's invisible
+  outer edge, which skips the rearranging a skin does around its own resize: widening *Compact* that
+  way left its drawers behind. The handle now follows the pointer from its own corner and stops at
+  the size limits the skin declares.
+
 - **A Media Player skin whose visualization fills the whole player can be picked up and moved
   again, and no longer opens with a bar spectrum hanging off its bottom edge.** On *Circle* the
   visualization is the size of the entire window, so every click on the skin's own body was treated

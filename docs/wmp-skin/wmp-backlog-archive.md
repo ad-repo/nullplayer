@@ -2362,3 +2362,53 @@ while the window was visibly wrong, and W212's `gaps=` read 0.000 on all four ed
 state — **the white was not a hole, it was the donor's border bitmaps carrying its interior colour
 baked in as opaque white.** Three fixes were built, measured and reverted before the three rules
 above. Verify a borrowed-frame row by driving the app and capturing the live window.
+
+
+---
+
+## W193 — a skin's own resize grip, the only resize a `.wmz` window has
+
+**Closed 2026-09-17.** `view.size(corner)` now runs the drag. Accepted live on `Compact`: press the
+20x20 grip at scene `385,340` and the window follows the pointer from its bottom-right corner.
+
+`onMouseDown="view.size('bottomright')"` is the corpus's standard grip — **235 calls in 88 of the 185
+installed archives** — and a `.wmz` window is borderless, so in WMP it is the only resize the window
+has. Inert, the user reached for the macOS window edge instead, which skips whatever the skin does
+*around* its own resize: `Compact`'s `DoSize()` pins both drawers to their edges for the duration and
+unpins them after, and a window widened any other way leaves the drawer behind.
+
+**The implementation is smaller than the row expected, because W192 had already landed.** No modal
+loop: `WMPObjectModel` posts `sizeWindow` with the corner as its value, and
+`WMPMainView.beginScriptResize(corner:)` arms the **same** borderless edge drag the window's own
+6pt resize band runs — so the clamp against the view's `minWidth`/`maxWidth`, the anchored edge and
+the relayout are one implementation rather than two. Corners are matched as substrings:
+`bottomright` (86 archives), `topright` (4), `right` (3), `bottom`/`bottomleft`/`left`/`topleft`
+(2 each); `Revert` is the only skin authoring all seven.
+
+Two gates, and the second is the one that is not obvious:
+
+- **`scene.isResizable`**, the permission the edge band already asks for. Measured over the installed
+  corpus: all 88 archives that call `view.size` author `resizAble="true"`, so it costs them nothing
+  and stops a view with no authored maximum from being dragged open without one.
+- **The left button must still be down.** The call arrives from an *asynchronous* script
+  transaction, so a quick click's command can land after the release; arming the drag then would
+  resize the window on whatever the user pressed next.
+
+`WMPMainView.mouseUp` no longer returns early while a target is captured. An edge-band drag starts on
+bare artwork and has nothing to release, but a grip is a real element — returning there would leave
+it drawn pressed for good and skip its `onMouseUp`/`onClick`.
+
+**What it could not reproduce, and why the row was closed anyway.** In WMP `view.size` *blocks* until
+the drag ends, so `DoSize()`'s unpin runs afterwards. Here a script transaction completes before its
+host commands are applied, so both brackets have landed by the time the first pixel moves. The drag
+is right; the bracketing is early, and no arrangement of this pipeline changes that. Recorded in
+`reference/skins/compact.md` § *Still open*.
+
+**The harness could not see this row at all**, which is the process note worth keeping:
+`WMP_RENDER_CLICK` raises `onClick` and only `onClick`, and every grip in the corpus is an
+`onMouseDown`, so the probe reports `handlers=0` — identical to an inert control. It was closed
+against the running debug build. Noted on the flag's own row in `reference/harness.md`.
+
+Original row:
+
+| W193 | `view.size(corner)` is unimplemented, so a skin's own resize grip is dead | **88 of 185 archives, 235 calls** (decoded `.wms`+`.js` scan, 2026-09-16) — `Revert` ×7, `The Unit` ×6, `QuickSilver` ×5, the whole Alienware/ALX family, `Halo 2`, `Star Wars`, `xsn_sports`, `Tomb Raider 2`, the Plus! skins, `Compact` | Found while closing W184-W192 (`reference/skins/compact.md`), not from a report of its own — though it is what makes the *stretch* half of that report behave oddly. `onMouseDown="view.size('bottomright')"` is the corpus's standard grip and **a `.wmz` window has no OS frame**, so in WMP it is the only resize the window has. Here it is inert and the user drags the macOS window edge instead, which skips whatever the skin does *around* its own resize: `Compact`'s `DoSize()` pins both drawers to their edges for the duration and unpins them after, and without that a widened window leaves the drawer behind. The implementation is a modal drag loop in `WMPMainWindowController` driven from a host command, honouring the view's `minWidth`/`maxWidth` — and with W192 landed, the alignment dance the skins wrap around the call already works. Corners authored: `bottomright` overwhelmingly, plus `topleft` (`Revert`), `topright` (`The Unit`) and `right` (`Alienware Invader`). |
