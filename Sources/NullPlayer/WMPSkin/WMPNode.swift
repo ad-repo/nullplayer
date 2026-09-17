@@ -1,7 +1,7 @@
 import Foundation
 
 enum WMPElementKind: Hashable, CustomStringConvertible {
-    case theme, view, subview, text, statusText, currentPositionText, image, button, buttonGroup, buttonElement
+    case theme, view, subview, text, statusText, currentPositionText, durationText, image, button, buttonGroup, buttonElement
     case slider, volumeSlider, seekSlider, balanceSlider, customSlider, progressBar
     case playElement, pauseElement, stopElement, prevElement, nextElement
     case rewElement, ffwdElement
@@ -17,11 +17,17 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case "view": self = .view
         case "subview": self = .subview
         case "text": self = .text
-        // WMP's readout tags are TEXT controls with a host-supplied value.  Treating the two
+        // WMP's readout tags are TEXT controls with a host-supplied value.  Treating these
         // spellings as unknown left a skin's status and elapsed-time cells absent, even though the
-        // adjacent ordinary TEXT metadata cell rendered correctly.
+        // adjacent ordinary TEXT metadata cell rendered correctly. **A readout with no host value
+        // has no glyphs, and a `<TEXT>` is sized by its glyphs** — so an unrecognised one is not a
+        // cell in the wrong face, it is a node the layout drops entirely (`WMP_RENDER_UNRESOLVED`
+        // says `missing literal geometry (height)`). `DURATIONTEXT` sat in that state and
+        // `circle`'s track length never drew; it and `pharaoh` are the corpus's two
+        // (`scripts/wmp_markup_census.sh <out> DURATIONTEXT` — 2 uses, 2 of 182).
         case "statustext": self = .statusText
         case "currentpositiontext": self = .currentPositionText
+        case "durationtext": self = .durationText
         case "image": self = .image
         case "button": self = .button
         case "buttongroup": self = .buttonGroup
@@ -104,6 +110,7 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case .text: return "text"
         case .statusText: return "statusText"
         case .currentPositionText: return "currentPositionText"
+        case .durationText: return "durationText"
         case .image: return "image"
         case .button: return "button"
         case .buttonGroup: return "buttonGroup"

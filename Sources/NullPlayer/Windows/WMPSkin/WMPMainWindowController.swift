@@ -592,6 +592,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         imageStore = store
         materializer.rekey(presentation, to: scene.viewID)
         presentation.activeLimits = scene.resizeLimits
+        applyWindowSizeLimits(presentation, scene: scene)
         presentation.activeScene = scene
         scriptRuntime = runtime
         lastScriptSnapshot = host.snapshot
@@ -891,6 +892,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // The app-authored player is an ordinary opaque rectangle and keeps its shadow.
         window?.hasShadow = true
         window?.invalidateShadow()
+        // The floor and ceiling go back with the view that owns them; see `applyWindowSizeLimits`.
+        window?.minSize = Self.unskinnedSize
+        window?.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                 height: CGFloat.greatestFiniteMagnitude)
         let view = unskinnedView ?? WMPUnskinnedMainView(frame: NSRect(origin: .zero, size: Self.unskinnedSize))
         unskinnedView = view
         view.onImport = { [weak self] in self?.importSkinFromPanel() }
@@ -908,6 +913,39 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         window.setFrame(frame, display: true)
         view.setBoundsSize(Self.unskinnedSize)
         window.invalidateShadow()
+    }
+
+    /// **The window's own floor and ceiling, which belong to the view on screen and not to the
+    /// player we show when there is no skin (W213).**
+    ///
+    /// `configureWindow` sets `minSize` to `unskinnedSize` — 440x170 — and nothing ever moved it
+    /// again, so every `.wmz` window in the corpus smaller than that carried a floor four times its
+    /// own size. AppKit enforces `minSize` *after* the delegate answers, so no amount of refusing in
+    /// `windowWillResize` helps: the first edge drag on `circle`'s 192x82 player snapped the window
+    /// to 440x170 while the scene stayed 192x82, and the two reported symptoms are both that one
+    /// state. The artwork is rasterized at the scene's size and sat in the corner; everything laid
+    /// out from `bounds / canvasSize` — the hosted surfaces, and **`skinPoint(from:sceneSize:)`,
+    /// which is where every click is resolved** — stretched to the window. So the visualization
+    /// "popped out and stretched but the app didn't", and every control moved out from under the
+    /// pointer, which is why *"the volume doesnt seem to work"*.
+    ///
+    /// A fixed view pins both ends: it has one size, and a window that cannot be resized should not
+    /// be nudged to another by a pass that reads these.
+    private func applyWindowSizeLimits(_ presentation: WMPViewPresentation, scene: WMPScene) {
+        let window = presentation.window
+        let limits = WMPWindowSizeLimits.forScene(scene)
+        window.minSize = NSSize(width: limits.minimum.width * uiScale,
+                                height: limits.minimum.height * uiScale)
+        window.maxSize = NSSize(
+            width: (limits.maximum?.width).map { $0 * uiScale } ?? .greatestFiniteMagnitude,
+            height: (limits.maximum?.height).map { $0 * uiScale } ?? .greatestFiniteMagnitude)
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WMP_SIZE_TRACE"] != nil,
+           let breakage = limits.breakage(for: scene.canvasSize) {
+            NSLog("[wmp/size] MISMATCH \(scene.viewID) canvas=\(scene.canvasSize) "
+                + "floor=\(limits.minimum) verdict=\(breakage.rawValue)")
+        }
+        #endif
     }
 
     /// `size` is in the skin's own pixels. UI Size is applied here and in `windowWillResize`, and
@@ -939,6 +977,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         presentation.loadTask?.cancel()
         let requested = WMPSize(width: window.contentLayoutRect.width / uiScale,
                                 height: window.contentLayoutRect.height / uiScale)
+        // **A window that is not the user's to size does not get laid out at whatever size it was
+        // left at (W213).** The resize edges are already gated on `isResizable`, so a fixed view
+        // reaching here is an app-level pass having moved its frame — and building at that size is
+        // how `circle` ended up drawing its `<EFFECTS jscript:vMain.height>` down a 63 px strip
+        // below the skin. Built at the authored canvas instead, the size comparison below then
+        // finds a mismatch and snaps the window back to it.
+        let layoutSize = Self.authoredResizable(in: skin, viewID: viewID) ? requested : nil
         let overrides = presentation.sceneOverrides
         let scriptRuntime = scriptRuntime
         presentation.loadTask = Task { [weak self, weak presentation] in
@@ -953,7 +998,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     scriptOutput = output
                 }
                 var scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: viewID, requestedSize: requested, overrides: resolvedOverrides)
+                    .build(viewID: viewID, requestedSize: layoutSize, overrides: resolvedOverrides)
                 // The resize is now laid out, so what moved is a fact rather than a guess, and the
                 // skin's own `onResize` can run against it. Corona's `EqResize` re-spaces its ten
                 // sliders from `svEqualizerTopMiddle.width`; without this they stay at the spacing
@@ -967,7 +1012,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     resolvedOverrides = output.overrides
                     scriptOutput = output
                     scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                        .build(viewID: viewID, requestedSize: requested, overrides: resolvedOverrides)
+                        .build(viewID: viewID, requestedSize: layoutSize, overrides: resolvedOverrides)
                 }
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: self?.renderScale(for: scene.canvasSize) ?? 1,
@@ -1111,7 +1156,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         let frameStore = WMPViewFrameStore(defaults: importer.defaults)
         let skinName = importer.selectedSkinName ?? ""
-        let savedSize = frameStore.size(skin: skinName, view: registration.id)
+        // **A stored size belongs to a view the user can size, and to no other (W213).** The store
+        // keeps whatever the window came to rest at, and `windowDidResize` files it on any resize —
+        // including one this app made rather than the user. A fixed view then re-opens at it: the
+        // builder honours `requestedSize` by design (it is also how a donor view is rendered at
+        // *our* window's size for a hosted frame, W209), and the limits do not refuse it either,
+        // since `minimum` falls back to the authored size and most of the corpus authors no
+        // maximum. `circle`'s 192x82 `vMain` came back **192x145**, with its
+        // `<EFFECTS height="jscript:vMain.height">` filling the extra 63 px as a bar spectrum
+        // hanging off the bottom of the skin (reported 2026-09-17). The origin is not gated the
+        // same way: where the user put a window is the user's decision at any size.
+        let savedSize = Self.authoredResizable(in: skin, viewID: registration.id)
+            ? frameStore.size(skin: skinName, view: registration.id) : nil
         let savedOrigin = frameStore.origin(skin: skinName, view: registration.id)
         let task = Task { [weak self] in
             guard let self else { return }
@@ -1391,10 +1447,25 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // The skin's own limits are in the skin's own pixels, so the drag is measured there and the
         // answer scaled back. A fixed skin stays fixed at every UI Size; a resizable one keeps the
         // range it authored, expressed at the current zoom.
-        guard let limits = materializer.presentation(for: sender)?.activeLimits else {
+        guard let presentation = materializer.presentation(for: sender),
+              let limits = presentation.activeLimits else {
             return NSSize(width: Self.unskinnedSize.width * uiScale,
                           height: Self.unskinnedSize.height * uiScale)
         }
+        // **A view that declares no `resizAble` refuses the resize rather than undoing it (W213).**
+        // The window is borderless but carries `.resizable`, so AppKit offers edge drags whatever
+        // `WMPMainView.edges(at:)` decides, and the limits alone do not refuse one: `minimum` is the
+        // authored size and most of the corpus authors no maximum. Snapping back afterwards is not
+        // the same thing — the window is live-resized first, and everything laid out from
+        // `bounds / canvasSize` follows it while the skin's own raster does not, which is the
+        // reported *"the visualization popped out and stretched but the app didn't"*. Refusing here
+        // is the only place the stretch never happens at all.
+        if presentation.activeScene?.isResizable == false {
+            let scale = uiScale
+            return NSSize(width: presentation.skinSpaceSize.width * scale,
+                          height: presentation.skinSpaceSize.height * scale)
+        }
+
         let clamped = limits.clamp(WMPSize(width: frameSize.width / uiScale,
                                            height: frameSize.height / uiScale))
         return NSSize(width: clamped.width * uiScale, height: clamped.height * uiScale)
@@ -1407,14 +1478,25 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     func windowDidResize(_ presentation: WMPViewPresentation) {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WMP_SIZE_TRACE"] != nil {
+            NSLog("[wmp/size] \(presentation.viewID) -> \(presentation.window.frame.size) "
+                + "applying=\(presentation.isApplyingSceneSize)\n"
+                + Thread.callStackSymbols.prefix(14).joined(separator: "\n"))
+        }
+        #endif
         presentation.skinSpaceSize = NSSize(width: presentation.window.frame.width / uiScale,
                                             height: presentation.window.frame.height / uiScale)
         // Persisted in skin space as well, so a size the user dragged out at 200% is not restored
-        // as a scene twice that size the next time the skin loads.
-        WMPViewFrameStore(defaults: importer.defaults).setSize(
-            WMPSize(width: presentation.skinSpaceSize.width,
-                    height: presentation.skinSpaceSize.height),
-            skin: importer.selectedSkinName ?? "", view: presentation.viewID)
+        // as a scene twice that size the next time the skin loads — and only for a view the user
+        // can size at all. A fixed view has no size of the user's to keep, and every resize it sees
+        // is this app's (W213); filing those is how `circle`'s 192x82 player had 192x145 on record.
+        if let skin = loadedSkin, Self.authoredResizable(in: skin, viewID: presentation.viewID) {
+            WMPViewFrameStore(defaults: importer.defaults).setSize(
+                WMPSize(width: presentation.skinSpaceSize.width,
+                        height: presentation.skinSpaceSize.height),
+                skin: importer.selectedSkinName ?? "", view: presentation.viewID)
+        }
         renderCurrentSize(presentation)
     }
 
@@ -2120,6 +2202,24 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         guard let width = literal("width"), let height = literal("height") else { return nil }
         return WMPSize(width: width, height: height)
+    }
+
+    /// Whether the view lets the user size its window at all — `WMPScene.isResizable`, read from
+    /// the markup before a scene exists, which is what deciding whether to *request* a size needs.
+    /// `resizAble` is the corpus's dominant spelling and `resizable` the other; both appear in the
+    /// same archive, and absent is false.
+    static func authoredResizable(in skin: WMPLoadedSkin, viewID: String) -> Bool {
+        guard let view = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node else { return false }
+        for name in ["resizAble", "resizable"] {
+            guard let attribute = view.attributes.first(where: {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+            }), case let .literal(raw) = attribute.value else { continue }
+            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare("true") == .orderedSame
+        }
+        return false
     }
 
     /// Overrides that lift a view's own declared floor for one build, so the **authored** layout

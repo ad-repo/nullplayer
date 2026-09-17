@@ -161,8 +161,43 @@ struct WMPSceneBuilder: @unchecked Sendable {
             : WMPSize(width: maxWidth ?? .greatestFiniteMagnitude,
                       height: maxHeight ?? .greatestFiniteMagnitude)
         let resizeLimits = WMPResizeLimits(minimum: minimum, maximum: maximum)
+        // `resizAble` is the corpus's dominant spelling and `resizable` the other; both appear in
+        // the same archive. Absent is false — a borderless window gets its resize edges from this
+        // and from nothing else.
+        let resizable = (literalString(view, "resizAble") ?? literalString(view, "resizable"))?
+            .caseInsensitiveCompare("true") == .orderedSame
         let canvas = resizeLimits.clamp(requestedSize ?? defaultSize)
         let canvasRect = WMPRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
+
+        // **A view whose own field states a matte gives its visualizer the rect as a backdrop
+        // (W213).** An `<EFFECTS>` with no ancestor shape used to take no ground at all, and a
+        // visualizer with no backdrop is a window with holes in it: `circle` showed the desktop
+        // through the antialias fringe round its dial, through its three track-number panels — ten
+        // `num*.bmp` that are nothing but a magenta glyph in a red matte, so the digit *is* whatever
+        // the surface paints — and through its whole right-hand field. Reported 2026-09-17 as
+        // *"it is still missing the backing on the volume"*.
+        //
+        // **The permission is a `clippingColor` on a full-canvas child, and that is the signal that
+        // separates the reported skin from the one that refuses it.** `Plus! Plasma Ball/BubbleSkin`
+        // shapes itself with `transparencyColor` **alone** — it never names a matte — and grounding
+        // its rect turns 40,334 px of it black outside the silhouette, measured, which is the
+        // counter-evidence `WMPEffectsGround` has carried since W174. A skin that declares both keys
+        // over a canvas-sized field has distinguished *hole* from *matte*, and both of them are the
+        // visualizer's. Read from the markup and the bitmap's own size, before the walk, because the
+        // child that states it is laid out after the `<EFFECTS>` is visited.
+        let viewStatesAMatte: Bool = try {
+            for child in view.children where child.kind == .subview {
+                guard !colors(child, names: ["clippingColor"]).isEmpty,
+                      let path = try resource(child, names: ["backgroundImage", "background"])?.1,
+                      literalString(child, "backgroundTiled")?
+                          .caseInsensitiveCompare("true") != .orderedSame,
+                      let decoded = try? imageStore.image(for: path),
+                      CGFloat(decoded.image.width) == canvas.width,
+                      CGFloat(decoded.image.height) == canvas.height else { continue }
+                return true
+            }
+            return false
+        }()
 
         var commands: [WMPPaintCommand] = []
         var hits: [WMPHitMetadata] = []
@@ -171,6 +206,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
         // the only cost worth avoiding here; nothing outlives the build.
         var paintSequence = 0
         var alphaPlanes: [String: WMPAlphaPlane?] = [:]
+        /// A container shape read as a *keep* plane, for the coverage walks. Same cache discipline
+        /// as `alphaPlane`, and the same lifetime; `WMPImageStore` caches the mask itself anyway.
+        var keepPlanes: [String: WMPAlphaPlane?] = [:]
+        func keepPlane(for shape: WMPSceneClipMask) -> WMPAlphaPlane? {
+            let key = "\(shape.resourcePath)|\(shape.keyedOut.map(\.description).joined(separator: ","))"
+            if let cached = keepPlanes[key] { return cached }
+            let plane = (try? imageStore.regionMask(for: shape.resourcePath,
+                                                    keyedOut: shape.keyedOut))
+                .flatMap { WMPAlphaPlane(keepMask: $0) }
+            keepPlanes[key] = plane
+            return plane
+        }
         func alphaPlane(for image: WMPSceneImage) -> WMPAlphaPlane? {
             let key = "\(image.resourcePath)|\(image.colorKeys.map(\.description).joined(separator: ","))"
                 + "|\(image.implicitColorKey?.description ?? "-")"
@@ -931,11 +978,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // `backgroundImage` is excluded — that backdrop is already emitted and already moves
             // the split index past itself.
             var effectsGround: WMPEffectsGround?
-            if node.kind == .effects, let shape = groundShapeStack.last, !frame.isEmpty,
+            if node.kind == .effects, !frame.isEmpty,
+               groundShapeStack.last != nil || viewStatesAMatte,
                try resource(node, names: ["backgroundImage", "background"]) == nil {
                 let authored = color(node, names: ["backgroundColor"])
                 effectsGround = WMPEffectsGround(frame: frame,
-                    color: authored ?? WMPColor(red: 0, green: 0, blue: 0), shape: shape)
+                    color: authored ?? WMPColor(red: 0, green: 0, blue: 0),
+                    shape: groundShapeStack.last)
             }
 
             // **The window's own shape confines the surface too, and that is a separate statement
@@ -1309,8 +1358,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 case "right": alignment = .right
                 // `CURRENTPOSITIONTEXT` reserves the trailing cell of a composite readout.
                 // WMP right-aligns that clock by default; treating it as ordinary left-aligned
-                // TEXT put `0:08` directly against Cerulean's scrolling metadata.
-                default: alignment = node.kind == .currentPositionText ? .right : .left
+                // TEXT put `0:08` directly against Cerulean's scrolling metadata. `DURATIONTEXT`
+                // is the other half of the same clock and takes the same default — and the corpus
+                // says so rather than the SDK: of its two uses, `pharaoh` writes
+                // `justification="Left"` explicitly on its `elapsed / total` pair, which is a
+                // statement only worth authoring against a right-aligned default.
+                default: alignment = node.kind == .currentPositionText
+                    || node.kind == .durationText ? .right : .left
                 }
                 // **`fontFace` is the attribute the corpus authors, not `fontType`**: 110 skins
                 // against 21. Reading only `fontType` rendered every one of those in Arial, which
@@ -1430,6 +1484,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
         try walk(view, parentFrame: canvasRect,
                  parentAuthoredSize: WMPSize(width: width, height: height),
                  inheritedClip: canvasRect, parentAlpha: 1, isRoot: true)
+
+        // **A hosted surface is its picture, and its picture ends where the skin paints over it
+        // (W213).** The layer above it is already separated out for drawing (`commandSplitIndex`),
+        // so the same list answers where a click can still reach the surface. A **windowed** one is
+        // excluded: nothing the skin paints is drawn over a real child window, so its rect is live
+        // whatever the markup declares after it.
+        for index in hits.indices where hits[index].coverage == nil
+            && hits[index].kind.caseInsensitiveCompare("effects") == .orderedSame {
+            guard let widget = widgets.first(where: { $0.stableID == hits[index].stableID }),
+                  !widget.isWindowedEffects, let split = widget.commandSplitIndex,
+                  split < commands.count else { continue }
+            hits[index].coverage = WMPHitCoverageBuilder.surfaceCoverage(
+                frame: hits[index].frame, coveredBy: Array(commands[split...]),
+                pixels: alphaPlane, keeps: keepPlane)
+        }
         hits.sort { $0.paintOrder < $1.paintOrder }
         let allDirty = commands.compactMap { command in
             command.clipRect.flatMap { command.frame.intersection($0) } ?? command.frame
@@ -1446,11 +1515,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
         } ?? allDirty
         let metrics = WMPSceneMetrics(resolvedNodeCount: resolvedNodes.count,
             unresolvedNodeCount: unresolvedNodes.count, visibleBounds: allDirty)
-        // `resizAble` is the corpus's dominant spelling and `resizable` the other; both appear in
-        // the same archive. Absent is false — a borderless window gets its resize edges from this
-        // and from nothing else.
-        let resizable = (literalString(view, "resizAble") ?? literalString(view, "resizable"))?
-            .caseInsensitiveCompare("true") == .orderedSame
         return WMPScene(viewID: registration.id, canvasSize: canvas, resizeLimits: resizeLimits,
             isResizable: resizable,
             commands: commands, hits: hits, widgets: widgets, geometries: geometries, unresolved: unresolved,
@@ -1632,7 +1696,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
     private func isText(_ kind: WMPElementKind) -> Bool {
         switch kind {
-        case .text, .statusText, .currentPositionText: return true
+        case .text, .statusText, .currentPositionText, .durationText: return true
         default: return false
         }
     }

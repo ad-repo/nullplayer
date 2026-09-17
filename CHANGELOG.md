@@ -4,6 +4,33 @@
 
 ### Fixed
 
+- **A Media Player skin whose visualization fills the whole player can be picked up and moved
+  again, and no longer opens with a bar spectrum hanging off its bottom edge.** On *Circle* the
+  visualization is the size of the entire window, so every click on the skin's own body was treated
+  as a click on the visualization and the window could not be dragged anywhere; the visualization
+  now takes only the clicks that land where it can actually be seen. The same skin opened 63 points
+  too tall, with the extra filled by its own visualization, because a window-tidying pass meant for
+  the Classic skin was resizing it — that pass now leaves Media Player windows alone. Two related
+  fixes ride along: a skin window that the skin declares fixed no longer takes a size left over from
+  a previous session, and the track length now appears on the two skins that ask for it.
+
+- **A Media Player skin smaller than 440 by 170 points no longer jumps to that size the first time
+  you touch its edge, leaving its controls unclickable.** Every skin window carried the minimum size
+  of the plain player we show when no skin is loaded, so a small skin — *Circle* is 192 by 82 —
+  snapped up to it on the first edge drag while its artwork stayed the size it was drawn: the
+  visualization stretched to the new window, the skin did not, and every button and slider moved out
+  from under the pointer, which looked like the volume control having stopped working. A skin window
+  now takes its size limits from the skin, and a skin that declares itself fixed cannot be resized
+  at all.
+
+- **A Media Player visualization now has a backdrop, so the skins that cut their artwork away to
+  show it no longer have holes in them.** *Circle* draws its dial's edge, its track number and its
+  whole right-hand panel by cutting shapes out of its artwork and letting the visualization show
+  through; with nothing painted behind it, those cut-outs showed the desktop instead — the player
+  appeared to be missing its backing. The visualization is now drawn on black, as Media Player
+  itself does. One skin in the installed collection changes as a result, which is the one that was
+  reported.
+
 - **A window NullPlayer draws itself no longer wears white blocks or a grey column where a Media
   Player skin's border should be.** On *Alienware Invader* the PeppyMeter, waveform and flow windows
   carried a white slab in the right of the title bar, a bare gap two-thirds of the way down each

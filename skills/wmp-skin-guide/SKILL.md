@@ -311,6 +311,19 @@ a dispatch defect — it is a control the pointer never reached at all.
   sprite with *nothing* opaque in it is a hit catcher rather than a shape (`holiday_skin`, `Grinch`
   and `Josie_and_the_Pussycats` build whole transports that way, 104 controls across 21 archives),
   and a node with a `mappingImage` takes its region from the *map*, never from its art.
+- **A hosted surface is its picture, and its picture ends where the skin paints over it (W213).**
+  `<EFFECTS>` and `<VIDEO>` already rank last, which keeps the controls drawn over them; what
+  ranking cannot give back is the artwork *between* those controls, which is not a control at all.
+  `circle`'s `<EFFECTS>` is `jscript:vMain.width` by `jscript:vMain.height` — the whole player — so
+  every press answered "visualization" and **the window could not be dragged**.
+  `WMPHitCoverageBuilder.surfaceCoverage` reads the layer `commandSplitIndex` already separates for
+  drawing and leaves the surface reachable only where it can be seen. **The half that decides the
+  corpus is that a command paints only where the shapes it is inside keep it**: `clippingColor` keys
+  a container's shape and never its artwork (W169), so `cerulean`'s `face.bmp` is opaque `#FF0000`
+  across its own lens and only the container's region mask opens the hole. Read without the masks it
+  buried the surfaces of `cerulean`, `aoe`, `claw`, `gadget` and `pharaoh`. Measured over the 184
+  installed archives: the `rect-only` set is identical to the baseline — no control lost — and 20
+  surfaces tighten. A **windowed** surface is excluded: nothing the skin paints is drawn over it.
 - **A `CUSTOMSLIDER`'s `positionImage` is the authority on its region, and the colours the node
   keys out are not part of it (W150).** `WMPPositionMap` marked only *alpha-zero* pixels as outside
   the control, and `Plus! Pulsar`'s `seek_map.png` marks the 66% of its 79x136 square that is not

@@ -2246,3 +2246,53 @@ making it partial is what exposed it.**
 Original row:
 
 | W182 | The animation clock is per **view**, not per image, so a GIF a skin assigns later starts part way through — and a one-shot is cut off at the same offset | **1 skin measured live 2026-09-15 across 8 runs; unmeasured across the corpus**, and every skin that assigns a `backgroundImage` GIF from script is a candidate — count them | Reported as "why does the AlienMorph skin animation sometimes not fully run when first opened, it runs what appears to be half of the animation". `WMPViewPresentation.animationEpoch` is set **once per view**, on the first scene containing any animated GIF (`WMPMainWindowController.swift:2201`), and `animationClock` then hands `now - epoch` to every GIF in that view for `WMPImageAnimation.frame(at:)` to index its own delay table. A GIF that enters the scene later is therefore entered by exactly the gap between the two, and `cadence.endsAt` is measured from the same epoch so the tail is lost as well. `AlienMorph` walks into it because its `mainView` is authored `timerInterval="1000" onTimer="introStart()"` and `introStart()` → `toggleShutter()` is what assigns `m_anim_shutter_open.gif` — one second *after* the view loads. **Measured in the running debug build** by frame-differencing the 282x282 shutter region of a `screencapture` series (the harness renders at an explicit clock and is blind to this whole class): pointer away from the window, motion runs 1.10s→10.91s, span **9.80s**, the GIF's full duration, reproduced 5/5; pointer parked on the player's button group, span **8.69s** — `m_set1_hov.gif` is 10 frames at 40ms with `loop=0`, so hovering starts the epoch ~1.1s early and the intro loses precisely that much at the head. A later toggle is worse and is the same defect: clicking `btnShutter` 4s after launch runs **1.73s** of the 8.46s close animation, and clicking it at 12s moves for a **single 110ms interval** — the scene renders once at a clock already past `endsAt` and snaps to the last frame. So "sometimes" is "whenever anything animated in that view first". **The fix is an epoch per image slot rather than per view**; before taking it, count the archives that assign a GIF to `backgroundImage` from script — the W128 scan shape in `reference/harness.md` § *Counting a tag across the corpus* is the one to copy, because the write is as often in an inline handler as in a program. Reproduce with the recipe in `reference/skins/alienmorph.md` § *How to drive it*. |
+
+## W213 — a visualizer that owned every click, stood on nothing, and grew its own window
+
+Reported 2026-09-17 against `circle`, in three messages: *"the circle skin has multiple issues, it
+cannt be dragged and looks to be missing parts of the UI. also the vizulization opens below it"*,
+then *"it is still missing hte backing on the volume and the vizulization still pops under it"*,
+then *"the only thing fixed was the drag"*. Four independent defects; the skin dossier is
+[`skills/wmp-skin-guide/reference/skins/circle.md`](../../skills/wmp-skin-guide/reference/skins/circle.md).
+
+**None of the four is a drawing defect and no render dump shows any of them.** The scene `circle`
+builds was correct in every capture throughout.
+
+| # | Defect | Cause | Fix |
+|---|---|---|---|
+| 1 | The window could not be dragged anywhere | The `<EFFECTS>` hit covered its whole rect, and that rect is the entire player, so every press answered `visEffects` and never reached `beginWindowDrag` | `WMPHitCoverageBuilder.surfaceCoverage` — a hosted surface is reachable only where the skin has not painted over it, honouring each command's inherited container shapes |
+| 2 | "the visualization opens below it" — the window opened 63 px too tall with a bar spectrum in the extra | `WindowManager.tightenClassicCenterStackIfNeeded` is Classic's stack repair, `isRunningModernUI` answers false for the WMP controller, and it grew the borderless skin window to `Skin.mainWindowSize.height` from `windowDidFinishDragging` | Gated on `isRunningWMPUI`. Two smaller gates ride with it: a stored size is read and written only for a view that declares `resizAble`, and `renderCurrentSize` lays a fixed view out at its authored canvas |
+| 3 | "missing the backing" — the window had holes in it that showed the desktop | `WMPEffectsGround` was granted only where an **ancestor** states a shape; `vMain` states none, so the rect took no ground and every pixel the artwork keys away was transparent | The ground fills the rect where no shape is in scope, permitted by a `clippingColor` on a full-canvas child — the signal that keeps `Plus! Plasma Ball/BubbleSkin`, which names no matte |
+| 4 | The track length never drew | `<DURATIONTEXT>` was not an element kind: no host value, no glyphs, and a `<TEXT>` is sized by its glyphs, so the node was dropped as unresolved | A kind bound to `player.currentMedia.durationString`, right-aligned by default |
+| 5 | *"when i streched the window the visulization popped out and stretched bu the app didnt"* and *"the volume doesnt seem to work"* — **one defect, not two** | `configureWindow` set `window.minSize` to `unskinnedSize` (440x170) and nothing moved it again, so every `.wmz` window smaller than that carried a floor four times its own size. AppKit enforces `minSize` **after** the delegate answers, so refusing in `windowWillResize` cannot help: the first edge drag snapped the 192x82 player to 440x170 with the scene still 192x82 | `applyWindowSizeLimits` tracks the presented scene — floor from `resizeLimits`, both ends pinned for a view that is not resizable — and `presentUnskinned` gives the unskinned floor back. `windowWillResize` refuses a fixed view's resize as well, so the stretch never starts |
+
+**Why (5) is one defect and reads as two.** The artwork is rasterized at the *scene's* size and sits
+in the window's corner, while everything laid out from `bounds / canvasSize` follows the *window* —
+the hosted surfaces, and `WMPMainView.skinPoint(from:sceneSize:)`, **which is where every click is
+resolved**. So the visualization stretched while the skin did not, and simultaneously every control
+moved out from under the pointer. The volume was simply the control that got tried.
+
+**Measured.** `swift test` 2363 tests / 0 failures. Corpus render sweep over 184 archives: **552 of
+553 images identical**, the one being `circle`'s own ground; plus the two `<DURATIONTEXT>` readouts
+(`circle`, `pharaoh`) and `Scooby-Doo_2`'s documented nondeterministic `randomPic()`.
+`WMP_RENDER_OCCLUDED` corpus-wide: the `rect-only` set is **byte-identical to the baseline** — no
+control lost anywhere — with 20 surfaces tightening.
+
+**What this row is worth keeping for is the two wrong answers it produced first.**
+
+- **A clean corpus sweep blessed a change that deleted a readout.** Confining the surface to
+  `visfield.bmp`'s keep region — reading a full-canvas sibling's `clippingColor` as the window's
+  outline — measured perfectly: 550 of 553 images identical, `rect-only` unchanged, one `shape=`
+  population change and an `offshape=0` no-op. It is wrong, because `circle`'s track-number panels
+  cycle ten `num*.bmp` that are **entirely** key colours, so the digit is whatever the surface
+  paints behind it. A sweep renders scenes; it cannot see what a *surface* draws.
+- **Two reports, one cause — and the second report is what located it.** "The volume doesn't work"
+  and "the visualization stretched but the app didn't" were filed as separate observations and are
+  the same window state; reading them together is what pointed at `bounds` rather than at the
+  slider. Measured after the fix with the visualizer stopped, which gives the volume's own rect a
+  **zero** noise floor: a drag to the arc's low end moves 758 px in it and back moves 2,437.
+- **A plausible cause that reproduces the symptom is not the cause.** The frame store did hold
+  `192x145` for a 192x82 player, and a fixed view taking a size from outside itself is a real
+  defect — it was found, fixed, and was **not** why the window grew. Clearing the record still gave
+  192x82 at launch and 192x145 on the first click. `WMP_SIZE_TRACE=1` (`reference/harness.md`)
+  printed the backtrace and named `tightenClassicCenterStackIfNeeded` on its first run.

@@ -23,6 +23,9 @@ import XCTest
 //   WMP_RENDER_PROBE=<view|all>    every scene node: type, id, resolved frame, clip, paint, attrs
 //   WMP_RENDER_BITMAPS=1           resolved bitmap count and every one that failed, with missing=
 //   WMP_RENDER_UNRESOLVED=1        name every node the unresolved count reports, and which dimension
+//   WMP_RENDER_LIMITS=1            will this window come apart on a drag or resize: the scene's
+//                                  canvas against the limits the app gives its window, plus
+//                                  exposed= (is it below the unskinned player's 440x170)
 //   WMP_RENDER_SCRIPTS=1           per program: bytes, declared handlers, whether it evaluated
 //   WMP_RENDER_EXPR=1              every JScript: geometry expression, its value, its order, deps
 //   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
@@ -100,6 +103,7 @@ struct WMPProbe {
     /// every use of it so far has been followed by opening the `.wms` by hand to guess which nodes
     /// it counted. This prints them.
     var wantsUnresolved: Bool { env["WMP_RENDER_UNRESOLVED"] != nil }
+    var wantsLimits: Bool { env["WMP_RENDER_LIMITS"] != nil }
     var wantsOccluded: Bool { env["WMP_RENDER_OCCLUDED"] != nil }
     var wantsScripts: Bool { env["WMP_RENDER_SCRIPTS"] != nil }
     var wantsExpressions: Bool { env["WMP_RENDER_EXPR"] != nil }
@@ -1005,6 +1009,7 @@ enum WMPHarness {
         if probe.wantsUnresolved {
             for line in unresolvedLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
         }
+        if probe.wantsLimits { WMPHarnessOutput.emit(Self.limitsLine(scene: scene, viewID: viewID)) }
         if probe.wantsOccluded {
             for line in occludedLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
         }
@@ -1058,6 +1063,41 @@ enum WMPHarness {
             "FINDING [\(diagnostic.severity.rawValue)] \(diagnostic.code.rawValue) ×\(count) "
                 + diagnostic.message.replacingOccurrences(of: "\n", with: " ")
         }
+    }
+
+    /// **Will this window come apart if the user drags or resizes it?** — answered from the scene
+    /// alone, with no window and no gesture.
+    ///
+    /// The artwork is rasterized at the *scene's* size while the hosted surfaces and
+    /// `WMPMainView.skinPoint(from:sceneSize:)` are derived from `bounds / canvasSize`, so a window
+    /// forced to a size its scene is not separates the two: the visualization stretches, the skin
+    /// does not, and every control moves out from under the pointer. `WMPWindowSizeLimits` is what
+    /// the app will give the window — the same derivation the controller uses, deliberately not a
+    /// second copy — so a canvas outside those limits is a window that **will** be forced, and the
+    /// verdict says which way. `ok` is the invariant holding.
+    ///
+    /// It cannot see the disagreement itself, which lives in the window layer and needs the live
+    /// `WMP_SIZE_TRACE`; it enumerates the scenes where the disagreement is guaranteed, which is the
+    /// half a corpus sweep can own. Before W213 every view smaller than 440x170 in either axis was
+    /// one edge drag from being snapped to it.
+    static func limitsLine(scene: WMPScene, viewID: String) -> String {
+        let limits = WMPWindowSizeLimits.forScene(scene)
+        func size(_ value: WMPSize?) -> String {
+            value.map { "\(WMPNumber.format($0.width))x\(WMPNumber.format($0.height))" } ?? "none"
+        }
+        // **`exposed=` is the field with predictive value, and `verdict=` is the invariant.** Both
+        // sides of the verdict are derived from this scene, so it can only ever say `ok` while the
+        // app takes its floor from the scene — which is the point, and is also why a green column
+        // is not on its own evidence of anything. `exposed=` is the independent number: how far the
+        // view is below the *unskinned* player's 440x170, the constant that used to be every skin
+        // window's floor. **483 of the corpus's 630 views are below it in at least one axis**, so a
+        // constant floor leaking back in does not break one skin, it breaks three quarters of them.
+        let exposed = scene.canvasSize.width < WMPMainWindowController.unskinnedSize.width
+            || scene.canvasSize.height < WMPMainWindowController.unskinnedSize.height
+        return "LIMITS \(viewID): canvas=\(size(scene.canvasSize)) floor=\(size(limits.minimum)) "
+            + "ceiling=\(size(limits.maximum)) resizable=\(scene.isResizable ? "yes" : "no") "
+            + "exposed=\(exposed ? "yes" : "no") "
+            + "verdict=\(limits.breakage(for: scene.canvasSize)?.rawValue ?? "ok")"
     }
 
     /// The static half of the demand tally: what the markup and the scripts *ask for*, minus what

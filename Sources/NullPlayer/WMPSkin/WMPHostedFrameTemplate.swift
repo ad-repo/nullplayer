@@ -604,7 +604,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                  .rewElement, .ffwdElement,
                  .playlist, .dropdownPlaylist, .listBox, .video, .wmpVideo, .effects,
                  .equalizerSettings,
-                 .text, .statusText, .currentPositionText:
+                 .text, .statusText, .currentPositionText, .durationText:
                 subtree(node)
             default:
                 break

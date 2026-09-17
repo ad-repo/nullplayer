@@ -103,7 +103,8 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
                       ("max", "player.currentMedia.duration")],
         // These are text widgets, but WMP supplies their values rather than requiring a `value=`
         // binding in the markup.  Cerulean's elapsed-time cell is one of them.
-        .currentPositionText: [("value", "player.controls.currentPositionString")]
+        .currentPositionText: [("value", "player.controls.currentPositionString")],
+        .durationText: [("value", "player.currentMedia.durationString")]
     ]
 
     /// `holding` are elements the pointer is currently dragging. **Their `value` is the user's for

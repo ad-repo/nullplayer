@@ -263,6 +263,19 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         guard let presentation = presentation(for: sender),
               let limits = presentation.activeLimits else { return frameSize }
+        // **A view that declares no `resizAble` refuses the resize rather than undoing it (W213).**
+        // The window is borderless but carries `.resizable`, so AppKit offers edge drags whatever
+        // `WMPMainView.edges(at:)` decides, and the limits alone do not refuse one: `minimum` is the
+        // authored size and most of the corpus authors no maximum. Snapping back afterwards is not
+        // the same thing — the window is live-resized first, and everything laid out from
+        // `bounds / canvasSize` follows it while the skin's own raster does not, which is the
+        // reported *"the visualization popped out and stretched but the app didn't"*. Refusing here
+        // is the only place the stretch never happens at all.
+        if presentation.activeScene?.isResizable == false {
+            let scale = controller?.uiScale ?? 1
+            return NSSize(width: presentation.skinSpaceSize.width * scale,
+                          height: presentation.skinSpaceSize.height * scale)
+        }
         let scale = controller?.uiScale ?? 1
         let clamped = limits.clamp(WMPSize(width: frameSize.width / scale,
                                            height: frameSize.height / scale))

@@ -5579,6 +5579,18 @@ class WindowManager {
     @discardableResult
     private func tightenClassicCenterStackIfNeeded() -> Bool {
         guard !isRunningModernUI else { return false }
+        // **A `.wmz` window's size is the skin's, and this repair is Classic's floor (W213).**
+        // `isRunningModernUI` answers false for the WMP controller, so the whole Classic stack
+        // repair ran over a borderless skin window — and its first act is to grow the main window
+        // to `Skin.mainWindowSize.height`, which is Classic's, not the one the `.wmz` authored.
+        // Reported 2026-09-17 as a bar spectrum hanging off the bottom of `circle`: its 192x82
+        // player came back **192x145** on the mouse-up of the first click, because `mouseDown` on
+        // bare artwork is a window drag and `windowDidFinishDragging` calls this. The strip was the
+        // skin's own `<EFFECTS height="jscript:vMain.height">` growing into the 63 px that were
+        // never the skin's. This is `WMP_TASKS.md` W196's G4 arriving through a second door; the
+        // gate is the mode, per CLAUDE.md, and Classic, Original and `.wal` reach this exactly as
+        // before.
+        guard !isRunningWMPUI else { return false }
         guard !isTighteningClassicCenterStack else { return false }
         guard let mainWindow = mainWindowController?.window else { return false }
 

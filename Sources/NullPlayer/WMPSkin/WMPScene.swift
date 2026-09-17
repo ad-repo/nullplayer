@@ -204,6 +204,16 @@ struct WMPWidget: Hashable, Codable {
     ///
     /// `clippingColor` only, never `transparencyColor`, for exactly the reason `groundShape`
     /// states: a hole *inside* the silhouette is where this surface is meant to show.
+    ///
+    /// **A sibling's `clippingColor` is not this, and `circle` is why (W213).** Its `vMain` has no
+    /// artwork and a full-canvas `<SUBVIEW backgroundImage="visfield.bmp" clippingColor="#FF0000">`
+    /// after the `<EFFECTS zIndex="-1">`, which reads exactly like a window outline stated one level
+    /// down — and is not one. The 4,022 px it keys away are the **visualizer's own field**: three
+    /// track-number panels sit in them (`sHundreds`/`sTens`/`sOnes`), and all ten of the `num*.bmp`
+    /// they cycle through are made *entirely* of the two key colours — a magenta glyph cut out of a
+    /// red matte, with nothing but the surface behind to fill it in. Confining the surface to that
+    /// outline was built, measured clean across the corpus and reported wrong on screen: it takes
+    /// the readout away. A container that shapes a surface has to be one the surface is *inside*.
     let clippingShape: WMPWidgetRegionMask?
 
     /// `<EFFECTS windowed="true">`: the visualization is a **windowed** control, and in WMP a
@@ -265,16 +275,23 @@ struct WMPWidget: Hashable, Codable {
 /// **`shape` is what stops it becoming a black slab, and it is the skin's own statement rather
 /// than a guess.** Only a container that declares a `clippingColor` over a background image at its
 /// own size contributes one, and the ground is clipped to that image minus the clipping colour —
-/// so the ground can never reach a pixel the skin said the window does not cover. Without one
-/// there is no ground at all — `Plus! BubbleSkin` shapes itself with `transparencyColor` alone, and
-/// a rect-sized fill there would take 44% of its rect black outside the silhouette.
+/// so the ground can never reach a pixel the skin said the window does not cover.
 ///
-/// **The shape must come from a container *above* the rect, and `circle` is why that is not a
-/// limitation to relax.** Its `vMain` declares the `<EFFECTS>` and the vis field that keys a hole
-/// in it as **siblings**, so no ancestor states a shape and the rect takes no ground — which is the
-/// right answer twice over: `visfield.bmp`'s 1,122 magenta pixels are a one-pixel antialias fringe
-/// between the grey field and the red matte, not a screen, and grounding them draws a black halo
-/// round the skin.
+/// **A rect with no shape in scope still gets the ground, and `circle` is why (W213).** This used
+/// to refuse it, on the reasoning that `circle`'s `vMain` states the `<EFFECTS>` and the field that
+/// keys it as *siblings*, so no ancestor states a shape — and that a fill through
+/// `visfield.bmp`'s 1,122 magenta pixels "draws a black halo round the skin". What it actually
+/// draws is the **skin**: those pixels, the three track-number panels beside them and the whole
+/// right-hand field are all the visualizer's, and with no ground behind them the window has holes
+/// in it that show the desktop. It was reported on screen as *"it is still missing the backing on
+/// the volume"* — the dial, the transport ring and the readouts all standing on nothing.
+///
+/// **The permission is a `clippingColor` on a full-canvas child of the view, and that is what keeps
+/// `Plus! Plasma Ball/BubbleSkin`.** It shapes itself with `transparencyColor` **alone**, never
+/// naming a matte, and grounding its rect turns **40,334 px** of it black outside the silhouette
+/// (measured 2026-09-17 with `scripts/wmp_render_sweep.sh`; ungated, 9 rects move and that is the
+/// largest). A skin that declares both keys over a canvas-sized field has distinguished *hole* from
+/// *matte*, and both of them are the visualizer's. Gated, **one** corpus image moves: `circle`'s.
 ///
 /// Measured over the corpus by rendering rather than from the markup — dump every view and count
 /// the fully transparent pixels inside each effects frame: **17 of the 95 rects are partly
@@ -289,7 +306,17 @@ struct WMPEffectsGround: Hashable, Codable {
     /// The window shape the ground is confined to: the nearest ancestor's background artwork with
     /// its `clippingColor` keyed out. Never `transparencyColor` — that is the hole this ground
     /// exists to fill.
-    let shape: WMPSceneClipMask
+    ///
+    /// **`nil` is the rect itself, and that is WMP's own default rather than a relaxation (W213).**
+    /// A surface with no ancestor shape used to take no ground at all, which is a visualizer with
+    /// *holes in it*: `circle` showed the desktop through every pixel its artwork keys away — the
+    /// antialias fringe round its dial, its three track-number panels (ten `num*.bmp` that are
+    /// nothing but a magenta glyph in a red matte), and the whole right-hand field. Reported
+    /// 2026-09-17 as *"it is still missing the backing on the volume"*. Confining a fill to a shape
+    /// the skin never stated is the thing to avoid; refusing the fill is not the same rule, and the
+    /// corpus says so — 78 of the 95 effects rects are already fully backed by the skin's own paint
+    /// and cannot see this at all.
+    let shape: WMPSceneClipMask?
 }
 
 /// A container's clipping shape, inherited by every paint command *inside* it.
@@ -404,7 +431,11 @@ struct WMPHitMetadata: Hashable, Codable {
     /// Where this control's own artwork is, when the skin keyed a hole in it. `nil` means the node
     /// draws no sprite of its own, or draws one with no transparent pixel — either way the whole
     /// frame is live, which is what it was before coverage existed. See `WMPHitCoverage`.
-    let coverage: WMPHitCoverage?
+    ///
+    /// A hosted surface has no sprite of its own and takes its coverage from the layer the skin
+    /// paints *over* it instead — patched in after the walk, because that layer does not exist yet
+    /// when the node is visited. See `WMPHitCoverageBuilder.surfaceCoverage` (W213).
+    var coverage: WMPHitCoverage?
     let cursor: WMPCursor?
     /// `tabStop="false"` is authored 544 times against `"true"`'s 170: a skin marks most of its
     /// controls *out* of the keyboard ring and leaves a handful in. Absent is in, as in WMP.

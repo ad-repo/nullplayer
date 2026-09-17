@@ -100,6 +100,7 @@ All of them are read by `WMPRenderDumpTests/testSweepsSkinOrCorpus`
 | `WMP_RENDER_BITMAPS` | `1` | `BITMAPS` — resolved count and every path that failed to load, with `missing=` |
 | `WMP_RENDER_OCCLUDED` | `1` | `OCCLUDED` — every control the pointer cannot reach **anywhere in its own frame**, plus a per-view tally. A target is unreachable when no sample of its rect hit-tests back to it: something in front answers everywhere, so the control draws, hovers nothing and clicks nothing. Each line names what answered instead (`by=[…]`) and which rule reached it — `covered-only` is a control the current rule recovered, `rect-only` is one it **lost**, `neither` is dead under both. **`rect-only` is the column that ranks work**: it is the flat-`zIndex`, whole-rectangle hit testing this engine did before W148, and a change that populates it is taking controls away. Sampling is a 17x17 grid over the frame plus, for a `<BUTTONELEMENT>`, the first pixel its mapping colour owns — a mapping child holds an arbitrary region and a grid alone misses a thin one. No headless probe saw this class before it existed: a starved view is `starved.tsv`'s subject, and a *fully laid out* view whose controls are buried is invisible to every count in `RENDER-DUMP`. **What this probe cannot see is a control with no hit entry at all** (W152): it enumerates targets that *have* one and asks who answers instead, so a group whose mapping regions never reached the hit map reads as a clean view here — `digitaldj/DigitalDJ` reports `unreachable-either-way=4 of 92 hits` while its entire transport strip misses every click. Pair it with `WMP_RENDER_CLICK` on a control you decoded yourself before believing a clean line |
 | `WMP_RENDER_UNRESOLVED` | `1` | `UNRESOLVED` — one line per node the scene could not place: authored tag, id, and **which dimension** was missing (`width`, `height` or `width+height`). `RENDER-DUMP`'s `unresolved` count is the numerator `starved.tsv` ranks on and it names nothing, so every use of it had been followed by opening the `.wms` and guessing. It is what separated the three populations that count conflates — a `<TEXT>` sized by its own glyphs, a `<BUTTONGROUP>` sized by its mapping image, and a `<PLAYELEMENT>` that is a colour region and was never a box — and each was a rule rather than a skin |
+| `WMP_RENDER_LIMITS` | `1` | `LIMITS` — one line per view answering *will this window come apart if it is dragged or resized?* from the scene alone, with no window and no gesture. `canvas=` the size the scene is built at, `floor=`/`ceiling=` the limits the app gives a window showing it (`WMPWindowSizeLimits.forScene`, **the same derivation the controller applies** — not a second copy, which is how a probe comes to disagree with the app), `resizable=`, and `verdict=ok\|below-floor\|above-ceiling`. **A window forced to a size its scene is not comes apart in a specific way**: the artwork is rasterized at the *scene's* size while the hosted surfaces and `WMPMainView.skinPoint(from:sceneSize:)` — where every click is resolved — come from `bounds / canvasSize`, so the visualization stretches, the skin stays put, and every control moves out from under the pointer. `circle` reported that as two unrelated complaints (W213). **Read `exposed=` and not `verdict=`.** Both sides of the verdict come from the same scene, so it can only say `ok` while the app takes its floor from the scene — a green column there is the invariant holding, not evidence that anything was checked. `exposed=yes` is the independent number: the view is smaller than the *unskinned* player's 440x170 in at least one axis, which is the constant that used to be every skin window's `minSize`. **483 of the corpus's 630 views** (343 fixed / 287 resizable), so a constant floor leaking back in does not break one skin, it breaks three quarters of them. What this cannot see is the disagreement itself, which lives in the window layer: that is `WMP_SIZE_TRACE`'s `MISMATCH` line |
 | `WMP_RENDER_SCRIPTS` | `1` | `SCRIPTS`/`SCRIPT` — per program: bytes, declared handlers, and the runtime's availability |
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
 | `WMP_CALL_TRACE` | `1` | `CALL`/`CALLS` — every host object-model access with receiver, member, value, and how it resolved: `ok`, `INERT` or `UNRECOGNISED` |
@@ -129,6 +130,33 @@ repeats for the same view is placement running twice, which is the bug this flag
 WMP_PLACE_TRACE=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
   nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
 ```
+
+`WMP_SIZE_TRACE=1` is read by **the app** (`WMPMainWindowController.windowDidResize`, DEBUG, through
+`NSLog`) and prints one line per resize of a `.wmz` window — the view, the new frame, whether it is
+our own scene size landing (`applying=true`), and **the call stack that asked for it**:
+
+```
+[wmp/size] <viewID> -> (<W>, <H>) applying=<bool>
+<14 frames of backtrace>
+```
+
+**The backtrace is the whole instrument, because the question this flag exists for is not what size
+the window is — every other probe answers that — but *who* chose it.** W213's third defect was a
+`.wmz` player that opened at the skin's 192x82 and was 192x145 a click later, and the size alone is
+compatible with four unrelated causes: the skin's own script, a stored size, the scene builder's
+clamp, or a pass in `App/` that has no idea a skin is loaded. It was the fourth — one frame named
+`WindowManager.tightenClassicCenterStackIfNeeded`, reached from `windowDidFinishDragging`, growing
+the window to `Skin.mainWindowSize.height` because `isRunningModernUI` answers false for the WMP
+controller. **Two days of reasoning had already produced a guard against the stored size**, which is
+a real rule and was not this bug; the trace found the cause on its first run. Reach for it before
+theorising about any `.wmz` window that is not the size its markup says, and note the pairing: a
+line with `applying=true` is ours settling and is not evidence of anything.
+
+It prints a second kind of line, and that one is a **detector rather than a trace**:
+`[wmp/size] MISMATCH <view> canvas=… floor=… verdict=below-floor|above-ceiling` whenever the limits
+the app is about to give a window would force it away from its own scene. `WMP_RENDER_LIMITS`
+enumerates the scenes where that is structurally possible; this fires when it actually happens, which
+is the half no corpus sweep can own.
 
 `WMP_ANIM_TRACE=1` is read by **the app** (`WMPMainWindowController.startAnimation`) and prints what
 the repaint loop *achieved* over the last second, once a second per animating window:
@@ -315,7 +343,15 @@ screen-only report rather than a last resort. Nothing in it is committed; rebuil
    `mappingColor` out of the group's mapping bitmap and adding the group's origin.
 
 3. **Read `/tmp/app.log`, then capture the window.** `screencapture -o -x -l <windowid>` takes the
-   window alone, transparency included. It is far too slow to film a 250 ms animation — capture the
+   window alone, transparency included. **Check the capture's pixel dimensions before reading the
+   picture**: given a window id that has gone stale — the app relaunched, the view switched — it
+   does not fail, it silently returns a **full-screen** image, and a screen crop compared against a
+   window crop reads as the skin having lost half its artwork. (`-R` is the other half of the same
+   trap: it wants `x,y,w,h` with commas and rejects `WxH`.) A window whose own capture is `192x82`
+   at 1x and `384x164` at 2x is the one you asked for; anything near the screen's size is not.
+   **Never point-sample a 2x capture against a 1x dump either** — a 2x render is not a 1x render
+   scaled, and 4,252 opaque pixels came out "differing by >40" on a window with nothing wrong with
+   it. Render the dump at the capture's scale, or compare shapes rather than pixels. It is far too slow to film a 250 ms animation — capture the
    *settled* state and use `WMP_RENDER_SETTLE` for the frames in between.
 
 **What the trace settles that a screenshot cannot.** The compact-mode report read as one defect and

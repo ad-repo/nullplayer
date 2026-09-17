@@ -84,6 +84,51 @@ struct WMPResizeLimits: Hashable, Codable {
     }
 }
 
+/// The floor and ceiling a window showing a given scene is given, in the skin's own points.
+///
+/// **A window whose frame and whose scene disagree comes apart, and this is the one number that
+/// predicts it (W213).** The artwork is rasterized at the *scene's* size, while the hosted surfaces
+/// and `WMPMainView.skinPoint(from:sceneSize:)` — where every click is resolved — are derived from
+/// `bounds / canvasSize`. Let the window be a size the scene is not and the two layers separate:
+/// the visualization stretches while the skin stays put, and every control moves out from under the
+/// pointer. It was reported as two unrelated complaints on `circle` and was one window state.
+///
+/// The app used to leave `minSize` at the unskinned player's 440x170 for every skin, so **any view
+/// smaller than that in either axis was one edge drag away from it**. That is a property of the
+/// scene alone, so it is checkable over the whole corpus with no window and no gesture — see
+/// `WMP_RENDER_LIMITS` in `skills/wmp-skin-guide/reference/harness.md`. Derived here rather than in
+/// the controller so the probe and the app cannot answer differently; a second copy of a rule is
+/// how a harness comes to report work that is already done.
+struct WMPWindowSizeLimits: Hashable {
+    let minimum: WMPSize
+    /// `nil` is unbounded, which is what a resizable view with no `maxWidth`/`maxHeight` gets.
+    let maximum: WMPSize?
+
+    /// **A view that is not resizable is pinned to its canvas at both ends.** It has one size, and a
+    /// window that the user cannot resize should not be moved to another size by a pass that reads
+    /// these — `minSize` is enforced by AppKit after every delegate has answered.
+    static func forScene(_ scene: WMPScene) -> WMPWindowSizeLimits {
+        guard scene.isResizable else {
+            return WMPWindowSizeLimits(minimum: scene.canvasSize, maximum: scene.canvasSize)
+        }
+        return WMPWindowSizeLimits(minimum: scene.resizeLimits.minimum,
+                                   maximum: scene.resizeLimits.maximum)
+    }
+
+    /// Why this window would be forced away from `canvas`, or `nil` when it would not be.
+    enum Breakage: String { case belowFloor = "below-floor", aboveCeiling = "above-ceiling" }
+
+    func breakage(for canvas: WMPSize) -> Breakage? {
+        if canvas.width + 0.5 < minimum.width || canvas.height + 0.5 < minimum.height {
+            return .belowFloor
+        }
+        if let maximum, canvas.width > maximum.width + 0.5 || canvas.height > maximum.height + 0.5 {
+            return .aboveCeiling
+        }
+        return nil
+    }
+}
+
 struct WMPResolvedGeometry: Hashable, Codable {
     let localFrame: WMPRect
     let absoluteFrame: WMPRect

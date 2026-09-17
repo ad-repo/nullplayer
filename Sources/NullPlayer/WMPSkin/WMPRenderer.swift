@@ -258,11 +258,15 @@ struct WMPRenderer: @unchecked Sendable {
         context.scaleBy(x: 1, y: -1)
 
         for ground in grounds {
-            guard let mask = try? imageStore.regionMask(for: ground.shape.resourcePath,
-                                                        keyedOut: ground.shape.keyedOut)
-            else { continue }
             context.saveGState()
-            clip(to: ground.shape.frame, mask: mask, context: context)
+            // A shape is the skin's own statement about where its window is; without one the
+            // backdrop is simply the rect, which is what WMP paints behind a visualization.
+            if let shape = ground.shape {
+                guard let mask = try? imageStore.regionMask(for: shape.resourcePath,
+                                                            keyedOut: shape.keyedOut)
+                else { context.restoreGState(); continue }
+                clip(to: shape.frame, mask: mask, context: context)
+            }
             context.setFillColor(red: CGFloat(ground.color.red) / 255,
                 green: CGFloat(ground.color.green) / 255,
                 blue: CGFloat(ground.color.blue) / 255, alpha: 1)
