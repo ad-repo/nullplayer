@@ -347,8 +347,30 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         pendingRestoredFrame = nil
                         pendingRestoredViewID = nil
                     }
-                    let resolved = try await builder.build(viewID: registration.id,
+                    var resolved = try await builder.build(viewID: registration.id,
                         requestedSize: scene.canvasSize, overrides: output.overrides)
+                    var overrides = output.overrides
+                    // The player view opens under the same rule as every other one (W211): a view
+                    // laid out at a size it was not authored at has been resized, and the skin's
+                    // own `onResize` is part of reaching that size. Overrides only — the load's
+                    // host commands and timers are applied below.
+                    if Self.opensResized(in: skin, viewID: registration.id, opened: resolved) {
+                        let authored = try await builder.build(viewID: registration.id,
+                            requestedSize: Self.authoredCanvas(in: skin, viewID: registration.id),
+                            overrides: Self.unclampedOverrides(output.overrides, in: skin,
+                                                               viewID: registration.id))
+                        if let event = Self.resizeEvent(in: skin, viewID: registration.id,
+                                                        before: authored, after: resolved) {
+                            let sized = await runtime.transact(skin: skin, viewID: registration.id,
+                                size: resolved.canvasSize, snapshot: host.snapshot, event: event,
+                                geometry: resolved.scriptGeometry)
+                            overrides = sized.overrides
+                            resolved = try await builder.build(viewID: registration.id,
+                                                               requestedSize: resolved.canvasSize,
+                                                               overrides: overrides)
+                            recordScriptDiagnostics(sized.diagnostics)
+                        }
+                    }
                     let rendered = try await WMPRenderer(imageStore: store).render(
                         scene: resolved, backingScale: renderScale(for: resolved.canvasSize))
                     try Task.checkCancellation()
@@ -361,7 +383,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         opener: nil, offset: nil) else { continue }
                     apply(skin: skin, store: store, scene: resolved, image: rendered.image,
                           overlay: rendered.overlayImage,
-                          runtime: runtime, overrides: output.overrides, into: presentation)
+                          runtime: runtime, overrides: overrides, into: presentation)
                     // **Before the load transaction's commands, so a skin that re-opens its own
                     // panels does not end up with two.** A dispatcher skin reads
                     // `theme.loadPreference('plViewer')` and calls `theme.openView` for each panel
@@ -1128,9 +1150,34 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     }
                     return
                 }
-                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                var scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: registration.id, requestedSize: base.canvasSize,
                            overrides: output.overrides)
+                var overrides = output.overrides
+                // **The window opened at a size the view was never authored at, which is a resize
+                // (W211).** See `opensResized`. Only the overrides are taken from this pass: the
+                // load's own host commands and timer set are what the code below applies, and a
+                // second transaction's empty `timerRequests` would cancel the timers `onLoad` had
+                // just registered — the trap the `viewchange` dispatch at the end of this method
+                // already records.
+                if Self.opensResized(in: skin, viewID: registration.id, opened: scene) {
+                    let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                    let authored = try await builder.build(viewID: registration.id,
+                        requestedSize: Self.authoredCanvas(in: skin, viewID: registration.id),
+                        overrides: Self.unclampedOverrides(output.overrides, in: skin,
+                                                           viewID: registration.id))
+                    if let event = Self.resizeEvent(in: skin, viewID: registration.id,
+                                                    before: authored, after: scene) {
+                        let resized = await scriptRuntime.transact(skin: skin,
+                            viewID: registration.id, size: scene.canvasSize,
+                            snapshot: host.snapshot, event: event, geometry: scene.scriptGeometry)
+                        overrides = resized.overrides
+                        scene = try await builder.build(viewID: registration.id,
+                                                        requestedSize: scene.canvasSize,
+                                                        overrides: overrides)
+                        recordScriptDiagnostics(resized.diagnostics)
+                    }
+                }
                 let rendered = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderScale(for: scene.canvasSize),
                     clock: existing?.animationClock(for: scene.viewID) ?? 0,
@@ -1142,7 +1189,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     storedTopLeft: savedOrigin) else { return }
                 apply(skin: skin, store: store, scene: scene, image: rendered.image,
                       overlay: rendered.overlayImage,
-                      runtime: scriptRuntime, overrides: output.overrides, into: presentation)
+                      runtime: scriptRuntime, overrides: overrides, into: presentation)
                 if let oldTopLeft {
                     presentation.window.setFrameOrigin(
                         NSPoint(x: oldTopLeft.x, y: oldTopLeft.y - presentation.window.frame.height))
@@ -2051,6 +2098,66 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }), case let .literal(raw) = attribute.value,
               let milliseconds = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return 0 }
         return max(0, milliseconds)
+    }
+
+    /// **The view's authored canvas, before its own floor is applied to it.**
+    ///
+    /// `minWidth`/`minHeight` are a floor on the *window*, and a skin routinely declares one well
+    /// above the size it authored the view at — `Alienware Invader`'s `plView` is written 331x277
+    /// with `minWidth="531" minHeight="291"`, `Back to the Future Trilogy`'s the same shape. The
+    /// builder clamps, correctly, so this is the only place the authored pair is still readable.
+    static func authoredCanvas(in skin: WMPLoadedSkin, viewID: String) -> WMPSize? {
+        guard let view = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node else { return nil }
+        func literal(_ name: String) -> CGFloat? {
+            guard let attribute = view.attributes.first(where: {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+            }), case let .literal(raw) = attribute.value,
+                  let value = Double(raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  value.isFinite, value > 0 else { return nil }
+            return CGFloat(value)
+        }
+        guard let width = literal("width"), let height = literal("height") else { return nil }
+        return WMPSize(width: width, height: height)
+    }
+
+    /// Overrides that lift a view's own declared floor for one build, so the **authored** layout
+    /// can be resolved next to the one the window opened at.
+    static func unclampedOverrides(_ base: WMPSceneOverrides, in skin: WMPLoadedSkin,
+                                   viewID: String) -> WMPSceneOverrides {
+        guard let node = skin.views.first(where: {
+            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+        })?.node else { return base }
+        var overrides = base
+        for name in ["minwidth", "minheight"] {
+            overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
+                                                         property: name)] = .number(1)
+        }
+        return overrides
+    }
+
+    /// **A view that opens at a size it was never authored at has already been resized, and its
+    /// `onResize` has to run before anyone sees it (W211).**
+    ///
+    /// `Alienware Invader` authors `plView` at 331x277 and floors it at 531x291, and states its two
+    /// side rails in three pieces each: a top, a centred piece, and a tile whose height only
+    /// `onPlResize()` ever sets — `plLeftStretch.height = view.height / 2`. The window opens at the
+    /// floor, no resize is raised there, so that tile keeps its bitmap's own 51pt and both rails
+    /// have a 58pt band of bare window punched through them. Reported 2026-09-17 on the playlist,
+    /// and visible on every skin of this shape: the load pass alone is not the layout WMP shows,
+    /// because WMP reaches the floor *by resizing* and the skin's handler runs on the way.
+    ///
+    /// The before-layout is the authored one with the floor lifted, so the changed set is measured
+    /// rather than assumed and `resizeEvent`'s rule — a handler goes to the object whose own box
+    /// moved — decides the dispatch exactly as it does on a user drag.
+    ///
+    /// Gated on the view declaring an `onResize` at all: 161 of 180 archives do not, and they must
+    /// not pay a second scene build to open a window.
+    static func opensResized(in skin: WMPLoadedSkin, viewID: String, opened: WMPScene) -> Bool {
+        guard !handlers(in: skin, event: "onResize", targetID: nil, viewID: viewID).isEmpty,
+              let authored = authoredCanvas(in: skin, viewID: viewID) else { return false }
+        return authored != opened.canvasSize
     }
 
     /// The `onResize` dispatch for one completed relayout, or `nil` when there is nothing to say.

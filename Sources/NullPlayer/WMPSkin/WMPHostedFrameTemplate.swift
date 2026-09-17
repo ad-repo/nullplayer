@@ -992,7 +992,30 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             // them from frame is where they are — a border piece reaches an edge of the view, and a
             // corner bitmap routinely dips well into the hole while doing it (190pt on `Halo 2`),
             // so touching an edge is the exemption rather than overlap being the test.
+            //
+            // **A piece the donor draws *over its own content* and inside the strip our content is
+            // given is furniture too (W210).** `Alienware Invader`'s three rack nodes at `left=18`
+            // sit to the left of its client subview, so the test above is right not to fire on
+            // them; `reclaimingSideRacks` then judges that 134pt margin a rack, hands the strip to
+            // our content, and the frame is painted over it (W209) — an alien head and two empty
+            // boxes on the library's rows. Widening the hole to the reclaimed rect alone is not the
+            // answer: `Ice`'s right rail (`Vid-righttile.bmp`, 37pt of the 157pt margin the same
+            // rule reclaims) lands in its strip too, and dropping it took the inner right border
+            // off every window that borrows that frame.
+            //
+            // **Paint order is what tells them apart, because it is the donor's own answer to the
+            // same question.** A piece drawn *before* the client subview is behind the skin's own
+            // list — a rail, a bezel, a background — and it is behind ours for the same reason. A
+            // piece drawn *after* it is over the skin's content, and over ours. `Ice` paints its
+            // rail at `zIndex=5` under a `zIndex=50` list; `Alienware Invader` paints its racks at
+            // `zIndex=10` over a list with no `zIndex` at all. Read off `commands`, which is the
+            // order the renderer draws in, rather than off `zIndex`, which is ordered among
+            // siblings only.
             let hole = CGRect(x: client.x, y: client.y, width: client.width, height: client.height)
+            let reclaimed = Self.reclaimingSideRacks(hole, in: built)
+            let paintOrder = Dictionary(scene.commands.enumerated().map { ($0.element.stableID, $0.offset) },
+                                        uniquingKeysWith: min)
+            let clientOrder = paintOrder[clientNodeID]
             let bounds = CGRect(x: 0, y: 0, width: built.width, height: built.height)
             let furniture = Set(scene.geometries.compactMap { id, geometry -> Int? in
                 let frame = geometry.absoluteFrame
@@ -1001,9 +1024,15 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 let touchesEdge = piece.minX <= bounds.minX + 1 || piece.minY <= bounds.minY + 1
                     || piece.maxX >= bounds.maxX - 1 || piece.maxY >= bounds.maxY - 1
                 guard !touchesEdge else { return nil }
-                let overlap = piece.intersection(hole)
-                guard !overlap.isNull else { return nil }
-                return overlap.width * overlap.height > piece.width * piece.height * 0.5 ? id : nil
+                let half = piece.width * piece.height * 0.5
+                let inHole = piece.intersection(hole)
+                if !inHole.isNull, inHole.width * inHole.height > half { return id }
+                // Only over the reclaimed strip, and only for a piece the donor draws over its own
+                // content.
+                guard let clientOrder, let order = paintOrder[id], order > clientOrder else { return nil }
+                let inReclaimed = piece.intersection(reclaimed)
+                guard !inReclaimed.isNull else { return nil }
+                return inReclaimed.width * inReclaimed.height > half ? id : nil
             })
             let whole = scene.commands.filter {
                 !excludedNodeIDs.contains($0.stableID) && !furniture.contains($0.stableID)

@@ -603,6 +603,28 @@ showing the drawer, because the dump always shows the drawer. **`WMP_RENDER_APPK
 The general form, which is not only about `<EFFECTS>`: **before believing a render dump has
 falsified a fix, ask whether the thing you changed is something a dump can represent at all.**
 
+### `gaps=` cannot see a hosted frame that is wrong everywhere but its edges
+
+`HOSTED-FRAME`'s `gaps=` is the longest unbroken **bare** run in a 6pt band at each of the four
+edges. Two things follow, and both were learned the expensive way on 2026-09-17.
+
+- **It cannot see anything further in than 6pt.** `Alienware Invader` reads
+  `gaps=0.000/0.000/0.000/0.000` at 472x290 while the window on screen carries three white blocks and
+  a 54pt opaque column over its content (the `W212` row). A clean `gaps=` is not a clean frame.
+- **Bare means transparent, and a PNG viewer draws transparent and opaque white identically.** This
+  donor's border bitmaps carry its interior colour baked in — `f_top_right.png` is a silver band over
+  opaque `(255,255,255,255)` — so `WMP_HOSTED_FRAME_DUMP`'s picture looked like a frame full of holes
+  and was a frame full of white paint. Two diagnoses were drawn from the picture and both were wrong.
+  Read the alpha:
+
+```bash
+python3 -c "
+from PIL import Image
+im=Image.open('/tmp/f/plView-frame.png').convert('RGBA')
+print(im.getpixel((950,40)))   # (255,255,255,255) is paint; (0,0,0,0) is a hole
+"
+```
+
 ### A single-transaction sweep cannot measure a per-transaction rule
 
 `wmp_render_sweep.sh` renders each view once, after `onLoad`. A change to what happens on the
