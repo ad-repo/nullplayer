@@ -36,6 +36,9 @@ import Foundation
 /// Why a borrowed frame was refused. A `nil` artwork is "not for this window"; this is "not ever".
 enum WMPHostedFrameRefusal: Error {
     case panelCannotBeSliced
+    /// The ring's pieces do not meet: one of the frame's four edges is bare for a long unbroken run
+    /// (W209). A verdict on the donor rather than on the window that asked, like the case above.
+    case ringDoesNotClose
 }
 
 struct WMPHostedFrameTemplate: Equatable, Sendable {
@@ -43,6 +46,26 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     let viewID: String
     /// The ring pieces, by stable id — the only nodes whose paint commands reach our windows.
     let ringNodeIDs: Set<Int>
+    /// Ring pieces that must be given the **window's own height** before the frame is built, and
+    /// those that must be given its width (W209).
+    ///
+    /// **A tiled edge piece with no authored length is resized by the skin's own script**, and the
+    /// frame build runs no script: it is a private builder over a private image store, deliberately
+    /// outside the runtime that is driving the skin the user is looking at. `Alienware Invader`
+    /// resizes its rails in `onResize="resizeListBox();onPlResize();"`, so the lower half of both
+    /// sides was drawn one bitmap tall — 0.231 of each side bare, which is the gap reported on
+    /// 2026-09-16 — while the skin's own window looks right. Tiling *is* the statement that the
+    /// piece repeats to fill its side, so the span is given to it here rather than inferred from
+    /// pixels: an override on this build alone, in the same place the donor's resize floor is
+    /// lifted.
+    let stretchedDownNodeIDs: Set<Int>
+    let stretchedAcrossNodeIDs: Set<Int>
+    /// The pieces admitted **beyond** the first in each slot (W209), which are trusted less than
+    /// the eight: they are dropped at render time wherever they turn out to lie inside the client
+    /// hole. Markup cannot answer that — `Alienware Invader`'s rack pieces are anchored to the same
+    /// left edge as its rails, and only their resolved frames separate the two — so it is asked of
+    /// the built scene, where the hole is a rectangle and every piece has a frame.
+    let extraNodeIDs: Set<Int>
     /// The stretched client subview whose resolved frame is the content hole.
     let clientNodeID: Int
     /// The ring's own top-right corner piece, where it declares one.
@@ -83,6 +106,33 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// a whole player rather than a window of its own and the artwork has to be cropped to it.
     var panelNodeID: Int? = nil
 
+    /// **W209 prototype — the whole donor view, minus what is the skin's own (`WMP_HOSTED_FRAME_WHOLE=1`,
+    /// or `defaults write com.nullplayer.NullPlayer WMPHostedFrameWholeView -bool YES`).**
+    ///
+    /// Every rule above selects *pieces* and reassembles them, and every open item on W209 is
+    /// downstream of that: the extent crop, the bare-edge measurement, the ring-open refusal, the
+    /// second "repairing" build, the logo plate composited after measurement, and the missing right
+    /// rail that lives in a drawer the direct-children walk cannot reach. The reporter's own
+    /// observation is that *the skin's playlist has none of these defects* — because the playlist is
+    /// not reassembled, it is simply drawn.
+    ///
+    /// So this inverts the default: draw the donor view whole, and **subtract** the subtrees that
+    /// are the skin's rather than the frame's — the client hole's own contents, every control, and
+    /// every readout. What is left is the picture the skin drew, at our window's size.
+    var excludedNodeIDs: Set<Int> = []
+
+    /// Whether the donor view is drawn whole. **On.** `WMP_HOSTED_FRAME_WHOLE=0` restores the
+    /// piece-selecting assembler it replaced, which is the comparison every number in W209's case
+    /// study was measured against (`reference/skins/back-to-the-future-trilogy.md`).
+    static let drawsWholeDonorView: Bool =
+        ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_WHOLE"] != "0"
+
+    /// Whether the whole-view build obeys the donor's own declared floor and scales down below it.
+    /// **On.** `WMP_HOSTED_FRAME_WHOLE=1` draws whole but unclamped, which is the isolated
+    /// comparison that separated the floor's contribution from the whole-view render's.
+    static let wholeDonorViewObeysFloor: Bool =
+        ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_WHOLE"] != "1"
+
     // MARK: - Derivation
 
     /// The eight places a ring piece can be anchored. A piece is classified by its *alignment*
@@ -101,6 +151,17 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             case (.leading, .trailing): self = .bottomLeft
             case (.stretch, .trailing): self = .bottom
             case (.trailing, .trailing): self = .bottomRight
+            // **A side is often drawn by more than one piece, and the middle one is anchored to the
+            // *centre* of that side (W209).** `Alienware Invader` builds each rail out of three
+            // subviews — `pl_left_tile.png` stretched from `top="60"`, `pl_left_mid.png` at
+            // `verticalAlignment="center"`, and `pl_left_tile2.png` tiled from
+            // `top="wmpprop:plLeftCenter.top"` — so a ring that takes one piece per side drew the
+            // upper rail and nothing below the ornament. That is the gap the reporter saw on
+            // 2026-09-16: *"alienware has gaps in its playlist still"*, 0.231 of both sides bare.
+            case (.leading, .center): self = .left
+            case (.trailing, .center): self = .right
+            case (.center, .leading): self = .top
+            case (.center, .trailing): self = .bottom
             default: return nil
             }
         }
@@ -120,7 +181,11 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             guard let candidate = template(for: registration) else { continue }
             // The ring's completeness is the score: an eight-piece ring resizes cleanly in both
             // axes, a four-corner one has gaps the skin filled some other way.
-            var score = candidate.ringNodeIDs.count
+            // **The score is filled slots, not pieces.** A ring's completeness is what it measures,
+            // and counting the repair-only extras with them re-ranked whole skins: `Project Gotham
+            // Racing 2` has 8 slots in its playlist and 12 pieces in its video view, so the video
+            // view won a contest it had already lost on the merits (W209).
+            var score = candidate.ringNodeIDs.subtracting(candidate.extraNodeIDs).count
             // A panel that holds something — a playlist, a visualiser, a video surface — is the
             // window this skin means by "one of my windows". Several skins wrap the *same* ring
             // around an `upgradeView`, the nag panel a 2002 skin shows a player too old to run it,
@@ -192,6 +257,9 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 best = (WMPHostedFrameTemplate(
                     viewID: registration.id,
                     ringNodeIDs: [],
+                    stretchedDownNodeIDs: [],
+                    stretchedAcrossNodeIDs: [],
+                    extraNodeIDs: [],
                     clientNodeID: hole.stableID,
                     topRightNodeID: nil,
                     minimumSize: .zero,
@@ -221,6 +289,76 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         }
         return false
     }
+
+    /// **A transport control does not have to be a transport *tag* (W209).** W208 refused a corner
+    /// candidate that holds one of the typed elements above, which is how `Ice` spells its playlist
+    /// shuffle (`<Repeatbutton>`). `Back to the Future Trilogy` spells the same pair of controls as
+    /// a plain `<buttongroup>` of `<buttonelement>`s whose `onClick` is
+    /// `player.settings.setMode('loop', down)` — nothing in the markup's *vocabulary* says transport
+    /// — and it declares them six nodes before `f_top_left.png`, so first-declaration-wins handed
+    /// the top-left corner to the skin's repeat and shuffle glyphs exactly as `Ice` handed over its
+    /// bottom-left. Same defect, different spelling, so the rule is extended by what the control
+    /// *does* rather than by widening it to everything clickable, which is the answer W208 measured
+    /// and rejected (it costs 7 of the 88 rings — a resize grip and a close box are frame
+    /// furniture).
+    ///
+    /// **The ring path only.** `carriesTransport` is shared with the panel path, and asking this
+    /// question there costs six donors that the corpus says are right: `Gorillaz`'s panel — the
+    /// skill's own counter-evidence for "a painted control is pixels, not nodes" — plus
+    /// `deepbluesomething`, `HOB`, `Vario`, `Combat_Flight_Simulator_3` and `TDK`, all of which
+    /// went from a frame to nothing when the rule was written into the shared helper. A panel is a
+    /// whole drawer and may legitimately carry a scripted button somewhere inside it; a *ring
+    /// piece* is one bitmap in one corner, and a corner that plays music is never right.
+    private static func scriptsTransport(_ node: WMPNode) -> Bool {
+        if isScriptedTransportControl(node) { return true }
+        for child in node.children where scriptsTransport(child) { return true }
+        return false
+    }
+
+    private static func isScriptedTransportControl(_ node: WMPNode) -> Bool {
+        switch node.kind {
+        case .button, .buttonGroup, .buttonElement, .repeatButton, .customSlider, .slider:
+            break
+        default:
+            return false
+        }
+        for attribute in node.attributes {
+            // **An event handler only.** `enabled`, `down` and the other bindings *read* the player
+            // — `Combat_Flight_Simulator_3`'s zoom button is
+            // `onClick="videoZoom();" enabled="wmpenabled:player.controls.stop"`, which greys itself
+            // out when nothing is playing and controls nothing — and reading is what every skin's
+            // own readout does. What makes a control the player's is what it does when pressed.
+            guard attribute.name.lowercased().hasPrefix("on") else { continue }
+            let script = attribute.rawValue.lowercased()
+            guard script.contains("player.") || script.contains("settings.") else { continue }
+            guard transportCalls.contains(where: { script.contains($0) }) else { continue }
+            // **A control that leaves the window is furniture, whatever it does on its way out.**
+            // `Combat_Flight_Simulator_3` closes its video view with
+            // `player.controls.pause();} view.close();` and stops playback from the corner above it,
+            // and both are its *close* box — the one control W208 measured as belonging in a corner.
+            // Without this the skin's whole ring collapsed (no complete corner set) and a donor that
+            // measures a perfect 0.000 on all four edges lent nothing at all.
+            if navigationCalls.contains(where: { script.contains($0) }) { continue }
+            return true
+        }
+        return false
+    }
+
+    /// What a script has to touch for the control that raises it to be the *player's*. Deliberately
+    /// short: these are the calls that change what the user is listening to, which is the line W208
+    /// drew. Reading or displaying a property is not on it — a skin's own caption binds
+    /// `player.currentMedia.name` and is decoration.
+    private static let transportCalls = [
+        "settings.setmode", "controls.play", "controls.pause", "controls.stop", "controls.next",
+        "controls.previous", "controls.fastforward", "controls.fastreverse",
+        "settings.mute", "settings.volume", "settings.balance", "settings.rate",
+    ]
+
+    /// What a control does when it is a *window's* control rather than the player's: it goes
+    /// somewhere. A close box that pauses on its way out is still a close box.
+    private static let navigationCalls = [
+        ".close(", "closeview", "currentviewid", "openview", "minimize", "returntomediacenter",
+    ]
 
     /// Whether a node *is*, or wraps, something the user can press.
     ///
@@ -299,6 +437,10 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     private static func template(for registration: WMPViewRegistration) -> WMPHostedFrameTemplate? {
         let view = registration.node
         var ring: [Role: WMPNode] = [:]
+        var pieces: [WMPNode] = []
+        var stretchedDown: Set<Int> = []
+        var stretchedAcross: Set<Int> = []
+        var extras: Set<Int> = []
         var client: WMPNode?
 
         // Direct children only. A ring is laid out against the *window*, so its pieces are the
@@ -334,10 +476,50 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 // the set `carriesTransport` already names for the panel path. Measured: this leaves
                 // all 88 ring lines standing and moves only the corners a transport control had
                 // taken.
+                // **The script-based half is asked of the four corners only.** The typed rule
+                // above is W208's and applies to every slot; this one reaches deeper — it inspects
+                // handlers rather than tags — and asked of the edges it moved seven donors' client
+                // holes and refused five rings that measured a clean 0.000 (`AlienMorph`,
+                // `ALXMorph`, `ALXVortex`, `AlienwareTeleport`, `Project…`), because a slot it
+                // emptied was filled by the next declaration and the ring no longer met. Both
+                // reported cases are corners — `Ice`'s bottom-left, `Back to the Future Trilogy`'s
+                // top-left — and a corner is where a skin paints its own window controls.
+                let centred = horizontal == .center || vertical == .center
+                let isExtra = centred || ring[role] != nil
                 if carriesTransport(child) { continue }
-                // First declaration wins, matching the duplicate-id rule elsewhere in the engine:
-                // a skin that layers two bitmaps in one corner authored the lower one first.
-                if ring[role] == nil { ring[role] = child }
+                if scriptsTransport(child), Role.corners.contains(role) || isExtra { continue }
+                // First declaration wins **for the role**, matching the duplicate-id rule elsewhere
+                // in the engine: a skin that layers two bitmaps in one corner authored the lower one
+                // first. That decides which piece *names* the slot — which corners exist, and which
+                // bitmap the close control has to clear.
+                // **A centre-anchored piece never claims a slot.** The eight alignment pairs are
+                // the ring as every rule before this one measured it, and letting a `center` piece
+                // hold one displaces the real edge bitmap into the extras — which refused five
+                // clean rings and moved seven donors' client holes when it was first tried. It is
+                // admitted below, as a repair, which is the only thing it was ever needed for.
+                if !centred, ring[role] == nil {
+                    ring[role] = child
+                    pieces.append(child)
+                    note(child, role, &stretchedDown, &stretchedAcross)
+                    continue
+                }
+                // **But the ring is every piece, not eight of them (W209).** A side is routinely
+                // drawn by two or three subviews — `Alienware Invader`'s rails are a tile, a centre
+                // ornament and a second tile, the last of which declares no alignment at all and so
+                // lands in the top-left slot behind the corner that already holds it — and taking
+                // one piece per slot left a quarter of both sides bare. Later pieces are drawn as
+                // well as the first; only the slot's identity is exclusive.
+                //
+                // **A later piece must not be clickable**, and that is a narrower rule than the
+                // slots' own (W208 measured that refusing everything clickable costs 7 rings,
+                // because a resize grip and a close box are frame furniture in a *corner*). A
+                // second bitmap anchored to the middle of an edge is a different population: it is
+                // where a skin paints its logo — `Back to the Future Trilogy`'s `f_logo.png` wraps
+                // a button that opens the film's website — and a NullPlayer window is not the place
+                // to advertise it.
+                pieces.append(child)
+                extras.insert(child.stableID)
+                note(child, role, &stretchedDown, &stretchedAcross)
             } else if horizontal == .stretch, vertical == .stretch, client == nil {
                 client = child
             }
@@ -346,13 +528,108 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         guard Role.corners.isSubset(of: Set(ring.keys)), let client else { return nil }
         return WMPHostedFrameTemplate(
             viewID: registration.id,
-            ringNodeIDs: Set(ring.values.map(\.stableID)),
+            ringNodeIDs: Set(pieces.map(\.stableID)),
+            stretchedDownNodeIDs: stretchedDown,
+            stretchedAcrossNodeIDs: stretchedAcross,
+            extraNodeIDs: extras,
             clientNodeID: client.stableID,
             topRightNodeID: ring[.topRight]?.stableID,
             minimumSize: CGSize(width: number(view, "minWidth") ?? number(view, "width") ?? 0,
                                 height: number(view, "minHeight") ?? number(view, "height") ?? 0),
-            viewNodeID: view.stableID
+            viewNodeID: view.stableID,
+            excludedNodeIDs: notOurs(view, client: client)
         )
+    }
+
+    /// Everything in the donor view that is the **skin's own**, as stable ids, for the whole-view
+    /// path to subtract (W209 prototype).
+    ///
+    /// The selecting rules above ask "is this piece frame?" and answer no by default, which is why
+    /// a rail nested in a drawer, a tile sized by script and a plate over a join all fall out. This
+    /// asks the opposite question, and the three things it subtracts are the three the doctrine at
+    /// the top of this file names: the donor's **content** (its list, video and effects surfaces —
+    /// ours goes in the hole), its **controls** (a borrowed button is a lie about what it does), and
+    /// its **readouts** (a caption bound to the skin's own player state, stale on our window).
+    ///
+    /// Whole subtrees, because a `BUTTONGROUP`'s mapping image and a `PLAYLIST`'s rows are painted
+    /// by descendants with ids of their own. The client subview itself is kept — it is where the
+    /// donor's interior fill is painted, and the fill is what `erasingInteriorFill` opens.
+    /// Whether the node is itself something the user can press, as opposed to wrapping one.
+    private static func isControlKind(_ node: WMPNode) -> Bool {
+        switch node.kind {
+        case .button, .repeatButton, .buttonGroup, .slider, .customSlider, .popup,
+             .volumeSlider, .seekSlider, .balanceSlider:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func notOurs(_ view: WMPNode, client: WMPNode) -> Set<Int> {
+        var excluded: Set<Int> = []
+        func subtree(_ node: WMPNode) {
+            excluded.insert(node.stableID)
+            for child in node.children { subtree(child) }
+        }
+        for child in client.children { subtree(child) }
+        // **A subview whose background image *is* a control's image is that control's backing.**
+        // Dropping the control alone is not enough: `Back to the Future Trilogy` spells every one
+        // of its window controls as `<subview backgroundImage="pl_shuff_no.png">` wrapping a
+        // `<buttongroup image="pl_shuff_no.png">`, so the glyph is painted twice and the subview's
+        // copy survived — the loop and shuffle pair in the top-left corner, the close box in the
+        // top-right, the resize grip in the bottom-right, all borrowed onto a NullPlayer window
+        // that has its own.
+        //
+        // The same image in both places is what separates a backing from a plate: the logo subview
+        // beside it carries `f_logo.png` and wraps a button drawn from `f_logo_no.png`, and that
+        // plate is frame — it covers the join between two pieces of the bottom bar, and leaving it
+        // out is the notch reported three times.
+        walk(view) { node in
+            guard node.kind == .subview, let backing = literal(node, "backgroundImage") else { return }
+            for child in node.children where Self.isControl(child) || Self.isControlKind(child) {
+                for name in ["image", "backgroundImage"] where
+                    literal(child, name)?.caseInsensitiveCompare(backing) == .orderedSame {
+                    subtree(node)
+                    return
+                }
+            }
+        }
+        walk(view) { node in
+            switch node.kind {
+            case .button, .buttonGroup, .buttonElement, .slider, .customSlider, .volumeSlider,
+                 .seekSlider, .balanceSlider, .progressBar, .popup, .editBox,
+                 .playButton, .pauseButton, .stopButton, .prevButton, .nextButton, .rewButton,
+                 .ffwdButton, .muteButton, .repeatButton, .returnButton, .shuffleButton,
+                 .playElement, .pauseElement, .stopElement, .prevElement, .nextElement,
+                 .rewElement, .ffwdElement,
+                 .playlist, .dropdownPlaylist, .listBox, .video, .wmpVideo, .effects,
+                 .equalizerSettings,
+                 .text, .statusText, .currentPositionText:
+                subtree(node)
+            default:
+                break
+            }
+        }
+        return excluded
+    }
+
+    /// Record an edge piece whose length its author left to script. Tiled, in a side role, with the
+    /// dimension along that side unstated in markup: three conditions, all readable without
+    /// resolving anything, and every one of them necessary — a piece with an authored height is
+    /// saying how tall it is, and a piece that does not tile has nothing to repeat.
+    private static func note(_ node: WMPNode, _ role: Role,
+                             _ down: inout Set<Int>, _ across: inout Set<Int>) {
+        guard literal(node, "backgroundTiled")?.caseInsensitiveCompare("true") == .orderedSame else {
+            return
+        }
+        switch role {
+        case .left, .right:
+            if number(node, "height") == nil { down.insert(node.stableID) }
+        case .top, .bottom:
+            if number(node, "width") == nil { across.insert(node.stableID) }
+        default:
+            break
+        }
     }
 
     /// Whether a view carries one of the surfaces a WMP panel exists to hold.
@@ -401,8 +678,44 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             return try await panelArtwork(builder: builder, renderer: renderer, size: size,
                                           backingScale: backingScale)
         }
+        // **The ring is assembled as the skin lays it out, and only repaired if it fails.** The
+        // second pass gives every script-sized edge piece the span of its side (W209); it is a
+        // repair, so it is reached only by a donor whose ring came out open, and every ring that
+        // closes on the first pass is byte-identical to what it was before the rule existed —
+        // measured over the corpus, and `Back to the Future Trilogy` is why the check matters:
+        // stretching its tiles unconditionally moved its client hole and opened a gap on its right
+        // edge that its own layout does not have.
+        guard let first = try await composeRing(builder: builder, renderer: renderer, size: size,
+                                                backingScale: backingScale, repairing: false)
+        else { return nil }
+        var assembled = first
+        // A view drawn whole cannot come apart, so neither the repair pass nor the ring-open
+        // refusal has a question to answer (W209 prototype).
+        if Self.drawsWholeDonorView { return assembled.artwork }
+        if first.gap > Self.ringEdgeGapLimit,
+           !extraNodeIDs.isEmpty || !stretchedDownNodeIDs.isEmpty || !stretchedAcrossNodeIDs.isEmpty {
+            if let repaired = try await composeRing(builder: builder, renderer: renderer, size: size,
+                                                    backingScale: backingScale, repairing: true),
+               repaired.gap < first.gap {
+                assembled = repaired
+            }
+        }
+        // **Thrown, not nil**: like the panel path's unslicable verdict, this is about the donor at
+        // every size rather than about the window that asked.
+        guard assembled.gap <= Self.ringEdgeGapLimit else {
+            throw WMPHostedFrameRefusal.ringDoesNotClose
+        }
+        return assembled.artwork
+    }
+
+    /// One complete ring: built, grown if it falls short of its own view, cropped to its extent,
+    /// measured for bare edges, and opened up so it can be painted over the content.
+    private func composeRing(builder: WMPSceneBuilder, renderer: WMPRenderer, size: CGSize,
+                             backingScale: CGFloat, repairing: Bool) async throws
+        -> (artwork: SkinnedSurfaceFrameArtwork, gap: CGFloat)? {
         guard var built = try await ringRender(builder: builder, renderer: renderer, canvas: size,
-                                              backingScale: backingScale) else { return nil }
+                                               backingScale: backingScale,
+                                               repairing: repairing) else { return nil }
 
         // **A ring does not always reach the edges of its own view (W207).** `Ice`'s `plView` parks
         // a hidden drawer down its right side — every right-anchored piece is placed at
@@ -421,7 +734,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             let grown = CGSize(width: size.width + max(0, shortfall.width),
                                height: size.height + max(0, shortfall.height))
             if let second = try await ringRender(builder: builder, renderer: renderer, canvas: grown,
-                                                 backingScale: backingScale) {
+                                                 backingScale: backingScale,
+                                                 repairing: repairing) {
                 built = second
             }
         }
@@ -431,6 +745,13 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             width: (built.extent.width * backingScale).rounded(),
             height: (built.extent.height * backingScale).rounded())) else { return nil }
 
+        // **A ring that does not close is not a frame (W209).** Every rule above assumes the pieces
+        // meet: the roles come from alignment, the insets from the client subview, and the extent
+        // from the alpha — and all three resolve perfectly for a donor whose pieces only meet at
+        // the *skin's own* layout. Nothing on the `HOSTED-FRAME` line can see that; the assembled
+        // pixels can. The caller decides what to do with the number.
+        let gap = Self.widestEdgeGap(cropped, scale: backingScale) ?? 0
+
         // The extent is the frame; map the client hole into it and then onto the window.
         let scaleX = built.extent.width > 0 ? size.width / built.extent.width : 1
         let scaleY = built.extent.height > 0 ? size.height / built.extent.height : 1
@@ -438,24 +759,271 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                              y: (built.client.minY - built.extent.minY) * scaleY,
                              width: built.client.width * scaleX, height: built.client.height * scaleY)
         content = Self.reclaimingSideRacks(content, in: size)
-        return SkinnedSurfaceFrameArtwork(
-            image: cropped, size: size, contentRect: content,
+        // **Erase the interior fill so the frame can be painted whole (W209).** See
+        // `SkinnedSurfaceFrameArtwork.paintsOverContent` for what the cut it replaces was costing.
+        let opened = Self.erasingInteriorFill(cropped, content: content, size: size,
+                                              scale: backingScale)
+        // **The hole stays the client subview's, not the erased fill's bounding box.** Deriving it
+        // from the pixels was tried and made the borders lopsided — 43pt on the left against 16 on
+        // the right on `Back to the Future Trilogy`, because its left bezel dips into the subview
+        // and its right does not. Reported as *"the left and right are not equal"*. The overhang it
+        // was meant to trim no longer needs trimming: the frame is painted over the content now, so
+        // the bezel covers whatever runs under it.
+        return (SkinnedSurfaceFrameArtwork(
+            image: opened?.image ?? cropped, size: size, contentRect: content,
             trailingCornerWidth: built.corner.map { $0 * scaleX },
-            wasScaledToFit: abs(scaleX - 1) > 0.001 || abs(scaleY - 1) > 0.001)
+            wasScaledToFit: abs(scaleX - 1) > 0.001 || abs(scaleY - 1) > 0.001,
+            paintsOverContent: opened != nil), gap)
+    }
+
+    /// Remove the ring's **interior fill** — the flat colour a donor paints behind its own content —
+    /// from the client rect, leaving every other pixel the skin drew there.
+    ///
+    /// The fill is found, not assumed: the most common opaque colour inside the client rect. That is
+    /// the one thing about someone else's chrome that can be *counted* rather than inferred, which
+    /// is the distinction the four dead title-bar rules were on the wrong side of. A donor whose
+    /// interior is a picture has no such colour — its most common one is a few percent of the rect —
+    /// and is answered nil, so the caller keeps cutting the hole as it always has.
+    ///
+    /// Nil also when the erase leaves the rect still substantially painted: whatever is left there
+    /// would be drawn over the user's content, which is the failure the cut exists to prevent.
+    private static func erasingInteriorFill(_ image: CGImage, content: CGRect, size: CGSize,
+                                            scale: CGFloat) -> (image: CGImage, opening: CGRect)? {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0, scale > 0, !content.isEmpty,
+              size.width > 0, size.height > 0 else { return nil }
+        // The artwork's pixels per point. The crop above can leave the image a point or two off the
+        // window, so the rect is mapped through the image's own scale rather than the backing one.
+        let pixelsX = CGFloat(width) / size.width, pixelsY = CGFloat(height) / size.height
+        let hole = CGRect(x: (content.minX * pixelsX).rounded(.down),
+                          y: (content.minY * pixelsY).rounded(.down),
+                          width: (content.width * pixelsX).rounded(),
+                          height: (content.height * pixelsY).rounded())
+            .intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        guard hole.width >= 2, hole.height >= 2 else { return nil }
+
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = pixels.withUnsafeMutableBytes({ bytes -> CGContext? in
+            CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        }) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let x0 = Int(hole.minX), y0 = Int(hole.minY)
+        let x1 = min(width, Int(hole.maxX)), y1 = min(height, Int(hole.maxY))
+        // Quantised to 8 levels an axis: these fills are flat, and two neighbouring pixels of a
+        // gradient must not count as two different colours.
+        var tally: [UInt32: Int] = [:]
+        var opaque = 0
+        for y in y0..<y1 {
+            let row = y * width * 4
+            for x in x0..<x1 where pixels[row + x * 4 + 3] > 200 {
+                opaque += 1
+                let key = UInt32(pixels[row + x * 4] >> 5) << 10
+                    | UInt32(pixels[row + x * 4 + 1] >> 5) << 5
+                    | UInt32(pixels[row + x * 4 + 2] >> 5)
+                tally[key, default: 0] += 1
+            }
+        }
+        let area = (x1 - x0) * (y1 - y0)
+        guard area > 0, let fill = tally.max(by: { $0.value < $1.value }),
+              // A fill is a fill when it is most of what is painted in there. Below this the
+              // interior is a picture and there is nothing to erase.
+              CGFloat(fill.value) >= CGFloat(area) * 0.5 else { return nil }
+        // **The fill is one connected region, and its extent is the skin's content area.**
+        //
+        // The client subview states where the donor puts its *list*; the area the skin actually
+        // paints its content colour over can be larger, and in `Back to the Future Trilogy` it is:
+        // the black runs below the client rect into a tab in the bottom bar, where the skin plates
+        // it with its logo. Deriving the hole from the subview alone left our graph stopping short
+        // of that, and the strip of the skin's own black below it read as a notch hanging out of
+        // the border — reported four times, and correctly: *"you are creating this notch, it is not
+        // in the art"*. It was our content being too small for the opening, not artwork.
+        //
+        // So the fill is flooded from the client rect, erased wherever it reaches, and **the hole
+        // is its bounding box**. Our content then covers every pixel the donor filled, which is
+        // exactly what the donor's own window does. Nothing of the border is repainted: the flood
+        // only clears the content colour, and the frame — drawn over the content since this change
+        // — puts every bezel, corner and plate back on top of whatever overhangs.
+        //
+        // Two earlier attempts failed either side of this. Erasing the tab without growing the hole
+        // left a gap the window's backing showed through; filling that gap from the nearest
+        // surviving pixel painted it with the black above it. Both *made* the tab they were
+        // chasing.
+        func isFill(_ index: Int) -> Bool {
+            guard pixels[index + 3] > 0 else { return false }
+            let key = UInt32(pixels[index] >> 5) << 10
+                | UInt32(pixels[index + 1] >> 5) << 5
+                | UInt32(pixels[index + 2] >> 5)
+            return key == fill.key
+        }
+        var queue: [Int] = []
+        var seen = [Bool](repeating: false, count: width * height)
+        for y in y0..<y1 {
+            for x in x0..<x1 where isFill((y * width + x) * 4) && !seen[y * width + x] {
+                seen[y * width + x] = true
+                queue.append(y * width + x)
+            }
+        }
+        var flooded: [Int] = []
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        var head = 0
+        while head < queue.count {
+            let cell = queue[head]; head += 1
+            let x = cell % width, y = cell / width
+            flooded.append(cell)
+            if x < minX { minX = x }
+            if x > maxX { maxX = x }
+            if y < minY { minY = y }
+            if y > maxY { maxY = y }
+            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let nx = x + dx, ny = y + dy
+                guard nx >= 0, nx < width, ny >= 0, ny < height, !seen[ny * width + nx],
+                      isFill((ny * width + nx) * 4) else { continue }
+                seen[ny * width + nx] = true
+                queue.append(ny * width + nx)
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        // **The hole never grows past the client subview.**
+        //
+        // Letting the flood's own bounding box be the hole was tried and reported wrong twice in one
+        // pass: our content then reaches below the donor's bezel and over its bottom bar — on the
+        // waveform window the black ran straight over the skin's logo — and out to the right edge,
+        // because a donor whose border is painted in the same colour as its content area gives the
+        // flood nothing to stop at. The subview is the skin's statement of where content goes, and
+        // it stands. The flood's only job is to find the fill *inside* it, so a bezel that dips into
+        // the rectangle is not mistaken for content.
+        minX = max(minX, x0); minY = max(minY, y0)
+        maxX = min(maxX, x1 - 1); maxY = min(maxY, y1 - 1)
+        guard maxX >= minX, maxY >= minY else { return nil }
+        // Erase only what the accepted hole covers. Outside it the fill is the donor's border and
+        // is not ours to touch — clearing it was what produced the tab in the first place.
+        for cell in flooded {
+            let x = cell % width, y = cell / width
+            guard x >= minX, x <= maxX, y >= minY, y <= maxY else { continue }
+            for channel in 0..<4 { pixels[cell * 4 + channel] = 0 }
+        }
+        var remaining = 0
+        for y in y0..<y1 {
+            let row = y * width * 4
+            for x in x0..<x1 where pixels[row + x * 4 + 3] > 200 { remaining += 1 }
+        }
+        // **What may survive the erase, and the two measurements that bound it.** Whatever is left
+        // is painted over the user's content, so the bar is how much of their window the donor may
+        // keep. `Back to the Future Trilogy` keeps **5.8%** at the live window's 357x238 — its
+        // inner bezel and the tab that rises through the bottom bar, which is frame and has to be
+        // drawn. `Alienware Invader` keeps **19%** — an album-art panel, a search box and a list
+        // rack baked into one 190pt corner bitmap (pixels rather than nodes, the `Gorillaz` rule),
+        // which would sit on top of the library's rows. Between them, and it is the *size the
+        // window actually is* that has to be measured: at 550x464 the same BTTF frame keeps 2%, so
+        // a bar set from a probe at one size passed there and failed at the size on screen, which
+        // is how three rounds of fixes changed nothing the reporter could see.
+        let leftover = CGFloat(remaining) / CGFloat(area)
+        guard leftover <= 0.10, let made = context.makeImage() else { return nil }
+        let opening = CGRect(x: CGFloat(minX) / pixelsX, y: CGFloat(minY) / pixelsY,
+                             width: CGFloat(maxX - minX + 1) / pixelsX,
+                             height: CGFloat(maxY - minY + 1) / pixelsY)
+        return (made, opening)
     }
 
     /// One ring render on a canvas of `canvas` points, plus the three things read off it: the client
     /// hole, the top-right corner's width, and **the extent the ring's pixels actually cover**.
     private func ringRender(builder: WMPSceneBuilder, renderer: WMPRenderer, canvas: CGSize,
-                            backingScale: CGFloat) async throws
+                            backingScale: CGFloat, repairing: Bool) async throws
         -> (image: CGImage, client: CGRect, corner: CGFloat?, extent: CGRect)? {
+        // **Below the donor's own floor, build at the floor (W209 prototype).** A skin that declares
+        // `minWidth=560 minHeight=260` has never been asked what 357x238 looks like, and it shows:
+        // `Back to the Future Trilogy` is clean at every size from 420x260 up and grows a ~13x20pt
+        // black tab beside its logo the moment the height drops under 260, because two of its
+        // bottom pieces are placed at `view.height-86` and `view.height-93` against a corner bitmap
+        // 215 tall. The ring path answered this by unclamping and letting the pieces fall where
+        // they may; a view drawn whole has the author's own layout to fall back on.
+        var built = canvas
+        if Self.drawsWholeDonorView, Self.wholeDonorViewObeysFloor {
+            built = CGSize(width: max(canvas.width, minimumSize.width),
+                           height: max(canvas.height, minimumSize.height))
+        }
         let scene = try await builder.build(viewID: viewID,
-                                            requestedSize: WMPSize(width: canvas.width, height: canvas.height),
-                                            overrides: unclamped)
+                                            requestedSize: WMPSize(width: built.width, height: built.height),
+                                            overrides: repairing ? laidOut(on: canvas) : unclamped)
         guard let client = scene.geometries[clientNodeID]?.absoluteFrame, !client.isEmpty else {
             return nil
         }
-        let ring = scene.commands.filter { ringNodeIDs.contains($0.stableID) }
+        // **An extra piece that lands inside the hole is the donor's own furniture, not frame
+        // (W209).** `Alienware Invader` anchors its album-art panel, search box and playlist rack
+        // to the same left edge as its rails, so markup cannot tell them apart; their frames can.
+        // The eight slot-holders are exempt — a corner bitmap is routinely wider than the border it
+        // sits in (190pt on `Halo 2`) and overlapping the hole is what decorative corners do.
+        let overlapping = Set(extraNodeIDs.filter { id in
+            guard let frame = scene.geometries[id]?.absoluteFrame else { return false }
+            let piece = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+            guard piece.width > 0, piece.height > 0 else { return false }
+            let hole = CGRect(x: client.x, y: client.y, width: client.width, height: client.height)
+            let overlap = piece.intersection(hole)
+            guard !overlap.isNull else { return false }
+            return overlap.width * overlap.height > piece.width * piece.height * 0.5
+        })
+        // **The eight slots first, the rest only to repair (W209).** Admitting every edge-anchored
+        // bitmap unconditionally moved things far outside the skins it was meant to fix: measured
+        // over the corpus it re-cut the client hole on seven donors and opened gaps that refused six
+        // rings which had measured a clean 0.000 — `AlienMorph`, `ALXMorph`, `ALXVortex`,
+        // `AlienwareTeleport`, `Harry_Potter…` and `Project…`. A ring that closes is already right,
+        // and the extra pieces are only ever an answer to one that does not.
+        // **An extra that sits in the border is frame furniture, and it is drawn from the start.**
+        // `Back to the Future Trilogy` plates its bottom bar with `f_logo.png` over a tab of the
+        // same black its content area is filled with; refuse the plate and the tab is a hole in the
+        // bar — the notch, reported three times. It wraps a button that opens the film's website,
+        // and W208's rule is about a *corner* glyph that claims to do something to playback, which
+        // this is not: our chrome is a picture, the donor's handlers are never wired, and a bar
+        // with a hole in it is the worse answer. Transport is still refused, everywhere.
+        // Extras that overlap the hole are the donor's own content furniture and stay out of the
+        // first pass; they are admitted only when a ring has to be repaired.
+        // **The whole donor view, minus what is the skin's own (W209 prototype).** See
+        // `excludedNodeIDs`. Nothing is selected, so nothing can be left out: the drawer's nested
+        // right rail, the script-sized lower tiles and the plate over the bottom bar's join are all
+        // drawn because the skin drew them, in the skin's own order, at the skin's own positions.
+        if Self.drawsWholeDonorView {
+            // **A piece that sits inside the hole and touches no edge is the donor's furniture.**
+            // Subtracting by kind cannot see it: `Alienware Invader` paints its album-art rack, its
+            // search box and its list rack as ordinary decorated subviews, and they arrived on our
+            // windows as an alien head and two empty boxes over the library's rows. What separates
+            // them from frame is where they are — a border piece reaches an edge of the view, and a
+            // corner bitmap routinely dips well into the hole while doing it (190pt on `Halo 2`),
+            // so touching an edge is the exemption rather than overlap being the test.
+            let hole = CGRect(x: client.x, y: client.y, width: client.width, height: client.height)
+            let bounds = CGRect(x: 0, y: 0, width: built.width, height: built.height)
+            let furniture = Set(scene.geometries.compactMap { id, geometry -> Int? in
+                let frame = geometry.absoluteFrame
+                let piece = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+                guard piece.width > 0, piece.height > 0 else { return nil }
+                let touchesEdge = piece.minX <= bounds.minX + 1 || piece.minY <= bounds.minY + 1
+                    || piece.maxX >= bounds.maxX - 1 || piece.maxY >= bounds.maxY - 1
+                guard !touchesEdge else { return nil }
+                let overlap = piece.intersection(hole)
+                guard !overlap.isNull else { return nil }
+                return overlap.width * overlap.height > piece.width * piece.height * 0.5 ? id : nil
+            })
+            let whole = scene.commands.filter {
+                !excludedNodeIDs.contains($0.stableID) && !furniture.contains($0.stableID)
+            }
+            guard !whole.isEmpty else { return nil }
+            let wholeScene = WMPScene(viewID: scene.viewID, canvasSize: scene.canvasSize,
+                                      resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
+                                      commands: whole, hits: [], widgets: [], geometries: [:],
+                                      unresolved: [], diagnostics: [], dirtyBounds: nil,
+                                      metrics: scene.metrics, wasBuiltOnMainThread: false)
+            let drawn = try await renderer.render(scene: wholeScene, backingScale: backingScale)
+            let canvasRect = CGRect(x: 0, y: 0,
+                                    width: scene.canvasSize.width, height: scene.canvasSize.height)
+            return (drawn.image,
+                    CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
+                    topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
+                    Self.opaqueExtent(drawn.image, scale: backingScale) ?? canvasRect)
+        }
+        let admitted = repairing ? ringNodeIDs : ringNodeIDs.subtracting(extraNodeIDs)
+        let ring = scene.commands.filter { admitted.contains($0.stableID) && !overlapping.contains($0.stableID) }
         guard !ring.isEmpty else { return nil }
         let ringOnly = WMPScene(viewID: scene.viewID, canvasSize: scene.canvasSize,
                                 resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
@@ -465,7 +1033,38 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         let rendered = try await renderer.render(scene: ringOnly, backingScale: backingScale)
         let full = CGRect(x: 0, y: 0, width: scene.canvasSize.width, height: scene.canvasSize.height)
         let extent = Self.opaqueExtent(rendered.image, scale: backingScale) ?? full
-        return (rendered.image,
+
+        // **The border's own decoration is drawn, and it is drawn *after* the extent is measured.**
+        //
+        // A skin plates its border where two pieces meet: `Back to the Future Trilogy` covers the
+        // join in its bottom bar with `f_logo.png`, and the piece underneath carries the black of
+        // the screen area up into the bar because the plate was always going to hide it. Leave the
+        // plate out and that black is a tab hanging in the middle of the border — reported four
+        // times, and reported correctly as *"you are creating this notch, it is not in the art"*:
+        // the skin's own playlist has no tab, because the skin draws the plate.
+        //
+        // Nothing may move as a result, so this is deliberately not part of the ring. The extent
+        // above, the crop taken from it and the bare-edge measurement are all made from the slot
+        // pieces alone; the decoration is composited on top afterwards. Adding it to the ring was
+        // tried first and grew the alpha bounding box, which shifted the crop, which changed the
+        // edge measurement, which refused `Harry_Potter…` and moved `Ice`'s client hole — all for
+        // a plate a few points across. Painted here, every number on every skin is untouched.
+        var image = rendered.image
+        let decoration = scene.commands.filter {
+            extraNodeIDs.contains($0.stableID) && !admitted.contains($0.stableID)
+                && !overlapping.contains($0.stableID)
+        }
+        if !decoration.isEmpty {
+            let decorScene = WMPScene(viewID: scene.viewID, canvasSize: scene.canvasSize,
+                                      resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
+                                      commands: ring + decoration, hits: [], widgets: [], geometries: [:],
+                                      unresolved: [], diagnostics: [], dirtyBounds: nil,
+                                      metrics: scene.metrics, wasBuiltOnMainThread: false)
+            if let plated = try? await renderer.render(scene: decorScene, backingScale: backingScale) {
+                image = plated.image
+            }
+        }
+        return (image,
                 CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
                 topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
                 extent)
@@ -500,6 +1099,77 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         return CGRect(x: CGFloat(minX) / scale, y: CGFloat(minY) / scale,
                       width: CGFloat(maxX - minX + 1) / scale, height: CGFloat(maxY - minY + 1) / scale)
     }
+
+    /// How much of each edge of a frame the ring leaves **bare**, as the longest unbroken run of
+    /// unpainted rows or columns divided by that edge's length — top, left, bottom, right (W209).
+    ///
+    /// A ring is a closed surround by definition, so every edge of the assembled frame should be
+    /// painted along its whole length. Measured over the installed corpus at 550x464, the skins
+    /// whose rings close read **0 to 0.024**; the two that do not read 0.37/0.34 (`Back to the
+    /// Future Trilogy`) and 0.23 (`Alienware Invader`, whose side rails stop two-thirds down).
+    ///
+    /// **The longest *run*, not the total, and that distinction is the rule.** A skin with rounded
+    /// corners or a keyed notch leaves bare pixels scattered along an edge and its total climbs
+    /// while every gap stays a few points wide; a ring that came apart leaves one hole a third of
+    /// the edge long. Only the second is a frame with a piece missing.
+    ///
+    /// Alpha only, read in a band the depth of the thinnest border worth having, because a piece
+    /// anchored a point or two off the edge is still a border and a piece 200pt inside it is not.
+    static func edgeGaps(_ image: CGImage, scale: CGFloat) -> [CGFloat]? {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0, scale > 0 else { return nil }
+        var alpha = [UInt8](repeating: 0, count: width * height)
+        guard let context = alpha.withUnsafeMutableBytes({ bytes -> CGContext? in
+            CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                      bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                      bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue)
+        }) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let band = max(1, Int((edgeBandDepth * scale).rounded()))
+        // A bitmap context stores row 0 at the *top* of the image it produces, whatever its
+        // coordinate origin, so row 0 is the frame's top edge. The four edges are symmetric and the
+        // names matter only to the caller's log line; they were checked against a dumped PNG.
+        let painted: (Int, Int) -> Bool = { x, y in alpha[y * width + x] > edgeAlphaFloor }
+        func longestRun(_ count: Int, _ bare: (Int) -> Bool) -> CGFloat {
+            var longest = 0, run = 0
+            for index in 0..<count {
+                run = bare(index) ? run + 1 : 0
+                if run > longest { longest = run }
+            }
+            return CGFloat(longest) / CGFloat(count)
+        }
+        let top = longestRun(width) { x in !(0..<min(band, height)).contains { painted(x, $0) } }
+        let bottom = longestRun(width) { x in
+            !(max(0, height - band)..<height).contains { painted(x, $0) }
+        }
+        let left = longestRun(height) { y in !(0..<min(band, width)).contains { painted($0, y) } }
+        let right = longestRun(height) { y in
+            !(max(0, width - band)..<width).contains { painted($0, y) }
+        }
+        return [top, left, bottom, right]
+    }
+
+    static func widestEdgeGap(_ image: CGImage, scale: CGFloat) -> CGFloat? {
+        edgeGaps(image, scale: scale)?.max()
+    }
+
+    /// The deepest a piece can sit from the window's edge and still be that edge's border, in
+    /// points. Six: thinner than every border in the corpus, so a piece inside it is unambiguously
+    /// the edge, and deep enough to absorb a ring anchored a point or two in.
+    private static let edgeBandDepth: CGFloat = 6
+    /// Below this a pixel is the anti-aliased fringe of something drawn elsewhere, not a border.
+    private static let edgeAlphaFloor: UInt8 = 40
+    /// The widest bare run an edge may carry before the ring is refused (W209).
+    ///
+    /// **The population is bimodal and this sits in the empty middle.** Measured over the 185
+    /// installed archives at 550x464 on 2026-09-16, the 88 rings split into 59 that measure
+    /// **0.000 to 0.052** and 28 that measure **0.231 to 1.000**, with nothing in between but
+    /// `Dreamcatcher` at 0.109. There is no continuum to tune along: a ring either closes or has a
+    /// piece missing. Two of the 28 were reported from the running app on the day this was written
+    /// — `Back to the Future Trilogy` (0.369, a third of its top edge) and `Alienware Invader`
+    /// (0.231, side rails that stop two-thirds down) — and five of them measure 0.9 or more, which
+    /// is a whole edge of the window with no frame on it.
+    private static let ringEdgeGapLimit: CGFloat = 0.15
 
     /// Nine-slice the one-piece panel (W207) onto a window of `size` points.
     ///
@@ -663,6 +1333,23 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         var overrides = WMPSceneOverrides.empty
         for name in ["minwidth", "minheight"] {
             overrides.properties[WMPScenePropertyAddress(stableID: viewNodeID, property: name)] = .number(1)
+        }
+        return overrides
+    }
+
+    /// `unclamped`, plus the span every script-sized edge piece needs to reach along its own side
+    /// (W209). See `stretchedDownNodeIDs`. The length is the whole canvas rather than the distance
+    /// to the next corner: a tile is clipped by the window and painted under the corner pieces,
+    /// which are drawn after it by the same paint order the skin declares.
+    private func laidOut(on canvas: CGSize) -> WMPSceneOverrides {
+        var overrides = unclamped
+        // `geometry`, not `properties`: a dimension is resolved through `parseDimension`, which
+        // reads the geometry overrides a script's own writes land in.
+        for id in stretchedDownNodeIDs {
+            overrides.geometry[WMPScenePropertyAddress(stableID: id, property: "height")] = canvas.height
+        }
+        for id in stretchedAcrossNodeIDs {
+            overrides.geometry[WMPScenePropertyAddress(stableID: id, property: "width")] = canvas.width
         }
         return overrides
     }

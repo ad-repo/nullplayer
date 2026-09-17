@@ -171,6 +171,29 @@ What is left of that gap is one row.
 |---|---|---|---|
 | W111 | Objects a skin declares inside `<PLAYER>` are laid out as controls, and count as starved | `<controls>` **103 nodes / 67 of 179 skins**, `<VIDEOSETTINGS>` 28 / 24, plus `durationText` 2 / 2 and `automenu` 4 / 3 as unknown tags, measured 2026-09-09 with `WMP_RENDER_UNRESOLVED=1` over the 179-archive sweep | **Costs no pixels and distorts the ranking**, which is the only reason it is a row: `starved.tsv` scores `unresolved / declared`, and ~154 of the 1,067 unresolved nodes left in the corpus are objects that were never boxes. `<controls>` is a child of `<PLAYER>` carrying nothing but `currentPosition_onchange` handlers — `aom.wms` is the worked case — and `WMPSceneBuilder.isNonLayout` already treats `.player` and `.network` exactly that way, so this is the same one-line rule applied to two more kinds. `STATUSTEXT` and `CURRENTPOSITIONTEXT` are no longer part of this row: both are implemented as native text controls. `durationText` and `automenu` remain separate questions and need a census before a kind: decide whether each is a `<TEXT>` WMP fills in for the skin (which is drawing work, not classification) or an object. Do **not** batch them with `<controls>`. |
 
+## Tier 1h — the borrowed window frame
+
+Opened 2026-09-17 by the `Back to the Future Trilogy` / `Alienware Invader` reports. **The tier
+exists because W207 and W208 closed the frame's geometry and its slot rules, and what is left is
+neither**: these rows are about the pixels a donor lends and how they compose against NullPlayer's
+own content. They rank below Tier 1g and above Tier 1e.
+
+Every row here is verified by driving the app and capturing the live window. A `HOSTED-FRAME` line
+alone has twice measured clean while the window was visibly wrong — the process notes are in
+[`skills/wmp-skin-guide/reference/skins/back-to-the-future-trilogy.md`](skills/wmp-skin-guide/reference/skins/back-to-the-future-trilogy.md)
+§ *Process lessons this skin taught*.
+
+**W209 closed 2026-09-17** — the borrowed frame is now the donor view **drawn whole** with the
+skin's own content subtracted, instead of a ring assembled from selected pieces. 88 rings of 185
+archives draw a frame (was 67) and **nothing is refused as open** (was 21). The case study is
+[`back-to-the-future-trilogy.md`](skills/wmp-skin-guide/reference/skins/back-to-the-future-trilogy.md);
+the rules are in `skills/wmp-skin-guide/SKILL.md` § *Every NullPlayer window in WMP mode is the
+skin's or is themed*.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W210 | A donor whose left "border" is a furnished column: the hole is widened over the rack and the rack is painted anyway | **1 archive reported, `Alienware Invader`; the rule it touches reaches `Ice` and `Star Wars` too** — `reclaimingSideRacks` fires wherever one side margin dwarfs the other | **Read [`skills/wmp-skin-guide/reference/skins/alienware-invader.md`](skills/wmp-skin-guide/reference/skins/alienware-invader.md) before taking this row — the cause is already identified and measured, do not re-derive it.** An alien head, a search box and a list rack are painted over the left quarter of every NullPlayer window borrowing this frame. They are **three nodes** at `left=18` (`pl_top_left2.png` 116x160, `pl_left_tile3.png` 116x23 tiled, `pl_bot_left2.png` 116x28), not pixels in a corner bitmap — an earlier handoff recorded the opposite and was wrong. The defect is two correct rules disagreeing: at the donor's floor the client subview resolves to `134,34 374x221`, so the rack at `18..134` is legitimately outside the hole and `ringRender`'s furniture test rightly ignores it; `reclaimingSideRacks` then judges a 134pt left margin against a 15pt right one to be a rack and hands that strip to our content (left inset 90pt → 27.8pt at 357 wide); and the frame is painted **over** the content, so the rack lands on our rows. Shape of a fix, **untested**: run the furniture test against the *reclaimed* content rect rather than the raw client frame. Measure `Ice` (157pt right rack — W207 records what growing by it cost), `Star Wars` (164 of 575pt) and `Halo 2` (a 190pt corner bitmap that legitimately dips into a reclaimed strip and must not be dropped). Verify on screen, not from the `HOSTED-FRAME` line. |
+
 ## Tier 1g — the window system, not the scene
 
 Opened 2026-09-16 by an audit of `.wmz` window placement against the `.wal` rules, and it holds one

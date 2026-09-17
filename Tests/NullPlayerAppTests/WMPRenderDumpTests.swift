@@ -820,8 +820,18 @@ enum WMPHarness {
         let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
         let renderer = WMPRenderer(imageStore: store)
         let backing = CGFloat(Double(ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_SCALE"] ?? "") ?? 1)
-        let artwork = try? await template.artwork(builder: builder, renderer: renderer, size: size,
-                                                  backingScale: backing)
+        var refusal = ""
+        var artwork: SkinnedSurfaceFrameArtwork?
+        do {
+            artwork = try await template.artwork(builder: builder, renderer: renderer, size: size,
+                                                 backingScale: backing)
+        } catch WMPHostedFrameRefusal.ringDoesNotClose {
+            refusal = " refused=ring-open"
+        } catch WMPHostedFrameRefusal.panelCannotBeSliced {
+            refusal = " refused=panel-unslicable"
+        } catch {
+            artwork = nil
+        }
         // **Which donor class lent it (W207).** `ring=` is the eight-piece ring's piece count;
         // `panel=` is a one-piece panel nine-sliced at its own hole, and the two are different
         // enough that a line reading `ring=0` would be a lie about what was borrowed. The slice
@@ -833,7 +843,7 @@ enum WMPHarness {
             : " min=\(WMPNumber.format(template.minimumSize.width))x\(WMPNumber.format(template.minimumSize.height))"
         let head = "HOSTED-FRAME view=\(template.viewID) \(donor) "
             + "size=\(WMPNumber.format(size.width))x\(WMPNumber.format(size.height))" + floor
-        guard let artwork else { return head + " artwork=none" }
+        guard let artwork else { return head + " artwork=none" + refusal }
         // **`WMP_HOSTED_FRAME_DUMP=<dir>` writes the borrowed frame as a PNG.** Nothing in a render
         // dump contains it — the ring is assembled from pieces the donor draws for itself, and a
         // nine-sliced panel (W207) is assembled by us — so the numbers on this line were the only
@@ -848,6 +858,13 @@ enum WMPHarness {
             }
         }
         let metrics = artwork.metrics
+        // **`gaps=` is the only field on this line that can see a ring that came apart (W209).**
+        // Top/left/bottom/right, each the longest unbroken run of *bare* edge as a fraction of that
+        // edge — see `WMPHostedFrameTemplate.edgeGaps`. Every other number here is derived from
+        // markup that resolves perfectly for a donor whose pieces only meet at the skin's own
+        // layout, which is exactly the class of defect this reports.
+        let measured = WMPHostedFrameTemplate.edgeGaps(artwork.image, scale: backing)
+        let gaps = measured?.map { String(format: "%.3f", $0) }.joined(separator: "/") ?? "none"
         return head + " caption=\(WMPNumber.format(artwork.captionHeight))"
             + " corner=\(artwork.trailingCornerWidth.map(WMPNumber.format) ?? "none")"
             + " left=\(WMPNumber.format(metrics.leftBorder))"
@@ -856,6 +873,10 @@ enum WMPHarness {
             + " content=\(WMPNumber.format(artwork.contentRect.minX)),\(WMPNumber.format(artwork.contentRect.minY))"
             + " \(WMPNumber.format(artwork.contentRect.width))x\(WMPNumber.format(artwork.contentRect.height))"
             + " scaled=\(artwork.wasScaledToFit ? "yes" : "no")"
+            + " gaps=\(gaps)"
+            // `whole=yes` is a frame whose interior fill came away, so it is painted over the
+            // content entire rather than having the client rect cut out of it (W209).
+            + " whole=\(artwork.paintsOverContent ? "yes" : "no")"
     }
 
     private static func measure(view viewID: String, skin: WMPLoadedSkin, builder: WMPSceneBuilder,

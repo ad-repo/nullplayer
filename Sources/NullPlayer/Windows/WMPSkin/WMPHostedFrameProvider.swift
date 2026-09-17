@@ -142,11 +142,14 @@ final class WMPHostedFrameProvider {
         Task { [weak self] in
             var produced: SkinnedSurfaceFrameArtwork?
             var unslicable = false
+            var ringOpen = false
             do {
                 produced = try await template.artwork(builder: builder, renderer: renderer,
                                                      size: key.size, backingScale: scale)
             } catch WMPHostedFrameRefusal.panelCannotBeSliced {
                 unslicable = true
+            } catch WMPHostedFrameRefusal.ringDoesNotClose {
+                ringOpen = true
             } catch {
                 produced = nil
             }
@@ -155,6 +158,22 @@ final class WMPHostedFrameProvider {
                 guard self.generation == generation else { return }
                 self.inFlight.remove(key)
                 guard let produced else {
+                    // **A ring that does not close is a verdict on the skin, at every size
+                    // (W209).** The pieces are anchored to the window's edges, so a donor whose
+                    // ring comes apart on one hosted window comes apart on all of them — and
+                    // unlike the panel's, this one drops the template however many frames have
+                    // already been produced, because every one of them has the same hole in it.
+                    // The windows fall back to palette chrome, which is what a `.wmz` that lends
+                    // no frame at all has always given them.
+                    if ringOpen {
+                        self.template = nil
+                        self.donorInsets = nil
+                        self.cache.removeAll()
+                        self.order.removeAll()
+                        self.mostRecent = nil
+                        NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
+                        return
+                    }
                     if !unslicable { self.refused.insert(key) }
                     // **A panel that cannot be sliced lends nothing, and only the artwork pass
                     // knows** (W207): the four slice lines come from the *resolved* hole, so a
@@ -208,7 +227,8 @@ extension SkinnedSurfaceFrameArtwork {
             contentRect: CGRect(x: contentRect.minX * scaleX, y: contentRect.minY * scaleY,
                                 width: contentRect.width * scaleX, height: contentRect.height * scaleY),
             trailingCornerWidth: trailingCornerWidth.map { $0 * scaleX },
-            wasScaledToFit: true
+            wasScaledToFit: true,
+            paintsOverContent: paintsOverContent
         )
     }
 }

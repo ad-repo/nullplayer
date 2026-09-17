@@ -125,7 +125,14 @@ final class CavaView: NSView {
         // Content-only fast path for 60 Hz animation ticks: `onNeedsDisplay` only dirties the content
         // rect, so repaint just the bars and skip re-resolving the skin, allocating a SkinRenderer,
         // and redrawing the whole chrome. Mirrors ModernCavaView's animation-rect early-out.
-        if !isHighlighted, contentRect.contains(dirtyRect) {
+        // **A borrowed WMP frame is painted over the content, so a content-only redraw erases it
+        // (W209).** These animation-tick fast paths repaint the surface and return before the
+        // chrome overlay, which is correct while the chrome is a border *around* the content and
+        // wrong the moment any of it overlaps: the frame's inner bezel was painted black by every
+        // tick, which is the notch and the ragged edge reported on 2026-09-16 and the reason no
+        // change to the artwork made any difference on screen. Full redraw wherever a skin lent a
+        // frame; every other case keeps the fast path exactly as it was.
+        if !isHighlighted, contentRect.contains(dirtyRect), WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size) == nil {
             NSColor.black.setFill()
             contentRect.fill()
             drawCavaContent(in: contentRect)

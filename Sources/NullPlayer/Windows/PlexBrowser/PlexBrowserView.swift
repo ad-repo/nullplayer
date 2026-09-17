@@ -2608,7 +2608,12 @@ class PlexBrowserView: NSView {
             // paints there. So the client hole is cut out of the ring: the palette owns it, as the
             // fill above already assumes. Everything else — corners, edges, the caption band — is
             // untouched, and a window with no borrowed ring never reaches here.
-            if !content.isEmpty {
+            // A frame whose interior fill was erased is painted whole, for the reason
+            // `SkinnedSurfaceFrameArtwork.paintsOverContent` gives: the cut is a rectangle and these
+            // bezels are not, so it takes the frame's own inner edge with it (W209). `Scooby Doo`,
+            // whose wallpaper interior is what the cut was written for, erases to nothing and keeps
+            // it.
+            if !content.isEmpty, !artwork.paintsOverContent {
                 context.beginPath()
                 context.addRect(bounds)
                 context.addRect(content)

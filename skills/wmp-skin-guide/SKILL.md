@@ -86,26 +86,44 @@ Theming is two layers, and the second is the one a skin with styled panels is as
 
 - **Colour** — `WMPSurfacePalette` → `SkinnedSurfaceStyle`, the seven roles every hosted surface
   needs.
-- **Shape** — `WMPHostedFrameTemplate` → `SkinnedSurfaceFrameArtwork`, the skin's own **eight-piece
-  resizable ring** (four corner bitmaps, four tiled or stretched edges) around its stretched client
-  subview. Measured 2026-09-12: **85 archives declare a view with all four corners, and all 85 of
-  those views also declare the stretched client subview** that makes the ring reusable.
-  `WMPHostedFrameProvider` renders it per window size through the ordinary
-  `WMPSceneBuilder`/`WMPRenderer`, so alignment, tiling and `JScript:` layout expressions are
-  resolved by the code that draws the skin rather than by a second reading of the same markup.
+- **Shape — the donor view is drawn *whole*, and what is the skin's own is subtracted (W209).**
+  `WMPHostedFrameTemplate` → `SkinnedSurfaceFrameArtwork`. The template names a donor view — almost
+  always the playlist — and `WMPHostedFrameProvider` rebuilds **that entire view** at our window's
+  size through the ordinary `WMPSceneBuilder`/`WMPRenderer`, so alignment, tiling and `JScript:`
+  layout expressions are resolved by the code that draws the skin rather than by a second reading of
+  the same markup. Four subtractions, and nothing else is removed:
+  1. the **client subview's contents** — the hole is ours;
+  2. every **control** — a borrowed button is a lie about what it does;
+  3. every **readout** — `<TEXT>`, `<STATUSTEXT>`, `<CURRENTPOSITIONTEXT>` are bound to the skin's
+     own player state and are stale on our window;
+  4. a subview whose **`backgroundImage` is also a control child's `image`** — these skins paint a
+     button twice, once as the wrapper's backing, and dropping only the control leaves the glyph.
+     The same image in both places is what separates a backing from a *plate*: `Back to the Future
+     Trilogy`'s logo subview carries `f_logo.png` and wraps a button drawn from `f_logo_no.png`, and
+     that plate is frame — it covers a join in the bottom bar.
+
+  **Below the donor's declared floor, the view is built at the floor and the finished picture is
+  scaled down.** A skin that declares `minWidth=560 minHeight=260` has never been asked what 357x238
+  looks like, and its pieces come apart there. The scaling is non-uniform and the corners soften;
+  that is the price of the author's own layout, and it was accepted on screen over the alternative.
   **Insets come from the client subview, never from the artwork's thickness** — `Halo 2`'s "border"
-  bitmaps are 190px wide on a 406px window and mostly transparent. Only the ring is borrowed: the
-  donor's buttons and playlist are the skin's window, not ours. The title and close control keep the
-  *window's* own coordinates, because every hosted view hit-tests its close box at `width - 25`.
-  **The client hole is cut out of the ring before it is drawn, not merely filled behind it.** The
-  artwork is one image the size of the whole window, so painting it over the palette fill puts the
-  ring's own interior under our content — invisible while the donor's edges are thin, and wallpaper
-  when they are not: `Scooby Doo`'s side tiles are wide half-transparent art and its top piece
-  carries the film's title, and all of it was landing behind the library's rows and behind the cover
-  art drawn there. `PlexBrowserView.drawWinampModernChrome` clips even-odd against `contentRect`.
-  The other hosted windows still draw the full image (`SkinnedSurfaceChrome.drawSkinFrame`); they
-  paint over their whole client area, so nothing shows through — a new one that does not should
-  take the same clip.
+  bitmaps are 190px wide on a 406px window and mostly transparent.
+- **The frame is painted *over* the content, and the interior *fill* is erased — not the rectangle
+  (W209).** The old rule cut the client **rectangle** out before drawing, and these bezels are not
+  rectangular, so the cut erased the frame's own inner edge wherever it dipped inside the rect.
+  Instead the **most common opaque colour inside the hole** is found — *counted*, not inferred —
+  flood-filled from the hole so a bezel dipping in is not mistaken for content, and everything left
+  is drawn whole over our content. A donor whose interior is a *picture* has no such colour
+  (`Scooby Doo`'s wallpaper) and keeps the cut; so does one where more than **10%** of the hole
+  survives the erase. `SkinnedSurfaceFrameArtwork.paintsOverContent` carries the flag,
+  `SkinnedSurfaceChrome.drawSkinFrame` and `PlexBrowserView.drawWinampModernChrome` honour it.
+- **An animation tick that repaints content must repaint the chrome (W209).** `NetworkMonitorView`,
+  `CavaView` and `PeppyMeterView` each had a content-only fast path for 60 Hz redraws that returned
+  before the chrome overlay. Correct while chrome is a border *around* content; wrong the moment any
+  of it overlaps, which is what painting over the content made true — the borrowed bezel was being
+  erased on every tick. **Nothing in a probe dump can show this**, and it is why three rounds of
+  artwork fixes changed nothing the reporter could see. A hosted window with a fast path takes a
+  full redraw whenever a skin lent a frame.
 - **Shape, the second donor class — a *panel* (W207).** Over half the corpus lends no ring: measured
   at the library's own 550x464 on 2026-09-16, **88 of 185 archives lend a ring and 97 lend nothing**.
   But 77 of those 97 do state a window style, as **one fixed bitmap with the list inset inside it** —
@@ -142,17 +160,16 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   states a 157pt right rack, and growing by it put 157pt of decorative artwork on every window's
   right edge with nothing in it. Read `WMP_BORDER_TRACE` in `reference/harness.md` before touching
   this: three of its failure modes are invisible in both a screenshot and a `HOSTED-FRAME` line.
-- **A ring piece is decoration, not a control (W208).** Roles are read off alignment alone, and a
-  skin's own buttons are anchored to its window's edges exactly as its corner bitmaps are, so they
-  compete for the same eight slots and first-declaration-wins hands the slot to whichever came
-  first. `Ice` writes its playlist shuffle six nodes before `Vid-bottomleft.bmp` and every hosted
-  window wore that glyph as a corner. A candidate carrying **transport** is refused — the ring's
-  half of the panel path's `carriesTransport` rule. **Refusing anything clickable is the wrong
-  rule**: it costs 7 of the 88 rings, because a resize grip and a close box are plain `<button>`s in
-  edge-anchored subviews and they *are* frame furniture (`Ice`'s bottom-right corner art is its
-  grip). The `HOSTED-FRAME` line cannot see this class of defect at all — it reports the piece count
-  and the client hole, never which bitmap filled a slot — so `WMP_HOSTED_FRAME_DUMP` is the
-  instrument.
+- **A borrowed glyph is a lie about what it does (W208, and it is why W209 subtracts).** A skin's
+  own buttons are anchored to its window's edges exactly as its corner bitmaps are, so nothing in
+  the markup separates them by position. `Ice` writes its playlist shuffle six nodes before
+  `Vid-bottomleft.bmp`, and while the frame was *assembled from selected pieces* that glyph won the
+  bottom-left corner on every hosted window. The selecting rules that answered it — transport-typed
+  candidates refused, scripted transport refused in corners only — are **gone with the assembler**;
+  the whole-view path drops every control unconditionally, which is both simpler and stricter, and
+  it costs nothing now that no slot can be left empty by a refusal. The `HOSTED-FRAME` line cannot
+  see this class of defect at all — it reports the piece count and the client hole, never which
+  bitmap was drawn — so `WMP_HOSTED_FRAME_DUMP` is the instrument.
 - **The ground a hosted window paints is its content hole, not the window**
   (`SkinnedSurfaceChrome.hostedGroundRect`). Every window in the spectrum family paints its own
   ground in its own `draw` and nothing shared owned that step, while `drawSkinFrame` deliberately
@@ -223,10 +240,33 @@ classifying each direct `<SUBVIEW backgroundImage=…>` child by its `horizontal
 whichever you re-derive, with the method — the engine's own answer is the authoritative one, and the
 one-skin gap is the scan's, not the engine's.
 
-The windows inside the rule: playlist, library, equalizer, visualizations, spectrum, Cava, Flow,
-PeppyMeter, audio analyzer, waveform. **Adding another one means wiring both layers in the same
-change** — `SkinnedSurfaceChrome.metrics(for:fallback:)` for its layout and hit testing, and
-`WindowManager.hostedSurfaceFrameArtwork(for:)` for its chrome.
+### Adding a NullPlayer-native window in WMP mode
+
+The windows inside the rule today: playlist, library, equalizer, visualizations, spectrum, Cava,
+Flow, PeppyMeter, audio analyzer, waveform. A new one wires **every** step below in the same change;
+each was a separate reported defect, and skipping any one of them is how that defect comes back.
+
+1. **Route before you host.** Ask `WMPSkinSurfaces` whether the skin declares this surface itself
+   (§ *Ask what the skin provides before opening a window of your own*). A routing case added before
+   the surface is hosted trades a duplicate window for an empty drawer.
+2. **Colour** — nothing to do; `WindowManager.hostedSurfaceStyle` already answers for the family.
+   Take the roles from there, never a hard-coded pair.
+3. **Layout and hit testing** — `SkinnedSurfaceChrome.metrics(for:fallback:)`. The close control is
+   a **hit area in the borrowed frame's top-right corner**, not a glyph of ours; nothing of ours is
+   drawn over a borrowed frame.
+4. **Chrome** — `WindowManager.hostedSurfaceFrameArtwork(for:)`.
+5. **Paint the ground as `hostedGroundRect`, never `bounds`.** A `bounds.fill()` turns a shaped
+   frame into a black box with the skin drawn inside it.
+6. **Honour `paintsOverContent`** — draw your content, then the frame on top. The frame is not a
+   border around a rectangle any more; it overlaps.
+7. **If the view has an animation fast path, disable it whenever a skin lent a frame.** A 60 Hz
+   content-only redraw erases the overlapping chrome, and **no probe can see it** — it is the defect
+   that made three rounds of artwork fixes look like no-ops.
+8. **Grow, don't shrink** — `HostedWindowBorderLayout` adds the border around the interior off
+   `WMPHostedFrameProvider.donorInsets`. Never scale the window's content to make room.
+9. **Verify on screen.** The `HOSTED-FRAME` line reports piece counts and rects; it cannot see a
+   wrong bitmap, an erased bezel or a borrowed glyph. `WMP_HOSTED_FRAME_DUMP` and a
+   `screencapture` of the live window are the instruments — § *Debugging a live defect*.
 
 ## Which control a click reaches
 
@@ -1206,10 +1246,15 @@ queue, with the object model as the security boundary — see Amendment 2 in
 
 ## NullPlayer's own windows beside a skin
 
-Landed 2026-09-09. A `.wmz` has no frame system to mount a foreign window in — no
-`<Wasabi:StandardFrame>` a playlist can be dropped into — so NullPlayer's own windows are
-app-authored chrome *coloured* from the skin instead. Four things carry it, and the last two were
-found by looking at the screen rather than by reasoning.
+Landed 2026-09-09. **This section is the *colour and content* half; the *shape* half — which donor
+view is borrowed, how it is drawn and what is subtracted from it — is § *Every NullPlayer window in
+WMP mode is the skin's or is themed* above, and that section is the authority. Read it first.** What
+follows was written when colour was all a `.wmz` could lend, and the palette work below is unchanged
+by W207/W209: a window still takes the palette, and takes a borrowed frame *as well* where the skin
+lends one.
+
+Four things carry the palette, and the last two were found by looking at the screen rather than by
+reasoning.
 
 - **The seam is family-neutral, and it is the one `.wal` already had.** `SkinnedSurfaceStyle` /
   `SkinnedSurfaceChrome` (in `App/Skinning/`, formerly `WinampModernSurfaceStyle`/`Chrome`) are built

@@ -240,7 +240,12 @@ struct SkinnedSurfaceChrome {
         // a still picture over a running visualiser. Only the hole is protected; corners, edges and
         // the caption band are untouched, and a window with no borrowed ring never reaches here.
         // `PlexBrowserView` has cut the same hole for the library since the rings arrived.
-        if !content.isEmpty {
+        // **A frame whose interior fill has been erased is painted whole (W209).** The cut below is
+        // a rectangle and these bezels are not rectangular — `Back to the Future Trilogy`'s bottom
+        // bar rises into a tab at its centre — so cutting the client rect punched a notch through
+        // the skin's own frame and stepped its left edge. Where the interior came away
+        // (`paintsOverContent`), every remaining pixel is frame and belongs over the content.
+        if !content.isEmpty, !artwork.paintsOverContent {
             context.beginPath()
             context.addRect(bounds)
             context.addRect(content)

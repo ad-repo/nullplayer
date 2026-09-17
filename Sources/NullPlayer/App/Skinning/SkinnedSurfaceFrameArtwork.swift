@@ -42,6 +42,24 @@ struct SkinnedSurfaceFrameArtwork {
     /// is the one case where the ring is not drawn at the proportions its author chose.
     let wasScaledToFit: Bool
 
+    /// **Whether this frame can be painted over our content whole, with no hole cut in it (W209).**
+    ///
+    /// A ring is drawn *over* the surface, and until now the client rect was cut out of it first,
+    /// because these interiors are often opaque — a corner bitmap in this corpus is a border with
+    /// the skin's own content area filled in behind it, and uncut it would paint a still picture
+    /// over a running visualiser. But the cut takes the frame's **inner bezel** with it wherever the
+    /// bezel dips into the client rect, and that is a real shape in these skins: `Back to the Future
+    /// Trilogy`'s bottom bar rises into a tab at its centre, which came out as a black notch
+    /// punched through the frame, with the left edge stepped for the same reason. Reported
+    /// 2026-09-16: *"there is a notch on the bottom and the content does not fit smoothly on the
+    /// left — the border/pane should sit on top of the content in the z order"*.
+    ///
+    /// So the interior fill is erased from the artwork instead, and what is left — bezel, tab,
+    /// corners, every pixel the skin drew as frame — is painted over the content whole. True only
+    /// where that erase left the client rect substantially clear; a donor whose interior is a
+    /// *picture* rather than a fill erases to nothing and keeps the cut it always had.
+    var paintsOverContent: Bool = false
+
     /// The band the window title and close control are drawn in: everything above the client panel.
     var captionHeight: CGFloat { max(0, contentRect.minY) }
 
