@@ -1,8 +1,8 @@
 # `Alienware Invader.wmz`
 
-**W210 and the open-resize defect are closed (2026-09-17); W212 is open** — the borrowed frame still
-paints three white blocks and a grey column over NullPlayer's own windows. Read § *What is still
-open* before starting, and the `W212` row's three reverted fixes before proposing one.
+**W210, W212 and the open-resize defect are all closed (2026-09-17).** Nothing here is open. Read
+§ *W212* before touching the borrowed frame: all three of its rules were paid for on this archive,
+and two of them are measurements rather than markup.
 
 Part of the six-archive Alienware/ALX family that already holds two counter-evidence rows (see
 [`alienmorph.md`](alienmorph.md) and the `center`-is-not-a-margin row in
@@ -42,10 +42,10 @@ It also states its rails in three pieces per side and sizes the lower ones in it
 `stretchedDownNodeIDs` existed for under the old assembler. **The whole-view render does not answer
 this for free, and an earlier version of this file said it did.** A view drawn whole cannot come
 *apart*, but it can still be drawn *short*: the frame build is a private builder outside the script
-runtime, so the tile `onPlResize()` sizes is still one bitmap tall and the borrowed frame carries the
-same 20.1% bare run down each side that the skin's own window had before the open-resize fix
-(`gaps=0.000/0.201/0.000/0.201`). Reviving the repair pass to close it is one of the three dead ends
-in the `W212` row.
+runtime, so the tile `onPlResize()` sizes was still one bitmap tall and the borrowed frame carried
+the same 20.1% bare run down each side that the skin's own window had before the open-resize fix
+(`gaps=0.000/0.201/0.000/0.201`). Closed by the guarded span repair in § *W212*; the unguarded
+version of it is the dead end that row recorded.
 
 ## W210, closed 2026-09-17 — the rack no longer reaches our windows
 
@@ -121,20 +121,80 @@ authored `width`/`height` is below its own `minWidth`/`minHeight`:
 `WMP_RENDER_SIZE` at the floor prints `handlers=0` and compares a no-op against a no-op. Check it in
 the running app, or not at all.
 
-## What is still open — W212
+## W212, closed 2026-09-17 — the white blocks and the grey column
 
-The borrowed frame still puts **three white blocks and a grey column** on every NullPlayer window
-that wears it. Both halves, the measurements, and three reverted fixes are the `W212` row in
-[`WMP_TASKS.md`](../../../../WMP_TASKS.md). The short of it: the white is not a hole — this skin's
-border bitmaps carry its interior colour baked in (`f_top_right.png` is a silver band over opaque
-`(255,255,255,255)`, and so are `f_right_tile.png` and `pl_bot_left.png`) — and the grey column is
-the donor's genuine 99pt left rail, under which `reclaimingSideRacks` lays our content by reclaiming
-the left inset to 34.
+Three defects on the borrowed frame, one cause each. All three are visible only on **NullPlayer's
+own** windows; the skin's own `plView` was correct throughout, and that asymmetry is the clue each
+time.
 
-**`gaps=0.000/0.000/0.000/0.000` on the `HOSTED-FRAME` line while the window is visibly wrong**: the
-field samples a 6pt band at the very edge and can see none of this. Dump the frame and read its
-**alpha** — opaque white and transparency are the same picture in a PNG viewer, which cost two wrong
-diagnoses in one session.
+### The white blocks — a `wmpprop:` read the frame build could not answer
+
+`plView` hangs each side column off a centred piece and states the tile beside it as
+`top="wmpprop:plLeftCenter.top"`. Centring computes a coordinate the markup does not carry, so
+`WMPInitialLayoutResolver` — which reads the target's *authored* attribute — answered **0**, and
+both stretch tiles painted at the top of the window over the corner pieces. The white those bitmaps
+carry for the skin's own list to cover then landed in the caption band's right end.
+
+**Why only our windows:** WMP answers that read from the live object model, and the skin's own
+window does the same through the script runtime. `WMPHostedFrameTemplate`'s builder is outside the
+runtime and had no other source. Fixed in `WMPSceneBuilder.parseDimension`: a `wmpprop:` geometry
+read answers from the target's resolved frame, or — when the paint-order walk has not reached it
+yet, which is this skin (`zIndex=6` reads `zIndex=10`) — from the coordinate its centring computes.
+Pinned by `WMPAlignmentTests`, three cases including the authored-coordinate counter-evidence.
+
+### The grey column — a rail is not a rack
+
+`reclaimingSideRacks` handed all 134pt of the left margin to our content; 99pt of it is an opaque
+three-piece rail, and the frame paints over content (W209), so 54pt of every hosted window was laid
+out under it. Neither position nor paint order separates the rail from the rack — W210 established
+that both sit in the reclaimed strip and this donor paints both after its list.
+
+**What separates them is that the rail is artwork and the dropped rack leaves bare canvas.**
+`clearOfTheDonorsOwnRail` measures how far in from each edge the donor paints something that is
+neither transparent nor its **interior fill**. Excluding the fill is load-bearing: `f_right_tile` is
+96px wide and its inner 73 are opaque `(255,255,255,255)`, so a run measured on alpha alone reads a
+96pt right border and takes back the width the donor gives its own content. Two more details the
+corpus forced — the run tolerates a gap (this rail carries a one-pixel pure-white highlight 15px in,
+which read as fill and answered 13pt for a 99pt rail, so the test is *density* behind the point
+rather than an unbroken run), and it ends on the last painted pixel rather than on the slack the
+density test allows past it. `borderInsets` now **composes** the frame at the reference size instead
+of deriving insets from markup, so the window is grown by the border it will actually wear.
+
+### The bare band — the span repair, reachable and guarded
+
+With the rail at its true 99pt, the 20.1% bare run down each side (the tiles `onPlResize()` sizes,
+which the frame build never runs) became a 99pt notch of desktop. The repair pass is now reachable
+under the whole-view render, under the three guards that answer this row's own recorded dead end:
+
+- **Furniture is classified on the first pass.** A stretched rack reaches the bottom edge and the
+  furniture test exempts edge-touching pieces — that is exactly how the rack came back last time.
+- **Only the axis that came out bare is spanned.** `edgeGaps` is `[top, left, bottom, right]`;
+  spanning the top tile as well painted its white filler straight over both rails, because the tile
+  is drawn after them.
+- **The window's content rect may not move.** Stretching a tile down grows the alpha bounding box
+  and the hole rides the crop: `KungFuChaos` and `The_Last_Samurai` are both that shape, three edges
+  closer to closed and 47pt of interior taken by a border that is not there. Refused.
+
+### What it measured
+
+Corpus at 357x238 over 185 archives: **4 of 167 frame lines move, every one an improvement**, each
+checked as a frame dump against its baseline.
+
+| archive | before → after |
+|---|---|
+| `Alienware` | `gaps=0.000/0.201/0.000/0.201` → `0.000` all four; left inset 27.8 → 66.6 (the rail) |
+| `T3-Skynet_Media_Player` | broken caption band and bottom bar close; `whole=no` → `yes` |
+| `Frostbite` | bottom gap `0.235` → `0.134` |
+| `livin_it_skate` | right inset 33 → 64: content no longer laid out under its opaque green button rail |
+
+`Ice`, `Star Wars`, `Halo 2` and `Back to the Future Trilogy` are untouched. The 553-image render
+sweep is **552 identical, 1 differing** — `Scooby-Doo_2/infoView`, the run-to-run one — with zero
+`RENDER-DUMP`, `FINDING`, `COMPAT` or `BITMAPS` lines changed, which is the measurement that says
+the scene-builder change moves nothing that already had a script runtime. Verified live on
+PeppyMeter, Waveform and flow with a track playing, and cross-checked on `Ice` and `anemone`.
+
+**PeppyMeter's black bars are not this row.** The meter template keeps its own aspect and
+letterboxes inside whatever hole it is given; it does that identically with no skin loaded.
 
 ## What is already ruled out
 
@@ -142,7 +202,8 @@ diagnoses in one session.
 |---|---|
 | The rack is painted into a corner bitmap and no node rule can reach it | False. Three separate subviews, listed above. `pl_top_left.png` is 99x60 and carries none of it |
 | The old piece-selecting assembler handled this better | No — it showed the same rack *and* lost the right rail *and* tore the bottom bar. Compare `WMP_HOSTED_FRAME_WHOLE=0` against the default; the whole-view render is strictly better on this skin |
-| Its rails needed the script-driven span (`stretchedDownNodeIDs`) | Half right, and the half that is wrong was recorded here as settled. The *skin's own* window is fixed, and by the open-resize rule above rather than by a span override. The **borrowed frame** still has the bare run — the frame build runs no script — and `stretchedDownNodeIDs` is unreachable under the whole-view render. Reviving it re-admits the rack (`W212`, dead end (a)) |
+| Its rails needed the script-driven span (`stretchedDownNodeIDs`) | True for the **borrowed frame** and false for the skin's own window, which the open-resize rule above fixed. The span is now applied under the whole-view render, but only with the three guards in § *W212* — the unguarded version re-admits the rack, and that is what made it a dead end the first time |
+| The white is a hole in the frame | No. It is opaque `(255,255,255,255)` that a PNG viewer draws identically to transparency, and reading the picture rather than the alpha cost two wrong diagnoses. It was never a hole and never a colour problem either: the tiles carrying it were simply drawn in the wrong place (§ *W212*) |
 | The furniture test in `ringRender` is simply not firing | It is firing correctly. The rack is outside the donor's own hole; the hole is moved *afterwards* |
 
 ## Also true of this skin, from elsewhere in the guide

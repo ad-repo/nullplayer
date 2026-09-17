@@ -345,10 +345,69 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 severity: .warning, location: node.location))
         }
 
+        /// A `wmpprop:<element>.<left|top|width|height>` answered from **where that element is**,
+        /// rather than from the attribute it does not carry.
+        ///
+        /// The static resolver reads the target's authored attribute, and a coordinate an
+        /// alignment computes is not authored anywhere: the Alienware/ALX frame family hangs every
+        /// side column off `<subview id="plLeftCenter" verticalAlignment="center">` with no `top`,
+        /// and states the tile above it as `top="wmpprop:plLeftCenter.top"`. Read from markup that
+        /// is **0**, so the tile painted at the top of the window, over the corner piece, and the
+        /// white filler its author baked in for the list to cover landed in the caption band's
+        /// right end — on every NullPlayer window wearing the borrowed frame (W212). WMP answers
+        /// the read from the live object model, which is where the element *is*, and so does this
+        /// skin's own window through the script runtime; the surfaces built without one — the
+        /// borrowed frame — had no other source for it.
+        ///
+        /// Two sources, in this order. An element this build has already placed answers from its
+        /// resolved frame. One it has not is answered only for the coordinate **centring**
+        /// computes — the walk is in paint order, so a tile at `zIndex=6` reads a centre piece at
+        /// `zIndex=10` — and only when it states no coordinate of its own on that axis, which is
+        /// the whole of the case the static resolver reads wrong.
+        var resolvingBindings = Set<Int>()
+        func laidOutGeometry(_ path: String) -> CGFloat? {
+            let parts = path.split(separator: ".", maxSplits: 1)
+            guard parts.count == 2, let target = idToNode[String(parts[0]).lowercased()],
+                  resolvingBindings.insert(target.stableID).inserted else { return nil }
+            defer { resolvingBindings.remove(target.stableID) }
+            let property = String(parts[1]).lowercased()
+            if let geometry = geometries[target.stableID] {
+                switch property {
+                case "left": return geometry.localFrame.x
+                case "top": return geometry.localFrame.y
+                case "width": return geometry.localFrame.width
+                case "height": return geometry.localFrame.height
+                default: return nil
+                }
+            }
+            guard property == "top" || property == "left",
+                  target.attribute(named: property) == nil,
+                  view.children.contains(where: { $0 === target }) else { return nil }
+            let down = property == "top"
+            let alignment = down ? WMPAxisAlignment(vertical: literalString(target, "verticalAlignment"))
+                                 : WMPAxisAlignment(horizontal: literalString(target, "horizontalAlignment"))
+            guard alignment == .center else { return nil }
+            var extent = parseDimension(target, down ? "height" : "width")
+            if extent == nil,
+               let resolved = try? resolveResource(target,
+                                                   names: intrinsicSizeResourceNames(for: target.kind),
+                                                   overrides: overrides, warn: { _ in }),
+               let size = try? imageStore.image(for: resolved.1).size {
+                extent = down ? size.height : size.width
+            }
+            guard let extent, extent.isFinite else { return nil }
+            return ((down ? canvas.height : canvas.width) - extent) / 2
+        }
+
         func parseDimension(_ node: WMPNode, _ name: String) -> CGFloat? {
             if let value = overrides.geometry[WMPScenePropertyAddress(stableID: node.stableID,
                                                                       property: name.lowercased())],
                value.isFinite { return value }
+            if let attribute = node.attribute(named: name),
+               case let .binding(kind, path) = attribute.value, kind == .property,
+               let value = laidOutGeometry(path), value.isFinite {
+                return value
+            }
             guard let property = WMPInitialLayoutResolver.Property(rawValue: name.lowercased()) else { return nil }
             switch layoutResolver.resolve(node, property: property) {
             case let .value(value): return value

@@ -239,4 +239,67 @@ final class WMPAlignmentTests: XCTestCase {
         XCTAssertEqual(try frame(skin, scene, "drawer").y, 265,
                        "while the axis the skin actually slid still takes the scripted value")
     }
+
+    // MARK: - W212: reading a centred piece's coordinate back out
+
+    /// **A `wmpprop:` read of another element's geometry answers where that element *is*.**
+    ///
+    /// One hop on from the rule above, and the half of it that had no answer. The same
+    /// Alienware/ALX frame that hangs its side columns off a centred piece states the tiles above
+    /// and below them as `top="wmpprop:plLeftCenter.top"` — and centring computes a coordinate the
+    /// markup does not carry, so a resolver reading the target's *authored* attribute answered
+    /// **0** and both tiles painted at the top of the window, over the corner pieces. The white
+    /// filler those bitmaps carry for the skin's own list to cover then landed in the caption
+    /// band's right end, on every NullPlayer window wearing the borrowed frame.
+    ///
+    /// It only ever showed there. WMP answers the read from the live object model and the skin's
+    /// own window does the same through the script runtime, so the one surface built without a
+    /// runtime — `WMPHostedFrameTemplate`'s private builder — was the one that had no source for
+    /// it, which is why three rounds of artwork fixes changed nothing the reporter could see.
+    func testAWmppropGeometryReadAnswersWhereTheTargetIsDrawn() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="pl" width="531" height="291">
+            <SUBVIEW id="corner" zIndex="5" backgroundImage="corner.png"/>
+            <SUBVIEW id="centre" zIndex="10" verticalAlignment="center" backgroundImage="mid.png"/>
+            <SUBVIEW id="tile" zIndex="6" top="wmpprop:centre.top" backgroundImage="tile.png"/>
+        </VIEW></THEME>
+        """, resources: ["corner.png": try sheet(99, 60), "mid.png": try sheet(99, 56),
+                         "tile.png": try sheet(99, 51)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "pl")
+
+        XCTAssertEqual(try frame(skin, scene, "tile").y, (291 - 56) / 2,
+                       "the tile meets the centre piece it names, wherever centring put it")
+        XCTAssertNil(try frame(skin, scene, "tile").intersection(try frame(skin, scene, "corner")),
+                     "which is what keeps its baked-in white filler off the caption band")
+    }
+
+    /// The target is walked **after** the node that reads it — the layout walk is in paint order,
+    /// and this family states the tile at `zIndex=6` against a centre piece at `zIndex=10`. So the
+    /// answer cannot come from a resolved frame and is computed from the centring instead, which is
+    /// the only coordinate the static resolver reads wrong. Pinned separately because the two
+    /// sources are different code paths and only this one has an ordering to get wrong.
+    func testTheReadIsAnsweredEvenWhenTheTargetIsPaintedLater() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="pl" width="531" height="291">
+            <SUBVIEW id="early" zIndex="1" top="wmpprop:late.top" backgroundImage="tile.png"/>
+            <SUBVIEW id="late" zIndex="50" verticalAlignment="center" backgroundImage="mid.png"/>
+        </VIEW></THEME>
+        """, resources: ["mid.png": try sheet(99, 56), "tile.png": try sheet(99, 51)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "pl")
+        XCTAssertEqual(try frame(skin, scene, "early").y, (291 - 56) / 2)
+    }
+
+    /// And the case that must keep its authored answer: a target that states its own coordinate is
+    /// read at that coordinate, centring or not. Nothing here is entitled to move a piece whose
+    /// author placed it.
+    func testAWmppropReadOfAnAuthoredCoordinateIsUnchanged() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="pl" width="531" height="291">
+            <SUBVIEW id="anchor" zIndex="10" top="118" backgroundImage="mid.png"/>
+            <SUBVIEW id="tile" zIndex="6" top="wmpprop:anchor.top" backgroundImage="tile.png"/>
+        </VIEW></THEME>
+        """, resources: ["mid.png": try sheet(99, 56), "tile.png": try sheet(99, 51)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "pl")
+        XCTAssertEqual(try frame(skin, scene, "tile").y, 118)
+    }
 }

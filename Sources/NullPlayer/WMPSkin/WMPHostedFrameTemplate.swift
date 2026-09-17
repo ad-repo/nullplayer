@@ -689,9 +689,44 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                                 backingScale: backingScale, repairing: false)
         else { return nil }
         var assembled = first
-        // A view drawn whole cannot come apart, so neither the repair pass nor the ring-open
-        // refusal has a question to answer (W209 prototype).
-        if Self.drawsWholeDonorView { return assembled.artwork }
+        // **A view drawn whole cannot come *apart*, but it can still be drawn short (W212).**
+        //
+        // The frame build is a private builder outside the script runtime, so a side tile whose
+        // height only the skin's own `onResize` ever sets keeps its bitmap's — `Alienware Invader`
+        // sizes both its rails in `onPlResize()` and the borrowed frame carried a 20% bare band
+        // down each side, which is the desktop showing through a 99pt rail on every hosted window.
+        //
+        // So the repair pass is reachable here, under the same rule as the ring path — only for a
+        // frame whose own edges came out bare — and under two more, because this is the attempt
+        // that was measured, reverted and recorded as a dead end (`W212`): the furniture
+        // classification is **pinned to the first pass**, where the pieces are the size their
+        // author drew them, and the repair is accepted only if it closes the gap *and* leaves the
+        // donor's client hole exactly where the first pass put it. A repair that moves the hole is
+        // rewriting the window, not closing a seam.
+        if Self.drawsWholeDonorView {
+            // `edgeGaps` is [top, left, bottom, right]. **Only the side that came out bare is
+            // spanned**: giving this donor's top tile the width of the canvas as well painted its
+            // white filler straight over both side rails, because the tile is drawn after them.
+            let down = max(first.gaps[1], first.gaps[3]) > Self.ringEdgeGapLimit
+            let across = max(first.gaps[0], first.gaps[2]) > Self.ringEdgeGapLimit
+            if first.gap > Self.ringEdgeGapLimit,
+               down ? !stretchedDownNodeIDs.isEmpty : !stretchedAcrossNodeIDs.isEmpty,
+               let repaired = try await composeRing(builder: builder, renderer: renderer, size: size,
+                                                    backingScale: backingScale, repairing: true,
+                                                    spans: (down, across),
+                                                    pinnedFurniture: first.furniture),
+               repaired.gap < first.gap,
+               // **The hole may not move.** Not the donor's client rect — the *window's* content
+               // rect, which is the client rect mapped through the frame's own extent: stretching
+               // a tile down paints further than the first pass did, the alpha bounding box grows
+               // with it, and the hole rides the crop. `KungFuChaos` and `The_Last_Samurai` are
+               // both that shape — three edges closer to closed and 47pt of the window's interior
+               // taken by a border that is not there.
+               Self.sameHole(repaired.artwork.contentRect, first.artwork.contentRect) {
+                assembled = repaired
+            }
+            return assembled.artwork
+        }
         if first.gap > Self.ringEdgeGapLimit,
            !extraNodeIDs.isEmpty || !stretchedDownNodeIDs.isEmpty || !stretchedAcrossNodeIDs.isEmpty {
             if let repaired = try await composeRing(builder: builder, renderer: renderer, size: size,
@@ -711,11 +746,15 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// One complete ring: built, grown if it falls short of its own view, cropped to its extent,
     /// measured for bare edges, and opened up so it can be painted over the content.
     private func composeRing(builder: WMPSceneBuilder, renderer: WMPRenderer, size: CGSize,
-                             backingScale: CGFloat, repairing: Bool) async throws
-        -> (artwork: SkinnedSurfaceFrameArtwork, gap: CGFloat)? {
+                             backingScale: CGFloat, repairing: Bool,
+                             spans: (down: Bool, across: Bool) = (true, true),
+                             pinnedFurniture: Set<Int>? = nil) async throws
+        -> (artwork: SkinnedSurfaceFrameArtwork, gap: CGFloat, gaps: [CGFloat],
+            furniture: Set<Int>, client: CGRect)? {
         guard var built = try await ringRender(builder: builder, renderer: renderer, canvas: size,
                                                backingScale: backingScale,
-                                               repairing: repairing) else { return nil }
+                                               repairing: repairing, spans: spans,
+                                               pinnedFurniture: pinnedFurniture) else { return nil }
 
         // **A ring does not always reach the edges of its own view (W207).** `Ice`'s `plView` parks
         // a hidden drawer down its right side — every right-anchored piece is placed at
@@ -735,7 +774,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                height: size.height + max(0, shortfall.height))
             if let second = try await ringRender(builder: builder, renderer: renderer, canvas: grown,
                                                  backingScale: backingScale,
-                                                 repairing: repairing) {
+                                                 repairing: repairing, spans: spans,
+                                                 pinnedFurniture: pinnedFurniture) {
                 built = second
             }
         }
@@ -750,7 +790,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         // from the alpha — and all three resolve perfectly for a donor whose pieces only meet at
         // the *skin's own* layout. Nothing on the `HOSTED-FRAME` line can see that; the assembled
         // pixels can. The caller decides what to do with the number.
-        let gap = Self.widestEdgeGap(cropped, scale: backingScale) ?? 0
+        let gaps = Self.edgeGaps(cropped, scale: backingScale) ?? [0, 0, 0, 0]
+        let gap = gaps.max() ?? 0
 
         // The extent is the frame; map the client hole into it and then onto the window.
         let scaleX = built.extent.width > 0 ? size.width / built.extent.width : 1
@@ -758,7 +799,9 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         var content = CGRect(x: (built.client.minX - built.extent.minX) * scaleX,
                              y: (built.client.minY - built.extent.minY) * scaleY,
                              width: built.client.width * scaleX, height: built.client.height * scaleY)
+        let hole = content
         content = Self.reclaimingSideRacks(content, in: size)
+        content = Self.clearOfTheDonorsOwnRail(content, hole: hole, in: cropped, size: size)
         // **Erase the interior fill so the frame can be painted whole (W209).** See
         // `SkinnedSurfaceFrameArtwork.paintsOverContent` for what the cut it replaces was costing.
         let opened = Self.erasingInteriorFill(cropped, content: content, size: size,
@@ -773,7 +816,105 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             image: opened?.image ?? cropped, size: size, contentRect: content,
             trailingCornerWidth: built.corner.map { $0 * scaleX },
             wasScaledToFit: abs(scaleX - 1) > 0.001 || abs(scaleY - 1) > 0.001,
-            paintsOverContent: opened != nil), gap)
+            paintsOverContent: opened != nil), gap, gaps, built.furniture, built.client)
+    }
+
+    /// **A rack may be reclaimed only as far as the donor leaves it unpainted (W212).**
+    ///
+    /// `reclaimingSideRacks` hands a one-sided margin back to our content on the reading that a
+    /// margin that deep is furniture rather than border. On `Alienware Invader` half of it is
+    /// furniture and half is not: its `plView` states a 134pt left margin, of which 99pt is a
+    /// three-piece rail it paints its own list *beside*, and the rule handed all 134 away. The
+    /// frame is painted over the content (W209), so 54pt of every hosted window was laid out under
+    /// an opaque rail — the grey column, reported 2026-09-17.
+    ///
+    /// **What separates the rail from the rack is neither position nor paint order** — both sit in
+    /// the reclaimed strip, and this donor paints both after its list. It is that the rail is the
+    /// donor's *own artwork* and the rack, once dropped, leaves bare canvas. So the strip is
+    /// measured: how far in from the edge the donor paints something that is neither transparent
+    /// nor its interior fill.
+    ///
+    /// The fill has to be excluded or the measurement answers the opposite question. These border
+    /// bitmaps carry the interior colour baked in for the skin's own list to cover — `f_right_tile`
+    /// is 96px wide and its inner 73 are opaque `(255,255,255,255)` — so a run measured on alpha
+    /// alone reads a 96pt right border and takes back the width the donor gives its own content. It
+    /// is counted, not assumed, exactly as `erasingInteriorFill` counts it, and a donor whose
+    /// interior is a picture has no fill to exclude and is left alone.
+    ///
+    /// The run is the **median** across the rows the hole spans, so a rail with a gap in it — this
+    /// donor's side tiles are sized by a script the frame build never runs, leaving a 20% bare band
+    /// down each side — still reads its own thickness.
+    private static func clearOfTheDonorsOwnRail(_ content: CGRect, hole: CGRect,
+                                                in image: CGImage, size: CGSize) -> CGRect {
+        guard content.minX < hole.minX || content.maxX > hole.maxX else { return content }
+        let width = image.width, height = image.height
+        guard width > 0, height > 0, size.width > 0, size.height > 0, !hole.isEmpty else {
+            return content
+        }
+        let pixelsX = CGFloat(width) / size.width, pixelsY = CGFloat(height) / size.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = pixels.withUnsafeMutableBytes({ bytes -> CGContext? in
+            CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        }) else { return content }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        func key(_ index: Int) -> UInt32 {
+            UInt32(pixels[index] >> 5) << 10 | UInt32(pixels[index + 1] >> 5) << 5
+                | UInt32(pixels[index + 2] >> 5)
+        }
+        let y0 = max(0, Int((hole.minY * pixelsY).rounded(.down)))
+        let y1 = min(height, Int((hole.maxY * pixelsY).rounded()))
+        let x0 = max(0, Int((hole.minX * pixelsX).rounded(.down)))
+        let x1 = min(width, Int((hole.maxX * pixelsX).rounded()))
+        guard y1 - y0 >= 2, x1 - x0 >= 2 else { return content }
+        var tally: [UInt32: Int] = [:]
+        for y in y0..<y1 {
+            let row = y * width * 4
+            for x in x0..<x1 where pixels[row + x * 4 + 3] > 200 {
+                tally[key(row + x * 4), default: 0] += 1
+            }
+        }
+        let area = (x1 - x0) * (y1 - y0)
+        guard area > 0, let fill = tally.max(by: { $0.value < $1.value }),
+              CGFloat(fill.value) >= CGFloat(area) * 0.5 else { return content }
+
+        func isBorder(_ index: Int) -> Bool {
+            pixels[index + 3] > 200 && key(index) != fill.key
+        }
+        func median(_ runs: [Int]) -> CGFloat {
+            guard !runs.isEmpty else { return 0 }
+            return CGFloat(runs.sorted()[runs.count / 2])
+        }
+        // **The run tolerates a hole in the artwork, because these rails have one.** A strict run
+        // of border pixels stops at the first that is not: `pl_left_tile` carries a one-pixel pure
+        // white highlight 15px in, which reads as fill and answered a 13pt rail for a 99pt one. So
+        // the run is the furthest point in from the edge at which the strip behind it is still
+        // *mostly* painted — dense enough to be artwork, which a bare margin never is.
+        func run(_ row: Int, from edge: Int, step: Int, limit: Int) -> Int {
+            var painted = 0, reached = 0
+            for offset in 0..<limit where offset < width {
+                guard isBorder(row + (edge + offset * step) * 4) else { continue }
+                painted += 1
+                // Dense enough behind it to be artwork, and the run ends on the artwork rather
+                // than on the slack the density test allows past it.
+                if painted * 5 >= (offset + 1) * 4 { reached = offset + 1 }
+            }
+            return reached
+        }
+        var fromLeft: [Int] = [], fromRight: [Int] = []
+        for y in y0..<y1 {
+            let row = y * width * 4
+            fromLeft.append(run(row, from: 0, step: 1, limit: x0))
+            fromRight.append(run(row, from: width - 1, step: -1, limit: width - x1))
+        }
+        // Never past the donor's own hole: the rail is a floor under the reclaim, not a new border.
+        let left = min(hole.minX, max(content.minX, median(fromLeft) / pixelsX))
+        let right = min(size.width - hole.maxX, max(size.width - content.maxX, median(fromRight) / pixelsX))
+        guard left > content.minX || right > size.width - content.maxX else { return content }
+        return CGRect(x: left, y: content.minY, width: max(0, size.width - left - right),
+                      height: content.height)
     }
 
     /// Remove the ring's **interior fill** — the flat colour a donor paints behind its own content —
@@ -931,8 +1072,10 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// One ring render on a canvas of `canvas` points, plus the three things read off it: the client
     /// hole, the top-right corner's width, and **the extent the ring's pixels actually cover**.
     private func ringRender(builder: WMPSceneBuilder, renderer: WMPRenderer, canvas: CGSize,
-                            backingScale: CGFloat, repairing: Bool) async throws
-        -> (image: CGImage, client: CGRect, corner: CGFloat?, extent: CGRect)? {
+                            backingScale: CGFloat, repairing: Bool,
+                            spans: (down: Bool, across: Bool) = (true, true),
+                            pinnedFurniture: Set<Int>? = nil) async throws
+        -> (image: CGImage, client: CGRect, corner: CGFloat?, extent: CGRect, furniture: Set<Int>)? {
         // **Below the donor's own floor, build at the floor (W209 prototype).** A skin that declares
         // `minWidth=560 minHeight=260` has never been asked what 357x238 looks like, and it shows:
         // `Back to the Future Trilogy` is clean at every size from 420x260 up and grows a ~13x20pt
@@ -947,7 +1090,9 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         }
         let scene = try await builder.build(viewID: viewID,
                                             requestedSize: WMPSize(width: built.width, height: built.height),
-                                            overrides: repairing ? laidOut(on: canvas) : unclamped)
+                                            overrides: repairing
+                                                ? laidOut(on: canvas, down: spans.down, across: spans.across)
+                                                : unclamped)
         guard let client = scene.geometries[clientNodeID]?.absoluteFrame, !client.isEmpty else {
             return nil
         }
@@ -1017,7 +1162,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                         uniquingKeysWith: min)
             let clientOrder = paintOrder[clientNodeID]
             let bounds = CGRect(x: 0, y: 0, width: built.width, height: built.height)
-            let furniture = Set(scene.geometries.compactMap { id, geometry -> Int? in
+            let derivedFurniture = Set(scene.geometries.compactMap { id, geometry -> Int? in
                 let frame = geometry.absoluteFrame
                 let piece = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
                 guard piece.width > 0, piece.height > 0 else { return nil }
@@ -1034,6 +1179,13 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 guard !inReclaimed.isNull else { return nil }
                 return inReclaimed.width * inReclaimed.height > half ? id : nil
             })
+            // **The repair pass does not re-classify (W212).** Giving a script-sized tile the span
+            // of its side changes every rect the test above reads: this donor's list rack doubles
+            // in height, reaches the bottom edge, and is exempted as a border piece — which is how
+            // the earlier attempt at this repair put the rack back on every hosted window. The
+            // first pass is where the pieces are the size their author drew them, so its verdict
+            // is the one that stands.
+            let furniture = pinnedFurniture ?? derivedFurniture
             let whole = scene.commands.filter {
                 !excludedNodeIDs.contains($0.stableID) && !furniture.contains($0.stableID)
             }
@@ -1049,7 +1201,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             return (drawn.image,
                     CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
                     topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
-                    Self.opaqueExtent(drawn.image, scale: backingScale) ?? canvasRect)
+                    Self.opaqueExtent(drawn.image, scale: backingScale) ?? canvasRect,
+                    furniture)
         }
         let admitted = repairing ? ringNodeIDs : ringNodeIDs.subtracting(extraNodeIDs)
         let ring = scene.commands.filter { admitted.contains($0.stableID) && !overlapping.contains($0.stableID) }
@@ -1096,7 +1249,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         return (image,
                 CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
                 topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
-                extent)
+                extent, [])
     }
 
     /// The bounding box, in points, of everything in `image` that is not fully transparent.
@@ -1370,15 +1523,19 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// (W209). See `stretchedDownNodeIDs`. The length is the whole canvas rather than the distance
     /// to the next corner: a tile is clipped by the window and painted under the corner pieces,
     /// which are drawn after it by the same paint order the skin declares.
-    private func laidOut(on canvas: CGSize) -> WMPSceneOverrides {
+    private func laidOut(on canvas: CGSize, down: Bool = true, across: Bool = true) -> WMPSceneOverrides {
         var overrides = unclamped
         // `geometry`, not `properties`: a dimension is resolved through `parseDimension`, which
         // reads the geometry overrides a script's own writes land in.
-        for id in stretchedDownNodeIDs {
-            overrides.geometry[WMPScenePropertyAddress(stableID: id, property: "height")] = canvas.height
+        if down {
+            for id in stretchedDownNodeIDs {
+                overrides.geometry[WMPScenePropertyAddress(stableID: id, property: "height")] = canvas.height
+            }
         }
-        for id in stretchedAcrossNodeIDs {
-            overrides.geometry[WMPScenePropertyAddress(stableID: id, property: "width")] = canvas.width
+        if across {
+            for id in stretchedAcrossNodeIDs {
+                overrides.geometry[WMPScenePropertyAddress(stableID: id, property: "width")] = canvas.width
+            }
         }
         return overrides
     }
@@ -1408,6 +1565,23 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 in: slices.panel)
         }
         let reference = CGSize(width: max(minimumSize.width, 320), height: max(minimumSize.height, 240))
+        // **Composed, not derived, because half of a rack can be the donor's own rail (W212).**
+        // The reclaim these insets are measured through is bounded by the artwork the donor paints
+        // in that margin (`clearOfTheDonorsOwnRail`), which is a fact about pixels — so the border
+        // the window is grown by is read off the frame it will wear, at the reference size, rather
+        // than from a second rule that can only see the markup. A donor whose ring cannot be
+        // composed falls back to the geometry, which is the answer this rule gave before.
+        if Self.drawsWholeDonorView,
+           let composed = try? await composeRing(builder: builder, renderer: renderer,
+                                                 size: reference, backingScale: backingScale,
+                                                 repairing: false) {
+            let content = composed.artwork.contentRect
+            if !content.isEmpty {
+                return NSEdgeInsets(top: max(0, content.minY), left: max(0, content.minX),
+                                    bottom: max(0, reference.height - content.maxY),
+                                    right: max(0, reference.width - content.maxX))
+            }
+        }
         let scene = try await builder.build(
             viewID: viewID,
             requestedSize: WMPSize(width: reference.width, height: reference.height))
@@ -1475,6 +1649,12 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             }
         }
         return context.makeImage()
+    }
+
+    /// Two content rects that are the same hole, to within the rounding a re-render can move.
+    private static func sameHole(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) < 0.5 && abs(lhs.minY - rhs.minY) < 0.5
+            && abs(lhs.width - rhs.width) < 0.5 && abs(lhs.height - rhs.height) < 0.5
     }
 
     /// Widen the client hole back over a **side rack**: a donor panel's own furniture beside its

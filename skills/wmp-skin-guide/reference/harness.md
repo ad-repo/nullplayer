@@ -608,14 +608,17 @@ falsified a fix, ask whether the thing you changed is something a dump can repre
 `HOSTED-FRAME`'s `gaps=` is the longest unbroken **bare** run in a 6pt band at each of the four
 edges. Two things follow, and both were learned the expensive way on 2026-09-17.
 
-- **It cannot see anything further in than 6pt.** `Alienware Invader` reads
-  `gaps=0.000/0.000/0.000/0.000` at 472x290 while the window on screen carries three white blocks and
-  a 54pt opaque column over its content (the `W212` row). A clean `gaps=` is not a clean frame.
+- **It cannot see anything further in than 6pt.** `Alienware Invader` read
+  `gaps=0.000/0.000/0.000/0.000` at 472x290 while the window on screen carried three white blocks and
+  a 54pt opaque column over its content (W212, closed 2026-09-17). A clean `gaps=` is not a clean
+  frame — and the mirror holds: `gaps=` was the *only* field that could see the bare band down the
+  same skin's rails, which the same fix closed, so neither reading substitutes for the other.
 - **Bare means transparent, and a PNG viewer draws transparent and opaque white identically.** This
   donor's border bitmaps carry its interior colour baked in — `f_top_right.png` is a silver band over
   opaque `(255,255,255,255)` — so `WMP_HOSTED_FRAME_DUMP`'s picture looked like a frame full of holes
-  and was a frame full of white paint. Two diagnoses were drawn from the picture and both were wrong.
-  Read the alpha:
+  and was a frame full of white paint. Two diagnoses were drawn from the picture and both were wrong;
+  the third came off the alpha *and* off a node-by-node trace of what the frame build actually drew,
+  and found a tile 117pt from where the skin's own window puts it. Read the alpha:
 
 ```bash
 python3 -c "

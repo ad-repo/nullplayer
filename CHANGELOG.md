@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- **A window NullPlayer draws itself no longer wears white blocks or a grey column where a Media
+  Player skin's border should be.** On *Alienware Invader* the PeppyMeter, waveform and flow windows
+  carried a white slab in the right of the title bar, a bare gap two-thirds of the way down each
+  side rail, and a grey band lying across the left of their contents. Three separate causes, all of
+  them about a border being drawn somewhere other than where the skin puts it: a piece positioned
+  relative to another piece was reading that piece's *authored* place rather than where it actually
+  sits, a decorative column beside the skin's own list was being counted as empty margin and handed
+  to your content, and a rail the skin sizes from its own script was drawn only one tile tall. The
+  borrowed frame now matches the skin's own window on all three counts. Every other skin's frame is
+  unchanged bar four, each of which came out closer to the skin's own artwork than before.
+
 - **A window NullPlayer draws itself now keeps its full size and wears the skin's border around it,
   instead of shrinking to fit inside one.** Media Player skins lend borders of wildly different
   thickness — *Anemone*'s spiky drawer is 173 by 145 points of frame, where *Halo 2*'s is 22 — and

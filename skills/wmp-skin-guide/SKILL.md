@@ -160,6 +160,28 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   states a 157pt right rack, and growing by it put 157pt of decorative artwork on every window's
   right edge with nothing in it. Read `WMP_BORDER_TRACE` in `reference/harness.md` before touching
   this: three of its failure modes are invisible in both a screenshot and a `HOSTED-FRAME` line.
+- **A donor's *own rail* is not a rack, and the reclaim stops where its artwork does (W212).**
+  `reclaimingSideRacks` gives a lopsided margin back to our content on the reading that it is
+  furniture; on `Alienware Invader` half of it is a 99pt opaque rail, and with the frame painted
+  over the content 54pt of every hosted window was laid out under it. Neither position nor paint
+  order separates the two — W210 settled that both sit in the reclaimed strip. What does is that
+  the rail is *artwork* and a dropped rack leaves bare canvas, so `clearOfTheDonorsOwnRail`
+  measures how far in from each edge the donor paints something that is neither transparent nor
+  its **interior fill**. Excluding the fill is the whole rule: these border bitmaps carry the
+  interior colour baked in for the skin's own list to cover (`f_right_tile` is 96px wide with 73
+  of them opaque white), so a run measured on alpha alone reads a 96pt border and takes back the
+  width the donor gives its own content. `borderInsets` **composes** the frame at the reference
+  size rather than deriving insets from markup, so the window is grown by the border it will wear.
+- **A view drawn whole cannot come apart, but it can still be drawn short (W212).** The frame build
+  is outside the script runtime, so a side tile whose height only the skin's `onResize` sets keeps
+  its bitmap's — a 20% bare run down each side of `Alienware Invader`, which is the desktop showing
+  through a 99pt rail. The span repair is reachable under the whole-view render, under three guards
+  that each answer a measured failure: **furniture is classified on the first pass** (a stretched
+  rack reaches the bottom edge and the edge exemption lets it back in), **only the axis that came
+  out bare is spanned** (`edgeGaps` is `[top, left, bottom, right]`; spanning the top tile too
+  painted its white filler over both rails, which are drawn before it), and the repair is refused
+  if the window's **content rect moves** (stretching a tile down grows the alpha bounding box and
+  the hole rides the crop — `KungFuChaos` and `The_Last_Samurai` are that shape).
 - **A borrowed glyph is a lie about what it does (W208, and it is why W209 subtracts).** A skin's
   own buttons are anchored to its window's edges exactly as its corner bitmaps are, so nothing in
   the markup separates them by position. `Ice` writes its playlist shuffle six nodes before
@@ -803,6 +825,21 @@ queue, with the object model as the security boundary — see Amendment 2 in
   byte-identical across the whole family: a non-resizable player authors no
   centred pieces, so **this class lives entirely in the windows a skin opens beside its player** —
   which is why four phases of `mainView` work never saw it. `WMPAlignmentTests` pins both halves.
+- **A `wmpprop:` read of another element's geometry answers where that element *is*, not what it
+  authored (W212).** One hop on from the rule above, and the half of it that had no answer: the same
+  family states the tiles either side of its centred column as `top="wmpprop:plLeftCenter.top"`, and
+  centring computes a coordinate the markup does not carry, so `WMPInitialLayoutResolver` — which
+  reads the target's authored attribute — answered **0** and both tiles painted over the corner
+  pieces. `WMPSceneBuilder.parseDimension` answers such a read from the target's **resolved frame**,
+  or, when the layout walk has not reached it yet, from the coordinate its centring computes: the
+  walk is in *paint order*, so a tile at `zIndex=6` routinely reads a centre piece at `zIndex=10`.
+  **This only ever showed on a surface built without the script runtime**, because WMP answers the
+  read from the live object model and a skin's own window does the same through the runtime — so the
+  corpus render sweep is byte-identical across the change (552 of 553 images, the odd one being
+  `Scooby-Doo_2`'s random picture) and the one caller it moves is the borrowed frame
+  (`WMPHostedFrameTemplate`), where it was three white blocks on every hosted window. The
+  counter-evidence is pinned beside it: a target that states its own coordinate is read at that
+  coordinate.
 - **A `windowed="true"` `<EFFECTS>` is a real child window: nothing the skin paints goes over it
   (W144).** This is the *other* answer to the occlusion question the entry below settles for the
   windowless case, and the two are opposite on purpose — which is why 106 corpus skins say
