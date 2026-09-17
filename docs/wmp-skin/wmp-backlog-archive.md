@@ -2296,3 +2296,69 @@ control lost anywhere — with 20 surfaces tightening.
   defect — it was found, fixed, and was **not** why the window grew. Clearing the record still gave
   192x82 at launch and 192x145 on the first click. `WMP_SIZE_TRACE=1` (`reference/harness.md`)
   printed the backtrace and named `tightenClassicCenterStackIfNeeded` on its first run.
+
+## W209, W210, W212 — the borrowed window frame, and what empties Tier 1h
+
+Three rows closed 2026-09-17, in that order, each opened by the one before it. All three are about
+the pixels a donor lends a NullPlayer-owned window (`WMPHostedFrameTemplate`), and in all three
+**the donor's own view was correct throughout** — the asymmetry is the clue. The case studies are
+[`back-to-the-future-trilogy.md`](../../skills/wmp-skin-guide/reference/skins/back-to-the-future-trilogy.md)
+and [`alienware-invader.md`](../../skills/wmp-skin-guide/reference/skins/alienware-invader.md); the
+rules landed in `skills/wmp-skin-guide/SKILL.md` § *Every NullPlayer window in WMP mode is the
+skin's or is themed*.
+
+**W209 — a ring assembled from selected pieces is not the frame the skin drew.** The borrowed frame
+is now the donor view **drawn whole** with the skin's own content subtracted, instead of a ring
+built from pieces chosen by role. **88 rings of 185 archives draw a frame (was 67) and nothing is
+refused as open (was 21).**
+
+**W210 — a donor's own furniture is told from its border by the order it paints them.** Opened by
+W209 against `Alienware Invader`, whose left border is a *furnished* column: its own hole starts
+right of the rack, `reclaimingSideRacks` handed that 134pt strip to our content, and the frame
+paints over content — so the rack landed on the library's rows. Position cannot separate a rail from
+a rack: both sit in the reclaimed strip, touch no edge, and are more than half inside the widened
+hole, which is why measuring the furniture test against the reclaimed rect took `Ice`'s right rail
+with it. **Paint order can, because it is the donor's own answer to the same question**: a piece
+drawn *before* the client subview is behind the skin's list and behind ours; a piece drawn *after*
+it is over both. `Ice` paints its rail under a `zIndex=50` list, this skin paints its racks over a
+list with no `zIndex`. **Read it off `scene.commands`, the render order — never off `zIndex`, which
+is sibling-ordered.** The skin's own `plView` was fixed in the same change for a different reason: a
+view laid out at a size it was never authored at has already been resized, so its `onResize` now
+runs on both the player and auxiliary open paths before anyone sees it.
+
+**W212 — the three white blocks and the grey column.** Three rules landed, and the first is not
+about the frame at all:
+
+1. **A `wmpprop:` read of another element's geometry answers where that element was *laid out*.**
+   `plView` hangs each side column off a centred piece and states the tile beside it as
+   `top="wmpprop:plLeftCenter.top"`. Centring computes a coordinate the markup does not carry, so
+   the static resolver — reading the target's *authored* attribute — answered 0 and both tiles
+   painted over the corner pieces, putting the white those bitmaps carry for the skin's own list to
+   cover into the caption band. WMP answers that read from the live object model and the skin's own
+   window does the same through the script runtime; the frame build has no runtime, which is why the
+   one surface without one was the one that was wrong. It now answers from the target's resolved
+   frame, or from the coordinate its centring computes when the paint-order walk has not reached it.
+2. **A rack is reclaimed only as far as the donor leaves it *unpainted*** (`clearOfTheDonorsOwnRail`)
+   — the reclaim stops where the donor paints something that is neither transparent nor its interior
+   fill. **Excluding the interior fill is the rule, not a detail**: `f_right_tile` is 96px wide with
+   73 of them opaque white, and alpha alone reads that as a 96pt border.
+3. **The span repair is reachable under the whole-view render**, with three guards: furniture is
+   classified on the first pass (or a stretched rack reaches the bottom edge and the edge exemption
+   readmits it), only the axis that came out bare is spanned (or the top tile's white lands over both
+   rails), and the repair is refused if the window's content rect moves — which is what `KungFuChaos`
+   and `The_Last_Samurai` do.
+
+**Measured.** Corpus at 357x238 over 185 archives: **4 of 167 frame lines move, every one an
+improvement** — `Alienware Invader` (gaps 0.201 → 0.000), `T3-Skynet` (caption band and bottom bar
+close, `whole=no → yes`), `Frostbite` (bottom 0.235 → 0.134), `livin_it_skate` (content off its
+opaque button rail). `Ice`, `Star Wars`, `Halo 2` and `Back to the Future Trilogy` untouched. The
+553-image render sweep is 552 identical and 1 differing (`Scooby-Doo_2`'s documented random picture)
+with no `RENDER-DUMP`, `FINDING`, `COMPAT` or `BITMAPS` line changed — which is what says a builder
+change moves nothing that already had a runtime. Verified live on PeppyMeter, waveform and Flow with
+a track playing, and on `Ice` and `anemone`.
+
+**What these three rows are worth keeping for.** A `HOSTED-FRAME` line alone measured clean twice
+while the window was visibly wrong, and W212's `gaps=` read 0.000 on all four edges in the same
+state — **the white was not a hole, it was the donor's border bitmaps carrying its interior colour
+baked in as opaque white.** Three fixes were built, measured and reverted before the three rules
+above. Verify a borrowed-frame row by driving the app and capturing the live window.
