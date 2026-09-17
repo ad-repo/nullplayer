@@ -55,9 +55,13 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// nowhere near the corner). What the control must actually avoid is the corner bitmap, which
     /// is where a skin paints its *own* close button.
     let topRightNodeID: Int?
-    /// The donor view's own declared floor. A window smaller than this cannot be built at its own
-    /// size, because `WMPResizeLimits.clamp` is what every other consumer of this view obeys.
+    /// The donor view's own declared floor, as markup. **It is no longer obeyed when the ring is
+    /// laid out** (see `unclamped`); it is kept because the derivation reads it and because a floor
+    /// larger than the view's own width is the signature of the `Ice` case.
     let minimumSize: CGSize
+
+    /// The donor view node itself, so the floor can be overridden for the frame build alone.
+    let viewNodeID: Int
 
     /// The **one-piece panel** this frame is nine-sliced from, where the skin lends a panel rather
     /// than a ring (W207), or nil for the eight-piece ring every field above describes.
@@ -191,6 +195,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                     clientNodeID: hole.stableID,
                     topRightNodeID: nil,
                     minimumSize: .zero,
+                    viewNodeID: registration.node.stableID,
                     panelNodeID: node.stableID), depth, area)
             }
         }
@@ -212,6 +217,25 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 return true
             default:
                 if carriesTransport(child) { return true }
+            }
+        }
+        return false
+    }
+
+    /// Whether a node *is*, or wraps, something the user can press.
+    ///
+    /// `carriesTransport` asks the narrower question the panel path needs — is this the player's own
+    /// control cluster. A ring piece has to refuse anything clickable at all, because a corner is a
+    /// corner: `Ice`'s shuffle is a `<Repeatbutton>` (which `carriesTransport` does catch) but the
+    /// same skin family wraps plain `<button>`s in edge-anchored subviews too, and one of those in a
+    /// corner slot is the same defect.
+    private static func isControl(_ node: WMPNode) -> Bool {
+        for child in node.children {
+            switch child.kind {
+            case .button, .repeatButton, .buttonGroup, .slider, .customSlider, .popup:
+                return true
+            default:
+                if isControl(child) { return true }
             }
         }
         return false
@@ -285,6 +309,32 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             let vertical = WMPAxisAlignment(vertical: literal(child, "verticalAlignment"))
             if hasBackgroundImage(child) {
                 guard let role = Role(horizontal: horizontal, vertical: vertical) else { continue }
+                // **A ring piece is decoration. A subview with a control in it is a control (W208).**
+                //
+                // The role is read off alignment alone, and a skin's own buttons are anchored to the
+                // window's edges exactly as its corner bitmaps are — so they compete for the same
+                // eight slots, and "first declaration wins" hands the slot to whichever the author
+                // happened to write first. `Ice` writes its playlist shuffle button —
+                // `<subview id="Plshuffle" horizontalAlignment="left" verticalAlignment="Bottom"
+                // backgroundimage="Pl-shuffle.bmp">`, 26x24, wrapping a `<Repeatbutton>` — six nodes
+                // *before* `Vid-bottomleft.bmp`, so every NullPlayer window wearing that ring got the
+                // skin's shuffle glyph where its bottom-left corner should be, hanging outside the
+                // frame's own curve. Reported 2026-09-16: *"you are still using the wrong piece on
+                // the bottom left"*.
+                //
+                // This is the ring's half of a rule the panel path already states — a container
+                // holding the player's controls is not a frame — and of the doctrine at the top of
+                // this file: the donor's buttons are the skin's window, not ours. Borrowing one is
+                // not merely ugly, it is a lie about what that glyph does.
+                // **Transport only, deliberately.** Refusing *anything* clickable costs seven of
+                // the corpus's 88 rings: a window's own resize grip and close box are plain
+                // `<button>`s wrapped in edge-anchored subviews, and they are frame furniture — the
+                // corner art *is* the grip in `Ice`'s own bottom-right. What must never be borrowed
+                // is a control that claims to do something to the user's playback, which is exactly
+                // the set `carriesTransport` already names for the panel path. Measured: this leaves
+                // all 88 ring lines standing and moves only the corners a transport control had
+                // taken.
+                if carriesTransport(child) { continue }
                 // First declaration wins, matching the duplicate-id rule elsewhere in the engine:
                 // a skin that layers two bitmaps in one corner authored the lower one first.
                 if ring[role] == nil { ring[role] = child }
@@ -300,7 +350,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             clientNodeID: client.stableID,
             topRightNodeID: ring[.topRight]?.stableID,
             minimumSize: CGSize(width: number(view, "minWidth") ?? number(view, "width") ?? 0,
-                                height: number(view, "minHeight") ?? number(view, "height") ?? 0)
+                                height: number(view, "minHeight") ?? number(view, "height") ?? 0),
+            viewNodeID: view.stableID
         )
     }
 
@@ -350,34 +401,104 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             return try await panelArtwork(builder: builder, renderer: renderer, size: size,
                                           backingScale: backingScale)
         }
+        guard var built = try await ringRender(builder: builder, renderer: renderer, canvas: size,
+                                              backingScale: backingScale) else { return nil }
+
+        // **A ring does not always reach the edges of its own view (W207).** `Ice`'s `plView` parks
+        // a hidden drawer down its right side — every right-anchored piece is placed at
+        // `view.width-163` and is 65 wide — so ~117pt of the canvas is authored empty, and the frame
+        // we cut from it left the right sixth of every hosted window bare. Measured as the rendered
+        // alpha's bounding box, which is the only place that shortfall is visible: the markup is a
+        // pile of `jscript:` offsets and every one of them resolves.
+        //
+        // The answer is to give the ring the canvas it needs and then keep only the ring: build a
+        // second time on a canvas grown by the shortfall, and crop to the extent. Exactly one extra
+        // build, only for a donor that needs it — a ring that already fills its view measures a full
+        // extent, takes neither branch, and comes out byte-identical.
+        let shortfall = CGSize(width: size.width - built.extent.width,
+                               height: size.height - built.extent.height)
+        if shortfall.width > 1 || shortfall.height > 1 {
+            let grown = CGSize(width: size.width + max(0, shortfall.width),
+                               height: size.height + max(0, shortfall.height))
+            if let second = try await ringRender(builder: builder, renderer: renderer, canvas: grown,
+                                                 backingScale: backingScale) {
+                built = second
+            }
+        }
+        guard let cropped = built.image.cropping(to: CGRect(
+            x: (built.extent.minX * backingScale).rounded(),
+            y: (built.extent.minY * backingScale).rounded(),
+            width: (built.extent.width * backingScale).rounded(),
+            height: (built.extent.height * backingScale).rounded())) else { return nil }
+
+        // The extent is the frame; map the client hole into it and then onto the window.
+        let scaleX = built.extent.width > 0 ? size.width / built.extent.width : 1
+        let scaleY = built.extent.height > 0 ? size.height / built.extent.height : 1
+        var content = CGRect(x: (built.client.minX - built.extent.minX) * scaleX,
+                             y: (built.client.minY - built.extent.minY) * scaleY,
+                             width: built.client.width * scaleX, height: built.client.height * scaleY)
+        content = Self.reclaimingSideRacks(content, in: size)
+        return SkinnedSurfaceFrameArtwork(
+            image: cropped, size: size, contentRect: content,
+            trailingCornerWidth: built.corner.map { $0 * scaleX },
+            wasScaledToFit: abs(scaleX - 1) > 0.001 || abs(scaleY - 1) > 0.001)
+    }
+
+    /// One ring render on a canvas of `canvas` points, plus the three things read off it: the client
+    /// hole, the top-right corner's width, and **the extent the ring's pixels actually cover**.
+    private func ringRender(builder: WMPSceneBuilder, renderer: WMPRenderer, canvas: CGSize,
+                            backingScale: CGFloat) async throws
+        -> (image: CGImage, client: CGRect, corner: CGFloat?, extent: CGRect)? {
         let scene = try await builder.build(viewID: viewID,
-                                            requestedSize: WMPSize(width: size.width, height: size.height))
+                                            requestedSize: WMPSize(width: canvas.width, height: canvas.height),
+                                            overrides: unclamped)
         guard let client = scene.geometries[clientNodeID]?.absoluteFrame, !client.isEmpty else {
             return nil
         }
         let ring = scene.commands.filter { ringNodeIDs.contains($0.stableID) }
         guard !ring.isEmpty else { return nil }
-
-        let canvas = scene.canvasSize
-        let ringOnly = WMPScene(viewID: scene.viewID, canvasSize: canvas,
+        let ringOnly = WMPScene(viewID: scene.viewID, canvasSize: scene.canvasSize,
                                 resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
                                 commands: ring, hits: [], widgets: [], geometries: [:],
                                 unresolved: [], diagnostics: [], dirtyBounds: nil,
                                 metrics: scene.metrics, wasBuiltOnMainThread: false)
         let rendered = try await renderer.render(scene: ringOnly, backingScale: backingScale)
+        let full = CGRect(x: 0, y: 0, width: scene.canvasSize.width, height: scene.canvasSize.height)
+        let extent = Self.opaqueExtent(rendered.image, scale: backingScale) ?? full
+        return (rendered.image,
+                CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
+                topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
+                extent)
+    }
 
-        // The scene may have been clamped up to the donor's floor; map it back onto the window.
-        let scaleX = canvas.width > 0 ? size.width / canvas.width : 1
-        let scaleY = canvas.height > 0 ? size.height / canvas.height : 1
-        var content = CGRect(x: client.x * scaleX, y: client.y * scaleY,
-                             width: client.width * scaleX, height: client.height * scaleY)
-        content = Self.reclaimingSideRacks(content, in: size)
-        // The corner piece our close control has to clear, mapped onto the window the same way.
-        let corner = topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }
-        return SkinnedSurfaceFrameArtwork(
-            image: rendered.image, size: size, contentRect: content,
-            trailingCornerWidth: corner.map { $0.width * scaleX },
-            wasScaledToFit: abs(scaleX - 1) > 0.001 || abs(scaleY - 1) > 0.001)
+    /// The bounding box, in points, of everything in `image` that is not fully transparent.
+    ///
+    /// Alpha only — no colour rule, no threshold to tune. It answers one question: how much of the
+    /// canvas did the ring paint. Nil when the image is empty or cannot be read, and the caller then
+    /// treats the whole canvas as the extent, which is the pre-W207 behaviour.
+    private static func opaqueExtent(_ image: CGImage, scale: CGFloat) -> CGRect? {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0, scale > 0 else { return nil }
+        var alpha = [UInt8](repeating: 0, count: width * height)
+        guard let context = alpha.withUnsafeMutableBytes({ bytes -> CGContext? in
+            CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                      bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                      bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue)
+        }) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            let row = y * width
+            for x in 0..<width where alpha[row + x] != 0 {
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        return CGRect(x: CGFloat(minX) / scale, y: CGFloat(minY) / scale,
+                      width: CGFloat(maxX - minX + 1) / scale, height: CGFloat(maxY - minY + 1) / scale)
     }
 
     /// Nine-slice the one-piece panel (W207) onto a window of `size` points.
@@ -397,6 +518,20 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// in the wrong place.
     private func panelArtwork(builder: WMPSceneBuilder, renderer: WMPRenderer, size: CGSize,
                               backingScale: CGFloat) async throws -> SkinnedSurfaceFrameArtwork? {
+        guard let slices = try await panelSlices(builder: builder, renderer: renderer,
+                                                 backingScale: backingScale) else { return nil }
+        return Self.compose(slices, size: size, backingScale: backingScale)
+    }
+
+    /// The panel's own bitmap and the four slice lines cut out of it, resolved from the donor's
+    /// layout alone.
+    ///
+    /// **Nothing here depends on the window's size**, and that is the point: a one-piece panel is
+    /// laid out by its author at one size with no alignment rules to re-resolve, so its borders are
+    /// four constants. `borderInsets` is those constants, which is what lets a hosted window be
+    /// *grown* around its interior before any frame has been rendered for it (W207).
+    func panelSlices(builder: WMPSceneBuilder, renderer: WMPRenderer,
+                     backingScale: CGFloat) async throws -> PanelSlices? {
         guard let panelNodeID else { return nil }
         // **A drawer is authored shut, and a node that is not drawn resolves no frame.** Every panel
         // in this population is a `visible="false"` tray the skin slides out on a button — the
@@ -460,40 +595,129 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             .allSatisfy({ $0 >= Self.minimumBorder }) else {
             throw WMPHostedFrameRefusal.panelCannotBeSliced
         }
-        // **A panel's borders are absolute, and a short window has to be given them anyway (W207).**
-        //
-        // `anemone`'s tray is 83/72/90/73 around its list — 173x145 of frame — and the spectrum
-        // family opens about 600x150. Two answers were tried and reported wrong, in this order:
-        // composing at `floor + 1` and mapping that onto the window left a **five-point hole** with
-        // the whole drawer squashed around it (*"waveform, cava and the analyser"*), and refusing the
-        // window outright took the border off every one of them (*"you removed the border from all
-        // the windows except peppymeter"* — PeppyMeter being the only one tall enough to clear the
-        // floor). The third is the ring path's own: **scale the frame, uniformly, until the hole is
-        // worth having.** The slice is composed on a canvas large enough that the borders leave a
-        // third of each axis for content, and the whole picture is then drawn into the window —
-        // thinner borders in the same proportions the skin drew, never a distorted one, and never a
-        // window that is all frame. `wasScaledToFit` reports it, exactly as a ring below its donor's
-        // floor does.
-        //
-        // A window that *can* carry the borders at 1:1 is untouched: the scale is 1 and the hole
-        // absorbs every point of the window's own size, which is the whole purpose of slicing
-        // (550x464 → 83/72/83/73 with a 384x319 hole; 1200x800 → the same borders, a 1034x655 hole).
+        return PanelSlices(image: cropped,
+                           panel: CGSize(width: panel.width, height: panel.height),
+                           margins: margins)
+    }
+
+    /// The panel's bitmap and the four slice lines cut out of it. Size-independent, by construction.
+    struct PanelSlices: @unchecked Sendable {
+        let image: CGImage
+        /// The panel's own size in points, the coordinates `margins` are stated in.
+        let panel: CGSize
+        /// Top / left / bottom / right, in points. **These are the border, at the thickness its
+        /// author drew it**, and they never change with the window (W207).
+        let margins: NSEdgeInsets
+    }
+
+    /// **The border is added around the interior, never taken out of it (W207).**
+    ///
+    /// The slice is composed at the window's own size with its four borders at 1:1 — so the hole is
+    /// exactly `window − border`, and a window that wants a 600x150 interior is expected to have
+    /// been *grown* to 600+left+right by 150+top+bottom before it asks
+    /// (`HostedWindowBorderLayout`, driven by `borderInsets`). Reported 2026-09-16:
+    /// *"the interior window … should be its full borderless size, then the border is added after
+    /// that, and the final size is simply the full interior + border"*.
+    ///
+    /// Three answers preceded it and each was reported wrong: composing at `floor + 1` and mapping
+    /// that onto the window left a five-point hole with the drawer squashed around it; refusing a
+    /// window that could not carry the borders took the frame off everything but PeppyMeter; and a
+    /// uniform scale-to-fit sized so the hole keeps a third of each axis is the thin, shrunken
+    /// border the report above is about. Growing the window is the fourth, and the only one that
+    /// leaves both the interior and the border at the size their authors chose.
+    ///
+    /// A window that still cannot carry its borders — one clamped by the screen, or one asking
+    /// before the growth has landed — is answered nil and keeps the palette chrome for that size,
+    /// rather than being handed a frame with no room in it.
+    private static func compose(_ slices: PanelSlices, size: CGSize,
+                                backingScale: CGFloat) -> SkinnedSurfaceFrameArtwork? {
+        let margins = slices.margins
         let floor = CGSize(width: margins.left + margins.right, height: margins.top + margins.bottom)
-        let fit = max(1, max(floor.width * 1.5 / size.width, floor.height * 1.5 / size.height))
-        let target = CGSize(width: size.width * fit, height: size.height * fit)
-        guard let composed = Self.ninePatch(cropped, panel: CGSize(width: panel.width, height: panel.height),
-                                            margins: margins, target: target, scale: backingScale)
-        else { return nil }
-        let scaleX = target.width > 0 ? size.width / target.width : 1
-        let scaleY = target.height > 0 ? size.height / target.height : 1
-        var content = CGRect(x: margins.left * scaleX, y: margins.top * scaleY,
-                             width: max(0, (target.width - floor.width)) * scaleX,
-                             height: max(0, (target.height - floor.height)) * scaleY)
-        content = Self.reclaimingSideRacks(content, in: size)
+        guard size.width >= floor.width + minimumInterior.width,
+              size.height >= floor.height + minimumInterior.height else { return nil }
+        guard let composed = ninePatch(slices.image, panel: slices.panel, margins: margins,
+                                       target: size, scale: backingScale) else { return nil }
+        var content = CGRect(x: margins.left, y: margins.top,
+                             width: size.width - floor.width, height: size.height - floor.height)
+        content = reclaimingSideRacks(content, in: size)
         return SkinnedSurfaceFrameArtwork(
             image: composed, size: size, contentRect: content,
-            trailingCornerWidth: margins.right,
-            wasScaledToFit: abs(scaleX - 1) > 0.001 || abs(scaleY - 1) > 0.001)
+            trailingCornerWidth: margins.right, wasScaledToFit: false)
+    }
+
+    /// **The donor's resize floor, lifted, so the ring is laid out at the window's own size (W207).**
+    ///
+    /// A ring is eight pieces with stretched or tiled edges: laying it out at 300pt is exactly the
+    /// operation its author built it for. The floor is a constraint on the *skin's* window, and
+    /// obeying it here meant building the ring on a canvas the window is not, then stretching the
+    /// picture — which distorts the border and, where a view's floor is larger than its own natural
+    /// size, does worse. `Ice` is that case and it is what the reporter saw: `<view id="plView"
+    /// width="383" … minWidth="585">`, so the ring was composed on a 585x308 canvas its own art only
+    /// reaches 487x279 of, and the stretched result left the right sixth of every hosted window bare
+    /// (measured 2026-09-16 — the alpha bounding box of `WMP_HOSTED_FRAME_DUMP`, identical at every
+    /// window size because the canvas was always the floor).
+    ///
+    /// With the window grown to `interior + border`, there is no longer a size the ring has to be
+    /// squeezed into: it is drawn 1:1 at whatever the window is, and `wasScaledToFit` goes false.
+    private var unclamped: WMPSceneOverrides {
+        var overrides = WMPSceneOverrides.empty
+        for name in ["minwidth", "minheight"] {
+            overrides.properties[WMPScenePropertyAddress(stableID: viewNodeID, property: name)] = .number(1)
+        }
+        return overrides
+    }
+
+    /// The smallest hole worth cutting. Below it the "window" is all frame, which is the failure the
+    /// growth exists to avoid — and a window this small has not been grown yet.
+    private static let minimumInterior = CGSize(width: 24, height: 24)
+
+    /// **The border this donor adds around a hosted window's interior, before any frame has been
+    /// rendered for that window (W207).**
+    ///
+    /// This is the number `HostedWindowBorderLayout` grows a window by, and it has to be answerable
+    /// without a window size, because the window cannot reach a size that can carry the border until
+    /// it knows how thick the border is. A panel's borders are four constants of its own bitmap. A
+    /// ring's are resolved from its client subview, which *can* depend on the window — so it is read
+    /// once at the donor's own declared floor, where its author laid it out.
+    func borderInsets(builder: WMPSceneBuilder, renderer: WMPRenderer,
+                      backingScale: CGFloat) async throws -> NSEdgeInsets? {
+        if panelNodeID != nil {
+            guard let slices = try await panelSlices(builder: builder, renderer: renderer,
+                                                     backingScale: backingScale) else { return nil }
+            let m = slices.margins
+            return Self.effectiveBorder(
+                hole: CGRect(x: m.left, y: m.top,
+                             width: slices.panel.width - m.left - m.right,
+                             height: slices.panel.height - m.top - m.bottom),
+                in: slices.panel)
+        }
+        let reference = CGSize(width: max(minimumSize.width, 320), height: max(minimumSize.height, 240))
+        let scene = try await builder.build(
+            viewID: viewID,
+            requestedSize: WMPSize(width: reference.width, height: reference.height))
+        guard let client = scene.geometries[clientNodeID]?.absoluteFrame, !client.isEmpty else {
+            return nil
+        }
+        let canvas = CGSize(width: scene.canvasSize.width, height: scene.canvasSize.height)
+        return Self.effectiveBorder(
+            hole: CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
+            in: canvas)
+
+    }
+
+    /// **The border a window actually wears, which is not every point outside the donor's hole.**
+    ///
+    /// A donor's client hole says where the *skin's* content goes, and a playlist view with a rack
+    /// down one side leaves a third of the window outside it — `Ice`'s `plView` states a 157pt right
+    /// margin on a 585pt canvas. Growing a window by that put 157pt of decorative artwork on its
+    /// right edge and nothing in it. `reclaimingSideRacks` is the rule that already refuses to give
+    /// a rack away at *draw* time, so the growth is measured through the same rule: the border added
+    /// around the interior is the border the content will be laid out against.
+    private static func effectiveBorder(hole: CGRect, in size: CGSize) -> NSEdgeInsets {
+        let content = reclaimingSideRacks(hole, in: size)
+        return NSEdgeInsets(top: max(0, content.minY), left: max(0, content.minX),
+                            bottom: max(0, size.height - content.maxY),
+                            right: max(0, size.width - content.maxX))
     }
 
     /// Nine pieces of `source`, laid out for a `target`-point window. Pixel work, so it is kept

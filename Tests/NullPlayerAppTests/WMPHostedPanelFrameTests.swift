@@ -175,14 +175,19 @@ final class WMPHostedPanelFrameTests: XCTestCase {
         }
     }
 
-    /// **A short window is given the borders anyway, scaled until the hole is worth having.**
+    /// **A short window is not given a scaled-down border — it is given no border, and grown (W207).**
     ///
-    /// Two answers were reported wrong before this one: composing at the borders' own size left a
-    /// five-point hole with the drawer squashed around it, and refusing the window took the border
-    /// off every window in the spectrum family. The third is the ring path's own — a uniform
-    /// scale-to-fit — and what it guarantees is the hole: at least a third of each axis, with the
-    /// borders in the proportions the skin drew them.
-    func testAShortWindowKeepsTheBordersScaledAndGetsAThirdOfItselfForContent() async throws {
+    /// Three answers were reported wrong before this one, and this test used to assert the third:
+    /// composing at the borders' own size left a five-point hole with the drawer squashed around it;
+    /// refusing the window took the border off every window in the spectrum family; and a uniform
+    /// scale-to-fit, which kept a third of each axis for content, drew the border thinner than the
+    /// skin did — *"the interior is too small because the exterior border is very wide"*.
+    ///
+    /// The rule now is the one the reporter asked for: **the interior keeps its size and the border
+    /// is added around it**, so a window too short to carry the border at 1:1 is answered nil and
+    /// keeps its palette chrome until `HostedWindowBorderLayout` has grown it. Nothing is ever drawn
+    /// at a scale its author did not choose.
+    func testAShortWindowIsRefusedRatherThanGivenAShrunkenBorder() async throws {
         let loaded = try await skin("""
         <THEME><VIEW id="myview" width="321" height="268">\(Self.tray)</VIEW></THEME>
         """, images: ["tray.png": try panelImage(width: 328, height: 261)])
@@ -194,21 +199,29 @@ final class WMPHostedPanelFrameTests: XCTestCase {
         let renderer = WMPRenderer(imageStore: store)
 
         // The spectrum family's own opening size. 145 points of border would leave 5.
-        let size = CGSize(width: 600, height: 150)
-        guard let artwork = try await template.artwork(builder: builder, renderer: renderer,
-                                                       size: size, backingScale: 1) else {
-            return XCTFail("a short window still wears the skin's border")
-        }
-        XCTAssertTrue(artwork.wasScaledToFit)
-        XCTAssertGreaterThanOrEqual(artwork.contentRect.height, size.height / 3)
-        XCTAssertGreaterThanOrEqual(artwork.contentRect.width, size.width / 3)
-        // Thinner than the authored 72/73, and still in the donor's own proportions.
-        let metrics = artwork.metrics
-        XCTAssertLessThan(metrics.titleHeight, 72)
-        XCTAssertEqual(metrics.titleHeight / metrics.bottomBorder, 72.0 / 73.0, accuracy: 0.05)
-        XCTAssertEqual(metrics.leftBorder / metrics.titleHeight, 83.0 / 72.0, accuracy: 0.05)
+        let short = try await template.artwork(builder: builder, renderer: renderer,
+                                               size: CGSize(width: 600, height: 150), backingScale: 1)
+        XCTAssertNil(short, "a window too short for the border was dressed in a shrunken one")
 
-        // And a window that can carry them at 1:1 is untouched — the hole takes every point.
+        // **Grown by exactly the border, it fits at 1:1 and the hole is the interior it asked for.**
+        // 600x150 of interior plus this donor's 83/72/90/73 is what the layout asks for next.
+        let insets = try await template.borderInsets(builder: builder, renderer: renderer,
+                                                     backingScale: 1)
+        let border = try XCTUnwrap(insets)
+        let grown = CGSize(width: 600 + border.left + border.right,
+                           height: 150 + border.top + border.bottom)
+        guard let dressed = try await template.artwork(builder: builder, renderer: renderer,
+                                                       size: grown, backingScale: 1) else {
+            return XCTFail("the grown window still wears no border")
+        }
+        XCTAssertFalse(dressed.wasScaledToFit, "the border was scaled on a window sized to carry it")
+        XCTAssertEqual(dressed.contentRect.width, 600, accuracy: 0.5)
+        XCTAssertEqual(dressed.contentRect.height, 150, accuracy: 0.5)
+        // The borders are the author's own numbers, not a fraction of them.
+        XCTAssertEqual(dressed.metrics.titleHeight, border.top, accuracy: 0.5)
+        XCTAssertEqual(dressed.metrics.bottomBorder, border.bottom, accuracy: 0.5)
+
+        // And a roomier window is untouched — the hole takes every extra point.
         guard let roomy = try await template.artwork(builder: builder, renderer: renderer,
                                                      size: CGSize(width: 1200, height: 800),
                                                      backingScale: 1) else {

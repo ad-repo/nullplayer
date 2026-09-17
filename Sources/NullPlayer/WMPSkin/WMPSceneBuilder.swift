@@ -991,9 +991,53 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     inheritedClipMasks: fillMask.map { [$0] } ?? []))
             }
             if let path = backgroundPath, !frame.isEmpty {
-                let backgroundFrame = isRoot ? (rootBackgroundSize.map {
+                var backgroundFrame = isRoot ? (rootBackgroundSize.map {
                     WMPRect(x: frame.x, y: frame.y, width: $0.width, height: $0.height)
                 } ?? frame) : frame
+                // **A background bitmap does not stretch onto an axis the skin never asked it to
+                // stretch on (W208).** `backgroundImage` fills its frame because a `stretch`-aligned
+                // subview grows with a resizable window and its tile is what covers the delta — that
+                // is still true and is the whole reason the two `stretch` axes are exempt here, along
+                // with `backgroundTiled`, which says the same thing a different way.
+                //
+                // What is left is a box the skin made *bigger than the art on purpose*, and then the
+                // art is art: it draws at its own size in the corner of the box, exactly as a
+                // `<BUTTON>`'s `image` and a `CUSTOMSLIDER`'s strip cell already do. `Ice`'s playlist
+                // is the case that showed it — reported 2026-09-16 as the right border being drawn
+                // *twice*. Its four right-hand pieces are anchored at four different offsets and
+                // declared four boxes wider than their bitmaps, so stretched they ended at 487, 468,
+                // 468 and 483 and the border came apart into two ragged edges; at their own widths
+                // all four end at **468**, which is the single edge the skin drew.
+                //
+                // Measured over the 185-archive corpus before changing it: of 2,959 non-tiled
+                // background paints whose bitmap could be read, **93 across 29 skins** have a box
+                // larger than the art on a non-stretch axis, and the other 2,866 are untouched by
+                // construction. Every changed view was rendered and compared.
+                if !isRoot, let natural = try? imageStore.image(for: path).size {
+                    let horizontalAlignment = WMPAxisAlignment(
+                        horizontal: literalString(node, "horizontalAlignment"))
+                    let verticalAlignment = WMPAxisAlignment(
+                        vertical: literalString(node, "verticalAlignment"))
+                    let tiled = literalString(node, "backgroundTiled")?
+                        .caseInsensitiveCompare("true") == .orderedSame
+                    // **Its own size, not the smaller of the two.** `min` was the first shape of
+                    // this rule and it still squashed the other half of the population: `Ice`'s
+                    // `Vid-topleft.bmp` is 43x61 inside a 62x52 box, so `min` drew it 43x52 and the
+                    // corner's curve stopped meeting the left tile below it — a step in the border
+                    // that reads as a detached side panel, reported the same evening as *"left
+                    // window side panel is wrong"*. Art larger than its box overflows and is trimmed
+                    // by the clip it already inherits, which is the behaviour the `<BUTTON>` rule
+                    // above depends on for the Alienware time readout. **70 of 2,961 paints across
+                    // 13 skins** are on this side of it.
+                    if !tiled {
+                        if horizontalAlignment != .stretch, natural.width > 0 {
+                            backgroundFrame.width = natural.width
+                        }
+                        if verticalAlignment != .stretch, natural.height > 0 {
+                            backgroundFrame.height = natural.height
+                        }
+                    }
+                }
                 emit(imageCommand(node: node, path: path, frame: backgroundFrame,
                     clip: inheritedClip, z: z, background: true, alpha: alpha,
                     clippingPath: clippingPath, hueShift: hueShift))
@@ -1135,11 +1179,23 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // Only the *foreground* image takes this. `backgroundImage` still fills its
                     // frame, because a `stretch`-aligned subview grows with a resizable window and
                     // its background tile is what covers the delta.
-                    let drawn = strip == nil
-                        ? WMPRect(x: frame.x, y: frame.y,
-                                  width: min(frame.width, artwork.width),
-                                  height: min(frame.height, artwork.height))
-                        : frame
+                    //
+                    // **A strip cell is artwork too, and it takes the same rule (W208).** This read
+                    // `: frame` — the selected cell stretched to whatever box the node declared —
+                    // and a `CUSTOMSLIDER` is exactly where the two differ, because `borderSize`
+                    // exists to make the control's box *bigger than its art*: `Ice` authors ten
+                    // equaliser bands as `width="20" height="140" borderSize="20"` over a 5x65
+                    // `positionImage`, so each 5x65 cell was blown up four times across and twice
+                    // down. That is what drew the band grid a second time below the frosted panel
+                    // and over the window's bottom frame — reported 2026-09-16 with a screenshot of
+                    // Ice's own equaliser. Measured over the 185-archive corpus: **318 `customSlider`
+                    // paints across 75 skins, of which 17 across 4 skins were stretched** and the
+                    // other 301 already had cell and frame the same size, so this is a no-op for
+                    // them by construction.
+                    let source = strip.map { WMPSize(width: $0.width, height: $0.height) } ?? artwork
+                    let drawn = WMPRect(x: frame.x, y: frame.y,
+                                        width: min(frame.width, source.width),
+                                        height: min(frame.height, source.height))
                     emit(imageCommand(node: node, path: path, frame: drawn,
                         clip: inheritedClip, z: z, background: false, alpha: alpha,
                         sourceOverride: strip, clippingPath: clippingPath, hueShift: hueShift))

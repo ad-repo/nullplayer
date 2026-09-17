@@ -36,6 +36,31 @@ struct SkinnedSurfaceChrome {
             )
         }
 
+        /// The four borders as a plain inset, for a donor that states them without reference to a
+        /// window (`WMPHostedFrameTemplate.borderInsets`, W207).
+        init(insets: NSEdgeInsets) {
+            self.init(titleHeight: insets.top, leftBorder: insets.left,
+                      rightBorder: insets.right, bottomBorder: insets.bottom)
+        }
+
+        init(titleHeight: CGFloat, leftBorder: CGFloat, rightBorder: CGFloat, bottomBorder: CGFloat) {
+            self.titleHeight = titleHeight
+            self.leftBorder = leftBorder
+            self.rightBorder = rightBorder
+            self.bottomBorder = bottomBorder
+        }
+
+        /// The library's own chrome. Its status bar is the bottom border, which is why it is the one
+        /// window in this family whose bottom inset is not a plain edge.
+        static var plexBrowser: Metrics {
+            Metrics(
+                titleHeight: SkinElements.PlexBrowser.Layout.titleBarHeight,
+                leftBorder: SkinElements.PlexBrowser.Layout.leftBorder,
+                rightBorder: SkinElements.PlexBrowser.Layout.rightBorder,
+                bottomBorder: SkinElements.PlexBrowser.Layout.statusBarHeight
+            )
+        }
+
         static var waveform: Metrics {
             Metrics(
                 titleHeight: SkinElements.WaveformWindow.Layout.titleBarHeight,

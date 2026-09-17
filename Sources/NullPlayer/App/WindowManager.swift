@@ -253,6 +253,10 @@ class WindowManager {
     // MARK: - Singleton
     
     static let shared = WindowManager()
+
+    /// Grows NullPlayer's own windows around their interiors when a foreign skin lends them a frame
+    /// (W207). Held for its lifetime; it drives itself off notifications.
+    private var hostedBorderLayout: HostedWindowBorderLayout?
     
     // MARK: - Properties
     
@@ -836,6 +840,10 @@ class WindowManager {
         registerPreferenceDefaults()
         loadPreferences()
 
+        // W207: a hosted window is its interior plus whatever border the hosting skin lends. Built
+        // here so it is listening before any window opens or any skin is presented.
+        hostedBorderLayout = MainActor.assumeIsolated { HostedWindowBorderLayout() }
+
         // WMP owns an app-authored unskinned fallback and must not consult another skin engine.
         if storedUIMode.controllerFamily != .wmp {
             loadDefaultSkin()
@@ -1062,6 +1070,48 @@ class WindowManager {
             // provider is `@MainActor` because it mutates its render cache from a completed build.
             return MainActor.assumeIsolated { controller.hostedFrames.artwork(for: size) }
         }
+    }
+
+    /// **The border the hosting skin adds around one of NullPlayer's own windows, asked without
+    /// reference to any window (W207).**
+    ///
+    /// `hostedSurfaceFrameArtwork(for:)` answers "what does the frame at *this* size look like", and
+    /// that is not enough to grow a window: a 600x150 analyser cannot carry `anemone`'s 173x145 of
+    /// border, so no frame is ever rendered for it and its insets are never learned. The donor states
+    /// its four borders on its own (`WMPHostedFrameTemplate.borderInsets`), and that is what
+    /// `HostedWindowBorderLayout` grows by.
+    ///
+    /// A `switch` on the family for the same reason the two above are: `.wal` mounts our surfaces in
+    /// the skin's own frame rather than painting a picture of one, so it adds nothing here.
+    var hostedSurfaceBorderInsets: SkinnedSurfaceChrome.Metrics? {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern: return nil
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController,
+                  let insets = MainActor.assumeIsolated({ controller.hostedFrames.donorInsets })
+            else { return nil }
+            return SkinnedSurfaceChrome.Metrics(insets: insets)
+        }
+    }
+
+    /// The windows `HostedWindowBorderLayout` grows around their interiors, each with the chrome it
+    /// draws for itself when no skin lends it one. **A hosted window added later joins the rule by
+    /// appearing here and nowhere else.**
+    ///
+    /// Playlist and the equalizer are deliberately absent: both lay themselves out from classic
+    /// sprite geometry in fixed steps rather than from `SkinnedSurfaceChrome.Metrics`, so growing
+    /// their frames would move their furniture without moving their borders.
+    var hostedBorderWindows: [(window: NSWindow?, fallback: SkinnedSurfaceChrome.Metrics)] {
+        [
+            (spectrumWindowController?.window, .spectrumFamily),
+            (cavaWindowController?.window, .spectrumFamily),
+            (networkMonitorWindowController?.window, .spectrumFamily),
+            (audioAnalysisWindowController?.window, .spectrumFamily),
+            (peppyMeterWindowController?.window, .spectrumFamily),
+            (waveformWindowController?.window, .waveform),
+            (projectMWindowController?.window, .projectM),
+            (plexBrowserWindowController?.window, .plexBrowser)
+        ]
     }
 
     /// Whether the loaded `.wal` skin registered any settings of its own (Phase 27.3). Safe default

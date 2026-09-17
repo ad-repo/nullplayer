@@ -49,6 +49,12 @@ final class WMPHostedFrameProvider {
     private var mostRecent: SkinnedSurfaceFrameArtwork?
     private var generation = 0
 
+    /// **The border this skin adds around a hosted window's interior, independent of any window
+    /// (W207).** Resolved once per skin, because the growth that gives a window room for the border
+    /// cannot wait for a frame rendered at a size the border does not yet fit in. Nil until it has
+    /// been resolved, and for a skin that lends nothing.
+    private(set) var donorInsets: NSEdgeInsets?
+
     /// Adopt a newly presented skin. Answers whether the skin has a frame to lend at all, which is
     /// what decides between artwork chrome and the palette-only chrome every `.wmz` gets today.
     @discardableResult
@@ -61,7 +67,26 @@ final class WMPHostedFrameProvider {
         let store = WMPImageStore(provider: skin.archive)
         builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
         renderer = WMPRenderer(imageStore: store)
+        resolveDonorInsets()
         return true
+    }
+
+    /// Learn the donor's four borders. One scene build, off the UI executor like every other, and a
+    /// `.hostedSurfaceStyleDidChange` when it lands so the windows can grow around their interiors.
+    private func resolveDonorInsets() {
+        guard let template, let builder, let renderer else { return }
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let generation = self.generation
+        Task { [weak self] in
+            let insets = try? await template.borderInsets(builder: builder, renderer: renderer,
+                                                          backingScale: scale)
+            guard let self, let insets else { return }
+            await MainActor.run {
+                guard self.generation == generation else { return }
+                self.donorInsets = insets
+                NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
+            }
+        }
     }
 
     /// Drop everything — a skin teardown, or a switch to the unskinned player.
@@ -75,6 +100,7 @@ final class WMPHostedFrameProvider {
         inFlight.removeAll()
         refused.removeAll()
         mostRecent = nil
+        donorInsets = nil
     }
 
     /// The frame for a window of `size`, or nil when this skin lends none.

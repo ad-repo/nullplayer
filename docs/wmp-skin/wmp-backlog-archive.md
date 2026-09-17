@@ -9,6 +9,81 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W207 — how a hosted window and a borrowed border share the space, 2026-09-16
+
+**The open half of the donor class, closed the same week it opened.** Reported as
+*"the interior is too small because the exterior border is very wide"*, and settled by the reporter
+directly: *"the interior window … should be its full borderless size. then the border is added after
+that and the final size is simply the full interior + border. whatever the border is. different
+skins will have different width borders. this is ok."*
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W207 | A hosted window's *interior* shrank by whatever the borrowed frame's borders took, rather than the window growing around it | **Every window NullPlayer draws itself, under every skin that lends a frame** — 88 rings plus 32 panels of 185 archives. The borders differ by an order of magnitude across the corpus: `anemone`'s drawer is 173x145 of frame, `Halo 2`'s ring is 22/34/47/21 | **Closed 2026-09-16.** The window is **grown**: `HostedWindowBorderLayout` remembers each hosted window's interior in borderless points and sets the frame to `interior + border`, anchored top-left, `minSize` with it. One central rule, driven off `NSWindow.didResizeNotification`, `didBecomeKey` and `windowLayoutDidChange`, so a hosted window added later joins by appearing in `WindowManager.hostedBorderWindows` alone. The border comes from `WMPHostedFrameProvider.donorInsets`, which resolves a donor's four borders **without reference to any window** — the piece that was missing, because a 600x150 analyser can never render a frame carrying 173x145 of border and so could never learn its insets from one. Below that size the donor is answered nil and the window keeps palette chrome until the growth lands; nothing is drawn at a scale its author did not choose. Verified in the running app under `anemone` (all five windows 321x145 → 470x257, hole exactly the interior), `Halo 2` (interiors unchanged across the switch), `Ice`, and `corona`, which lends nothing and gives every window its own chrome and original size back |
+
+**Three answers preceded it and each was reported wrong**, recorded so none is retried: composing at
+the borders' own size left a **five-point hole** with the drawer squashed around it; refusing a
+window that could not carry the borders took the border off everything but PeppyMeter; and a uniform
+scale-to-fit sized so the hole keeps a third of each axis is the thin border the report was about.
+
+**Two more were tried during this work and are wrong for reasons worth keeping.** Growing each window
+to the donor's *declared floor* so a ring lands at 1:1 — `Ice` declares `min=585x308`, so every
+hosted window was forced to 585x308 at once; that is the ring path's own recorded rejection
+(*forcing every hosted window up to the donor's minimum moves windows the user placed*) confirmed by
+test. And measuring the growth against the donor's **raw** margins instead of through
+`reclaimingSideRacks` — `Ice`'s `plView` states a 157pt right rack, and growing by it put 157pt of
+decorative artwork on every window's right edge with nothing in it.
+
+**Three defects inside the rule itself, none visible in a screenshot or a `HOSTED-FRAME` line**, all
+found with `WMP_BORDER_TRACE` and all worth knowing before touching this again:
+
+1. `apply()` ran once, when the skin landed, and every window opened afterwards missed it — the trace
+   was simply empty. Opening a window now posts a layout change and makes it key; both are watched.
+2. Reading a window's interior back as `frame − donorBorder` made every window a **fixed point of its
+   own rule**: Cava opens 321x145, `anemone` lends 173x145, so the interior came back `148x0`, the
+   target came back 321x145 — the size it already was — and nothing ever grew. The interior is read
+   against the border the window is **wearing** (`hostedSurfaceFrameArtwork(for:)?.metrics ?? fallback`),
+   which is the same question the view's own `draw` asks.
+3. The docking pass settles a window a point off our own `setFrame`, in a `didResize` outside the
+   applying flag — read as the user's, it re-derived the interior and the analyser came back
+   `387x219` where its siblings came back `321x145`. Targets are rounded, a 1pt landing is accepted,
+   and a resize matching the last applied size is not the user's. A persisted interior is written
+   only when measured against a border we are certain of, or it outlives the session and comes back
+   next launch as the size the user gets.
+
+## W208 — the Ice report, 2026-09-16
+
+**Reported as two defects in one screenshot — *"this is the built in ice eq and playlist. both are
+broken"*, then, on the playlist, *"the playlist somehow doubling the right side border is a very
+weird way"*.** That second remark is what found the cause: the right border was not *missing*, it was
+being drawn **twice**. Both closed the same day, and both turned out to be the same rule applied in
+two more places — **artwork draws at its own size; the box the skin declares around it is a box, not
+a scale.** The engine already stated that for a `<BUTTON>`'s `image`; it did not hold for a
+`CUSTOMSLIDER`'s filmstrip cell or for a `backgroundImage` off its stretch axes.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W208a | A `CUSTOMSLIDER`'s selected filmstrip cell was drawn **stretched to the node's declared box**, and `borderSize` exists precisely to make that box bigger than the art | **17 of 318 `customSlider` paints, across 4 of the 75 skins that author one** — `Ice` 10, `Stars and Stripes` 5, `Nautical` 1, `Halloween` 1. The other 301 already had cell and frame the same size and are untouched by construction (`min(frame, cell)` is identity there) | **Closed 2026-09-16.** `Ice` authors ten equaliser bands as `width="20" height="140" borderSize="20"` over a 5x65 `positionImage`, so every cell was blown up 4x across and 2x down — which drew the band grid a second time below the frosted panel and over the window's own bottom frame, and is what the screenshot showed. The fix is the rule already written beside it in `WMPSceneBuilder` for the no-strip case — own size, anchored top-left, capped by the frame — extended to the strip cell, which is artwork too. Reproduce the population with the `crop=` vs `frame=` comparison on `WMP_RENDER_PROBE=all` over the corpus. All four skins render better: `Stars and Stripes`'s volume bar is a crisp row of blue segments instead of a 13px smear, `Nautical`'s volume track is an undistorted curve. Confirmed in the running app on `Ice`'s own equaliser |
+| W208b | A `backgroundImage` was stretched onto an axis the skin never asked it to stretch on, so a frame whose pieces are anchored at different offsets came apart into **two ragged right edges** | **93 of 2,959 non-tiled background paints whose bitmap could be read, across 29 of 185 archives** — `Ice` 17, `STALKER` 13, `Halloween` 11, `AlienMorph` 10, then a tail of 3s and 2s. Of 554 corpus view renders, **35 changed** | **Closed 2026-09-16.** `backgroundImage` fills its frame because a `stretch`-aligned subview grows with a resizable window and its tile covers the delta — still true, which is why both `stretch` axes and `backgroundTiled` stay exempt. What is left is a box the skin made larger than the art on purpose. `Ice`'s playlist is the case: its four right-hand pieces are anchored at four different offsets (`view.width-163/-154/-165/-150`) and declared four boxes wider than their bitmaps, so stretched they ended at **487, 468, 468 and 483** and the border split into two edges with the corner blob overhanging the tile; drawn at their own widths **all four end at 468**, the single edge the skin drew. The rule's first shape was `min(box, art)` and it still squashed the other half of the population — `Vid-topleft.bmp` is 43x61 in a 62x52 box, so `min` drew it 43x52 and the corner's curve stopped meeting the left tile, a step that reads as a detached side panel (*"left window side panel is wrong"*). It is the art's **own** size now: **70 of 2,961 paints across 13 skins** are on the larger-than-its-box side, they overflow into the clip they already inherit, and re-rendering the corpus moved only 14 views — `Halloween`, `STALKER` and `AlienMorph` carry 57 of those 70 paints and none of their renders changed at all. Every one of the 35 changed views was rendered and compared against its baseline: `AlienMorph`'s videoView loses a stray black slab hanging under its bottom bar, `TDK`'s playlist module is visually identical, `Ice`'s playlist closes into one clean border with the resize grip in its corner. Confirmed in the running app |
+| W208c | A ring piece is chosen by **alignment alone**, so a skin's own edge-anchored *button* competes for a corner slot and wins it whenever the author declared it first | Ring roles are filled from eight alignment pairs across every corpus skin that lends one — **88 of 185 archives**. The fix costs none of them: all 88 `HOSTED-FRAME` lines are byte-identical either side of it | **Closed 2026-09-16.** `Ice` writes `<subview id="Plshuffle" horizontalAlignment="left" verticalAlignment="Bottom" backgroundimage="Pl-shuffle.bmp">` — 26x24, wrapping a `<Repeatbutton>` — six nodes before `Vid-bottomleft.bmp`, and first-declaration-wins handed it the bottom-left corner. Every NullPlayer window wearing that ring got the skin's shuffle glyph hanging outside the frame's own curve, which is both wrong to look at and a lie about what the glyph does. A candidate carrying **transport** is now refused, which is the ring's half of the rule the panel path already applies (`carriesTransport`, `Erektorset`). **Refusing anything *clickable* was tried first and is the wrong rule**: it cost 7 of the 88 rings, because a window's own resize grip and close box are plain `<button>`s wrapped in edge-anchored subviews and they are frame furniture — `Ice`'s own bottom-right corner art *is* its resize grip. The `HOSTED-FRAME` line cannot see this defect (it reports the ring's count and the client hole, not which bitmap filled a slot); `WMP_HOSTED_FRAME_DUMP` is what shows it |
+
+**What this did not close, measured so it is not re-derived as a defect.** `Ice`'s `plView` still
+presents a **585x308** window around **468x304** of art, because its canvas is `clamp(width=383)`
+against `minWidth="585"`. That is not this skin's bug and not a sizing bug: over the corpus,
+**200 of 554 view renders leave more than 30pt of empty canvas on the right or bottom** — `Israeli`
+538, `Plus! Hard Boiled` 366, `Ocean` 387 — so a view declared larger than its art is the corpus
+norm, and a rule that shrank a window to what it paints would move a third of it. Two readings were
+ruled out on the way and neither is worth retrying: building at the authored width instead of the
+clamped one (the shortfall is linear with slope 1, so **no** canvas size closes it), and sizing the
+window to its painted extent (the 200 above).
+
+**The instrument that found it.** The alpha bounding box of a view dump —
+`WMP_SKIN=…/Ice.wmz WMP_RENDER_DUMP=<dir> swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus`,
+then compare `getbbox()` with the image size. `plView` came back 487x304 of 585x308 before, 468x304
+after. Nothing in `HOSTED-FRAME` or a screenshot separates "the border is missing" from "the border
+is drawn twice, 19pt apart"; the per-piece `frame=` on `WMP_RENDER_PROBE=all`, read against the
+bitmaps' own widths, is what did.
+
 ## W205-W206 — the anemone report, 2026-09-16
 
 **Reported as two defects — *"anemone skin has a problem with the visualization outside the skin and

@@ -827,22 +827,43 @@ final class WMPPhase14Tests: XCTestCase {
         XCTAssertEqual(digit.y, markup.y)
     }
 
-    /// Only the *foreground* image takes the rule. `backgroundImage` still fills its frame, because
-    /// a `stretch`-aligned subview grows with a resizable window and its background is what covers
-    /// the delta — `LostPlanet`'s frame tiles are 61 px of exactly that.
-    func testABackgroundImageStillFillsTheFrameItWasGiven() async throws {
+    /// **A `backgroundImage` fills its frame on the axes the skin asked it to stretch on, and draws
+    /// at its own size on the others (W208).**
+    ///
+    /// The stretch axes and `backgroundTiled` are why the rule exists: a `stretch`-aligned subview
+    /// grows with a resizable window and its background is what covers the delta — `LostPlanet`'s
+    /// frame tiles are 61 px of exactly that. What changed is the *other* case, a box the skin made
+    /// bigger than the art on purpose. `Ice`'s playlist anchored four right-hand pieces at four
+    /// offsets inside four oversized boxes, and stretched they ended at 487, 468, 468 and 483 — the
+    /// right border drawn twice, 19 px apart. At their own widths all four end at 468.
+    func testABackgroundImageFillsOnlyTheAxesItWasToldToStretch() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="200" height="100">
             <SUBVIEW id="panel" left="0" top="0" width="180" height="60"
                      backgroundImage="tile.png"/>
+            <SUBVIEW id="wide" left="0" top="0" width="180" height="60"
+                     horizontalAlignment="stretch" backgroundImage="tile.png"/>
+            <SUBVIEW id="tiled" left="0" top="0" width="180" height="60"
+                     backgroundTiled="true" backgroundImage="tile.png"/>
         </VIEW></THEME>
         """, resources: ["tile.png": try sheet(20, 10)])
         let scene = try await WMPSceneBuilder(loadedSkin: skin,
             imageStore: WMPImageStore(provider: skin.archive)).build(viewID: "main")
-        let frame = try XCTUnwrap(scene.commands
-            .first { $0.stableID == (try? stableID(skin, "panel")) }?.frame)
-        XCTAssertEqual(frame.width, 180, "a background is not clamped to its bitmap")
-        XCTAssertEqual(frame.height, 60)
+        func frame(_ id: String) throws -> WMPRect {
+            try XCTUnwrap(scene.commands.first { $0.stableID == (try? stableID(skin, id)) }?.frame)
+        }
+        // Neither axis stretches and it is not tiled: the 20x10 bitmap draws 20x10.
+        let plain = try frame("panel")
+        XCTAssertEqual(plain.width, 20, "art in an oversized box is drawn at its own width")
+        XCTAssertEqual(plain.height, 10, "art in an oversized box is drawn at its own height")
+        // A stretch axis still fills, and the axis beside it still does not.
+        let wide = try frame("wide")
+        XCTAssertEqual(wide.width, 180, "a stretch-aligned background must still fill its frame")
+        XCTAssertEqual(wide.height, 10)
+        // `backgroundTiled` says the same thing a different way, on both axes.
+        let tiled = try frame("tiled")
+        XCTAssertEqual(tiled.width, 180, "a tiled background must still fill its frame")
+        XCTAssertEqual(tiled.height, 60)
     }
 
     /// The static demand tally is derived from the object model rather than restated, so a member

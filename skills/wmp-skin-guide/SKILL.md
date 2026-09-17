@@ -123,9 +123,36 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   whole player, so a panel carrying the transport, the host sliders or the equaliser is refused, as
   the ring path refuses the player view by scoring it -100. What a panel cannot exclude is the
   donor's own *painted* controls: `Gorillaz` has a button strip in its bitmap, and those are pixels,
-  not nodes. **The open half is how the window and the border share the space** — see W207 in
-  `WMP_TASKS.md` before touching `panelArtwork`; three answers have already been tried and reported
-  wrong, and the row records all three.
+  not nodes.
+- **How the window and the border share the space: the window is grown (W207, closed 2026-09-16).**
+  **The interior keeps its size and the border is added around it** — `HostedWindowBorderLayout`,
+  one central rule for every hosted window, driven off `WMPHostedFrameProvider.donorInsets`, which
+  answers a donor's four borders *without reference to any window* because a 600x150 analyser can
+  never render a frame carrying `anemone`'s 173x145 and so could never learn its insets from one.
+  A window too small to carry the border at 1:1 is answered nil and keeps palette chrome until the
+  growth lands; nothing is ever drawn at a scale its author did not choose, and `wasScaledToFit`
+  is now only the ring's below-floor case. Three answers preceded it and each was reported wrong:
+  composing at the borders' own size (a five-point hole), refusing the window (the border came off
+  everything but PeppyMeter), and a uniform scale-to-fit (the thin border the report was about).
+  **Two more were tried and are wrong for reasons worth keeping.** Growing to the donor's *declared
+  floor* so a ring lands 1:1 — `Ice` declares `min=585x308`, so every hosted window was forced to
+  that at once, which is the ring path's own recorded rejection (*forcing every hosted window up to
+  the donor's minimum moves windows the user placed*) confirmed by test. And measuring the growth
+  against the donor's raw margins rather than through `reclaimingSideRacks` — `Ice`'s `plView`
+  states a 157pt right rack, and growing by it put 157pt of decorative artwork on every window's
+  right edge with nothing in it. Read `WMP_BORDER_TRACE` in `reference/harness.md` before touching
+  this: three of its failure modes are invisible in both a screenshot and a `HOSTED-FRAME` line.
+- **A ring piece is decoration, not a control (W208).** Roles are read off alignment alone, and a
+  skin's own buttons are anchored to its window's edges exactly as its corner bitmaps are, so they
+  compete for the same eight slots and first-declaration-wins hands the slot to whichever came
+  first. `Ice` writes its playlist shuffle six nodes before `Vid-bottomleft.bmp` and every hosted
+  window wore that glyph as a corner. A candidate carrying **transport** is refused — the ring's
+  half of the panel path's `carriesTransport` rule. **Refusing anything clickable is the wrong
+  rule**: it costs 7 of the 88 rings, because a resize grip and a close box are plain `<button>`s in
+  edge-anchored subviews and they *are* frame furniture (`Ice`'s bottom-right corner art is its
+  grip). The `HOSTED-FRAME` line cannot see this class of defect at all — it reports the piece count
+  and the client hole, never which bitmap filled a slot — so `WMP_HOSTED_FRAME_DUMP` is the
+  instrument.
 - **The ground a hosted window paints is its content hole, not the window**
   (`SkinnedSurfaceChrome.hostedGroundRect`). Every window in the spectrum family paints its own
   ground in its own `draw` and nothing shared owned that step, while `drawSkinFrame` deliberately

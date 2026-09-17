@@ -4,6 +4,38 @@
 
 ### Fixed
 
+- **A window NullPlayer draws itself now keeps its full size and wears the skin's border around it,
+  instead of shrinking to fit inside one.** Media Player skins lend borders of wildly different
+  thickness — *Anemone*'s spiky drawer is 173 by 145 points of frame, where *Halo 2*'s is 22 — and
+  the spectrum analyser, cava, flow, the waveform, the analyser, PeppyMeter, projectM and the
+  library were all being squeezed inside whatever was lent, so a wide border left almost nothing to
+  look at. The window is now grown instead: the contents keep the size they had and the border is
+  added outside them, so switching skins changes the frame around your windows without ever changing
+  what is inside. Resize a window and it is the interior you are sizing; take the skin away and each
+  window gets its own chrome and its original size back.
+
+- **A Media Player skin's own equaliser draws its ten bands once, inside the panel.** On *Ice* the
+  band grid appeared twice — once where it belongs and again below it, spilling over the window's
+  bottom edge. These skins give a slider a hit area deliberately larger than its artwork, and the
+  artwork was being stretched to fill that larger box rather than drawn at its own size. Four skins
+  in the collection are affected; *Stars and Stripes*' volume bar is a crisp row of segments again
+  rather than a smear.
+
+- **A Media Player skin's own playlist window has one border instead of two.** *Ice* drew its right
+  edge twice, nineteen points apart, with the corner piece overhanging the edge tile — because its
+  four right-hand pieces each declare a box wider than the picture inside it, and the pictures were
+  being stretched to those boxes. A picture is now drawn at its own size unless the skin asked for it
+  to stretch, which closes the border into a single edge and fixes the matching step on the left that
+  made the side panel look detached. Twenty-nine skins draw at least one piece this way.
+
+- **A skin's own buttons are no longer mistaken for the corners of the frame it lends our windows.**
+  The frame a skin lends is assembled from the pieces anchored to its window's edges, and a skin's
+  own controls are anchored exactly the same way — so on *Ice* the playlist's shuffle button was
+  being used as the bottom-left corner, leaving its glyph hanging outside the curve of every
+  NullPlayer window that wore that frame. Playback controls are now refused as frame pieces. A
+  window's resize grip and close box still count, because on several skins the corner artwork *is*
+  the grip.
+
 - **A Media Player skin's visualization stays inside the skin, even when the skin says so with the
   backdrop behind it.** *Anemone* is a spiky sea urchin around a black lens, and its spectrum drew
   out past the urchin on both sides — spikes of it hanging in mid-air below the blades of controls.
