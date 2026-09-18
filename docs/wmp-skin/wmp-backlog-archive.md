@@ -2366,6 +2366,73 @@ above. Verify a borrowed-frame row by driving the app and capturing the live win
 
 ---
 
+## W225 — the bracket a skin wraps around its own resize
+
+**Closed 2026-09-18.** Accepted live on `Compact` by the reporter, driving the grip with
+`WMP_RESIZE_TRACE=1`: *"that fixed it"*.
+
+Reported as *"when you stretch compact skin it breaks the drawers and the main body will absorb them
+and also not allow them to close"*, with a second round of *"the drawer and resizing is totally
+broken in every way"* against the first fix. W193 made `view.size(corner)` run the drag; this row is
+what the skin does *around* the call.
+
+**WMP's `view.size` does not return until the button comes up**, and the corpus's grips are written
+against exactly that — 235 calls in 88 of the 185 archives, every one of them `onMouseDown`.
+`Compact`'s `DoSize()` pins `playlistDrawer` to `right` and `settingsDrawer` to `bottom` so both ride
+the window's corner, calls it, and unpins them. Nothing here can block, so the pin and the unpin both
+landed before the first pixel moved: the drawers held their absolute positions while `playerView`
+(`stretch`) grew over them. Measured at 900 wide, `WMP_RENDER_PROBE=all` puts the playlist tab at
+`403,140` — under the body, where no click reaches it, which is both halves of the report.
+
+**Three claims, and the report needed all three.**
+
+1. **The mutation count is the seam.** `WMPObjectModel.resizeCallMutationIndex` records where the
+   call fell; `WMPScriptRuntime` holds the tail in `deferredResizeMutations` and
+   `resumeAfterWindowResize` replays it against the size the window finished at. Gated on
+   `animatesTweens` for the same reason a tween is (W194) — that is the caller promising it is a
+   window, and only a window runs a drag — so a render dump, the corpus census and the windowless
+   dispatcher still run the handler straight through and **every measurement taken against them
+   holds**. A grip that starts no drag (button already up, view not resizable) resumes at once, so a
+   bracket can never be stranded half-applied.
+2. **The tail is the last word on the release, not the first.** Raised at the top of `mouseUp`, it
+   fell straight through into the ordinary control path, whose `mouseup`/`click` dispatch calls
+   `presentation.scriptTask?.cancel()`. The unpin lost that race: `playerView` stayed pinned
+   `left`/`top` while both drawers stayed pinned to the corner, for the rest of the session — a
+   player drawn small in the top-left with its drawers stranded at the window's edges. Raised from a
+   `defer`. The grip authors no `onClick`, so what it supersedes is a binding-only pass.
+3. **Assigning an alignment freezes the element where it is drawn — and the extent half of that must
+   stay out of the geometry overrides.** WMP re-measures the margins at the write, so the unpin must
+   not teleport the drawer back to its authored `left`; without this the drawer jumped 478 px back
+   into the middle of a stretched player. But `WMPSceneBuilder.ownAuthoredSize` reads the geometry
+   overrides and **is what every child's own alignment delta is measured from**. Written there,
+   `SetAlignment(true)` made `playerView`'s authored 422 read as the 754 it had been dragged to, and
+   its whole chrome — tiles, corners, transport strip — saw a zero delta and collapsed back to the
+   authored arrangement inside a 754-wide frame, while both drawers sat correctly at the edges. That
+   is the second report, and it is the one the *live* trace could not name: every number in
+   `[wmp/resize]` was correct while the picture was wrong. The origin half stays an ordinary
+   script-assigned coordinate; the extent half is `WMPSceneOverrides.scriptAlignmentExtent`,
+   consulted only by the `stretch` case.
+
+**Blast radius, measured rather than cited.** A decoded scan of all 185 installed archives for a
+script *assignment* to `horizontalAlignment`/`verticalAlignment` finds **one**: `Compact`. So claim 3
+can move nothing else in the corpus, which is why this closed on that scan plus the skin's own
+headless invariants (`33 nodes, 33 commands, 14 hits, 3 widgets, 4 unresolved`; `viewSize=601x378`
+and `422x480`) rather than on a full render sweep.
+
+**Why no headless probe found it.** `WMP_RENDER_CLICK` raises `onClick` and every grip is
+`onMouseDown`; the builder takes its canvas from the overrides, so a capture agrees with the skin
+whether or not the window would ever have moved. `WMP_RESIZE_TRACE=1` was added for it — the pair to
+read is `release script=true` followed by a `resume`. **And `bottomright` drags both axes**: two
+rounds of this were spent on a replay that moved only the width and therefore never reproduced the
+bottom drawer's half.
+
+**Still open from the same report:** the window-edge band runs no bracket at all. This engine lets
+the user drag a borderless `.wmz` window's edge; WMP has no such affordance, so no skin anticipates
+it and `DoSize()`'s pin never runs on that path. Stretching `Compact` by the edge leaves the drawers
+behind exactly as the pre-W225 grip did.
+
+---
+
 ## W193 — a skin's own resize grip, the only resize a `.wmz` window has
 
 **Closed 2026-09-17.** `view.size(corner)` now runs the drag. Accepted live on `Compact`: press the

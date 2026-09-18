@@ -124,6 +124,12 @@ final class WMPObjectModel {
     /// The tweens this transaction asked the host to animate, in call order.
     private(set) var tweens: [WMPScriptTween] = []
     private(set) var diagnostics: [WMPJScriptDiagnostic] = []
+    /// **Where `view.size(corner)` was called, counted in mutations.** WMP's `view.size` blocks
+    /// until the user releases the button, so everything a handler writes *after* it happens when
+    /// the drag is over — and a skin's resize bracket is built entirely out of that. Nothing here
+    /// can block, so the split point is recorded instead and `WMPScriptRuntime` holds the tail.
+    /// The first call wins: a second `view.size` in the same handler cannot start a second drag.
+    private(set) var resizeCallMutationIndex: Int?
     /// Reads made since the last `beginDependencyCapture()`, in order. One expression's dependency
     /// list; the topological sort is built out of these.
     private(set) var dependencyReads: [String] = []
@@ -147,6 +153,7 @@ final class WMPObjectModel {
         preferenceWrites.removeAll(keepingCapacity: true)
         repaintHints.removeAll(keepingCapacity: true)
         diagnostics.removeAll(keepingCapacity: true)
+        resizeCallMutationIndex = nil
         dependencyReads.removeAll(keepingCapacity: true)
         completions.removeAll(keepingCapacity: true)
         tweens.removeAll(keepingCapacity: true)
@@ -1119,6 +1126,15 @@ final class WMPObjectModel {
         // window-edge band asks for, so the host gate costs the corpus nothing.
         case (.view, "size"):
             hostCommand("sizeWindow", .string(arguments.first?.string ?? ""))
+            // **WMP's `view.size` does not return until the drag does, and the skins are written
+            // against exactly that (W225).** `Compact`'s `DoSize()` pins both drawers to the edges
+            // they must ride, calls this, and unpins them again — so the pin is meant to stand for
+            // the whole drag. Run straight through, the pin and the unpin both land before the
+            // first pixel moves, the drawers keep their absolute positions while the body stretches
+            // over them, and their tabs end up buried under it where no click can ever reach them.
+            // The call cannot block here, so the mutation count is the seam: see
+            // `WMPScriptRuntime.transact`.
+            if resizeCallMutationIndex == nil { resizeCallMutationIndex = mutations.count }
             return .value(.null)
         // **The most widely authored control in the corpus: 162 of 180 archives, 196 of them, and
         // 179 tooltipped "Return to full mode"** (W100). WMP leaves skin mode for the player's own

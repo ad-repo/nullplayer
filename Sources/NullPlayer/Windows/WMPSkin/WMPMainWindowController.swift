@@ -642,6 +642,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             self.host.perform(action, value: value)
             self.refreshHostState()
         }
+        view.onScriptResizeEnded = { [weak self, weak presentation] in
+            guard let self, let presentation else { return }
+            self.resumeAfterScriptResize(presentation)
+        }
         view.onScriptEvent = { [weak self, weak presentation] name, targetID, targetStableID in
             guard let self, let presentation else { return }
             self.dispatchScriptEvent(presentation, name: name, targetID: targetID,
@@ -1989,9 +1993,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// slider release path so a skin that commits its own seek is not seeked twice (W156).
     private var scriptDidCommitSeek = false
 
+    /// **The release that ends a skin's own resize drag (W225).** `view.size(corner)` blocks in
+    /// WMP, so the statements after it are the skin putting its layout back — `Compact` unpins both
+    /// drawers from the edges it had them ride — and they belong to the mouse-up, not to the press.
+    /// Runs against the size the window finished at, which is the canvas those writes measure from.
+    func resumeAfterScriptResize(_ presentation: WMPViewPresentation) {
+        wmpResizeTrace("resumeAfterScriptResize \(presentation.viewID) "
+            + "scene=\(presentation.activeScene?.canvasSize.width ?? -1)"
+            + "x\(presentation.activeScene?.canvasSize.height ?? -1)")
+        dispatchScriptTransaction(presentation, nil, resumingWindowResize: true)
+    }
+
     private func dispatchScriptTransaction(_ presentation: WMPViewPresentation,
-                                           _ event: WMPJScriptEvent,
-                                           stickyLatch: (stableID: Int, down: Bool)? = nil) {
+                                           _ event: WMPJScriptEvent?,
+                                           stickyLatch: (stableID: Int, down: Bool)? = nil,
+                                           resumingWindowResize: Bool = false) {
         guard let skin = loadedSkin, let store = imageStore,
               let activeScene = presentation.activeScene, let scriptRuntime else { return }
         let viewID = presentation.viewID
@@ -2005,9 +2021,22 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 await scriptRuntime.setWidgetDown(stableID: stickyLatch.stableID,
                                                   down: stickyLatch.down, viewID: viewID)
             }
-            let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
-                size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
-                geometry: activeScene.scriptGeometry, animatesTweens: true)
+            let resumed = resumingWindowResize
+                ? await scriptRuntime.resumeAfterWindowResize(skin: skin, viewID: viewID,
+                    size: activeScene.canvasSize, snapshot: host.snapshot,
+                    geometry: activeScene.scriptGeometry)
+                : nil
+            // A resume with nothing held is every grip in the corpus whose handler is the call and
+            // nothing else; there is no transaction to run for it.
+            if resumingWindowResize, resumed == nil { return }
+            let output: WMPScriptOutput
+            if let resumed {
+                output = resumed
+            } else {
+                output = await scriptRuntime.transact(skin: skin, viewID: viewID,
+                    size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
+                    geometry: activeScene.scriptGeometry, animatesTweens: true)
+            }
             // **A host command is the script's output, not the drawing's, so it is applied the
             // moment the transaction returns — before the scene is built rather than after it is
             // presented.**
@@ -2464,7 +2493,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // window band runs — clamped by the view's `minWidth`/`maxWidth`, relaid out by
             // `windowDidResize` like any other.
             case "sizeWindow":
-                presentation.mainView?.beginScriptResize(corner: command.value?.string ?? "")
+                // **And the rest of the handler waits for the drag (W225).** A grip that did not
+                // start one — the button is already up, or the view is not resizable — has no
+                // release coming, so the held tail is run at once rather than stranding the skin
+                // with its drawers still pinned.
+                if presentation.mainView?.beginScriptResize(corner: command.value?.string ?? "")
+                    != true {
+                    resumeAfterScriptResize(presentation)
+                }
             // `view.returnToMediaCenter()` toggles the library beside the active skin.
             case "toggleLibrary": WindowManager.shared.togglePlexBrowser()
             case let action where action.hasPrefix("playPlaylistItem:"):

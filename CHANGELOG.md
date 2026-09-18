@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **Stretching a Media Player skin no longer swallows its drawers.** These skins hold their sliding
+  panels against the edge of the window while you drag its resize grip, and put them back when you
+  let go — but both halves of that were happening before the first pixel moved. Dragging *Compact*
+  wider left its playlist and settings drawers stranded in the middle of the player with the body
+  growing over them, tabs and all, so they could not be opened or closed again. The panels now ride
+  the corner for as long as you are dragging, and settle where you leave them.
+
 - **A Media Player skin's drawers now slide open and shut instead of jumping.** These skins ask for
   a panel to move over a length of time — *Compact*'s playlist and settings drawers are written to
   take about half a second — and every one of them arrived instantly, so nothing in any of these

@@ -172,6 +172,129 @@ final class WMPCompactDrawerTests: XCTestCase {
                        + "its own 200 and the 50 the view gained is the drawer's")
     }
 
+    // MARK: W225 — the skin's own resize bracket
+
+    /// **`view.size(corner)` blocks in WMP, so the rest of the handler belongs to the release.**
+    /// `Compact`'s `DoSize()` pins both drawers to the edges they must ride, calls it, and unpins
+    /// them again. Run straight through, the pin and the unpin both land before the first pixel
+    /// moves: the drawers keep their absolute positions while the stretching body swallows them,
+    /// and their tabs end up buried where no click can reach. Reported as "when you stretch compact
+    /// skin it breaks the drawers and the main body will absorb them".
+    func testTheHandlerAfterViewSizeIsHeldUntilTheDragEnds() async throws {
+        let skin = try await load("""
+        <THEME><VIEW id="main" width="200" height="100" resizable="true">
+            <SUBVIEW id="drawer" left="150" top="0" width="40" height="100"/>
+            <BUTTON id="grip" left="0" top="0" width="10" height="10"
+                    onMouseDown="drawer.horizontalAlignment='right'; view.size('bottomright');
+                                 drawer.horizontalAlignment='left';"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let source = """
+        drawer.horizontalAlignment='right'; view.size('bottomright');
+        drawer.horizontalAlignment='left';
+        """
+        let press = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 100),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "mousedown", targetID: "grip", handlers: [source]),
+            animatesTweens: true)
+        let alignment = WMPScenePropertyAddress(stableID: try stableID(skin, "drawer"),
+                                                property: "horizontalalignment")
+        XCTAssertEqual(press.overrides.properties[alignment]?.string, "right",
+                       "the pin stands for the duration of the drag; the unpin after the call is "
+                       + "held, exactly as WMP holds it by not returning")
+
+        // The drag: the window is now 260 wide and the pinned drawer rode the edge out with it.
+        let builder = WMPSceneBuilder(loadedSkin: skin,
+                                      imageStore: WMPImageStore(provider: skin.archive))
+        let dragged = try await builder.build(viewID: "main", requestedSize: WMPSize(width: 260, height: 100),
+                                              overrides: press.overrides)
+        XCTAssertEqual(try XCTUnwrap(dragged.geometries[try stableID(skin, "drawer")]).localFrame.x,
+                       210, "pinned right, the drawer rides the 60 the window gained")
+
+        // The release: WMP's own call returns here, and the unpin freezes the drawer where it is.
+        let resumed = await runtime.resumeAfterWindowResize(
+            skin: skin, viewID: "main", size: WMPSize(width: 260, height: 100),
+            snapshot: WMPHostSnapshot(), geometry: dragged.scriptGeometry)
+        let release = try XCTUnwrap(resumed)
+        XCTAssertEqual(release.overrides.properties[alignment]?.string, "left")
+        let settled = try await builder.build(viewID: "main", requestedSize: WMPSize(width: 260, height: 100),
+                                              overrides: release.overrides)
+        XCTAssertEqual(try XCTUnwrap(settled.geometries[try stableID(skin, "drawer")]).localFrame.x,
+                       210, "unpinned, the drawer stays where the drag left it — WMP re-measures "
+                       + "the margin at the write, so it does not teleport back to its authored 150")
+    }
+
+    /// **A transaction with no frame clock still runs the handler straight through.** The same
+    /// promise a tween is gated on (W194): a render dump, the corpus census and the windowless
+    /// dispatcher have no drag to hold anything for, so every measurement taken against them holds.
+    func testAHeadlessCallerKeepsTheWholeHandler() async throws {
+        let skin = try await load("""
+        <THEME><VIEW id="main" width="200" height="100" resizable="true">
+            <SUBVIEW id="drawer" left="150" top="0" width="40" height="100"/>
+            <BUTTON id="grip" left="0" top="0" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 100),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "mousedown", targetID: "grip", handlers: ["""
+            drawer.horizontalAlignment='right'; view.size('bottomright');
+            drawer.horizontalAlignment='left';
+            """]))
+        XCTAssertEqual(output.overrides.properties[
+            .init(stableID: try stableID(skin, "drawer"), property: "horizontalalignment")]?.string,
+            "left", "no clock, no drag, no hold")
+        let nothingHeld = await runtime.resumeAfterWindowResize(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 100),
+            snapshot: WMPHostSnapshot())
+        XCTAssertNil(nothingHeld)
+    }
+
+    /// **The extent half of a frozen alignment must stay out of the geometry overrides.** Assigning
+    /// an alignment freezes the element at the size it is *drawn*, and writing that size as
+    /// geometry makes `WMPSceneBuilder.ownAuthoredSize` answer it — which is what every *child's*
+    /// alignment delta is measured from. `Compact`'s `SetAlignment(true)` then made `playerView`'s
+    /// authored 422 read as the 754 it had been dragged to, and its whole chrome collapsed back to
+    /// the authored arrangement inside a 754-wide frame while both drawers sat correctly out at the
+    /// window's edges. Reported as "the drawer and resizing is totally broken in every way".
+    func testFreezingAnAlignmentDoesNotRestateTheParentsAuthoredSize() async throws {
+        let skin = try await load("""
+        <THEME><VIEW id="main" width="200" height="100" resizable="true">
+            <SUBVIEW id="body" left="0" top="0" width="200" height="100">
+                <SUBVIEW id="rail" left="150" top="0" width="40" height="10" horizontalAlignment="right"/>
+            </SUBVIEW>
+            <BUTTON id="go" left="0" top="0" width="10" height="10"/>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        // The skin pins the body, grows the view, and re-anchors — `SetAlignment` in miniature.
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 260, height: 100),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go", handlers: ["""
+            body.horizontalAlignment='left'; body.horizontalAlignment='stretch';
+            """]),
+            geometry: [try stableID(skin, "body"): WMPRect(x: 0, y: 0, width: 260, height: 100)])
+        XCTAssertNil(output.overrides.geometry[
+            .init(stableID: try stableID(skin, "body"), property: "width")],
+            "the frozen 260 is the alignment's baseline, not the body's authored width")
+        let scene = try await WMPSceneBuilder(loadedSkin: skin,
+                                              imageStore: WMPImageStore(provider: skin.archive))
+            .build(viewID: "main", requestedSize: WMPSize(width: 260, height: 100),
+                   overrides: output.overrides)
+        XCTAssertEqual(try XCTUnwrap(scene.geometries[try stableID(skin, "body")]).localFrame.width,
+                       260, "the body keeps the size it was frozen at")
+        XCTAssertEqual(try XCTUnwrap(scene.geometries[try stableID(skin, "rail")]).localFrame.x,
+                       210, "and its right-aligned child still rides the 60 the parent gained — "
+                       + "the child's delta is measured from the parent's *authored* 200")
+    }
+
     // MARK: W189 — WMP's own resource strings
 
     func testResourceStringsResolveOrBlankButNeverDrawTheURL() {

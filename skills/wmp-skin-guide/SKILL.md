@@ -859,6 +859,43 @@ queue, with the object model as the security boundary — see Amendment 2 in
   W187); and the frame is set in the **same main-actor turn as `present`**, because resizing ahead
   of the render leaves AppKit stretching the old picture into the new frame — reported as "a big UI
   flash when the drawer opens" (W190). See `reference/skins/compact.md`.
+- **`view.size(corner)` blocks in WMP, and a skin's resize bracket is built entirely out of that
+  (W225, 2026-09-18).** 235 calls in 88 of the 185 archives, every one of them `onMouseDown`, and
+  the statements *after* the call are what the skin does when the drag is over. `Compact`'s
+  `DoSize()` pins `playlistDrawer` to `right` and `settingsDrawer` to `bottom` so both ride the
+  window's corner, calls it, and unpins them. Nothing here can block, so the pin and the unpin both
+  landed before the first pixel moved: the drawers kept their absolute positions while `playerView`
+  (`stretch`) grew over them, and their tabs ended up buried under the body where no click could
+  reach them. Reported as *"when you stretch compact skin it breaks the drawers and the main body
+  will absorb them and also not allow them to close"*. Three claims, and the report needed all three:
+  1. **The mutation count is the seam.** `WMPObjectModel.resizeCallMutationIndex` records where the
+     call fell; `WMPScriptRuntime` holds the tail and `resumeAfterWindowResize` replays it against
+     the size the window finished at. **Gated on `animatesTweens`** for the same reason a tween is
+     (W194) — that is the caller promising it is a window, and only a window runs a drag — so a
+     render dump, the corpus census and the windowless dispatcher still run the handler straight
+     through and every measurement taken against them holds.
+  2. **The tail is the *last* word on the release, not the first.** Raised at the top of `mouseUp`,
+     it fell straight through into the ordinary control path, whose `mouseup`/`click` dispatch calls
+     `presentation.scriptTask?.cancel()`. The unpin lost that race and `playerView` stayed pinned
+     `left`/`top` while both drawers stayed pinned to the corner — a player drawn small in the
+     top-left with its drawers stranded out at the window's edges, for the rest of the session. It
+     is raised from a `defer`.
+  3. **Assigning an alignment freezes the element where it is *drawn*, and the extent half of that
+     must stay out of the geometry overrides.** WMP re-measures the margins at the write, so the
+     unpin must not teleport the drawer back to its authored `left`. But
+     `WMPSceneBuilder.ownAuthoredSize` reads the geometry overrides and **is what every child's own
+     alignment delta is measured from**: written there, `SetAlignment(true)` made `playerView`'s
+     authored 422 read as the 754 it had been dragged to, and its whole chrome — tiles, corners,
+     the transport strip — saw a zero delta and collapsed back to the authored arrangement inside a
+     754-wide frame while both drawers sat correctly at the edges. Reported as *"the drawer and
+     resizing is totally broken in every way"*. The origin half is an ordinary script-assigned
+     coordinate; the extent half is `WMPSceneOverrides.scriptAlignmentExtent`, consulted only by the
+     `stretch` case. **One archive in the corpus assigns an alignment from script**, so 3 can move
+     nothing else — verify with a decoded scan for `.horizontalAlignment =` before touching it.
+  **Drivable only live**, and `WMP_RESIZE_TRACE=1` is the instrument: read `release script=true`
+  against the `resume` that must follow it. The **window-edge band runs no bracket at all** — it is
+  an affordance this engine adds and WMP has no equivalent — which is the remaining hole.
+  See `reference/skins/compact.md`.
 - **WMP's `event` object is a global, and 84 of 185 archives read it (W184).** `Compact`'s drawer
   handlers open `view.maxWidth = event.screenWidth` from a plain function call, and its view root
   reads the same thing from a `jscript:` attribute where no event exists at all — so it is bound

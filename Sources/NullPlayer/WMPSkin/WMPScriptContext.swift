@@ -169,6 +169,9 @@ struct WMPScriptRunResult: Sendable {
     /// The tweens this transaction asked its caller to animate (W194). Only ever non-empty for a
     /// transaction run with `animatesTweens`; see `WMPObjectModel.tweenGroup`.
     var tweens: [WMPScriptTween] = []
+    /// How many mutations had been made when the handler called `view.size(corner)` (W225).
+    /// `nil` when it never did. See `WMPObjectModel.resizeCallMutationIndex`.
+    var resizeCallMutationIndex: Int?
 }
 
 /// The skin's JavaScript context: one per skin session, on one dedicated serial queue.
@@ -513,6 +516,7 @@ final class WMPScriptContext: @unchecked Sendable {
         result.timers = pendingTimers
         result.clearedTimers = pendingClearedTimers
         result.tweens = model.tweens
+        result.resizeCallMutationIndex = model.resizeCallMutationIndex
         return result
     }
 

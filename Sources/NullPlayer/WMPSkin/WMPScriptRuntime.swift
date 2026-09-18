@@ -442,6 +442,14 @@ actor WMPScriptRuntime {
     /// The canvas each script-assigned alignment was written at, per view scope. See
     /// `WMPSceneOverrides.scriptAssignedAlignment`.
     private var scriptAssignedAlignment: [String: [WMPScenePropertyAddress: WMPSize]] = [:]
+    /// **The half of a handler that WMP runs after the drag, held until the drag is over (W225).**
+    /// Everything a handler writes after `view.size(corner)` — see
+    /// `WMPObjectModel.resizeCallMutationIndex`. Keyed by view scope, replayed by
+    /// `resumeAfterWindowResize`, and dropped with the rest of the scope by `discardView`.
+    private var deferredResizeMutations: [String: [WMPJScriptMutation]] = [:]
+    /// Mirrors `WMPSceneOverrides.scriptAlignmentExtent` — the size an element had when the script
+    /// assigned its alignment. Kept out of the geometry overrides on purpose; see that field.
+    private var scriptAlignmentExtent: [String: [WMPScenePropertyAddress: CGFloat]] = [:]
     private var recentTransactionTimes: [Date] = []
     /// **The tweens in flight, per view scope (W194).** A tween outlives the transaction that
     /// started it — that is the whole of this row — so it is runtime state rather than transaction
@@ -491,7 +499,8 @@ actor WMPScriptRuntime {
                   snapshot: WMPHostSnapshot, event: WMPJScriptEvent?,
                   geometry: [Int: WMPRect] = [:],
                   animatesTweens: Bool = false,
-                  tweenFrame: WMPTweenFrame? = nil) async -> WMPScriptOutput {
+                  tweenFrame: WMPTweenFrame? = nil,
+                  injecting injected: [WMPJScriptMutation] = []) async -> WMPScriptOutput {
         let scope = WMPPath.fold(viewID)
         guard !torndown else { return WMPScriptOutput(overrides: overrides(for: scope)) }
         let now = Date()
@@ -629,18 +638,50 @@ actor WMPScriptRuntime {
             overrides.geometry[address] = resolved
         }
         committedExpressions[scope] = expressionValues
+        // **The half of the handler that runs after the drag (W225).** `view.size(corner)` blocks
+        // in WMP until the user lets go, so a skin's resize bracket — `Compact`'s `DoSize()` pins
+        // both drawers to the edges they must ride, calls it, unpins them — states the pin for the
+        // *duration* of the drag. Nothing here can block, so the tail of the handler is held and
+        // `resumeAfterWindowResize` replays it on the release.
+        //
+        // Gated on `animatesTweens` for the same reason a tween is (W194): that is the caller
+        // promising it is a window, and only a window runs a drag at all. A render dump, the corpus
+        // census and the windowless dispatcher have no drag to hold anything for, so for them the
+        // handler still runs straight through and every measurement taken against them holds.
+        var mutations = injected + result.mutations
+        if animatesTweens, let index = result.resizeCallMutationIndex {
+            let split = index + injected.count
+            if split < mutations.count {
+                deferredResizeMutations[scope, default: []]
+                    .append(contentsOf: mutations[split...])
+                wmpResizeTrace("hold \(mutations.count - split) of \(mutations.count) at "
+                    + "\(size.width)x\(size.height): "
+                    + mutations[split...].map { "\($0.targetID).\($0.property)=\($0.value.string ?? "-")" }
+                        .joined(separator: " "))
+                mutations = Array(mutations[..<split])
+            }
+        }
         var scriptAligned = scriptAssignedAlignment[scope] ?? [:]
+        var alignmentExtent = scriptAlignmentExtent[scope] ?? [:]
         // **The canvas each mutation was written at, which moves *within* the transaction.** A
         // handler that grows its own window and then re-anchors something against the new size —
         // `Compact`'s `view.width += rightMove` between two `SetAlignment` calls — does both in one
         // transaction, so the incoming `size` is the right canvas for the writes before the resize
         // and the wrong one for the writes after it. Tracked over the mutation list in order, which
         // is the order the handlers made them in.
-        let rootStableID = skin.views.first {
+        let rootNode = skin.views.first {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
-        }?.node.stableID
+        }?.node
+        let rootStableID = rootNode?.stableID
+        // Only a child of the view root can be frozen by an alignment write, for the same reason
+        // only one can be anchored by it: the anchor is a view canvas, and a deeper node's parent
+        // grew by an amount the canvas does not state.
+        let rootChildIDs = Set((rootNode?.children ?? []).map(\.stableID))
+        // The layout as the script knows it *now*: the frames the last scene resolved, advanced by
+        // every geometry mutation this transaction has already made.
+        var resolved = geometry
         var canvas = size
-        for mutation in result.mutations {
+        for mutation in mutations {
             guard let stableID = plan.idToStableID[WMPPath.fold(mutation.targetID)] else { continue }
             let address = WMPScenePropertyAddress(stableID: stableID,
                                                   property: mutation.property.lowercased())
@@ -649,6 +690,16 @@ actor WMPScriptRuntime {
                !((address.property == "width" || address.property == "height") && value < 0) {
                 overrides.geometry[address] = CGFloat(value)
                 scriptAssigned[address] = canvas
+                if alignmentExtent[address] != nil { alignmentExtent[address] = CGFloat(value) }
+                if var frame = resolved[stableID] {
+                    switch address.property {
+                    case "left": frame.x = CGFloat(value)
+                    case "top": frame.y = CGFloat(value)
+                    case "width": frame.width = CGFloat(value)
+                    default: frame.height = CGFloat(value)
+                    }
+                    resolved[stableID] = frame
+                }
                 if stableID == rootStableID, value > 0 {
                     let before = canvas
                     if address.property == "width" { canvas.width = CGFloat(value) }
@@ -663,13 +714,50 @@ actor WMPScriptRuntime {
                 overrides.properties[address] = mutation.value
                 if address.property == "horizontalalignment" || address.property == "verticalalignment" {
                     scriptAligned[address] = canvas
+                    // **Assigning an alignment freezes the element where it currently is (W225).**
+                    // WMP re-measures the element's margins against the canvas at the write, so the
+                    // coordinate it holds afterwards is the one it is *drawn* at — not the one the
+                    // markup authored. Resolving from the authored value instead is what made the
+                    // skins' own resize bracket lossy: `Compact` pins `playlistDrawer` to `right`
+                    // so it rides a drag out to the window's edge, then writes `left` back to park
+                    // it, and the unpin teleported the drawer 478 px back into the middle of a
+                    // stretched player, underneath the body, with its tab buried where nothing
+                    // could click it. Recording the resolved frame — and anchoring it at this
+                    // canvas, so the growth that counts afterwards is the growth since the write —
+                    // is the same reading `scriptDelta` already gives a script-assigned coordinate.
+                    //
+                    // **One archive in the corpus assigns an alignment from script** (`Compact`, 20
+                    // writes; decoded `.wms`+`.js` scan), so this can move nothing else.
+                    if rootChildIDs.contains(stableID), let frame = resolved[stableID] {
+                        let horizontal = address.property == "horizontalalignment"
+                        let origin = horizontal ? ("left", frame.x) : ("top", frame.y)
+                        let extent = horizontal ? ("width", frame.width) : ("height", frame.height)
+                        // The origin half is an ordinary script-assigned coordinate…
+                        if origin.1 >= 0 {
+                            let frozen = WMPScenePropertyAddress(stableID: stableID,
+                                                                 property: origin.0)
+                            overrides.geometry[frozen] = origin.1
+                            scriptAssigned[frozen] = canvas
+                        }
+                        // …the extent half is not, because `ownAuthoredSize` reads the geometry
+                        // overrides and every child's alignment delta is measured from it.
+                        if extent.1 >= 0 {
+                            alignmentExtent[WMPScenePropertyAddress(stableID: stableID,
+                                                                    property: extent.0)] = extent.1
+                        }
+                        wmpResizeTrace("freeze \(mutation.targetID) \(origin.0)=\(origin.1) "
+                            + "\(extent.0)=\(extent.1) as \(mutation.value.string ?? "-") at "
+                            + "\(canvas.width)x\(canvas.height)")
+                    }
                 }
             }
         }
         scriptAssignedAlignment[scope] = scriptAligned
         overrides.scriptAssignedAlignment = scriptAligned
+        scriptAlignmentExtent[scope] = alignmentExtent
+        overrides.scriptAlignmentExtent = alignmentExtent
         let assigned = Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
-                                             mutations: result.mutations, overrides: overrides,
+                                             mutations: mutations, overrides: overrides,
                                              currentSize: size)
         let mediaDrivenResize = assigned.map {
             Self.isMediaDrivenViewResize(in: skin, viewID: viewID, assigned: $0,
@@ -1044,12 +1132,37 @@ actor WMPScriptRuntime {
     /// view that `theme.openView` had *covered* — WMP opened a second window and never touched the
     /// first, so this engine had to simulate one having survived. It now genuinely survives, in its
     /// own window, and nothing was ever put back except by that simulation (W90).
+    /// **The release that ends a `view.size(corner)` drag (W225).** Replays the half of the handler
+    /// that WMP would have run when its own call returned — `Compact`'s unpin of both drawers and
+    /// the `DoSnapToSize()` behind it — against the size the window actually finished at, which is
+    /// the canvas those writes are meant to be measured from. Answers `nil` when the transaction
+    /// held nothing, which is every grip in the corpus whose handler is the call and nothing else.
+    ///
+    /// The controller calls this on mouse-up **and** when the drag never started, so a bracket can
+    /// never be stranded half-applied.
+    func resumeAfterWindowResize(skin: WMPLoadedSkin, viewID: String, size: WMPSize,
+                                 snapshot: WMPHostSnapshot,
+                                 geometry: [Int: WMPRect] = [:]) async -> WMPScriptOutput? {
+        let scope = WMPPath.fold(viewID)
+        guard let held = deferredResizeMutations.removeValue(forKey: scope), !held.isEmpty
+        else {
+            wmpResizeTrace("resume \(viewID): nothing held")
+            return nil
+        }
+        wmpResizeTrace("resume \(viewID) at \(size.width)x\(size.height): \(held.count) writes")
+        return await transact(skin: skin, viewID: viewID, size: size, snapshot: snapshot,
+                              event: nil, geometry: geometry, animatesTweens: true,
+                              injecting: held)
+    }
+
     func discardView(_ viewID: String) {
         let scope = WMPPath.fold(viewID)
         committedOverrides.removeValue(forKey: scope)
         committedExpressions.removeValue(forKey: scope)
         scriptAssignedGeometry.removeValue(forKey: scope)
         scriptAssignedAlignment.removeValue(forKey: scope)
+        deferredResizeMutations.removeValue(forKey: scope)
+        scriptAlignmentExtent.removeValue(forKey: scope)
         propertyRegistries.removeValue(forKey: scope)
         activeTweens.removeValue(forKey: scope)
         context?.discardElements(for: viewID)
@@ -1067,6 +1180,8 @@ actor WMPScriptRuntime {
         committedExpressions.removeAll()
         scriptAssignedGeometry.removeAll()
         scriptAssignedAlignment.removeAll()
+        deferredResizeMutations.removeAll()
+        scriptAlignmentExtent.removeAll()
         propertyRegistries.removeAll()
         activeTweens.removeAll()
     }

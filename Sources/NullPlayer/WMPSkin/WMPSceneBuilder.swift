@@ -868,6 +868,15 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     else { return fallback }
                     return parentExtent - canvas[keyPath: axis]
                 }
+                // The size the element had when the script assigned its alignment, if it did. The
+                // markup's own value otherwise, which is every other node in the corpus.
+                func alignmentExtent(_ name: String, _ authored: CGFloat) -> CGFloat {
+                    guard isRoot || parentNode == nil || parentNode?.kind == .view,
+                          let base = overrides.scriptAlignmentExtent[
+                            WMPScenePropertyAddress(stableID: node.stableID, property: name)]
+                    else { return authored }
+                    return base
+                }
                 func aligns(_ name: String) -> Bool {
                     anchor[WMPScenePropertyAddress(stableID: node.stableID, property: name)] != nil
                         || !isComputed(node, name)
@@ -878,7 +887,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 case .trailing where aligns("left"):
                     x += scriptDelta("left", deltaWidth, \.width, parentFrame.width)
                 case .stretch where aligns("width"):
-                    width = max(0, width + scriptDelta("width", deltaWidth, \.width, parentFrame.width))
+                    width = max(0, alignmentExtent("width", width) + scriptDelta("width", deltaWidth,
+                                                                                 \.width, parentFrame.width))
                 default: break
                 }
                 switch vertical {
@@ -886,7 +896,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 case .trailing where aligns("top"):
                     y += scriptDelta("top", deltaHeight, \.height, parentFrame.height)
                 case .stretch where aligns("height"):
-                    height = max(0, height + scriptDelta("height", deltaHeight, \.height, parentFrame.height))
+                    height = max(0, alignmentExtent("height", height)
+                        + scriptDelta("height", deltaHeight, \.height, parentFrame.height))
                 default: break
                 }
                 frame = WMPRect(x: parentFrame.x + x, y: parentFrame.y + y, width: width, height: height)
@@ -1970,6 +1981,17 @@ struct WMPSceneOverrides: Hashable, Codable, Sendable {
     /// Only a script-assigned alignment is anchored, and `Compact` is the corpus's only skin that
     /// assigns one (20 writes, 1 of 185 archives), so nothing else in the corpus can move.
     var scriptAssignedAlignment: [WMPScenePropertyAddress: WMPSize] = [:]
+    /// **The extent a script-assigned alignment was measured at, kept out of the geometry (W225).**
+    /// Assigning an alignment freezes the element at the size it is *drawn*, and the origin half of
+    /// that is an ordinary script-assigned coordinate — but the size half cannot be, because
+    /// `ownAuthoredSize` reads the geometry overrides and is what every child's own alignment delta
+    /// is measured from. Written there, `Compact`'s `SetAlignment(true)` made `playerView`'s
+    /// authored 422 read as the 754 it had been dragged to, so its whole chrome — the tiles, the
+    /// right-hand corners, the transport strip — saw a zero delta and collapsed back to the
+    /// authored arrangement inside a 754-wide frame, with both drawers still correctly out at the
+    /// window's edges. Keyed by `width`/`height`; the canvas it is anchored at is the alignment's
+    /// own, in `scriptAssignedAlignment`.
+    var scriptAlignmentExtent: [WMPScenePropertyAddress: CGFloat] = [:]
 
     static let empty = WMPSceneOverrides(geometry: [:], properties: [:])
 }

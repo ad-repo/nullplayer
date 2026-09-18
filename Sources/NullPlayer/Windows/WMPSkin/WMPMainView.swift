@@ -14,6 +14,18 @@ func wmpSeekTrace(_ message: @autoclosure () -> String) {
     FileHandle.standardError.write(Data(("[wmp/seek] " + message() + "\n").utf8))
 }
 
+/// `WMP_RESIZE_TRACE=1` — a window resize against the skin's own bracket around it (W225).
+///
+/// A `view.size(corner)` drag and the half of the handler it holds are not visible to any other
+/// instrument: `WMP_RENDER_CLICK` raises `onClick` and every grip in the corpus is `onMouseDown`,
+/// and a scene capture agrees with the skin either way because the builder takes its canvas from
+/// the overrides. One line per press, per release and per replayed write, plus the alignment
+/// freezes the bracket depends on.
+func wmpResizeTrace(_ message: @autoclosure () -> String) {
+    guard ProcessInfo.processInfo.environment["WMP_RESIZE_TRACE"] != nil else { return }
+    FileHandle.standardError.write(Data(("[wmp/resize] " + message() + "\n").utf8))
+}
+
 /// `WMP_WIDGET_TRACE=1` — the lifetime of every hosted widget view against the presents that carry
 /// it: one line per present naming the code path it came from and the widgets in the scene, a
 /// `create`/`drop` per hosted view, and a line per playlist redraw.
@@ -114,6 +126,11 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// a drag that could never begin, and every expression-driven layout in the corpus was stuck at
     /// the size its markup opened with.
     private var resizeEdges: WMPWindowEdges = []
+    /// Whether the drag in flight is the skin's own `view.size(corner)` rather than the window
+    /// edge band. Only the skin's owns a held handler tail to release (W225).
+    private var isScriptResize = false
+    /// Raised when a `view.size(corner)` drag lets go — the moment WMP's own call returns.
+    var onScriptResizeEnded: (() -> Void)?
     private var resizeStartFrame = NSRect.zero
     private var resizeStartMouse = NSPoint.zero
     private var widgetViews: [Int: NSView] = [:]
@@ -429,7 +446,11 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // against the window edge keeps every pixel it had.
         if target == nil {
             let edges = edges(at: convert(event.locationInWindow, from: nil))
-            if !edges.isEmpty { beginWindowResize(edges); return }
+            if !edges.isEmpty {
+                wmpResizeTrace("edge-band press edges=\(edges) — the skin's own bracket does not run")
+                beginWindowResize(edges)
+                return
+            }
         }
         guard let target else { beginWindowDrag(event); return }
         capturedTarget = target
@@ -450,7 +471,22 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // **The bracket's tail is the last word on the release, not the first (W225).** It used to
+        // be raised here, at the top — and the release then fell straight through into the ordinary
+        // control path below, whose `mouseup`/`click` dispatch *cancels the transaction in flight*.
+        // The unpin lost that race, so `playerView` stayed pinned `left`/`top` and both drawers
+        // stayed pinned to the edges they had ridden, for the rest of the session: the body stopped
+        // following the window while the drawers kept tracking its corner, which is a player drawn
+        // small in the top-left with its two drawers stranded out at the far edges. Raised from a
+        // `defer`, the resume is dispatched last and is the transaction that survives. The grip
+        // authors no `onClick` (19 of the corpus's 235 `view.size` calls author anything at all),
+        // so what it supersedes is a binding-only pass.
+        var resumeScriptResize = false
+        defer { if resumeScriptResize { onScriptResizeEnded?() } }
         if !resizeEdges.isEmpty {
+            resumeScriptResize = isScriptResize
+            isScriptResize = false
+            wmpResizeTrace("release script=\(resumeScriptResize) size=\(window?.frame.size ?? .zero)")
             resizeEdges = []
             // **A grip the skin owns is still a control (W193).** An edge-band drag starts on bare
             // artwork and has nothing to release, but `view.size('bottomright')` is called from a
@@ -813,12 +849,25 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// - **The button must still be down.** The call arrives from an asynchronous script
     ///   transaction, so a quick click's command can land after the release; arming the drag then
     ///   would resize the window on whatever the user pressed next.
-    func beginScriptResize(corner: String) {
+    /// Answers whether a drag actually started. The caller needs to know: with `view.size` blocking
+    /// in WMP, the rest of the handler is held until the release (W225), and a call that starts no
+    /// drag has no release coming — so a `false` here is the signal to run that tail at once rather
+    /// than strand the skin mid-bracket.
+    @discardableResult
+    func beginScriptResize(corner: String) -> Bool {
         guard resizeEdges.isEmpty, scene?.isResizable == true,
-              NSEvent.pressedMouseButtons & 1 != 0 else { return }
+              NSEvent.pressedMouseButtons & 1 != 0 else {
+            wmpResizeTrace("beginScriptResize REFUSED corner=\(corner) "
+                + "inDrag=\(!resizeEdges.isEmpty) resizable=\(scene?.isResizable == true) "
+                + "button=\(NSEvent.pressedMouseButtons & 1 != 0)")
+            return false
+        }
         let edges = Self.edges(forCorner: corner)
-        guard !edges.isEmpty else { return }
+        guard !edges.isEmpty else { return false }
         beginWindowResize(edges)
+        isScriptResize = true
+        wmpResizeTrace("beginScriptResize corner=\(corner) edges=\(edges)")
+        return true
     }
 
     /// The seven spellings the corpus authors, read as the substrings they are: `bottomright` (86

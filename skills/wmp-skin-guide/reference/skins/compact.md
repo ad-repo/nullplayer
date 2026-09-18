@@ -22,6 +22,7 @@ fault sat behind the one before it.
 | **`res://wmploc.dll` strings written into readouts** | its settings tab title and both on/off switches; 133 uses of 50 ids across 6 archives (W189) |
 | **A `<RETURNBUTTON>` with no `onClick`** | `id="toggle"`, bottom right of the video. 19 uses across 15 archives and 15 author nothing (W191) |
 | **A resize grip that calls `view.size('bottomright')`** | `onmousedown="DoSize();"`. Live since W193, and this is the skin it was closed on |
+| **A resize *bracket* around that call** | `DoSize()` pins both drawers to the edges they must ride, calls `view.size`, unpins them. WMP's call blocks until the release; W225 is the three things that took |
 
 ## Defects it found
 
@@ -39,6 +40,8 @@ Full rows, with the evidence each was closed on, are in
 | *"a big UI flash when the drawer opens"* | the window resized ahead of the picture that fits it (W190) |
 | *"the library button does not call the library"* | `<RETURNBUTTON>` had no behaviour (W191) |
 | *"the drawers disappear … stuck in a bad state that you cannot escape"* | **not reproduced from the reporter's steps.** The mechanism that provably strands a drawer is the pin/resize/unpin idiom (W192) |
+| *"when you stretch compact skin it breaks the drawers and the main body will absorb them and also not allow them to close"* | the bracket ran straight through, so the pin and the unpin both landed before the drag (W225). Measured: at 900 wide the playlist tab sits at `403,140`, under the stretched body, where nothing can click it |
+| *"the drawer and resizing is totally broken in every way"* | the fix's own second round — the frozen *extent* went into the geometry overrides, so `ownAuthoredSize` restated it and every child of `playerView` stopped stretching (W225, claim 3) |
 
 ## What was ruled out
 
@@ -82,16 +85,32 @@ click is correct whether or not the window would ever have moved, because the bu
 canvas from the overrides. `viewSize=601x378` (playlist) and `viewSize=422x480` (settings) are the
 only headless evidence that the *window* follows.
 
+## Driving the stretch
+
+The grip is the only resize WMP gives this window, and `bottomright` drags **both** axes — a trace
+that moves only the width never sees half the report. The settled geometry, verified live and by
+replaying the real archive's transactions:
+
+| Window | `playerView` | `playlistDrawer` | `settingsDrawer` |
+|---|---|---|---|
+| 422x378 (authored) | `0,0 422x378` | `219,37 204x261` | `74,236 292x142` |
+| dragged to 754x673 | `0,0 754x673` | `551,37 204x556` | `74,531 292x142` |
+| …settings drawer open | `0,0 754x673`, canvas 775 | unchanged | `74,633` |
+| …playlist drawer open | `0,0 754x673`, canvas 933 | `729,37` | unchanged |
+
+**The side drawer growing tall is not a defect.** `SetAlignment` gives it `verticalAlignment="stretch"`
+and its inner black panel and bottom cap are `stretch`/`bottom`, so `204x261` becoming `204x556` in a
+673-tall window is the markup working. The piece to check instead is a *child of the body*: `seek`
+goes `169,309 195x15` → `169,604 527x15`. A `seek` that stayed 195 wide is claim 3 regressing.
+
 ## Still open
 
-- **`DoSize()`'s brackets run before the drag, not around it.** W193 made the grip resize the window,
-  but WMP's `view.size` blocks until the drag ends and this engine's cannot: a script transaction
-  completes before its host commands are applied, so the pin *and* the unpin have both landed by the
-  time the first pixel moves. The resize is right; what the skin does around it is early.
-- **`moveTo(x, y, duration)` ignores the duration.** The endpoint is written at the end of the
-  handler and `onEndMove` is raised immediately, so both drawers jump rather than slide. Reported as
-  *"its not a smooth opening"*. Making it slide means moving `onEndMove` from *end of handler* to
-  *end of tween*, and **36 corpus views chain their next step from that callback** — it is the
-  drawer template Microsoft shipped — so it wants a corpus sweep either side.
+- **`moveTo(x, y, duration)` ignores the duration.** *Closed by W194* — tweens animate for a caller
+  with a frame clock, and this skin's drawers were the report (*"its not a smooth opening"*).
+- **The window-edge band runs no bracket.** This engine lets the user drag a borderless `.wmz`
+  window's edge; WMP has no such affordance, so no skin anticipates it and `DoSize()`'s pin never
+  runs on that path. Stretching Compact by the edge leaves the drawers behind exactly as the
+  pre-W225 grip did. Either the band raises the view's own grip handler or it is refused on a view
+  that authors one; neither has been measured.
 - **44 of the 50 `res://wmploc.dll` string ids are blank**, including this skin's buffering and
   status format strings.
