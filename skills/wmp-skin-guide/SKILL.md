@@ -95,9 +95,26 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   `wasScaledToFit` is not a readiness flag. The current static frame probe does not exercise live
   child composition or animation; verify those through live-host captures.
 
-The [architecture analysis](../../docs/wmp-skin/hosted-window-architecture-analysis.md) proposes a
-future container/state API; it is not the implemented contract above. The mechanism notes below
-retain measured counterexamples and rejected approaches.
+**Every rule above is a rule each hosting view has to apply for itself, and that is the standing
+weakness of this contract.** Relayout on artwork arrival, the correct ground fill, the overlay
+policy, the metrics, the growth registration — each is centralised as a value or a helper and each
+remains *optional at the call site*. Flow, Cava and PeppyMeter each carry their own borrowed-frame
+fast path; the library computes its content rectangle somewhere else again. A frame dump can be
+clean while the window is wrong, so nothing headless catches a view that simply did not call.
+When a hosted defect reproduces on several windows at once, suspect the call sites before the frame.
+
+**Rejected approach, 2026-09-18: the hosted-window container.** The
+[architecture analysis](../../docs/wmp-skin/hosted-window-architecture-analysis.md) first proposed a
+`WMPHostedSurfaceContainer` owning composition, placement and hit testing for all eight windows, with
+a content protocol, adapters, a presentation state machine, a second border coordinator and a
+migration of `PlexBrowserView`. **It is withdrawn, and re-proposing it needs new evidence.** It was
+priced against a defect population nobody had measured, its state/identity work landed in
+`App/Skinning/` — shared with Winamp Modern and with playlist/EQ, which it did not migrate — and it
+would have made the failures uniform rather than fewer. What the document now carries is WMP-local
+incremental correction plus **one narrowly named helper under `Windows/WMPSkin/` where several WMP
+call sites need the same conversion corrected**. That helper is in scope; the framework is not.
+It does not replace the implemented contract above. The mechanism notes below retain measured
+counterexamples and rejected approaches.
 
 Routing is `routeWMPSkinSurface` / `WMPSkinSurfaces` — 171 of the 180 archives declare a playlist and
 164 an equaliser, so ours is the fallback for the handful that declare neither. **A fallback is
@@ -1651,6 +1668,60 @@ The ones that cost the most, in WMP terms:
   *and* every miss lands where the map's colour bands are, hit testing is exonerated and the defect
   is in what gets painted (W47 was a mirrored mask clip). Doing that first turned a vague live report
   into a one-line fix.
+
+### Triage a hosted-window defect before choosing a seam
+
+**Reported 2026-09-18: the skin's own windows are right and the borrowed ones are wrong — broken
+borders and content in the wrong rectangle, repeating across the eight hosted windows and across
+skins.** Two triage steps come before any fix, and both were skipped by the architecture analysis
+that this section replaced.
+
+- **Compare the skin's own window against the hosted one first, because a fine main window
+  eliminates most of the engine.** The player view and a borrowed frame share archive validation,
+  the XML graph, bitmap decoding, `WMPSceneBuilder`, `WMPRenderer`, paint order, colour and the
+  script runtime. If the skin's own window is right, none of those is the defect, whatever the
+  hosted window looks like. What is left is hosted-only and is three stages deep: subtraction and
+  composition in `WMPHostedFrameTemplate`, asynchronous render and cache in `WMPHostedFrameProvider`,
+  and placement by the view itself.
+- **Then read the frame PNG against the live window, because they fail identically on screen.**
+  A border that is broken in `WMP_HOSTED_FRAME_DUMP` is an extraction defect and belongs in the
+  template. A border that dumps clean over a window that is visibly wrong is an integration defect
+  and belongs in that window's WMP path — and if several windows are wrong at once, in what they
+  each failed to call. **The picture alone cannot tell these apart**, which is the whole reason the
+  fork is worth one capture: § *`gaps=` cannot see a hosted frame that is wrong everywhere but its
+  edges* in `reference/harness.md` is the same lesson learned from the opposite direction, and
+  carries the alpha check that stops a frame full of white paint reading as a frame full of holes.
+
+**Do not open this class with a skins × windows capture matrix.** It is the instrument the analysis
+document reached for twice and it answers the wrong question: sweeping the skin axis measures
+*donors*, and a report that the skin's own window is fine has already cleared them. The variance is
+on the window axis. One skin and three hosted windows localise this faster than 185 skins and one
+window, and `reference/harness.md` § *A named skin outranks a corpus sweep* is the general form.
+The corpus axis is for showing a landed fix did not cost another skin — after there is a fix.
+
+### Evidence proportional to a hosted-window change
+
+Match the evidence to what the change can reach. Every row is WMP-scoped; none of it authorises
+touching another family.
+
+| Change | Required evidence |
+|---|---|
+| Donor extraction or repair in the template | The triggering size and skin, plus the counterexample an over-broad rule would break. A rule used across donors needs the corpus comparison, with the changed output attributed. |
+| Drawing or layout in one hosted window | Live before/after capture of that window at the failing size **and** a normal one; native child placement where the window has children. |
+| A helper called from several WMP call sites | Exercise every changed call site, including the animated ones. |
+| Provider completion, scale or cache handling | A focused test for the reproduced transition, and a live check at the affected backing scale or across a skin switch. |
+| A WMP branch in a shared file | Diff review proving the non-WMP path is untouched, plus the behaviour checked in the other families and across entry to and exit from WMP. |
+
+**For animation, capture several live frames**: the failure mode is content redraw erasing the
+bezel, and a single frame catches it only by luck. **For asynchronous arrival, verify relayout and
+not only repaint** — a window that repaints without laying out leaves its children in the old
+rectangles, which is how W190 and the TheUnit report both presented. **Use the reported dimensions**;
+357x238, 550x464 and 710x810 are useful historical cases and not a substitute for the size the
+reporter was looking at. **Use both backing scales** whenever the change touches pixels or a
+coordinate conversion.
+
+A check in another family verifies isolation and nothing else. A failure there means the WMP change
+is wrong and must be revised or dropped; it is never a licence to fix that family.
 
 ## Presenting a skin in a window
 

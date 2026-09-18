@@ -403,6 +403,13 @@ the script and into the engine's own semantics.
 
 ### Capturing the hosted windows, one at a time
 
+**Two eliminations come before this loop**, both cheap, both in `SKILL.md` § *Triage a hosted-window
+defect before choosing a seam*: check the skin's own window (if it is right, the whole shared engine
+is cleared and the defect is hosted-only), then read the frame PNG against the live window (a broken
+dump is extraction, a clean dump over a wrong window is integration). Capture the set below to
+localise a defect those two steps have already placed — not to go looking for one, and never by
+multiplying the skin axis, which measures donors the reporter has already cleared.
+
 A report about a **borrowed frame** is a report about ten windows, and the capture step has two traps
 that each hand back a confident wrong picture (W219-W222, 2026-09-17):
 
