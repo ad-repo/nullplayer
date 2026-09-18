@@ -15,6 +15,43 @@ import UniformTypeIdentifiers
 final class WMPSkinWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// Whether the drag in flight is the edge band's, taken before AppKit could see it.
+    private var isResizingFromEdgeBand = false
+
+    /// **The window edge is ours, and it has to be taken before AppKit takes it (W227).**
+    ///
+    /// `WMPMainView` has carried an edge band since W193, and for a real drag it has never once
+    /// run. A `.wmz` window is `[.borderless, .resizable]`, and `.resizable` is enough: AppKit
+    /// claims a press near the frame edge in `super.sendEvent` and runs its own modal resize loop,
+    /// so the view is sent no `mouseDown` and the window is then resized entirely outside the
+    /// skin. Measured 2026-09-18 on `Compact` — a `leftMouseDown` at the left edge arrives here,
+    /// nothing arrives at the view, no `leftMouseDragged` or `leftMouseUp` arrives at all, and the
+    /// window grows by exactly the drag. A *click* on the same pixel does reach the view, which is
+    /// why the band read as live and why W227 recorded `edge-band press` as this path's
+    /// instrument: it only ever printed for gestures that resized nothing.
+    ///
+    /// Claiming the press here — and returning without `super` — puts the band back under the
+    /// view's own rules: the skin's `minWidth`/`maxWidth` clamp, the anchored edge, the relayout,
+    /// and the grip handler the skin wraps around its own resize. A press the view does not claim
+    /// is untouched, so a control drawn against the window edge keeps every pixel it had and
+    /// AppKit's own behaviour is exactly what it was.
+    override func sendEvent(_ event: NSEvent) {
+        guard let view = contentView as? WMPMainView else { return super.sendEvent(event) }
+        switch event.type {
+        case .leftMouseDown where view.claimsEdgeBandResize(at: event.locationInWindow):
+            isResizingFromEdgeBand = view.beginEdgeBandResize(at: event.locationInWindow)
+            if isResizingFromEdgeBand { return }
+        case .leftMouseDragged where isResizingFromEdgeBand:
+            view.continueWindowResize(); return
+        case .leftMouseUp where isResizingFromEdgeBand:
+            isResizingFromEdgeBand = false
+            if view.endWindowResize() { view.onScriptResizeEnded?() }
+            return
+        default: break
+        }
+        super.sendEvent(event)
+    }
 }
 
 final class WMPMainWindowController: NSWindowController, MainWindowProviding, NSWindowDelegate {
@@ -632,6 +669,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // Native playlist rows are the one WMP-owned surface the scene cannot paint.  Feed them
         // this skin's palette before they are installed, never a palette from another UI mode.
         view.surfaceStyle = WMPSurfacePalette(skin: skin, viewID: scene.viewID).surfaceStyle
+        // **The grips this view authors for its own resize (W227).** Identified here rather than in
+        // the scene, because a grip is a node whose mouse handler reaches `view.size` and the
+        // handler routinely reaches it through a function in the skin's scripts — which the scene
+        // builder does not have. Computed once per view, from markup that cannot change under it.
+        view.resizeGrips = skin.views
+            .first { $0.id.caseInsensitiveCompare(scene.viewID) == .orderedSame }
+            .map { WMPResizeGrip.grips(in: $0.node, scriptSources: skin.scriptSources) } ?? []
         // The container shape a windowless `<EFFECTS>` is confined to. Decoded through the same
         // store the scene draws from, so it is cached alongside the artwork it comes from.
         view.regionMaskProvider = { [weak store] mask in

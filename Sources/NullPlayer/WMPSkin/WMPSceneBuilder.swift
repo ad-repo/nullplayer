@@ -922,10 +922,28 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 let anchor = overrides.scriptAssignedGeometry
                 func scriptDelta(_ name: String, _ fallback: CGFloat, _ axis: KeyPath<WMPSize, CGFloat>,
                                  _ parentExtent: CGFloat) -> CGFloat {
-                    guard isRoot || parentNode == nil || parentNode?.kind == .view,
-                          let canvas = anchor[WMPScenePropertyAddress(stableID: node.stableID,
+                    guard let canvas = anchor[WMPScenePropertyAddress(stableID: node.stableID,
                                                                       property: name)]
                     else { return fallback }
+                    // **A script assignment on a nested node is already the answer, and the
+                    // authored-size delta must not be added to it.** The re-anchoring above is the
+                    // growth of the element's *parent* since the assignment, and only a child of
+                    // the view root has a parent whose extent this canvas is — for anything deeper,
+                    // `parentExtent` is a subview's height and the canvas is not what it grew from.
+                    // The fallback is worse than nothing there: it is the growth since the
+                    // *markup*, added on top of a number the handler measured at the current size,
+                    // so the resize is counted twice.
+                    //
+                    // `Compact` is the worked case, and it is what is on screen. `svBanner`'s
+                    // `visible_onchange` writes `svScreen.height = svScreenOuter.height -
+                    // svScreen.top` the first time a track plays, and `myeffect` is
+                    // `height="jscript:svScreen.height - top"` under it. Stretch the player to
+                    // 620x573 and *then* start playing: both write the right number for that
+                    // canvas — 435 and 410 — and both were then drawn 195 taller, 195 being
+                    // 573 − 378, the growth since the authored size. The visualizer spilled out of
+                    // the window over the transport strip. Nothing moves for a node the script
+                    // never wrote, which is every other node in the corpus.
+                    guard isRoot || parentNode == nil || parentNode?.kind == .view else { return 0 }
                     return parentExtent - canvas[keyPath: axis]
                 }
                 // The size the element had when the script assigned its alignment, if it did. The

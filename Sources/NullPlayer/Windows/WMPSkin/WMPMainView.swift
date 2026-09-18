@@ -126,11 +126,23 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// a drag that could never begin, and every expression-driven layout in the corpus was stuck at
     /// the size its markup opened with.
     private var resizeEdges: WMPWindowEdges = []
-    /// Whether the drag in flight is the skin's own `view.size(corner)` rather than the window
-    /// edge band. Only the skin's owns a held handler tail to release (W225).
+    /// Whether the drag in flight has a held handler tail to release on the mouse-up (W225).
+    ///
+    /// It used to mean "this drag came from `view.size(corner)`", which was the only way to get
+    /// one. An edge-band drag now raises the view's own grip handler too (W227), so it carries a
+    /// tail as well, and what this flag is actually asking is whether anything is held.
     private var isScriptResize = false
+    /// Whether the drag in flight started on the window edge band rather than on the skin's grip.
+    /// Read by `beginScriptResize`, which must adopt the drag the band already started rather than
+    /// refuse the call that the band itself raised.
+    private var isEdgeBandResize = false
     /// Raised when a `view.size(corner)` drag lets go — the moment WMP's own call returns.
     var onScriptResizeEnded: (() -> Void)?
+    /// **The grips this view authors for its own resize (W227).** Set by the controller from the
+    /// skin's markup and scripts, because a grip is identified by the script its handler reaches
+    /// and the scene carries no script. Empty for the 97 corpus archives that author none, and for
+    /// every one of them the edge band behaves exactly as it did before.
+    var resizeGrips: [WMPResizeGrip.Grip] = []
     private var resizeStartFrame = NSRect.zero
     private var resizeStartMouse = NSPoint.zero
     private var widgetViews: [Int: NSView] = [:]
@@ -329,7 +341,11 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
     func skinPoint(from event: NSEvent, sceneSize: WMPSize) -> WMPPoint {
-        let point = convert(event.locationInWindow, from: nil)
+        skinPoint(fromWindowPoint: event.locationInWindow, sceneSize: sceneSize)
+    }
+
+    func skinPoint(fromWindowPoint windowPoint: NSPoint, sceneSize: WMPSize) -> WMPPoint {
+        let point = convert(windowPoint, from: nil)
         return WMPPoint(x: bounds.width > 0 ? point.x * sceneSize.width / bounds.width : 0,
                         y: bounds.height > 0 ? point.y * sceneSize.height / bounds.height : 0)
     }
@@ -443,15 +459,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // `main_button` backdrop draggable.
         if target == nil, hitTester?.hitTest(point) != nil { return }
         // The edge band is consulted only where hit testing found no control, so a button sitting
-        // against the window edge keeps every pixel it had.
-        if target == nil {
-            let edges = edges(at: convert(event.locationInWindow, from: nil))
-            if !edges.isEmpty {
-                wmpResizeTrace("edge-band press edges=\(edges) — the skin's own bracket does not run")
-                beginWindowResize(edges)
-                return
-            }
-        }
+        // against the window edge keeps every pixel it had. **The window claims this first**, and
+        // for a real drag it is the only path that runs — see `WMPSkinWindow.sendEvent`. What is
+        // left here is a press AppKit delivered to the view anyway, which is the same gesture.
+        if target == nil, beginEdgeBandResize(at: event.locationInWindow) { return }
         guard let target else { beginWindowDrag(event); return }
         capturedTarget = target
         if isSlider(target) { onSliderCaptureChanged?(true, target.stableID) }
@@ -484,10 +495,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         var resumeScriptResize = false
         defer { if resumeScriptResize { onScriptResizeEnded?() } }
         if !resizeEdges.isEmpty {
-            resumeScriptResize = isScriptResize
-            isScriptResize = false
-            wmpResizeTrace("release script=\(resumeScriptResize) size=\(window?.frame.size ?? .zero)")
-            resizeEdges = []
+            resumeScriptResize = endWindowResize()
             // **A grip the skin owns is still a control (W193).** An edge-band drag starts on bare
             // artwork and has nothing to release, but `view.size('bottomright')` is called from a
             // real element's `onMouseDown` — so the press is captured, and returning here would
@@ -855,6 +863,17 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// than strand the skin mid-bracket.
     @discardableResult
     func beginScriptResize(corner: String) -> Bool {
+        // **The band's own call, arriving back (W227).** An edge-band press raises the grip's
+        // handler, so this call is the one the band asked for and there is already a drag under the
+        // pointer. Refusing it would answer `false`, and `false` is the caller's signal that no
+        // release is coming — the held tail would run at once, mid-drag, against the size the
+        // window started at, which is the stranded bracket W225 exists to prevent. The drag keeps
+        // the edges the user is actually pulling rather than the corner the markup names: the grip
+        // is not where the pointer is.
+        if isEdgeBandResize, !resizeEdges.isEmpty {
+            wmpResizeTrace("beginScriptResize ADOPTED corner=\(corner) edges=\(resizeEdges)")
+            return true
+        }
         guard resizeEdges.isEmpty, scene?.isResizable == true,
               NSEvent.pressedMouseButtons & 1 != 0 else {
             wmpResizeTrace("beginScriptResize REFUSED corner=\(corner) "
@@ -882,6 +901,75 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         if corner.contains("top") { edges.insert(.top) }
         if corner.contains("bottom") { edges.insert(.bottom) }
         return edges
+    }
+
+    /// Which of the view's grips an edge-band drag should raise.
+    ///
+    /// A view authors up to seven (`Revert` has the most), and they differ only in the corner they
+    /// name — the statements after the call are the same handler, so any of them runs the bracket.
+    /// The one whose corner shares an edge with the drag is preferred anyway, because a handler
+    /// that reads its own corner reads the one nearest what the user is pulling; the frontmost is
+    /// the fallback, which is what a drag on a plain left or top edge gets.
+    private func grip(for edges: WMPWindowEdges) -> WMPResizeGrip.Grip? {
+        resizeGrips.first { !Self.edges(forCorner: $0.corner).isDisjoint(with: edges) }
+            ?? resizeGrips.first
+    }
+
+    /// **Claim a press on the window edge, and hand the skin its own bracket around it (W227).**
+    ///
+    /// Answers whether the press started a resize. The edge of a borderless `.wmz` window is an
+    /// affordance this engine adds: WMP offers only the grip the skin draws in its corner, so no
+    /// handler in the corpus anticipates a drag that starts anywhere else, and what a bare edge
+    /// drag skipped is the *rest* of that grip handler. 69 of the 87 archives authoring
+    /// `view.size` run something after the call, and in 68 of them it is one idiom —
+    /// `saveVidSize()` / `onVidSetSize()` / `g_fUserHasSized = true`, persisting the size the user
+    /// just dragged to. Pulled by the edge, the window resized and the skin forgot it the moment
+    /// the view closed; `Compact`'s `DoSize()` is the other kind, and left both drawers behind.
+    ///
+    /// So the band raises the view's own grip handler exactly as a press on the grip does, W225's
+    /// machinery holds the tail, and the release replays it against the size the window finished
+    /// at. **Only the handler, not a press**: no target is captured and `interaction` is not told,
+    /// so the grip is never drawn pressed by a drag that never touched it.
+    @discardableResult
+    func beginEdgeBandResize(at windowPoint: NSPoint) -> Bool {
+        let edges = edges(at: convert(windowPoint, from: nil))
+        guard !edges.isEmpty else { return false }
+        beginWindowResize(edges)
+        isEdgeBandResize = true
+        if let grip = grip(for: edges) {
+            wmpResizeTrace("edge-band press edges=\(edges) grip=\(grip.nodeID ?? "-")"
+                + "#\(grip.stableID) corner=\(grip.corner)")
+            isScriptResize = true
+            onScriptEvent?("mousedown", grip.nodeID, grip.stableID)
+        } else {
+            wmpResizeTrace("edge-band press edges=\(edges) — the view authors no grip")
+        }
+        return true
+    }
+
+    /// Whether a press at this window point is the band's rather than a control's. Asked by
+    /// `WMPSkinWindow.sendEvent` before AppKit is given the event, because a control drawn against
+    /// the window edge keeps every pixel it had.
+    func claimsEdgeBandResize(at windowPoint: NSPoint) -> Bool {
+        guard let scene, resizeEdges.isEmpty else { return false }
+        let point = skinPoint(fromWindowPoint: windowPoint, sceneSize: scene.canvasSize)
+        guard interactiveTarget(at: point) == nil, hitTester?.hitTest(point) == nil else { return false }
+        return !edges(at: convert(windowPoint, from: nil)).isEmpty
+    }
+
+    /// One step of a resize in flight, from either path.
+    func continueWindowResize() { dragWindowResize() }
+
+    /// Ends a resize in flight and answers whether a held handler tail is waiting to be replayed.
+    @discardableResult
+    func endWindowResize() -> Bool {
+        let held = isScriptResize
+        wmpResizeTrace("release script=\(held) band=\(isEdgeBandResize) "
+            + "size=\(window?.frame.size ?? .zero)")
+        isScriptResize = false
+        isEdgeBandResize = false
+        resizeEdges = []
+        return held
     }
 
     private func beginWindowResize(_ edges: WMPWindowEdges) {

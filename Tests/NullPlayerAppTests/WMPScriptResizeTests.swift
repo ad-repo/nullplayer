@@ -41,4 +41,65 @@ final class WMPScriptResizeTests: XCTestCase {
             XCTAssertTrue(WMPMainView.edges(forCorner: corner).isEmpty, "corner \(corner)")
         }
     }
+
+    // MARK: W227 — naming the grip the window edge should raise
+
+    private func loadSkin(wms: String) async throws -> WMPLoadedSkin {
+        let entries = [WMPTestArchiveEntry("skin.wms", data: Data(wms.utf8))]
+        return try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive(entries))
+    }
+
+    /// **The shape 233 of the corpus's 234 calls are spelled in**: straight into the handler
+    /// attribute, alongside whatever the skin does after the call.
+    func testAGripSpelledIntoTheHandlerAttributeIsFound() async throws {
+        let skin = try await loadSkin(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <BUTTON id="size" left="300" top="220" image="g.bmp"
+                    onMouseDown="view.size( 'bottomright' );saveVidSize()"/>
+        </VIEW></THEME>
+        """)
+        let grips = WMPResizeGrip.grips(in: skin.views[0].node, scriptSources: [:])
+        XCTAssertEqual(grips.count, 1)
+        XCTAssertEqual(grips.first?.nodeID, "size")
+        XCTAssertEqual(grips.first?.corner, "bottomright")
+    }
+
+    /// **The one that is not, and it is the archive the whole bracket exists for.** `Compact` writes
+    /// `onMouseDown="DoSize()"` with the call inside a function in `compact.js`, so a literal-only
+    /// match finds every grip in the corpus except the only one whose tail does more than save a
+    /// preference. One hop resolves it; deeper than one hop is authored nowhere.
+    func testAGripReachedThroughAFunctionIsFound() async throws {
+        let skin = try await loadSkin(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <BUTTON id="size" left="300" top="220" image="g.bmp" onMouseDown="DoSize();"/>
+        </VIEW></THEME>
+        """)
+        let scripts = ["compact.js": """
+        function DoSize()
+        {
+            if (movingDrawer == 0)
+            {
+                settingsDrawer.verticalAlignment = "bottom";
+                view.size( 'bottomright' );
+                settingsDrawer.verticalAlignment = "top";
+            }
+        }
+        """]
+        let grips = WMPResizeGrip.grips(in: skin.views[0].node, scriptSources: scripts)
+        XCTAssertEqual(grips.first?.nodeID, "size")
+        XCTAssertEqual(grips.first?.corner, "bottomright")
+    }
+
+    /// A control that moves or plays something is not a grip, however it is drawn. The edge band
+    /// raises a grip's handler, so naming the wrong node would fire a skin's transport on a resize.
+    func testAnOrdinaryControlIsNotAGrip() async throws {
+        let skin = try await loadSkin(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <BUTTON id="play" left="10" top="10" image="p.bmp" onClick="player.controls.play();"/>
+            <BUTTON id="mover" left="20" top="10" image="m.bmp" onMouseDown="view.dragMove();"/>
+        </VIEW></THEME>
+        """)
+        XCTAssertTrue(WMPResizeGrip.grips(in: skin.views[0].node, scriptSources: [:]).isEmpty)
+    }
+
 }

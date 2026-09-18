@@ -946,9 +946,40 @@ queue, with the object model as the security boundary — see Amendment 2 in
      `stretch` case. **One archive in the corpus assigns an alignment from script**, so 3 can move
      nothing else — verify with a decoded scan for `.horizontalAlignment =` before touching it.
   **Drivable only live**, and `WMP_RESIZE_TRACE=1` is the instrument: read `release script=true`
-  against the `resume` that must follow it. The **window-edge band runs no bracket at all** — it is
-  an affordance this engine adds and WMP has no equivalent — which is the remaining hole.
-  See `reference/skins/compact.md`.
+  against the `resume` that must follow it. See `reference/skins/compact.md`.
+- **The window edge is ours, and AppKit takes it before the view can (W227).** `WMPMainView` has
+  carried a 6pt edge band since W193 and for a real drag it had never run: a `.wmz` window is
+  `[.borderless, .resizable]`, and `.resizable` alone is enough for AppKit to claim a press near the
+  frame in `NSWindow.sendEvent` and run its own resize loop — the view is sent no `mouseDown`, no
+  `mouseDragged` and no `mouseUp`, and the window is resized entirely outside the skin. A *click* on
+  the same pixel does reach the view, which is why the band read as live and why `edge-band press`
+  only ever printed for gestures that resized nothing. `WMPSkinWindow.sendEvent` claims the press
+  first, and only where the view says no control is there, so a control drawn against the window
+  edge keeps every pixel it had.
+  **What the bare band skipped is the skin's bracket, and the corpus is emphatic about it**: 69 of
+  the 87 archives authoring `view.size` run something after the call, and in 68 it is one idiom —
+  `saveVidSize()` / `onVidSetSize()` / `g_fUserHasSized = true`, persisting the size the user just
+  dragged to. Pulled by the edge, the window resized and the skin forgot it the moment the view
+  closed. So the band raises the view's own grip handler (`WMPResizeGrip` names the node; 233 of the
+  234 corpus calls are spelled into the handler attribute and the one that is not is `Compact`'s
+  `DoSize()`, so it resolves one hop through the skin's scripts), W225's machinery holds the tail,
+  and the release replays it. `beginScriptResize` **adopts** a drag already under the pointer rather
+  than refusing it: refusing answers `false`, which is the caller's signal that no release is
+  coming, and the held tail would then run mid-drag against the size the window started at.
+- **A script-assigned extent is an answer, not a baseline, and a nested one must not be re-grown.**
+  W225's re-anchoring is the growth of the element's *parent* since the assignment, and only a child
+  of the view root has a parent whose extent the canvas is; deeper, the fallback was the growth since
+  the *markup*, added on top of a number the handler measured at the current size — the resize
+  counted twice. `Compact` is the worked case: `svBanner`'s `visible_onchange` writes
+  `svScreen.height = svScreenOuter.height - svScreen.top` the first time a track plays, and
+  `myeffect` is `height="jscript:svScreen.height - top"` under it. Stretch the player to 620x573 and
+  *then* start playing — both wrote the right number for that canvas, 435 and 410, and both were
+  drawn 195 taller, 195 being 573 − 378. The visualizer spilled out of the window over the transport
+  strip, and the drawers read as missing underneath it. **The order is the reproduction**: with a
+  track already playing the same stretch is correct, because the write happens before the resize
+  rather than after it. Nothing moves for a node the script never wrote.
+  **An authored `jscript:` binding on a sibling's extent is a different mechanism and is still open
+  as W235** — `NVIDIA`'s `visEffects` off `visFrame` — measured not to be this.
 - **WMP's `event` object is a global, and 84 of 185 archives read it (W184).** `Compact`'s drawer
   handlers open `view.maxWidth = event.screenWidth` from a plain function call, and its view root
   reads the same thing from a `jscript:` attribute where no event exists at all — so it is bound

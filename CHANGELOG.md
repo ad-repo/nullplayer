@@ -4,6 +4,21 @@
 
 ### Fixed
 
+- **Stretching a Media Player skin by the window edge now runs whatever the skin does around its own
+  resize.** A `.wmz` window has no title bar or frame, so the only resize its author drew is a grip
+  somewhere on the player. This app adds draggable window edges on top of that, and pulling one of
+  them resized the window behind the skin's back: most skins save the size you dragged to and reopen
+  the view at it, so the size was forgotten the moment you closed the view, and *Compact* left both
+  its drawers behind while the body grew over their tabs. Dragging an edge now does exactly what
+  dragging the skin's own grip does.
+
+- **A Media Player skin's visualizer no longer spills out over the player.** Stretching the window
+  and *then* starting a track drew the visualization larger than the window itself, over the
+  transport controls and past the frame, with the skin's drawers lost underneath it. A panel whose
+  size the skin's own script sets was having the window's growth added to it a second time, so it
+  came out as much too big as the window had grown. Reported on *Compact*; the order matters, and
+  with a track already playing the same stretch was always correct.
+
 - **A Media Player skin's visualization now follows the window when you stretch it.** Dragging the
   skin's own resize grip grew the visualizer sideways and left its height where it started, so it
   ended up a wide strip with the player's black panel below it — and the previous/next-visualization

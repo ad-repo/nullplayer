@@ -407,4 +407,42 @@ final class WMPAlignmentTests: XCTestCase {
                        "the handler sized the pane to 300 and its children measure from that, so "
                        + "the strip keeps the margin the script left it at")
     }
+
+    /// **A script-assigned extent on a *nested* node must not have the resize added to it (W227).**
+    ///
+    /// The re-anchoring the test above exercises is the growth of the element's **parent** since the
+    /// assignment, and only a child of the view root has a parent whose extent the canvas is. Deeper
+    /// than that the fallback was the growth since the *markup*, added on top of a number the
+    /// handler measured at the size the window is already at — so the resize was counted twice.
+    ///
+    /// `Compact` is the case it was reported on. `svBanner`'s `visible_onchange` writes
+    /// `svScreen.height = svScreenOuter.height - svScreen.top` the first time a track plays, and its
+    /// `<EFFECTS>` is `height="jscript:svScreen.height - top"` under that. Stretch the player to
+    /// 620x573 and *then* start playing: both wrote the right number for that canvas, 435 and 410,
+    /// and both were drawn 195 taller — 195 being 573 − 378, the growth since the authored size. The
+    /// visualizer spilled out of the window over the transport strip.
+    func testANestedScriptAssignedExtentIsNotRegrownByTheResize() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <SUBVIEW id="outer" width="320" height="240" verticalAlignment="stretch"
+                     horizontalAlignment="stretch" backgroundColor="#000000">
+                <SUBVIEW id="pane" width="320" height="200" verticalAlignment="stretch"
+                         horizontalAlignment="stretch" backgroundColor="#00FF00"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let pane = try stableID(skin, "pane")
+        var overrides = WMPSceneOverrides.empty
+        // The window is already at 320x300 and the handler measured 260 against it.
+        overrides.geometry[.init(stableID: pane, property: "height")] = 260
+        overrides.scriptAssignedGeometry[.init(stableID: pane, property: "height")] =
+            WMPSize(width: 320, height: 300)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", requestedSize: WMPSize(width: 320, height: 300),
+                   overrides: overrides)
+        XCTAssertEqual(try frame(skin, scene, "pane").height, 260,
+                       "the handler's own answer for this canvas, not that plus the 60 the view "
+                       + "grew since its markup")
+    }
+
 }
