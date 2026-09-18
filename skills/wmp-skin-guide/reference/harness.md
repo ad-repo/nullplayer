@@ -562,6 +562,18 @@ Whenever a change makes work happen on **more** commands, more nodes or more oft
 green is about correctness only. Time a repeated render of one heavy view before believing it is
 free: twenty renders after a warm pass took 173.1 ms each before the cache and 0.3 ms after.
 
+### A dump cannot see a **tween** at all, at any clock (W194)
+
+`WMP_RENDER_CLOCK` pins the *animation* clock — GIF frames — and a tween is not on it. A
+`moveTo`/`resizeTo`/`alphaBlendTo` duration animates only for a caller that passes
+`animatesTweens`, and every headless path here deliberately does not: a dump, a census sweep and the
+windowless dispatcher all get the endpoint applied at the handler boundary and the completion raised
+in the same transaction, exactly as before that row. **That is the point** — it is what keeps every
+number on this page valid across the change — but it means no capture, at any clock value, can tell
+a skin that slides from one that jumps. Drive the running app; `Compact`'s drawers are the case.
+`Tests/NullPlayerAppTests/WMPTweenTests.swift` is where the motion itself is falsifiable, because
+the runtime's frame step can be called directly.
+
 ### A dump cannot see *when* a GIF was entered, and `WMP_RENDER_CLOCK` cannot either
 
 `WMP_RENDER_CLOCK` is what makes an animation falsifiable at all, and it still answers only "what is

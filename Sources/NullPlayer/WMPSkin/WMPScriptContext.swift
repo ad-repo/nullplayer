@@ -166,6 +166,9 @@ struct WMPScriptRunResult: Sendable {
     /// has to mean "nothing changed" rather than "there are none" — see
     /// `WMPMainWindowController.applyTimerDelta`.
     var clearedTimers: [Int] = []
+    /// The tweens this transaction asked its caller to animate (W194). Only ever non-empty for a
+    /// transaction run with `animatesTweens`; see `WMPObjectModel.tweenGroup`.
+    var tweens: [WMPScriptTween] = []
 }
 
 /// The skin's JavaScript context: one per skin session, on one dedicated serial queue.
@@ -333,14 +336,18 @@ final class WMPScriptContext: @unchecked Sendable {
              geometry: [Int: WMPRect],
              boundValues: [Int: WMPJSONValue] = [:],
              retiredGeometry: Set<WMPScenePropertyAddress> = [],
-             screen: WMPSize = WMPObjectModel.defaultScreen) async -> WMPScriptRunResult {
+             screen: WMPSize = WMPObjectModel.defaultScreen,
+             animatesTweens: Bool = false,
+             tweenFrame: WMPTweenFrame? = nil) async -> WMPScriptRunResult {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(returning: perform(plan: plan, size: size, snapshot: snapshot,
                                                        preferences: preferences, event: event,
                                                        geometry: geometry, boundValues: boundValues,
                                                        retiredGeometry: retiredGeometry,
-                                                       screen: screen))
+                                                       screen: screen,
+                                                       animatesTweens: animatesTweens,
+                                                       tweenFrame: tweenFrame))
             }
         }
     }
@@ -384,10 +391,13 @@ final class WMPScriptContext: @unchecked Sendable {
                          geometry: [Int: WMPRect], currentViewID: String? = nil,
                          boundValues: [Int: WMPJSONValue] = [:],
                          retiredGeometry: Set<WMPScenePropertyAddress> = [],
-                         screen: WMPSize = WMPObjectModel.defaultScreen) -> WMPScriptRunResult {
+                         screen: WMPSize = WMPObjectModel.defaultScreen,
+                         animatesTweens: Bool = false,
+                         tweenFrame: WMPTweenFrame? = nil) -> WMPScriptRunResult {
         model.beginTransaction(snapshot: snapshot, preferences: preferences,
                                viewID: currentViewID ?? plan.viewID, screen: screen,
                                modifiers: event?.modifiers ?? [])
+        model.animatesTweens = animatesTweens
         pendingTimers.removeAll()
         pendingClearedTimers.removeAll()
         // Sync the element state to the layout the skin is drawn at. The scene was built with the
@@ -417,6 +427,22 @@ final class WMPScriptContext: @unchecked Sendable {
             view.properties["height"] = .number(Double(size.height))
             view.properties["left"] = .number(0)
             view.properties["top"] = .number(0)
+        }
+
+        // **The frame is written before the expressions, not after.** A `.wmz` positions one pane
+        // off another — `top="wmpprop:plLeftCenter.top"` — and an expression resolved against last
+        // frame's value would leave the dependent pane one frame behind the pane it is glued to,
+        // which is W87 in miniature and visible as a tearing drawer. The writes become mutations,
+        // so the runtime commits them over the expression's answer for the same reason a handler's
+        // assignment wins.
+        if let tweenFrame {
+            for write in tweenFrame.writes {
+                model.applyTweenFrame(targetID: write.targetID, property: write.property,
+                                      value: write.value)
+            }
+            for completion in tweenFrame.completions {
+                model.completeTween(stableID: completion.stableID, event: completion.event)
+            }
         }
 
         var result = WMPScriptRunResult()
@@ -486,6 +512,7 @@ final class WMPScriptContext: @unchecked Sendable {
         result.diagnostics += model.diagnostics
         result.timers = pendingTimers
         result.clearedTimers = pendingClearedTimers
+        result.tweens = model.tweens
         return result
     }
 

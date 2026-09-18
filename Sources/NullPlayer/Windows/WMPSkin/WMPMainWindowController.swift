@@ -2007,7 +2007,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             }
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                 size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
-                geometry: activeScene.scriptGeometry)
+                geometry: activeScene.scriptGeometry, animatesTweens: true)
             // **A host command is the script's output, not the drawing's, so it is applied the
             // moment the transaction returns — before the scene is built rather than after it is
             // presented.**
@@ -2069,6 +2069,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             if !switchedView {
                 applyTimerDelta(presentation, registered: output.timerRequests,
                                 cleared: output.clearedTimerTokens)
+                // **Before the early return below, not after it.** A transaction that only started
+                // a tween has moved nothing *yet* — the endpoint is held back, so its overrides
+                // equal the presented scene's and W158 correctly declines to redraw. The motion
+                // still has to begin (W194).
+                startTweenLoop(presentation, hasActiveTweens: output.hasActiveTweens)
             }
             recordScriptDiagnostics(output.diagnostics)
             // **The latch is the artwork's as well as the script's, and it is written from both
@@ -2536,7 +2541,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             let event = WMPJScriptEvent(name: "timer", targetID: nil, handlers: [request.source])
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                 size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
-                geometry: activeScene.scriptGeometry)
+                geometry: activeScene.scriptGeometry, animatesTweens: true)
             // Commands before drawing, and for the reason in `dispatchScriptTransaction`: the
             // build and the render are what a later tick cancels, and the commands are not theirs.
             let switchedView = self.applyHostCommands(output.hostCommands, from: presentation)
@@ -2547,6 +2552,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             if !switchedView {
                 self.applyTimerDelta(presentation, registered: output.timerRequests,
                                      cleared: output.clearedTimerTokens)
+                self.startTweenLoop(presentation, hasActiveTweens: output.hasActiveTweens)
             }
             self.recordScriptDiagnostics(output.diagnostics)
             guard !switchedView, !Task.isCancelled else { return }
@@ -2595,6 +2601,95 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         WindowManager.shared.audioEngine.loadTracks(tracks)
         WindowManager.shared.audioEngine.play()
         refreshHostState()
+    }
+
+    /// **Drive whatever the skin asked to animate, one frame at a time (W194).**
+    ///
+    /// `moveTo`/`resizeTo`/`alphaBlendTo` name a duration and nothing in the corpus ever moved over
+    /// it: the endpoint landed at the handler boundary and `onEndMove` was raised in the same
+    /// transaction, so a 1,000 ms slide took one frame — reported against `Compact`'s drawers as
+    /// *"its not a smooth opening"*. The runtime holds the motion and this is the clock it runs on.
+    ///
+    /// **It is deliberately not the animation loop.** That one paces to the shortest GIF delay in
+    /// the scene and exists only for scenes that have artwork frames; a tween is motion the script
+    /// asked for, runs for a known length of time, and re-renders because the *geometry* moved. A
+    /// scene can be doing both at once and neither cadence is the other's.
+    ///
+    /// One loop per view, started by whichever transaction first reports motion and left running
+    /// while frames are still owed — a tween started by a completion handler is picked up by the
+    /// frame it was raised from, so a chained sequence keeps the loop it is already in rather than
+    /// starting a second one. It stops with the view's other clocks (`stopAllTimers`).
+    private func startTweenLoop(_ presentation: WMPViewPresentation, hasActiveTweens: Bool) {
+        guard hasActiveTweens, presentation.tweenTask == nil else { return }
+        let interval = TimeInterval(WMPJScriptProtocol.tweenFramePeriodMilliseconds) / 1_000
+        presentation.tweenTask = Task { [weak self, weak presentation] in
+            defer { presentation?.tweenTask = nil }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled, let self, let presentation else { return }
+                guard await self.presentTweenFrame(presentation) else { return }
+            }
+        }
+    }
+
+    /// One tween frame: step the motion, then draw the view it moved.
+    ///
+    /// Answers whether another frame is owed. **A frame is a full transaction and a full rebuild**,
+    /// for the same reason a script transaction is (see `dispatchScriptTransaction`): a handler
+    /// writes one pane's `top` and a whole subtree moves with it, and the dirty region that would
+    /// describe cannot be derived from what the tween wrote.
+    ///
+    /// The window can change size inside a frame, and `Compact` is why the row called the callback
+    /// the risk rather than the tween: its drawer's `onEndMove` shrinks the player, so the last
+    /// frame of a closing slide is the frame that resizes the window — which now happens a beat
+    /// after the drawer starts moving, exactly as it does in WMP, instead of in the click.
+    private func presentTweenFrame(_ presentation: WMPViewPresentation) async -> Bool {
+        guard let skin = loadedSkin, let store = imageStore, let scriptRuntime,
+              let activeScene = presentation.activeScene else { return false }
+        let viewID = presentation.viewID
+        guard let output = await scriptRuntime.tweenFrame(
+            skin: skin, viewID: viewID, size: activeScene.canvasSize,
+            snapshot: host.snapshot, geometry: activeScene.scriptGeometry) else { return false }
+        // A completion handler is a handler like any other: it can post commands, register timers
+        // and switch the view, and a switch owns everything after it.
+        let switchedView = applyHostCommands(output.hostCommands, from: presentation)
+        recordScriptDiagnostics(output.diagnostics)
+        guard !switchedView, presentation.viewID == viewID else { return false }
+        if let assigned = output.viewSize { presentation.scriptViewSize = assigned }
+        applyTimerDelta(presentation, registered: output.timerRequests,
+                        cleared: output.clearedTimerTokens)
+        let windowSize = WMPSize(
+            width: presentation.window.contentLayoutRect.width / uiScale,
+            height: presentation.window.contentLayoutRect.height / uiScale)
+        let rebuildSize = presentation.scriptViewSize ?? windowSize
+        do {
+            let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                .build(viewID: viewID, requestedSize: rebuildSize,
+                       interactionState: presentation.interactionState,
+                       overrides: output.overrides)
+            let rendered = try await WMPRenderer(imageStore: store).render(
+                scene: scene, backingScale: renderBackingScale(for: presentation),
+                clock: presentation.animationClock(for: scene.viewID),
+                slotClocks: Self.slotClocks(presentation, for: scene, store: store))
+            guard presentation.viewID == viewID else { return false }
+            if scene.canvasSize != windowSize {
+                setWindowSize(presentation, NSSize(width: scene.canvasSize.width,
+                                                   height: scene.canvasSize.height))
+            }
+            presentation.sceneOverrides = output.overrides
+            presentation.activeScene = scene
+            startAnimation(presentation, for: scene)
+            presentation.presentedListItems = output.listItems
+            presentation.mainView?.updateListItems(output.listItems)
+            presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage,
+                                           scene: scene, traceSource: "tween")
+            arbitrateVideoSurface()
+        } catch {
+            recordScriptDiagnostics([.init(code: "tween-frame",
+                                           message: error.localizedDescription)])
+            return false
+        }
+        return output.hasActiveTweens
     }
 
     /// Drive the scene's animated artwork, if it has any.

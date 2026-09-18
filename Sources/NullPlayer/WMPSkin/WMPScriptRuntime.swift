@@ -14,6 +14,63 @@ enum WMPJScriptProtocol {
     static let maximumPreferenceCount = 512
     static let maximumRepaintHints = 4_096
     static let maximumTransactionsPerSecond = 120
+    /// Tweens a single transaction may start. A handler that slides four panes is the corpus
+    /// idiom; anything past this applies its endpoint instantly rather than being dropped.
+    static let maximumTweens = 64
+    /// The tween loop's frame period. 30 fps against a `.wmz` transaction-plus-rebuild costs a
+    /// third of the 120/s transaction budget and leaves the rest for the view's own timer, which
+    /// is the clock every animating skin in the corpus is already running.
+    static let tweenFramePeriodMilliseconds = 33
+}
+
+/// **One `moveTo`/`resizeTo`/`alphaBlendTo`, expressed as the motion it asked for (W194).**
+///
+/// WMP animates these over the call's duration argument. This engine landed the endpoint at the
+/// handler boundary and raised the completion in the same transaction, so a 1,000 ms slide took one
+/// frame — reported against `Compact`'s drawers as *"its not a smooth opening"*. The endpoint is
+/// still what a caller with no frame clock applies (a render dump is a still, and `WMPObjectModel`
+/// only produces one of these when the transaction is told it has a clock), so the settled state is
+/// unchanged either way; what this adds is the frames in between and, with them, the honest moment
+/// for `onEndMove`.
+struct WMPScriptTweenChannel: Sendable, Hashable {
+    let property: String
+    let from: Double
+    let to: Double
+}
+
+struct WMPScriptTween: Sendable, Hashable {
+    /// The element's script id, which is what a mutation is addressed by.
+    let targetID: String
+    let stableID: Int
+    let channels: [WMPScriptTweenChannel]
+    let durationMilliseconds: Double
+    /// `endmove` or `endalphablend`, raised when the tween **finishes** rather than when the
+    /// handler that started it returns. Nil for `resizeTo`: `onEndResize` is zero uses corpus-wide
+    /// and deliberately not implemented.
+    let completionEvent: String?
+}
+
+/// **One frame of every tween in flight, as the transaction that draws it (W194).**
+///
+/// A tween frame is a real script transaction and not a shortcut around one: the interpolated value
+/// is written through the object model so the element reads where it *is*, the write becomes a
+/// mutation and therefore a scene override, and a tween that reached its end carries its
+/// `onEndMove` into the same transaction's completion pass — which is how a skin's sequence chains
+/// off the end of the motion rather than off the end of the handler that started it.
+struct WMPTweenFrame: Sendable {
+    struct Write: Sendable {
+        let targetID: String
+        let property: String
+        let value: Double
+    }
+
+    struct Completion: Sendable {
+        let stableID: Int
+        let event: String
+    }
+
+    let writes: [Write]
+    let completions: [Completion]
 }
 
 enum WMPJSONValue: Hashable, Codable, Sendable {
@@ -271,13 +328,20 @@ struct WMPScriptOutput: Sendable {
     /// and nil for the store-thumbnail collapse to `0x0`, which is a view saying it has no window
     /// rather than one asking for a smaller one.
     let viewSize: WMPSize?
+    /// **Whether this view still owes a tween frame (W194).** A `moveTo` with a duration animates
+    /// only where something is driving frames, so this is the caller's own loop condition: keep
+    /// calling `WMPScriptRuntime.tweenFrame` while it is true. False on every transaction run
+    /// without `animatesTweens`, which is every headless one.
+    let hasActiveTweens: Bool
 
     init(overrides: WMPSceneOverrides, hostCommands: [WMPJScriptHostCommand] = [],
          diagnostics: [WMPJScriptDiagnostic] = [], repaintNodeIDs: Set<Int> = [],
          timerRequests: [WMPJScriptTimerRequest] = [], clearedTimerTokens: [Int] = [],
          calls: [WMPJScriptCall] = [],
          expressions: [WMPJScriptExpressionResult] = [], expressionOrder: [String] = [],
-         listItems: [Int: [String]] = [:], viewSize: WMPSize? = nil) {
+         listItems: [Int: [String]] = [:], viewSize: WMPSize? = nil,
+         hasActiveTweens: Bool = false) {
+        self.hasActiveTweens = hasActiveTweens
         self.listItems = listItems
         self.viewSize = viewSize
         self.overrides = overrides
@@ -379,6 +443,18 @@ actor WMPScriptRuntime {
     /// `WMPSceneOverrides.scriptAssignedAlignment`.
     private var scriptAssignedAlignment: [String: [WMPScenePropertyAddress: WMPSize]] = [:]
     private var recentTransactionTimes: [Date] = []
+    /// **The tweens in flight, per view scope (W194).** A tween outlives the transaction that
+    /// started it — that is the whole of this row — so it is runtime state rather than transaction
+    /// output. A later call on the same element and property replaces the one running, because a
+    /// skin retoggling a drawer mid-slide means "go the other way", not "queue a second slide".
+    private var activeTweens: [String: [ActiveTween]] = [:]
+
+    private struct ActiveTween {
+        let tween: WMPScriptTween
+        let started: Date
+
+        var endsAt: Date { started.addingTimeInterval(tween.durationMilliseconds / 1_000) }
+    }
     /// The dispatcher view's plan, built once. Building one walks the whole graph, and a dispatcher
     /// runs at the period its markup authored — 100 ms in every corpus skin that has one.
     private var dispatcherPlans: [String: WMPScriptViewPlan] = [:]
@@ -406,14 +482,26 @@ actor WMPScriptRuntime {
     /// markup, and a script tests exactly that: Corona's compact view animates `svVideo` down to 0
     /// and gives up immediately if it reads 0 to begin with, which is what an authored-attributes-
     /// only model reports for an element sized by its bitmap.
+    ///
+    /// `animatesTweens` is the caller promising a frame clock: it will keep calling `tweenFrame`
+    /// until the output stops reporting active tweens. Only a window can (W194); a render dump and
+    /// the corpus census cannot, and for them a `moveTo` lands its endpoint in this transaction
+    /// exactly as it did before that row.
     func transact(skin: WMPLoadedSkin, viewID: String, size: WMPSize,
                   snapshot: WMPHostSnapshot, event: WMPJScriptEvent?,
-                  geometry: [Int: WMPRect] = [:]) async -> WMPScriptOutput {
+                  geometry: [Int: WMPRect] = [:],
+                  animatesTweens: Bool = false,
+                  tweenFrame: WMPTweenFrame? = nil) async -> WMPScriptOutput {
         let scope = WMPPath.fold(viewID)
         guard !torndown else { return WMPScriptOutput(overrides: overrides(for: scope)) }
         let now = Date()
         recentTransactionTimes.removeAll { now.timeIntervalSince($0) >= 1 }
-        guard recentTransactionTimes.count < WMPJScriptProtocol.maximumTransactionsPerSecond else {
+        // **A tween frame is not rate limited, because it is not the script's to spend.** The cap
+        // exists to stop a handler feeding itself; a frame comes from the host's own 30 Hz loop,
+        // and dropping one would strand a drawer short of the pixel it was travelling to and lose
+        // the `onEndMove` that frame was carrying (W194).
+        guard tweenFrame != nil
+                || recentTransactionTimes.count < WMPJScriptProtocol.maximumTransactionsPerSecond else {
             return WMPScriptOutput(overrides: overrides(for: scope),
                 diagnostics: [.init(code: "script-rate-limit",
                                     message: "more than 120 transactions per second")])
@@ -466,7 +554,9 @@ actor WMPScriptRuntime {
                                        preferences: preferences.values(), event: event,
                                        geometry: geometry, boundValues: boundValues,
                                        retiredGeometry: Set((scriptAssignedGeometry[scope] ?? [:]).keys),
-                                       screen: screen)
+                                       screen: screen, animatesTweens: animatesTweens,
+                                       tweenFrame: tweenFrame)
+        register(tweens: result.tweens, in: scope)
 
         var diagnostics = startupDiagnostics + result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
@@ -610,7 +700,82 @@ actor WMPScriptRuntime {
                                calls: result.calls,
                                expressions: result.expressions, expressionOrder: result.expressionOrder,
                                listItems: context.listItems(),
-                               viewSize: mediaDrivenResize ? nil : assigned)
+                               viewSize: mediaDrivenResize ? nil : assigned,
+                               hasActiveTweens: !(activeTweens[scope] ?? []).isEmpty)
+    }
+
+    // MARK: Tweens (W194)
+
+    /// A new call replaces whatever was animating the same element and property. `Compact`'s
+    /// drawer tab is one handler that moves the drawer either way depending on where it reads it,
+    /// so a press mid-slide has to reverse the motion from where it currently *is* — which it does
+    /// for free, because the replacement's `from` was read off the element in the frame it landed.
+    private func register(tweens: [WMPScriptTween], in scope: String) {
+        guard !tweens.isEmpty else { return }
+        let now = Date()
+        var live = activeTweens[scope] ?? []
+        for tween in tweens {
+            let replaced = Set(tween.channels.map { $0.property })
+            live.removeAll { existing in
+                existing.tween.stableID == tween.stableID
+                    && existing.tween.channels.contains { replaced.contains($0.property) }
+            }
+            live.append(.init(tween: tween, started: now))
+        }
+        activeTweens[scope] = live
+    }
+
+    /// **One frame of every tween in flight, or nil when there is nothing left to animate.**
+    ///
+    /// The caller is a frame loop, so this answers the whole question it has: it steps the clock,
+    /// runs the transaction that draws the frame, and its output reports whether another frame is
+    /// owed. A tween that reached its end contributes its endpoint *and* its completion to the
+    /// same frame, so `onEndMove` is raised with the element already at its destination — a handler
+    /// reading `subPlayList.left` to decide whether the drawer is now open sees the number it would
+    /// see in WMP.
+    ///
+    /// Motion is linear. WMP's own easing is undocumented and the corpus is sliding drawers over
+    /// two to four hundred milliseconds, where the curve is not what anyone is reporting.
+    func tweenFrame(skin: WMPLoadedSkin, viewID: String, size: WMPSize,
+                    snapshot: WMPHostSnapshot,
+                    geometry: [Int: WMPRect] = [:]) async -> WMPScriptOutput? {
+        let scope = WMPPath.fold(viewID)
+        guard !torndown, let live = activeTweens[scope], !live.isEmpty else { return nil }
+        let now = Date()
+        var writes: [WMPTweenFrame.Write] = []
+        var completions: [WMPTweenFrame.Completion] = []
+        var remaining: [ActiveTween] = []
+        for entry in live {
+            let duration = entry.tween.durationMilliseconds / 1_000
+            let progress = duration > 0
+                ? min(1, max(0, now.timeIntervalSince(entry.started) / duration))
+                : 1
+            for channel in entry.tween.channels {
+                let value = channel.from + (channel.to - channel.from) * progress
+                writes.append(.init(targetID: entry.tween.targetID, property: channel.property,
+                                    // The last frame is the endpoint itself rather than an
+                                    // interpolation that happens to land near it: a drawer must
+                                    // come to rest on the pixel the skin named.
+                                    value: progress >= 1 ? channel.to : value))
+            }
+            if progress >= 1 {
+                if let event = entry.tween.completionEvent {
+                    completions.append(.init(stableID: entry.tween.stableID, event: event))
+                }
+            } else {
+                remaining.append(entry)
+            }
+        }
+        activeTweens[scope] = remaining
+        return await transact(skin: skin, viewID: viewID, size: size, snapshot: snapshot,
+                              event: nil, geometry: geometry, animatesTweens: true,
+                              tweenFrame: .init(writes: writes, completions: completions))
+    }
+
+    /// Stop animating one view — its window closed, or its view was replaced. Nothing puts the
+    /// endpoint back: a view that stops existing has no motion to finish.
+    func cancelTweens(for viewID: String) {
+        activeTweens.removeValue(forKey: WMPPath.fold(viewID))
     }
 
     /// **A script-assigned alignment is live *through* a resize the same handler makes.**
@@ -886,6 +1051,7 @@ actor WMPScriptRuntime {
         scriptAssignedGeometry.removeValue(forKey: scope)
         scriptAssignedAlignment.removeValue(forKey: scope)
         propertyRegistries.removeValue(forKey: scope)
+        activeTweens.removeValue(forKey: scope)
         context?.discardElements(for: viewID)
         if contextViewID?.caseInsensitiveCompare(viewID) == .orderedSame { contextViewID = nil }
     }
@@ -902,5 +1068,6 @@ actor WMPScriptRuntime {
         scriptAssignedGeometry.removeAll()
         scriptAssignedAlignment.removeAll()
         propertyRegistries.removeAll()
+        activeTweens.removeAll()
     }
 }

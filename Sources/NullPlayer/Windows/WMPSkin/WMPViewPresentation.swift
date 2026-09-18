@@ -77,6 +77,11 @@ final class WMPViewPresentation {
     var animationTraceSleepSeconds: TimeInterval = 0
     /// The script's own `setTimeout`/`setInterval` tasks, by token. Per view because the tokens are
     /// per view: two open panels each run their own chain.
+    /// **The frame loop of whatever this view is currently animating (W194).** A `moveTo` with a
+    /// duration is motion this window owes the user, and it outlives the transaction that asked
+    /// for it — so it is a clock of its own, alongside the view timer and the GIF loop, and it
+    /// stops with them.
+    var tweenTask: Task<Void, Never>?
     var scriptTimerTasks: [Int: Task<Void, Never>] = [:]
     var scriptTask: Task<Void, Never>?
     var loadTask: Task<Void, Never>?
@@ -175,6 +180,8 @@ final class WMPViewPresentation {
     /// exactly when it is most needed.
     func stopAllTimers() {
         cancelScriptTimers()
+        tweenTask?.cancel()
+        tweenTask = nil
         viewTimerTask?.cancel()
         viewTimerTask = nil
         viewTimerMilliseconds = 0

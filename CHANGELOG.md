@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **A Media Player skin's drawers now slide open and shut instead of jumping.** These skins ask for
+  a panel to move over a length of time — *Compact*'s playlist and settings drawers are written to
+  take about half a second — and every one of them arrived instantly, so nothing in any of these
+  skins had ever animated. They now travel for the time the skin asked for. The step a skin runs
+  *after* a panel has finished moving now runs then, too, rather than the moment the click is
+  handled: closing *Compact*'s drawer slides it away and the window shrinks behind it, which is what
+  Media Player itself does.
+
 - **A Media Player skin with anything moving in it no longer repaints its whole window, and its
   playlist no longer redraws, twelve times a second.** *Claw*'s scrolling track title keeps the
   player repainting for as long as it plays, and each of those frames was also rebuilding the

@@ -777,10 +777,37 @@ queue, with the object model as the security boundary — see Amendment 2 in
   slides the drawer, the second reads `subPlayList.left` to decide whether it is now open or shut.
   With the endpoint applied inside the call that read answered the destination, so closing the
   drawer never hid the playlist and it stayed over the player forever — reported as "the playlist is
-  always showing". `WMPObjectModel.tween` queues the endpoint and `WMPScriptContext` flushes at each
-  handler boundary, so W38 (the endpoint lands this transaction) and W55 (`onEndMove` is raised from
-  it) both still hold. **A duration of zero is not a tween** and applies immediately, which is what
+  always showing". **A duration of zero is not a tween** and applies immediately, which is what
   `movePlayButton()`'s `moveTo(x, 116, 0)` toggle depends on.
+- **And the tween now runs for the duration it was given, but only where something is drawing
+  frames (W194).** For four phases the endpoint landed at the handler boundary and the completion
+  was raised in the same transaction, so a 1,000 ms slide took one frame and nothing in the corpus
+  ever animated — reported against `Compact`'s drawers as *"its not a smooth opening"*. **The
+  decision is made per transaction, not per call**: `WMPScriptRuntime.transact(animatesTweens:)` is
+  a caller promising a frame clock, and only a window has one. A render dump, the corpus census and
+  the windowless dispatcher (W89) do not, and for them the call behaves exactly as it did before —
+  endpoint at the handler boundary (W38), completion from it (W55) — so **the settled state is
+  identical either way and every measurement taken against a headless probe still holds**. That is
+  also why a sweep cannot see this row at all; it is drivable only live.
+  With a clock, `WMPObjectModel` holds the motion as a `WMPScriptTween` (channels with `from`/`to`,
+  duration, completion event), the runtime keeps it per view scope, and
+  `WMPMainWindowController.startTweenLoop` steps it at 30 fps through
+  `WMPScriptRuntime.tweenFrame` — a real transaction per frame, so the interpolated value is
+  written through the object model, becomes a mutation and therefore a scene override, and the
+  element reads where it *is* mid-slide. Three things still arrive instantly under a clock, each
+  because a frame would be a guess: a duration of zero, a channel already at its destination (its
+  completion is raised at once, or a sequence chained off a no-op move would stall), and a channel
+  whose current value the model does not hold — which is why `alphaBlendTo` on an **unauthored**
+  `alphaBlend` still arrives rather than fading, and the ALX family keeps the subtrees it depends on
+  arriving. A later call on the same element and property **replaces** the one running, so a drawer
+  re-toggled mid-slide reverses from wherever it is.
+  **The callback is the load-bearing half.** Moving `onEndMove` from end-of-handler to end-of-tween
+  changes when 36 views chain their next step: `Compact` shrinks its own window inside
+  `Playlist_OnEndMove`, so the window now shrinks a beat after the drawer starts closing, which is
+  what WMP does. It is enabled on the **click and view-timer paths only** — load, resize and close
+  still arrive settled, because an `onLoad` sequence chained through `onEndMove` (`Alienware
+  Invader`'s intro, the drawer template's 36 views) would otherwise present its pre-tween state and
+  complete a beat later.
 - **Compact mode is authored by 11 archives, and the button every skin has is not it — audited 2026-09-12.**
   The corpus splits three ways and conflating them wastes a session. **Real compact toggles: 11 skins**, by two
   mechanisms — a switch to a smaller view (`corona`, `9SeriesDefault` → `viewTiny`; `Main_Street` slim/mini;
@@ -1067,8 +1094,10 @@ queue, with the object model as the security boundary — see Amendment 2 in
   by its own glyphs. `CTFontGetAscent` is the floor. It moves nothing that was already inside its
   box and 142 corpus images where text was drawing over the artwork above it.
 - **A call that lands its endpoint completes in the same transaction, and a skin's sequence is
-  chained from that completion (W55).** `moveTo`/`alphaBlendTo` have applied their endpoint
-  immediately since W38, so the step that follows was the missing half: `onEndMove` is 247 uses
+  chained from that completion (W55).** *Superseded in one direction by W194 above: under a frame
+  clock the completion is raised when the tween ends instead, and everything below still describes
+  the headless path and the mechanism both share.* `moveTo`/`alphaBlendTo` have applied their
+  endpoint immediately since W38, so the step that follows was the missing half: `onEndMove` is 247 uses
   across 113 archives, `onEndAlphaBlend` 50 / 21, and **`onEndResize` is zero, so it is deliberately
   not implemented.** `WMPScriptContext.raiseCompletionHandlers` raises them before the geometry
   cascade, bounded and once per `(element, event)`. **The template Microsoft shipped is built out of

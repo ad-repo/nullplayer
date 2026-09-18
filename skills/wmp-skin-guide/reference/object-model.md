@@ -247,8 +247,8 @@ Two consequences bind any change to this set:
   141. See `harness.md` § *Counting a tag across the corpus*. Dropping a
   name can only turn a currently-tallied call back into a silent empty string.
 
-Implemented today: `moveTo`, `resizeTo`, `alphaBlendTo` (endpoint applied immediately — the tween is
-*not* drawn yet, but the **completion now fires**, see below),
+Implemented today: `moveTo`, `resizeTo`, `alphaBlendTo` (**animated over the duration they name
+wherever a frame clock is driving them, and applied instantly everywhere else — see *Tweens* below**),
 `appendItem`/`removeAllItems`/`getItem` on `POPUP`, `setColumnResizeMode` and `setColumnWidth` on the
 playlist kinds — `ITEMSPLAYLIST` among them, and it is a modelled `.playlist` kind since W97 —
 `next`/`previous`/`nextPreset` on `EFFECTS`, and `close`/`minimize`/`size` on the view.
@@ -277,7 +277,53 @@ ends, so `DoSize()`'s unpin runs afterwards; here a transaction completes before
 applied, so both brackets have already landed when the drag starts. The drag is right, the
 bracketing is early, and no arrangement of this pipeline changes that.
 
-**A call that lands its endpoint completes in the same transaction (W55).** `WMPObjectModel` records
+### Tweens (W194)
+
+**A duration animates only where something is drawing frames, and the decision is made per
+transaction.** `WMPScriptRuntime.transact(animatesTweens:)` is the caller promising a clock. Only a
+window has one: `WMPMainWindowController` passes it on the **click and view-timer paths**, and
+nothing else does — not a render dump, not the corpus census, not the windowless dispatcher (W89),
+and not the load, resize or close paths, where an `onLoad` sequence chained through `onEndMove` has
+to have finished before the first present. Without a clock the call behaves exactly as it did before
+this row, so **the settled state is identical either way** and no headless measurement on this
+subsystem moved. The corollary is that no probe here can see the row at all; it is drivable only in
+the running app.
+
+With a clock, `WMPObjectModel.tweenGroup` emits a `WMPScriptTween` — the channels it is moving with
+their `from` and `to`, the duration, and the completion event — and writes nothing. The runtime holds
+the live set per view scope; `WMPMainWindowController.startTweenLoop` drives
+`WMPScriptRuntime.tweenFrame` at 30 fps until the output stops reporting `hasActiveTweens`. **A frame
+is a real transaction**: the interpolated value goes through the object model, becomes a mutation and
+therefore a scene override, and the element reads where it *is* mid-slide, which is what W112 is
+about. Motion is linear — WMP's own easing is undocumented and the corpus slides drawers over two to
+four hundred milliseconds. The last frame writes the endpoint itself rather than an interpolation
+near it, so a drawer rests on the pixel the skin named.
+
+Three things still arrive instantly under a clock, each because a frame would be a guess:
+
+* **A duration of zero**, which is never a tween and must be readable by the rest of the handler.
+* **A channel already at its destination.** Its completion is raised at once, or a sequence chained
+  off a no-op move would stall waiting for a frame with nothing to draw.
+* **A channel whose current value the model does not hold.** `left`/`top`/`width`/`height` are
+  synced from the scene each transaction so they are always there; `alphaBlend` is absent unless
+  authored or previously written, and an absent one *inherits* (`WMPSceneBuilder.inheritedAlpha`),
+  so the only number a fade could start from is the opaque default. `alphaBlendTo` on an unauthored
+  `alphaBlend` therefore arrives rather than fading — which is what the Alienware/ALX family's
+  `m_anim_*` subtrees depend on.
+
+A later call on the same element and property **replaces** the one running, so a drawer re-toggled
+mid-slide reverses from wherever it currently is. `WMPScriptRuntime.cancelTweens(for:)` and
+`discardView` drop a view's motion outright: a view that stops existing has no motion to finish.
+
+**The callback is the load-bearing half of this row, not the tween.** Moving `onEndMove` from
+end-of-handler to end-of-tween changes when 36 views chain their next step, and `Compact` shrinks its
+own window inside `Playlist_OnEndMove` — so the window now shrinks a beat after the drawer starts
+closing, which is what WMP does. `Tests/NullPlayerAppTests/WMPTweenTests.swift` pins both halves,
+starting with the no-clock invariant.
+
+**A call that lands its endpoint completes in the same transaction (W55).** *Under a frame clock the
+completion is raised at the end of the tween instead; everything here describes the mechanism both
+paths share and the timing of the headless one.* `WMPObjectModel` records
 `(stableID, event)` on every `moveTo` and `alphaBlendTo`; `WMPScriptContext.raiseCompletionHandlers`
 turns each into the `onEndMove`/`onEndAlphaBlend` the markup authored, before the geometry cascade so
 a chained step's writes still propagate, bounded by `WMPPhase0Limits.expressionPasses` and once per

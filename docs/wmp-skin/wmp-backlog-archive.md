@@ -2451,3 +2451,51 @@ displays"), and neither is visible in any headless probe: the pane switch itself
 |---|---|---|---|
 | W223 | An **artwork repaint presents the pane state a script transaction has already replaced**, so a pane opens, is covered by the one it replaced, and comes back ~300 ms later | Every skin whose pane switch is a script write and whose button has a hover/down image — `claw` is the report; the corpus's pane switches are script writes almost without exception | `renderInteraction` read `presentation.sceneOverrides` **before** its task and presented whatever came back. Measured on the running app: `946.471 present src=transaction widgets=[playlist:6]` (the click opens the list) → `946.483 present src=interaction widgets=[effects:4]` (the mouse-up repaint, built on `pl.visible=false`: the list is dropped and a fresh `WMPEffectsSurfaceView` is created in its place, which is the **black** — an empty GL surface until its first frame) → `946.785 present src=transaction widgets=[playlist:6]` (the next transaction brings it back). **Closed 2026-09-17.** The overrides are read per attempt and re-checked after the render; a transaction that landed in between owns the pane and the repaint rebuilds against what it wrote, up to three attempts. **Giving up is safe rather than a compromise**: `state` is stored on `presentation.interactionState` before the task and every other build path passes it, so the down/hover image is drawn by whichever present lands next. Verified live: three clicks, three pane switches, no `interaction` present contradicting a `transaction`. |
 | W224 | **A repaint of the same structure did all the work of a new scene**, including a full redraw of every hosted surface, at the animation loop's rate | Every skin with anything moving in it; `claw` with its list open and **no** visualizer still presents 11.8x/s off one scrolling `<TEXT>` | The animation loop re-renders `presentation.activeScene` — the *same* scene — so each frame is a new picture and nothing else, but `present` rebuilt the hit tester, re-synced the widgets, reset the tooltips, invalidated the cursor rects, rebuilt the accessibility tree and, through `synchronizeWidgetViews`'s `refreshHostState`, redrew the whole playlist: **106 list redraws in 9 s with the list unchanged**. **Closed 2026-09-17.** A present whose `hits` **and** `widgets` both equal the last one's skips all of it (`structure=same` on the trace line), and `WMPPlaylistSurfaceView.update` marks itself dirty only when the rows, the play marker, the highlight or the scroll position moved. `overlayView.frame` and the widget frames were already re-set in `layout()`, which AppKit runs on any bounds change, so nothing is left stale by the skip. **Two controls, because a guard that is simply stuck measures identically to one that works**: a pane switch is still one `structure=new` present with one `drop`/`create` pair, and skipping to the next track of the 3-track cue row produced exactly one `playlist draw` with `selected=` 0 → 1. After: 114 presents in 9 s, all `structure=same`, **0** playlist redraws. |
+
+## W194 — a tween that runs for the duration it was given, 2026-09-18
+
+Reported on 2026-09-16 against `Compact`'s drawers as *"its not a smooth opening"*. For four phases
+`moveTo`/`resizeTo`/`alphaBlendTo` landed their endpoint at the handler boundary (W38) and raised
+`onEndMove` in the same transaction (W55), so a 1,000 ms slide took one frame and **nothing in the
+corpus ever animated**.
+
+**Closed 2026-09-18.** The shape is a split, and it is what made the row safe to take: **a tween
+animates only where something is drawing frames, decided per transaction.**
+`WMPScriptRuntime.transact(animatesTweens:)` is a caller promising a clock, and only a window has
+one — `WMPMainWindowController` passes it on the click and view-timer paths and nowhere else. A
+render dump, the corpus census and the windowless dispatcher (W89) get exactly the behaviour they had
+before, so **the settled state is identical either way and not one headless measurement on this
+subsystem moved**. With a clock, `WMPObjectModel.tweenGroup` emits a `WMPScriptTween` and writes
+nothing; the runtime holds the live set per view scope and `startTweenLoop` drives
+`WMPScriptRuntime.tweenFrame` at 30 fps until no frames are owed. A frame is a **real transaction** —
+the interpolated value goes through the object model, becomes a mutation and therefore a scene
+override — so the element reads where it *is* mid-slide, which is W112 preserved rather than
+re-litigated. The mechanism is written up in `reference/object-model.md` § *Tweens*.
+
+**The callback was the risk and it is where the visible behaviour changed.** `onEndMove` moved from
+end-of-handler to end-of-tween, which changes when 36 views chain their next step: `Compact` shrinks
+its own window inside `Playlist_OnEndMove`, so the window now shrinks a beat after the drawer starts
+closing — what WMP does, and the reason the row warned about it. Load, resize and close deliberately
+stay instant: an `onLoad` sequence chained through `onEndMove` (`Alienware Invader`'s intro, the
+drawer template's 36 views) would otherwise present its pre-tween state and complete a beat later.
+
+**Three cases still arrive instantly under a clock**, each because a frame would be a guess: a
+duration of zero (never a tween — `movePlayButton()` reads it back), a channel already at its
+destination (its completion is raised at once, or a sequence chained off a no-op move stalls), and a
+channel whose current value the model does not hold — which is why `alphaBlendTo` on an **unauthored**
+`alphaBlend` arrives rather than fading, keeping the Alienware/ALX `m_anim_*` subtrees as they were.
+
+**The process note worth keeping: no probe on this subsystem can see this row.** `WMP_RENDER_CLOCK`
+pins the GIF clock and a tween is not on it, and the headless paths are the ones deliberately left
+instant — so a capture at any clock value cannot tell a skin that slides from one that jumps. It was
+closed against the running debug build, driven by the reporter across `Compact`, `xsn_sports`,
+`corona`, `Cablemusic` and the Alienware family: the first three for the motion and the callback
+ordering, the last two as the regression checks for W112 and for `alphaBlendTo`'s arriving subtrees.
+`Tests/NullPlayerAppTests/WMPTweenTests.swift` is where the motion is falsifiable at all, because the
+frame step can be called directly; its first test is the no-clock invariant the sweep rests on. Noted
+on `WMP_RENDER_CLOCK`'s own section in `reference/harness.md`.
+
+Original row:
+
+| W194 | `moveTo`/`resizeTo`/`alphaBlendTo` ignore their duration, so nothing in the corpus ever animates | **the duration form is corpus-wide**; the completion callbacks it would move are **36 views** (`onEndMove`, the drawer template Microsoft shipped) | Reported 2026-09-16 as *"its not a smooth opening"* against `Compact`'s drawers, which jump rather than slide. `WMPObjectModel.flushPendingTweens` writes the endpoint at the end of the handler and `WMPScriptContext.raiseCompletionHandlers` raises `onEndMove` immediately, so a 1,000 ms slide takes one frame. **The tween is the easy half; the callback is the risk.** Moving `onEndMove` from *end of handler* to *end of tween* changes when 36 views' sequences chain — W55 is the row that made that callback load-bearing, and `Compact` itself shrinks its window inside `Playlist_OnEndMove`, so a real tween means the window shrinks a second after the drawer starts closing, which is what WMP does. Sweep the corpus either side and drive at least `Compact`, `xsn_sports` and `corona` live; a render dump cannot see motion (`WMP_RENDER_CLOCK` pins frames for GIFs only). |
+

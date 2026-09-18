@@ -114,6 +114,15 @@ final class WMPObjectModel {
     /// Endpoints of `moveTo`/`resizeTo`/`alphaBlendTo` calls that named a duration, held until the
     /// handler that made them returns. See `flushPendingTweens()`.
     private var pendingTweens: [(element: WMPScriptElement, property: String, value: WMPJSONValue)] = []
+    /// **Whether this transaction's caller has a frame clock (W194).** A window does; a render
+    /// dump, a corpus sweep and the windowless dispatcher do not, and for them a tween's only
+    /// honest answer is its settled state — which is what `pendingTweens` above lands and what
+    /// every measurement on this subsystem was taken against. Only a transaction with a clock
+    /// produces `tweens`, so the two paths agree on where the motion ends and differ only in
+    /// whether anything is drawn on the way there.
+    var animatesTweens = false
+    /// The tweens this transaction asked the host to animate, in call order.
+    private(set) var tweens: [WMPScriptTween] = []
     private(set) var diagnostics: [WMPJScriptDiagnostic] = []
     /// Reads made since the last `beginDependencyCapture()`, in order. One expression's dependency
     /// list; the topological sort is built out of these.
@@ -140,6 +149,7 @@ final class WMPObjectModel {
         diagnostics.removeAll(keepingCapacity: true)
         dependencyReads.removeAll(keepingCapacity: true)
         completions.removeAll(keepingCapacity: true)
+        tweens.removeAll(keepingCapacity: true)
     }
 
     func beginDependencyCapture() {
@@ -1125,18 +1135,16 @@ final class WMPObjectModel {
         // transaction — the tween itself is rendering work, not a missing member (W38) — but **not
         // until the handler that asked for it has returned**; see `tween(_:_:_:duration:)`.
         case (_, "moveto"):
-            tween(element, "left", .number(arguments.first?.number ?? 0),
-                  duration: arguments.count > 2 ? arguments[2].number : nil)
-            tween(element, "top", .number(arguments.count > 1 ? (arguments[1].number ?? 0) : 0),
-                  duration: arguments.count > 2 ? arguments[2].number : nil)
-            completions.append((element.stableID, "endmove"))
+            tweenGroup(element, duration: arguments.count > 2 ? arguments[2].number : nil,
+                       completion: "endmove",
+                       channels: [("left", arguments.first?.number ?? 0),
+                                  ("top", arguments.count > 1 ? (arguments[1].number ?? 0) : 0)])
             return .value(.null)
         case (_, "resizeto"):
-            tween(element, "width", .number(max(0, arguments.first?.number ?? 0)),
-                  duration: arguments.count > 2 ? arguments[2].number : nil)
-            tween(element, "height",
-                  .number(max(0, arguments.count > 1 ? (arguments[1].number ?? 0) : 0)),
-                  duration: arguments.count > 2 ? arguments[2].number : nil)
+            tweenGroup(element, duration: arguments.count > 2 ? arguments[2].number : nil,
+                       completion: nil,
+                       channels: [("width", max(0, arguments.first?.number ?? 0)),
+                                  ("height", max(0, arguments.count > 1 ? (arguments[1].number ?? 0) : 0))])
             return .value(.null)
         // The third of the trio, and the one the Alienware/ALX family is built out of: its big
         // `m_anim_*` artwork hangs off subviews authored `alphaBlend="0"`, which the scene lays out
@@ -1144,10 +1152,9 @@ final class WMPObjectModel {
         // back is this call. The endpoint is applied now, so the subtree arrives at the alpha the
         // skin asked for without fading to it.
         case (_, "alphablendto"):
-            tween(element, "alphablend",
-                  .number(min(255, max(0, arguments.first?.number ?? 0))),
-                  duration: arguments.count > 1 ? arguments[1].number : nil)
-            completions.append((element.stableID, "endalphablend"))
+            tweenGroup(element, duration: arguments.count > 1 ? arguments[1].number : nil,
+                       completion: "endalphablend",
+                       channels: [("alphablend", min(255, max(0, arguments.first?.number ?? 0)))])
             return .value(.null)
         // Nothing draws playlist columns, so this stores what the skin asked for and is counted
         // inert — the census keeps ranking the demand instead of losing it to a working-looking
@@ -1179,6 +1186,51 @@ final class WMPObjectModel {
     /// returns, before it raises any completion. **A duration of zero is not a tween**: it is an
     /// instant move and a later read in the same handler must see it, which is what
     /// `movePlayButton()` and `moveSetDrawer()` toggle on.
+    /// **One call of the trio, and the decision of whether anything animates (W194).**
+    ///
+    /// A duration is a request for motion and this engine can only honour it where something is
+    /// going to draw the frames: `animatesTweens` is the transaction saying its caller has a clock.
+    /// With no clock — a render dump, the corpus census, the windowless dispatcher (W89) — the call
+    /// behaves exactly as it did before this row: the endpoint lands at the handler boundary (W38)
+    /// and the completion is raised in the same transaction (W55). With one, the endpoint is held
+    /// back entirely and `WMPScriptRuntime` steps it, which is the only way `onEndMove` can be
+    /// raised when the tween *ends* rather than when the handler returns.
+    ///
+    /// Three things fall back to the instant path rather than being animated, and each is a case
+    /// where a frame would be a guess: a duration of zero (never a tween — `movePlayButton()`'s
+    /// `moveTo(x, 116, 0)` toggle depends on reading it back), a channel already at its
+    /// destination, and a channel whose current value the model does not hold. That last one is
+    /// why the ALX family's `alphaBlendTo` on an unauthored `alphaBlend` still arrives instantly:
+    /// an absent `alphaBlend` inherits its parent's (`WMPSceneBuilder.inheritedAlpha`), so the
+    /// only number a fade could start from is the opaque default, and the corpus leans on those
+    /// subtrees *arriving* rather than on their fading in.
+    private func tweenGroup(_ element: WMPScriptElement, duration: Double?, completion: String?,
+                            channels: [(property: String, value: Double)]) {
+        let animates = animatesTweens && (duration.map { $0.isFinite && $0 > 0 } ?? false)
+        var resolved: [WMPScriptTweenChannel] = []
+        if animates {
+            for channel in channels {
+                // `alphaBlend` is the one property with a meaningful default: absent means the
+                // element inherits, which at full opacity is 255.
+                let current = element.properties[channel.property]?.number
+                    ?? (channel.property == "alphablend" ? 255 : nil)
+                guard let current, current.isFinite, current != channel.value else { continue }
+                resolved.append(.init(property: channel.property, from: current, to: channel.value))
+            }
+        }
+        guard animates, !resolved.isEmpty, tweens.count < WMPJScriptProtocol.maximumTweens else {
+            for channel in channels {
+                tween(element, channel.property, .number(channel.value), duration: duration)
+            }
+            // A tween with nowhere to travel is over the moment it starts, so its completion is
+            // now — the step a sequence chains off must not be lost to a no-op move.
+            if let completion { completions.append((element.stableID, completion)) }
+            return
+        }
+        tweens.append(.init(targetID: element.id, stableID: element.stableID, channels: resolved,
+                            durationMilliseconds: duration ?? 0, completionEvent: completion))
+    }
+
     private func tween(_ element: WMPScriptElement, _ property: String, _ value: WMPJSONValue,
                        duration: Double?) {
         guard let duration, duration.isFinite, duration > 0 else {
@@ -1186,6 +1238,22 @@ final class WMPObjectModel {
             return
         }
         pendingTweens.append((element, property, value))
+    }
+
+    /// **One tween frame, written where the handler's endpoint would have gone.**
+    ///
+    /// The mutation this records is what carries the frame into the view's overrides, and it leaves
+    /// the element reading where it now *is* — which is what a handler that runs mid-tween has to
+    /// see, and the whole point of W112.
+    func applyTweenFrame(targetID: String, property: String, value: Double) {
+        guard let element = element(targetID) else { return }
+        _ = writeElement(element, property, .number(value))
+    }
+
+    /// A finished tween's `onEndMove`/`onEndAlphaBlend`, queued for this transaction's completion
+    /// pass — the one `WMPScriptContext.raiseCompletionHandlers` already runs (W55).
+    func completeTween(stableID: Int, event: String) {
+        completions.append((stableID, event))
     }
 
     /// Applies every endpoint queued since the last flush. Called by `WMPScriptContext` at each
