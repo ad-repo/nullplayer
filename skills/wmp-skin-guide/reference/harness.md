@@ -1579,6 +1579,68 @@ warning path as a missing file. An override is runtime data; nothing it carries 
 
 ---
 
+## After the string table (184-archive corpus, rev `bc1b777f`, 2026-09-18)
+
+**The top of `starved.tsv` was not a list of starved views, and it had never been checked against
+its own PNGs.** Taking W68's first instruction literally — take the top row, dump the view, look at
+it — the two views ranked 0.90 both draw their whole player:
+
+| ratio | view | what the PNG shows |
+|---|---|---|
+| 0.90 | `Batman Begins/mainView` | blank at frame 0; **complete** at `WMP_RENDER_SETTLE=160` |
+| 0.90 | `Alienware Invader/mainView` | frame 0 of a 568-frame intro (already known, W75) |
+| 0.76 | `Constantine/mainView` | its full shield |
+| 0.72 | `Disney_Mix_Central/mainView` | its full banner |
+
+Batman is Alienware Invader's shape exactly: `onViewTimer()` walks `intro_f1…154.png` into
+`mainBack.backgroundImage` off a 500 ms→50 ms timer and only at frame 154 sets
+`mainBackGroup1.visible = true`. `2 nodes, 0 commands, 0 hits` → `40 nodes, 29 commands, 27 hits,
+3 widgets` once it has run. **An intro skin at the top of this ranking is the ranking working
+correctly and saying nothing** — always settle a `0 commands` row before opening its markup.
+
+**What the numerator was actually counting is a string table.** `WMP_RENDER_UNRESOLVED` on Batman's
+19: one `<controls>` (W111) and **seventeen `<TEXT>` nodes that were never boxes** —
+
+```xml
+<subview id="locSub">
+  <text id="locShowPl"   toolTip="Show Playlist" />
+  <text id="timeElapsed" toolTip="Click to show remaining time" />
+```
+
+— the Skins Factory house style for string constants, read back by script as `locShowPl.toolTip`.
+No `value` to measure and no artwork to fall back on, so every one recorded `unresolved`. That is
+**733 of 1,183 unresolved nodes across 87 of the 184 archives**, led by the ALX/Alienware family
+(26 each), `Batman Begins` and `Alienware Invader` (25), `Star Wars`, `STALKER`, `LostPlanet` (23).
+
+`WMPSceneBuilder.isStringTableText` now excludes them, and the rule is narrower than "text with no
+size" for three reasons each of which is a real population:
+
+* a node the **script** fills resolves when it is filled — `literalString` reads the scene overrides
+  before the markup, so asking for the override too is what keeps this from swallowing one;
+* a `value` authored as a `wmpprop:`/`jscript:` binding answers nil from `literalString` and is not
+  literal text, so the raw attribute is tested as well;
+* only `.text` qualifies — `<STATUSTEXT>`, `<CURRENTPOSITIONTEXT>` and `<DURATIONTEXT>` take their
+  content from the player, so an unsized one genuinely has nowhere to draw.
+
+**What the census pair said.** Two `wmp_skin_census.sh` runs over 184 archives:
+
+| | before | after |
+|---|---:|---:|
+| unresolved nodes | 1,181 | **456** |
+| of which `text` | 786 | **61** |
+| every other tag | — | **not one node moved** |
+| `starved(>=50%)` | 14 views / 14 skins | **2 / 2** |
+| PNGs | 553 | **553 identical** |
+
+The single differing PNG is `Scooby-Doo_2/infoView`, the corpus's one nondeterministic view. The
+invariant files are byte-identical apart from `loadms` timings and that view's blit count, so no
+node, command, hit or widget moved anywhere — which is what a tally-only change must look like.
+
+**This is a measurement-only change and has no UI signature.** Nothing to click, nothing to see in
+the app; the census pair is the whole verification, and a live pass would be a weaker version of it.
+
+---
+
 ## After the starvation classes (179-archive corpus, 2026-09-09)
 
 `starved.tsv` had ranked views for two phases and nothing had been taken off the top of it, because

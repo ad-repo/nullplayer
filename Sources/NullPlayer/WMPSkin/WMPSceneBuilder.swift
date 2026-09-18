@@ -748,7 +748,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     return
                 }
                 guard var width, var height else {
-                    if !unresolvedNodes.contains(node.stableID) {
+                    let isStringTable = width == nil && height == nil
+                        && isStringTableText(node, literalString)
+                    if !unresolvedNodes.contains(node.stableID), !isStringTable {
                         let missing = [width == nil ? "width" : nil, height == nil ? "height" : nil]
                             .compactMap { $0 }.joined(separator: "+")
                         recordUnresolved(node, attribute: "size",
@@ -1934,6 +1936,34 @@ struct WMPSceneBuilder: @unchecked Sendable {
             return true
         }
         return isNonLayout(node.kind)
+    }
+
+    /// A `<TEXT>` that states no text and no box: the skin is using it as a **string table**, not
+    /// as a control, and it was never going to draw a pixel.
+    ///
+    /// The Skins Factory house style declares one `<subview id="locSub">` per view holding a
+    /// `<text id="locShowPl" toolTip="Show Playlist" />` for every string its script needs, and
+    /// reads them back as `locShowPl.toolTip`. Nothing gives such a node a size — there is no
+    /// `value` to measure and no artwork to fall back on — so every one of them was recorded
+    /// `unresolved`, which is the numerator `starved.tsv` ranks the whole corpus on. That is
+    /// **733 of the 1,183 unresolved nodes** in the 184-archive sweep, and it put two skins at the
+    /// very top of the ranking that are not starved at all: `Batman Begins/mainView` and
+    /// `Alienware Invader/mainView` both score 0.90 and both draw their whole player once their
+    /// intro animation has run (`WMP_RENDER_SETTLE=160` for Batman's 154 frames). Ranking a
+    /// phantom is the same defect `isNonLayout` was written for; see W111.
+    ///
+    /// The test is deliberately narrower than "a text node with no size". A node the *script*
+    /// fills resolves the moment it is filled, because `literalString` reads the scene overrides
+    /// before the markup — so asking for the override too is what keeps this from swallowing one.
+    /// A `value` authored as a `wmpprop:`/`jscript:` binding answers nil from `literalString` and
+    /// is not literal text, so the raw attribute is tested as well. And only `.text` qualifies:
+    /// `<STATUSTEXT>`, `<CURRENTPOSITIONTEXT>` and `<DURATIONTEXT>` take their content from the
+    /// player rather than from an attribute, so an unsized one genuinely has nowhere to draw.
+    private func isStringTableText(_ node: WMPNode,
+                                   _ literalString: (WMPNode, String) -> String?) -> Bool {
+        node.kind == .text
+            && node.attribute(named: "value") == nil
+            && literalString(node, "value") == nil
     }
 
     private func isNonLayout(_ kind: WMPElementKind) -> Bool {
