@@ -13,6 +13,22 @@ func wmpSeekTrace(_ message: @autoclosure () -> String) {
     guard ProcessInfo.processInfo.environment["WMP_SEEK_TRACE"] != nil else { return }
     FileHandle.standardError.write(Data(("[wmp/seek] " + message() + "\n").utf8))
 }
+
+/// `WMP_WIDGET_TRACE=1` — the lifetime of every hosted widget view against the presents that carry
+/// it: one line per present naming the code path it came from and the widgets in the scene, a
+/// `create`/`drop` per hosted view, and a line per playlist redraw.
+///
+/// It exists because a pane that opens and then closes itself is invisible to every other
+/// instrument: `WMP_RENDER_CLICK` rebuilds one scene from one event, and nothing headless can see a
+/// *second* present, from a different path, landing 11 ms later with the state the first replaced —
+/// `claw`'s "it displays, then goes black, then displays" (W223). The `structure=` field is the
+/// other half: it says whether a present carried a new scene structure or only a new picture
+/// (W224). Full grammar and the captures to compare against are in `reference/harness.md`.
+func wmpWidgetTrace(_ message: @autoclosure () -> String) {
+    guard ProcessInfo.processInfo.environment["WMP_WIDGET_TRACE"] != nil else { return }
+    let t = Date().timeIntervalSince1970
+    FileHandle.standardError.write(Data((String(format: "[wmp/widget] %.3f ", t) + message() + "\n").utf8))
+}
 #endif
 
 /// Which window edges a borderless-window resize drag is moving.
@@ -159,19 +175,36 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
 
 
     func present(_ cgImage: CGImage, overlay: CGImage? = nil, scene: WMPScene,
-                 dirtyBounds: WMPRect? = nil) {
+                 dirtyBounds: WMPRect? = nil, traceSource: String = "?") {
         let previous = self.scene
         image = NSImage(cgImage: cgImage, size: bounds.size)
         overlayView.image = overlay.map { NSImage(cgImage: $0, size: bounds.size) }
         self.scene = scene
-        hitTester = WMPHitTester(hits: scene.hits)
-        synchronizeWidgetViews(scene.widgets)
-        // The AppKit overlays — playlist, equalizer, popup, effects, video — are positioned in
-        // `layout()`, which AppKit will not run on its own just because a new scene arrived. Without
-        // this an equalizer that the skin slid away stays on screen at its old frame.
-        needsLayout = true
-        removeAllToolTips(); _ = addToolTip(bounds, owner: self, userData: nil)
-        window?.invalidateCursorRects(for: self)
+        // **A repaint of the same structure is a new picture and nothing else (W224).** The
+        // animation loop re-renders `presentation.activeScene` — the *same* scene — for as long as
+        // anything in it moves, and a scrolling `<TEXT>` is enough: `claw` with its playlist open
+        // and no visualizer still presents 11.8x/s off its metadata line. Everything below derives
+        // from the scene's own structure rather than from the picture, so when the hits and the
+        // widgets are identical there is nothing for any of it to do, and doing it anyway cost a
+        // hit-tester rebuild, a widget sync, a tooltip reset, a cursor-rect invalidation, an
+        // accessibility reset **and a full redraw of every hosted surface** on every frame —
+        // measured at 11.8 playlist redraws a second with the list unchanged.
+        let structureUnchanged = previous.map {
+            $0.widgets == scene.widgets && $0.hits == scene.hits
+        } ?? false
+        #if DEBUG
+        wmpWidgetTrace("present src=\(traceSource) view=\(scene.viewID) widgets=[\(scene.widgets.map { "\($0.kind):\($0.stableID)" }.joined(separator: ","))] snapshotItems=\(currentSnapshot.playlistItems.count) structure=\(structureUnchanged ? "same" : "new")")
+        #endif
+        if !structureUnchanged {
+            hitTester = WMPHitTester(hits: scene.hits)
+            synchronizeWidgetViews(scene.widgets)
+            // The AppKit overlays — playlist, equalizer, popup, effects, video — are positioned in
+            // `layout()`, which AppKit will not run on its own just because a new scene arrived.
+            // Without this an equalizer that the skin slid away stays on screen at its old frame.
+            needsLayout = true
+            removeAllToolTips(); _ = addToolTip(bounds, owner: self, userData: nil)
+            window?.invalidateCursorRects(for: self)
+        }
         if let dirtyBounds {
             // The union with everything the *previous* scene drew at a different frame. A dirty
             // rect derived from the new scene alone covers where a pane has arrived and never where
@@ -202,7 +235,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             // moving slider) cannot change the silhouette, and invalidating per frame is expensive.
             window?.invalidateShadow()
         }
-        setAccessibilityChildren(nil)
+        // The children are built from the scene's hits and text widgets, so an unchanged structure
+        // describes the same tree — and rebuilding it per frame is what an assistive client sees as
+        // a window whose contents change 12 times a second.
+        if !structureUnchanged { setAccessibilityChildren(nil) }
     }
 
     func refreshHostState(_ snapshot: WMPHostSnapshot) {
@@ -669,7 +705,11 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         let wanted = Set(native.map(\.stableID))
         let widgetIDs = Set(widgets.map(\.stableID))
         widgetValues = widgetValues.filter { widgetIDs.contains($0.key) }
-        for (id, view) in widgetViews where !wanted.contains(id) { view.removeFromSuperview(); widgetViews[id] = nil }
+        for (id, view) in widgetViews where !wanted.contains(id) {
+            #if DEBUG
+            wmpWidgetTrace("drop id=\(id) \(type(of: view))")
+            #endif
+            view.removeFromSuperview(); widgetViews[id] = nil }
         for widget in native where widgetViews[widget.stableID] == nil {
             let view: NSView
             switch widget.kind {
@@ -718,6 +758,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
                     self?.onScriptEvent?("change", nodeID, stableID)
                 }
             }
+            #if DEBUG
+            wmpWidgetTrace("create id=\(widget.stableID) kind=\(widget.kind) frame=\(widget.frame)")
+            #endif
             widgetViews[widget.stableID] = view; addSubview(view)
         }
         // A partial fade is a real state in the corpus — `Plus! Plasma Ball` hangs its effects off

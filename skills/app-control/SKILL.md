@@ -186,6 +186,15 @@ osascript -e "tell application \"System Events\" to tell (first process whose un
 "$WH" drag   $((X+320)) $((Y+291)) $((X+400)) $((Y+291)) $((X+500)) $((Y+291))
 ```
 
+- **Match the window by its size, never by `head -1`.** A `.wmz` window list can carry a second,
+  transient row for the same app — a different id at a different origin — and a click computed from
+  it lands on the desktop: the gesture posts, the log shows the hover/down repaints of *nothing*,
+  and it reads exactly like a dead control. Two measurement runs on 2026-09-17 were thrown away to
+  it, one of them a "0 redraws" rate that was really a pane that never opened. Pick the row whose
+  `w`/`h` are the skin's own canvas (`$WH windows | awk -F'\t' '$5==289 && $6==283 {print; exit}'`),
+  and **confirm the state you think you set** from the subsystem's own trace before measuring
+  anything against it.
+
 | Verb | What it posts |
 |---|---|
 | `winhelper windows` | `id layer x y w h alpha title`, on-screen windows owned by NullPlayer |

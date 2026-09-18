@@ -14,6 +14,15 @@ final class WMPPlaylistSurfaceView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func update(_ snapshot: WMPHostSnapshot) {
+        // What this surface actually draws, before the update: the rows, the play marker, the
+        // highlight and the scroll position. A host refresh arrives with every clock tick and
+        // behind every present, and marking the view dirty unconditionally redrew the whole list
+        // 11.8 times a second with all four of them unchanged (W224). Nothing else in `snapshot`
+        // reaches `draw`.
+        let drawnItems = self.snapshot.playlistItems
+        let drawnPlaying = self.snapshot.playlistIndex
+        let drawnSelection = selectedIndex
+        let drawnScroll = firstVisibleIndex
         self.snapshot = snapshot
         // The highlight follows the track that is playing. Seeding it once and leaving it there
         // left every WMP skin's playlist highlighting row 1 for the whole session while the play
@@ -30,7 +39,10 @@ final class WMPPlaylistSurfaceView: NSView {
         if selectedIndex < 0 { selectedIndex = snapshot.playlistIndex }
         selectedIndex = min(selectedIndex, snapshot.playlistItems.count - 1)
         scrollSelectionIntoView()
-        needsDisplay = true
+        if drawnItems != snapshot.playlistItems || drawnPlaying != snapshot.playlistIndex
+            || drawnSelection != selectedIndex || drawnScroll != firstVisibleIndex {
+            needsDisplay = true
+        }
         setAccessibilityValue(selectedIndex >= 0 ? selectedIndex + 1 : 0)
     }
 
@@ -59,6 +71,9 @@ final class WMPPlaylistSurfaceView: NSView {
         // itself — here the whole 596x468 window arrives as {{-269, -26}, {596, 468}} in this
         // view's coordinates — and a layer-backed view does not clip it (`masksToBounds` is
         // false). Filling it painted this surface's translucent wash over the entire skin.
+        #if DEBUG
+        wmpWidgetTrace("playlist draw rows=\(snapshot.playlistItems.count) bounds=\(bounds.size) selected=\(selectedIndex)")
+        #endif
         style.background.setFill(); bounds.fill()
         let visibleRows = max(1, Int(bounds.height / rowHeight))
         for index in firstVisibleIndex..<min(snapshot.playlistItems.count, firstVisibleIndex + visibleRows) {

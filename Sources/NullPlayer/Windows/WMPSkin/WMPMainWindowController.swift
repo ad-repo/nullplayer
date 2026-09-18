@@ -755,7 +755,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             setWindowSize(presentation,
                           NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height))
         }
-        view.present(image, overlay: overlay, scene: scene)
+        view.present(image, overlay: overlay, scene: scene, traceSource: "initial")
         view.refreshHostState(host.snapshot)
         // A mode switch can create this WMP session while audio (or local video) is already
         // playing. `lastScriptSnapshot` is deliberately seeded above so normal host events do not
@@ -1035,7 +1035,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     presentation.presentedListItems = scriptOutput.listItems
                     presentation.mainView?.updateListItems(scriptOutput.listItems)
                 }
-                presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene)
+                presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene, traceSource: "load")
                 presentation.mainView?.refreshHostState(self.host.snapshot)
                 if let scriptOutput {
                     let switchedView = self.applyHostCommands(scriptOutput.hostCommands,
@@ -1822,23 +1822,44 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let viewID = presentation.viewID
         presentation.loadTask?.cancel()
         presentation.interactionState = state
-        let overrides = presentation.sceneOverrides
         presentation.loadTask = Task { [weak self, weak presentation] in
             do {
-                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: viewID, requestedSize: activeScene.canvasSize,
-                           interactionState: state, dirtyNodeIDs: changed,
-                           overrides: overrides)
-                let result = try await WMPRenderer(imageStore: store).render(
-                    scene: scene, backingScale: self?.renderBackingScale(for: presentation) ?? 1,
-                    clock: presentation?.animationClock(for: scene.viewID) ?? 0,
-                    slotClocks: Self.slotClocks(presentation, for: scene, store: store))
-                try Task.checkCancellation()
-                guard let presentation else { return }
-                presentation.activeScene = scene
-                self?.startAnimation(presentation, for: scene)
-                presentation.mainView?.present(result.image, overlay: result.overlayImage,
-                                               scene: scene, dirtyBounds: scene.dirtyBounds)
+                // **An artwork repaint must never present the pane state a script transaction has
+                // already replaced.** This path draws one thing — the hover/down image of the
+                // control under the pointer — and it reads the *pane* state from
+                // `presentation.sceneOverrides`, which the click's own transaction is writing at
+                // the same moment. Reading it before the task and presenting whatever came back
+                // put a scene built on `pl.visible=false` on screen 11 ms after the transaction
+                // had opened the playlist: `claw`'s list appeared, the visualizer was recreated
+                // over it, and the next transaction brought the list back ~300 ms later —
+                // reported as "it displays, then goes black, then displays".
+                //
+                // So the overrides are read per attempt and re-checked after the render; a
+                // transaction that landed in between owns the pane, and this repaint rebuilds
+                // against what it wrote. Giving up after a few attempts is safe rather than a
+                // compromise: `state` is stored on `presentation.interactionState` above, and
+                // every other build path passes it, so the down/hover image is drawn by whichever
+                // present lands next.
+                for _ in 0..<3 {
+                    guard let presentation else { return }
+                    let overrides = presentation.sceneOverrides
+                    let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                        .build(viewID: viewID, requestedSize: activeScene.canvasSize,
+                               interactionState: state, dirtyNodeIDs: changed,
+                               overrides: overrides)
+                    let result = try await WMPRenderer(imageStore: store).render(
+                        scene: scene, backingScale: self?.renderBackingScale(for: presentation) ?? 1,
+                        clock: presentation.animationClock(for: scene.viewID),
+                        slotClocks: Self.slotClocks(presentation, for: scene, store: store))
+                    try Task.checkCancellation()
+                    guard presentation.sceneOverrides == overrides else { continue }
+                    presentation.activeScene = scene
+                    self?.startAnimation(presentation, for: scene)
+                    presentation.mainView?.present(result.image, overlay: result.overlayImage,
+                                                   scene: scene, dirtyBounds: scene.dirtyBounds,
+                                                   traceSource: "interaction")
+                    return
+                }
             } catch is CancellationError {} catch { self?.lastLoadDiagnostic = error.localizedDescription }
         }
     }
@@ -2164,7 +2185,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self.startAnimation(presentation, for: scene)
                 presentation.presentedListItems = output.listItems
                 presentation.mainView?.updateListItems(output.listItems)
-                presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene)
+                presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene, traceSource: "transaction")
                 self.arbitrateVideoSurface()
             } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }
         }
@@ -2542,7 +2563,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self.startAnimation(presentation, for: scene)
                 presentation.mainView?.updateListItems(output.listItems)
                 presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage,
-                                               scene: scene)
+                                               scene: scene, traceSource: "timer")
                 self.arbitrateVideoSurface()
             } catch { self.recordScriptDiagnostics([.init(code: "timer-transaction", message: error.localizedDescription)]) }
         }
@@ -2697,7 +2718,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     clock: clock, slotClocks: slotClocks) else { return }
         let presentStarted = Date()
         guard presentation.activeScene == scene else { return }
-        view.present(rendered.image, overlay: rendered.overlayImage, scene: scene, dirtyBounds: dirty)
+        view.present(rendered.image, overlay: rendered.overlayImage, scene: scene, dirtyBounds: dirty, traceSource: "animation")
         if Self.animationTrace {
             presentation.animationTraceRenderSeconds += presentStarted.timeIntervalSince(renderStarted)
             presentation.animationTracePresentSeconds += Date().timeIntervalSince(presentStarted)

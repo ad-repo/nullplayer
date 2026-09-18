@@ -4,6 +4,20 @@
 
 ### Fixed
 
+- **A Media Player skin with anything moving in it no longer repaints its whole window, and its
+  playlist no longer redraws, twelve times a second.** *Claw*'s scrolling track title keeps the
+  player repainting for as long as it plays, and each of those frames was also rebuilding the
+  window's hit map, its tooltips, its cursor shapes and its accessibility tree, and redrawing the
+  playlist — 106 needless list redraws every nine seconds. A repaint that carries the same controls
+  and the same panes as the last one is now just a new picture, and the list repaints when its rows,
+  its playing track, its highlight or its scroll position actually change.
+
+- **A Media Player skin's playlist no longer flashes black when you open it.** On *Claw* — and any
+  skin whose button switches panes from script — the list appeared, was replaced by a black
+  rectangle, and came back a fraction of a second later. The repaint that draws the button's own
+  pressed artwork was being built from the pane state the click had just replaced, so it painted the
+  old pane over the new one; it now rebuilds against what the click wrote.
+
 - **A Media Player skin's own resize grip now resizes the window.** Most of these skins draw a small
   handle in a corner — *Compact* puts one at the bottom right — and in Media Player that handle is
   the only way to resize the window at all, because a skin window has no ordinary window frame to

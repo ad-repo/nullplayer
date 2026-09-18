@@ -227,6 +227,42 @@ WMP_SEEK_TRACE=1 NULLPLAYER_PLAY=/abs/path/long.m4a \
   nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
 ```
 
+`WMP_WIDGET_TRACE=1` is read by **the app** (`WMPMainView`, `WMPWidgetViews`, `#if DEBUG`, stderr)
+and prints the lifetime of every AppKit-hosted widget against the presents that carry it: one
+`present src=<initial|load|interaction|transaction|timer|animation> widgets=[<kind>:<stableID>,…]`
+line per present, a `create`/`drop` line per hosted view, and a `playlist draw rows=…` line per
+redraw of a playlist surface.
+
+**It exists because a pane that opens and then closes itself is invisible to every other
+instrument.** `WMP_RENDER_CLICK` rebuilds one scene from one event and says the switch was
+requested; nothing headless can see a *second* present, from a different code path, landing 11 ms
+later with the state the first one replaced. `claw`'s playlist was reported as "it displays, then
+goes black, then displays" and the whole defect is three lines:
+
+```
+946.471 present src=transaction  widgets=[playlist:6,text:25]   ← the click: the list opens
+946.483 present src=interaction  widgets=[effects:4,text:25]    ← stale overrides: list dropped
+946.785 present src=transaction  widgets=[playlist:6,text:25]   ← the list comes back
+```
+
+**`src=` is the field to read, and a `drop` followed by a `create` of a different kind is the
+signature.** The black frame is not a paint bug: dropping a hosted view and building a new
+`WMPEffectsSurfaceView` in its place shows an empty GL surface until its first frame. Read the
+sources against each other — an `interaction` or `animation` present that contradicts the last
+`transaction` is a repaint built on overrides a script transaction has already replaced
+(W223: `renderInteraction` re-checks them, closed 2026-09-17).
+**The presents are also a rate measurement**, and `structure=` is what makes them cheap (W224):
+`claw` with the list open and no visualizer re-presents 11.8x/s off its scrolling `<TEXT>`, and
+before the gate every one of those frames rebuilt the hit tester, re-synced the widgets, reset the
+tooltips and cursor rects, rebuilt the accessibility tree and **redrew the whole playlist** — 106
+list redraws in 9 s with the list unchanged. A present whose `hits` and `widgets` both equal the
+last one's is a new *picture* and nothing else, so all of that is skipped and only the renderer's
+frame remains; `WMPPlaylistSurfaceView.update` likewise marks itself dirty only when the rows, the
+play marker, the highlight or the scroll position moved. **Read the two together**: with the list
+open, `structure=same` on every present and **zero** `playlist draw` lines is the correct capture,
+and one `playlist draw` with a changed `selected=` on a track change is the control that proves the
+guard is not simply stuck (measured 2026-09-17 on the 3-track cue row).
+
 `NULLPLAYER_PLAY=<audio file>` is read by **the app** (`AppDelegate`, `#if DEBUG`) and enqueues and
 plays that file at launch through the same `application(_:openFiles:)` a Finder open takes. **Live QA
 needs playback**, and every readout a skin binds to the host — the clock, the seek thumb, the
