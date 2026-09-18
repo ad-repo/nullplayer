@@ -1674,6 +1674,21 @@ of these was invisible to the harness and visible in the first minute of live QA
   launch; it also renders almost identically to `vPlayer`, so there is no visual signal that it
   happened. Confirm skin *and* view before diagnosing anything in this engine.
 
+- **The player's window outlives its presentation, so re-showing it must rebuild it (W233).** The
+  controller keeps **one** `playerWindow` for its whole life and the materializer lends it to
+  whichever view is the player. `closeViewWindow` tears that presentation down and orders the window
+  out — but the `NSWindow` is still the controller's `window`, so `WindowManager.showMainWindow`
+  ordered a corpse back in: the last picture the skin drew, no scene, no hit map, no timer, and
+  `WMP_WIDGET_TRACE` recording **zero presents** afterwards. `showWindow(_:)` rebuilds the session
+  when there is no presentation behind the window it is about to reveal, and `reloadSelectedSkin`
+  is the right rebuild rather than a re-present: the close discarded the script view, and the reload
+  runs the skin's own `onLoad`, which is what clears the preference that asked for the close.
+  **A skin's close button is not always about the thing it sits on** — the Skins Factory close in a
+  playlist writes `exitView`, the windowless dispatcher reads it back and posts `view.close()`, and
+  W89 runs a dispatcher's commands against the player, so closing "the playlist" closes the player.
+  That is WMP's own behaviour; the route back is the part that has to work. Reported as *"if you
+  close the playlist you do not return to the main window … the playlist is frozen"*.
+
 - **`.wmz` mode must offer a route to a track.** The auxiliary NullPlayer windows stay hidden here
   until they have WMP-owned chrome, so the skin's own Open button — `theme.openDialog('FILE_OPEN')` —
   is the only one. Before it was implemented the only way to start playback was to leave WMP mode and

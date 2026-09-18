@@ -9,6 +9,42 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W232-W233 — the Disney report, 2026-09-18
+
+**Two defects, one skin, and neither is what the ranking said was wrong with it.**
+`Disney_Mix_Central/mainView` was the last unexplained row in `starved.tsv` — W68's own text named
+it as where that row now starts, with *"draws its banner and five widgets and answers no click
+anywhere"*. The `0 hits` is a **frame-0 phantom**, the third of its kind after `Batman Begins` and
+`Alienware Invader`: `mainBack` is authored `visible="false"` and everything else hangs off
+`wmpprop:mainBack.visible`, and `onViewTimer` runs a 31-frame intro (3 s delay, then 50 ms a frame)
+before revealing the player. At `WMP_RENDER_SETTLE=6` the view goes `7 nodes / 0 commands / 0 hits`
+→ `39 / 24 / 14`, and `WMP_RENDER_CLICK` dispatches play, prev, next, the time readout and
+`toggleLibrary` correctly. **Settle a `0 hits` row before opening its markup, exactly as with a
+`0 commands` one.**
+
+The "five widgets" half was real, and the live report that followed was a second defect entirely.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W232 | A `<TEXT>` that states a string and no geometry was drawn at its parent's origin | **246 nodes across 42 of 185 archives** (decoded markup scan; `<text>` with a literal `value` and no `left`/`top`/`width`/`height` and no alignment). The 35 aligned readouts and the bound-value residue are outside it | **Closed 2026-09-18.** The Skins Factory house style declares **two** string subviews per view, and `isStringTableText` closed only the first: `locSub`'s tooltip constants have no `value` to measure, so they never resolved and never drew. The second holds the strings its script substitutes into WMP's own rip-CD readouts and those carry a literal `value` — `intrinsicTextSize` measured the glyphs, the node resolved at its parent's origin and all five sentences drew **stacked on one another at `0,0` over the artwork**. WMP draws none of them, for the reason the unsized `<PLAYLIST>` established the day before: a node stating no `width`/`height` and carrying no image is 0x0 in WMP's own arithmetic. `WMPSceneBuilder.isStringConstantText`. **Three guards, each a corpus population rather than a hypothetical**: the scene overrides are asked alongside the markup, because `Cablemusic`'s 34 station rows are `<TEXT id="pr0" value="">` with no geometry either and are placed entirely by `InitPrograms()` — a markup-only rule deletes both its drawers; an authored alignment is geometry, which keeps `Constantine`'s and `NVIDIA`'s `<text id="visEffectName" horizontalAlignment="center" value="test"/>` and the 35 skins that author one; and a `wmpprop:`/`jscript:` `value` is not a stated string, which is what leaves the 61-node bound-`<TEXT>` residue reported. **Census pair over 184 archives, `49f64442` → this change: 20 of 553 PNGs move, and 19 of them change nothing below `y=13`** — the top-left band a parent-origin string lands in, `x[0,247] y[1,13]` at the widest. The 20th is `Scooby-Doo_2/infoView`, which picks its character at random and differs between two runs of the same binary. **`hits==0` (84 views / 51 skins) and `commands==0` (79 / 49) are unchanged**, so no view stopped drawing or stopped answering a click. |
+| W233 | Reopening the player after a skin closed it revealed a dead window | **24 corpus archives** author the windowless `controlView` dispatcher and the close button is in every one of them (W89's own count); the dead window is reachable by any other close of the player | **Closed 2026-09-18, live-only — no headless probe can see it, because the sweep has no window.** Reported on `Disney_Mix_Central` as *"when you go to the playlist you get trapped … if you close the playlist you do not return to the main window … when you bring the playlist back into focus the playlist is frozen"*. The X on the playlist's title bar is not a playlist control: it writes `theme.savePreference('exitView','true')`, the windowless dispatcher reads it back 100 ms later and posts `view.close()`, and W89 runs a dispatcher's commands against the player — so it closes the **player window**, which is what WMP's own close does. Measured: zero NullPlayer windows afterwards and the process still alive. The defect is the way back. The controller owns **one** `playerWindow` for its life; `closeViewWindow` tears the presentation down and orders that window out, but the `NSWindow` survives as the controller's `window`, so `WindowManager.showMainWindow` → `showWindow(_:)` ordered the corpse back in — the last picture the skin drew, no scene, no hit map, no timer, and `WMP_WIDGET_TRACE` recording **zero presents** after the restore. `showWindow(_:)` now rebuilds the session when the window it is about to reveal has no presentation behind it. **`reloadSelectedSkin` rather than a re-present**: the close discarded the script view, and the reload runs the skin's own `onLoad`, which is what clears the latched preference — `onLoadMain` writes `exitView` back to `false`, and without that the dispatcher's next tick closes the window the restore just rebuilt. A `playerWindowIsACorpse` flag gates it, because a launch is also a window with no presentation and rebuilding there cancels the session load already running; verified as exactly one `src=initial` present per launch. Same class as `pharaoh`'s recorded *"you can get trapped in the mini windows with no way back to the main window"*. Verified live end to end: playlist → X (window gone) → Windows > Main Window → the window returns presenting and the playlist toggle works again. |
+
+**What W232 does to the ranking, and it moves the wrong way on purpose — the same shape as W75.**
+`starved.tsv` is `unresolved / declared`, and five of `Disney_Mix_Central/mainView`'s ten declared
+nodes were those string constants. With them gone the numerator is unchanged at 3 and the
+denominator is 5, so the row goes **0.300 → 0.600 and to the top of the file** for a view that got
+strictly better. Corpus starved views go 2 → 3 for that reason and no other. **The three it still
+counts are the string subviews' own parents** — `locSub`, the anonymous one and a `<controls>` —
+which is W231's question, not this one: a container whose every child is a string constant is a
+string table too, and nothing has opened that yet.
+
+**The process lesson, and it is W68's own rule turned on the row that states it.** W68 says a high
+ratio ranks a view as *worth dumping* and only the PNG says whether anything is missing. Disney was
+the last row nobody had dumped, and when it was dumped the ranked defect (`0 hits`) was an intro
+running correctly while an unranked one — five sentences of Microsoft boilerplate painted across the
+corner of the player — was in the same picture the whole time. **Read the PNG before believing the
+column.**
+
 ## W207 — how a hosted window and a borrowed border share the space, 2026-09-16
 
 **The open half of the donor class, closed the same week it opened.** Reported as

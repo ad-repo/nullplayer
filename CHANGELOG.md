@@ -4,6 +4,22 @@
 
 ### Fixed
 
+- **A Media Player skin no longer traps you with no window when you close its playlist.** These
+  skins' close button does not close the panel it sits on — it closes the player, the way Media
+  Player's own does — and NullPlayer was left running with no window at all. Bringing the window
+  back from the Windows menu or the Dock then showed the last picture the skin had drawn with
+  nothing behind it: *Disney Mix Central*'s playlist came back frozen, and no button in it did
+  anything ever again. The window is now rebuilt when it is reopened, so the skin comes back live
+  and in its main mode. This affects the whole Skins Factory family — two dozen skins carry the
+  same close button.
+
+- **Windows Media Player's own "insert an audio CD" messages no longer sit across the corner of a
+  Media Player skin.** These skins keep a hidden list of the phrases their script needs — *Insert an
+  audio CD and select tracks to rip…*, *Media Library*, and three more — and every one of them was
+  being drawn, stacked on top of one another, in the top-left corner of the player. *Disney Mix
+  Central* showed five; **42 skins** showed at least one. A phrase the skin never gave a place on
+  screen is a string it looks up, not a label, and is no longer drawn.
+
 - **A Media Player skin's borrowed window frame no longer comes apart on the Library Browser.**
   *Alienware Invader* draws the rails down the sides of its playlist window in pieces it sizes from
   its own script, and the frame NullPlayer borrows from it is built without running that script — so

@@ -56,6 +56,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// preference and let this view's `onTimer` read it back and act (W89). It outlives a view
     /// switch on purpose — it is the way back from the panel it opened — so only teardown and a
     /// skin reload stop it.
+    /// **The player was closed and its window is still here.** The controller keeps one
+    /// `playerWindow` for its life, so "there is no presentation" is not a state `showWindow` can
+    /// read off the window — and it is also the state every launch is in for the moment before the
+    /// first present lands, where a rebuild would cancel the session load that is already running.
+    /// Set only by a close that took the player down; cleared by the rebuild that answers it.
+    private var playerWindowIsACorpse = false
     private var dispatcherViewID: String?
     private var dispatcherTimerTask: Task<Void, Never>?
     /// The dispatcher's `onTimer` sources, resolved once. `handlers` walks the whole graph, and at
@@ -1340,6 +1346,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             materializer.remove(presentation, closing: true)
             closeScriptView(viewID, size: size)
             persistOpenViews()
+            playerWindowIsACorpse = true
             return true
         }
         closeAuxiliaryWindow(presentation)
@@ -1614,6 +1621,37 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
     func skinDidChange() {}
     func windowVisibilityDidChange() {}
+
+    /// **Showing the player again after the skin closed it rebuilds it. The window outlives the
+    /// presentation, and revealing the corpse is what "the playlist is frozen" was.**
+    ///
+    /// The controller owns one `playerWindow` for its whole life and the materializer hands it to
+    /// whichever view is the player; `closeViewWindow` tears that presentation down and orders the
+    /// window out, but the `NSWindow` object stays — it is this controller's `window`. So
+    /// `WindowManager.showMainWindow` → `showWindow(_:)` ordered a window back in that had no
+    /// presentation behind it: the last picture the skin drew, no scene, no hit map, no timer.
+    /// Every click landed on nothing and the trace recorded **zero presents** afterwards.
+    ///
+    /// Reported on `Disney_Mix_Central` as *"if you close the playlist you do not return to the
+    /// main window … when you bring the playlist back into focus the playlist is frozen"*, and the
+    /// route in is the Skins Factory close button: it writes `exitView`, the windowless
+    /// `controlView` dispatcher reads it back 100 ms later and posts `view.close()`, and W89 runs a
+    /// dispatcher's commands against the player. **24 corpus archives carry that dispatcher and the
+    /// close button is in every one of them**, so this is the whole family, not one skin — and the
+    /// same dead window is reachable by any other close of the player.
+    ///
+    /// `reloadSelectedSkin` rather than a re-present: the close discarded the script view and
+    /// stopped nothing else, so the session has to be built again from the archive. It also runs
+    /// the skin's own `onLoad`, which is what clears the latched preference — Disney's
+    /// `onLoadMain` writes `exitView` back to `false`, and without that the dispatcher's next tick
+    /// would close the window this call just rebuilt.
+    override func showWindow(_ sender: Any?) {
+        if playerWindowIsACorpse {
+            playerWindowIsACorpse = false
+            reloadSelectedSkin()
+        }
+        super.showWindow(sender)
+    }
     func setNeedsDisplay() { window?.contentView?.needsDisplay = true }
 
     /// The `os*` value `player.openState` answers — the same derivation the object model and

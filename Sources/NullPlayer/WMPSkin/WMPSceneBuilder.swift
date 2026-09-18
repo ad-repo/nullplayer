@@ -718,6 +718,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 var width = parseDimension(node, "width")
                 var height = parseDimension(node, "height")
 
+                if isStringConstantText(node, overrides, literalString) { return }
+
                 if width == nil || height == nil,
                    node.attribute(named: "width") == nil || node.attribute(named: "height") == nil,
                    let (_, path) = try resource(node, names: intrinsicSizeResourceNames(for: node.kind)) {
@@ -1964,6 +1966,57 @@ struct WMPSceneBuilder: @unchecked Sendable {
         node.kind == .text
             && node.attribute(named: "value") == nil
             && literalString(node, "value") == nil
+    }
+
+    /// The other half of the string table: a `<TEXT>` that states a **string** and no geometry
+    /// whatsoever. `isStringTableText` answers the tooltip half — `Disney_Mix_Central`'s
+    /// `<subview id="locSub">` of `<text id="locShowPl" toolTip="Show Playlist"/>` — which has no
+    /// value to measure and so never resolved a size and never drew. The Skins Factory house style
+    /// declares a *second* such subview holding the strings its script substitutes into WMP's own
+    /// rip-CD readouts, and those carry a literal `value`, so `intrinsicTextSize` measures the
+    /// glyphs, the node resolves at its parent's origin and the sentence is painted across the
+    /// top-left corner of the player. `Disney_Mix_Central/mainView` draws five of them over the
+    /// artwork — "Insert an audio CD and select tracks to rip...", "Media Library" and three more,
+    /// stacked on one another at `0,0` — which is what W68 counted as its "five widgets".
+    ///
+    /// WMP does not draw them, and the reason is the one the unsized `<PLAYLIST>` established: a
+    /// node that states no `width`/`height` and carries no image is 0x0 in WMP's own arithmetic.
+    /// A string constant is a variable the skin reads back, not a control, and every one of these
+    /// subviews is authored with no geometry at any level.
+    ///
+    /// **The test is "no geometry at all", and the override half of it is load-bearing.**
+    /// `Cablemusic` declares its thirty-four station rows as `<TEXT id="pr0" value="">` with no
+    /// geometry either, and lays every one of them out from `InitPrograms()` writing
+    /// `pr<N>.top`/`.left`/`.width` — so a markup-only reading of this rule would delete both its
+    /// drawers. The scene overrides are asked alongside the markup for that reason, and directly
+    /// rather than through `parseDimension`, which answers an unstated `left`/`top` with the
+    /// resolver's own 0 and so can never say "the skin stated nothing". An authored alignment is
+    /// geometry too: `Constantine`'s and `NVIDIA`'s
+    /// `<text id="visEffectName" horizontalAlignment="center" value="test"/>` is a readout whose
+    /// position is computed from its parent, and 35 skins author exactly one of those.
+    ///
+    /// **A bound `value` is not a string constant either**, and the residue census is what says so:
+    /// the 61 `<TEXT>` nodes `isStringTableText` correctly leaves unresolved are mostly a
+    /// `wmpprop:`/`jscript:` `value` on a node that states no box, and they stay reported. Only a
+    /// value the markup *states* — or no value at all — reaches this rule.
+    ///
+    /// Corpus reach over the 185 archives: **246 nodes across 42 archives** stop painting at their
+    /// parent's origin; the 35 aligned readouts, the bound readouts and `Cablemusic`'s script-placed
+    /// rows are untouched.
+    private func isStringConstantText(_ node: WMPNode, _ overrides: WMPSceneOverrides,
+                                      _ literalString: (WMPNode, String) -> String?) -> Bool {
+        guard node.kind == .text,
+              node.attribute(named: "horizontalAlignment") == nil,
+              node.attribute(named: "verticalAlignment") == nil,
+              node.attribute(named: "value") == nil || literalString(node, "value") != nil
+        else { return false }
+        for name in ["left", "top", "width", "height"] {
+            guard node.attribute(named: name) == nil,
+                  overrides.geometry[WMPScenePropertyAddress(stableID: node.stableID,
+                                                             property: name)] == nil
+            else { return false }
+        }
+        return true
     }
 
     private func isNonLayout(_ kind: WMPElementKind) -> Bool {

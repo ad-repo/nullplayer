@@ -41,6 +41,15 @@ final class WMPStringTableTextTests: XCTestCase {
         Set(scene.unresolved.compactMap(\.nodeID))
     }
 
+    /// Did the builder place this node at all? `geometries` is keyed by stable id, so the graph is
+    /// what turns an authored id back into one — and a node the builder skipped has no entry.
+    private func isDrawn(_ id: String, in scene: WMPScene, of skin: WMPLoadedSkin) -> Bool {
+        guard let node = skin.graph.allNodes.first(where: {
+            $0.xmlID?.caseInsensitiveCompare(id) == .orderedSame
+        }) else { return false }
+        return scene.geometries[node.stableID] != nil
+    }
+
     // MARK: - The rule
 
     /// `Batman Begins`'s `locSub`, to scale. Seventeen of these are why that skin ranked first.
@@ -121,5 +130,73 @@ final class WMPStringTableTextTests: XCTestCase {
 
         XCTAssertTrue(unresolvedIDs(scene).contains("status"),
                       "the player fills it, so an unsized one has nowhere to put the text")
+    }
+
+    // MARK: - W232 — the other half of the table: a string the markup states
+
+    /// **`Disney_Mix_Central`'s second string subview, and it was painted over the player.**
+    ///
+    /// The Skins Factory house style declares `locSub` (tooltips, above) *and* an anonymous
+    /// subview of the strings its script substitutes into WMP's own rip-CD readouts. Those carry a
+    /// literal `value`, so `intrinsicTextSize` measured the glyphs, the node resolved at its
+    /// parent's origin and all five sentences drew stacked on one another at `0,0` over the
+    /// artwork — what W68 counted as that view's "five widgets".
+    func testAStringConstantWithNoGeometryIsNotDrawn() async throws {
+        let wms = """
+        <THEME><VIEW id="main" width="40" height="40">
+            <SUBVIEW>
+                <TEXT id="locNoAudioCd" value="Insert an audio CD and select tracks to rip..."/>
+                <TEXT id="locPlMl" value="Media Library"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """
+        let skin = try await load(wms: wms)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        for id in ["locNoAudioCd", "locPlMl"] {
+            XCTAssertFalse(isDrawn(id, in: scene, of: skin),
+                           "a text that states no box is 0x0 in WMP's own arithmetic: \(id)")
+        }
+        XCTAssertEqual(unresolvedIDs(scene).intersection(["locNoAudioCd", "locPlMl"]), [],
+                       "and it is not starved either — it was never a box")
+    }
+
+    /// **The override half, and it is the one that would have deleted `Cablemusic`.** Its thirty-four
+    /// station rows are `<TEXT id="pr0" value="">` with no geometry either, laid out entirely by
+    /// `InitPrograms()` writing `pr<N>.top`/`.left`/`.width`. A markup-only reading of the rule
+    /// drops both of its drawers, so the scene overrides are asked alongside the markup.
+    func testAScriptPlacedTextStillDraws() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="40" height="40">
+            <TEXT id="pr0" value="Station"/>
+        </VIEW></THEME>
+        """)
+        let node = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID?.lowercased() == "pr0" })
+        let overrides = WMPSceneOverrides(
+            geometry: [.init(stableID: node.stableID, property: "left"): 4,
+                       .init(stableID: node.stableID, property: "top"): 6,
+                       .init(stableID: node.stableID, property: "width"): 20],
+            properties: [:])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+
+        XCTAssertTrue(isDrawn("pr0", in: scene, of: skin),
+                      "a handler placed it, so the skin did state a box — just not in the markup")
+    }
+
+    /// **An authored alignment is geometry.** `Constantine`'s and `NVIDIA`'s
+    /// `<TEXT id="visEffectName" horizontalAlignment="center" value="test"/>` is a readout whose
+    /// position is computed from its parent rather than stated, and **35 archives author exactly
+    /// one of those**. Keyed on "no geometry attribute" alone, the rule would take every one.
+    func testAnAlignedReadoutIsNotAStringConstant() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="40" height="40">
+            <TEXT id="visEffectName" horizontalAlignment="center" value="test"/>
+        </VIEW></THEME>
+        """)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        XCTAssertTrue(isDrawn("visEffectName", in: scene, of: skin),
+                      "it states where it goes; the coordinate is just computed rather than literal")
     }
 }

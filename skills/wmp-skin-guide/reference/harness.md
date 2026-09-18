@@ -1645,23 +1645,37 @@ The 456 unresolved nodes left, by authored tag, over the 629 views of the 184-ar
 
 | tag | nodes | ranked as |
 |---|---:|---|
-| `subview` | 180 | **W231** — opened by this change; nobody has opened one yet |
+| `subview` | 180 | **W231** — opened by this change; nobody has opened one yet. W232 sharpened the question: a subview whose every child is a string constant is a string table, and three of the four remaining `starved.tsv` rows are exactly that |
 | `controls` | 104 | W111 |
 | `text` | 61 | what the string-table rule correctly leaves: a bound `value`, a `<TEXT>` declared twice, a node authoring one dimension |
 | `button` | 49 | unranked |
 | `videosettings` | 29 | W111 |
 | `slider` 10, `statusText` 7, `automenu` 4, and 12 others | 33 | unranked |
 
-**`starved.tsv` is four rows deep now and bottoms out at 0.000 below them**: `cyberchannel/playview`
-0.50, `Batman Begins/mainView` 0.50, `Alienware Invader/mainView` 0.33,
-`Disney_Mix_Central/mainView` 0.30. The two intro skins are explained above. The other two are not:
+**`starved.tsv` is four rows deep now and bottoms out at 0.000 below them**, and **all four have
+been taken as of 2026-09-18; not one of them was a starved view.** Measured at that date:
+`Disney_Mix_Central/mainView` 0.60, `Batman Begins/mainView` 0.50, `cyberchannel/playview` 0.50,
+`Alienware Invader/mainView` 0.33.
 
+* The two intro skins are explained above: settle them.
 * `cyberchannel/playview` is the whole view — `<VIEW id="playview"><PLAYLIST/></VIEW>`, a bare list
-  in a view that states no size (cp1252 archive; `iconv -f CP1252`, not UTF-16). Establish what WMP
-  gives an unsized `<PLAYLIST>` before calling it a defect.
-* `Disney_Mix_Central/mainView` draws its banner and five widgets and answers **no click anywhere**.
-  That is the `hits == 0` column, not the starvation one — `WMP_RENDER_OCCLUDED` and
-  `WMP_RENDER_CLICK`, not `WMP_RENDER_UNRESOLVED`.
+  in a view that states no size (cp1252 archive; `iconv -f CP1252`, not UTF-16). WMP's ambient
+  `width`/`height` default is *zero or the size of the image*, and there is no image on either node,
+  so the view is 0x0 in WMP's arithmetic too and the row is a phantom. The defect it hid was in
+  routing, not in the scene (`49f64442`).
+* `Disney_Mix_Central/mainView`'s **`0 hits` is frame 0 of a 31-frame intro** — `mainBack` is
+  `visible="false"` until `onViewTimer` finishes it, and `WMP_RENDER_SETTLE=6` takes the view from
+  `7 nodes, 0 commands, 0 hits` to `39 / 24 / 14` with every control dispatching under
+  `WMP_RENDER_CLICK`. **Settle a `0 hits` row before opening its markup, exactly as with a
+  `0 commands` one.** Its *real* defect was in the same picture and nothing ranked it: five `<TEXT>`
+  string constants drawn stacked at `0,0` over the artwork, closed as W232.
+
+**W232 moved this file's top row the wrong way on purpose, and that is worth reading before ranking
+from it again.** The ratio is `unresolved / declared`; removing five string constants from
+`Disney_Mix_Central/mainView` left the numerator at 3 and took the denominator to 5, so a view that
+got strictly better went 0.300 → **0.600 and to the top**. Corpus starved views 2 → 3, for that
+reason and no other. The three nodes it still counts are the string subviews' own **parents**, which
+is W231: a container whose every child is a string constant is a string table too.
 
 **`WMP_RENDER_UNRESOLVED` prints the node and its missing dimension and nothing else, and that is
 the gap that left the `<TEXT>` class unexamined for two phases.** Print the parent and the authored
