@@ -2580,12 +2580,10 @@ class PlexBrowserView: NSView {
                                        controlScale: WindowManager.shared.playlistChromeScale)
     }
 
-    /// The window frame for a fallback browser inside a `.wal` skin (Phase 16).
-    ///
-    /// Flat, palette-coloured, and drawn at **exactly** the classic metrics — same title bar height,
-    /// same 12px side borders, same status bar, and a close glyph inside the same top-right 20×14 box
-    /// `hitTestCloseButton` checks. Nothing about layout, hit testing, or resizing changes; only the
-    /// pixels do.
+    /// Chrome for a palette-themed browser, including WMP despite the historical function name.
+    /// Palette fallback uses classic layout metrics. WMP borrowed artwork instead uses the donor's
+    /// resolved content geometry for layout/hit testing, fills only that hole, and paints the frame
+    /// according to `paintsOverContent`, without adding a title or close glyph.
     private func drawWinampModernChrome(style: WinampModernSurfaceStyle, context: CGContext,
                                         bounds: NSRect, isActive: Bool) {
         let titleHeight = Layout.titleBarHeight
@@ -2601,18 +2599,10 @@ class PlexBrowserView: NSView {
             context.setFillColor(style.background.cgColor)
             context.fill(content)
             context.saveGState()
-            // The ring is the frame *around* the list, never wallpaper behind it. Several rings in
-            // the corpus are decorative rather than thin — `Scooby Doo`'s side tiles are wide
-            // half-transparent artwork and its top piece carries the film's title — and drawn over
-            // the whole window that art lands under every row and behind the cover art the browser
-            // paints there. So the client hole is cut out of the ring: the palette owns it, as the
-            // fill above already assumes. Everything else — corners, edges, the caption band — is
-            // untouched, and a window with no borrowed ring never reaches here.
-            // A frame whose interior fill was erased is painted whole, for the reason
-            // `SkinnedSurfaceFrameArtwork.paintsOverContent` gives: the cut is a rectangle and these
-            // bezels are not, so it takes the frame's own inner edge with it (W209). `Scooby Doo`,
-            // whose wallpaper interior is what the cut was written for, erases to nothing and keeps
-            // it.
+            // Solid interior fill has already been erased when paintsOverContent is true, so
+            // preserve the whole bezel, including pixels intruding into the client rectangle.
+            // Otherwise cut the rectangle to keep pictorial interiors (e.g. Scooby Doo) from
+            // painting wallpaper over the browser's content.
             if !content.isEmpty, !artwork.paintsOverContent {
                 context.beginPath()
                 context.addRect(bounds)

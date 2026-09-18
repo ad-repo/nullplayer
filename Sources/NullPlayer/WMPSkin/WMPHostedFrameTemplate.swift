@@ -2,49 +2,30 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-/// The window frame a `.wmz` skin already draws for its *own* panels, borrowed for NullPlayer's
-/// windows.
-///
-/// **What the corpus authors.** A WMP skin has no frame system — no `<Wasabi:StandardFrame>` a
-/// hosted surface can be mounted in — so for a long time the only thing a `.wmz` gave our own
-/// windows was `WMPSurfacePalette`'s colours. But a skin with a styled playlist or equaliser panel
-/// is not drawing a coloured rectangle: it is drawing an **eight-piece resizable ring** — four
-/// corner bitmaps anchored to the corners, four edge bitmaps tiled or stretched along the sides —
-/// with its real content in a stretched client subview inside. `xsn_sports` and `Halo 2` are the
-/// reported pair and they are not unusual: measured over the 180-archive corpus on 2026-09-12,
-/// **85 archives declare a view whose four corners are all present, and all 85 of those views also
-/// declare a stretched client subview**, which is what makes the ring reusable rather than merely
-/// recognisable.
-///
-/// **What is borrowed, and what is not.** Only the ring. The donor view's buttons, playlist, text
-/// and video surface are the *skin's* window, not ours, and a NullPlayer spectrum analyser wearing
-/// Halo 2's playlist buttons would be a lie about what those buttons do. So a template records the
-/// ring pieces and the client panel, and the artwork it produces contains the ring alone; the
-/// palette still paints the client area and NullPlayer still draws its own content and controls
-/// over it.
-///
-/// **The insets come from the client subview, never from the artwork's thickness.** `Halo 2`'s
-/// `f_left_tile.png` is 190px wide on a 406px window and is mostly transparent — the ring is a
-/// decorative surround, not a border — while its `plFrame` states the content hole exactly
-/// (`left="22" top="34" width="view.width-43" height="view.height-81"`). Sizing a window's content
-/// from the corner bitmaps would leave 190px of dead margin on a 275px window.
-///
-/// The template is markup-only and cheap; the *artwork* is produced by re-building the donor view
-/// through the ordinary `WMPSceneBuilder` at the hosted window's size, so every alignment, tile and
-/// `JScript:` layout expression is resolved by the same code that draws the skin itself rather than
-/// by a second, divergent reading of the same markup.
-/// Why a borrowed frame was refused. A `nil` artwork is "not for this window"; this is "not ever".
+/// Rendering refusals that the provider can treat as donor-wide policy decisions.
+/// A nil artwork result instead means no usable artwork for that request.
 enum WMPHostedFrameRefusal: Error {
     case panelCannotBeSliced
-    /// The ring's pieces do not meet: one of the frame's four edges is bare for a long unbroken run
-    /// (W209). A verdict on the donor rather than on the window that asked, like the case above.
+    /// The diagnostic piece assembler found an open edge. The provider drops that donor as a
+    /// fallback policy; this does not prove it fails at every size. The default whole-donor path
+    /// uses gaps for repair and does not throw this refusal.
     case ringDoesNotClose
 }
 
+/// A donor selected from WMP markup for a native hosted window. Rings are rendered as the whole
+/// donor view with donor-owned content, controls, readouts, and classified furniture subtracted;
+/// fixed panels are nine-sliced around their resolved client hole. Selection metadata also supports
+/// the older piece-assembly diagnostic path (`WMP_HOSTED_FRAME_WHOLE=0`).
+///
+/// Scene construction uses the normal WMP builder/renderer outside the live script runtime. The
+/// default ring path renders at least at the donor floor, crops its painted extent, and maps that
+/// image and client geometry onto the requested size. Insets come from resolved client geometry
+/// with rail-aware rack reclamation, not raw bitmap widths (which may be mostly transparent).
 struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// The view the ring was taken from.
     let viewID: String
-    /// The ring pieces, by stable id — the only nodes whose paint commands reach our windows.
+    /// Selected ring pieces by stable ID, used by selection, repair classification, and the
+    /// diagnostic assembler. This is not a paint whitelist for the default whole-donor path.
     let ringNodeIDs: Set<Int>
     /// Ring pieces that must be given the **window's own height** before the frame is built, and
     /// those that must be given its width (W209).
@@ -68,19 +49,11 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     let extraNodeIDs: Set<Int>
     /// The stretched client subview whose resolved frame is the content hole.
     let clientNodeID: Int
-    /// The ring's own top-right corner piece, where it declares one.
-    ///
-    /// **This is the width our close control has to clear, and the client hole is not.** A donor's
-    /// client hole says where the skin's *content* goes, and for a playlist panel with a side rack
-    /// — `Star Wars`'s `plView` leaves 164 of 575pt to the right of its list — that is a third of
-    /// the window, so a close control aligned with the hole's right edge lands in the middle of the
-    /// caption band with ring artwork either side of it (reported 2026-09-15: the fix put the x
-    /// nowhere near the corner). What the control must actually avoid is the corner bitmap, which
-    /// is where a skin paints its *own* close button.
+    /// Selected top-right corner node, retained to measure legacy corner-width metadata.
+    /// Borrowed close hit testing uses the capped 40×26-point corner target, not this node's width.
     let topRightNodeID: Int?
-    /// The donor view's own declared floor, as markup. **It is no longer obeyed when the ring is
-    /// laid out** (see `unclamped`); it is kept because the derivation reads it and because a floor
-    /// larger than the view's own width is the signature of the `Ice` case.
+    /// The donor's declared floor, used by default whole-donor rendering before extent-to-target
+    /// scaling. Diagnostic whole-without-floor and piece-assembly variants bypass that clamp.
     let minimumSize: CGSize
 
     /// The donor view node itself, so the floor can be overridden for the frame build alone.

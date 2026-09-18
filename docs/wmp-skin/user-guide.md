@@ -63,9 +63,14 @@ skin-authored HTML, and native-object reflection are unsupported. Video tags sho
 NullPlayer-owned placeholder; `<EFFECTS>` uses bounded native Spikes, Bars, Ambience, Cava, and
 vis_classic renderers inside the skin-authored rectangle rather than loading Windows effect
 plug-ins. Right-click Cava and vis_classic to use their normal tuning and profile controls; those
-choices are kept separate from their standalone windows. Script runs in a
-separate killable helper with bounded messages and deadlines; a script failure keeps the last valid
-static scene and disables script for that skin session.
+choices are kept separate from their standalone windows. Skin scripts run in a persistent
+in-process JavaScript context on a dedicated serial queue, behind a restricted host object model.
+They do not run in a killable helper process. A script that never returns can stall its script
+queue; there is no process-level timeout recovery for that context.
 
-Auxiliary NullPlayer windows without WMP-owned chrome remain unavailable in WMP mode. Switch to
-Classic, Original, or Original-Metal to use those windows.
+The library, Flow, PeppyMeter, Spectrum, AudioAnalysis, Cava, waveform, and ProjectM windows are
+available in WMP mode. They wear a frame borrowed from the skin when one is available, or use
+colours derived from the skin otherwise. Playlist and equalizer use the skin's own surface when
+provided, with themed native windows as fallbacks. Video, radio sheets, compact mode, and debug
+windows retain their unskinned presentation. See the
+[current hosting contract](../../skills/wmp-skin-guide/SKILL.md#current-hosting-contract).

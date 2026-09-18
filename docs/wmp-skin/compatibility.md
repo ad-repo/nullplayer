@@ -50,8 +50,13 @@ remote casting or VLC video audio. The design, defaults, and limits are document
 | `VIDEO`, `WMPVIDEO` | Documented app-authored placeholder; plug-ins and ActiveX remain denied |
 | Multiple `VIEW`s | Controlled `theme.currentViewID` transaction, per-skin/view size, safe top-left, accessibility replacement |
 
-NullPlayer auxiliary windows remain hidden in WMP mode because WMP-owned chrome hosts have not been
-defined for them. They never fall back to Classic, Original, Original-Metal, or Winamp Modern chrome.
+NullPlayer's library, Flow, PeppyMeter, Spectrum, AudioAnalysis, Cava, waveform, and ProjectM
+windows are available in WMP mode. They use the active skin's borrowed frame when available and
+WMP-derived palette chrome otherwise. Playlist and equalizer route to the skin's own surface when
+provided; native fallbacks also receive WMP theming but are excluded from border growth because
+their layouts use classic sprite geometry. Video, radio sheets, compact mode, and debug windows
+have no skin chrome and are outside this theming policy. See the
+[current hosting contract](../../skills/wmp-skin-guide/SKILL.md#current-hosting-contract).
 
 ## Expressions and bindings
 

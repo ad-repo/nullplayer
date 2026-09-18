@@ -11,9 +11,11 @@ extension Notification.Name {
     static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
     static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
     static let windowDragDidEnd = Notification.Name("windowDragDidEnd")
-    /// The palette NullPlayer's own surfaces are drawn from has moved — a `.wal` skin switched colour
-    /// theme (Phase 16), or a `.wmz` skin or view was presented. Those windows take their colours
-    /// from `hostedSurfaceStyle` and have no handle on the skin view.
+    /// Hosted appearance or geometry changed: palette/theme, WMP presentation, completed frame
+    /// size, resolved donor insets, or donor fallback. Posted on the main thread without a per-window
+    /// payload. Hosted views re-read family-gated style/artwork, invalidate layout, and repaint;
+    /// HostedWindowBorderLayout also observes it to update outer sizes/minima around interiors.
+    /// This is not a repaint-only event or a guarantee that every requested frame is ready.
     static let hostedSurfaceStyleDidChange = Notification.Name("hostedSurfaceStyleDidChange")
 }
 
@@ -1022,7 +1024,8 @@ class WindowManager {
     /// Non-nil **only** in `winampModern` mode and only once a skin has actually loaded, so every
     /// other mode — and this mode's own placeholder — runs the untouched classic path. The style is
     /// derived on each read rather than cached: a colour-theme switch changes the palette underneath
-    /// us, and `.hostedSurfaceStyleDidChange` only tells a window to repaint.
+    /// us. `.hostedSurfaceStyleDidChange` prompts consumers to re-read this accessor; its broader
+    /// layout and border-growth semantics are documented at the notification declaration.
     var winampModernSurfaceStyle: WinampModernSurfaceStyle? {
         guard uiMode.controllerFamily == .winampModern,
               let palette = (mainWindowController as? WinampModernMainWindowController)?.currentPalette

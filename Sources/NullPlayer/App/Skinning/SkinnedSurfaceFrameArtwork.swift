@@ -15,11 +15,12 @@ import AppKit
 /// hosted surface goes inside it. Deriving it is the family's job (`WMPHostedFrameTemplate`), and no
 /// skin markup is known here.
 struct SkinnedSurfaceFrameArtwork {
-    /// The frame, drawn on a transparent canvas in top-left skin coordinates. Its pixel size is
-    /// `size * backingScale`; it is drawn into `size` points.
+    /// The frame on a transparent canvas in top-left skin coordinates, drawn into `size` points.
+    /// Pixel dimensions may reflect a cropped donor rendered at its floor or provisional artwork
+    /// from another size; they need not equal target points times the destination backing scale.
     let image: CGImage
 
-    /// The window size this frame was rendered for, in points.
+    /// The target window size for this artwork and its mapped geometry, in points.
     let size: CGSize
 
     /// Where NullPlayer's own content belongs inside it, in the same top-left coordinates — the
@@ -28,18 +29,13 @@ struct SkinnedSurfaceFrameArtwork {
     /// nothing about where content can go; the skin's stretched client subview says it exactly.
     let contentRect: CGRect
 
-    /// How wide the ring's own top-right corner piece is, in points, where it declares one.
-    ///
-    /// **The close control is inset by this, not by the client hole's right border.** The hole says
-    /// where the donor's *content* goes and a panel with a side rack leaves a third of the window
-    /// outside it — `Star Wars`'s playlist view leaves 164 of 575pt — so a close aligned with the
-    /// hole lands mid-band with ring artwork either side (reported 2026-09-15). The corner bitmap is
-    /// the thing that has to be cleared, because that is where a skin paints its own close button.
+    /// Legacy corner-width metadata in points (panel path: right slice margin). Retained for
+    /// diagnostics/compatibility; the close hit target does not use this inset.
     var trailingCornerWidth: CGFloat? = nil
 
-    /// True when the window is smaller than the donor view's own declared minimum and the frame had
-    /// to be scaled down to fit it. Kept as a fact about the artwork rather than hidden, because it
-    /// is the one case where the ring is not drawn at the proportions its author chose.
+    /// Whether composition maps the cropped frame extent to a different target size, or the
+    /// provider scaled previous artwork provisionally. Includes below-floor rings but is not a
+    /// below-floor or readiness flag. Painters use it to choose interpolation.
     let wasScaledToFit: Bool
 
     /// **Whether this frame can be painted over our content whole, with no hole cut in it (W209).**
@@ -60,12 +56,10 @@ struct SkinnedSurfaceFrameArtwork {
     /// *picture* rather than a fill erases to nothing and keeps the cut it always had.
     var paintsOverContent: Bool = false
 
-    /// The band the window title and close control are drawn in: everything above the client panel.
+    /// The band above the client panel; caps the close hit target's height. Borrowed frames
+    /// receive no added window title or close glyph.
     var captionHeight: CGFloat { max(0, contentRect.minY) }
 
-    /// The same four numbers `SkinnedSurfaceChrome` already lays a window out from, so a view that
-    /// asks the chrome for its metrics gets the skin's insets wherever a frame is available and its
-    /// own classic constants everywhere else.
     /// The close *hit area* in the ring's caption band — nothing is drawn there, so it is sized to
     /// be easy to hit rather than to match a glyph: the corner of one of these bands is where the
     /// skin paints its own close button, and that painted × is what the user aims at. Wider than it
@@ -76,6 +70,7 @@ struct SkinnedSurfaceFrameArtwork {
     static let closeHitWidth: CGFloat = 40
     static let closeHitHeight: CGFloat = 26
 
+    /// Insets derived from the mapped content rectangle, shared by layout and hit testing.
     var metrics: SkinnedSurfaceChrome.Metrics {
         SkinnedSurfaceChrome.Metrics(
             titleHeight: max(0, contentRect.minY),

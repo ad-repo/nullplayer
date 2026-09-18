@@ -1,5 +1,10 @@
 # WMP skin Phase 5 handoff
 
+> **Historical handoff — availability and hosting guidance is superseded.** This records a past
+> implementation phase, not the current product contract. Native WMP-hosted windows are now
+> available; see the [current hosting contract](../../skills/wmp-skin-guide/SKILL.md#current-hosting-contract).
+> Other phase claims remain unverified narrative and must be checked against current code.
+
 > **Superseded in part (2026-09-07).** The helper-process script architecture this
 > describes was retired: skin JScript now runs in one persistent in-process `JSContext`
 > per skin session with the object model as the boundary. See Amendment 2 in

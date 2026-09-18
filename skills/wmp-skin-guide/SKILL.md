@@ -74,6 +74,31 @@ either routes to the skin's own window or wears the skin — if it can be themed
 that draws no skin chrome in any mode (the video player, the radio sheets, compact mode, the debug
 window) is outside it; one that draws chrome is inside it, and there is no third option.
 
+### Current hosting contract
+
+- Native library, Flow, PeppyMeter, Spectrum, AudioAnalysis, Cava, waveform, and ProjectM windows
+  receive WMP palette chrome and borrowed donor artwork when available. These eight are the
+  `WindowManager.hostedBorderWindows` participants; `HostedWindowBorderLayout` grows their frames
+  around saved interiors using donor reference insets.
+- Playlist and equalizer route to skin-provided surfaces first. Their native fallbacks receive
+  WMP theming but **do not participate in border growth**: their classic sprite geometry does not
+  follow the shared metrics. Video, radio sheets, compact mode, and debug windows have no skin
+  chrome and are outside this policy.
+- Borrowed rings use whole-donor rendering with subtraction; fixed panels use nine-slicing.
+  Apply the supplied geometry and `paintsOverContent` policy. Borrowed artwork receives no added
+  title or close glyph; the close target is the capped 40×26-point top-right hit area.
+- Asynchronous frame completion is a layout change, not just a repaint. Consumers relayout and
+  invalidate display; the border-layout observer may also grow windows. The authoritative event
+  semantics are documented at `Notification.Name.hostedSurfaceStyleDidChange` in `WindowManager`.
+- Exact artwork may include below-floor or extent scaling. During pending renders the provider
+  can return a scaled previous image; a panel allows this only within 15% on both axes.
+  `wasScaledToFit` is not a readiness flag. The current static frame probe does not exercise live
+  child composition or animation; verify those through live-host captures.
+
+The [architecture analysis](../../docs/wmp-skin/hosted-window-architecture-analysis.md) proposes a
+future container/state API; it is not the implemented contract above. The mechanism notes below
+retain measured counterexamples and rejected approaches.
+
 Routing is `routeWMPSkinSurface` / `WMPSkinSurfaces` — 171 of the 180 archives declare a playlist and
 164 an equaliser, so ours is the fallback for the handful that declare neither. **A fallback is
 decided when the window opens, and the skin can change underneath it**: loading a `.wmz` with no
@@ -121,8 +146,9 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   `CavaView` and `PeppyMeterView` each had a content-only fast path for 60 Hz redraws that returned
   before the chrome overlay. Correct while chrome is a border *around* content; wrong the moment any
   of it overlaps, which is what painting over the content made true — the borrowed bezel was being
-  erased on every tick. **Nothing in a probe dump can show this**, and it is why three rounds of
-  artwork fixes changed nothing the reporter could see. A hosted window with a fast path takes a
+  erased on every tick. **The current static frame probe does not exercise this path**, which is
+  why three rounds of artwork fixes changed nothing the reporter could see. Verify it with live-host,
+  multi-frame captures. A hosted window with a fast path takes a
   full redraw whenever a skin lent a frame.
 - **Shape, the second donor class — a *panel* (W207).** Over half the corpus lends no ring: measured
   at the library's own 550x464 on 2026-09-16, **88 of 185 archives lend a ring and 97 lend nothing**.
@@ -144,12 +170,15 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   not nodes.
 - **How the window and the border share the space: the window is grown (W207, closed 2026-09-16).**
   **The interior keeps its size and the border is added around it** — `HostedWindowBorderLayout`,
-  one central rule for every hosted window, driven off `WMPHostedFrameProvider.donorInsets`, which
-  answers a donor's four borders *without reference to any window* because a 600x150 analyser can
+  one central rule for the eight registered growth participants listed above, driven off
+  `WMPHostedFrameProvider.donorInsets`, which answers a donor's four borders *without reference to any window* because a 600x150 analyser can
   never render a frame carrying `anemone`'s 173x145 and so could never learn its insets from one.
-  A window too small to carry the border at 1:1 is answered nil and keeps palette chrome until the
-  growth lands; nothing is ever drawn at a scale its author did not choose, and `wasScaledToFit`
-  is now only the ring's below-floor case. Three answers preceded it and each was reported wrong:
+  A panel too small to carry its borders at 1:1 is answered nil and keeps palette chrome until
+  growth lands. Exact panels preserve their sliced borders; rings can scale below the donor floor
+  or when mapping their cropped extent onto the target. Pending renders may return provisional
+  scaled artwork, including panels within the provider's 15% per-axis guard. `wasScaledToFit`
+  records extent-to-target scaling or provisional scaling, not exclusively a below-floor case.
+  Three answers preceded it and each was reported wrong:
   composing at the borders' own size (a five-point hole), refusing the window (the border came off
   everything but PeppyMeter), and a uniform scale-to-fit (the thin border the report was about).
   **Two more were tried and are wrong for reasons worth keeping.** Growing to the donor's *declared
@@ -276,16 +305,6 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   has no subviews. **A new hosted window wires this in step 3 of the checklist below**, and the
   probe cannot see it: the frame is right, the artwork is right, and the picture is wrong.
 
-**The caption band is the donor's, and it is never too short to draw in.** Measured 2026-09-15 with
-`WMP_HOSTED_FRAME=550x464` — the library's own default size — over the installed corpus: **87 of 184
-archives lend a ring**, and their captions run **7px to 104px**, median ~37, with nothing below one
-character. So the `captionHeight >= classicCharHeight` guard both painters carried never fired on a
-real skin, and the case that does exist is the opposite one: a band shorter than the lettering
-*asked for* — `The_Sentinel_v.1.0` lends 7px, `TheUnit` and `The` 9px, and the library asks for 1.6x
-glyphs 9.6px tall. Dropping the caption there would take the window's only close control with it, so
-`SkinnedSurfaceChrome.drawBorrowedCaption` scales the lettering down to the band instead, and the
-library draws through that same painter rather than a copy of it.
-
 **Nothing of ours is drawn over a borrowed ring — no title, no close glyph.** The ring is the
 window's chrome, whole, and the only thing we add is a **hit area in its top-right corner**
 (`SkinnedSurfaceChrome.closeButtonRect`, 40x26pt, capped by the band), because that corner is where
@@ -311,8 +330,10 @@ frame system: `<Wasabi:StandardFrame:*>` declares the frame, the client rect is 
 resize strips, and its title bar and buttons are declared controls wired to actions — so a hosted
 window is *mounted* in the skin's frame and we draw no chrome at all. Nothing is inferred, and none
 of this class of defect exists there. A `.wmz` has no frame system: no title-bar element, no close
-element, no client rect. The ring is eight bitmaps recognised by their alignment, and everything
-else has to come from pixels. **When a `.wmz` question can only be answered by reading the artwork,
+element, no standard client-rect contract. Donor selection uses authored geometry and alignment;
+rings are rendered whole after subtraction and panels are nine-sliced at their content hole.
+The close target remains a convention rather than a declared skin control.
+**When a `.wmz` question can only be answered by reading the artwork,
 that is the signal to stop answering it.**
 
 Placing the control *inside* the client hole was tried in between and rejected on sight — a close
@@ -338,8 +359,9 @@ one-skin gap is the scan's, not the engine's.
 ### Adding a NullPlayer-native window in WMP mode
 
 The windows inside the rule today: playlist, library, equalizer, visualizations, spectrum, Cava,
-Flow, PeppyMeter, audio analyzer, waveform. A new one wires **every** step below in the same change;
-each was a separate reported defect, and skipping any one of them is how that defect comes back.
+Flow, PeppyMeter, audio analyzer, waveform. The growth subset is the eight windows listed in the
+current contract; playlist/EQ are explicit exceptions to step 8. A new metrics-based hosted window
+wires every applicable step in the same change; each prevents a previously reported defect.
 
 1. **Route before you host.** Ask `WMPSkinSurfaces` whether the skin declares this surface itself
    (§ *Ask what the skin provides before opening a window of your own*). A routing case added before
@@ -357,10 +379,11 @@ each was a separate reported defect, and skipping any one of them is how that de
 6. **Honour `paintsOverContent`** — draw your content, then the frame on top. The frame is not a
    border around a rectangle any more; it overlaps.
 7. **If the view has an animation fast path, disable it whenever a skin lent a frame.** A 60 Hz
-   content-only redraw erases the overlapping chrome, and **no probe can see it** — it is the defect
-   that made three rounds of artwork fixes look like no-ops.
+   content-only redraw erases overlapping chrome. The current static frame probe cannot exercise
+   that redraw path; verify it with live-host, multi-frame captures.
 8. **Grow, don't shrink** — `HostedWindowBorderLayout` adds the border around the interior off
-   `WMPHostedFrameProvider.donorInsets`. Never scale the window's content to make room.
+   `WMPHostedFrameProvider.donorInsets` for registered metrics-based windows. Playlist/EQ remain
+   excluded because their layout uses classic sprite geometry. Never scale content to make room.
 9. **Verify on screen.** The `HOSTED-FRAME` line reports piece counts and rects; it cannot see a
    wrong bitmap, an erased bezel or a borrowed glyph. `WMP_HOSTED_FRAME_DUMP` and a
    `screencapture` of the live window are the instruments — § *Debugging a live defect*.

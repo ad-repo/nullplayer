@@ -158,13 +158,10 @@ final class WMPHostedFrameProvider {
                 guard self.generation == generation else { return }
                 self.inFlight.remove(key)
                 guard let produced else {
-                    // **A ring that does not close is a verdict on the skin, at every size
-                    // (W209).** The pieces are anchored to the window's edges, so a donor whose
-                    // ring comes apart on one hosted window comes apart on all of them — and
-                    // unlike the panel's, this one drops the template however many frames have
-                    // already been produced, because every one of them has the same hole in it.
-                    // The windows fall back to palette chrome, which is what a `.wmz` that lends
-                    // no frame at all has always given them.
+                    // The older diagnostic assembler (`WMP_HOSTED_FRAME_WHOLE=0`) can refuse an
+                    // open ring. This branch drops the donor and cached sizes as a fallback policy,
+                    // not proof that every size fails. The default whole-donor path instead uses
+                    // size-dependent gaps to attempt repair and does not throw ringDoesNotClose.
                     if ringOpen {
                         self.template = nil
                         self.donorInsets = nil
