@@ -172,6 +172,25 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   of them opaque white), so a run measured on alpha alone reads a 96pt border and takes back the
   width the donor gives its own content. `borderInsets` **composes** the frame at the reference
   size rather than deriving insets from markup, so the window is grown by the border it will wear.
+- **The reclaim measures a rail where the rail *is*, and a donor with no fill is not a donor with
+  no rail (W219).** `clearOfTheDonorsOwnRail` above assumed two things that `TheUnit` breaks at
+  once, and between them our content was handed the skin's own left rail — which the rectangular cut
+  then erased, leaving no left bezel on any hosted window and our black ground running out to the
+  window's edge. First, the run measured **in from the window's edge**, and this border grows the
+  other way: `left_stretch.png` is 37px wide with its outer **30 the transparency key** — the
+  window's curved silhouette — and the rail in the inner 7, so a run anchored at the edge is starved
+  by 30 bare columns and answers zero. It now skips the bare lead-in; where a border does reach the
+  edge the skip is zero and every number is unchanged. Second, the rule **returned the rack
+  unmeasured whenever the hole carried no dominant fill**, which is the reclaim at its most
+  dangerous rather than its safest — and a donor whose client subview is a `<VIDEO>` region has no
+  fill at all, because its contents are ours and are subtracted, so its hole renders 97%
+  transparent. Excluding nothing measures every opaque pixel in the strip as border, which can only
+  make the reclaim *smaller*. Corpus at 550x464: **8 lines move across 7 skins**, all of them
+  content the donor paints (`livin_it_skate`'s green rail, `Blinx`'s orange wing, `Crimson_Skies`),
+  and the four rack skins the reclaim exists for — `Star Wars`, `STALKER`, `WoW`, `Halloween` — are
+  byte-identical. **A column-wise measure was tried first and is wrong**: it re-refused exactly
+  those four racks, which is the 2026-09-15 *"reclaim it, we have no content for it"* report coming
+  back.
 - **A view drawn whole cannot come apart, but it can still be drawn short (W212).** The frame build
   is outside the script runtime, so a side tile whose height only the skin's `onResize` sets keeps
   its bitmap's — a 20% bare run down each side of `Alienware Invader`, which is the desktop showing
@@ -192,6 +211,25 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   it costs nothing now that no slot can be left empty by a refusal. The `HOSTED-FRAME` line cannot
   see this class of defect at all — it reports the piece count and the client hole, never which
   bitmap was drawn — so `WMP_HOSTED_FRAME_DUMP` is the instrument.
+- **A resize grip is the window's corner, not a control's picture (W222).** Subtraction rule 4 — a
+  subview whose `backgroundImage` is also a control child's `image` is that control's backing and
+  goes with it — is right for a glyph painted twice (`Back to the Future Trilogy`'s shuffle pair)
+  and wrong for a corner that is *authored as a button because that is the only node a `.wmz` can
+  hang a mouse handler on*. `TheUnit` writes its rounded top-right corner and the top of its right
+  rail exactly that way: `<subview backgroundImage="top2.png"><button image="top2.png"
+  onmousedown="view.size('topright')"/></subview>`, three of them. The rule took all three off
+  **every hosted window at once** — a square notch where the curve should be and the rail starting
+  28pt down — reported 2026-09-17 as *"the issue is the right top corner … every window"*. **That
+  it is the same on every window is the signature to read**: a piece the *frame* never had, as
+  against a piece one window mislaid. The exemption is window geometry and nothing else
+  (`isWindowGeometryGrip`): handlers that reach `view.size` or `view.dragMove` and never touch
+  `player.`. The backing stays, the control walk still drops the button itself, our window keeps its
+  own resize, and W193's 235 `view.size(corner)` calls are the population this serves. Corpus at
+  550x464: **9 lines change and every one is a `gaps` value falling** — bare edge becoming artwork,
+  on `Halo 2`, `Ice`, `Official Xbox` ×2, `XBOX`, `WWC` and both `TheUnit` archives — with no
+  content rect moving. `Plus! Pulsar` is the one exception and is a pre-existing defect rather than
+  this one: its donor is bigger than the window (`content=-191.111,38`, a hole starting off the
+  window's left edge, before and after), so restoring a grip moved its alpha crop.
 - **The ground a hosted window paints is its content hole, not the window**
   (`SkinnedSurfaceChrome.hostedGroundRect`). Every window in the spectrum family paints its own
   ground in its own `draw` and nothing shared owned that step, while `drawSkinFrame` deliberately
@@ -202,6 +240,28 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   place so a window added later inherits it; Waveform, Spectrum, AudioAnalysis and ProjectM never
   filled the full bounds in the borrowed path, and Playlist, EQ and the library already filled
   `contentRect` only.
+  **And the hole crosses between the two coordinate spaces as *insets*, never as a rect (W221).**
+  `contentRect` is the artwork's own top-left scene space — what `drawSkinFrame` paints in, flipped
+  — and those three views fill their ground in the window's bottom-left space, so handing the rect
+  over mirrored the hole vertically. Invisible while a donor's caption and bottom border are about
+  equal, which every donor before this one was; `TheUnit` lends a **5pt caption over a 60pt bottom
+  bar**, and all three grounds landed 55pt low — the top of every hole left transparent with the
+  desktop showing through it and the ground running out under the bottom bar. It reads exactly like
+  a window with a hole punched in it, and it survived the first round of fixes because the *frame*
+  was correct in every capture. `hostedGroundRect` now builds the rect from
+  `artwork.scaled(to:).metrics`, which is orientation-free, and any new caller filling a rect in a
+  view's own space must do the same.
+- **A borrowed frame that arrives late is a *layout*, not a repaint (W220).** The ring is derived
+  asynchronously for the window's own size, so it lands **after** the view has already laid out
+  against the classic fallback metrics, and `hostedSurfaceStyleDidChange` did nothing but
+  `needsDisplay = true`. A repaint redraws the chrome around subviews still framed for the old hole:
+  three of these windows host one (`ProjectMView`'s GL view, `AudioAnalysisView`'s SwiftUI host,
+  `SpectrumView`'s), and on Visualizations that subview kept the **whole window** and buried every
+  borrowed piece under the visualization — no caption, no rail, no bottom bar, on a window whose
+  `HOSTED-FRAME` line was perfect. All nine hosted views now mark the layout dirty on that
+  notification, and `ProjectMView` re-frames its GL view explicitly; it costs nothing where a view
+  has no subviews. **A new hosted window wires this in step 3 of the checklist below**, and the
+  probe cannot see it: the frame is right, the artwork is right, and the picture is wrong.
 
 **The caption band is the donor's, and it is never too short to draw in.** Measured 2026-09-15 with
 `WMP_HOSTED_FRAME=550x464` — the library's own default size — over the installed corpus: **87 of 184
@@ -275,7 +335,9 @@ each was a separate reported defect, and skipping any one of them is how that de
    Take the roles from there, never a hard-coded pair.
 3. **Layout and hit testing** — `SkinnedSurfaceChrome.metrics(for:fallback:)`. The close control is
    a **hit area in the borrowed frame's top-right corner**, not a glyph of ours; nothing of ours is
-   drawn over a borrowed frame.
+   drawn over a borrowed frame. **Relayout on `hostedSurfaceStyleDidChange`, not just repaint**
+   (W220) — the frame arrives after your first layout pass, and a subview framed for the old hole
+   covers the ring.
 4. **Chrome** — `WindowManager.hostedSurfaceFrameArtwork(for:)`.
 5. **Paint the ground as `hostedGroundRect`, never `bounds`.** A `bounds.fill()` turns a shaped
    frame into a black box with the skin drawn inside it.

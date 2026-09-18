@@ -7099,6 +7099,10 @@ class PlexBrowserView: NSView {
     /// the whole job.
     @objc private func hostedSurfaceStyleDidChange() {
         hasResolvedWindowWinampModernStyle = false
+        // A borrowed frame moves the content hole this view lays its list and its controls out
+        // from, and it lands after the first layout pass — see the same note on the rest of the
+        // hosted family (W220).
+        needsLayout = true
         needsDisplay = true
     }
 

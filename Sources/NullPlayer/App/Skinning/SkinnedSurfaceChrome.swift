@@ -105,12 +105,25 @@ struct SkinnedSurfaceChrome {
     /// The rule lives here, once, so a window added later inherits it instead of rediscovering it.
     /// The library never had the defect for the same reason it has none of this family's chrome
     /// bugs: it lays itself out from `metrics` and clips its content to the hole.
+    /// **The hole is stated in the artwork's top-left coordinates and filled in AppKit's, so it is
+    /// the insets that cross between them, never the rect (W221).** `contentRect` is scene space —
+    /// the same space `drawSkinFrame` paints in, flipped — and the three views that fill this rect
+    /// do it in the window's own bottom-left space. Handing the rect straight over mirrors the hole
+    /// vertically, which is invisible while a donor's caption and bottom border are about equal and
+    /// glaring the moment they are not: `TheUnit` lends a 5pt caption over a 60pt bottom bar, and
+    /// cava, `flow` and PeppyMeter each painted their ground 55pt low — the top of every hole left
+    /// transparent with the desktop showing through it, the ground running out under the bottom bar.
+    /// Reported 2026-09-17 as the windows still being broken after the border itself was fixed.
     static func hostedGroundRect(in bounds: CGRect) -> CGRect {
         guard let artwork = WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size) else {
             return bounds
         }
-        let hole = artwork.scaled(to: bounds.size).contentRect.offsetBy(dx: bounds.minX, dy: bounds.minY)
-        return hole.isEmpty ? bounds : hole
+        let metrics = artwork.scaled(to: bounds.size).metrics
+        let hole = CGRect(x: bounds.minX + metrics.leftBorder,
+                          y: bounds.minY + metrics.bottomBorder,
+                          width: bounds.width - metrics.leftBorder - metrics.rightBorder,
+                          height: bounds.height - metrics.titleHeight - metrics.bottomBorder)
+        return hole.isEmpty || hole.width <= 0 || hole.height <= 0 ? bounds : hole
     }
 
     /// Draws spectrum-family chrome in the same flipped, top-left coordinate system used by

@@ -565,6 +565,22 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         }
     }
 
+    /// Whether a control does nothing but resize or move the window it is drawn on.
+    ///
+    /// These are the corner and edge grips: `view.size('topright')`, `view.dragMove()`. They are
+    /// authored as buttons because that is the only node a `.wmz` can hang a mouse handler on, and
+    /// the image they carry is the window's own corner rather than a glyph — W193 counted 235
+    /// `view.size(corner)` calls in the corpus, every one of them on `onMouseDown`. A control that
+    /// also reaches player state is not one of these.
+    private static func isWindowGeometryGrip(_ node: WMPNode) -> Bool {
+        let handlers = ["onmousedown", "onmouseup", "onclick", "ondblclick", "onmousemove"]
+            .compactMap { literal(node, $0)?.lowercased() }
+        guard !handlers.isEmpty else { return false }
+        let script = handlers.joined(separator: ";")
+        guard script.contains("view.size") || script.contains("view.dragmove") else { return false }
+        return !script.contains("player.")
+    }
+
     private static func notOurs(_ view: WMPNode, client: WMPNode) -> Set<Int> {
         var excluded: Set<Int> = []
         func subtree(_ node: WMPNode) {
@@ -589,6 +605,21 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             for child in node.children where Self.isControl(child) || Self.isControlKind(child) {
                 for name in ["image", "backgroundImage"] where
                     literal(child, name)?.caseInsensitiveCompare(backing) == .orderedSame {
+                    // **A resize grip is the window's corner, not a control's picture (W222).** The
+                    // rule above reads "the same image in both places" as a glyph painted twice and
+                    // drops the pair. `TheUnit` writes its top-right corner that way and the button
+                    // in it does not press anything: `onmousedown="view.size('topright')"`, the
+                    // artwork *is* the grip. Subtracting it took the rounded corner and the top of
+                    // the right rail off every hosted window — reported 2026-09-17 as *"the issue
+                    // is the right top corner"*, on every window at once, which is the signature of
+                    // a piece the frame never had rather than one a window mislaid.
+                    //
+                    // So the backing stays and only the control goes, the way it does everywhere
+                    // else: the walk below drops the button itself, our window keeps its own
+                    // resize, and nothing of the skin's behaviour is borrowed. Window geometry is
+                    // the whole exemption — a grip asks the *view* for its size and touches no
+                    // player state, so a control that reaches `player.` is a glyph as before.
+                    if Self.isWindowGeometryGrip(child) { continue }
                     subtree(node)
                     return
                 }
@@ -877,11 +908,21 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             }
         }
         let area = (x1 - x0) * (y1 - y0)
-        guard area > 0, let fill = tally.max(by: { $0.value < $1.value }),
-              CGFloat(fill.value) >= CGFloat(area) * 0.5 else { return content }
+        guard area > 0 else { return content }
+        // **A donor with no interior fill has nothing to exclude, and that is not a reason to stop
+        // measuring (W219, `TheUnit`).** The fill is excluded because these border bitmaps carry the
+        // interior colour baked in; a donor that paints *no* colour behind its own content — the
+        // client subview's contents are ours and are subtracted, so its hole comes out transparent
+        // — has no such colour, and the rule returned the rack unmeasured. That is the reclaim at
+        // its most dangerous rather than its safest: nothing is known about the strip, and the
+        // whole of it is handed away. Excluding nothing measures every opaque pixel in the strip as
+        // border, which can only make the reclaim smaller.
+        let candidate = tally.max(by: { $0.value < $1.value })
+        let fill = (candidate.map { CGFloat($0.value) >= CGFloat(area) * 0.5 } ?? false)
+            ? candidate?.key : nil
 
         func isBorder(_ index: Int) -> Bool {
-            pixels[index + 3] > 200 && key(index) != fill.key
+            pixels[index + 3] > 200 && key(index) != fill
         }
         func median(_ runs: [Int]) -> CGFloat {
             guard !runs.isEmpty else { return 0 }
@@ -892,14 +933,30 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         // white highlight 15px in, which reads as fill and answered a 13pt rail for a 99pt one. So
         // the run is the furthest point in from the edge at which the strip behind it is still
         // *mostly* painted — dense enough to be artwork, which a bare margin never is.
+        //
+        // **It starts where the donor starts painting, not at the window's edge (W219, `TheUnit`).** The
+        // run assumed a border grows inwards from the edge; this one is the other way round.
+        // `left_stretch.png` is 37px wide and its outer **30 are the transparency key** — the
+        // window's own curved silhouette — with the rail in the inner 7, so a run anchored at the
+        // edge is starved by 30 bare columns before it reaches any artwork and answers a rail of
+        // zero. The 37pt rack then goes to our content whole, and because this donor keeps the
+        // rectangular cut (`whole=no`) the cut erases the rail it was just handed: no left bezel on
+        // any hosted window, our black ground running out to the window's edge. Skipping the bare
+        // lead-in costs the rule nothing where a border does reach the edge — the skip is zero
+        // there — and it is the *inner* end of the artwork that bounds our content either way.
         func run(_ row: Int, from edge: Int, step: Int, limit: Int) -> Int {
+            var lead = 0
+            while lead < limit, lead < width, pixels[row + (edge + lead * step) * 4 + 3] <= 200 {
+                lead += 1
+            }
+            guard lead < limit else { return 0 }
             var painted = 0, reached = 0
-            for offset in 0..<limit where offset < width {
+            for offset in lead..<limit where offset < width {
                 guard isBorder(row + (edge + offset * step) * 4) else { continue }
                 painted += 1
                 // Dense enough behind it to be artwork, and the run ends on the artwork rather
                 // than on the slack the density test allows past it.
-                if painted * 5 >= (offset + 1) * 4 { reached = offset + 1 }
+                if painted * 5 >= (offset - lead + 1) * 4 { reached = offset + 1 }
             }
             return reached
         }

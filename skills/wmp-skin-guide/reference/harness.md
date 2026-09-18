@@ -361,6 +361,45 @@ switch never loaded the view (W46); `setViewTimerInterval value=50` immediately 
 staying silent through all of it said no handler ever threw, which is what moved the search out of
 the script and into the engine's own semantics.
 
+### Capturing the hosted windows, one at a time
+
+A report about a **borrowed frame** is a report about ten windows, and the capture step has two traps
+that each hand back a confident wrong picture (W219-W222, 2026-09-17):
+
+- **`screencapture -o -x -l <id>` returns a full-screen image for a window that is off-screen**, the
+  same silent fallback as a stale id, and these windows tile down a column that runs off the bottom
+  of the screen the moment more than four are open. Check the capture's pixel size against the
+  window's points × the backing scale before reading it, every time.
+- **`-R x,y,w,h` picks up whatever is behind the window**, and a hosted window is mostly keyed-out
+  artwork, so the window behind reads as *this* window's content: a visualizer showing through a
+  transparent hole reads as a ground that was never painted. Park each window alone before shooting
+  it — move the others off-screen right (`set position to {1400, 40}` via System Events), put the
+  one under test at a fixed origin, `AXRaise` it, capture, then move it away and bring up the next:
+
+```bash
+PID=$(pgrep -x NullPlayer | head -1)
+pos() { osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
+  to tell (first window whose name is \"$1\") to set position to {$2, $3}"; }
+skills/app-control/scripts/winhelper windows > /tmp/wins.txt
+while read id layer x y w h alpha name; do pos "$name" 1400 40; done < /tmp/wins.txt
+while read id layer x y w h alpha name; do
+  pos "$name" 60 60; sleep 0.5
+  osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
+    to tell (first window whose name is \"$name\") to perform action \"AXRaise\""
+  screencapture -x -R 60,60,$w,$h "/tmp/w-${name// /_}.png"; pos "$name" 1400 40
+done < /tmp/wins.txt
+```
+
+**Then sort the defects by whether they vary window to window before theorising about any of them.**
+A defect identical on every window is a property of the *frame* — the ring the skin lends, measured
+once for all of them — and one window differing is a property of that window's own layout. The three
+frame defects and the one layout defect in the `TheUnit` report were indistinguishable in prose and
+separated instantly by that question. Put every window's capture in front of you before answering:
+fixing the first one found and verifying it on two windows is what produced *"you did not check
+them"*.
+
+Windows are moved back on-screen afterwards. They are the user's.
+
 ### Auditing one authored control across the whole corpus
 
 *"Every skin has this button and it does nothing"* is a shape of report the census cannot answer,
