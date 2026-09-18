@@ -9,6 +9,62 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W226 — a hidden element still has a place
+
+**Closed 2026-09-18.** Accepted live on `Compact` by the reporter, the second half of the W225
+session's report: *"when you stretch the window the visualization does not follow the stretch"*.
+
+**The widget was never at fault, and the row said to measure that before ranking it.** A hosted
+surface is an AppKit view laid into the scene's frame, so the question is whether the *scene* frame
+grew. `WMP_RENDER_PROBE=all` with `WMP_RENDER_HOST=playing` — the vis pane is `visible="false"`
+until playback starts, so a stopped host hosts no `myeffect` at all — at `422x378` and at
+`700x600`:
+
+| | own size | 700x600, before | 700x600, after |
+|---|---|---|---|
+| `WIDGET … effects id=myeffect` | `280x215` | `558x215` | `558x437` |
+| `svVisual`, the pane it lives in | `320x240` | `598x`**`240`** | `598x462` |
+| `svEffectsControls`, the viz strip | `top=220` | `top=`**`220`** | `top=442` |
+
+The surface sat exactly on its scene frame in every run. The width followed the drag and the height
+did not, which makes it two scene-side defects in `WMPSceneBuilder`, one behind the other.
+
+**1. A geometry binding reads where the target *is*, and a hidden target was nowhere.** `Compact`
+sizes its pane with `<subview id="svVisual" height="wmpprop:video1.height">`, and `video1` is
+`visible="false"` for the whole of audio playback — `ShowVisualizations(true)` hides the video and
+shows the effects. The walk returns on an invisible node before recording a geometry, so
+`laidOutGeometry` had nothing to answer from and the read fell through to the static resolver, which
+reads the markup: **240**, the height the window was *born* at. WMP lays hidden elements out and
+answers the read from its live object model. A hidden node is now measured — geometry only: no
+paint, no hit target, no widget, no children, and no entry in the resolved or unresolved tallies —
+and **only when some other node in the view binds a `left`/`top`/`width`/`height` off it**
+(`geometryBindingTargets`). Every other hidden node in the corpus leaves the walk exactly where it
+did before.
+
+**2. The alignment baseline was reading the resize back as if it were authored.**
+`ownAuthoredSize` is what every child's alignment delta is measured from, and W225 put the geometry
+overrides into it deliberately: a container a *handler* sized is a baseline, because the handler
+stated that size on purpose. But `WMPScriptRuntime` writes an override for two different things —
+a script assignment, and its own re-evaluation of an authored expression or binding — and the second
+is only this canvas's answer echoed back. With `svVisual` reading 462 on both sides of the
+subtraction the delta was zero, so the strip under the visualizer stayed at its authored `top` while
+the pane around it grew. `authoredDimension` now takes an override only when
+`overrides.scriptAssignedGeometry` says a handler wrote it, and re-reads the markup otherwise.
+`jscript:` attributes are untouched: the static resolver evaluates them at the current canvas, which
+is the same number `parseDimension` already had.
+
+**Blast radius, measured.** Full 179-archive render sweep against a baseline worktree at
+`3daa3cb7`: **706 RENDER-DUMP invariant lines identical, 0 differing**; **553 PNGs identical, 0
+lost, 0 new, 1 differing**. The one is `Scooby-Doo_2/infoView`, and it is **not this change** — two
+runs of the *same* build disagree about it, because the skin picks its character at random. That
+archive is the corpus's one nondeterministic render and a sweep diff naming it alone is noise; see
+`skills/wmp-skin-guide/reference/harness.md`. `swift test`: 2402 passed, 18 skipped, 0 failures.
+
+**Still open from the same report:** W227, the window-edge band, which runs no skin resize bracket
+at all.
+
+---
+
 ## W232-W233 — the Disney report, 2026-09-18
 
 **Two defects, one skin, and neither is what the ranking said was wrong with it.**

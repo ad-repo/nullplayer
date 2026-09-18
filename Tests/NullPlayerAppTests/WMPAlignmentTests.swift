@@ -302,4 +302,109 @@ final class WMPAlignmentTests: XCTestCase {
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "pl")
         XCTAssertEqual(try frame(skin, scene, "tile").y, 118)
     }
+
+    // MARK: - W226: a hidden element still has a place, and a bound extent is not a baseline
+
+    /// **A geometry binding reads where the target *is*, and a hidden target is somewhere.**
+    ///
+    /// `Compact` sizes its visualisation pane with `<subview id="svVisual"
+    /// height="wmpprop:video1.height">`, and `video1` is `visible="false"` for the whole of audio
+    /// playback. A hidden node was never walked, so it had no resolved frame and the read fell back
+    /// to the markup — 240, the height the window was *born* at. Stretching the window grew the
+    /// pane's width and left its height where it started, so the visualizer hosted inside it never
+    /// followed the drag. Reported as "when you stretch the window the visualization does not
+    /// follow the stretch".
+    ///
+    /// The second half is in the same picture: the pane's own extent now follows the window, and
+    /// its children measure their alignment from `ownAuthoredSize`. Reading the grown extent back
+    /// as the baseline makes that delta zero, so the strip under the visualizer stays where it was
+    /// authored — which is how the surface can grow while everything inside it does not.
+    func testAPaneBoundToAHiddenSiblingFollowsTheResizeAndCarriesItsChildren() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <SUBVIEW id="pane" width="320" height="240"
+                     horizontalAlignment="stretch" verticalAlignment="stretch">
+                <SUBVIEW id="film" visible="false" width="320" height="240"
+                         horizontalAlignment="stretch" verticalAlignment="stretch"
+                         backgroundColor="#FF00FF"/>
+                <SUBVIEW id="vis" zIndex="2" width="320" height="wmpprop:film.height"
+                         horizontalAlignment="stretch" backgroundColor="#000000">
+                    <SUBVIEW id="strip" top="220" width="320" height="20"
+                             verticalAlignment="bottom" backgroundColor="#00FF00"/>
+                </SUBVIEW>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let view = try XCTUnwrap(skin.views.first { $0.id == "main" }?.node.stableID)
+        var overrides = WMPSceneOverrides.empty
+        overrides.geometry[.init(stableID: view, property: "height")] = 462
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+
+        XCTAssertEqual(try frame(skin, scene, "vis").height, 462,
+                       "the pane follows the hidden element it is bound to, which stretched")
+        XCTAssertEqual(try frame(skin, scene, "strip").y, 442,
+                       "220 + the 222 the pane grew by: the strip rides the pane's bottom edge "
+                       + "instead of freezing at the authored margin")
+    }
+
+    /// And the hidden element is **measured, not drawn**. It answers where it is and contributes
+    /// nothing else: no paint, no hit target, no widget, no children.
+    func testAMeasuredHiddenElementPaintsNothing() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <SUBVIEW id="film" visible="false" width="320" height="240" backgroundColor="#FF00FF">
+                <SUBVIEW id="inner" width="10" height="10" backgroundColor="#FF00FF"/>
+            </SUBVIEW>
+            <SUBVIEW id="vis" width="320" height="wmpprop:film.height" backgroundColor="#000000"/>
+        </VIEW></THEME>
+        """)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let magenta = WMPColor(red: 255, green: 0, blue: 255)
+        XCTAssertNotNil(scene.geometries[try stableID(skin, "film")],
+                        "it was measured, or the binding below could not have been answered")
+        XCTAssertNil(scene.geometries[try stableID(skin, "inner")],
+                     "a hidden element's children are not walked")
+        XCTAssertFalse(scene.commands.contains { $0.paint == .fill(magenta) },
+                       "and nothing it declares reaches the picture")
+        XCTAssertEqual(try frame(skin, scene, "vis").height, 240)
+    }
+
+    /// The other side of the same rule: a hidden element **nothing reads a coordinate off** is not
+    /// measured at all. Only the graph asking where it is buys it a frame — every other hidden node
+    /// in the corpus leaves the walk exactly where it did before.
+    func testAHiddenElementNobodyBindsToIsNotMeasured() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <SUBVIEW id="film" visible="false" width="320" height="240" backgroundColor="#FF00FF"/>
+        </VIEW></THEME>
+        """)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        XCTAssertNil(scene.geometries[try stableID(skin, "film")])
+    }
+
+    /// **A script-assigned extent is still the baseline, and that is W225's rule.** The runtime
+    /// writes a geometry override for both a handler's assignment and its own re-evaluation of an
+    /// authored expression; only the first is the author stating a size deliberately, and only the
+    /// first may be measured from. `scriptAssignedGeometry` is what separates them.
+    func testAScriptAssignedExtentIsStillTheBaselineForItsChildren() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <SUBVIEW id="pane" width="320" height="240" backgroundColor="#000000">
+                <SUBVIEW id="strip" top="220" width="320" height="20"
+                         verticalAlignment="bottom" backgroundColor="#00FF00"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let pane = try stableID(skin, "pane")
+        var overrides = WMPSceneOverrides.empty
+        overrides.geometry[.init(stableID: pane, property: "height")] = 300
+        overrides.scriptAssignedGeometry[.init(stableID: pane, property: "height")] =
+            WMPSize(width: 320, height: 240)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+        XCTAssertEqual(try frame(skin, scene, "strip").y, 220,
+                       "the handler sized the pane to 300 and its children measure from that, so "
+                       + "the strip keeps the margin the script left it at")
+    }
 }

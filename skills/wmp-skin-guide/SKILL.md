@@ -1032,6 +1032,30 @@ queue, with the object model as the security boundary — see Amendment 2 in
   (`WMPHostedFrameTemplate`), where it was three white blocks on every hosted window. The
   counter-evidence is pinned beside it: a target that states its own coordinate is read at that
   coordinate.
+- **A hidden element still has a place, and the extent a binding gives it is not a baseline
+  (W226).** Two more steps along the same read, both found by measuring `Compact`'s visualizer at
+  two window sizes. **First: the walk returns on an invisible node before recording a geometry**, so
+  `parseDimension` had nothing to answer a `wmpprop:` read from and fell through to the markup —
+  which is the size the window was *born* at, not the size it has been dragged to. `Compact` sizes
+  its vis pane with `<subview id="svVisual" height="wmpprop:video1.height">` and `video1` is
+  `visible="false"` for the whole of audio playback, so stretching the window grew the pane's width
+  and left its height at the authored 240. WMP lays hidden elements out and answers the read from
+  its live object model; so does this, for a hidden node **some other node actually binds a
+  coordinate off** (`geometryBindingTargets`) and no other — measured only, with no paint, no hit
+  target, no widget, no children and no entry in the resolved or unresolved tallies. **Second: the
+  alignment baseline must not read the resize back as if it were authored.** `ownAuthoredSize` takes
+  the geometry overrides because W225's rule says a container a *handler* sized is a baseline — but
+  `WMPScriptRuntime` writes an override for a script assignment *and* for its own re-evaluation of
+  an authored expression or binding, and the second is only this canvas's answer echoed back. With
+  the pane reading 462 on both sides of the subtraction, every child's delta was zero and the strip
+  under the visualizer froze at its authored `top` while the pane grew around it.
+  `WMPSceneBuilder.authoredDimension` takes an override only when `overrides.scriptAssignedGeometry`
+  says a handler wrote it. `jscript:` attributes are untouched — the static resolver evaluates them
+  at the current canvas, which is the number `parseDimension` already had. Corpus-wide the render
+  sweep is byte-identical (706 invariant lines, 553 PNGs, the one differing being `Scooby-Doo_2`'s
+  random picture again). Reported as "when you stretch the window the visualization does not follow
+  the stretch"; `WMPAlignmentTests` pins all four halves, including the two counter-cases — a hidden
+  node nobody binds to is still not measured, and a script-assigned extent is still a baseline.
 - **A `windowed="true"` `<EFFECTS>` is a real child window: nothing the skin paints goes over it
   (W144).** This is the *other* answer to the occlusion question the entry below settles for the
   windowless case, and the two are opposite on purpose — which is why 106 corpus skins say

@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **A Media Player skin's visualization now follows the window when you stretch it.** Dragging the
+  skin's own resize grip grew the visualizer sideways and left its height where it started, so it
+  ended up a wide strip with the player's black panel below it — and the previous/next-visualization
+  buttons under it stayed where they were authored instead of riding the bottom edge. Reported on
+  *Compact*, and it affects any skin that sizes a panel from another element's height.
+
 - **Media Player skin windows no longer open off the bottom of the screen.** With a `.wmz` skin
   loaded, each window you opened from the Windows menu was placed flush under the lowest one already
   open, with nothing stopping the column at the edge of the display — so the fourth one down sat

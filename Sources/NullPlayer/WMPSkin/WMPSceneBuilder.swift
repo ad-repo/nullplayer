@@ -260,6 +260,33 @@ struct WMPSceneBuilder: @unchecked Sendable {
         }
         indexIDs(view)
 
+        /// The elements some other node reads a **coordinate** off, through
+        /// `<attr>="wmpprop:<id>.<left|top|width|height>"`.
+        ///
+        /// A hidden node is never walked, so it has no resolved frame and `laidOutGeometry` falls
+        /// back to the markup — the size the element was *authored* at, which is the size the
+        /// window was born at and not the size it has been dragged to. `Compact` sizes its
+        /// visualisation pane with `<subview id="svVisual" height="wmpprop:video1.height">`, and
+        /// `video1` is `visible="false"` for the whole of audio playback: stretching the window
+        /// grew the pane's width and left its height at the authored 240, so the visualizer inside
+        /// it never followed the drag (W226).
+        ///
+        /// So a hidden node is measured — geometry only, no paint, no hit target, no widget and no
+        /// children — but only when the graph actually asks where it is. Every other hidden node
+        /// returns exactly where it did before.
+        var geometryBindingTargets = Set<Int>()
+        func indexGeometryBindings(_ node: WMPNode) {
+            for name in ["left", "top", "width", "height"] {
+                guard let attribute = node.attribute(named: name),
+                      case let .binding(kind, path) = attribute.value, kind == .property,
+                      let id = path.split(separator: ".", maxSplits: 1).first,
+                      let target = idToNode[String(id).lowercased()] else { continue }
+                geometryBindingTargets.insert(target.stableID)
+            }
+            node.children.forEach(indexGeometryBindings)
+        }
+        indexGeometryBindings(view)
+
         /// A number a script may have written, then the markup's own.
         ///
         /// The type's `literal(_:_:)` reads the attribute and nothing else, and `<TEXT>` is where
@@ -465,6 +492,30 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
         }
 
+        /// The extent this node states **in its own markup**, with a geometry binding read the way
+        /// the static grammar reads it rather than from where the target has been laid out.
+        ///
+        /// `parseDimension` is the frame; this is the baseline every child's alignment delta is
+        /// measured from, and the two part company on exactly one kind of attribute. A
+        /// `height="wmpprop:video1.height"` now follows the target's *resolved* frame, so a pane
+        /// bound to a stretching sibling grows with the window — and if that grown extent were
+        /// also the baseline, the delta would be zero and nothing inside the pane would move.
+        /// `Compact`'s `svVisual` is 240 authored and 462 when the window is dragged 222 taller:
+        /// its visualizer and the effects strip under it follow the drag only because the
+        /// difference between those two numbers is what their alignment reads (W226).
+        func authoredDimension(_ node: WMPNode, _ name: String) -> CGFloat? {
+            let address = WMPScenePropertyAddress(stableID: node.stableID, property: name.lowercased())
+            // A script-*assigned* extent is a baseline — W225's reason: the handler stated that
+            // size deliberately, and its children's margins are measured from it. An override the
+            // runtime wrote while re-evaluating an authored expression or binding is not: it is
+            // this canvas's answer, echoed back, and reading it here is what made the delta zero.
+            if overrides.scriptAssignedGeometry[address] != nil,
+               let value = overrides.geometry[address], value.isFinite { return value }
+            guard let property = WMPInitialLayoutResolver.Property(rawValue: name.lowercased()),
+                  case let .value(value) = layoutResolver.resolve(node, property: property) else { return nil }
+            return value
+        }
+
         /// Did this coordinate come from something that already knows the view's current size?
         ///
         /// A script override and a `JScript:`/`wmpprop:` attribute both do — they were evaluated
@@ -668,19 +719,23 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // that reads only the authored attribute draws whichever the author happened to leave
             // on — which is how an opaque video pane ended up over the artwork as soon as playback
             // started.
+            var hidden = false
             if let override = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
                                                                           property: "visible")] {
-                if !override.truth { return }
+                if !override.truth { hidden = true }
             } else if let mirrored = mirroredVisibility(of: node) {
                 // **A `wmpprop:` path can name another element in the same skin, not only a host
                 // property.** 150 of the corpus's `visible="wmpprop:…"` attributes do: `WoW` hangs
                 // its CD-rip bar off `wmpprop:playlist2.visible`, and 8 skins share that exact
                 // line. Resolving it here is what keeps the bar hidden now that an *unanswerable*
                 // path no longer resolves to a falsy empty string.
-                if !mirrored { return }
+                if !mirrored { hidden = true }
             } else if literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame {
-                return
+                hidden = true
             }
+            // Measured-only, and only for a node the graph reads a coordinate off. A node with no
+            // frame of its own has no coordinate to give, so `isNonLayout` still leaves here.
+            if hidden, !geometryBindingTargets.contains(node.stableID) || isNonLayout(node) { return }
             if isNonLayout(node) {
                 for child in node.children.sorted(by: paintOrder) {
                     try walk(child, parentFrame: parentFrame, parentAuthoredSize: parentAuthoredSize,
@@ -744,7 +799,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     height = intrinsicHeight
                 }
                 guard let left, let top else {
-                    if !unresolvedNodes.contains(node.stableID) {
+                    if !unresolvedNodes.contains(node.stableID), !hidden {
                         recordUnresolved(node, attribute: "position", value: "missing literal geometry")
                     }
                     return
@@ -752,7 +807,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 guard var width, var height else {
                     let isStringTable = width == nil && height == nil
                         && isStringTableText(node, literalString)
-                    if !unresolvedNodes.contains(node.stableID), !isStringTable {
+                    if !unresolvedNodes.contains(node.stableID), !isStringTable, !hidden {
                         let missing = [width == nil ? "width" : nil, height == nil ? "height" : nil]
                             .compactMap { $0 }.joined(separator: "+")
                         recordUnresolved(node, attribute: "size",
@@ -765,14 +820,15 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     let partial = WMPRect(x: parentFrame.x + left, y: parentFrame.y + top,
                         width: width ?? 0, height: height ?? 0)
                     let partialAuthored = WMPSize(width: width ?? 0, height: height ?? 0)
-                    for child in node.children.sorted(by: paintOrder) {
+                    for child in hidden ? [] : node.children.sorted(by: paintOrder) {
                         try walk(child, parentFrame: partial, parentAuthoredSize: partialAuthored,
                                  inheritedClip: inheritedClip, parentAlpha: parentAlpha,
                                  parentNode: node, parentNodeFrame: partial)
                     }
                     return
                 }
-                ownAuthoredSize = WMPSize(width: width, height: height)
+                ownAuthoredSize = WMPSize(width: authoredDimension(node, "width") ?? width,
+                                          height: authoredDimension(node, "height") ?? height)
                 // **Alignment moves geometry the skin left as a literal, and nothing else.**
                 //
                 // A resizing `.wmz` states the same intent twice: WoW's `pl5_1` authors
@@ -912,6 +968,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                 width: frame.width, height: frame.height)
             geometries[node.stableID] = WMPResolvedGeometry(localFrame: local,
                 absoluteFrame: frame, visibleFrame: visible, clipRect: inheritedClip)
+            // A measured hidden node stops here: it answers where it is and nothing else. Paint,
+            // hit targets, widgets, children and the resolved/unresolved tallies all stay exactly
+            // as they were before it was measured at all.
+            if hidden { return }
             resolvedNodes.insert(node.stableID)
             let z = zIndex(of: node)
             let alpha = inheritedAlpha(node, parentAlpha)
