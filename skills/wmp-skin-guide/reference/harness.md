@@ -1639,6 +1639,35 @@ node, command, hit or widget moved anywhere — which is what a tally-only chang
 **This is a measurement-only change and has no UI signature.** Nothing to click, nothing to see in
 the app; the census pair is the whole verification, and a live pass would be a weaker version of it.
 
+### What the residue is, and where this ranking now starts
+
+The 456 unresolved nodes left, by authored tag, over the 629 views of the 184-archive sweep:
+
+| tag | nodes | ranked as |
+|---|---:|---|
+| `subview` | 180 | **W231** — opened by this change; nobody has opened one yet |
+| `controls` | 104 | W111 |
+| `text` | 61 | what the string-table rule correctly leaves: a bound `value`, a `<TEXT>` declared twice, a node authoring one dimension |
+| `button` | 49 | unranked |
+| `videosettings` | 29 | W111 |
+| `slider` 10, `statusText` 7, `automenu` 4, and 12 others | 33 | unranked |
+
+**`starved.tsv` is four rows deep now and bottoms out at 0.000 below them**: `cyberchannel/playview`
+0.50, `Batman Begins/mainView` 0.50, `Alienware Invader/mainView` 0.33,
+`Disney_Mix_Central/mainView` 0.30. The two intro skins are explained above. The other two are not:
+
+* `cyberchannel/playview` is the whole view — `<VIEW id="playview"><PLAYLIST/></VIEW>`, a bare list
+  in a view that states no size (cp1252 archive; `iconv -f CP1252`, not UTF-16). Establish what WMP
+  gives an unsized `<PLAYLIST>` before calling it a defect.
+* `Disney_Mix_Central/mainView` draws its banner and five widgets and answers **no click anywhere**.
+  That is the `hits == 0` column, not the starvation one — `WMP_RENDER_OCCLUDED` and
+  `WMP_RENDER_CLICK`, not `WMP_RENDER_UNRESOLVED`.
+
+**`WMP_RENDER_UNRESOLVED` prints the node and its missing dimension and nothing else, and that is
+the gap that left the `<TEXT>` class unexamined for two phases.** Print the parent and the authored
+geometry attributes before taking W231: the question there is whether an unresolved `<SUBVIEW>` is
+the *parent* of nodes already counted, which neither the count nor the ratio can currently say.
+
 ---
 
 ## After the starvation classes (179-archive corpus, 2026-09-09)
