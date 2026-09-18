@@ -1925,7 +1925,18 @@ class WindowManager {
         // Winamp Modern has no center stack for this to scan — the skin's windows belong to no
         // column and are any size — so a hosted window joins the tiling instead. Everything below is
         // the Classic/Original stack, untouched.
-        if uiMode.controllerFamily == .winampModern {
+        //
+        // **`.wmz` is in the same branch, and had to be (W217).** The Classic stack below opens each
+        // window under the lowest one already open and clamps nothing, so in WMP mode — where the
+        // skin owns the player and our own surfaces are what opens here — the fourth window down was
+        // measured at the screen bottom, the fifth entirely below it and the sixth 200pt past that
+        // (`Halo 2`, 1800x1130 visible: CAVA at the edge, Audio Analyzer and Flow off it). Those
+        // windows are borderless in this mode and there is nothing left on screen to drag them back
+        // by. The tiler this branch uses clamps every slot onto the visible frame on both axes, which
+        // is the protection the Classic path has never had and does not need — its stack is a layout
+        // the user has arranged their desktop around.
+        let familyTiles = uiMode.controllerFamily == .winampModern || uiMode.controllerFamily == .wmp
+        if familyTiles {
             // `tiledOrigin` now only declines when there is no player window or screen to tile
             // against at all; the reachability fallback covers that, so no path here can leave a
             // window at an off-screen origin.
@@ -1935,7 +1946,9 @@ class WindowManager {
                 isSnappingWindow = true
                 window.setFrameOrigin(origin)
                 isSnappingWindow = false
-                if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
+                let traceKey = uiMode.controllerFamily == .wmp
+                    ? "WMP_PLACE_TRACE" : "WINAMP_MODERN_PLACE_TRACE"
+                if ProcessInfo.processInfo.environment[traceKey] == "1" {
                     NSLog("[place/tile] hosted %@", NSStringFromRect(window.frame))
                 }
                 postLayoutChangeNotification()
@@ -5784,6 +5797,85 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
+    /// Snap To Default for Windows Media Player (W217 / G4).
+    ///
+    /// Left to fall through, the command reached the Classic stack routine, which measures against
+    /// `screen.frame` rather than `visibleFrame`, builds its column from the per-feature controllers
+    /// — the very windows `dismissWMPFallbackSurfacesTheSkinProvides` has closed when the skin
+    /// provides those surfaces — and ends with no reachability pass. In `.wmz` that left a skin's own
+    /// panel, which is borderless and carries no title bar to drag, with no route back onto the
+    /// display at all. This is `snapWinampModernToDefaultPositions`' reasoning applied to the one
+    /// family where the windows genuinely cannot be recovered by hand.
+    ///
+    /// "Default positions" means what the first launch meant: the player re-centred, then every
+    /// materialized view re-placed through the same clamped tiler that placed it originally, in
+    /// `openPresentations` order. `WMPViewWindowMaterializer.place` is once-only by design, so this
+    /// walks the tiler directly rather than through it.
+    private func snapWMPToDefaultPositions() {
+        guard let controller = mainWindowController as? WMPMainWindowController,
+              let playerWindow = controller.window else { return }
+        guard let region = (playerWindow.screen ?? NSScreen.main)?.visibleFrame else { return }
+
+        clearSavedWindowFramePositions()
+
+        isSnappingWindow = true
+        defer { isSnappingWindow = false }
+
+        playerWindow.setFrame(Self.recenteredPlayerFrame(size: playerWindow.frame.size, in: region),
+                              display: true, animate: false)
+
+        // **One tiler, walked sequentially** — `WinampModernMainWindowController.arrangeWindows`'
+        // recipe, and the reason this is not `tiledOrigin(for:avoiding:)` per window. That call
+        // builds a *fresh* tiler each time and returns the first slot free of an occupancy set, which
+        // is how a window opened *after* an arrangement joins one; asked to lay out a whole session
+        // it re-derives every column from the current window's own width and piles late windows on
+        // top of each other. A shared cursor is what makes the result an arrangement, and it is where
+        // `WinampModernTiler`'s own off-screen protection lives: every slot it hands back is clamped
+        // onto `region` on both axes, so no window this walk places can land off the display.
+        guard var tiler = winampModernTiler() else { return }
+        var arranged: Set<ObjectIdentifier> = [ObjectIdentifier(playerWindow)]
+
+        func reposition(_ window: NSWindow) {
+            arranged.insert(ObjectIdentifier(window))
+            window.setFrameOrigin(tiler.nextSlot(for: window.frame.size).origin)
+        }
+
+        // The skin's own views first, in the order it opened them, so the result is the layout the
+        // skin would have produced on a fresh launch.
+        for window in controller.materializedAuxiliaryWindows where window.isVisible {
+            reposition(window)
+        }
+
+        // Then the themed NullPlayer surfaces the skin does *not* provide — a fallback playlist or
+        // EQ, the visualizer windows, the standalone video window — which hang off their own
+        // controllers and are invisible to the materializer.
+        var leftovers = snapTargetWindows()
+        if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
+            leftovers.append(videoWindow)
+        }
+        for window in leftovers where !arranged.contains(ObjectIdentifier(window)) {
+            reposition(window)
+        }
+
+        // One press is the guarantee, and a second press is a no-op: anything the walk above could
+        // not seat — a window owned by no controller in either list — is rescued outright.
+        let screens = visibleScreenFrames()
+        for window in allWindows() where !WindowPlacement.isReachable(window.frame, screens: screens) {
+            guard let origin = rescuedOrigin(for: window) else { continue }
+            window.setFrameOrigin(origin)
+        }
+
+        if ProcessInfo.processInfo.environment["WMP_PLACE_TRACE"] == "1" {
+            NSLog("[wmp/place] snap-to-default player %@", NSStringFromRect(playerWindow.frame))
+            for window in controller.materializedAuxiliaryWindows {
+                NSLog("[wmp/place] snap-to-default %@ %@",
+                      window.title, NSStringFromRect(window.frame))
+            }
+        }
+
+        postLayoutChangeNotification()
+    }
+
     /// The safety net: no window this app manages is left where the user cannot reach it.
     ///
     /// Every placement path is now supposed to keep its own output on screen, but placement is not
@@ -5892,6 +5984,14 @@ class WindowManager {
         // (B81). The modern arrangement is generated, not stacked, so it gets its own routine.
         if uiMode.controllerFamily == .winampModern {
             snapWinampModernToDefaultPositions()
+            return
+        }
+
+        // `.wmz` has the same mismatch and a sharper consequence: its windows are borderless, so a
+        // panel dragged off the display cannot be dragged back (W217 G4). Its own routine re-runs
+        // the placement the materializer performed at load.
+        if uiMode.controllerFamily == .wmp {
+            snapWMPToDefaultPositions()
             return
         }
 

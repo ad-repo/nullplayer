@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **Media Player skin windows no longer open off the bottom of the screen.** With a `.wmz` skin
+  loaded, each window you opened from the Windows menu was placed flush under the lowest one already
+  open, with nothing stopping the column at the edge of the display — so the fourth one down sat
+  half off the screen, and the fifth and sixth were not on it at all. These windows are borderless
+  and have no title bar to grab, so there was no way to drag them back. They now tile onto the
+  visible part of the display, the way Modern skin windows already did.
+- **Snap To Default works with a Media Player skin.** It used to re-centre the player and whichever
+  unthemed windows happened to be open, leaving the skin's own panels wherever they were. It now
+  re-centres the player and lays every window out again from there, and one press is enough — a
+  second press changes nothing.
 - **A Media Player skin no longer traps you with no window when you close its playlist.** These
   skins' close button does not close the panel it sits on — it closes the player, the way Media
   Player's own does — and NullPlayer was left running with no window at all. Bringing the window

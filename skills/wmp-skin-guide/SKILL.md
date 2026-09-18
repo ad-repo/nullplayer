@@ -1588,6 +1588,55 @@ how much of it this engine hosts today.
 The restore path passes `switchingViews: false`: a saved session must never move the user to a
 different view at launch.
 
+### Window placement and recovery
+
+**`App/WindowPlacement.swift` is the single definition of "on screen" — the window's top-left corner
+is on some screen — and `.wmz` uses it. Do not re-derive it locally.** A `.wmz` window is borderless:
+it has no title bar, and most skins make it unmovable by its background, so a window that lands past
+an edge cannot be dragged back. Every other family can be recovered by hand; this one cannot, which
+is why the rules below are contracts rather than preferences.
+
+| Moment | Seam | `.wmz` |
+|---|---|---|
+| A skin's own view opens | `WMPViewWindowMaterializer.place` | authored `openViewRelative` offset or the stored top-left, else `WindowManager.tiledOrigin`, then `rescuedOrigin` as the never-`nil` backstop. Placed **once**, so a window the user moved is never yanked back |
+| One of NullPlayer's own windows opens | `WindowManager.positionSubWindow` | the same `tiledOrigin` → `rescuedOrigin` pair, sharing the `.wal` branch |
+| Snap To Default | `WindowManager.snapWMPToDefaultPositions` | the player re-centred, then one `WinampModernTiler` walked over every window, then an unconditional reachability pass |
+| A resize | per-family | top-left anchored, so growth cannot strand the reachable corner |
+| A display change, a restore onto a smaller desktop | `ensureAllWindowsOnScreen`, `correctedRestoredFrames` | **not run in `.wmz`** — W217 G1–G3, still open |
+
+**`positionSubWindow` and Snap To Default both branched on `.winampModern` alone until W217, and
+`.wmz` fell through to the Classic stack.** That stack opens each window flush under the lowest one
+already open and clamps nothing, because in Classic a window parked past an edge is a placement the
+user chose rather than damage to repair. Measured live on `Halo 2` over an 1800x1130 visible frame
+with ten windows open: Cava straddled the bottom edge, the Audio Analyzer opened entirely below it
+and Flow 200pt further down again — three windows gone, with no route home and Snap To Default
+recentring the player and whichever unthemed fallback windows happened to exist. Both now take the
+tiling branch, whose every slot `WinampModernTiler.nextSlot` clamps onto the visible frame on both
+axes.
+
+**Snap To Default walks one tiler, not `tiledOrigin` per window.** `tiledOrigin(for:avoiding:)`
+builds a *fresh* tiler each call and returns the first slot clear of an occupancy set: that is how a
+window opened **after** an arrangement joins one, and it is the wrong instrument for laying out a
+whole session — it re-derives every column from the current window's own width, and late windows
+pile onto each other (measured: four windows on one slot). A shared cursor is what makes the result
+an arrangement. `WinampModernMainWindowController.arrangeWindows` is the recipe; the `.wmz` routine
+is that recipe with the player re-centred first.
+
+**The contract is that one press is enough and a second press is a no-op.** Verify it that way:
+`diff` the window list across two presses, do not judge it by eye.
+
+**Verify a placement change live, and measure the frames** — `WMP_PLACE_TRACE=1`, `Halo 2` as the
+load case (four panels from `onLoadSkin` plus `mainView`) and `Corona` as the control; read the
+frames back through `app-control`'s `winhelper windows` rather than off a screenshot. A frame outside
+every screen is `rescuedOrigin` failing. Two legs cannot be exercised by hand and need the unit
+tests (`Tests/NullPlayerAppTests/WMPSnapToDefaultTests.swift`): a genuinely stranded window — a
+`.wmz` window is not movable by its background and macOS clamps a drag at the screen edge, so one
+cannot be produced with the mouse — and a window taller than the display.
+
+**`WMPWindowRestorePolicy.safeFrame` is a second, weaker definition of "on screen"** (an 80pt strip,
+a 24pt bottom margin, and `first(where: intersects)` rather than `hostScreen`). It is W217 G1 and is
+still there; nothing new may call it.
+
 ## Debugging a live defect
 
 Read **`skills/live-ui-testing`** before diagnosing anything that only reproduces on screen, and the

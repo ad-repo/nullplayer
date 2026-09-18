@@ -1031,9 +1031,18 @@ sites:
 - end of `applyUIScaleLevelChangeIfNeeded`
 - after a `.wal` skin load in `ContextMenuBuilder` (three sites)
 
-Per `CLAUDE.md` this runs in **all three modes deliberately** — it is not justified as a no-op. An
-unreachable window is equally unusable in Classic, Original/Modern and Winamp Modern, and the rule is
-mode-independent. Verify it separately in each.
+**This sweep is gated to Winamp Modern**, structurally in `ensureAllWindowsOnScreen()` and again at
+every call site. There are **four** families, not three, and they divide like this: `.wal` is in the
+sweep; Classic and Original are deliberately out, because a window parked mostly past an edge is a
+placement they have laid their desktops out around and this sweep reads it as damage to repair (B56
+is the record of it reaching them); `.wmz` is out and **should not be** — it is W217 G3, still open,
+and it is the one family whose windows are borderless and cannot be dragged back. Until that closes,
+`.wmz` gets its recovery from the two seams it does share, `positionSubWindow`'s tiling branch and
+its own Snap To Default routine, both of which clamp every slot onto the visible frame.
+
+The rule itself — reachable means the top-left corner is on some screen — is mode-independent, and
+`App/WindowPlacement.swift` is its single definition in every family. Verify a change to it
+separately in each.
 
 ### Restore
 

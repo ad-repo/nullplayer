@@ -125,6 +125,13 @@ through `NSLog`; setting them on the test probe does not exercise their instrume
 again — placement happens once per window, so a window the user has moved is never yanked back.
 It is the `.wmz` counterpart of `WINAMP_MODERN_PLACE_TRACE`, and it exists for one question a
 screenshot answers badly: **a skin that opens five panels at load has five windows to fit**.
+
+**Since W217 a stranded `.wmz` window is recoverable — Snap To Default has a `.wmz` routine — so a
+`[wmp/place]` frame outside every screen is a defect and not merely a warning.** The same flag now
+also prints `[place/tile] hosted <frame>` for NullPlayer's own windows opening in WMP mode (they
+share the `.wal` tiling branch of `positionSubWindow`) and one `snap-to-default` line per window on
+each press. Read the frames back with `app-control`'s `winhelper windows`, never off a screenshot,
+and check idempotency by `diff`ing two presses.
 `Halo 2`'s `onLoadSkin` opens four from its own preferences plus `mainView`, and the failure mode
 is not a wrong-looking window but an invisible one — the tiler walking off the bottom of its column.
 A line whose frame is outside every screen is the `rescuedOrigin` fallback failing; a line that
