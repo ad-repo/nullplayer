@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- **A Media Player skin's borrowed window frame no longer comes apart on the Library Browser.**
+  *Alienware Invader* draws the rails down the sides of its playlist window in pieces it sizes from
+  its own script, and the frame NullPlayer borrows from it is built without running that script — so
+  each rail stopped about a hundred points short. On every window but one the missing stretch was
+  filled in automatically; the Library Browser is the tallest window NullPlayer opens, and the same
+  gap was a small enough fraction of its height to slip past the check, leaving a notch of bare
+  desktop showing through both sides. The check now looks at how long the gap actually is, so the
+  rails are completed on every window.
+
 - **Stretching a Media Player skin no longer swallows its drawers.** These skins hold their sliding
   panels against the edge of the window while you drag its resize grip, and put them back when you
   let go — but both halves of that were happening before the first pixel moved. Dragging *Compact*

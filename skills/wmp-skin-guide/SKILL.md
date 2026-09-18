@@ -201,6 +201,19 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   painted its white filler over both rails, which are drawn before it), and the repair is refused
   if the window's **content rect moves** (stretching a tile down grows the alpha bounding box and
   the hole rides the crop — `KungFuChaos` and `The_Last_Samurai` are that shape).
+- **And what reaches that repair is a *length*, not a share of the edge (W228).** The run a
+  script-sized rail leaves is the same at every window size — `Alienware Invader`'s is **107pt** —
+  so a gate on `gaps` alone asks a question about the window: 107pt is 0.231 of a 464pt-tall one
+  and 0.132 of the library browser's 810. The identical hole was therefore repaired on nine hosted
+  windows and left open on the tenth, which is the only one that opens taller than 107 / 0.15 =
+  713pt, reported 2026-09-18 as *"alien invader media library window draws broken. the other
+  nullplayer windows draw ok"*. `edgeCameOutBare` now takes either test — the fraction, **or**
+  `ringEdgeGapPointLimit` = 40pt measured along that edge — and 40 is in the same empty middle
+  0.15 sits in: at 710x810 the corpus's closing rings run 0 to 24.3pt and its open ones 49.7, 85.2
+  and 106.9. One `HOSTED-FRAME` line moves corpus-wide and 550x464 is unchanged. **Read a `gaps=`
+  fraction back into points before believing a defect belongs to the window it showed up on** —
+  the number is the frame's defect divided by the window's size, and one hosted window differing
+  is otherwise the signature of that window's own layout (§ *Capturing the hosted windows*).
 - **A borrowed glyph is a lie about what it does (W208, and it is why W209 subtracts).** A skin's
   own buttons are anchored to its window's edges exactly as its corner bitmaps are, so nothing in
   the markup separates them by position. `Ice` writes its playlist shuffle six nodes before

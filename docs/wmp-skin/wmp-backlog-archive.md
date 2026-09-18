@@ -2366,6 +2366,24 @@ above. Verify a borrowed-frame row by driving the app and capturing the live win
 
 ---
 
+## W228 — the rail that was only open on the tallest window, 2026-09-18
+
+Reported as *"alien invader media library window draws broken. the other nullplayer windows draw
+ok"*. The dossier is
+[`skills/wmp-skin-guide/reference/skins/alienware-invader.md`](../../skills/wmp-skin-guide/reference/skins/alienware-invader.md)
+§ *W228*; the durable rule is in `SKILL.md` beside W212's, which this row is the missing half of.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W228 | The span repair that closes a script-sized rail is gated on a **fraction** of the edge, so the same bare run is repaired on a short window and left open on a tall one | **1 archive of 185** moves at 710x810 (`Alienware Invader`), 0 at 550x464; the shape is every ring whose rails are sized in `onResize` — this is the one the corpus has | **Closed.** `Alienware Invader` sizes both rails in `onPlResize()`, which the frame build never runs, so the ring comes out **107pt** short down each side at every size. That is 0.231 of a 464pt-tall window and trips `ringEdgeGapLimit`; it is 0.132 of the library browser's 810 and does not — and the library is the only hosted window that opens taller than 107 / 0.15 = 713pt. `edgeCameOutBare` now takes either test, the fraction **or** `ringEdgeGapPointLimit` = 40pt along that edge. Forty is in the same empty middle 0.15 sits in: at 710x810 the rings that close run 0 to 24.3pt and the ones with a piece missing measure 49.7 (`Half-Life_2`), 85.2 (`Combat_Flight_Simulator_3`) and 106.9 (this skin). Corpus at 710x810: **one line moves**, `gaps 0.132 → 0.000`, with `content=99,34 588x740` and every inset byte-identical; at 550x464 nothing moves — the only line the point limit newly reaches is `Half-Life_2` at 0.091/50pt and its repair is rejected. The repair's own guards are what make the wider gate cheap: it lands only if it closes the gap *and* leaves the content rect where the first pass put it. Verified live on the library at 746x931: zero bare pixels on all four edges, against `y=1288..1501` left 198px / right 46px fully transparent before. Pinned by `Tests/NullPlayerAppTests/WMPHostedRingSpanTests.swift` |
+
+**The process note worth keeping: a `gaps=` fraction is the frame's defect divided by the window's
+size.** W219-W222 established that a defect appearing on *every* hosted window is a property of the
+frame and one window differing is a property of that window's own layout. This row is the exception
+that completes the rule — one window differed and the frame was still the cause, because the
+*measurement* the gate read scales with the window. Read the run back into points
+(`gaps[1] × height`) before concluding anything about the window it showed up on.
+
 ## W225 — the bracket a skin wraps around its own resize
 
 **Closed 2026-09-18.** Accepted live on `Compact` by the reporter, driving the grip with

@@ -738,9 +738,11 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             // `edgeGaps` is [top, left, bottom, right]. **Only the side that came out bare is
             // spanned**: giving this donor's top tile the width of the canvas as well painted its
             // white filler straight over both side rails, because the tile is drawn after them.
-            let down = max(first.gaps[1], first.gaps[3]) > Self.ringEdgeGapLimit
-            let across = max(first.gaps[0], first.gaps[2]) > Self.ringEdgeGapLimit
-            if first.gap > Self.ringEdgeGapLimit,
+            let down = Self.edgeCameOutBare(max(first.gaps[1], first.gaps[3]),
+                                            along: size.height)
+            let across = Self.edgeCameOutBare(max(first.gaps[0], first.gaps[2]),
+                                              along: size.width)
+            if down || across,
                down ? !stretchedDownNodeIDs.isEmpty : !stretchedAcrossNodeIDs.isEmpty,
                let repaired = try await composeRing(builder: builder, renderer: renderer, size: size,
                                                     backingScale: backingScale, repairing: true,
@@ -1409,6 +1411,33 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// (0.231, side rails that stop two-thirds down) — and five of them measure 0.9 or more, which
     /// is a whole edge of the window with no frame on it.
     private static let ringEdgeGapLimit: CGFloat = 0.15
+
+    /// The longest bare run an edge may carry in **points** before the span repair is reached
+    /// (W228).
+    ///
+    /// **A fraction is a property of the window as much as of the ring, and the repair gate needs
+    /// the property of the ring.** `Alienware Invader` sizes both its rails in `onPlResize()`, so
+    /// the frame build — outside the script runtime — leaves the same **107pt** hole down each side
+    /// at every window size. That is 0.231 of a 464pt-tall window and trips `ringEdgeGapLimit`, and
+    /// 0.132 of the library browser's 810 and does not: the identical hole was repaired on nine
+    /// hosted windows and left open on the tallest one, which is the *"alien invader media library
+    /// window draws broken"* report. Nothing about the frame differs between the two — the
+    /// `HOSTED-FRAME` lines are the same ring, the same pieces and the same 107pt.
+    ///
+    /// Forty points, and the measurement is the same shape as the fraction's. Over the 185
+    /// installed archives at 710x810 the rings that close run **0 to 24.3pt** and the ones with a
+    /// piece missing measure **49.7** (`Half-Life_2`), **85.2** (`Combat_Flight_Simulator_3`) and
+    /// **106.9** (`Alienware Invader`), with nothing between — the same empty middle 0.15 sits in
+    /// at 550x464. A run is measured along its own edge, so a side gap is judged against the
+    /// window's height and a top or bottom gap against its width.
+    private static let ringEdgeGapPointLimit: CGFloat = 40
+
+    /// Whether an edge came out bare enough to be a missing piece rather than a keyed notch:
+    /// too large a share of its edge, **or** too long in absolute terms. See
+    /// `ringEdgeGapPointLimit` for why one test cannot answer for every window size.
+    static func edgeCameOutBare(_ gap: CGFloat, along edge: CGFloat) -> Bool {
+        gap > ringEdgeGapLimit || gap * edge > ringEdgeGapPointLimit
+    }
 
     /// Nine-slice the one-piece panel (W207) onto a window of `size` points.
     ///

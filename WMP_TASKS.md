@@ -85,9 +85,9 @@ The `.wmz` placement/recovery audit moved **W196 → W217** and the `Colorchoose
 **W171 → W218**; the archived, *closed* W196 (a view's resize limits read from markup only) and W171
 (a `clippingImage` with no `clippingColor`) keep their numbers, and every reference in
 `Sources/`, `Tests/` and `skills/` to those two numbers means the closed rows. Check
-`docs/wmp-skin/wmp-backlog-archive.md` before reusing any number: the next free one is **W228**
-(W211 was never issued; W219-W224 were opened and closed the same day, 2026-09-17, and W225 on
-2026-09-18, and all are archived).
+`docs/wmp-skin/wmp-backlog-archive.md` before reusing any number: the next free one is **W229**
+(W211 was never issued; W219-W224 were opened and closed the same day, 2026-09-17, and W225 and W228
+on 2026-09-18, and all are archived).
 
 The corpus grew from 14 archives to 180 on 2026-09-07, so **every number taken against the 14-skin
 denominator is stale and none of them were rewritten in place.** A count here without the 180-archive

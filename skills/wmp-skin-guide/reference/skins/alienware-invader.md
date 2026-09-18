@@ -1,8 +1,8 @@
 # `Alienware Invader.wmz`
 
-**W210, W212 and the open-resize defect are all closed (2026-09-17).** Nothing here is open. Read
-§ *W212* before touching the borrowed frame: all three of its rules were paid for on this archive,
-and two of them are measurements rather than markup.
+**W210, W212, W228 and the open-resize defect are all closed (W228 on 2026-09-18).** Nothing here is
+open. Read § *W212* and § *W228* before touching the borrowed frame: all four of those rules were
+paid for on this archive, and three of them are measurements rather than markup.
 
 Part of the six-archive Alienware/ALX family that already holds two counter-evidence rows (see
 [`alienmorph.md`](alienmorph.md) and the `center`-is-not-a-margin row in
@@ -196,6 +196,51 @@ PeppyMeter, Waveform and flow with a track playing, and cross-checked on `Ice` a
 **PeppyMeter's black bars are not this row.** The meter template keeps its own aspect and
 letterboxes inside whatever hole it is given; it does that identically with no skin loaded.
 
+## W228, closed 2026-09-18 — the same rail, open on one window only
+
+The bare run W212 closed came back on **the library browser and nowhere else**, reported as *"alien
+invader media library window draws broken. the other nullplayer windows draw ok"* — a 99pt notch of
+desktop down the left of the window and 23pt down the right, 107pt tall, with whatever was behind
+the app showing through it.
+
+**Nothing about the frame differed between that window and the nine that were right.** The rails
+stop the same 107pt short at every size — the span repair is what closes them, and the gate on that
+repair was a *fraction* of the edge:
+
+```
+HOSTED-FRAME view=plView ring=18 size=669x640 … gaps=0.000/0.000/0.000/0.000   ← Waveform: repaired
+HOSTED-FRAME view=plView ring=18 size=710x810 … gaps=0.000/0.132/0.000/0.132   ← the library: not
+```
+
+107pt is **0.231** of a 464pt-tall window and trips `ringEdgeGapLimit`; it is **0.132** of the
+library's 810 and does not. The library is the only hosted window that opens taller than
+107 / 0.15 = **713pt**, which is why it is the only one that showed it. A fraction is a property of
+the window as much as of the ring, and the repair gate needs the property of the ring.
+
+**The gate is now either test** — `edgeCameOutBare`: the run is too large a share of its edge, **or**
+longer than `ringEdgeGapPointLimit` = 40pt, measured along its own edge. Forty is picked out of the
+same empty middle 0.15 sits in: over the 185 installed archives at 710x810 the rings that close run
+**0 to 24.3pt** and the ones with a piece missing measure **49.7** (`Half-Life_2`), **85.2**
+(`Combat_Flight_Simulator_3`) and **106.9** (this skin), with nothing between.
+
+| measurement | result |
+|---|---|
+| corpus at 710x810, before → after | **one** `HOSTED-FRAME` line moves: this skin, `gaps 0.132 → 0.000`. Insets, `content=99,34 588x740`, `whole=` and every other line byte-identical |
+| corpus at 550x464 | unchanged. The only line in the band the point limit newly reaches is `Half-Life_2` (0.091, 50pt), and its repair is rejected, so the line reads the same either side |
+| this skin at 550/640/760/810/931 tall | `gaps=0.000` at all five; `content` identical to before at each |
+| live, library at 746x931 | zero bare pixels on all four edges (`screencapture -o` alpha scan). Before: `y=1288..1501`, left 198px and right 46px fully transparent at 2x |
+
+**The repair's own guards are what make widening the gate cheap**: it is accepted only if it closes
+the gap *and* leaves the window's content rect where the first pass put it, so the two skins the
+point limit newly reaches attempt a repair and keep their frames. `Tests/NullPlayerAppTests/WMPHostedRingSpanTests.swift`
+pins the gate against these numbers.
+
+**What the `gaps=` number cannot tell you, and this row is the worked case.** The fraction printed
+on the line is the *frame's* defect divided by the *window's* size, so the same broken rail reads as
+five different numbers on five windows and as nothing at all once it is repaired. When a defect
+appears on one hosted window and not the others, read the run in **points** before concluding the
+window is at fault: `sidePoints = gaps[1] × height`.
+
 ## What is already ruled out
 
 | Theory | Why it is wrong |
@@ -204,6 +249,7 @@ letterboxes inside whatever hole it is given; it does that identically with no s
 | The old piece-selecting assembler handled this better | No — it showed the same rack *and* lost the right rail *and* tore the bottom bar. Compare `WMP_HOSTED_FRAME_WHOLE=0` against the default; the whole-view render is strictly better on this skin |
 | Its rails needed the script-driven span (`stretchedDownNodeIDs`) | True for the **borrowed frame** and false for the skin's own window, which the open-resize rule above fixed. The span is now applied under the whole-view render, but only with the three guards in § *W212* — the unguarded version re-admits the rack, and that is what made it a dead end the first time |
 | The white is a hole in the frame | No. It is opaque `(255,255,255,255)` that a PNG viewer draws identically to transparency, and reading the picture rather than the alpha cost two wrong diagnoses. It was never a hole and never a colour problem either: the tiles carrying it were simply drawn in the wrong place (§ *W212*) |
+| The library window has a layout defect of its own (W228) | No. Its frame carried the identical 107pt bare rail every other hosted window did; it is the only one taller than 713pt, which is where that run stops being 15% of the edge. Read a `gaps=` fraction back into points before blaming the window |
 | The furniture test in `ringRender` is simply not firing | It is firing correctly. The rack is outside the donor's own hole; the hole is moved *afterwards* |
 
 ## Also true of this skin, from elsewhere in the guide
