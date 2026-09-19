@@ -2162,6 +2162,33 @@ of these was invisible to the harness and visible in the first minute of live QA
   Measure it with `WMP_RENDER_HOVER`; `onmousemove`, `ondblclick`, `onfocus` and `onblur` are the
   same shape and still unraised.
 
+### A `<TEXT>` is sized by its glyphs, including on the frame before any layout exists
+
+`WMPScriptContext.perform` syncs every element's `left/top/width/height` from **the layout the skin
+is currently drawn at**. On the opening transaction there is no such layout, so the sync is skipped
+and every geometry property an element did not author falls through to the object model. For a
+`<TEXT>` the honest answer there is not the unset-numeric 0: a text node is sized by its own glyphs,
+and `WMPObjectModel` measures it the way `WMPSceneBuilder.intrinsicTextSize` does — **trimmed**,
+because `literalString` trims and a frame the script runtime computes has to agree with the frame
+the builder lays out. An authored dimension, a script assignment and a real laid-out frame all still
+win; the measurement is only ever the answer for a dimension nothing else has stated.
+
+Three rules come out of W218, and the first is the one worth carrying to unrelated work:
+
+- **A defect that repairs itself on the first interaction is still a defect, and the corpus sweep is
+  the only instrument that sees it.** `Colorchooser` chains its five transport buttons
+  `left="jscript:<prev>.left+<prev>.width"`; with every width answering 0 they stacked on one pixel,
+  the webdings glyphs overprinted, and the first click anywhere in that row fired **previous**
+  because `prevbutton` is last in z-order. The relayout that click triggers is the first one there
+  is, so the row is correct from the second click onward. Hand-testing cannot reproduce it — the
+  reporter tried and could not — and `reference/skins/colorchooser.md` had filed it as *not a
+  defect* on the strength of the mechanism alone.
+- **`WMP_RENDER_SETTLE` does not stand in for an event.** Settling pumps the run loop and drives
+  `onTimer`; it does not raise the input that creates the first layout. A cold `WMP_RENDER_CLICK`,
+  one point per process, is what distinguishes "correct" from "correct after one wasted click".
+- **Frame 0 is a state a user is always in.** A skin gets exactly one first frame and the first
+  click lands on it, so a rule that only holds from the second transaction holds for nobody.
+
 ## Drawing the skin's own controls
 
 - **A `<BUTTONGROUP>`'s artwork is a sheet the size of the whole group, and every state of it is

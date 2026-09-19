@@ -606,6 +606,25 @@ final class WMPObjectModel {
             return .value(element.properties[name] ?? Self.defaultInertEqualizerSettingsValue(for: name))
         }
         if let value = element.properties[name] { return .value(value) }
+        // **A `<TEXT>` is sized by its own glyphs, and until the first layout exists nothing
+        // has told the element model so.** `perform` syncs every element's frame from the layout
+        // the skin is *currently drawn at*, which on the opening transaction is no layout at all —
+        // so an unauthored `width` fell through to the unset-numeric 0 below. `Colorchooser` is
+        // the only archive in the corpus that chains geometry off a text node's measured width:
+        // its five transport buttons are `left="jscript:<prev>.left+<prev>.width"`, so with every
+        // `width` answering 0 the chain never advanced and `stopbutton`, `pausebutton`,
+        // `nextbutton` and `prevbutton` all resolved to `left=16` where 16/28/40/52 was authored.
+        // The glyphs overprinted at `103,29 12x12` and, `prevbutton` being last in z-order, the
+        // first click anywhere in that row fired **previous**. It repaired itself on that same
+        // click — the relayout it triggered is the first one there is, so the next transaction
+        // syncs real frames — which is why the defect is one click deep and survived hand-testing.
+        // Measured the way `WMPSceneBuilder.intrinsicTextSize` measures it, because frame 0 has to
+        // agree with the frame the builder lays out or the row would move under the pointer.
+        if Self.isText(element.kind), !element.authored.contains(name),
+           let size = Self.intrinsicTextSize(element) {
+            if name == "width" { return .value(.number(Double(size.width))) }
+            if name == "height" { return .value(.number(Double(size.height))) }
+        }
         // WMP's `alphaBlend` is 0-255 and an element that never authored it is fully opaque. The
         // unset-numeric default of 0 would tell a skin reading its own element that it is invisible,
         // and a fade written as `x.alphaBlendTo(x.alphaBlend + 32, 200)` would never leave zero.
@@ -642,6 +661,40 @@ final class WMPObjectModel {
 
     /// The element's current `value` measured in its current face — both read from the live property
     /// bag, so a `textWidth` read in the same handler that just assigned `value` sees the new string.
+    /// The kinds `WMPSceneBuilder.isText` sizes from glyphs, and the same list for the same reason.
+    private static func isText(_ kind: WMPElementKind) -> Bool {
+        switch kind {
+        case .text, .statusText, .currentPositionText, .durationText: return true
+        default: return false
+        }
+    }
+
+    /// The size the builder would lay this text out at, from the live property bag.
+    ///
+    /// `measuredTextWidth` answers `textWidth`, which is a typographic measurement a skin compares
+    /// against its own box; this is a *frame*, and the builder rounds it up before laying it out.
+    /// They stay separate so that rounding cannot move a marquee decision.
+    private static func intrinsicTextSize(_ element: WMPScriptElement) -> WMPSize? {
+        // **Trimmed, because `WMPSceneBuilder.literalString` trims and the frame has to match.**
+        // `Colorchooser` centres its webdings glyphs by padding the attribute — `value=" &lt; "` —
+        // and measuring the padding put the button at 24 wide where the builder lays it out at 12,
+        // which is the same row moving under the pointer for the opposite reason.
+        guard let value = element.properties["value"]?.string
+            .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
+              !value.isEmpty else { return nil }
+        let style = (element.properties["fontstyle"]?.string ?? "").lowercased()
+        let face = ["fontface", "fonttype"].lazy
+            .compactMap { element.properties[$0]?.string }
+            .first { !$0.isEmpty } ?? "Arial"
+        let size = CGFloat(max(1, element.properties["fontsize"]?.number ?? 12))
+        let bold = style.contains("bold"), italic = style.contains("italic")
+        return WMPSize(
+            width: WMPTextMetrics.width(of: value, fontName: face, fontSize: size,
+                                        bold: bold, italic: italic).rounded(.up),
+            height: WMPTextMetrics.lineHeight(fontName: face, fontSize: size,
+                                              bold: bold, italic: italic))
+    }
+
     private static func measuredTextWidth(_ element: WMPScriptElement) -> CGFloat {
         guard let value = element.properties["value"]?.string, !value.isEmpty else { return 0 }
         let style = (element.properties["fontstyle"]?.string ?? "").lowercased()

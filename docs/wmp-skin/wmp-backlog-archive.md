@@ -9,6 +9,82 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W218 — `Colorchooser`'s transport stacked on one pixel and the first click fired `previous`, 2026-09-19
+
+**Closed 2026-09-19.** The row as written read as a standing condition — *"so pause, stop and next
+all fire **previous**"* — and it is **one click deep**. That wording is why the reporter tested it,
+could not reproduce it, and said so.
+
+**The row, verbatim as it stood in Tier 1c:**
+
+> | W218 | `Colorchooser`'s transport buttons stack on one pixel, so pause, stop and next all fire
+> **previous** | **1 skin, 8 expressions** — the only archive in the corpus that chains geometry off
+> a `<TEXT>` node's own measured width, measured 2026-09-14 with `WMP_RENDER_EXPR` over the
+> 180-archive sweep | Found by the transport audit
+> (`skills/wmp-skin-guide/reference/harness.md` § *The transport audit*), not by a report. Its five
+> transport buttons are `<TEXT>` nodes chained `left="jscript:<prev>.left+<prev>.width"`, and a text
+> node sized from its own glyphs answers **0** for `width` in an expression — so `stopbutton`,
+> `pausebutton`, `nextbutton` and `prevbutton` all resolve to `103,29 12x12` where 16/28/40/52 was
+> authored, the webdings glyphs overprint, and only the last in z-order answers the pointer.
+> `WMP_RENDER_OCCLUDED` prints the consequence as three controls `reached=neither
+> by=[prevbutton#14:text]`. `playbutton` is correct because **its** geometry is authored rather than
+> derived, which is the shape of the fix: publish a measured size to the evaluator before the nodes
+> that depend on it resolve. Reproduce with `WMP_SKIN=…/Colorchooser.wmz WMP_RENDER_EXPR=1` and read
+> the four `live=16` rows.
+
+**The cause is one frame, not the evaluator.** `WMPScriptContext.perform` syncs every element's
+`left/top/width/height` from the layout the skin is *currently drawn at*; on the opening transaction
+there is no layout, the sync is skipped, and an unauthored `width` fell through to the object
+model's unset-numeric `0`. From the second transaction on, the sync supplies real frames and the
+chain resolves correctly — which is the whole of why it survived hand-testing. The misfiring click
+is itself what creates the first layout, so the row repairs itself on the one press nobody gets to
+repeat.
+
+**The fix** (`WMPObjectModel.readElement`): a `<TEXT>` asked for a `width`/`height` its markup never
+authored, with no laid-out frame and no script assignment to answer from, answers its glyph
+measurement — taken the way `WMPSceneBuilder.intrinsicTextSize` takes it, **trimmed**, because
+`WMPSceneBuilder.literalString` trims and `Colorchooser` centres its glyphs by padding the attribute
+(`value=" &lt; "`). Measuring the padding put the buttons at 24 wide against a frame the builder
+draws at 12 — the same row moving under the pointer with the sign flipped, caught by the sweep on
+the first attempt.
+
+**Measured, frame 0, `view-2` at 300x200:**
+
+```
+before   live=16  live=16  live=16  live=16      all four on one pixel
+after    live=16  live=28  live=40  live=52      the authored layout
+frames   play 91   stop 103   pause 115   next 127   prev 139     12x12 each
+```
+
+**Five cold processes, one first click each** — driving all five points in one invocation hides the
+defect, because the first click repairs the row for the other four:
+
+```
+before   view-2@109,35  hit=prevbutton#14  command=previous       view-2@145,35  MISS
+after    97→play  109→stop  121→pause  133→next  145→previous
+```
+
+`WMP_RENDER_SETTLE=1` does **not** repair it: settling drives `onTimer` and pumps the run loop, and
+neither creates a layout.
+
+**Corpus sweep, 184 archives, baseline in a worktree at `b82bc97a`:** 553 PNGs, **551 identical**.
+`Colorchooser/view-2` differs at `bbox=(104, 29, 151, 41)` — the transport row and nothing else in
+the window. `Scooby-Doo_2/infoView` also differed and **is not this change**: two consecutive runs of
+that skin alone differ on the *unchanged baseline binary*, which widened W239 from `blit=` to the
+PNG. Invariants byte-identical once `loadms=` and handler-list ordering are normalised — no node,
+command, hit, widget or unresolved count moved anywhere in the corpus.
+
+**What this cost and why the lesson is filed twice.** `reference/skins/colorchooser.md` had this
+under *What was ruled out*, concluding *"the running app lays all five out correctly"* — inferred
+from the mechanism, never measured, and wrong about the only frame a user's first click lands on.
+The bullet is kept there, struck through, rather than deleted. The general rule is in `SKILL.md`
+§ *A `<TEXT>` is sized by its glyphs*: **frame 0 is a state a user is always in**, and a rule that
+only holds from the second transaction holds for nobody.
+
+Coverage in `Tests/NullPlayerAppTests/WMPTextIntrinsicSizeTests.swift`. Two of its four cases fail
+on the parent commit; the other two guard what must *not* change — an authored width still outranks
+the glyphs, and an empty `<TEXT>` still measures nothing.
+
 ## W237 — the library followed the centre stack's height in `.wmz`, 2026-09-19
 
 **Closed 2026-09-19** for the `.wmz` half; the `.wal` half is B147 in

@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **The transport buttons in the *Colorchooser* Media Player skin no longer pile up on one spot,
+  and the first one you press is the one that acts.** The skin draws play, stop, pause, next and
+  previous as five single characters in the Webdings face, each positioned just past the width of
+  the one before it. This app had no width for a character until it had drawn the window once, so on
+  the first frame all four of the later buttons landed on top of the second slot — the glyphs
+  overprinted, and whichever click you aimed at that row fired **previous**. The row corrected
+  itself the instant you clicked, which is why it looked fine ever after: the damage was done on the
+  one press nobody gets to repeat. Text is now measured before the window is first laid out, so the
+  transport is spread across its five slots from the moment the skin opens.
+
 - **The library no longer resizes itself to match the player stack in Media Player skins.** With the
   library docked beside a `.wmz` skin, opening or closing the equalizer, Cava or any other window
   below the player stretched and shrank the library to match the stack's height — repeatedly

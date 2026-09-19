@@ -34,7 +34,7 @@ Five files, 68 KB: `colorChooser.wms`, `colorChooser.js`, `colorBack.bmp` (246x2
 
 ## Defects it found
 
-All four came from one report on 2026-09-14, *"colorchooser skin looks totaly broken from the UI I
+The first four came from one report on 2026-09-14, *"colorchooser skin looks totaly broken from the UI I
 do nto have a refrence image"*, except W166, reported separately in the same session as *"the window
 has no backing when a track plays and it clicks through to the background"*.
 
@@ -44,19 +44,25 @@ has no backing when a track plays and it clicks through to the background"*.
 | W164 | The root `<VIEW>`'s background was stretched to the declared canvas, putting the drawn box at x=87…299 against a `mainBackground` that stayed at the authored 77…241 |
 | W165 | Colours were read from the markup only, so the `wmpprop:` caption drew white on white, the mirrored transport strip drew no fill, and the sliders' script writes repainted nothing |
 | W166 | `zIndex` was read from the markup only, so `checkForContent()`'s `viz.zIndex = 5` never reordered the scene; the opaque panel stayed classified as artwork *above* a windowed surface and was punched out, leaving a click-through hole while a track played |
+| W218 | A `<TEXT>`'s measured width was 0 until the first layout existed, so the four buttons chained off one another all resolved to `left=16`; the glyphs overprinted and the first click in the row fired `previous`. Found by the transport audit on 2026-09-14, not by the report above, and closed 2026-09-19 |
 
 **W164 is the one that made the skin read as "totally broken"** — the others are missing detail, but
 a frame out of register with its own contents is a wrong-looking picture.
 
 ## What was ruled out
 
-- **The transport buttons stacking on top of each other is not a defect.** `WMP_RENDER_EXPR` reports
-  `stopbutton.left+stopbutton.width -> UNRESOLVED(missing width) live=16` for all four chained
-  buttons, and the render dump draws them at one x. That is the **first** transaction only: a
-  `<TEXT>` has no authored `width`, and the script model learns an intrinsic size from the geometry
-  the last scene resolved (`WMPScriptRuntime.transact`'s `geometry:`), so the chain converges on the
-  next transaction. The running app lays all five out correctly. A headless dump is one pass and
-  will keep showing this; do not fix it from the dump.
+- ~~**The transport buttons stacking on top of each other is not a defect.**~~ **It was one, it is
+  W218, and this bullet is kept because being wrong here cost two phases.** Everything it says about
+  the mechanism is accurate — the chain converges on the next transaction because the script model
+  learns an intrinsic size from the geometry the last scene resolved (`WMPScriptRuntime.transact`'s
+  `geometry:`). The conclusion drawn from it was not. *"The running app lays all five out
+  correctly"* was never measured; it was inferred from the mechanism, and it is false for the frame
+  that matters. **A skin gets exactly one first frame, and a user's first click lands on it.**
+  Driven cold, `WMP_RENDER_CLICK=view-2@109,35` — the stop glyph's authored spot — reported
+  `hit=prevbutton#14 … command=previous`, and `view-2@145,35`, where prev should be, reported
+  `MISS`. `WMP_RENDER_SETTLE` does not repair it; only an event does, and the repair rides on the
+  same click that misfired. Closed by measuring a `<TEXT>` before the first layout exists; the rule
+  is in `SKILL.md` § *A `<TEXT>` is sized by its glyphs*.
 - **`UNRESOLVED view-2/3 text id=style size=missing literal geometry (width+height)` is not a
   defect either.** `<TEXT id="style">` is a palette holder with no geometry on purpose; it is read
   through `wmpprop:` and never drawn.

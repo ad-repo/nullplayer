@@ -1922,11 +1922,25 @@ control:**
 
 **What it did find**, beyond confirming the population: `Colorchooser`'s transport. Its five buttons
 are `<TEXT>` nodes chained `left="jscript:<prev>.left+<prev>.width"`, and a text node that measures
-itself from its own glyphs reports `width` as **0** to the expression evaluator — so `stopbutton`,
-`pausebutton`, `nextbutton` and `prevbutton` all resolve to `103,29 12x12`, the glyphs overprint,
-and every one of those clicks fires **previous**. `WMP_RENDER_EXPR` prints it as four `live=16`
-rows where 16/28/40/52 was authored. It is the only skin in the corpus that chains off a text
-node's width (8 expressions, all here), which is why it survived every earlier expression sweep.
+itself from its own glyphs reported `width` as **0** before any layout existed — so `stopbutton`,
+`pausebutton`, `nextbutton` and `prevbutton` all resolved to `103,29 12x12`, the glyphs overprinted,
+and the first click anywhere in that row fired **previous**. `WMP_RENDER_EXPR` printed it as four
+`live=16` rows where 16/28/40/52 was authored. It is the only skin in the corpus that chains off a
+text node's width (8 expressions, all here), which is why it survived every earlier expression
+sweep. **Closed as W218 on 2026-09-19, and the way it was nearly missed is the part to keep.**
+
+- **The row read as a standing condition and was one click deep.** The relayout the misfiring click
+  triggers is the first layout there is, so from the second click on, every button is correct. The
+  reporter tried to reproduce it by hand and could not, and `reference/skins/colorchooser.md` had
+  already filed it under *What was ruled out* with the words *"the running app lays all five out
+  correctly"* — inferred from the mechanism, never measured.
+- **The instrument that settles it is a cold `WMP_RENDER_CLICK`, one point per process.** Five
+  separate invocations, one first click each: before the fix, `view-2@109,35` (the stop glyph)
+  answered `hit=prevbutton#14 … command=previous` and `view-2@145,35` answered `MISS`; after, each
+  of the five points hits its own button. Driving all five points in *one* invocation hides the
+  defect completely, because the first click repairs the row for the other four.
+- **`WMP_RENDER_SETTLE=1` does not repair it.** Settling drives `onTimer` and pumps the run loop; it
+  does not create a layout. Do not read a clean settled capture as a clean first frame.
 
 **And the thing it could not see.** The same session's report — *"pressing pause does not pause the
 stream"* — was true while every row above was green, because the defect is in the event the engine
