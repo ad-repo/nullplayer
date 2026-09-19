@@ -877,6 +877,27 @@ queue, with the object model as the security boundary — see Amendment 2 in
   2026-09-13; before that it was dead in every one of them, which is why *"the compact button does nothing"*
   was that button and not compact mode. Name the skin and check it against this list before reading such a
   report as a compact defect.
+  **This button's glyph is not its meaning, and a report about it is usually about the glyph
+  (W176).** Re-derived 2026-09-19 over the 185 installed archives: **204 controls in 169 archives**,
+  and *every one* tooltipped some spelling of "Return To Full Mode". **139 of them are
+  `<BUTTONELEMENT>` with no image at all** — a mapping colour on a shared bitmap — 61 are
+  `<BUTTON>` and 4 are bare `<RETURNBUTTON>`. Of the 65 that name a file the stems are
+  `full`/`fullmode`/`max`/`fullbutton`, **and 5 are `close*`**: the notice-view close boxes, which
+  is why those five now close their window instead (W176). So the same call wears a maximize box, a
+  full-mode arrow, an unmarked colour region and, in five skins, an X — and a reporter naming the
+  icon is not naming the control. **Read the authored `id` and `upToolTip` off `WMP_RENDER_PROBE`
+  before believing any report that identifies one of these by what it looks like.**
+
+  **`WALL-E` is the worked case, and the lesson is the button order rather than this button.** Its
+  `mainView` system strip is **minimize, full mode, close** left to right at `305,4` / `333,4` /
+  `361,4` — Windows order, where macOS puts close leftmost. Read left to right as macOS, that gives
+  *"the X to close maps to minimize and the minimize maps to library toggle"*, which is what it was
+  reported as. All three are correct: `WMP_RENDER_CLICK` at each centre hits the button under it,
+  the bitmaps are a dash on the left and a red X on the right as authored, and driven live the X
+  leaves 0 windows with the process alive while the dash leaves `AXMinimized=true` with 1. A
+  `.wmz` is a Windows skin and orders its title strip the Windows way; **check the strip's order
+  before reading a report that names two of its buttons.**
+
   Rapid library toggles require `WMPMainView.acceptsFirstMouse` so the click after the library
   takes focus still activates the skin control, and WMP-only `animationBehavior = .none` in
   `WindowManager.showPlexBrowser` so native window animations do not race visibility. Verified

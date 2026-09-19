@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- **Five Media Player skins no longer open on a "your player is too old" notice instead of the
+  player.** *WALL-E*, *Halo 2*, *Dreamcatcher*, *xsn_sports* and *T3-Skynet Media Player* each
+  carry a panel their author meant Windows Media Player to show only when it decided the player
+  could not run the skin, and each declares it ahead of the real player in the file. With nothing
+  else saying which view to open, that panel was the one that opened — on *WALL-E* it took the
+  window and the actual player arrived beside it a moment later, as a second window. The player now
+  opens, and the notice is left to the skin to raise if it ever wants to. The close box on such a
+  panel closes it, rather than opening the media library.
+
 - **Stretching a Media Player skin by the window edge now runs whatever the skin does around its own
   resize.** A `.wmz` window has no title bar or frame, so the only resize its author drew is a grip
   somewhere on the player. This app adds draggable window edges on top of that, and pulling one of

@@ -33,6 +33,27 @@ enum WMPDeclaredHostState {
         return nil
     }
 
+    /// The views a `.wmz` declares for the **host** to open, never the user — WMP's "your player is
+    /// too old" notice, under its two authored spellings.
+    ///
+    /// They are ordinary views: they lay out, they have a canvas, and the candidate walk will
+    /// happily present one. Five corpus archives declare one, and **every one of them declares it
+    /// ahead of the view it means by the player** — `Dreamcatcher`, `xsn_sports` and
+    /// `T3-Skynet_Media_Player` first of all, `Halo 2` second and `WALL-E` third. So a skin whose
+    /// dispatcher posts nothing to go to falls through to document order and opens on the nag
+    /// panel, with the real player either never presented or, in `WALL-E`'s case, arriving a timer
+    /// tick later beside it (W176).
+    ///
+    /// **This refuses the view as a *seed* of the walk, not as a destination.** A script that
+    /// redirects here with `theme.currentViewID` or opens it with `theme.openView` still gets it,
+    /// because those enter the walk as successors rather than as seeds — which is the only way the
+    /// corpus ever reaches one on purpose, `WALL-E`'s `preview.js` branching on
+    /// `player.versionInfo` being the single example. The same refusal is already spelled in
+    /// `WMPHostedFrameTemplate.derive`, which will not borrow a ring off one of these.
+    static func isHostOpenedNotice(viewID: String) -> Bool {
+        ["upgradeView", "versionView"].contains { $0.caseInsensitiveCompare(viewID) == .orderedSame }
+    }
+
     /// Matched on the authored tag as well as the kind, for the reason `WMPSkinSurfaces.matches`
     /// gives: what decides this is what the skin declared, not how much of it the graph classifies.
     private static func isEqualizerSettings(_ node: WMPNode) -> Bool {

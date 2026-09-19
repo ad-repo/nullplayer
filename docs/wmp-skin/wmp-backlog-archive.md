@@ -9,6 +9,58 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W176 — a skin opened on the nag panel it declares ahead of its player, 2026-09-19
+
+**Closed 2026-09-19, accepted by the reporter.** The row as it stood:
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W176 | `WALL-E` presents its `upgradeView` nag panel as the player, and its real `mainView` opens beside it | **1 archive confirmed live, 2026-09-15**; the wider class is the 3 archives already named for declaring `upgradeView` ahead of their real view (`xsn_sports`, `Halo 2`, `T3-Skynet_Media_Player`) | Found while verifying W175, not from a report, and **not caused by it** — the dispatcher posts no `openView` at load at all, so the successor list is empty under the old `last` rule and under the new ranking alike and the walk falls through to document order either way. (Reasoned from the commands, not measured against a baseline build; a worktree at the parent commit would settle it.) `WALL-E`'s dispatcher is the corpus's only one that opens its player from its *timer* rather than its `onLoad`: `checkRemoteViewStatus()` calls `theme.openView('mainView')` on the first tick where `delayPop` is true, so at the moment the candidate walk runs the dispatcher has posted **no** view to go to and the walk falls through to document order — which reaches `upgradeView`, the "your Windows Media Player is too old" panel WMP never shows. Measured: `defaults delete NullPlayer wmpSkinViewID`, launch `-uiMode wmp`, and the window list is player 382x298 + `mainView` 392x298, with `wmpSkinViewID` persisting as `upgradeView`. The donor ranking in `SKILL.md` § *Every NullPlayer window in WMP mode* already refuses `upgradeView` when borrowing a **frame**; the candidate walk does not, and that is the smallest form of this fix. The second half is harder and should be decided first: **a player that arrives one tick late has no way to claim the app's window**, because the first view with a canvas binds it (W96). |
+
+**The row's reach was one archive short and the corpus scan is the reason to keep this entry.**
+Re-derived 2026-09-19 by splitting every `.wms` on `<VIEW` with `WMPTextDecoder`'s encoding rules,
+over the 185 installed archives: **5 declare a notice view, not 4** — `Dreamcatcher` is the one the
+row missed — and **every one of them declares it ahead of the view it means by the player**, which
+is what makes a document-order fallback land on the nag panel rather than merely risk it:
+
+| Archive | Notice view | Position | What follows it |
+|---|---|---|---|
+| `Dreamcatcher` | `versionView` | 1 of 8 | `upgradeView`, `mainView`, … |
+| `xsn_sports` | `versionView` | 1 of 8 | `upgradeView`, `mainView`, … |
+| `T3-Skynet_Media_Player` | `versionView` | 1 of 9 | `upgradeView`, `mainView`, … |
+| `Halo 2` | `upgradeView` | 2 of 10 | `controlView`, `mainView`, … |
+| `WALL-E` | `upgradeView` | 3 of 4 | `mainView` |
+
+The fix is `WMPMainWindowController.startupCandidates`, which is the walk's seed list lifted out of
+`reloadSelectedSkin` so the ranking is testable without a window: a notice view is refused as a
+**seed** — from document order, where it now sorts last rather than being dropped, and from the
+user's persisted `wmpSkinViewID`, because landing on one is how it came to be persisted and
+honouring it there makes the defect survive its own fix. It stays reachable as a **successor**,
+which is the only way the corpus opens one on purpose: `WALL-E`'s `preview.js` branches on
+`parseInt(player.versionInfo)` and redirects to `upgradeView` for a player of version 7–10. We
+answer `12.0.0.0`, so that branch is not taken and the panel is now unreachable in the corpus.
+
+**The second half of the row needed no decision.** It asked how "a player that arrives one tick late
+claims the app's window", since the first view with a canvas binds it (W96). With `mainView` ranked
+ahead of the notice it takes the window at load, and the dispatcher's later
+`theme.openView('mainView')` lands on a view that is already open, where `show` is a raise. Nothing
+has to be taken away from anything.
+
+**Verified live, one launch per skin from a deleted `wmpSkinViewID`:** `WALL-E` one window 392x298
+(was player 382x298 + `mainView` 392x298, key persisting as `upgradeView`), `Dreamcatcher` 475x485,
+`T3-Skynet_Media_Player` 317x330, `xsn_sports` 409x277 and `Halo 2` 327x294 — the last two plus the
+panels their own `onLoadSkin` opens — and all five persisting `mainView`. `corona` is the control at
+`vPlayer`, unchanged.
+
+**One live report came in against this change and was measured rather than fixed: it was not a
+defect.** `WALL-E`'s `mainView` orders its three system buttons **Windows-style** — minimize, full
+mode, close, left to right at `305,4` / `333,4` / `361,4` — where macOS puts close leftmost, so
+reading them left to right as close/minimize/maximize gives "the X to close maps to minimize and the
+minimize maps to library toggle". `WMP_RENDER_CLICK` at each centre hits the button under it
+(`btnMin`, `btnFull` → `command=toggleLibrary`, `btnClose`); the bitmaps are a dash on the left and
+a red X on the right, as authored; and driven live the X leaves 0 windows with the process alive
+while the dash leaves `AXMinimized=true` with 1. See `SKILL.md` § *Which control a click reaches*.
+
 ## W99 — a view resolved against a size nothing is drawn at, 2026-09-19
 
 **Closed 2026-09-19, accepted by the reporter.** The row as it stood:

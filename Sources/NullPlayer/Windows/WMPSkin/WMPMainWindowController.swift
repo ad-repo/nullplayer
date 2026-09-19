@@ -363,18 +363,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let runtime = WMPScriptRuntime(
                     preferences: WMPPreferenceStore(skinData: skinData, defaults: importer.defaults))
                 await runtime.setScreen(Self.screenSize(for: window))
-                var candidates: [String] = []
-                if let preferred = importer.selectedViewID { candidates.append(preferred) }
-                // The skin's own `<THEME currentViewID>` outranks `vPlayer` and document order and
-                // is outranked by the user's persisted view (W153). Document order is a fallback
-                // for skins that declare nothing, and `portals` is what happens when it decides on
-                // their behalf: it defines `mode2` first and declares `mode1`, so the player opened
-                // on the skin's info mode and the mode button was not where anyone was clicking.
-                if let declared = WMPDeclaredHostState.authoredStartupViewID(in: skin) {
-                    candidates.append(declared)
-                }
-                candidates.append("vPlayer")
-                candidates.append(contentsOf: skin.views.map(\.id))
+                var candidates = Self.startupCandidates(
+                    persisted: importer.selectedViewID,
+                    declared: WMPDeclaredHostState.authoredStartupViewID(in: skin),
+                    declarationOrder: skin.views.map(\.id))
                 var visited = Set<String>()
                 var index = 0
                 var presented = false
@@ -502,6 +494,42 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentUnskinned(message: error.localizedDescription)
             }
         }
+    }
+
+    /// The order the walk tries views in, before any of them has been built.
+    ///
+    /// Four sources, ranked: **the user's persisted view**, then the skin's own
+    /// `<THEME currentViewID>`, then `vPlayer`, then document order. The first three are
+    /// statements about which view is the player; the fourth is a fallback for the skins that make
+    /// none, and `portals` is what happens when it decides on their behalf — it defines `mode2`
+    /// before it declares `mode1`, so the player opened on the skin's info mode and the mode button
+    /// was not where anyone was clicking (W153).
+    ///
+    /// **A host-opened notice view is refused as a seed, wherever it appears (W176).** Not from the
+    /// persisted slot either: landing on one is how it came to be persisted, so honouring it there
+    /// makes the defect survive its own fix. Within document order it sorts last rather than being
+    /// dropped, so a skin whose *only* view is a notice still opens.
+    ///
+    /// The skin's own `currentViewID` is the one place a notice view is still honoured, because
+    /// that is the skin stating it on purpose rather than the walk choosing on its behalf. It stays
+    /// reachable the other way too: a successor from a windowless view's `theme.openView` or
+    /// `theme.currentViewID` is inserted into the walk *after* this list is built, which is how
+    /// `WALL-E`'s `preview.js` reaches `upgradeView` when it decides the player is too old.
+    ///
+    /// Duplicates are left in. The walk folds each id through `WMPPath.fold` into a visited set as
+    /// it goes, so a view named twice here is tried once, and leaving them makes each rank readable
+    /// on its own.
+    static func startupCandidates(persisted: String?, declared: String?,
+                                  declarationOrder: [String]) -> [String] {
+        var candidates: [String] = []
+        if let persisted, !WMPDeclaredHostState.isHostOpenedNotice(viewID: persisted) {
+            candidates.append(persisted)
+        }
+        if let declared { candidates.append(declared) }
+        candidates.append("vPlayer")
+        candidates += declarationOrder.filter { !WMPDeclaredHostState.isHostOpenedNotice(viewID: $0) }
+        candidates += declarationOrder.filter { WMPDeclaredHostState.isHostOpenedNotice(viewID: $0) }
+        return candidates
     }
 
     /// What a view with **no window** asked for next.
@@ -2625,8 +2653,25 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     != true {
                     resumeAfterScriptResize(presentation)
                 }
-            // `view.returnToMediaCenter()` toggles the library beside the active skin.
-            case "toggleLibrary": WindowManager.shared.togglePlexBrowser()
+            // `view.returnToMediaCenter()` toggles the library beside the active skin — **except on
+            // a notice view, where the same call is spelled on a close box.** Reported as "the X to
+            // close the 'latest version' window opens the media library rather than close".
+            //
+            // W100 measured the call where it lives and its answer stands: 204 uses across 169
+            // archives, almost all on the skin's own player view, where "return to full mode" means
+            // the shell the library stands in for. **What decides this is the artwork, not the
+            // window's role** — the tooltip says "Return To Full Mode" on every one of the 204, so
+            // it cannot. The five `upgradeView`/`versionView` buttons are `f_close_no.png` /
+            // `wmp_close_no.png`, an X in the panel's top-right corner; the seven `videoView` ones
+            // are `v_full_no.png`, `fullmode_no.gif` and mapped colours, a genuine full-mode
+            // control that still means the library. A rule of "not the player" would have caught
+            // both and broken the second seven, which is why this names the view instead.
+            case "toggleLibrary":
+                if WMPDeclaredHostState.isHostOpenedNotice(viewID: presentation.viewID) {
+                    closeViewWindow(presentation)
+                } else {
+                    WindowManager.shared.togglePlexBrowser()
+                }
             case let action where action.hasPrefix("playPlaylistItem:"):
                 if let index = Int(action.dropFirst("playPlaylistItem:".count)) {
                     host.perform(.playPlaylistItem(index), value: nil)
