@@ -395,11 +395,37 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         #endif
         for widget in scene.widgets {
             guard let view = widgetViews[widget.stableID] else { continue }
-            view.frame = NSRect(x: widget.frame.x * xScale, y: widget.frame.y * yScale,
-                                width: widget.frame.width * xScale, height: widget.frame.height * yScale)
+            // **The overlay goes where the scene painted the widget, not where it was authored
+            // (W74).** A control authored past its container's edge is clipped by that container
+            // in WMP, and `WMPSceneBuilder` already records the container's box as the widget's
+            // `clipRect` — every painted command is confined to it. The `NSView` was placed from
+            // the raw frame instead, so it drew wherever the markup reached. `Revert`'s
+            // `ctrlPlaylist` is `3,14 250x257` inside a 260-tall view with `clip=3,14 250x242`:
+            // the unclipped view covered the bottom four points of `pl_b.bmp` and the playlist
+            // window lost the silver bevel closing its frame. `WMPVideoSurface.update` has always
+            // done this — frame ∩ clip ∩ bounds — and this is the same arithmetic for the rest of
+            // the widgets.
+            //
+            // **`?? widget.frame` is the trap here and is not what this reads like.** A widget with
+            // no `clipRect` is unconfined and keeps its frame, but `WMPRect.intersection` also
+            // answers `nil` for a clip that misses the frame *entirely* — and collapsing those two
+            // onto one fallback hosts a fully clipped-away widget at full size, which is the defect
+            // this fix exists to remove. The optional is unwrapped once, deliberately.
+            let visible: WMPRect?
+            if let clip = widget.clipRect {
+                visible = widget.frame.intersection(clip)
+            } else {
+                visible = widget.frame
+            }
+            let placedFrame = visible.map {
+                NSRect(x: $0.x * xScale, y: $0.y * yScale,
+                       width: $0.width * xScale, height: $0.height * yScale).intersection(bounds)
+            } ?? .zero
+            view.frame = placedFrame.isNull ? .zero : placedFrame
             #if DEBUG
             wmpWidgetTrace("layout \(widget.kind):\(widget.stableID) scene=\(WMPNumber.format(widget.frame.x)),\(WMPNumber.format(widget.frame.y)) "
                 + "\(WMPNumber.format(widget.frame.width))x\(WMPNumber.format(widget.frame.height)) "
+                + "clipped=\(visible.map(String.init(describing:)) ?? "none") "
                 + "view=\(WMPNumber.format(view.frame.width))x\(WMPNumber.format(view.frame.height))")
             #endif
             guard let effects = view as? WMPEffectsSurfaceView else { continue }
@@ -407,8 +433,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             // so the rect is the offset between the two, in this surface's scaled bounds.
             func placed(_ mask: WMPWidgetRegionMask) -> (CGImage, NSRect)? {
                 guard let image = regionMaskProvider?(mask) else { return nil }
-                return (image, NSRect(x: (mask.frame.x - widget.frame.x) * xScale,
-                                      y: (mask.frame.y - widget.frame.y) * yScale,
+                // Offset from the surface's own origin, which is the *placed* frame and no longer
+                // the authored one (W74) — a clipped surface would otherwise wear a shifted mask.
+                return (image, NSRect(x: mask.frame.x * xScale - view.frame.minX,
+                                      y: mask.frame.y * yScale - view.frame.minY,
                                       width: mask.frame.width * xScale,
                                       height: mask.frame.height * yScale))
             }

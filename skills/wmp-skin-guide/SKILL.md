@@ -1931,9 +1931,24 @@ of these was invisible to the harness and visible in the first minute of live QA
   **`WMP_RENDER_APPKIT` is what actually runs their `draw(_:)`** — it hosts the scene in a real
   `WMPMainView`, `cacheDisplay`s it twice (once with the overlays hidden), and reports what the
   AppKit layer added. `outside=` is the number that ranks: an overlay inside its own widget frame is
-  the hosting working. Corpus-wide that is **two views in one skin** (W74), which is the whole of
-  this class in the default state. The overlays still ignore `WMPWidget.clipRect`, which is what
-  W74 is.
+  the hosting working. Corpus-wide that is **zero** since W74 closed 2026-09-19; it was two views in
+  one skin, which was the whole of this class in the default state.
+- **An overlay is placed at frame ∩ clip ∩ bounds, and the clip is the half that is easy to forget
+  (W74).** `WMPSceneBuilder` records the container a widget was declared in as its `clipRect` and
+  every paint command intersects with it, so the scene has always confined a control authored past
+  its container's edge. `layout()` placed the `NSView` from the raw frame instead and the overlay
+  drew wherever the markup reached — `Revert`'s `ctrlPlaylist` resolves `3,14 250x257` against a
+  container box of `250x242`, and the extra fifteen points covered the bevel that closes the
+  playlist window's frame. It was reported on screen as "there is no bottom border on the playlist"
+  and the harness had been printing it as `outside=4000` all along. `WMPVideoSurface.update` had
+  the arithmetic right from the start; `layout()` now matches it.
+- **`intersection(_:) ?? frame` is wrong for a clip and is the trap inside that fix.** `WMPRect`
+  answers `nil` both for *no clip* and for *a clip that misses the frame entirely*, so the tidy
+  one-liner hosts a fully clipped-away widget at full size — the exact defect, reintroduced by the
+  fix for it. Unwrap the optional once and keep the two cases apart. The same `?? frame` idiom is
+  still live in `WMPRenderer`, `WMPHitCoverage` and `WMPSceneBuilder`, where it computes a rect for
+  *measurement*; painting is clipped by `CGContext.clip(to:)` and is unaffected, but a `visible=`
+  number taken off those paths reads a disjoint clip as unclipped.
 - **An overlay fills `bounds`, never `dirtyRect`.** AppKit is free to hand a view a dirty rect
   larger than itself, and it does: the 320x240 `WMPEffectsSurfaceView` was called with
   `{{-269, -26}, {596, 468}}` — the whole window in its own coordinates — and a layer-backed view

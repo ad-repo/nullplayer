@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **The playlist window in the *Revert* Media Player skin now has its bottom border back.** The
+  skin's playlist list is drawn a little taller than the window it sits in, and this app was
+  honouring that literally, so the list's black background covered the thin silver bevel the skin
+  draws along the bottom edge — the playlist ran straight into the window edge where every other
+  side had a border. Controls in a `.wmz` skin are now confined to the panel they were declared in,
+  as Windows Media Player confines them.
+
 - **Opening one window in a Media Player skin no longer makes every other window flash, redraw and
   change size.** With the library open under *Ice*, opening PeppyMeter redrew both windows repeatedly
   and left the library a different height than it started — it settled somewhere new each time, so

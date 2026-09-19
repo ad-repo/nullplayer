@@ -9,6 +9,57 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W74 — an overlay placed where the markup reached, not where the scene painted, 2026-09-19
+
+**Closed 2026-09-19.** Reported on screen as *"there is no bottom border on the playlist at all"*
+after a live check of the row's own claim, fixed in `WMPMainView.layout()`, and verified by the
+reporter in the debug build and by a 184-archive `WMP_RENDER_APPKIT` sweep.
+
+**The row's open question had already been answered elsewhere in the tree.** It asked whether to
+clip the overlay to `bounds` or to the widget's own `clipRect`; `bounds` is not the answer and could
+not have been, because the band the probe flags is *inside* the view. `WMPSceneBuilder` records the
+container a widget was declared in as its `clipRect`, every paint command intersects with it, and
+`WMPVideoSurface.update` had been placing the picture at frame ∩ clip ∩ bounds since it was written.
+`layout()` was the one seam using the raw authored frame. The fix is that arithmetic, applied to the
+rest of the widgets.
+
+**The numbers.** `Revert`'s `ctrlPlaylist` is `height="jscript:view.height-top-3"` with `top=0`
+inside a group at `top=14`, resolving `3,14 250x257` in a 260-tall view against `clip=3,14 250x242`.
+Eleven of the fifteen surplus points fall outside the view and the window clips them; the remaining
+four are the flagged band, and they cover where `pl_b.bmp` draws the silver bevel that closes the
+playlist frame. Before/after on both releases:
+
+```
+APPKIT vwPL: … outside=4000 (1.50%) max-delta=232 worst=3,256 250x4
+APPKIT vwPL: … outside=0    (0.00%) max-delta=23
+```
+
+**The sweep.** 184 archives / 629 views, baseline worktree at `bc12331a` against the working tree.
+The `^APPKIT ` diff is exactly the two `Revert` rows; `SKIN`/`LOAD`/`RENDER-DUMP`/`PNG`/`BITMAPS`
+are byte-identical once `loadms=` is excluded. One third line moved and is not this change:
+`Scooby-Doo_2/infoView` reads `blit=5070` in the baseline run, `5042` and `5021` in two others, and
+`5021` on three consecutive isolated runs — it is `hosted=0/0`, so `layout()` does nothing to it.
+That non-determinism is now its own row (W239).
+
+**What the fix's own tests caught, and it is the reason this entry exists.** The obvious spelling —
+`widget.clipRect.flatMap { widget.frame.intersection($0) } ?? widget.frame` — is wrong.
+`WMPRect.intersection` answers `nil` both for *no clip* and for *a clip that misses the frame
+entirely*, so that one-liner hosts a fully clipped-away widget at **full size**: the exact defect,
+reintroduced by its own fix. It passed the corpus sweep, because no corpus widget is disjoint from
+its container. `testDisjointClipCollapsesTheOverlay` is what found it. The same `?? frame` idiom is
+still live in `WMPRenderer`, `WMPHitCoverage` and `WMPSceneBuilder`, where it computes a rect for
+measurement rather than for painting.
+
+**What the row got wrong about its own reach, and what that is worth.** It stood for eleven days
+with the probe printing `outside=4000` and nobody had put the skin on screen; when it finally was,
+the reporter's *"the playlist looks fine"* nearly closed it as a harness artifact. Both the
+measurement and the report were true — the missing piece was a 4-point silver bevel that reads as
+wrong only once you know it should be there. **Neither a probe nor a glance settles a row of this
+size; the two together did.** See `measurement-is-not-its-interpretation` and its mirror.
+
+Evidence: `Tests/NullPlayerAppTests/WMPWidgetClipTests.swift`, and
+`skills/wmp-skin-guide/SKILL.md` § the overlay bullets.
+
 ## W238 — every hosted window re-rendered and re-grew when another opened, 2026-09-19
 
 **Closed 2026-09-19.** Measured on the row's own repro, fixed, and verified live on `Ice` the same

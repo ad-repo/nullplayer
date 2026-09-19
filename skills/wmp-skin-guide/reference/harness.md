@@ -1477,6 +1477,16 @@ by itself. Three instruments and one capability landed; every number below is
   the entire W43 class in the corpus's default state, and it is one defect in one skin. The
   reporter's "tons of issues" are therefore, on this evidence, mostly *scene*-side (the starvation
   class above) or driven by something a default-state sweep still cannot reach.
+  **Both closed 2026-09-19 as W74 and the corpus now reads `outside=0` everywhere**, re-measured at
+  184 archives / 629 views: `layout()` places an overlay at frame ∩ clip ∩ bounds instead of at the
+  authored frame. The sweep that proved it is not the one `wmp_render_sweep.sh capture` runs —
+  `outside=` is not in `INVARIANT_PATTERN` — so an AppKit-hosting change needs its own capture:
+  run `WMP_SKIN=<farm> WMP_RENDER_APPKIT=1 swift test --filter
+  WMPRenderDumpTests/testSweepsSkinOrCorpus` in a baseline worktree and in the working tree, and
+  diff the `^APPKIT ` lines. **`blit=` is not stable enough to diff that way**: `Scooby-Doo_2`'s
+  `infoView` reads 5070, 5042 and 5021 on the same binary depending on what ran before it in the
+  sweep, while being byte-stable at 5021 when the skin is run alone. Diff `outside=`, and read
+  `blit=` only within one run.
 * **Drag (W72).** Every slider in the corpus is now drivable headlessly. See *Proving the drag
   probe* above for the two worked axes.
 
