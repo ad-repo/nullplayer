@@ -9,6 +9,81 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W195 — the `res://wmploc.dll` string ids, 2026-09-19
+
+**Closed 2026-09-19** by commit `ac4af32c`, accepted live by the reporter. The row as it stood:
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W195 | 44 of the 50 `res://wmploc.dll` string ids draw as empty | **133 uses of 50 ids across 6 archives**, of which `WMPResourceStrings` names 9 (decoded scan, 2026-09-16) | The remainder are mostly *format* strings a skin builds a sentence from — `transport.js`'s buffering tooltip (`#2099`), its status strings (`#2077`, `#2078`, `#2063`) and the DVD chapter format (`#2086`) — plus the reception-quality tooltips (`#2079`-`#2081`, `#2092`). They are blank rather than wrong, which is where `theme.loadString` has always been. **Add a row to the table only when something in the corpus states the text** (a tooltip on the same control, a markup default the script replaces); the alternative is inventing Microsoft's wording, which was explicitly declined when this was opened. |
+
+**The constraint was loosened when it was taken, and that is what made it closable.** The row had
+stood on *"add a row only when something in the corpus states the text"*, which the opening session
+read as requiring a literal restatement elsewhere. The reporter widened it — *"if you can figure out
+the tooltip name with a high confidence from the element that is ok too"* — which turns a control's
+own `onClick` and property bindings into evidence. Nothing else about the row changed.
+
+**The census had been counting half the corpus.** Decoding all 185 archives and normalising to UTF-8
+first is load-bearing: `netgen.wms`, `corona.wms`, `Corona.js`, `metadata.js` and `corona_tiny.js`
+are UTF-16LE, and a byte-oriented `grep` walks straight past them. With that done the count
+reproduces the row's own figure exactly — **133 literal uses of 50 ids across 6 archives**, plus 3
+built at runtime from a computed id:
+
+```sh
+# from a directory of unzipped archives, UTF-16 files iconv'd to UTF-8
+grep -rioa 'RT_STRING/#[0-9]*' . | sed 's|^\./||'
+```
+
+| archive | uses |
+|---|---|
+| `Revert (1)` | 47 |
+| `Revert` | 41 |
+| `Compact` | 22 |
+| `corona` | 12 |
+| `9SeriesDefault` | 12 |
+| `circle` | 2 |
+
+**The table went 9 ids to 34, and every row is earned one of two ways.** Either the corpus states
+the wording — `#1811`'s own element carries `accName="Minimize"` in plain text beside the resource
+URL, and five archives author `upToolTip="Close"` on the button `#1812` sits on — or the element's
+binding leaves one reading: `#1809` is a `<slider>` with `min="0"`,
+`max="wmpprop:player.currentmedia.duration"` and `value="wmpprop:player.controls.currentposition"`;
+`#1845` is `min="-100" max="100"` bound to `player.settings.balance` with its own printed `<TEXT>`
+label; `#2063` is the only argument `OnDisconnectTransport()` ever hands `ShowStatus()`. Authored
+wording is copied **verbatim**, capitalisation included, which is why `3906`/`3907` read "Turn
+Equalizer On"/"Turn Equalizer Off" while `1814`-`1817` are lowercase.
+
+**Measure coverage by attribute, not by use.** The scene builder reads `toolTip`/`upToolTip`/
+`downToolTip` and `value`, and the object model answers `theme.loadString`; it reads neither
+`accName` nor `accKeyboardShortcut` nor `fontFace` nor `scrollingDirection` nor
+`<theme author= copyright=>`. Of the 133 uses, **90 sit in an attribute that reaches the screen, and
+those go 13 resolved to 58**:
+
+| archive | before | after |
+|---|---|---|
+| `Revert (1)` | 2/47 | 33/47 |
+| `Revert` | 2/41 | 27/41 |
+| `Compact` | 11/21 | 13/21 |
+| `9SeriesDefault` | 0/11 | 2/11 |
+| `corona` | 0/11 | 2/11 |
+| `circle` | 0/2 | 2/2 |
+
+Five rows in the table (`2109`, `2130`, `3904`, `3905`, `3908`) and the two theme-metadata ids
+(`1998`/`1999`) are **correct and invisible** — they appear only in attributes nothing reads. They
+were kept, and marked as such in `WMPResourceStrings`, because the evidence for them is the same
+evidence as for the rows beside them; they are not counted as coverage.
+
+**Sixteen ids stay blank on purpose, and the reasons are three different reasons.** Format strings
+fed to the skin's own `sprintf` (`#2099` buffering, `#2086` DVD chapter, `#2066` bitrate,
+`#2077`/`#2078` DRM signature), where a wrong guess yields a wrong *sentence* rather than a wrong
+word; wording with no anchor (`#2079`-`#2081`, `#2092`, picked off `nReceptionQuality` thresholds
+that say what is *measured* and never what is printed; `#1273`/`#2150`; `#2097`, the second HDCD
+mode beside `#2098`); and ids that are not labels at all, which is now **W236**.
+
+**Four archives never decoded** — `bruteforce`, `Need_for_Speed_Underground`,
+`QuantumRedshiftWMPSkin` (CAB) and `SplinterCellWMPSkin` (a zip `unzip` rejects). Raw `strings` finds
+no `RT_STRING` in any of them, which is not conclusive under compression, so the 133 is a floor.
+
 ## W226 — a hidden element still has a place
 
 **Closed 2026-09-18.** Accepted live on `Compact` by the reporter, the second half of the W225
