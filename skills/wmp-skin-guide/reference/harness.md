@@ -36,6 +36,17 @@ one** — the corpus moves, and a document quoting a frozen number goes wrong in
 right. Each row carries a sha256 so byte-identical archives under two filenames are visible as
 duplicates instead of counted twice.
 
+**The measured corpus is 179, not the 180 in `WMPSkins/`.** `scripts/wmp_corpus_exclusions.txt`
+holds `Darkling.wmz`, and § *`scripts/wmp_corpus_exclusions.txt`* below says why and what qualifies.
+An excluded archive is not a defect and never ranks work. **The corpus grew from 14 archives to 180
+on 2026-09-07**; it reads 184 from 2026-09-18 and 185 from 2026-09-19 as new archives landed, which
+is why every count on this page carries the archive number it was taken over.
+
+**Two byte-identical archives were deleted. Five *name*-similar pairs were kept deliberately** —
+`Ginger Man`/`Ginger_man`, `QuickSilver`/`QuickSilver (2)`, `Revert`/`Revert (1)`,
+`Project Gotham Racing 2`/`Project Gotham Racing 2 (1)`, `The Unit`/`TheUnit` — because they are
+different releases of the same skin with differing `.wms` and `.js`, and are separate test cases.
+
 ### Counting a tag across the corpus
 
 **Check `object-model.md` § *Verified **not** gaps* before you rank anything a scan turns up.** The
@@ -1295,6 +1306,63 @@ nothing; reading order out of an `.optionAll` list said the video was in front w
 is always drawn above its parent, and it moves with its parent atomically. If the picture is behind
 the skin, or trails a drag, the parent-child link is gone — do not go looking at VLC. See
 `SKILL.md` § the `.wmz` video loan.
+
+## Numbers that are void, and why
+
+A stale number copied forward reads as fresh, and this corpus has produced five classes of number
+that must not be scaled, quoted or re-derived. Re-measure instead.
+
+* **Anything measured against the 14-skin denominator.** The corpus grew to 180 on 2026-09-07 and
+  none of the earlier numbers were rewritten in place. A count without an archive stamp has not been
+  re-measured; re-measure it rather than scaling it.
+* **Anything captured before rev `61f8955a`.** The instrument dropped three blocks of its own output
+  (W35), so an earlier count is short by an unknown amount rather than merely stale. The distinct-name
+  count of the `UNKNOWN event` vocabulary is the visible symptom: **36 blocks were damaged in both
+  captures**, so the *edges* of that vocabulary move between runs and the uses figure is the one to
+  quote.
+* **Any `COMPAT` / `UNKNOWN tag` number taken before 2026-09-19.** W215 closed that day: the corpus's
+  unimplemented-tag demand read **1,197 uses and is 258**. Those counts are not merely stale, they
+  are *inflated*, and the tags they inflated with were the transport pairs, `customslider` and
+  `effects`. The member half of that row did not close and is the larger number now; see the archive.
+* **Any view count of 579, 574, 567, 515, 508, 506 or 482.** Re-measured 2026-09-09 over 179
+  archives.
+* **`WMP0035` is harness noise, not a defect.** Re-measured 2026-09-09: **62 `RENDER-DUMP … FAILED
+  [WMP0035]`** across the 179-archive sweep, and every one is a view with no window — `controlView`
+  ×25, `previewView` ×16, `mediaSwitcherView` ×12, `view-2` ×3, `versionView` ×3, and
+  `vGhost`/`vGhostAutoDetect`/`playview` ×1. That is the windowless class `SKILL.md` describes, whose
+  honest size is `0x0` and which `WMPRenderer` correctly refuses; the 25 matches the 25 archives that
+  author a `controlView` exactly. A FAILED line on a view that *does* have a canvas is still worth
+  chasing. **`WMP0032` and `WMP0033` are both zero corpus-wide** (2026-09-09), so neither a layout
+  rejection nor a decode failure can rank anything any more.
+
+**There are no loading rejections left in the corpus.** Load level is a constant, so it cannot rank
+anything: every open defect is a rendering or runtime one, and only a dumped PNG or a `SCRIPT-DIAG`
+line can see one. A row whose evidence is a census column is by that fact measuring structure, not
+result.
+
+### What the ranking files rank, and what they do not
+
+`starved.tsv` and `appkit.tsv` are produced by the census itself rather than by hand, and they
+outrank any prose that disagrees. Measured 2026-09-08 over 179 archives and **607 views**: 41 starved
+views across 36 skins, 79 with no hit target across 49, 75 drawing nothing across 45, and **two**
+views painting outside a widget frame. **That last number is now zero** — both were `Revert`, both
+closed 2026-09-19 as W74, re-measured over 184 archives / 629 views. `appkit.tsv` ranks nothing until
+a new archive lands.
+
+**`starved.tsv` ranks declared-but-unresolved nodes, not missing pixels, and the two are not the same
+view.** Its top rows were opened on 2026-09-08: `Cablemusic/mainview` (ratio 0.64, 63 unresolved)
+draws a nearly complete player, and `ALXMorph/mainView` draws its whole shell. A high ratio ranks a
+view as *worth dumping*; only the PNG says whether anything is missing. **Dump the view before taking
+the row.** The same session ruled out the explanation everyone reaches for first: geometry
+expressions. Corpus-wide **7,569 of 7,569** reach the live evaluator, and `Cablemusic/mainview`
+declares none at all — see § *After the cascade*.
+
+**"Draws nothing" counts an authored blank the same as a starved one, and closing W75 moved it the
+wrong way on purpose.** It was 65 views / 37 skins until a scripted `backgroundImage` started
+reaching the scene; ten `mediaSwitcherView`s then began obeying their own `view.backgroundImage = ""`
+collapse before redirecting, and a view that correctly draws nothing is indistinguishable from a
+starved one in this tally. **Settle a `0 commands` view by reading its PNG before opening its
+markup**, exactly as with `starved.tsv`.
 
 ## Proving the instrument
 

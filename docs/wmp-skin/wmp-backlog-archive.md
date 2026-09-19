@@ -9,6 +9,36 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## Issuing a number: what is taken, what collided, what is free
+
+**The next free number is W243.** Check this file before reusing any number — the live backlog is a
+list of *open* work and says nothing about which numbers are spent.
+
+**Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
+The `.wmz` placement/recovery audit moved **W196 → W217** and the `Colorchooser` transport row moved
+**W171 → W218**. The archived, *closed* W196 (a view's resize limits read from markup only) and W171
+(a `clippingImage` with no `clippingColor`) keep their numbers, and **every reference in `Sources/`,
+`Tests/` and `skills/` to those two numbers means the closed rows.**
+
+**A third collision was found 2026-09-19 and needs no renumber.** `WMPMainView.swift` and
+`WMPMainWindowController.swift` stamp `W235` on the AppKit edge-wedge work of commit `f5552068`,
+which is **not** the (now closed) W235 in this file. Those comments mean that defect.
+
+**W211 was never issued.** W219-W224 were opened and closed the same day, 2026-09-17; W225, W226,
+W228 and W232-W233 on 2026-09-18; all are archived. W236 was opened 2026-09-19 out of W195's
+closure, W237 and W239 were opened 2026-09-19 (**W237 closed 2026-09-19**), and W238 was issued and
+closed by another session — which is why an earlier note naming W237 as the next free number was
+already wrong when it was written.
+
+**Three closures on 2026-09-19 invalidate evidence still quoted elsewhere.** **W99** closed — a view
+resolved against a size nothing is drawn at, which is also part of the answer to what was W68 (moved
+to `LOW_QUALITY_TASKS.md` the same day); read its entry before taking any row whose evidence is a
+frame measured before that date. **W179** closed and issued no new number: the donor a skin lends is
+now chosen per view rather than by document order, and the three symptoms the row was named for had
+already been closed by the hosted-frame work that landed after its report. **W215** closed: the
+corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
+taken before that date is inflated rather than merely stale.
+
 ## W231 — `<SUBVIEW>` was the largest unexplained block in the residue, 2026-09-19
 
 **Closed 2026-09-19.** The row's whole content was the question "is this a phantom class like W111 or

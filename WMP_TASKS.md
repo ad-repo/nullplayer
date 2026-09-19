@@ -32,89 +32,34 @@ letting it outrank a measured row.
 
 ### How a row is ranked
 
-Reach is corpus demand across the 14-skin corpus installed in
-`~/Library/Application Support/NullPlayer/WMPSkins/`, not severity. Every Reach number must be
-reproducible by a command recorded next to it.
+**Reach is corpus demand, not severity**, measured across the skins installed in
+`~/Library/Application Support/NullPlayer/WMPSkins/`. **Every Reach number must be reproducible by a
+command recorded next to it**, and must carry the date and the archive count it was taken over. The
+measured corpus is **179 of the 180 installed** at the time these scripts were written and 185 by
+2026-09-19; `scripts/wmp_corpus_exclusions.txt` holds the difference and
+`skills/wmp-skin-guide/reference/harness.md` § *The corpus* says why.
 
-**Two numbers on this page are now produced by the census itself rather than by hand, and the file
-it writes them to outranks any row here that disagrees.** `starved.tsv` ranks every view by
-`unresolved / declared` (W70) and `appkit.tsv` ranks every hosted view by how much an AppKit overlay
-painted outside any widget frame (W71). Take work from the top of those, not from the top of a
-paragraph. Measured 2026-09-08 over 179 archives and **607 views**: 41 starved views across 36 skins,
-79 with no hit target across 49, 75 drawing nothing across 45, and **two** views painting outside a
-widget frame. **That last number is now zero** — both were `Revert`, both closed 2026-09-19 as W74,
-re-measured over 184 archives / 629 views. `appkit.tsv` ranks nothing until a new archive lands.
+**Two numbers on this page are produced by the census itself rather than by hand, and the files they
+are written to outrank any row here that disagrees.** `starved.tsv` ranks every view by
+`unresolved / declared` (W70); `appkit.tsv` ranks every hosted view by how much an AppKit overlay
+painted outside any widget frame (W71). **Take work from the top of those, not from the top of a
+paragraph** — and **dump the view before taking the row**, because `starved.tsv` ranks declared-
+but-unresolved nodes rather than missing pixels and a `0 commands` view may be an authored blank.
+What each file does and does not rank, with its measurement history, is `harness.md` § *What the
+ranking files rank, and what they do not*.
 
-**"Draws nothing" counts an authored blank the same as a starved one, and closing W75 moved it the
-wrong way on purpose.** It was 65 views / 37 skins until a scripted `backgroundImage` started
-reaching the scene; ten `mediaSwitcherView`s then began obeying their own `view.backgroundImage = ""`
-collapse before redirecting, and a view that correctly draws nothing is indistinguishable from a
-starved one in this tally. Read the PNG before ranking a `0 commands` row, exactly as with
-`starved.tsv`.
+**Load level is a constant: there are no loading rejections left in the corpus.** Every entry below
+is a rendering or runtime defect, and only a dumped PNG or a `SCRIPT-DIAG` line can see one. A row
+whose evidence is a census column is by that fact measuring structure, not result.
 
-**`starved.tsv` ranks declared-but-unresolved nodes, not missing pixels, and the two are not the
-same view.** Its top rows were opened and looked at on 2026-09-08: `Cablemusic/mainview` (ratio 0.64,
-63 unresolved) draws a nearly complete player, and `ALXMorph/mainView` draws its whole shell. A high
-ratio ranks a view as *worth dumping*; only the PNG says whether anything is missing. **Dump the view
-before taking the row.** The same session established what does *not* explain the ratio: geometry
-expressions. Corpus-wide **7,569 of 7,569** reach the live evaluator, and `Cablemusic/mainview`
-declares none at all — see W241/W242 and `skills/wmp-skin-guide/reference/harness.md` § *After the
-cascade*.
+**Before quoting or scaling any number on this page, check `harness.md` § *Numbers that are void, and
+why*.** Five classes of count here must be re-measured rather than carried forward: anything against
+the 14-skin denominator, anything captured before rev `61f8955a`, any `COMPAT`/`UNKNOWN tag` number
+taken before W215 closed on 2026-09-19, the stale view counts, and `WMP0035`/`WMP0032`/`WMP0033`.
 
-**Reach numbers below are `scripts/wmp_skin_census.sh` output, measured 2026-09-07 at rev
-`1d7e63bd` over the 180 archives in `WMPSkins/`.** Reproduce with
-`scripts/wmp_skin_census.sh /tmp/wmp/census`. **Re-measured 2026-09-07 after W6 closed: 608 views
-dumped and not one `RENDER-DUMP … FAILED`.** **That last clause is no longer true and was re-measured
-2026-09-09: 62 `RENDER-DUMP … FAILED [WMP0035]` across the 179-archive sweep, and every one of them
-is a view with no window.** The tally is `controlView` ×25, `previewView` ×16, `mediaSwitcherView`
-×12, `view-2` ×3, `versionView` ×3, `vGhost`/`vGhostAutoDetect`/`playview` ×1 — the windowless class
-`SKILL.md` describes, whose honest size is `0x0` and which `WMPRenderer` correctly refuses. The 25
-matches the 25 archives that author a `controlView` exactly. **So a `WMP0035` line is harness noise
-here, not a defect**, and the sentence it replaced would have you read it as one; a FAILED line on a
-view that *does* have a canvas is still worth chasing. A row below that still cites 579, 574, 567, 515, 508,
-506 or 482 views was not re-measured then. **`WMP0032` and `WMP0033` are both zero corpus-wide**, so
-neither a layout rejection nor a decode failure can rank anything any more.
-
-**The measured corpus is 179, not 180.** `scripts/wmp_corpus_exclusions.txt` is the blacklist both
-scripts read, and it holds `Darkling.wmz`: a Party Mode skin, authored against a WMP host this
-player has no equivalent of and will not grow one, whose own `OnLoad` draws a "designed for Party
-Mode" panel when that host is absent — which is what real WMP shows too. An excluded archive is not
-a defect and never ranks work here. Reasons live in that file; removing a line is a decision.
-
-**There are no loading rejections left in the corpus.** Load level is now a constant, so it can no
-longer rank anything: every entry below is a rendering or runtime defect, and only a dumped PNG or a
-`SCRIPT-DIAG` line can see one. A row whose evidence is a census column is by that fact measuring
-structure, not result.
-
-Numbers taken before rev `61f8955a` were measured with an instrument that dropped three blocks of
-its own output (W35), so a count from an earlier capture is short by an unknown amount rather than
-merely stale.
-
-**A third collision was found 2026-09-19 and needs no renumber: `WMPMainView.swift` and
-`WMPMainWindowController.swift` stamp `W235` on the AppKit edge-wedge work of commit `f5552068`,
-which is not the (now closed) W235 in the archive. Those comments mean that defect.**
-
-**Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
-The `.wmz` placement/recovery audit moved **W196 → W217** and the `Colorchooser` transport row moved
-**W171 → W218**; the archived, *closed* W196 (a view's resize limits read from markup only) and W171
-(a `clippingImage` with no `clippingColor`) keep their numbers, and every reference in
-`Sources/`, `Tests/` and `skills/` to those two numbers means the closed rows. Check
-`docs/wmp-skin/wmp-backlog-archive.md` before reusing any number: the next free one is **W243** — the note that said W237 was written before another session issued and closed **W238**, and W237/W239 were opened 2026-09-19 (**W237 closed 2026-09-19**)
-(W211 was never issued; W219-W224 were opened and closed the same day, 2026-09-17, and W225, W226,
-W228 and W232-W233 on 2026-09-18, and all are archived; W236 was opened 2026-09-19 out of W195's
-closure). **W99 closed 2026-09-19** — a view resolved against a size nothing is drawn at, which is
-also part of the answer to what was W68 (moved 2026-09-19; see `LOW_QUALITY_TASKS.md`); see the
-archive before taking any row whose evidence is a frame
-measured before that date. **W179 closed 2026-09-19** and issued no new number: the donor a skin
-lends is now chosen per view rather than by document order, and the three symptoms the row was named
-for had already been closed by the hosted-frame work that landed after its report.
-
-The corpus grew from 14 archives to 180 on 2026-09-07, so **every number taken against the 14-skin
-denominator is stale and none of them were rewritten in place.** A count here without the 180-archive
-stamp has not been re-measured; re-measure it rather than scaling it. Two byte-identical archives were
-deleted; five *name*-similar pairs (`Ginger Man`/`Ginger_man`, `QuickSilver`/`(2)`, `Revert`/`(1)`,
-`Project Gotham Racing 2`/`(1)`, `The Unit`/`TheUnit`) are different releases of the same skin with
-differing `.wms` and `.js`, and are kept deliberately as separate test cases.
+**Before issuing a number, read `docs/wmp-skin/wmp-backlog-archive.md` § *Issuing a number*.** It
+holds the next free number, the two renumbered IDs (W196 → W217, W171 → W218), the `W235` source-
+comment collision, and which numbers were issued and closed without ever appearing here.
 
 ## Tier 1 — views that load and then draw nothing
 
