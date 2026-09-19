@@ -2001,6 +2001,10 @@ that this section replaced.
   fork is worth one capture: § *`gaps=` cannot see a hosted frame that is wrong everywhere but its
   edges* in `reference/harness.md` is the same lesson learned from the opposite direction, and
   carries the alpha check that stops a frame full of white paint reading as a frame full of holes.
+- **Then repeat on two more windows under the same skin, and only to confirm the failure is one
+  shape.** Ten windows failing the same way against a player view that never does is one contract
+  unhonoured at ten call sites, not ten defects — so the second and third captures are there to
+  establish that, not to enumerate.
 
 **Do not open this class with a skins × windows capture matrix.** It is the instrument the analysis
 document reached for twice and it answers the wrong question: sweeping the skin axis measures
