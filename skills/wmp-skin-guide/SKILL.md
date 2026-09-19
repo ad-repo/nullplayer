@@ -884,6 +884,25 @@ queue, with the object model as the security boundary — see Amendment 2 in
   **A window bigger than the compact artwork is not a defect here**: `corona`'s `viewTiny` is authored 596x498 and
   draws a 346x103 mini player into it, exactly as its markup asks — WMP shapes that window with the transparency
   key and this engine leaves it transparent, which looks the same. Measure the window, not the ink.
+- **A view's own size is the one expression input a handler can change out from under the pass that
+  already read it, and the builder can refuse the change (W99).** `WMPScriptContext` resolves the
+  `JScript:` geometry before the handlers run — a pane positioned off another must see the frame that
+  pane lands at — so a handler that assigns `view.width`/`view.height` leaves every expression
+  reading it a transaction stale. **And `canvas = resizeLimits.clamp(…)`, so a view declaring
+  `minWidth`/`minHeight` has a floor its own script cannot write through**: `ALXMorph` is
+  `<view id="videoView" height="357" minHeight="357">` and `onLoadVid()` assigns 316, which the
+  canvas rejects while the script goes on answering it. The transaction now clamps the view element
+  to its own limits and re-resolves the expressions against that; `WMPScriptRuntime` reports the
+  clamped size as `viewSize`, so the window, the next transaction and the expressions carry one
+  number. **Re-resolving against the *raw* assignment instead is the defect with more reach** — it
+  walked `Back to the Future Trilogy/videoView` to `x=-94` — which the 20-archive sweep caught and
+  no single-skin check would have. `EXPR`'s two columns are the instrument: `->` is the initial
+  resolver against the canvas, `live=` is the runtime's, and **a disagreement between them where the
+  deps are only `view.width`/`view.height` is this class and nothing else** (corpus-wide: 809 before,
+  0 after). **A view with an `onTimer` hides it**, because the next tick opens a transaction at the
+  corrected size — `xsn_sports` read as a drawer button drifting 20 px rather than as a broken
+  window. 217 corpus views author the shape and **146 have no timer and never correct**, which is
+  part of what W68's "draws a shell" has been all along.
 - **A script resizing its own window is four separate claims, and `Compact.wmz`'s drawers needed all
   four (W184-W192, 2026-09-16).** They are listed here because each one *renders perfectly* in a
   capture and does nothing on screen: the builder takes its canvas from the script's overrides, so
@@ -978,8 +997,12 @@ queue, with the object model as the security boundary — see Amendment 2 in
   strip, and the drawers read as missing underneath it. **The order is the reproduction**: with a
   track already playing the same stretch is correct, because the write happens before the resize
   rather than after it. Nothing moves for a node the script never wrote.
-  **An authored `jscript:` binding on a sibling's extent is a different mechanism and is still open
-  as W235** — `NVIDIA`'s `visEffects` off `visFrame` — measured not to be this.
+  **An authored `jscript:` binding on a sibling's extent is a different mechanism and was W235** —
+  `NVIDIA`'s `visEffects` off `visFrame` — measured not to be this, and closed 2026-09-19 by the
+  alignment-baseline half of `c78f32f7`: `ownAuthoredSize` was reading the runtime's own geometry
+  override back as authored, so every child's stretch delta was zero. A gated widget like
+  `visEffects` is reachable headlessly after all — one `WMP_RENDER_CLICK` on the toggle that sets
+  `mainModeVis.visible`, then `WMP_RENDER_SIZE` for the stretch. See the archive.
 - **WMP's `event` object is a global, and 84 of 185 archives read it (W184).** `Compact`'s drawer
   handlers open `view.maxWidth = event.screenWidth` from a plain function call, and its view root
   reads the same thing from a `jscript:` attribute where no event exists at all — so it is bound

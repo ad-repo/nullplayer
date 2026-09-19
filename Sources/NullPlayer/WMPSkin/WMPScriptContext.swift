@@ -169,6 +169,11 @@ struct WMPScriptRunResult: Sendable {
     /// The tweens this transaction asked its caller to animate (W194). Only ever non-empty for a
     /// transaction run with `animatesTweens`; see `WMPObjectModel.tweenGroup`.
     var tweens: [WMPScriptTween] = []
+    /// The view's own size at the end of the transaction, **clamped to the limits the builder
+    /// will clamp the canvas to** (W99). `assignedViewSize` reads the raw mutations, which is the
+    /// size the script *asked* for; this is the size it got. They differ exactly when the view
+    /// declares a `minWidth`/`minHeight`/`maxWidth`/`maxHeight` its own script writes through.
+    var drawnViewSize: WMPSize?
     /// How many mutations had been made when the handler called `view.size(corner)` (W225).
     /// `nil` when it never did. See `WMPObjectModel.resizeCallMutationIndex`.
     var resizeCallMutationIndex: Int?
@@ -506,6 +511,79 @@ final class WMPScriptContext: @unchecked Sendable {
         raiseValueChangeHandlers(plan: plan, changes: boundValues, into: &result)
         raiseCompletionHandlers(plan: plan, into: &result)
         raiseAttributeChangeHandlers(plan: plan, into: &result)
+
+        // **A handler that resizes its own view leaves every `view.width`/`view.height` expression
+        // resolved against a size nothing is drawn at (W99).** Two separate reasons, one symptom,
+        // and the fix for either alone makes the other worse.
+        //
+        // The expression pass runs before the handlers on purpose — a pane positioned off another
+        // must see the frame that pane lands at rather than its markup — but the view's own size is
+        // the one input a handler can change out from under a pass that has already read it.
+        // `xsn_sports` authors `<view id="videoView" height="396">` and its `onLoad` writes
+        // `view.height = 416` whenever the player has nothing to stop, so the scene is built at 416
+        // while `top="jscript:view.height-221"` still answers 175. The entire bottom of the skin —
+        // eight frame pieces, both drawer covers, `vidOutline` and the resize grip — sits 20 px
+        // high until the view's own 500 ms timer opens a second transaction at the new size, and
+        // then drops. Reported as the drawer's toggle button drifting out from under the pointer.
+        //
+        // **The other reason is that the builder can refuse the assignment, and only the builder
+        // knew.** `canvas = resizeLimits.clamp(…)`, so a view declaring `minHeight` has a floor its
+        // own script cannot write through: `ALXMorph` is `<view id="videoView" height="357"
+        // minHeight="357">` and `onLoadVid()` assigns 316. The canvas stays 357 and the script goes
+        // on answering 316, so `view.height-187` resolves 41 px above the window it is anchored to.
+        // Re-resolving against the raw assignment rather than the clamped one is not a smaller
+        // version of the fix, it is the defect with more reach: measured over 20 archives it walked
+        // `Back to the Future Trilogy/videoView` out to x=-94 and `Plus! Professional/videoView` to
+        // y=-8. So the clamp is applied to the view element itself, which is both what the next
+        // transaction reads back and what these expressions now see.
+        //
+        // The limits are read from the view element's own properties, which is the same rule
+        // `WMPSceneBuilder.viewLimit` applies from the other side — a script write first, then the
+        // markup literal — because `WMPScriptViewPlan` seeds every authored attribute and a script
+        // write lands on top of it. The fallback floor is the assigned size, matching the builder's
+        // `?? defaultSize`: a view that declares no minimum cannot be clamped by one.
+        //
+        // **This is the first-transaction defect and nothing else.** A view with an `onTimer`
+        // corrects itself on the next tick, which is why `xsn_sports` read as a flicker; 146 of the
+        // 217 corpus views authoring this shape have no timer at all and never correct.
+        if let viewElement = model.element("view"),
+           let assignedWidth = viewElement.properties["width"]?.number,
+           let assignedHeight = viewElement.properties["height"]?.number,
+           assignedWidth.isFinite, assignedHeight.isFinite {
+            func limit(_ name: String) -> Double? {
+                guard let value = viewElement.properties[name]?.number,
+                      value.isFinite, value >= 0 else { return nil }
+                return value
+            }
+            let drawn = WMPSize(
+                width: CGFloat(min(max(assignedWidth, limit("minwidth") ?? assignedWidth),
+                                   limit("maxwidth") ?? .greatestFiniteMagnitude)),
+                height: CGFloat(min(max(assignedHeight, limit("minheight") ?? assignedHeight),
+                                    limit("maxheight") ?? .greatestFiniteMagnitude)))
+            if drawn.width != size.width || drawn.height != size.height {
+                // The size the window is about to be, written back before anything reads it: the
+                // clamp is the builder's answer, and a script that reads `view.height` after
+                // assigning through a floor must get the height it actually got.
+                viewElement.properties["width"] = .number(Double(drawn.width))
+                viewElement.properties["height"] = .number(Double(drawn.height))
+                // A handler's own geometry write still wins twice over: `WMPScriptRuntime` applies
+                // this transaction's mutations to the overrides *after* the expression values, and
+                // the addresses it wrote are retired here so a dependent reads the script's number
+                // rather than the expression's.
+                var retired = retiredGeometry
+                for mutation in model.mutations {
+                    guard let stableID = plan.idToStableID[WMPPath.fold(mutation.targetID)] else {
+                        continue
+                    }
+                    retired.insert(WMPScenePropertyAddress(stableID: stableID,
+                                                           property: mutation.property.lowercased()))
+                }
+                result.expressions.removeAll()
+                result.expressionOrder = resolveExpressions(plan: plan, into: &result,
+                                                            retiredGeometry: retired)
+            }
+            result.drawnViewSize = drawn
+        }
 
         result.calls = model.calls
         result.mutations = model.mutations

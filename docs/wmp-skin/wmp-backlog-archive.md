@@ -9,6 +9,139 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W99 — a view resolved against a size nothing is drawn at, 2026-09-19
+
+**Closed 2026-09-19, accepted by the reporter.** The row as it stood:
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W99 | A drawer's own toggle button drifts out from under the pointer once the view's timer runs | `xsn_sports` confirmed both live and headlessly; **every skin with a timer and a moved drawer is a candidate — count it** | Reported live 2026-09-09 as "it opens and closes right away, it is resistant to opening", and **reproduced against a baseline worktree at the parent commit, where it behaves identically** — so it is not W55, which only made it visible by correctly hiding a shut drawer's contents. `vidDrawerButton` in `xsn_sports/videoView` is drawn at `61,291` on the first frame and at `61,271` after `WMP_RENDER_SETTLE=2` runs the view's own 500 ms timer; a click at the first position returns `CLICK … MISS`, and a click at the settled one hits and opens the drawer to `4 widgets[slider×4]`. So the drawer works and the *target moves*. Twenty pixels, on a rebuild driven by a timer that only calls `htcpVid()` — which alpha-blends artwork and moves nothing — so find what re-resolves that subtree's geometry between ticks before assuming the handler did it. The old scripted-`view.height` theory is closed by W113; reproduce with `WMP_SKIN=…/xsn_sports.wmz WMP_RENDER_SETTLE=2 WMP_RENDER_PROBE=videoView`. |
+
+**The row's own reproduction numbers were stale and the button never moved.** `vidDrawerButton` is
+at `180,291` in every capture at every settle value. What moves is everything anchored to the view's
+*bottom* — eight frame pieces, both drawer covers, `vidOutline`'s height and `vidResize` — 20 px
+between frame 0 and the first timer tick. Looking for what re-resolved the drawer's subtree was
+looking for the wrong node; the `EXPR` line had been printing the answer for the whole of Phase 5:
+
+```
+EXPR videoView/vid3_1.top: view.height-221 -> 195  live=175
+```
+
+Two evaluators, one expression, and the live one wins. **`->` is the initial resolver against the
+canvas and `live=` is the script runtime's; a disagreement between them is this defect and there is
+no other reading of it.** Corpus-wide, over the 4,679 expressions that depend only on
+`view.width`/`view.height`, **809 disagreed**.
+
+**It is two mechanisms sharing one symptom, and fixing either alone makes the other worse.**
+
+1. **The expression pass runs before the handlers**, by design — a pane positioned off another must
+   see the frame that pane lands at, not its markup — but the view's own size is the one input a
+   handler can change out from under a pass that has already read it. `xsn_sports` authors
+   `<view id="videoView" height="396">` and its `onLoad` → `checkVideoPlayerState()` writes
+   `view.height = 416` whenever the player has nothing to stop, so the scene is built at 416 while
+   `top="jscript:view.height-221"` still answers 175.
+2. **The builder can refuse the assignment, and only the builder knew.**
+   `canvas = resizeLimits.clamp(…)`, so a view declaring `minHeight` has a floor its own script
+   cannot write through: `ALXMorph` is `<view id="videoView" height="357" minHeight="357">` and
+   `onLoadVid()` assigns 316. The canvas stays 357 and the script goes on answering 316.
+
+Fixing (1) alone and re-resolving against the *raw* assignment is not a smaller version of the fix,
+it is the defect with more reach — measured over 20 archives it walked
+`Back to the Future Trilogy/videoView` out to `x=-94` and `Plus! Professional/videoView` to `y=-8`.
+**A collateral diff is counter-evidence; that sweep is what caught it before it shipped.**
+
+**The fix.** `WMPScriptContext.perform` clamps the view element's own width/height to its
+`minWidth`/`minHeight`/`maxWidth`/`maxHeight` at the end of the transaction — read the way
+`WMPSceneBuilder.viewLimit` reads them, a script write first and then the markup literal, because
+`WMPScriptViewPlan` seeds every authored attribute — writes it back, and re-resolves the geometry
+expressions when it differs from the size the transaction opened at. `WMPScriptRuntime` reports that
+clamped size as `viewSize` instead of the raw assignment, so the window, the next transaction and
+the expressions all carry one number. A handler's own geometry write still wins twice over: the
+runtime applies the transaction's mutations to the overrides *after* the expression values, and the
+addresses it wrote are retired from the model commit.
+
+**Reach, and why `xsn_sports` was the worst case to look at.** A view with an `onTimer` corrects
+itself on the next tick, which is why the row read as a drifting button rather than as a broken
+window. **217 corpus views across ~90 archives author this shape** — an `onLoad` that resizes its
+own view over `jscript:view.width`/`view.height` geometry — and **146 of them have no timer at all
+and never correct.** Reproduce the count by decoding each `.wms` as `reference/harness.md` requires
+and matching `<view … onLoad=…>` against a `jscript:view.(width|height)` in its own body.
+
+| corpus sweep, 179 archives / 630 views | base | fix |
+|---|---|---|
+| `view.width`/`view.height` expressions | 4,679 | 4,679 |
+| …resolving against a size nothing is drawn at | **809** | **0** |
+| nodes moved | — | 601, across 59 views in 39 skins |
+| canvases changed | — | 0 |
+| nodes gained or lost | — | 0 |
+| negative origins | 19 | 19 |
+
+**What it looks like.** `AlienMorph/visView` drew with its entire right-hand column missing — no
+right rail, no close control, white gaps down the right edge — because every piece of it is
+`left="jscript:view.width-175"`. It now draws a complete symmetric window. **That is W68's
+"the Alienware family draws a shell", and this row is part of the answer to it**: `ALXMorph`,
+`AlienMorph`, `AlienwareTeleport`, `Alienware Invader` and `Alienware_Darkstar_WMP11` all declare
+`minWidth`/`minHeight` on views their own `onLoad` assigns through.
+
+**One collateral diff that is recorded rather than explained.** Three `visView`s (`Dreamcatcher`,
+`Harry_Potter_and_the_Chamber_of_Secrets`, `Xbox`) go from 2 widgets to 1. The lost one is
+`<TEXT id="visEffectsText" value="wmpprop:visEffects.currentEffectTitle">`, which authors no size and
+in the baseline hosted a `0x10` rect at `y=247` in a 245-tall view, printing `visible=none`. It drew
+nothing before and draws nothing now, and commands and hit counts are identical in all three. The
+same three views' `visEffects` goes from `353x240` clipped down to `291x218` to a clean `259x193` —
+the visualizer sized for the window instead of for the size the script asked for, which is the same
+shape as W235.
+
+## W235 — a visualizer sized off a sibling's extent, 2026-09-19
+
+**Closed 2026-09-19, accepted by the reporter.** Fixed by commit `c78f32f7` ("Follow the window
+stretch with the visualizer inside it"), which was taken against `Compact` and closed this row as
+collateral — the row was still open because nobody re-measured `NVIDIA` after it. The row as it
+stood:
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W235 | **A visualizer sized off a sibling's extent keeps its authored size while that sibling stretches** | **1 archive confirmed live 2026-09-18 (`NVIDIA`), inside a shape 76 archives author — 149 `<EFFECTS>` extents read off a sibling with no arithmetic, 72 of them in an archive declaring a resizable view.** How many of the 72 actually mis-size is **unmeasured**, so this row is placed provisionally: `Compact` authors the same shape (`myeffect` off `svScreen`) and resolves correctly, so the population is the candidate set, not the defect count. Reproduce the count with the decoded scan in `skills/wmp-skin-guide/reference/harness.md` — a `.wms` is UTF-16 and `grep` goes silent on it | Reported 2026-09-18 as *"when you stretch nvidia the built in viz does not expand"*, with a capture: the green lightning sits at its authored ~390x175 in the top-left of a panel that has grown to fill the window. **`visFrame` is fine and is the black panel you can see behind it** — `<subview id="visFrame" width="jscript:view.width-90" height="jscript:view.height-214" horizontalAlignment="stretch" verticalAlignment="stretch">` grows exactly as authored. What does not is the child that reads it: `<effects id="visEffects" width="jscript:visFrame.width" height="jscript:visFrame.height" windowed="false" horizontalAlignment="stretch" verticalAlignment="stretch">`, which resolves to the extent `visFrame` had at the view's authored 285x301 rather than re-reading the grown parent. **It is not W227, and it is not the `Compact` spill fix that came out of W227**, and that was measured rather than argued: the same two-axis stretch (285x301 -> 487x502) was driven twice on one debug build, once with that fix's `WMPSceneBuilder` hunk in and once with that single file reverted, and the visualizer is at the identical size and position in both captures. Neither change moves it. It is also a different mechanism from that fix — there a *script-assigned* absolute was having the window's growth added to it a second time; here nothing is script-assigned at all. The question this row opens is evaluation order: the parent's stretch is applied when the parent is laid out, and a sibling read that resolves against the authored graph rather than against `geometries` cannot see it. **Nothing headless can see this one.** `visEffects` is gated behind `mainModeVis.visible`, so `WMP_RENDER_PROBE` reports `mainView` with no effects widget at any size — `WMP_RENDER_SIZE=900x900` on `NVIDIA` prints four widgets and none of them is it. It needs the live app with a track playing, per `live-ui-testing`. The other three `mainView` widgets do grow correctly at 900x900 (`metadata` 99 -> 714 wide), so the view's own stretch is working and this is the binding alone. |
+
+**The row's "nothing headless can see this one" was wrong, and that is the reusable part.**
+`visEffects` is gated behind `mainModeVis.visible`, which is `false` at load — but `visModeToggle()`
+hangs off the main-mode button group's second mapping element, so one `WMP_RENDER_CLICK` reaches the
+state and `CLICK … changed=[…]` prints the geometry of every node the toggle resolved. A gated
+widget is not out of reach; it is one click behind a flag that was never tried. The measurement,
+with `WMP_RENDER_SIZE` supplying the stretch (the button group is right-aligned, so the click moves
+with it):
+
+```sh
+WMP_SKIN=…/NVIDIA.wmz WMP_RENDER_HOST=playing WMP_RENDER_SIZE=285x301 \
+  WMP_RENDER_CLICK='mainView@193,95' swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus
+WMP_SKIN=…/NVIDIA.wmz WMP_RENDER_HOST=playing WMP_RENDER_SIZE=700x700 \
+  WMP_RENDER_CLICK='mainView@608,95' swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus
+```
+
+| canvas | `visFrame` | `visEffects` |
+|---|---|---|
+| 285x301 (authored) | 195x87 | 195x87 |
+| 700x700 | 610x486 | 610x486 |
+
+`610x486` is `700-90` by `700-214`, which is what `visFrame` authors, and the child reads it exactly
+at both sizes. The mechanism that closed it is `c78f32f7`'s second half: `ownAuthoredSize` was taking
+the runtime's own geometry override — this canvas's answer echoed back — as the alignment baseline,
+so every child's stretch delta was zero. It now takes an override only when `scriptAssignedGeometry`
+says a handler wrote it, and an authored `jscript:` binding falls through to the markup baseline it
+should always have had.
+
+**The live half was not re-driven by the closing session and did not need to be.** A synthetic
+`winhelper drag` cannot drive this skin's grip: `mainResize`'s handler is `onMouseDown` →
+`view.size('bottomright')`, the call arrives back asynchronously, and `discardStaleResize`'s
+`pressedMouseButtons` gate correctly refuses an arm whose button is already up — so every posted
+drag either moved the window or reached nothing, with `WMP_RESIZE_TRACE=1` silent throughout. That
+is the tool's limit, not a defect, and it is why the reporter's own drag is what closed this.
+
+**`W235` is stamped on unrelated code, and it is not this row.** `WMPMainView.swift` (the
+stale-resize arm and the margin rule) and `WMPMainWindowController.swift` cite `W235` for the AppKit
+edge-wedge work in commit `f5552068` — a third duplicate-ID collision after W196/W217 and W171/W218.
+Those comments mean that defect, never this one.
+
 ## W195 — the `res://wmploc.dll` string ids, 2026-09-19
 
 **Closed 2026-09-19** by commit `ac4af32c`, accepted live by the reporter. The row as it stood:

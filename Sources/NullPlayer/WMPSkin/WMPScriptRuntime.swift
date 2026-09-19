@@ -756,9 +756,17 @@ actor WMPScriptRuntime {
         overrides.scriptAssignedAlignment = scriptAligned
         scriptAlignmentExtent[scope] = alignmentExtent
         overrides.scriptAlignmentExtent = alignmentExtent
-        let assigned = Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
+        var assigned = Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
                                              mutations: mutations, overrides: overrides,
                                              currentSize: size)
+        // **The size the script asked for is not always the size it got (W99).** `assignedViewSize`
+        // reads the raw mutations; the builder clamps the canvas to the view's own
+        // `minWidth`/`minHeight`, so a script writing through that floor — `ALXMorph`'s
+        // `onLoadVid()` assigns 316 into a `minHeight="357"` view — had the window, the next
+        // transaction's size and every `jscript:view.height` expression all carrying a number
+        // nothing is ever drawn at. The transaction applies the same clamp to the view element and
+        // reports it here, so the one answer reaches all three.
+        if let drawn = result.drawnViewSize, assigned != nil { assigned = drawn }
         let mediaDrivenResize = assigned.map {
             Self.isMediaDrivenViewResize(in: skin, viewID: viewID, assigned: $0,
                                          source: snapshot.video)
