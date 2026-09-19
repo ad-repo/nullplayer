@@ -90,6 +90,29 @@ window) is outside it; one that draws chrome is inside it, and there is no third
 - Asynchronous frame completion is a layout change, not just a repaint. Consumers relayout and
   invalidate display; the border-layout observer may also grow windows. The authoritative event
   semantics are documented at `Notification.Name.hostedSurfaceStyleDidChange` in `WindowManager`.
+- **Measuring a hosted window is a different seam from drawing one, and must not move it or cost a
+  render (W238).** `hostedSurfaceFrameArtwork(for:)` serves a `draw`: it *schedules* the build for a
+  size it has not got and answers the nearest thing available meanwhile — the last ring stretched
+  onto that size. Both are wrong for a rule that reads a window's border back to decide how big the
+  window should be, and `HostedWindowBorderLayout` reading through it was a feedback loop:
+  measuring a window scheduled a donor rebuild, and a *stretched* ring's insets are stretched with
+  it, so the reading disagreed with the border `apply()` adds and each pass left a residue.
+  Measured on `Ice` 2026-09-19 — opening PeppyMeter beside a settled library ran the layout ten
+  times over both windows, walked the library 603x594 → 603x732 → **603x709**, and paid two extra
+  full donor renders (395 ms, 363 ms) for sizes nothing asked for. **The measuring seam is
+  `hostedSurfaceRenderedFrameArtwork(for:)`: the cache or nothing, no stand-in, nothing scheduled.**
+- **The half of the border rule that adds the border and the half that subtracts it must be the same
+  number (W238).** `apply()` grows by `hostedSurfaceBorderInsets`; `windowDidResize` reads the
+  interior back by subtracting it. One `borderInPlay` helper serves both, which makes the read a
+  round trip rather than a measurement — a window resized by the user or by the docking pass lands
+  on exactly the interior it was dragged to, and a pass that only measures never moves anything.
+- **`donorInsets == nil` answers two different questions and they need telling apart (W238).** A
+  skin that lends no border at all is settled the moment it loads; one that lends a ring is still
+  resolving, and a frame read back during that gap is read against the previous skin's border — the
+  poisoned interiors that left Cava wanting 299x70 and the waveform 355x111. `lendsFrame` separates
+  them and `WindowManager.hostedSurfaceBordersAreSettled` is the predicate the rule gates on. Gating
+  on resolved insets alone would freeze every window under a skin that lends nothing: its insets
+  never resolve, so a resize would never be adopted and the rule would put the window straight back.
 - Exact artwork may include below-floor or extent scaling. During pending renders the provider
   can return a scaled previous image; a panel allows this only within 15% on both axes.
   `wasScaledToFit` is not a readiness flag.

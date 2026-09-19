@@ -1075,6 +1075,49 @@ class WindowManager {
         }
     }
 
+    /// **The frame the hosting skin has *already rendered* for `size`, which is not what a drawing
+    /// view is answered (W238).**
+    ///
+    /// `hostedSurfaceFrameArtwork(for:)` serves a `draw`: it schedules the build for a size it has
+    /// not got and answers the nearest thing available in the meantime. Both are right for pixels
+    /// and wrong for a measurement — a rule that reads a window's border back to decide how big the
+    /// window should be must not schedule work by asking, and must not be handed a stretched ring
+    /// whose insets are that ring's scaled rather than this window's. This is the measuring seam:
+    /// the frame or nothing.
+    ///
+    /// A `switch` on the family for the same reason its siblings are one.
+    func hostedSurfaceRenderedFrameArtwork(for size: CGSize) -> SkinnedSurfaceFrameArtwork? {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern: return nil
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController else { return nil }
+            return MainActor.assumeIsolated { controller.hostedFrames.renderedArtwork(for: size) }
+        }
+    }
+
+    /// **Whether a hosted window's frame can be read back as interior + border right now (W238).**
+    ///
+    /// `hostedSurfaceBorderInsets` answers nil for two different situations and only one of them is
+    /// safe to measure in: a skin that lends no border at all — where the window wears its own
+    /// chrome and that chrome is exactly what `HostedWindowBorderLayout` adds — and a skin that
+    /// lends one whose borders have not resolved yet, where the window may still be wearing the
+    /// previous skin's. A reading taken in the second outlives the session as the size the user
+    /// gets next launch, which is what left Cava wanting a 299x70 interior and the waveform 355x111
+    /// where both should have been 297x111.
+    ///
+    /// Every family but `.wmp` lends no borders at all, so every one of them is always settled —
+    /// which is what the predicate this replaced already answered for them.
+    var hostedSurfaceBordersAreSettled: Bool {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern: return true
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController else { return true }
+            return MainActor.assumeIsolated {
+                !controller.hostedFrames.lendsFrame || controller.hostedFrames.donorInsets != nil
+            }
+        }
+    }
+
     /// **The border the hosting skin adds around one of NullPlayer's own windows, asked without
     /// reference to any window (W207).**
     ///

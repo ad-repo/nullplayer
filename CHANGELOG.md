@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- **Opening one window in a Media Player skin no longer makes every other window flash, redraw and
+  change size.** With the library open under *Ice*, opening PeppyMeter redrew both windows repeatedly
+  and left the library a different height than it started — it settled somewhere new each time, so
+  the same two windows came back at different sizes on different days. The app was measuring each
+  window against a stretched copy of the skin's border rather than the border it actually adds, so
+  every pass left the window slightly wrong and the next pass tried to correct it. Windows now stay
+  exactly where and what size they are when another one opens, and the app no longer redraws the
+  skin's border for sizes no window is using.
+
 - **A Media Player skin's own windows no longer open in this app's plain chrome and snap into the
   skin's frame a moment later.** Opening the library, Flow or any of the other windows a `.wmz` skin
   lends its border to showed a plain grey frame first and swapped to the skin's about a second

@@ -9,6 +9,81 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W238 — every hosted window re-rendered and re-grew when another opened, 2026-09-19
+
+**Closed 2026-09-19.** Measured on the row's own repro, fixed, and verified live on `Ice` the same
+session. The row's mechanism was right; the thing it listed as symptom (1) turned out to be the
+cause, and the thing it listed third turned out to be the seam.
+
+**The two halves of the rule disagreed about what "the border" is.**
+`HostedWindowBorderLayout.apply()` **adds** `hostedSurfaceBorderInsets` — the donor's four borders,
+stated once per skin without reference to any window (W207). `windowDidResize` **subtracted**
+`drawnBorder`, the *artwork's* metrics at the window's current size, and on a size nothing had
+rendered yet the drawing seam answers the last ring **stretched** onto it, whose insets are
+stretched with it. Two different numbers, so every pass left a residue and the two chased each other
+across renders. The arithmetic reconstructs the reported drift exactly: `Ice`'s border is
+`34/40/66/40`, a ring built for 594 points of height stretched onto 732 has its 34/66 stretched to
+41.9/81.3, so the interior reads **608** — the reported `523x494 → 523x608` — and the next target is
+708.8, rounded to the reported **603x709**.
+
+**And because the measurement went through the drawing seam, *asking* what border a window wore
+scheduled a donor rebuild.** That is the row's third question — *should a measurement path be
+allowed to schedule renders at all?* — and the answer is no.
+
+Three changes, all WMP-local in effect:
+
+- `WMPHostedFrameProvider.renderedArtwork(for:)` — the measuring seam: the cache or nothing, no
+  stand-in, nothing scheduled. Plus `lendsFrame`, which tells "this skin lends no border" apart from
+  "its borders have not resolved yet"; `donorInsets` answers nil to both.
+- `WindowManager.hostedSurfaceRenderedFrameArtwork(for:)` and `hostedSurfaceBordersAreSettled`, both
+  `switch`ed on the controller family like their siblings.
+- `HostedWindowBorderLayout` — one `borderInPlay` helper used by **both** halves so they cannot
+  disagree; the `isApplying` guard the style observer was missing; and the `certain` gate widened to
+  cover the in-memory interior, not only the persisted one.
+
+**Measured on the row's repro** (`Ice`, debug build, `WMP_FRAME_TRACE=1 WMP_BORDER_TRACE=1`, library
+settled then PeppyMeter opened):
+
+| | Before (the row's measurement) | After |
+|---|---|---|
+| library interior while PeppyMeter opens | 523x494 → 523x608 | **523x632, constant** |
+| library frame | 603x594 → 732 → **709** | 603x732, no drift |
+| PeppyMeter | grown through intermediate sizes | opens **at** 379x254, never grown |
+| renders for sizes nothing asked for | 2 (395 ms, 363 ms) | **0** |
+
+**The library does still resize once when PeppyMeter opens — 603x732 → 603x437 — and that is the
+docking pass, not this rule.** It makes the library span exactly from the main window's top to
+PeppyMeter's bottom. The rule reads it back once (523x337, a clean fixed point) and skips it on
+every later pass, which is also the live proof that the adopt path still works for an external
+resize — the regression risk in gating it.
+
+**The persisted interiors are the clearest evidence, and they left a loose end.** After the run,
+`hostedInteriorSize2.*` held `AudioAnalysis 314.21x97.30`, `Cava 329.94x124.55` and
+`NetworkMonitor 563.07x133.20` — fractional because they were divided by a stand-in's scale factor —
+beside `PeppyMeter 299x154` and `PlexBrowser 523x337`, written by the fixed code and exact. The
+three poisoned values are still in defaults and will seed those windows wrong until overwritten.
+**A key version bump would discard them, but the key is family-neutral**, so it would also discard
+Classic and Original users' legitimately saved window sizes; and "fractional" is not a sound
+signature for a targeted purge, because a donor's insets are resolved from `JScript:` arithmetic and
+a legitimate reading can be fractional too. Left for the reporter to call.
+
+**Isolation.** Four of the five changes reduce to the identical constant outside WMP —
+`hostedSurfaceBorderInsets` and both artwork seams answer nil for every other family, so
+`borderInPlay == fallback ==` what `drawnBorder` returned, and `bordersAreSettled == true ==` the
+old `certain`. The fifth, the observer guard, runs in `.wal` too, so it was cleared by enumerating
+the posters rather than by calling it a no-op: Classic and Original never post
+`.hostedSurfaceStyleDidChange` at all, and `.wal`'s only two posters are `paletteDidChange()` and
+the skin-load path, neither reachable from inside a `setFrame` — and `isApplying` is true only for
+the duration of that one synchronous call.
+
+Coverage in `Tests/NullPlayerAppTests/WMPHostedBorderMeasurementTests.swift`, which pins the round
+trip, reproduces the old stretched-ring arithmetic so the drift cannot come back unnoticed, and
+asserts the measuring seam schedules nothing.
+
+The row as it stood:
+
+| W238 | **Every hosted window re-renders and re-grows when any other window opens, and the interior it settles on drifts** | **every `.wmz` session under a frame-lending skin** — ~120 of 185 archives (88 rings + 32 panels, W207's measurement); reported 2026-09-19 as *"other windows react to windows being launched and flash and redraw when others are opened"* and confirmed live the same session | **Measured, not inferred — this row is handed over with its mechanism already established.** With `Ice` and the library settled at 603x594, opening PeppyMeter ran the border layout **10 times over both windows**, changed the library's frame 603x594 → 603x732 → **603x709**, and paid it **two more full donor renders** (395 ms, 363 ms) for sizes it never asked for. Reproduce with `WMP_FRAME_TRACE=1 WMP_BORDER_TRACE=1 ./scripts/kill_build_run.sh --debug --log <path>`, `defaults write NullPlayer wmpSkinName -string "Ice"`, then Windows → Library Browser, wait for it to settle, then Windows → PeppyMeter. **It is a feedback loop, and there are two separable defects in it.** (1) `.hostedSurfaceStyleDidChange` is posted with `object: nil` — a global broadcast — by *every* render completion, and `HostedWindowBorderLayout`'s observer (`:51`) re-runs `apply()` over **every** hosted window on each; unlike the `didBecomeKey`/`windowLayoutDidChange` observer (`:64`) and `windowDidResize` (`:178`) it carries **no `isApplying` guard**. (2) `apply()` grows a window → `windowDidResize` rewrites the cached interior (`:186-189`) from the new frame minus `drawnBorder(of:)` → `drawnBorder` calls `hostedSurfaceFrameArtwork(for: window.frame.size)`, which at the new size is a **miss**, so it is handed a *provisional scaled* ring whose metrics are wrong **and schedules a render as a side effect of measuring** → that render posts the broadcast → back to (1). It settles only once the sizes land in the cache, which is why the interior drifts `523x494 → 523x608`. **The fix the code already argues for is at `:191-200`**: that comment states the rule — *"only a reading taken against a border we are certain of is worth keeping"* — but the `certain` check gates only `persist`, not the in-memory `interiors[key] = interior` write above it, so the uncertain reading is still adopted for the session. Start there; then the missing `isApplying` guard; then ask whether a measurement path should be allowed to schedule renders at all. **Constraints, and they are strict.** `App/Skinning/HostedWindowBorderLayout.swift` is shared with Winamp Modern, so CLAUDE.md's binding rule applies at its strictest: gate on the mode, never justify as a no-op, and prove Classic and Original byte-identical. **Already ruled out:** this is not W230's priming — the render counts and broadcasts are identical with `WMP_FRAME_PRIME=0`. **Do not read the growth cascade as fixed by W230 either**: a *first* open still pays four renders, and that half is unaddressed. W234 may share this seam. |
+
 ## W230 — a hosted window's first open, 2026-09-19
 
 **Closed 2026-09-19.** Measured, fixed and verified on screen in one session.

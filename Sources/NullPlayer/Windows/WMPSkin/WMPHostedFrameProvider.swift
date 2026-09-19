@@ -162,6 +162,28 @@ final class WMPHostedFrameProvider {
         return stale.scaled(to: key.size)
     }
 
+    /// **The frame actually rendered for `size` — no stand-in, and no build scheduled (W238).**
+    ///
+    /// `artwork(for:)` is the *drawing* path, and both of the things it does for a drawing view are
+    /// wrong for a measuring one: it schedules a render as a side effect of being asked, and on a
+    /// miss it answers the last ring stretched onto `size`, whose `metrics` are that ring's insets
+    /// scaled. `HostedWindowBorderLayout` asking it what border a window is wearing is what closed
+    /// the loop W238 is about — measuring a window grew it, growing it re-measured against a scaled
+    /// ring, and the wrong answer paid for two more full donor renders at sizes nothing asked for.
+    ///
+    /// A measurement gets the cache or nothing. It does not `touch` either: reading a size must not
+    /// reorder the eviction queue against the windows that are actually drawing.
+    func renderedArtwork(for size: CGSize) -> SkinnedSurfaceFrameArtwork? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        return cache[Key(size)]
+    }
+
+    /// Whether this skin lends a frame at all, which is **not** the same question as whether its
+    /// borders have resolved yet. `donorInsets` is nil for both, and the two need telling apart: a
+    /// skin that lends nothing is settled the moment it loads, while one that lends a ring is still
+    /// resolving and a window's frame read back during that gap is read against the wrong border.
+    var lendsFrame: Bool { template != nil }
+
     private func schedule(_ key: Key) {
         guard let template, let builder, let renderer, inFlight.insert(key).inserted else { return }
         let scale = NSScreen.main?.backingScaleFactor ?? 2

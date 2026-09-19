@@ -47,9 +47,16 @@ final class HostedWindowBorderLayout {
     private var observers: [NSObjectProtocol] = []
 
     init() {
+        // **Guarded like its siblings below, and for the same reason (W238).** This one is posted
+        // with `object: nil` by *every* render completion, so it re-runs the rule over every hosted
+        // window each time any frame lands — and a run that is itself a resize must not re-enter
+        // while our own `setFrame` is still settling.
         observers.append(NotificationCenter.default.addObserver(
             forName: .hostedSurfaceStyleDidChange, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.apply() }
+                MainActor.assumeIsolated {
+                    guard let self, !self.isApplying else { return }
+                    self.apply()
+                }
             })
         // **A window that opens after the skin has to be caught too.** The frame notification fires
         // once, when the skin lands, and every hosted window the user opens afterwards misses it —
@@ -88,7 +95,7 @@ final class HostedWindowBorderLayout {
                 continue
             }
             let interior = seededInterior(for: window, fallback: entry.fallback)
-            let insets = border ?? entry.fallback
+            let insets = Self.borderInPlay(fallback: entry.fallback)
             // **Only the border is added. The donor's own floor is not.** Growing each window up
             // to the donor's declared minimum was tried here and reported broken the same day:
             // `Ice` declares `min=585x308`, so every hosted window — a 321x145 analyser included —
@@ -183,21 +190,38 @@ final class HostedWindowBorderLayout {
            abs(applied.width - window.frame.width) <= 2, abs(applied.height - window.frame.height) <= 2 {
             return
         }
+        // **Only a reading taken against a border we are certain of is worth keeping, and that
+        // now gates the in-memory interior too — not just the stored one (W238).** A guess written
+        // here outlives the session and comes back next launch as the size the user gets: Cava came
+        // back wanting a 299x70 interior and the waveform 355x111 where both should have been
+        // 297x111, so the stack opened at four different heights. But the same guess adopted only
+        // for the session is no better while the session lasts — `apply()` reads it back on the
+        // very next broadcast and grows the window to it. An uncertain resize is not read at all;
+        // the interior the window already had stands, and the rule puts it back.
+        guard WindowManager.shared.hostedSurfaceBordersAreSettled else { return }
         var interior = seededInterior(for: window, fallback: entry.fallback)
+        // **Subtract the border `apply()` adds, not the one the artwork happens to show (W238).**
+        // These were two different numbers and that asymmetry was the loop: `apply()` grows by the
+        // donor's stated insets, while this read back `frame − drawnBorder`, and on a size nothing
+        // had rendered yet `drawnBorder` was a *stretched* ring whose insets were scaled with it.
+        // Measured on `Ice`: the library at 603x594 was grown to 603x732, read back against a ring
+        // scaled 732/594 — its 34/70 borders stretched to 42/86 — and so re-targeted at 603x709,
+        // paying a full donor render for each size on the way. Against the border this rule itself
+        // adds the read is a round trip instead of a measurement, and a window resized by the user
+        // lands on exactly the interior they dragged it to.
         interior.size = Self.interiorSize(outer: window.frame.size,
-                                          border: Self.drawnBorder(of: window, fallback: entry.fallback))
+                                          border: Self.borderInPlay(fallback: entry.fallback))
         interiors[key] = interior
         lastApplied[key] = nil
-        // **Only a reading taken against a border we are certain of is worth keeping.** While a
-        // donor is up but its frame for *this* size has not been rendered yet, the window is wearing
-        // its own chrome and the interior read off it is a guess — and a guess written here outlives
-        // the session and comes back next launch as the size the user gets. That is what happened
-        // across a run of skin switches: Cava came back wanting a 299x70 interior and the waveform
-        // 355x111 where both should have been 297x111, so the stack opened at four different heights.
-        // Either the skin lends nothing (the classic border is certain) or the frame is in hand.
-        let certain = WindowManager.shared.hostedSurfaceBorderInsets == nil
-            || WindowManager.shared.hostedSurfaceFrameArtwork(for: window.frame.size) != nil
-        if certain { persist(interior.size, for: window) }
+        persist(interior.size, for: window)
+    }
+
+    /// The border `apply()` lays around an interior: the donor's four, stated without reference to
+    /// any window (W207), or the window's own chrome where no skin lends any. **One helper because
+    /// the half of this rule that adds the border and the half that subtracts it have to agree** —
+    /// when they did not, each pass left a residue and the two chased each other across renders.
+    private static func borderInPlay(fallback: SkinnedSurfaceChrome.Metrics) -> SkinnedSurfaceChrome.Metrics {
+        WindowManager.shared.hostedSurfaceBorderInsets ?? fallback
     }
 
     /// **The first sight of a window is read against its *own* chrome, not the skin's.** A window
@@ -232,9 +256,15 @@ final class HostedWindowBorderLayout {
     /// it is at — which is the same question `SkinnedSurfaceChrome.metrics(for:fallback:)` asks in
     /// the view's own `draw`. Everywhere else it is wearing its own chrome, and that is what has to
     /// come off to find the interior.
+    /// **Asked of the rendered frame alone (W238).** The drawing seam schedules a build for a size
+    /// it has not got and stands a stretched ring in for it meanwhile, and neither belongs in a
+    /// measurement: seeding a window's interior would have scheduled a donor render as a side
+    /// effect of looking at it, and a stretched ring's insets are that ring's scaled, which is not
+    /// the border this window is wearing. `hostedSurfaceRenderedFrameArtwork(for:)` answers the
+    /// frame or nothing, which is exactly the question this doc comment already claimed to ask.
     private static func drawnBorder(of window: NSWindow,
                                     fallback: SkinnedSurfaceChrome.Metrics) -> SkinnedSurfaceChrome.Metrics {
-        WindowManager.shared.hostedSurfaceFrameArtwork(for: window.frame.size)?.metrics ?? fallback
+        WindowManager.shared.hostedSurfaceRenderedFrameArtwork(for: window.frame.size)?.metrics ?? fallback
     }
 
     // MARK: - Across launches
