@@ -19,6 +19,11 @@ final class WMPSkinWindow: NSWindow {
     /// Whether the drag in flight is the edge band's, taken before AppKit could see it.
     private var isResizingFromEdgeBand = false
 
+    /// Whether the gesture in flight is a press the band refused — a *control* drawn inside the
+    /// window's edge, forwarded to the view by hand because `super.sendEvent` would not have
+    /// delivered it at all. See the `leftMouseDown` case below.
+    private var isForwardingEdgePress = false
+
     /// **The window edge is ours, and it has to be taken before AppKit takes it (W227).**
     ///
     /// `WMPMainView` has carried an edge band since W193, and for a real drag it has never once
@@ -33,20 +38,57 @@ final class WMPSkinWindow: NSWindow {
     ///
     /// Claiming the press here — and returning without `super` — puts the band back under the
     /// view's own rules: the skin's `minWidth`/`maxWidth` clamp, the anchored edge, the relayout,
-    /// and the grip handler the skin wraps around its own resize. A press the view does not claim
-    /// is untouched, so a control drawn against the window edge keeps every pixel it had and
-    /// AppKit's own behaviour is exactly what it was.
+    /// and the grip handler the skin wraps around its own resize. A control drawn against the
+    /// window edge keeps every pixel it had — the band never claims a press that lands on one.
+    ///
+    /// **Declining the band is not enough: the whole margin has to be taken, or AppKit takes what
+    /// is left of it (W235).** The rule above claims a press the *band* wants. A press inside the
+    /// same margin that lands on a **control** — `NVIDIA`'s volume slider runs the full height of
+    /// its window, three points inside the right edge — is declined by `claimsEdgeBandResize`, and
+    /// declining it used to mean `super.sendEvent`, which is the one path this override exists to
+    /// keep AppKit off. `-[NSWindow _handleMouseDownEvent:]` then reached `_resize:` and ran
+    /// `-[NSWindow _resizeWithEvent:]`, **a modal tracking loop on the main thread**: the control
+    /// was never sent the press, and a gesture that loop did not see the end of left the whole
+    /// application wedged — no clicks, no repaints, a frozen visualizer, and a `sample` showing
+    /// 2,279 of 2,293 samples blocked in `nextEventMatchingMask:` under `_resizeWithEvent:`.
+    /// Reported as *"the window is not accessible, it is crashed"*, and it is the same press W227
+    /// already proved AppKit will claim — only on the half this override was letting through.
+    ///
+    /// So the margin is taken whole and then routed: the band's press resizes, and a control's
+    /// press is handed to the view by hand, with the drag and the release that follow it kept on
+    /// the same path. `super` never sees the gesture, so AppKit has nothing to start a loop from.
+    /// Outside the margin nothing changes — every press goes to `super` exactly as before.
     override func sendEvent(_ event: NSEvent) {
         guard let view = contentView as? WMPMainView else { return super.sendEvent(event) }
+        // A press is proof no earlier drag is still running; see `discardStaleResize`.
+        if event.type == .leftMouseDown { view.discardStaleResize() }
         switch event.type {
         case .leftMouseDown where view.claimsEdgeBandResize(at: event.locationInWindow):
             isResizingFromEdgeBand = view.beginEdgeBandResize(at: event.locationInWindow)
             if isResizingFromEdgeBand { return }
+        case .leftMouseDown where view.isInsideResizeBand(at: event.locationInWindow):
+            wmpResizeTrace("edge-margin press forwarded at \(event.locationInWindow) "
+                + "clicks=\(event.clickCount)")
+            // A control inside the margin. Forwarded rather than dropped: it is an ordinary press
+            // on an ordinary control and must behave as one — the slider tracks, the button
+            // dispatches — it simply cannot be allowed to reach AppKit's frame first.
+            isForwardingEdgePress = true
+            view.mouseDown(with: event)
+            return
         case .leftMouseDragged where isResizingFromEdgeBand:
             view.continueWindowResize(); return
         case .leftMouseUp where isResizingFromEdgeBand:
             isResizingFromEdgeBand = false
             if view.endWindowResize() { view.onScriptResizeEnded?() }
+            return
+        // **The rest of a forwarded gesture stays forwarded.** `super.sendEvent` is what tracks
+        // which view took a press and routes the drag and the release to it, and it never saw this
+        // one — so a slider pressed inside the margin would take the press and then never move.
+        case .leftMouseDragged where isForwardingEdgePress:
+            view.mouseDragged(with: event); return
+        case .leftMouseUp where isForwardingEdgePress:
+            isForwardingEdgePress = false
+            view.mouseUp(with: event)
             return
         default: break
         }

@@ -388,10 +388,20 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         guard let scene else { return }
         let xScale = bounds.width / max(1, scene.canvasSize.width)
         let yScale = bounds.height / max(1, scene.canvasSize.height)
+        #if DEBUG
+        wmpWidgetTrace("layout bounds=\(WMPNumber.format(bounds.width))x\(WMPNumber.format(bounds.height)) "
+            + "canvas=\(WMPNumber.format(scene.canvasSize.width))x\(WMPNumber.format(scene.canvasSize.height)) "
+            + "scale=\(WMPNumber.format(xScale)),\(WMPNumber.format(yScale))")
+        #endif
         for widget in scene.widgets {
             guard let view = widgetViews[widget.stableID] else { continue }
             view.frame = NSRect(x: widget.frame.x * xScale, y: widget.frame.y * yScale,
                                 width: widget.frame.width * xScale, height: widget.frame.height * yScale)
+            #if DEBUG
+            wmpWidgetTrace("layout \(widget.kind):\(widget.stableID) scene=\(WMPNumber.format(widget.frame.x)),\(WMPNumber.format(widget.frame.y)) "
+                + "\(WMPNumber.format(widget.frame.width))x\(WMPNumber.format(widget.frame.height)) "
+                + "view=\(WMPNumber.format(view.frame.width))x\(WMPNumber.format(view.frame.height))")
+            #endif
             guard let effects = view as? WMPEffectsSurfaceView else { continue }
             // The mask image covers its container's frame, which is not always the widget's own —
             // so the rect is the offset between the two, in this surface's scaled bounds.
@@ -830,7 +840,18 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     private static let resizeBandWidth: CGFloat = 6
 
     private func edges(at point: NSPoint) -> WMPWindowEdges {
-        guard scene?.isResizable == true, bounds.width > 0, bounds.height > 0 else { return [] }
+        guard scene?.isResizable == true else { return [] }
+        return marginEdges(at: point)
+    }
+
+    /// The margin as pure geometry: no permission asked, no skin state read.
+    ///
+    /// Separate from `edges(at:)` because the two have different jobs. That one decides whether a
+    /// press *resizes*; this one decides whether AppKit may be allowed anywhere near the press at
+    /// all, and the answer to that is never — a `.wmz` window's frame is this engine's, whatever
+    /// the view happens to permit. See `WMPSkinWindow.sendEvent`.
+    private func marginEdges(at point: NSPoint) -> WMPWindowEdges {
+        guard bounds.width > 0, bounds.height > 0 else { return [] }
         let band = Self.resizeBandWidth
         var edges: WMPWindowEdges = []
         if point.x <= band { edges.insert(.left) }
@@ -945,6 +966,40 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             wmpResizeTrace("edge-band press edges=\(edges) — the view authors no grip")
         }
         return true
+    }
+
+    /// **A new press means no earlier drag survives, and one that did cost the application (W235).**
+    ///
+    /// `beginScriptResize` arms a resize from a *script transaction*, which is asynchronous: the
+    /// skin's grip calls `view.size('bottomright')` out of its `onMouseDown` and the call arrives
+    /// back some milliseconds later. The `pressedMouseButtons` gate refuses an arm whose button has
+    /// already come up, but it cannot refuse one that lands in the gap between that check and the
+    /// release — and an arm with no release coming leaves `resizeEdges` set for the rest of the
+    /// session. Everything downstream then reads as a drag in flight: `claimsEdgeBandResize`
+    /// declines every later press on the window edge, which before the margin rule in
+    /// `WMPSkinWindow.sendEvent` handed that press to AppKit's modal resize loop and wedged the
+    /// whole application.
+    ///
+    /// AppKit cannot deliver two `mouseDown`s without a `mouseUp` between them, so a press is proof
+    /// that nothing is in flight. Called before either band rule reads the state it would strand.
+    func discardStaleResize() {
+        guard !resizeEdges.isEmpty else { return }
+        wmpResizeTrace("discarding stale resize edges=\(resizeEdges) script=\(isScriptResize) "
+            + "band=\(isEdgeBandResize) — a press arrived with a drag still armed")
+        resizeEdges = []
+        isScriptResize = false
+        isEdgeBandResize = false
+    }
+
+    /// Whether this window point is inside the resize margin at all, **whatever is drawn there**.
+    ///
+    /// The companion to `claimsEdgeBandResize`, and the two answer different questions on purpose:
+    /// that one asks *should this press resize*, this one asks *would AppKit take this press if we
+    /// let it through*. `WMPSkinWindow.sendEvent` needs both, because a press the band declines is
+    /// still a press AppKit's frame will claim for its own modal resize loop (W235) — so the
+    /// margin is taken whole and routed by us, rather than half-taken and half-surrendered.
+    func isInsideResizeBand(at windowPoint: NSPoint) -> Bool {
+        !marginEdges(at: convert(windowPoint, from: nil)).isEmpty
     }
 
     /// Whether a press at this window point is the band's rather than a control's. Asked by
