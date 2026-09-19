@@ -2140,7 +2140,11 @@ class WindowManager {
             } else if let frame = lastPlexBrowserFrame, frame != .zero {
                 if lastPlexBrowserFrameWasDocked,
                    let dockedFrame = rightDockedSideFrame(for: window, width: frame.width) {
-                    window.setFrame(dockedFrame, display: true)
+                    window.setFrame(Self.dockedLibraryReopenFrame(
+                        reDerived: dockedFrame,
+                        remembered: frame,
+                        preservingRememberedHeight: isRunningWMPUI
+                    ), display: true)
                 } else {
                     window.setFrame(frame, display: true)
                 }
@@ -5385,7 +5389,34 @@ class WindowManager {
         return touchesLeftEdge && overlapsStackVertically
     }
 
+    /// W237: the frame a remembered, right-docked library reopens at.
+    ///
+    /// Classic and Original take the re-derived docked frame whole — its height is the centre
+    /// stack's, and following the stack is their rule. A `.wmz` session takes only the dock edge
+    /// and keeps the height the user left it at, anchored at the top, because the library wears
+    /// the skin's borrowed frame and the centre stack has no claim on its size. The `.wal` half
+    /// of that is tracked separately as B147 and is deliberately not answered here.
+    static func dockedLibraryReopenFrame(reDerived: NSRect,
+                                         remembered: NSRect,
+                                         preservingRememberedHeight: Bool) -> NSRect {
+        guard preservingRememberedHeight else { return reDerived }
+        var frame = reDerived
+        let topY = frame.maxY
+        frame.size.height = remembered.height
+        frame.origin.y = topY - remembered.height
+        return frame
+    }
+
     private func refitDockedPlexBrowserToVerticalStack() {
+        // W237: a side-docked library that follows the centre stack's height is a Classic and
+        // Original rule, and it is not a `.wmz` one — there the library wears the skin's
+        // borrowed frame and the stack has no claim on its size. A `.wmz` session reaches this
+        // through `handleCenterStackWindowWillClose` (whose guard reads `!isRunningModernUI`,
+        // which is true for WMP) and through every other `updateDockedChildWindows` caller, so
+        // the library grew and shrank with our fallback EQ/playlist/spectrum windows. Gate the
+        // resize, not `isRunningModernUI` — that predicate answers a four-family question for
+        // ~15 other call sites (W214). The `.wal` half is B147.
+        guard !isRunningWMPUI else { return }
         guard let window = plexBrowserWindowController?.window, window.isVisible else { return }
         guard sideFrameIsRightDockedToCurrentStack(window.frame) else { return }
         guard let frame = rightDockedSideFrame(for: window, width: window.frame.width),

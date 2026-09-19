@@ -9,6 +9,47 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W237 — the library followed the centre stack's height in `.wmz`, 2026-09-19
+
+**Closed 2026-09-19** for the `.wmz` half; the `.wal` half is B147 in
+[`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md) and is untouched.
+
+**The row's own suspect was not the cause, and it said so — finding the real path was the first
+task.** `toggleHideTitleBars` is excluded in WMP by `isRunningModernUI` exactly as the row read it.
+The live path is `WindowManager.refitDockedPlexBrowserToVerticalStack`, reached from every
+`updateDockedChildWindows` caller — and one of those is `handleCenterStackWindowWillClose`, whose
+guard reads `!isRunningModernUI` and is therefore **true** in a WMP session. That is W214's item (1)
+observed live rather than audited.
+
+The other three functions the row asked to check in the same pass —
+`applyCenterStackSizingConstraints`, `normalizedCenterStackRestoredFrame` and
+`handleCenterStackWindowWillClose` itself — all switch on `CenterStackWindowKind`, which has no
+library case. They can still misuse the *centre-stack* windows in WMP (W214); none of them sizes the
+library.
+
+**The fix is two gates on `isRunningWMPUI`, not a new answer from `isRunningModernUI`**: the refit
+returns early in `.wmz`, and the remembered-docked reopen in `showPlexBrowser` re-derives only the
+dock edge, keeping the height the user left, top-anchored, through the pure
+`WindowManager.dockedLibraryReopenFrame(reDerived:remembered:preservingRememberedHeight:)`.
+
+**Measured live, one binary, three modes** (`corona`, Windows → Library Browser, then a Cava open
+and close, frames read through `app-control`'s `winhelper windows`):
+
+```
+.wmz      library 547x890  →  547x890  →  547x890
+classic   library 547x580  →  547x290  →  547x290
+modern    library 550x580  →  550x290  →  550x580
+```
+
+Reopening the library in `.wmz` with Cava open also came back 890, not the 613 stack height.
+`Tests/NullPlayerAppTests/WMPLibraryStackSizingTests.swift` pins the reopen arithmetic; the refit
+gate has no headless probe and is verified by the A/B above. The rule is in
+`skills/wmp-skin-guide/SKILL.md` § *The centre stack does not size a `.wmz` window*.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W237 | **The library window follows the centre stack's height in `.wmz` and `.wal` sessions, and it should follow neither** | **every `.wmz` session and every `.wal` session**; a mode gate, so no corpus sweep can see it (reported 2026-09-19, code read the same day) | Reported from the running app: *"library auto resize to center stack height should not be enabled in wmp or winamp-modern skin mode"*. The seam is `toggleHideTitleBars` (`WindowManager.swift:511`), whose tail resizes the side-docked windows — `plexBrowserWindowController` and `projectMWindowController` — by the main window's height delta so their bottom edge tracks the player's. That is Original-UI behaviour and belongs to the Original centre stack. **The two modes are wrong for opposite reasons, which is why this is one row and not two halves of W214.** `isRunningModernUI` (`:390`) names `ModernMainWindowController` → true, `MainWindowController` → false and `WMPMainWindowController` → false, then falls through to the persisted `isModernUIEnabled` preference. So **`.wmz` is already excluded by that guard** — if the library still resizes in a WMP session the cause is a *different* path and finding it is the first task on this row, not the gate. **`.wal` is not excluded at all**: `WinampModernMainWindowController` is not named in the switch, so a `.wal` session answers whichever value the user last left in the preference — the behaviour depends on a stale setting rather than on the running skin, which is the sharpest form of the W214 defect and the reason this ranks beside it. **Check `applyCenterStackSizingConstraints`, `normalizedCenterStackRestoredFrame` and `handleCenterStackWindowWillClose` in the same pass** — W214 already lists the last two as Classic-geometry rules reachable in a WMP session, and a library window is exactly the kind of thing they would catch. Naming `WinampModernMainWindowController` in `isRunningModernUI` is **not** the fix to reach for first: it is a four-family predicate being asked a two-way question, and every existing caller inherits whatever answer is chosen. Gate the resize itself. CLAUDE.md's binding rule applies at full strength — shared `App/` code, gated on the mode, with Classic and Original byte-identical. The `.wal` half is tracked separately in [`WINAMP5_TASKS.md`](WINAMP5_TASKS.md) as B147; a `.wmz` row and a `.wal` row never share an entry. Verify by driving the app: open the library in each mode, toggle hide-title-bars, and read the frames back through `app-control`'s `winhelper windows`. |
+
 ## W74 — an overlay placed where the markup reached, not where the scene painted, 2026-09-19
 
 **Closed 2026-09-19.** Reported on screen as *"there is no bottom border on the playlist at all"*

@@ -1763,6 +1763,40 @@ tests (`Tests/NullPlayerAppTests/WMPSnapToDefaultTests.swift`): a genuinely stra
 `.wmz` window is not movable by its background and macOS clamps a drag at the screen edge, so one
 cannot be produced with the mouse — and a window taller than the display.
 
+### The centre stack does not size a `.wmz` window
+
+**A NullPlayer window docked beside the player in `.wmz` keeps the size the user gave it. Nothing
+about the centre stack — how many of our fallback windows are open, or how tall they are — may
+resize it.** That is a Classic and Original rule: there the library's height *is* the stack's, and
+it grows and shrinks as EQ/playlist/spectrum windows open and close. In `.wmz` the same window
+wears the skin's borrowed frame, and a stack-driven resize re-renders that frame at a size the
+donor never authored.
+
+W237, closed 2026-09-19, was that rule leaking in. The leak is worth remembering because the
+obvious suspect was not the cause: `toggleHideTitleBars` resizes the side-docked windows by the
+main window's height delta and is *already* excluded by `isRunningModernUI`. The live path was
+`WindowManager.refitDockedPlexBrowserToVerticalStack`, reached from every
+`updateDockedChildWindows` caller — and one of those is `handleCenterStackWindowWillClose`, whose
+guard reads `!isRunningModernUI` and is therefore **true** in a WMP session. **A `!isRunningModernUI`
+guard is an open door into WMP** (W214); when a geometry rule reaches a `.wmz` window through one,
+gate the rule itself on `isRunningWMPUI` rather than teaching the four-family predicate a new answer.
+The reopen path is gated the same way, through the pure
+`WindowManager.dockedLibraryReopenFrame(reDerived:remembered:preservingRememberedHeight:)`, which
+re-derives the dock edge and keeps the remembered height, top-anchored.
+
+**Verify it the way it was verified: two modes in one binary, frames read back, never by eye.**
+Launch `-uiMode wmp`, open Windows → Library Browser, then open and close a centre-stack window
+(Cava is the cheapest), reading `app-control`'s `winhelper windows` at each step; the library's
+height must not move. Then the identical sequence in `-uiMode classic` and `-uiMode modern`, where
+it must still track — an A/B in the same binary is what proves the gate is narrow rather than the
+path dead. Measured on `corona`: `.wmz` 547x890 throughout, Classic 580 → 290, Original
+580 → 290 → 580. `Tests/NullPlayerAppTests/WMPLibraryStackSizingTests.swift` pins the reopen
+arithmetic; the live path has no headless probe.
+
+**The `.wal` half of W237 is B147 and is not answered by this.** `WinampModernMainWindowController`
+is not named in `isRunningModernUI`, so a `.wal` session still answers whichever value the user last
+left in the persisted preference.
+
 **`WMPWindowRestorePolicy.safeFrame` is a second, weaker definition of "on screen"** (an 80pt strip,
 a 24pt bottom margin, and `first(where: intersects)` rather than `hostScreen`). It is W217 G1 and is
 still there; nothing new may call it.

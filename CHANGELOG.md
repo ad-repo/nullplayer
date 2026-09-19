@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **The library no longer resizes itself to match the player stack in Media Player skins.** With the
+  library docked beside a `.wmz` skin, opening or closing the equalizer, Cava or any other window
+  below the player stretched and shrank the library to match the stack's height — repeatedly
+  redrawing the skin's borrowed border at sizes nobody asked for. The library now keeps the height
+  you gave it, and reopening it does too. Classic and Original skins still size it to the stack, as
+  they always have.
+
 - **The playlist window in the *Revert* Media Player skin now has its bottom border back.** The
   skin's playlist list is drawn a little taller than the window it sits in, and this app was
   honouring that literally, so the list's black background covered the thin silver bevel the skin
