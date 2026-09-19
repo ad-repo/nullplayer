@@ -137,7 +137,11 @@ if [ "$parse_only" -eq 0 ]; then
         > "$out/render.txt" 2> "$out/render.stderr.txt"
     render_status=$?
 
-    grep -E "$INVARIANT_PATTERN" "$out/render.txt" > "$out/invariants.txt"
+    # `loadms=` is a wall clock and can never match across two captures, so it is stripped here
+    # rather than diffed: it stays in render.txt for the per-skin parse, and out of the file the
+    # regression diff reads. Leaving it in reported ~20 changed lines per sweep that measured
+    # nothing but how busy the machine was.
+    grep -E "$INVARIANT_PATTERN" "$out/render.txt" | sed -E 's/ loadms=[0-9.]+//' > "$out/invariants.txt"
     lines=$(wc -l < "$out/invariants.txt" | tr -d ' ')
     floor=$((archives * MINIMUM_INVARIANT_LINES_PER_SKIN))
     if [ "$lines" -lt "$floor" ]; then

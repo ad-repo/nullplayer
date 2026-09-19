@@ -1427,7 +1427,12 @@ enum WMPHarness {
             }
         }
         if !inline.isEmpty {
-            lines.append("SCRIPT inline: " + inline.sorted { $0.value > $1.value }
+            // Ties break on the name, because `inline` is a dictionary and `sorted` would
+            // otherwise print equal counts in hash order — which is per-process random, so two
+            // runs of one binary produced ~19 "changed" lines per sweep that were the same tally
+            // in a different sequence. A regression diff cannot afford to invent differences.
+            lines.append("SCRIPT inline: "
+                + inline.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
                 .map { "\($0.key)×\($0.value)" }.joined(separator: " "))
         }
         return lines

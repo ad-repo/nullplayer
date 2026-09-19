@@ -134,7 +134,11 @@ capture() {
         > "$out/raw.txt" 2> "$out/stderr.txt"
     local status=$?
 
-    grep -E "$INVARIANT_PATTERN" "$out/raw.txt" > "$out/invariants.txt"
+    # `loadms=` is a wall clock and can never match across two captures, so it is stripped here
+    # rather than diffed: it stays in raw.txt for the per-skin parse, and out of the file the
+    # regression diff reads. Leaving it in reported ~20 changed lines per sweep that measured
+    # nothing but how busy the machine was.
+    grep -E "$INVARIANT_PATTERN" "$out/raw.txt" | sed -E 's/ loadms=[0-9.]+//' > "$out/invariants.txt"
     local lines
     lines=$(wc -l < "$out/invariants.txt" | tr -d ' ')
     echo "wmp_render_sweep: $lines invariant lines, $(find "$out/png" -name '*.png' | wc -l | tr -d ' ') images"
@@ -213,14 +217,18 @@ compare() {
     echo "=== invariants ==="
     cat "$base/damaged.txt" "$curr/damaged.txt" 2>/dev/null | sort -u > /tmp/wmp_sweep_damaged.txt
     python3 - "$base/invariants.txt" "$curr/invariants.txt" /tmp/wmp_sweep_damaged.txt <<'PYINVARIANTS'
-import difflib, os, sys
+import difflib, os, re, sys
+
+# A capture taken before `loadms=` was stripped at capture time still carries it, and a wall clock
+# never matches. Normalise both sides so an older baseline stays usable.
+LOADMS = re.compile(r" loadms=[0-9.]+")
 
 # XCTest's own banner shares the runner's stdout with the dump and can land inside a line, so a line
 # it collides with differs between two runs of one unchanged binary. Set those aside and count them.
 BANNER = "Test Case '-["
 
 def read(path):
-    return open(path, errors="replace").read().splitlines()
+    return [LOADMS.sub("", line) for line in open(path, errors="replace").read().splitlines()]
 
 damaged = set(read(sys.argv[3])) if os.path.exists(sys.argv[3]) else set()
 
