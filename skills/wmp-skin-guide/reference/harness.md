@@ -101,7 +101,7 @@ through `NSLog`; setting them on the test probe does not exercise their instrume
 | `WMP_RENDER_PROBE` | `all` or a view id | `PROBE` — every drawn node's type, id, resolved frame, clip, z, paint and authored attributes; plus a `WIDGET` line per widget — the AppKit-hosted surfaces the scene image does **not** contain. Two fields appear on a `WIDGET` line only when they are not the default, and both are about whether the surface is hosted at all and in what shape: `alpha=` is the container's inherited `alphaBlend` (`alpha=0` is a pane the skin has faded shut — `WMPMainView` hosts no view for it, and without the field such a widget read identically to a live one), and `mask=` names the container artwork a windowless `<EFFECTS>` is clipped to, with its frame and keyed colours. **`shape=` is the other confinement and `offshape=` is the number that ranks it (W198)**: the window's own silhouette — the nearest container's `clippingColor` region, `WMPSceneBuilder.groundShape` — and how many pixels of this widget's visible rect it cuts away. A skin that confines its visualizer by *paint* rather than by shape states no `mask=` at all and every other field on the line reads clean while the surface hangs outside the skin, which is exactly Cerulean's 104 px. `WMP_RENDER_APPKIT`'s `outside=` cannot see this class — the leak is inside the widget's own frame — so `offshape=` is the only field that reports it. It measures what the skin *authored*, not what the engine does with it, so it stays non-zero after the fix: `offshape>0` is a rect to check, not a defect. Confirm which by asking whether the rendered scene is transparent there (it was for 5 of the 6; `pharaoh` is the sixth and is in the W198 row) `WMP_RENDER_APPKIT` installs the same mask provider the controller does, so its `outside=` reading covers the masked surface rather than an unclipped rect |
 | `WMP_RENDER_BITMAPS` | `1` | `BITMAPS` — resolved count and every path that failed to load, with `missing=` |
 | `WMP_RENDER_OCCLUDED` | `1` | `OCCLUDED` — every control the pointer cannot reach **anywhere in its own frame**, plus a per-view tally. A target is unreachable when no sample of its rect hit-tests back to it: something in front answers everywhere, so the control draws, hovers nothing and clicks nothing. Each line names what answered instead (`by=[…]`) and which rule reached it — `covered-only` is a control the current rule recovered, `rect-only` is one it **lost**, `neither` is dead under both. **`rect-only` is the column that ranks work**: it is the flat-`zIndex`, whole-rectangle hit testing this engine did before W148, and a change that populates it is taking controls away. Sampling is a 17x17 grid over the frame plus, for a `<BUTTONELEMENT>`, the first pixel its mapping colour owns — a mapping child holds an arbitrary region and a grid alone misses a thin one. No headless probe saw this class before it existed: a starved view is `starved.tsv`'s subject, and a *fully laid out* view whose controls are buried is invisible to every count in `RENDER-DUMP`. **What this probe cannot see is a control with no hit entry at all** (W152): it enumerates targets that *have* one and asks who answers instead, so a group whose mapping regions never reached the hit map reads as a clean view here — `digitaldj/DigitalDJ` reports `unreachable-either-way=4 of 92 hits` while its entire transport strip misses every click. Pair it with `WMP_RENDER_CLICK` on a control you decoded yourself before believing a clean line |
-| `WMP_RENDER_UNRESOLVED` | `1` | `UNRESOLVED` — one line per node the scene could not place: authored tag, id, and **which dimension** was missing (`width`, `height` or `width+height`). `RENDER-DUMP`'s `unresolved` count is the numerator `starved.tsv` ranks on and it names nothing, so every use of it had been followed by opening the `.wms` and guessing. It is what separated the three populations that count conflates — a `<TEXT>` sized by its own glyphs, a `<BUTTONGROUP>` sized by its mapping image, and a `<PLAYELEMENT>` that is a colour region and was never a box — and each was a rule rather than a skin |
+| `WMP_RENDER_UNRESOLVED` | `1` | `UNRESOLVED` — one line per node the scene could not place: authored tag, id, and **which dimension** was missing (`width`, `height` or `width+height`). `RENDER-DUMP`'s `unresolved` count is the numerator `starved.tsv` ranks on and it names nothing, so every use of it had been followed by opening the `.wms` and guessing. It is what separated the three populations that count conflates — a `<TEXT>` sized by its own glyphs, a `<BUTTONGROUP>` sized by its mapping image, and a `<PLAYELEMENT>` that is a colour region and was never a box — and each was a rule rather than a skin. **Extended 2026-09-19 for W231 with `parent=`, `geom=`, `bg=` and `kids=`**, because the count is flat and could not say whether 180 unresolved `<SUBVIEW>` nodes were 180 failures or a few containers dragging their subtrees in: `parent=<tag>#<id>@<sid>:resolved|unresolved` says whether the node was already accounted for upstream, `kids=<n>/<m> unresolved <tag>x<n>,…` says how much of the tally below it is this node's doing, `geom=` lists every placement attribute it actually authored (or `none`), and `bg=` names the bitmap — which is load-bearing rather than decoration, because WMP's ambient size default is zero *or the size of the image*, so a node with a bitmap had a size available to it and one without never did |
 | `WMP_RENDER_LIMITS` | `1` | `LIMITS` — one line per view answering *will this window come apart if it is dragged or resized?* from the scene alone, with no window and no gesture. `canvas=` the size the scene is built at, `floor=`/`ceiling=` the limits the app gives a window showing it (`WMPWindowSizeLimits.forScene`, **the same derivation the controller applies** — not a second copy, which is how a probe comes to disagree with the app), `resizable=`, and `verdict=ok\|below-floor\|above-ceiling`. **A window forced to a size its scene is not comes apart in a specific way**: the artwork is rasterized at the *scene's* size while the hosted surfaces and `WMPMainView.skinPoint(from:sceneSize:)` — where every click is resolved — come from `bounds / canvasSize`, so the visualization stretches, the skin stays put, and every control moves out from under the pointer. `circle` reported that as two unrelated complaints (W213). **Read `exposed=` and not `verdict=`.** Both sides of the verdict come from the same scene, so it can only say `ok` while the app takes its floor from the scene — a green column there is the invariant holding, not evidence that anything was checked. `exposed=yes` is the independent number: the view is smaller than the *unskinned* player's 440x170 in at least one axis, which is the constant that used to be every skin window's `minSize`. **483 of the corpus's 630 views** (343 fixed / 287 resizable), so a constant floor leaking back in does not break one skin, it breaks three quarters of them. What this cannot see is the disagreement itself, which lives in the window layer: that is `WMP_SIZE_TRACE`'s `MISMATCH` line |
 | `WMP_RENDER_SCRIPTS` | `1` | `SCRIPTS`/`SCRIPT` — per program: bytes, declared handlers, and the runtime's availability |
 | `WMP_RENDER_EXPR` | `1` | `EXPR` — every `JScript:` geometry expression, its source, both evaluators' values, its dependency order and deps |
@@ -1686,7 +1686,7 @@ The 456 unresolved nodes left, by authored tag, over the 629 views of the 184-ar
 
 | tag | nodes | ranked as |
 |---|---:|---|
-| `subview` | 180 | **W231** — opened by this change; nobody has opened one yet. W232 sharpened the question: a subview whose every child is a string constant is a string table, and three of the four remaining `starved.tsv` rows are exactly that |
+| `subview` | 180 | W231 — opened by this change and **closed 2026-09-19**: 171 of 178 author no placement and carry no bitmap, so they are grouping wrappers and not starved views; **zero** have an unresolved parent. W232's sharpening was right — a subview whose every child is a string constant is a string table. The 7 that carry a bitmap are **W240**. See § *After the subview class* |
 | `controls` | 104 | W111 |
 | `text` | 61 | what the string-table rule correctly leaves: a bound `value`, a `<TEXT>` declared twice, a node authoring one dimension |
 | `button` | 49 | unranked |
@@ -1722,6 +1722,87 @@ is W231: a container whose every child is a string constant is a string table to
 the gap that left the `<TEXT>` class unexamined for two phases.** Print the parent and the authored
 geometry attributes before taking W231: the question there is whether an unresolved `<SUBVIEW>` is
 the *parent* of nodes already counted, which neither the count nor the ratio can currently say.
+
+---
+
+## After the subview class (185-archive corpus, 2026-09-19, W231)
+
+The probe was extended as the section above prescribes and the class was measured. **It is a
+phantom, 171 of 178 — and the 7 it is not are one rule, not seven skins.**
+
+Reproduce with `WMP_SKIN=<corpus> WMP_RENDER_UNRESOLVED=1 swift test --filter
+WMPRenderDumpTests/testSweepsSkinOrCorpus`, then split the `UNRESOLVED` lines on the new fields.
+The corpus reads **458** unresolved nodes over 185 archives, of which `subview` is **178** (the 456
+and 180 in W231 were 184 archives at rev `8935e4c8`).
+
+**The cascade theory is dead, and it was the reason the row was ranked at all.** W231 argued a
+`<SUBVIEW>` is a box, so an unresolved one is likelier than a `<controls>` to be a container that
+really failed, and a container that fails takes every child with it — worth more than its own count.
+Measured in both directions, it takes nothing with it:
+
+| | nodes |
+|---|---:|
+| whose **parent** is itself unresolved | **0 of 178** |
+| that drag any child into the tally | **5** |
+| whose children all resolve | 149 |
+| with no children at all | 24 |
+
+So the 178 are 178 distinct entries, never a chain, and the ratio does not double-count. The engine
+is already why: `WMPSceneBuilder` keeps walking a container it could not size, carrying its known
+origin forward (*"a script-sized container can still have a literal origin and independently literal
+descendants"*), so the container is recorded unresolved and **costs nothing**.
+
+**What the geometry field says is that they were never boxes**, which is W111's finding reached by a
+different route:
+
+| authored | nodes |
+|---|---:|
+| no placement attribute whatsoever | **131** |
+| an origin only (`left`/`top`, no size) | 36 |
+| a `width` or `height` | 11 |
+| — of which a **bitmap** to take a size from | **7** |
+
+131 of 178 author nothing and 171 of 178 carry no image, so WMP's ambient default — zero *or the
+size of the image* — gives them zero too, exactly as it does `cyberchannel/playview`. A grouping
+wrapper the skin never meant to size is not a starved view, and counting it as one is the same
+misclassification the string table was. **Named/anonymous does not separate anything**: 128 named,
+50 anonymous, and both distribute the same way.
+
+### The residue is a size fallback, and it is ranked as W240
+
+The seven image-bearing nodes are the whole of what is real here. Every one authors a literal origin
+— it was deliberately placed — and every one has a bitmap that states the size we refuse to take:
+
+| skin | node | bitmap |
+|---|---|---|
+| `Age_of_Mythology_MP7`, `Age_of_Mythology_MPXP` | `shutterSub` | `open_shutter.gif` |
+| `Radio` | (anonymous) | `corner_pieces.bmp` |
+| `XBOX` | `xLogo` | `x_logo.jpg` |
+| `STALKER` | `vidBack` | `backgroundImage` authored **empty** |
+| `WWC` | `introAnim` | `top` authored **empty**, drags a `<BUTTON>` in |
+
+The last two are malformed authoring rather than the size rule and should be split from it.
+
+**`XBOX`'s is an author typo and is the clearest statement of the rule.** `xLogo` authors
+`width="jsa:centerBox.width"` where the `<video>` two lines above it in the same `centerBox` authors
+`jscript:centerBox.width` — `jsa:` is **6 uses / 3 archives**, all the Xbox family, all this one
+node, never in script text (decoder-faithful scan, encodings 158 UTF-16-BOM / 146 cp1252 / 89 UTF-8
+/ 9 UTF-8-BOM over 402 files, `Need_for_Speed_Underground` and `SplinterCellWMPSkin` unreadable as
+always). WMP cannot parse it either — so this is **not** a dialect to implement, and matching the
+typo would be less faithful, not more, exactly as with `scrollingAmmount`. What WMP *does* do is
+fall back to the ambient default, and the bitmap is there, so the logo draws at its natural size
+centred in the video box. Ours draws nothing. `videoBox@1x.png` shows the frame and an empty black
+`centerBox`.
+
+**Do not take this as a one-line change.** The fallback would reach beyond `<SUBVIEW>` — 33 of the
+458 unresolved nodes corpus-wide carry a bitmap — and `Age_of_Mythology`'s `open_shutter.gif` is
+already load-bearing for the one-shot GIF terminator rule (`reference/skins/README.md`), while
+`Radio` is one of the four skins in the *17 views, 4 mismatched* table above, where a literal size
+and its bitmap's real size disagree. Measure the class before changing the rule; that is W240.
+
+**This was a measurement-only change with no UI signature.** The probe is emitted only under its own
+flag, so no sweep output, invariant or PNG moves; `swift test` is 2,454 passing and the corpus
+capture is the verification.
 
 ---
 

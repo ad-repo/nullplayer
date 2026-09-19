@@ -9,6 +9,54 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W231 — `<SUBVIEW>` was the largest unexplained block in the residue, 2026-09-19
+
+**Closed 2026-09-19.** The row's whole content was the question "is this a phantom class like W111 or
+a real one", with an explicit instruction not to price a fix before answering it. Answered: **171 of
+178 are phantoms, and the 7 that are not are one rule rather than seven skins**, now ranked as W240.
+
+The row as it stood in `WMP_TASKS.md`:
+
+> | W231 | **`<SUBVIEW>` is now the largest unexplained block in the residue, and nobody has opened one** | **180 nodes across 68 of 184 archives** — 129 named and 51 anonymous — measured 2026-09-18 at rev `8935e4c8` with `WMP_RENDER_UNRESOLVED=1` over the 629-view sweep | Opened by the string-table fix, which is the only reason it is visible: with the `<TEXT>` phantoms gone the corpus holds **456** unresolved nodes and this is **40%** of them, ahead of `<controls>` (104, W111) and well ahead of what is left of `text` (61). **It is not yet known whether this is a phantom class like W111 or a real one**, and that is the whole of the row — do not price a fix before answering it. A `<SUBVIEW>` is a box, unlike `<controls>`, so the prior runs the other way from W111's: an unresolved one is more likely to be a container that really did fail to place, and a container that fails takes **every child with it**, which is why it may be worth more than its own count. Three questions to separate them, in order: are these the *parents* of nodes already counted (in which case the corpus is smaller than 456 distinct failures and the ratio double-counts); does the subview author any geometry at all, or is it a grouping wrapper the skin never meant to size (`Plus!_The_Bionic_Dot` and `Plus! Bionic Dot` lead at 7 each, then `Alienware Invader` 6 and the ALX family 5); and do the 51 anonymous ones differ in kind from the 129 named, since an id is what a script needs and an anonymous wrapper is likelier to be pure structure. **Extend `WMP_RENDER_UNRESOLVED` to print the node's parent and its authored geometry attributes before starting** — the probe names the node and its missing dimension and nothing else, which is exactly the gap that left `<TEXT>` unexamined for two phases. See `skills/wmp-skin-guide/reference/harness.md` § *After the string table*.
+
+**The probe was extended first, as the row required**, with `parent=`, `geom=`, `bg=` and `kids=`.
+The three questions, measured over 185 archives (the 180/456 above were 184 at rev `8935e4c8`;
+the corpus now reads **458** unresolved of which **178** are `subview`):
+
+**Q1 — double-counting: no, in both directions.** **Zero** of the 178 have a parent that is itself
+unresolved, and only **5** drag any child into the tally; 149 have children that all resolve and 24
+have no children. The cascade the row was ranked on does not exist, and the engine is already why —
+`WMPSceneBuilder` keeps walking a container it could not size, carrying its known origin forward, so
+an unresolved container costs nothing.
+
+**Q2 — geometry: they were never boxes.** 131 of 178 author **no placement attribute whatsoever**,
+36 author an origin only, 11 author a `width` or `height`. 171 of 178 carry no bitmap, so WMP's
+ambient default (zero *or the size of the image*) gives them zero too, exactly as it does
+`cyberchannel/playview`. This is W111's finding reached by a different route.
+
+**Q3 — named vs anonymous: not a distinction.** 128 named, 50 anonymous, distributing the same way.
+
+**What was real**, and is W240: the **7** nodes carrying a bitmap. Each authors a literal origin —
+deliberately placed — and a background image that states the size this engine refuses to take.
+`Age_of_Mythology_MP7`/`_MPXP` (`shutterSub`/`open_shutter.gif`), `Radio` (`corner_pieces.bmp`),
+`XBOX` (`xLogo`/`x_logo.jpg`), plus `STALKER` (`vidBack`, an *empty* `backgroundImage`) and `WWC`
+(`introAnim`, an *empty* `top`, dragging a `<BUTTON>` in) which are malformed authoring rather than
+the size rule.
+
+`XBOX` states it most clearly and produced a second finding worth keeping: `xLogo` authors
+`width="jsa:centerBox.width"` where the `<video>` two lines above it in the same `centerBox` authors
+`jscript:centerBox.width`. **`jsa:` is 6 uses / 3 archives**, all the Xbox family, all this one node,
+never in script text. **It is an author typo and not a dialect to implement** — WMP cannot parse it
+either, so matching it would be less faithful, exactly as with `scrollingAmmount`. What WMP does
+instead is fall back to the ambient default, and the bitmap is present, so the logo draws centred in
+the video box where ours draws nothing.
+
+Full measurement, tables and reproduction in
+`skills/wmp-skin-guide/reference/harness.md` § *After the subview class*.
+
+**Measurement-only: no sweep output, invariant or PNG moves**, because the probe is emitted only
+under its own flag. `swift test` 2,454 passing.
+
 ## W215 — the sweep's own `supportedTags` list was a stale private copy, 2026-09-19
 
 **Closed 2026-09-19** (`38ab2e7f`), and it did exactly what the row said it would: the demand tally

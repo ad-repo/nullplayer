@@ -22,7 +22,8 @@ import XCTest
 //   WMP_RENDER_DUMP=<dir>          write every view to PNG, per-skin subdirectory in a sweep
 //   WMP_RENDER_PROBE=<view|all>    every scene node: type, id, resolved frame, clip, paint, attrs
 //   WMP_RENDER_BITMAPS=1           resolved bitmap count and every one that failed, with missing=
-//   WMP_RENDER_UNRESOLVED=1        name every node the unresolved count reports, and which dimension
+//   WMP_RENDER_UNRESOLVED=1        name every node the unresolved count reports, which dimension
+//                                  is missing, and its parent, authored geometry and children
 //   WMP_RENDER_LIMITS=1            will this window come apart on a drag or resize: the scene's
 //                                  canvas against the limits the app gives its window, plus
 //                                  exposed= (is it below the unskinned player's 440x170)
@@ -1203,13 +1204,74 @@ enum WMPHarness {
     /// whose geometry an unrun script owes it, and a node whose kind this engine sizes wrong.
     static func unresolvedLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
         let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        let unresolvedIDs = Set(scene.unresolved.map { $0.stableID })
         return scene.unresolved.map { entry in
             let node = nodesByID[entry.stableID]
             return "UNRESOLVED \(scene.viewID)/\(entry.stableID) "
                 + "\(node?.authoredTagName ?? "?") id=\(entry.nodeID ?? "-") "
-                + "\(entry.attribute)=\(condense(entry.authoredValue))"
+                + "\(entry.attribute)=\(condense(entry.authoredValue)) "
+                + lineage(of: node, unresolved: unresolvedIDs)
         }
     }
+
+    /// The three fields W231 needs and the count alone cannot say: where the node sits in the
+    /// graph, what geometry it actually authored, and what it is carrying.
+    ///
+    /// `unresolved` is a flat tally, so 180 `<SUBVIEW>` nodes could be 180 independent failures or
+    /// a handful of containers each dragging its subtree in with it — and the same number is what
+    /// `starved.tsv` ranks on either way. `parent=` and `kids=` answer that in both directions on
+    /// one line: `parent=…:unresolved` says this node was already accounted for upstream, and
+    /// `kids=n/m unresolved` says how much of the tally below it is this node's doing.
+    ///
+    /// `geom=` is the question W111 turned on, asked of a box instead of an object: a `<SUBVIEW>`
+    /// authoring no placement at all is a grouping wrapper the skin never meant to size, and
+    /// counting it as starved is the same misclassification the string table was. `bg=` is part of
+    /// that answer rather than decoration — WMP's ambient size default is zero *or the bitmap's
+    /// size*, so a wrapper with a `backgroundImage` had a size available to it and one without
+    /// never did.
+    private static func lineage(of node: WMPNode?, unresolved: Set<Int>) -> String {
+        guard let node else { return "parent=? geom=? kids=?" }
+
+        let parentField: String
+        if let parent = node.parent {
+            let state = unresolved.contains(parent.stableID) ? "unresolved" : "resolved"
+            parentField = "\(parent.authoredTagName)#\(parent.xmlID ?? "-")@\(parent.stableID):\(state)"
+        } else {
+            parentField = "-:root"
+        }
+
+        let authored = geometryNames.compactMap { name -> String? in
+            guard let attribute = node.attribute(named: name) else { return nil }
+            return "\(name)=\(attribute.rawValue)"
+        }
+
+        let background = ["backgroundImage", "image"].lazy
+            .compactMap { node.attribute(named: $0)?.rawValue }
+            .first
+
+        var kids = "none"
+        if !node.children.isEmpty {
+            var tally: [String: Int] = [:]
+            for child in node.children { tally[child.authoredTagName.lowercased(), default: 0] += 1 }
+            let shape = tally.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+                .map { "\($0.key)x\($0.value)" }.joined(separator: ",")
+            let starved = node.children.filter { unresolved.contains($0.stableID) }.count
+            kids = "\(starved)/\(node.children.count) unresolved \(shape)"
+        }
+
+        return "parent=\(parentField) "
+            + "geom=\(authored.isEmpty ? "none" : authored.joined(separator: ",")) "
+            + "bg=\(background.map(condense) ?? "-") "
+            + "kids=\(kids)"
+    }
+
+    /// Every attribute that can place or size a node, in the spelling the corpus authors. Matched
+    /// case-insensitively by `attribute(named:)`, so one spelling covers the Plus! family's
+    /// capitalisation as well.
+    private static let geometryNames = [
+        "width", "height", "left", "top", "right", "bottom",
+        "horizontalAlignment", "verticalAlignment"
+    ]
 
     /// Every control the pointer cannot reach anywhere in its own frame, with and without
     /// artwork coverage.
