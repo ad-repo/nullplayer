@@ -227,7 +227,10 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         }
     }
 
-    private static func supports(memberPath path: String) -> Bool {
+    /// Internal for the same reason as `supportedTags` and `supportedEvents`: the probe harness
+    /// classifies the same member paths and must not keep its own copy of this. It did, and the
+    /// copy had already dropped the `mediacenter` case (W215).
+    static func supports(memberPath path: String) -> Bool {
         let parts = path.lowercased().split(separator: ".").map(String.init)
         guard parts.count >= 2 else { return false }
         let object: String
@@ -274,7 +277,13 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         return .low
     }
 
-    private static let supportedTags: Set<String> = [
+    /// Internal rather than private, for the same reason as `supportedEvents`: the probe harness
+    /// prints the unknown remainder and must not restate this list. It kept a private copy of its
+    /// own through three phases, drifted to 34 entries against 47, and reported 1,197 uses of
+    /// "unimplemented" tags where the honest number is 258 — measured over the 184-archive corpus.
+    /// `customslider` (403 uses), `effects` (187), `pauseelement` (82) and the `*button` halves of
+    /// the transport pairs (213) were all implemented and all tallied as demand (W215).
+    static let supportedTags: Set<String> = [
         "theme", "view", "subview", "text", "statustext", "currentpositiontext", "durationtext", "image", "button", "buttongroup", "buttonelement",
         "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "itemsplaylist", "dropdownplaylist",
         "customslider", "progressbar",

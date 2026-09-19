@@ -1106,8 +1106,8 @@ enum WMPHarness {
     /// answers wrong.
     static func compatibilityLines(_ skin: WMPLoadedSkin) -> [String] {
         let report = skin.compatibilityReport
-        let tags = report.tags.filter { !supportedTags.contains($0.name) }
-        let members = report.members.filter { !supportsMember($0.name) }
+        let tags = report.tags.filter { !WMPCorpusReportHarness.supportedTags.contains($0.name) }
+        let members = report.members.filter { !WMPCorpusReportHarness.supports(memberPath: $0.name) }
         // Events were collected and compared all along and never printed, so the largest single
         // block of Class A demand in the corpus was invisible to the only instrument that ranks it:
         // `onResize` sat unrecognised through three phases with 47 uses across 19 archives, and
@@ -2130,41 +2130,6 @@ enum WMPHarness {
             .replacingOccurrences(of: "\t", with: " ")
             .trimmingCharacters(in: .whitespaces)
         return flat.count <= 80 ? flat : String(flat.prefix(77)) + "…"
-    }
-
-    private static let supportedTags: Set<String> = [
-        "theme", "view", "subview", "text", "image", "button", "buttongroup", "buttonelement",
-        "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "itemsplaylist", "dropdownplaylist",
-        "playelement", "pausebutton", "stopelement", "prevelement", "nextelement", "rewbutton",
-        "rewelement", "ffwdbutton", "ffwdelement", "returnbutton", "shufflebutton",
-        "equalizersettings", "popup", "wmpeffects", "video", "wmpvideo", "player", "network", "script"
-    ]
-
-    private static func supportsMember(_ path: String) -> Bool {
-        let parts = path.lowercased().split(separator: ".").map(String.init)
-        guard parts.count >= 2 else { return false }
-        let object: String, member: String
-        switch parts[0] {
-        case "player" where parts.count >= 3:
-            switch parts[1] {
-            case "controls": object = "controls"; member = parts[2]
-            case "settings": object = "settings"; member = parts[2]
-            case "currentmedia": object = "media"; member = parts[2]
-            case "currentplaylist": object = "playlist"; member = parts[2]
-            case "network": object = "network"; member = parts[2]
-            default: object = "player"; member = parts[1]
-            }
-        case "metadata": object = "metadata"; member = parts[1]
-        case "theme": object = "theme"; member = parts[1]
-        case "view": object = "view"; member = parts[1]
-        case "eq": object = "eq"; member = parts[1]
-        case "vis": object = "vis"; member = parts[1]
-        case "ipl", "ddpl": object = "playlist"; member = parts[1]
-        default:
-            object = parts[0]; member = parts[1]
-            if WMPJScriptCompatibility.supports(object: "element", member: member) { return true }
-        }
-        return WMPJScriptCompatibility.supports(object: object, member: member)
     }
 }
 
