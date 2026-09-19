@@ -92,7 +92,15 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   semantics are documented at `Notification.Name.hostedSurfaceStyleDidChange` in `WindowManager`.
 - Exact artwork may include below-floor or extent scaling. During pending renders the provider
   can return a scaled previous image; a panel allows this only within 15% on both axes.
-  `wasScaledToFit` is not a readiness flag. The current static frame probe does not exercise live
+  `wasScaledToFit` is not a readiness flag.
+- **The stand-in is primed before any window opens, so a first open is never unskinned (W230).**
+  Learning a ring donor's borders *is* composing a ring — `WMPHostedFrameTemplate.border` does it at
+  the reference size when the skin loads — and the composition used to be discarded, so the first
+  hosted window found `mostRecent` nil, was answered no artwork, and drew palette chrome until a
+  render at its own size landed. It is now adopted as `mostRecent`, never into `cache`: a cache hit
+  promises the frame was built for the size asked for, and this one was built for the donor's.
+  **Rings only** — a panel's borders are four constants of its own bitmap, read without composing
+  anything, and a stretched nine-patch is what the 15% guard exists to refuse. The current static frame probe does not exercise live
   child composition or animation; verify those through live-host captures.
 
 **Every rule above is a rule each hosting view has to apply for itself, and that is the standing

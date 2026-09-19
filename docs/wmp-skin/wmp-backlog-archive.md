@@ -9,6 +9,49 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W230 — a hosted window's first open, 2026-09-19
+
+**Closed 2026-09-19.** Measured, fixed and verified on screen in one session.
+
+**The row understated it by half, and the instrument is the finding.** `WMP_FRAME_TRACE=1` (new, and
+documented in `reference/harness.md`) prints a `miss`/`built` pair per hosted-window size. On `Ice`
+the library was unskinned for **881 ms**, not the reported ~0.5 s, and it was not one render but
+**four** — 273/391/424/492 ms at 550x580, 629x732, 685x732 and 741x803 — because
+`HostedWindowBorderLayout` grew the window three times and every new size missed the cache and
+scheduled a full donor rebuild. Only the last was ever seen. ~250 `artwork(for:)` calls were answered
+`standin=none` across that interval.
+
+**None of the row's three proposed shapes were needed.** `resolveDonorInsets` already composed a ring
+at the donor's reference size 157-170 ms after skin load — before any window exists — and threw the
+composed artwork away, keeping only its `contentRect`. `WMPHostedFrameTemplate.borderInsets` is now a
+wrapper over `border(builder:renderer:backingScale:)`, which returns `(insets, primed:)`, and
+`WMPHostedFrameProvider` adopts `primed` as `mostRecent`. Zero extra work, and the stand-in is a real
+ring rather than a scaled player frame. Kept out of `cache` deliberately: a cache hit promises the
+frame was built for the size asked for, and this one was built for the donor's.
+
+**Rings only**, as the row predicted — 88 of 185 archives. A panel's borders are four constants of
+its own bitmap, read without composing anything, so there is nothing to hand back, and a stretched
+nine-patch is what the provider's 15% guard exists to refuse. The 32 panel donors still wear palette
+chrome on a first open.
+
+Verified the way the row demanded, by driving the app and capturing staggered `screencapture`s across
+the open: the first frame after the click already wears the ring, settling with no visible swap.
+After: **zero** `standin=none`, all 250 misses answered `standin=scaled`. Tests:
+`Tests/NullPlayerAppTests/WMPHostedFramePrimingTests.swift`.
+
+**`WMP_FRAME_PRIME=0` came out of this and is why the session did not chase a phantom.**
+`Combat_Flight_Simulator_3` was reported broken minutes after the priming landed; the same binary with
+the priming withheld showed the identical checkerboard block, dotted top strip and missing side rails.
+That is the standing W179/W234 defect, not the new code. Build an A/B switch into the binary rather
+than a baseline build — `baseline-capture-never-by-stash` rules out the quick way of getting one.
+
+**What this did not touch, and what came out of measuring it: W238.** The four-render cascade is
+still there, and opening a *second* window re-renders and re-grows the first. That is its own row.
+
+The row as it stood:
+
+| W230 | **A hosted window opens wearing NullPlayer's own chrome and swaps to the skin's frame about half a second later** | unmeasured — reported 2026-09-18 on the library and Flow; the population is **every hosted NullPlayer window under a skin that lends a frame — 88 of 185 archives lend a ring and 32 lend a panel**, so ~120 of 185 (W207's measurement at the library's 550x464) | Reported live while accepting the `starved.tsv` fix: *"when you launch the nullplayer window for the first time it draws the chrome default and then snaps into the themed native window after about .5 seconds"*, and then *"you see this on library, flow etc"* — so it is the **hosted** surfaces, not the skin's own player. **The mechanism is documented in the code that causes it and is not a bug in the artwork.** `WMPHostedFrameProvider.artwork(for:)` (`:110`) is explicitly non-blocking: a size it has not rendered yet is answered from `mostRecent` scaled, and **on the first open of a given window there is no `mostRecent` at all**, so the guard at `:127` returns nil, `WindowManager.swift:1071` hands the surface no artwork, and it draws `WMPSurfacePalette` chrome. `schedule(:138)` then rebuilds the whole donor view through `WMPSceneBuilder`/`WMPRenderer` off the main actor — a full scene build at the window's size, which is where the ~0.5 s comes from — and the artwork landing posts the repaint the user sees as the snap. **So this is a priming question, not a rendering one**, and three shapes are worth pricing before taking it: render the donor once at the first hosted window's size when the skin loads (pays the cost before any window opens, but at a size nothing has asked for yet); hold the window off-screen or unpainted for one artwork round trip (correct-looking, and risks a visible delay on a slow donor); or seed `mostRecent` from the skin's own player frame so the first open scales a stand-in rather than falling back to the palette (cheapest, and the `:120` comment already argues a scaled ring is invisible while warning that a scaled **panel** is exactly the squash the 15% band exists to refuse — so this shape helps the 88 ring donors and not the 32 panel ones). **Measure which window is first and how long the round trip actually takes before choosing**; the 0.5 s is the reporter's estimate, not an instrument's. **No headless probe can see this** — a `HOSTED-FRAME` line is written after the artwork exists, and the whole defect is the interval before it does — so verify it by driving the app and capturing staggered `screencapture`s across the open, the way W190 was verified. |
+
 ## W176 — a skin opened on the nag panel it declares ahead of its player, 2026-09-19
 
 **Closed 2026-09-19, accepted by the reporter.** The row as it stood:

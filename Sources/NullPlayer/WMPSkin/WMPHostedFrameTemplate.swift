@@ -1613,15 +1613,38 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// once at the donor's own declared floor, where its author laid it out.
     func borderInsets(builder: WMPSceneBuilder, renderer: WMPRenderer,
                       backingScale: CGFloat) async throws -> NSEdgeInsets? {
+        try await border(builder: builder, renderer: renderer, backingScale: backingScale).insets
+    }
+
+    /// The same resolution, **plus the ring it composed to get there (W230).**
+    ///
+    /// A hosted window's first open used to draw NullPlayer's own palette chrome and swap to the
+    /// skin's frame about a second later, because `WMPHostedFrameProvider` has nothing to stand in
+    /// with until some size has been rendered — and on a first open no size has. Measured on `Ice`,
+    /// 2026-09-19: the library was unskinned for **881 ms** and paid **four** donor renders in it
+    /// (273/391/424/492 ms) as `HostedWindowBorderLayout` grew it 550x580 → 741x803, only the last
+    /// of which was ever seen.
+    ///
+    /// The stand-in for the first of those was already being built and thrown away: learning a
+    /// ring's borders *is* composing one, at the reference size below, 166 ms after the skin loads
+    /// and before any window exists. Returning it costs nothing and it is a real ring rather than a
+    /// guess — so the first open scales a frame instead of falling back to the palette.
+    ///
+    /// **Rings only.** A panel's borders are four constants of its own bitmap and are read without
+    /// composing anything, so there is nothing here to hand back; a panel keeps the palette for its
+    /// first open, which is also the provider's own 15% rule refusing to squash a nine-patch.
+    func border(builder: WMPSceneBuilder, renderer: WMPRenderer, backingScale: CGFloat)
+        async throws -> (insets: NSEdgeInsets?, primed: SkinnedSurfaceFrameArtwork?) {
         if panelNodeID != nil {
             guard let slices = try await panelSlices(builder: builder, renderer: renderer,
-                                                     backingScale: backingScale) else { return nil }
+                                                     backingScale: backingScale)
+            else { return (nil, nil) }
             let m = slices.margins
-            return Self.effectiveBorder(
+            return (Self.effectiveBorder(
                 hole: CGRect(x: m.left, y: m.top,
                              width: slices.panel.width - m.left - m.right,
                              height: slices.panel.height - m.top - m.bottom),
-                in: slices.panel)
+                in: slices.panel), nil)
         }
         let reference = CGSize(width: max(minimumSize.width, 320), height: max(minimumSize.height, 240))
         // **Composed, not derived, because half of a rack can be the donor's own rail (W212).**
@@ -1636,21 +1659,22 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                                  repairing: false) {
             let content = composed.artwork.contentRect
             if !content.isEmpty {
-                return NSEdgeInsets(top: max(0, content.minY), left: max(0, content.minX),
-                                    bottom: max(0, reference.height - content.maxY),
-                                    right: max(0, reference.width - content.maxX))
+                return (NSEdgeInsets(top: max(0, content.minY), left: max(0, content.minX),
+                                     bottom: max(0, reference.height - content.maxY),
+                                     right: max(0, reference.width - content.maxX)),
+                        composed.artwork)
             }
         }
         let scene = try await builder.build(
             viewID: viewID,
             requestedSize: WMPSize(width: reference.width, height: reference.height))
         guard let client = scene.geometries[clientNodeID]?.absoluteFrame, !client.isEmpty else {
-            return nil
+            return (nil, nil)
         }
         let canvas = CGSize(width: scene.canvasSize.width, height: scene.canvasSize.height)
-        return Self.effectiveBorder(
+        return (Self.effectiveBorder(
             hole: CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
-            in: canvas)
+            in: canvas), nil)
 
     }
 

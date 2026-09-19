@@ -73,17 +73,35 @@ final class WMPHostedFrameProvider {
 
     /// Learn the donor's four borders. One scene build, off the UI executor like every other, and a
     /// `.hostedSurfaceStyleDidChange` when it lands so the windows can grow around their interiors.
+    ///
+    /// **It also primes the stand-in (W230).** Learning a ring's borders is composing one, and the
+    /// composition used to be discarded — so the first hosted window to open found `mostRecent` nil,
+    /// was answered no artwork, and drew NullPlayer's own palette chrome until a render at its own
+    /// size landed. Measured on `Ice` 2026-09-19: 881 ms and four renders, because the border layout
+    /// grows the window and every new size is another full donor rebuild. Adopting the ring this
+    /// build already produced costs nothing and makes the *first* of those answerable immediately.
+    ///
+    /// It is deliberately **not** put in `cache`: it was composed at the donor's reference size, not
+    /// at a window's, and a cache hit is a promise that the frame was built for the size asked for.
+    /// `mostRecent` is the right slot — it is the one that means "the nearest thing available".
     private func resolveDonorInsets() {
         guard let template, let builder, let renderer else { return }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let generation = self.generation
+        let started = DispatchTime.now()
         Task { [weak self] in
-            let insets = try? await template.borderInsets(builder: builder, renderer: renderer,
-                                                          backingScale: scale)
-            guard let self, let insets else { return }
+            let border = try? await template.border(builder: builder, renderer: renderer,
+                                                    backingScale: scale)
+            let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
+            Self.trace("insets ok=\(border?.insets != nil) primed=\(border?.primed != nil) "
+                + "ms=\(Int(elapsed.rounded()))")
+            guard let self, let border, let insets = border.insets else { return }
             await MainActor.run {
                 guard self.generation == generation else { return }
                 self.donorInsets = insets
+                if Self.primes, let primed = border.primed, self.mostRecent == nil {
+                    self.mostRecent = primed
+                }
                 NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
             }
         }
@@ -116,7 +134,10 @@ final class WMPHostedFrameProvider {
         }
         // A size the donor has already turned down keeps the palette chrome it had before, and asks
         // no second time.
-        if refused.contains(key) { return nil }
+        if refused.contains(key) {
+            Self.trace("miss \(key.width)x\(key.height) standin=refused")
+            return nil
+        }
         schedule(key)
         // **The stand-in is for a resize, not for a different window.** A ring is laid out by its
         // author at every size and stretching yesterday's by a few points is invisible for the frame
@@ -124,14 +145,20 @@ final class WMPHostedFrameProvider {
         // borders keep their thickness, so stretching one from 550x464 onto a 350x170 window is the
         // squash the user sees — and it is the one thing the slice exists to avoid. Past 15% in
         // either axis a panel answers nil instead and the window wears the palette for that frame.
-        guard let stale = mostRecent else { return nil }
+        guard let stale = mostRecent else {
+            Self.trace("miss \(key.width)x\(key.height) standin=none")
+            return nil
+        }
         if template.panelNodeID != nil {
             let widthRatio = stale.size.width > 0 ? size.width / stale.size.width : 0
             let heightRatio = stale.size.height > 0 ? size.height / stale.size.height : 0
             guard (0.85...1.15).contains(widthRatio), (0.85...1.15).contains(heightRatio) else {
+                Self.trace("miss \(key.width)x\(key.height) standin=panel-refused")
                 return nil
             }
         }
+        Self.trace("miss \(key.width)x\(key.height) standin=scaled "
+            + "from=\(Int(stale.size.width))x\(Int(stale.size.height))")
         return stale.scaled(to: key.size)
     }
 
@@ -139,6 +166,7 @@ final class WMPHostedFrameProvider {
         guard let template, let builder, let renderer, inFlight.insert(key).inserted else { return }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let generation = self.generation
+        let started = DispatchTime.now()
         Task { [weak self] in
             var produced: SkinnedSurfaceFrameArtwork?
             var unslicable = false
@@ -154,9 +182,12 @@ final class WMPHostedFrameProvider {
                 produced = nil
             }
             guard let self else { return }
+            let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
             await MainActor.run {
                 guard self.generation == generation else { return }
                 self.inFlight.remove(key)
+                Self.trace("built \(key.width)x\(key.height) "
+                    + "ok=\(produced != nil) ms=\(Int(elapsed.rounded()))")
                 guard let produced else {
                     // The older diagnostic assembler (`WMP_HOSTED_FRAME_WHOLE=0`) can refuse an
                     // open ring. This branch drops the donor and cached sizes as a fallback policy,
@@ -202,6 +233,26 @@ final class WMPHostedFrameProvider {
             order.removeFirst()
             cache.removeValue(forKey: oldest)
         }
+    }
+
+    /// `WMP_FRAME_TRACE=1` — the first-open interval W230 is about, which nothing headless can
+    /// see: a `HOSTED-FRAME` line is written after the artwork exists and the whole defect is the
+    /// time before it does. `miss` is a window drawing without its frame; `built` closes it and
+    /// carries the round trip in milliseconds. `NSLog`, not `print`, for the reason
+    /// `WMP_BORDER_TRACE` records.
+    /// `WMP_FRAME_PRIME=0` — withhold the primed stand-in and restore the pre-W230 first open,
+    /// where a hosted window wears palette chrome until a render at its own size lands. An A/B
+    /// switch in the same binary, which is the only honest way to ask whether a frame that looks
+    /// wrong looks wrong *because* of the priming.
+    private static let primes = ProcessInfo.processInfo.environment["WMP_FRAME_PRIME"] != "0"
+
+    private static let traces = ProcessInfo.processInfo.environment["WMP_FRAME_TRACE"] != nil
+
+    private static func trace(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        guard traces else { return }
+        NSLog("[wmp/frame] \(message())")
+        #endif
     }
 
     private func touch(_ key: Key) {

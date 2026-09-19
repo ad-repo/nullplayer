@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **A Media Player skin's own windows no longer open in this app's plain chrome and snap into the
+  skin's frame a moment later.** Opening the library, Flow or any of the other windows a `.wmz` skin
+  lends its border to showed a plain grey frame first and swapped to the skin's about a second
+  afterwards — measured at 881 milliseconds on *Ice*. The skin's border is now ready before the first
+  window opens, so the window wears it from the moment it appears. Skins that lend a single fixed
+  panel rather than a border still show the plain frame briefly on the very first window.
+
 - **Five Media Player skins no longer open on a "your player is too old" notice instead of the
   player.** *WALL-E*, *Halo 2*, *Dreamcatcher*, *xsn_sports* and *T3-Skynet Media Player* each
   carry a panel their author meant Windows Media Player to show only when it decided the player
