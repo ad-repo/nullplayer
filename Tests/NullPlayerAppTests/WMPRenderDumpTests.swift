@@ -1427,15 +1427,20 @@ enum WMPHarness {
             }
         }
         if !inline.isEmpty {
-            // Ties break on the name, because `inline` is a dictionary and `sorted` would
-            // otherwise print equal counts in hash order — which is per-process random, so two
-            // runs of one binary produced ~19 "changed" lines per sweep that were the same tally
-            // in a different sequence. A regression diff cannot afford to invent differences.
-            lines.append("SCRIPT inline: "
-                + inline.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
-                .map { "\($0.key)×\($0.value)" }.joined(separator: " "))
+            lines.append("SCRIPT inline: " + tally(inline))
         }
         return lines
+    }
+
+    /// A `name×count` tally, highest count first, **ties broken on the name**. The tie-break is the
+    /// whole point: the caller counts into a dictionary, and `sorted` on the count alone leaves
+    /// equal counts in hash order, which Swift randomizes per process. Two captures of one
+    /// unchanged binary then differ in ~19 `SCRIPT inline:` lines that hold the same tally in a
+    /// different sequence, and `wmp_render_sweep.sh compare` reports them as changed — noise a real
+    /// regression can hide in.
+    static func tally(_ counts: [String: Int]) -> String {
+        counts.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .map { "\($0.key)×\($0.value)" }.joined(separator: " ")
     }
 
     private static func declaredHandlers(in source: String) -> [String] {
@@ -2162,6 +2167,34 @@ extension WMPHitMetadata {
 
 /// The two rules that decide which control a click reaches, both reported against `Plus! Pulsar`
 /// as "seems to ignore most clicks despite showing hover graphics".
+/// The sweep is a regression diff, so every line it prints has to be a function of the skin alone.
+final class WMPHarnessDeterminismTests: XCTestCase {
+    /// Equal counts must order by name. They came out of a dictionary in hash order, which Swift
+    /// randomizes per process, so two captures of one unchanged binary reported ~19 `SCRIPT inline:`
+    /// lines as changed while holding an identical tally. Asserting the whole string rather than
+    /// "sorted somehow" is deliberate: the format is what `compare` diffs.
+    func testEqualCountsOrderByName() {
+        let counts = ["onclick": 25, "value_onchange": 10, "enabled_onchange": 10,
+                      "ontimer": 2, "onload": 2, "onclose": 2]
+        XCTAssertEqual(WMPHarness.tally(counts),
+                       "onclick×25 enabled_onchange×10 value_onchange×10 onclose×2 onload×2 ontimer×2")
+    }
+
+    /// The same tally built in a different insertion order is the same line. A dictionary's
+    /// enumeration depends on its history as well as its seed, and a skin's handlers are counted in
+    /// document order, which differs between two skins holding the same totals.
+    func testInsertionOrderDoesNotReachTheOutput() {
+        let names = ["onclick", "onmouseover", "onmouseout", "onload", "ontimer", "onclose"]
+        var forward: [String: Int] = [:]
+        for name in names { forward[name] = 4 }
+        var reverse: [String: Int] = [:]
+        for name in names.reversed() { reverse[name] = 4 }
+        XCTAssertEqual(WMPHarness.tally(forward), WMPHarness.tally(reverse))
+        XCTAssertEqual(WMPHarness.tally(forward),
+                       "onclick×4 onclose×4 onload×4 onmouseout×4 onmouseover×4 ontimer×4")
+    }
+}
+
 final class WMPHitOrderingTests: XCTestCase {
     /// **`zIndex` orders siblings, so a subview's rank beats its child's literal.** Pulsar lays a
     /// `<SUBVIEW zIndex="5">` holding a `<CUSTOMSLIDER zIndex="55">` straight across a

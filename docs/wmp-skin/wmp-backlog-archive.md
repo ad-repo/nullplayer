@@ -9,6 +9,46 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W215 — the sweep's own `supportedTags` list was a stale private copy, 2026-09-19
+
+**Closed 2026-09-19** (`38ab2e7f`), and it did exactly what the row said it would: the demand tally
+every other tier is ranked from was overstating unimplemented work by 78%.
+
+`WMPRenderDumpTests` kept a private `supportedTags` beside `WMPCorpusReportHarness`'s, drifted to 34
+entries against 47. **Measured over the 184-archive corpus against a baseline worktree at
+`c62ee5a2`: `UNKNOWN tag` uses 1,197 → 258, across 800 → 220 lines.** The row predicted 1,203 → 259
+from a 2026-09-17 capture; the small difference is the corpus, not the arithmetic.
+
+The 939 phantom uses were precisely the thirteen the row named: `customslider` 403, `effects` 187,
+`pauseelement` 82, `prevbutton` 54, `playbutton` 54, `nextbutton` 53, `stopbutton` 52,
+`currentpositiontext` 16, `progressbar` 15, `mutebutton` 9, `statustext` 7, `repeatbutton` 5,
+`durationtext` 2. **What is left is honest demand and was already ranked**: `controls` 104 (W111),
+`videosettings` 97 (W103/W111), `listbox` 18 (W66), `editbox` 9, and a tail of ones and twos.
+
+**The fix was to delete the copy, not sync it** — `supportedTags` is now internal, as
+`supportedEvents` already was for the same reason.
+
+**A second copy was there that the row did not know about, and it had already drifted.**
+`WMPRenderDumpTests.supportsMember` was a line-for-line duplicate of
+`WMPCorpusReportHarness.supports(memberPath:)` missing the `mediacenter` case. Deleted too.
+`unknown-members` is unchanged at 2,214: **no skin in the corpus writes a `mediacenter.*` path**, so
+that drift had not yet cost a number — which is the argument for deleting a copy rather than waiting
+for it to be wrong about something.
+
+**The member half of the row is still open and is now the bigger number.** `supportsMember` cannot
+classify an element member at all, and `metadata.value` alone is **592 of the 2,214** unknown
+members. Quantify it before trusting any `unknown-members` count; that half did not close here.
+
+**Coverage**: `WMPPhase7Tests.testSupportedTagVocabularyMatchesWhatTheEngineClassifies` checks the
+list in both directions — every entry resolves to a `WMPElementKind`, and `listbox`/`editbox` stay
+*out*, because a kind is not an implementation and syncing the two sets would hide W66's 27 uses.
+`testTagsTheEngineImplementsAreNotReportedAsUnknownDemand` loads a skin authoring all thirteen and
+asserts no unknown demand, end-to-end rather than restating the list. Both were mutation-checked.
+
+**Corpus sweep**: 552 of 553 images identical. The one that differs is `Scooby-Doo_2/infoView`,
+which differs between two runs of the same binary — see W239, whose image half this session
+answered from the archive rather than measured.
+
 ## W179 — `Combat_Flight_Simulator_3` lent the library its *video* view's ring, 2026-09-19
 
 **Closed 2026-09-19.** Re-driven before it was taken, and **the three symptoms the row is named for

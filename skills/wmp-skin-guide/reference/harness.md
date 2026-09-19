@@ -809,14 +809,16 @@ capture. First, **the invariants**: W87's collateral announced itself as changed
 counts, and W143's 514 changed invariant lines are *entirely* `loadms` timings and `SCRIPT inline:`
 tie-ordering — no view gained or lost a node, command, hit target or canvas, so nothing stopped
 resolving and nothing started. A wide image diff with a still invariants diff is a layout rule
-reaching everything that authored it. Second, **sample across skins unrelated to the report and to
+reaching everything that authored it. **Both of those noise sources were removed on 2026-09-19, so
+a capture taken today cannot produce W143's 514 lines at all**; the rule survives, its reading does
+not — see *A sweep has one nondeterministic output* below. Second, **sample across skins unrelated to the report and to
 each other, and open them side by side** — ten of the 139, and each one had to be a repair on its own
 evidence (a badge centred under its own pointer arrow, a clipped readout made whole, a frame that
 had been half its window's width). "Every one I opened looks better" is the claim to make, and it is
 only worth anything if the ten were chosen before they were looked at. Neither check is the PNG
 count, and the count is what both fixes have in common.
 
-### A sweep has two nondeterministic outputs, and one of them is an image
+### A sweep has one nondeterministic output, and it is an image
 
 Measured 2026-09-14 by capturing the **same build twice** and comparing the pair — which is the
 cheap move that turns "my change did this" into "the harness does this", and costs one 45-second
@@ -825,11 +827,19 @@ capture.
 - **`Scooby-Doo_2/infoView` differs run to run.** Its `loadInfoPrefs` calls `randomPic()`, which is
   `parseInt(Math.random() * 10)` over five character PNGs. It is the only image in the 535 that
   moves on its own, and it will read as collateral damage from whatever you just changed.
-- **The invariants half is mostly noise.** A no-op change reports hundreds of "changed lines" that
-  are entirely `loadms` timings and `SCRIPT inline:` tally **ordering** — the same counts printed in
-  a different sequence, from unstable dictionary iteration. W143's note above already says this; it
-  is repeated here because a first-time reader sees `DIFFER — 516 changed lines` and stops. Read the
-  counts (`RENDER-DUMP … commands/hits/unresolved`), never the line total.
+- **The invariants half used to be mostly noise and is not any more, as of 2026-09-19
+  (`d72c3970`).** A no-op change reported hundreds of "changed lines" that were entirely `loadms`
+  timings and `SCRIPT inline:` tally **ordering** — the same counts printed in a different sequence,
+  from unstable dictionary iteration. Both are fixed: `loadms=` is stripped when `invariants.txt` is
+  written (it stays in `raw.txt`/`render.txt`, where the census's per-skin `LOAD` parse reads it,
+  and `compare` strips it from both sides so an older baseline is still usable), and the tally
+  breaks ties on the name. **Two captures of one unchanged binary now differ by 2 lines**, both the
+  `HARNESS` line naming the output directory. A changed invariant line is now evidence.
+
+  Two consequences. **A capture taken before that commit diffs ~39 `SCRIPT inline:` lines against
+  any capture taken after it** — a one-time reordering into the new canonical order, not a
+  regression. And **the old advice was the wrong half of the problem**: "read the counts, never the
+  line total" is how a real regression hides in 500 lines of noise. Read the line total now.
 
 **Predict the diff before running the compare.** For W162 the prediction was "7 archives, the ones
 with a markup `wmpprop:player.status` binding"; the answer was 14, and the extra 7 were skins whose
@@ -865,6 +875,7 @@ HARNESS <n> archive(s) from <path>
 SKIN <file.wmz>
 SKIN <file.wmz> FAILED <error>
 LOAD definition=<p> encoding=<e> entries=<n> bytes=<n> views=<n> nodes=<n> scripts=<n> resources=<n> loadms=<x>
+     loadms= is in raw.txt/render.txt only: a wall clock cannot be diffed, so it is stripped from invariants.txt
 FINDING [<severity>] <WMP00xx> ×<n> <message>
 COMPAT unknown-tags=<n> unknown-members=<n> unknown-events=<n> resources-missing=<n> resources-unsupported=<n>
 UNKNOWN tag <name> ×<n>

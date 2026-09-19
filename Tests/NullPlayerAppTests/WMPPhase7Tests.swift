@@ -179,6 +179,46 @@ final class WMPPhase7Tests: XCTestCase {
                        "Corpus reports must not disclose local corpus paths")
     }
 
+    /// The demand tally is only worth reading if "unimplemented" means it. `WMPRenderDumpTests`
+    /// kept a private copy of this list for three phases, drifted to 34 entries against 47, and
+    /// reported 1,197 uses of tags the engine had implemented — `customslider` alone was 403. The
+    /// copies are gone; this is the guard that the surviving list stays honest in both directions.
+    func testSupportedTagVocabularyMatchesWhatTheEngineClassifies() {
+        for tag in WMPCorpusReportHarness.supportedTags {
+            if case .unknown = WMPElementKind(tagName: tag) {
+                XCTFail("supportedTags claims '\(tag)', which WMPElementKind does not classify")
+            }
+        }
+        // The reverse is deliberately *not* "every kind is supported". `LISTBOX` and `EDITBOX` have
+        // kinds and no content behind them (W66), so they must keep ranking as measured demand — a
+        // kind is not an implementation, and syncing the two sets would hide the 27 uses of these.
+        for pending in ["listbox", "editbox"] {
+            XCTAssertFalse(WMPCorpusReportHarness.supportedTags.contains(pending),
+                           "'\(pending)' is classified but not hosted; listing it hides real demand")
+        }
+    }
+
+    /// End-to-end rather than a second copy of the list: a skin authoring the thirteen tags that
+    /// drifted must report no unknown demand at all. Asserting against the set would pass even if
+    /// the reporting path stopped consulting it.
+    func testTagsTheEngineImplementsAreNotReportedAsUnknownDemand() async throws {
+        let drifted = ["CUSTOMSLIDER", "EFFECTS", "PAUSEELEMENT", "PLAYBUTTON", "PREVBUTTON",
+                       "NEXTBUTTON", "STOPBUTTON", "CURRENTPOSITIONTEXT", "PROGRESSBAR",
+                       "MUTEBUTTON", "STATUSTEXT", "REPEATBUTTON", "DURATIONTEXT"]
+        let body = drifted.enumerated().map { index, tag in
+            "  <\(tag) id=\"n\(index)\" left=\"2\" top=\"\(index * 12 + 2)\" width=\"40\" height=\"10\"/>"
+        }.joined(separator: "\n")
+        let xml = "<THEME><VIEW id=\"main\" width=\"80\" height=\"200\">\n\(body)\n</VIEW></THEME>"
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data(xml.utf8))
+        ], filename: "DriftedTags.wmz")
+        let output = try WMPSkinTestSupport.temporaryDirectory().appendingPathComponent("drift.json")
+        let report = try await WMPCorpusReportHarness().writeReport(for: [url], to: output)
+        let skin = try XCTUnwrap(report.skins.first)
+        XCTAssertEqual(skin.unknownTags.map(\.name), [],
+                       "these thirteen are implemented; reporting them ranks work already done")
+    }
+
     func testOptInLocalCorpusProducesTypedReport() async throws {
         let environment = ProcessInfo.processInfo.environment
         let root = environment["WMP_CORPUS_PATH"].map { URL(fileURLWithPath: $0, isDirectory: true) }
