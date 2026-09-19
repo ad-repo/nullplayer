@@ -1377,6 +1377,20 @@ never erased, and a black panel during playback. Only the reporter driving the a
 shape and shadow live in the window server and stay a short, genuinely manual list; so do hover, a
 tab, a setting and live playback.
 
+**The playback half is instrumented and the rest is not.** `WMP_RENDER_HOST` seeds a playing host
+for a whole sweep and `NULLPLAYER_PLAY` starts a live debug launch on a track — that pair found W119
+and W120, two defects in the one state every transport readout in the corpus is authored for and
+that no capture had ever entered. **Read the `HOST` line of a capture before anything else in it.**
+The AppKit overlay class is now measured and closed (545 hosted views, two defects, both W74, fixed
+2026-09-19) and every slider in the corpus is drivable. What no sweep says anything about is still a
+tab, a setting, a hover, a drawer, the window's shape and its shadow, and anything driven by live
+playback; W69's flicker is in that remainder, which is why it needs its own instrumentation rather
+than another sweep.
+
+*(This paragraph and the one above it are what `WMP_TASKS.md`'s W73 carried as a backlog row. It was
+moved to `LOW_QUALITY_TASKS.md` on 2026-09-19 because it was a permanently-open caveat rather than a
+unit of work — the caveat is true, and this is where it belongs.)*
+
 ---
 
 ## What the harness measured on 2026-09-07 (14-skin corpus, rev `055063ed`)
@@ -1803,6 +1817,29 @@ and its bitmap's real size disagree. Measure the class before changing the rule;
 **This was a measurement-only change with no UI signature.** The probe is emitted only under its own
 flag, so no sweep output, invariant or PNG moves; `swift test` is 2,454 passing and the corpus
 capture is the verification.
+
+### What was under the phantoms, once they were cleared
+
+**The same sweep answers a question two phases of `starved.tsv` work never reached: what does the
+ranking say after its documented phantoms?** The top three are all explained —
+`Disney_Mix_Central/mainView` 0.600 (string-table parents, W231/W232), `cyberchannel/playview` 0.500
+(a bare `<PLAYLIST>` in a view with no size, 0x0 in WMP's arithmetic too), `Batman Begins/mainView`
+0.500 (frame 0 of a 154-frame intro). **Immediately below them are two views nobody has ever
+opened**, and neither is a phantom:
+
+| ratio | view | what `WMP_RENDER_UNRESOLVED` says |
+|---|---|---|
+| 0.381 | `Revert/vwPL`, `Revert (1)/vwPL` | seven anonymous `<BUTTON>` nodes, each alone in its own `<SUBVIEW>`, authoring `horizontalAlignment="stretch" verticalAlignment="stretch"` and no size |
+| 0.316 | `Beck/view-2` | **ten `<slider>` EQ bands, `eq1`…`eq10`, each authoring `height=""`** — an empty value, not a missing attribute — plus a `<text>` with `width=""` and a `statusText` |
+
+These are controls a user reaches for, which is what separates them from everything else in the
+residue. **The ranking was working; nobody had read past row three.** Ranked as W241, together with
+the two empty-value cases W240 split off as malformed authoring (`STALKER`'s `vidBack`, `WWC`'s
+`introAnim`).
+
+**`<controls>` appears nowhere in that tail**, which is what retired W111: its only stated
+justification was that it distorts this ranking, and it does not distort the part of it that ranks
+anything. See `LOW_QUALITY_TASKS.md`.
 
 ---
 

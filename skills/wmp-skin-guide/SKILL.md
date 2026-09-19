@@ -31,7 +31,11 @@ one holds down. Check that table before landing an engine-wide change.
 every env-var flag, the line grammar, `scripts/wmp_skin_census.sh`, `scripts/wmp_render_sweep.sh`,
 `scripts/wmp_markup_census.sh`, and the traps those scripts enforce. No other file restates a command; add a flag there in the same
 change that adds it. The ranked backlog it feeds is `WMP_TASKS.md` at the repo root, and a closed
-entry moves to `docs/wmp-skin/wmp-backlog-archive.md` in the same change that closes it.
+entry moves to `docs/wmp-skin/wmp-backlog-archive.md` in the same change that closes it. A row with a
+defect in the **row** rather than in the work — stale past the point of trust, not a unit of work,
+stripped of its own justification — moves to `LOW_QUALITY_TASKS.md` instead, which is neither the
+archive nor a rejection; six went there in one audit on 2026-09-19, and two of them left real work
+behind (W241, W242). Re-measure anything revived from it.
 
 **The `phase-*-handoff.md` files are unverified narrative.** Check every claim in them against the
 code before relying on it: phase 7 asserts that WMP "remains explicitly unavailable in release/MAS
