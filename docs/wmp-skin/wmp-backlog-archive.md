@@ -9,6 +9,72 @@ The live, reach-ranked backlog is [`WMP_TASKS.md`](../../WMP_TASKS.md); the `.wa
 this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-archive.md). A
 `.wmz` entry goes here, a `.wal` entry goes there.
 
+## W179 — `Combat_Flight_Simulator_3` lent the library its *video* view's ring, 2026-09-19
+
+**Closed 2026-09-19.** Re-driven before it was taken, and **the three symptoms the row is named for
+were already gone** — closed by the hosted-frame work that landed after the report (`bc12331a`,
+`61d1027c`, `d0edc76e`, `b3be0d90`). At 543x890 and at 900x420 there are no red corner wedges, the
+A-Z index column sits beside the artwork rather than on it, and the frame no longer overlaps the
+rows. **The row's own starting instruction was also wrong**: the client hole was never the defect,
+so dumping `contentRect` against the ring's opaque region would have measured a number that was
+already right.
+
+**What was left was a different defect in the same window**, and the reporter confirmed it on the
+capture: the borrowed ring's bottom edge was a stone corner, a transparent gap, the film drawer's
+`BRIGHTNESS`/`CONTRAST`/`HUE`/`SATURATION` plate, another gap, and the other corner. The gap is
+genuinely see-through — moving the window shows the desktop through it.
+
+**The cause is the donor, not the composition.** `HOSTED-FRAME` named `videoView`, and this skin
+also authors a `plView` built from the same `vid_*.png` bitmaps. Two faults stacked:
+
+1. **`plView` produced no candidate at all.** Its top-left corner *is* the plate —
+   `<subview backgroundImage="vid_top_left.png">`, 190x29, with the repeat and shuffle buttons drawn
+   on top as children with images of their own — so the W208/W209 corner rule ("a subview with a
+   control in it is a control") dropped the whole piece. Nothing else claimed the slot, the
+   four-corner guard failed, and the view was withdrawn.
+2. **That handed the ring to `videoView`**, whose drawer (`vid_controls_bg.png`) is *centre*-anchored
+   — it claims no slot and costs no score, and is still painted as decoration after the extent is
+   measured.
+
+**Both cases the corner refusal was written for have a second declaration for the slot** — `Ice`
+writes its shuffle glyph six nodes before `Vid-bottomleft.bmp`, `Back to the Future Trilogy` its
+repeat pair six before `f_top_left.png` — so the refusal was free there and its cost never showed. A
+refused corner is now taken back rather than losing the ring, and nothing of the skin's behaviour
+comes with it: the assembler draws the piece's own background command and never its children's, and
+the whole-view path subtracts every control in the subtree, exactly as `TheUnit`'s resize grip keeps
+its corner while the control walk drops the button (W222).
+
+**And a tie between a playlist and a video view now goes to the playlist.** Both views score 12 here
+— eight filled slots plus four for hosting content — so the winner was document order, and this skin
+writes `videoView` first. This is the half of W209's `Project Gotham Racing 2` judgement ("the video
+view won a contest it had already lost on the merits") that scoring filled slots did not reach: that
+fixed the case where the video view scores *higher* and said nothing about the case where it ties.
+
+**Measured at 543x890 scale 2 over the 185 installed archives.** The corner rule alone moves
+**nothing** — it is inert without the tie-break. Both together move **13 `HOSTED-FRAME` lines across
+12 archives, every one `video → playlist`**, each holding or improving its `gaps=`: `WWN_mp7` and
+`WWN_xp` rails 98pt → 21 (content 347 → 501 wide), `The_Sentinel` bottom 0.416 → 0.014, `TripleX`
+and `xXx_night_vision_redx` 0.017/0.011 → 0.010/0.006, `Charlies_Angels_Full_Throttle`,
+`Official_Xbox` ×2, `XBOX`, `The`/`TheUnit` unchanged in `gaps=`. `Combat_Flight_Simulator_3` itself
+goes `gaps=0.000/0.000/0.004/0.000 whole=no` → **`0.000` on all four edges, `whole=yes`**.
+
+**The tie-break was written too wide first and the corpus caught it.** As "a list beats anything
+that is not a list" it moved 17 lines with two regressions, both `visView → plView`: `Constantine`
+grew a **145pt** right rack where it had an 18pt rail — which is `Ice`'s recorded rack rejection
+coming back — and `QuickSilver`'s right edge went from 0.012 bare to **0.908**. A skin gives its
+playlist a rack and its visualiser a rail, so a list is only the better shape against the donor
+class that carries a drawer. `hostsVideo` excludes `<EFFECTS>` deliberately and
+`WMPHostedRingDonorTests` guards it against being re-widened.
+
+**Verified live, not only measured**: rebuilt, reopened the library on the reporter's own
+`Combat_Flight_Simulator_3` selection, and the bottom bar is a solid opaque stone rail across the
+full width with the resize hatching in its corner — no drawer plate, no see-through gaps, no
+borrowed repeat/shuffle glyphs in the top-left. The other 12 archives were measured, not looked at.
+
+**The row, verbatim as it stood in Tier 1c:**
+
+> | W179 | `Combat_Flight_Simulator_3` lends the library a ring whose corners land on the rows | **1 archive, screen capture 2026-09-15**; unmeasured against the rest of the corpus | Reported with the capture: red corner wedges printed over the list at the top-right and across both bottom corners, the A-Z index column sitting on the artwork rather than beside it, and the bottom row clipped by the frame. This is the *hole*, where W178 is the caption. The skin builds every panel from `jscript:`-sized stretch tiles — `centerBox` is `left="10" top="37" width="jscript:view.width-20" height="jscript:view.height-(56+55)"` and `plcenterBox` the same shape against `plView` (`cfs3.wms:869`, `:1023`) — so the client hole `WMPHostedFrameTemplate` derives is the value those expressions take **at the donor view's own size**, not at the library window's. Start by dumping the resolved `contentRect` at the library's actual size and comparing it with the ring bitmap's opaque region; do not assume the corner pieces are misplaced until that number is wrong. Note that `WMPHostedFrameTemplate` re-renders per window size (`SkinnedSurfaceFrameArtwork.matches(size:)` is exact), so a stale frame is not the explanation. |
+
 ## W218 — `Colorchooser`'s transport stacked on one pixel and the first click fired `previous`, 2026-09-19
 
 **Closed 2026-09-19.** The row as written read as a standing condition — *"so pause, stop and next

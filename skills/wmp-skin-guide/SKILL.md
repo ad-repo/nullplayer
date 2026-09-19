@@ -320,6 +320,35 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   content rect moving. `Plus! Pulsar` is the one exception and is a pre-existing defect rather than
   this one: its donor is bigger than the window (`content=-191.111,38`, a hole starting off the
   window's left edge, before and after), so restoring a grip moved its alpha crop.
+- **Refusing a corner is only right when the refusal is free, and a tie goes to the playlist
+  (W179).** Both cases the corner refusal above was written for have a *second* declaration for the
+  slot — `Ice` writes its shuffle glyph six nodes before `Vid-bottomleft.bmp`, `Back to the Future
+  Trilogy` its repeat pair six before `f_top_left.png` — so dropping the control hands the corner to
+  the real bitmap and the ring still meets. That is the whole population it was measured on, and it
+  made the cost look like nothing. `Combat_Flight_Simulator_3` is the other shape: its playlist's
+  top-left corner **is** the plate, `<subview backgroundImage="vid_top_left.png">` 190x29 with the
+  repeat and shuffle buttons drawn on top as children with images of their own, and nothing else
+  claims that slot. Refusing it emptied the corner, failed the four-corner guard, withdrew `plView`
+  as a candidate **entirely**, and handed the skin's ring to `videoView` — so the library wore the
+  film drawer's `BRIGHTNESS`/`CONTRAST`/`HUE`/`SATURATION` plate across its bottom bar, a
+  *centre*-anchored extra that claims no slot, costs no score and is painted as decoration anyway.
+  A refused corner is now taken back rather than losing the ring; nothing of the skin's behaviour
+  comes with it, because the assembler draws the piece's own background command and never its
+  children's and the whole-view path subtracts the subtree, exactly as W222's grip keeps its corner.
+  **The second half is the donor contest.** Both views score 12 here — eight filled slots plus four
+  for hosting content — so the winner was document order, which is the half of W209's `Project
+  Gotham Racing 2` judgement that scoring *filled slots* never reached: that fixed the case where a
+  video view scores higher and said nothing about the case where it ties. Corpus at 543x890 scale 2:
+  the corner rule alone moves **nothing**, and both together move **13 lines across 12 archives,
+  every one `video → playlist`**, each holding or improving its `gaps=` (`WWN` rails 98pt → 21,
+  `The_Sentinel` bottom 0.416 → 0.014, `TripleX` and `xXx` tighter). **Write the tie-break as "a list
+  beats anything that is not a list" and the corpus punishes it**: 17 lines, two regressions, both
+  `visView → plView` — `Constantine` grows a 145pt right rack where it had an 18pt rail, which is
+  `Ice`'s recorded rack rejection coming back, and `QuickSilver`'s right edge goes 0.012 bare →
+  **0.908**. A skin gives its playlist a rack and its visualiser a rail, so `hostsVideo` excludes
+  `<EFFECTS>` deliberately. **And read this bullet before believing a bottom-bar defect is a
+  composition defect**: the ring a window wears is chosen per *view*, two steps upstream of
+  anything `HOSTED-FRAME`'s inset fields describe — the field that names it is `view=`.
 - **The ground a hosted window paints is its content hole, not the window**
   (`SkinnedSurfaceChrome.hostedGroundRect`). Every window in the spectrum family paints its own
   ground in its own `draw` and nothing shared owned that step, while `drawSkinFrame` deliberately

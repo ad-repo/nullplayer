@@ -149,7 +149,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// spectrum window is the least interesting answer — but a skin whose *only* ring is there
     /// (`NVIDIA`, `WALL-E`) still has one, and one is better than none.
     static func derive(from skin: WMPLoadedSkin, playerViewID: String?) -> WMPHostedFrameTemplate? {
-        var best: (template: WMPHostedFrameTemplate, score: Int)?
+        var best: (template: WMPHostedFrameTemplate, score: Int, hostsList: Bool, hostsVideo: Bool)?
         for registration in skin.views {
             guard let candidate = template(for: registration) else { continue }
             // The ring's completeness is the score: an eight-piece ring resizes cleanly in both
@@ -167,7 +167,43 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             if let playerViewID, registration.id.caseInsensitiveCompare(playerViewID) == .orderedSame {
                 score -= 100
             }
-            if best == nil || score > best!.score { best = (candidate, score) }
+            // **A tie between a playlist and a *video* view goes to the playlist (W179).**
+            //
+            // `hostsContent` above is deliberately blind to *which* content a candidate holds, and
+            // where a skin dresses its playlist and its video view in the same bitmaps the two
+            // score identically — `Combat_Flight_Simulator_3` builds both out of `vid_*.png`, eight
+            // filled slots and four for the content, 12 each. The winner was then whichever the
+            // author declared first, and this skin writes `videoView` before `plView`, which is how
+            // the library came to wear a ring with the film drawer's BRIGHTNESS/CONTRAST/HUE/
+            // SATURATION plate across its bottom bar — a centre-anchored extra, so it claims no
+            // slot and costs no score, but it is still painted as decoration. Reported 2026-09-15
+            // with a capture of the library.
+            //
+            // A video view's border is drawn around a *picture* and carries the furniture a picture
+            // needs; a playlist's is drawn around a *list*, which is what every window borrowing
+            // this ring actually is. That is the same judgement W209 already recorded for
+            // `Project Gotham Racing 2` — "the video view won a contest it had already lost on the
+            // merits" — and it was only half-applied, because scoring filled slots fixes the case
+            // where the video view scores *higher* and says nothing about the case where it ties.
+            //
+            // **A visualiser is not a video view, and the corpus is emphatic about it.** Written
+            // first as "a list beats anything that is not a list", this moved 17 lines: every one
+            // of the nine `video → playlist` flips held its `gaps=` or improved it (`WWN`'s rails
+            // 98pt → 21, `The_Sentinel`'s bottom 0.416 → 0.014, `TripleX` and `xXx` both tighter),
+            // and both regressions were `visView → plView` — `Constantine` grew a 145pt right rack
+            // where it had an 18pt rail, which is `Ice`'s recorded rack rejection coming back, and
+            // `QuickSilver`'s right edge went from 0.012 bare to **0.908**. A skin gives its
+            // playlist a rack and its visualiser a rail, so the list is only the better shape
+            // against the donor class that carries a drawer.
+            //
+            // Strictly a tie-break: `score` still decides every contest it can, so a skin whose only
+            // ring is on its video view keeps it.
+            let hostsList = hostsList(registration.node)
+            let hostsVideo = hostsVideo(registration.node)
+            if best == nil || score > best!.score
+                || (score == best!.score && hostsList && best!.hostsVideo) {
+                best = (candidate, score, hostsList, hostsVideo)
+            }
         }
         if let best { return best.template }
         // **No ring anywhere in the skin: take a panel instead (W207).** Ranked strictly below the
@@ -414,6 +450,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         var stretchedDown: Set<Int> = []
         var stretchedAcross: Set<Int> = []
         var extras: Set<Int> = []
+        var refusedCorners: [Role: WMPNode] = [:]
         var client: WMPNode?
 
         // Direct children only. A ring is laid out against the *window*, so its pieces are the
@@ -459,8 +496,14 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 // top-left — and a corner is where a skin paints its own window controls.
                 let centred = horizontal == .center || vertical == .center
                 let isExtra = centred || ring[role] != nil
-                if carriesTransport(child) { continue }
-                if scriptsTransport(child), Role.corners.contains(role) || isExtra { continue }
+                if carriesTransport(child) {
+                    if Role.corners.contains(role), ring[role] == nil { refusedCorners[role] = refusedCorners[role] ?? child }
+                    continue
+                }
+                if scriptsTransport(child), Role.corners.contains(role) || isExtra {
+                    if Role.corners.contains(role), ring[role] == nil { refusedCorners[role] = refusedCorners[role] ?? child }
+                    continue
+                }
                 // First declaration wins **for the role**, matching the duplicate-id rule elsewhere
                 // in the engine: a skin that layers two bitmaps in one corner authored the lower one
                 // first. That decides which piece *names* the slot — which corners exist, and which
@@ -498,6 +541,34 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             }
         }
 
+        // **Refusing a corner is only right when the refusal is free (W179).**
+        //
+        // Both cases the rule above was written for have a *second* declaration for the slot: `Ice`
+        // writes its shuffle glyph six nodes before `Vid-bottomleft.bmp` and `Back to the Future
+        // Trilogy` its repeat pair six before `f_top_left.png`, so dropping the control hands the
+        // corner to the real bitmap and the ring still meets. That is the whole population the
+        // refusal was measured on, and it made the cost look like nothing.
+        //
+        // `Combat_Flight_Simulator_3` is the other shape: its playlist's top-left corner *is* the
+        // plate — `<subview backgroundImage="vid_top_left.png">`, 190x29, with the repeat and
+        // shuffle buttons drawn on top of it as children with images of their own — and nothing
+        // else claims that slot. Refusing it emptied the corner, which failed the guard below,
+        // which withdrew `plView` as a candidate entirely and handed the skin's ring to `videoView`
+        // instead: the library then wore the film drawer's BRIGHTNESS/CONTRAST/HUE/SATURATION plate
+        // across its bottom bar, reported 2026-09-15 with a capture.
+        //
+        // So a refused corner is taken back rather than losing the ring. Nothing of the skin's
+        // behaviour comes with it: the assembler draws the piece's own background command and never
+        // its children's, and the whole-view path subtracts every control in the subtree — the two
+        // buttons are dropped either way, exactly as `TheUnit`'s resize grip keeps its corner while
+        // the control walk drops the button (W222). A corner that is only ever *reached* through
+        // this path is a corner the skin painted and nothing else offered.
+        for role in Role.corners where ring[role] == nil {
+            guard let recovered = refusedCorners[role] else { continue }
+            ring[role] = recovered
+            pieces.append(recovered)
+            note(recovered, role, &stretchedDown, &stretchedAcross)
+        }
         guard Role.corners.isSubset(of: Set(ring.keys)), let client else { return nil }
         return WMPHostedFrameTemplate(
             viewID: registration.id,
@@ -645,6 +716,40 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 return true
             default:
                 if hostsContent(child) { return true }
+            }
+        }
+        return false
+    }
+
+    /// Whether this candidate is built around a **list** rather than around a picture.
+    ///
+    /// A strict subset of `hostsContent`, and read only to break a tie between two rings that
+    /// scored the same (W179). The typed list elements only: a `<VIDEO>`, an `<EFFECTS>` or an
+    /// `<EQUALIZERSETTINGS>` all make a view worth borrowing from, but none of them makes it the
+    /// shape of the windows doing the borrowing.
+    private static func hostsList(_ node: WMPNode) -> Bool {
+        for child in node.children {
+            switch child.kind {
+            case .playlist, .dropdownPlaylist, .listBox:
+                return true
+            default:
+                if hostsList(child) { return true }
+            }
+        }
+        return false
+    }
+
+    /// Whether this candidate is built around a **video surface** — the other half of the W179
+    /// tie-break, and the only donor class a list is allowed to displace. Deliberately excludes
+    /// `<EFFECTS>`: a visualiser view is a rectangle with a rail, and the two skins where a
+    /// playlist displaced one (`Constantine`, `QuickSilver`) both came out worse.
+    private static func hostsVideo(_ node: WMPNode) -> Bool {
+        for child in node.children {
+            switch child.kind {
+            case .video, .wmpVideo:
+                return true
+            default:
+                if hostsVideo(child) { return true }
             }
         }
         return false

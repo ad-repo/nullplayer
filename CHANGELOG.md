@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- **NullPlayer's own windows now borrow the right window from a Media Player skin.** Where a `.wmz`
+  dresses several of its own windows in the same artwork — its playlist and its video window, say —
+  this app could pick the video one, and then the library, equalizer and the rest wore a border with
+  the film controls baked into it: in *Combat Flight Simulator 3*, a `BRIGHTNESS`/`CONTRAST`/`HUE`/
+  `SATURATION` strip sat across the bottom of the library with the desktop showing through on either
+  side of it. Two things caused it. A skin often paints its repeat and shuffle buttons directly on
+  the corner of its playlist window, and this app was discarding that whole corner as a control —
+  which left the playlist with no border to lend at all, so the video window won by default. And
+  where the two windows were an equal match, whichever the skin's author happened to write first
+  won. Corners a skin painted are now kept (the buttons on them still are not), and a playlist
+  outranks a video window on an equal match. Twelve skins now lend a better-fitting border, several
+  of them noticeably roomier — *WWN* gives the library 150 more points of width than it did.
+
 - **The transport buttons in the *Colorchooser* Media Player skin no longer pile up on one spot,
   and the first one you press is the one that acts.** The skin draws play, stop, pause, next and
   previous as five single characters in the Webdings face, each positioned just past the width of
