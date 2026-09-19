@@ -38,6 +38,11 @@ duplicates instead of counted twice.
 
 ### Counting a tag across the corpus
 
+**Check `object-model.md` § *Verified **not** gaps* before you rank anything a scan turns up.** The
+author-typo class there — `scrollingAmmount`, `horizontalAlignemnt`, `donwImage`, `tootip`, `hegiht`,
+`visilble` — is the largest single false lead in the whole scan, and WMP ignores an unknown attribute
+too, so matching one would be less faithful rather than more.
+
 `scripts/wmp_markup_census.sh <outdir> <tag-or-attribute ...>` is the instrument, and it is the only
 one to use. It matches `<NAME[[:space:]/>]`, so `VIDEO` does not catch `<VIDEOSETTINGS>`, and it
 strips each `.wms` to ASCII first for the two traps in its own header comment (grep goes silent on a

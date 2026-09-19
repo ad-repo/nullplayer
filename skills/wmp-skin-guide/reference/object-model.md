@@ -671,9 +671,67 @@ not this left both views frozen in their authored state with no diagnostic anywh
 
 ---
 
+## Verified **not** gaps — check this before opening a row
+
+These were `WMP_TASKS.md` § *2c-note* until 2026-09-19; they rank nothing and cannot be taken, so
+they live here with the rest of the documented refusals.
+
+The SDK conformance audit (2026-09-11) disproved nine candidate gaps, and **that is the more valuable
+half of it**: each is a plausible-looking gap that would otherwise cost a session to chase. Check
+this list before opening a row that came from reading the SDK against a corpus scan.
+
+* **`onresize` is dispatched.** `WMPMainWindowController.swift:1162` builds the event as `"resize"`;
+  handler names are stored with the `on` prefix stripped, so grepping the sources for `onresize`
+  finds only the census table. 47 uses / 19 skins already work.
+* **`nineGridMargins`, `resizeImages`, `elementType`, `bottom`, `right`, `accDescription`** — ambient
+  attributes with **zero corpus uses**. Absent from the engine and correctly so.
+* **`moveSizeTo` and `slideTo`** — ambient methods, **zero calls** corpus-wide. (`resizeTo` is also
+  zero and is implemented anyway.) All three are in the vocabulary after W128, which costs nothing:
+  the vocabulary is the SDK's list, not a demand tally.
+* **`<COLUMN>`, `<ITEM>`, `<SETTINGS>`** — SDK elements with zero corpus uses.
+* **`eq.reset()` / `eq.nextPreset()` / `eq.previousPreset()`** — 104 / 91 / 87 skins, and all three
+  are implemented (`WMPObjectModel.swift:811-817`). A naive receiver-filtered scan reports them as
+  missing; they are not.
+* **`scrollingAmmount` / `scrolingDelay` (25 skins, 54 uses), `horizontalAlignemnt` (3), `donwImage`,
+  `tootip`, `hegiht`, `visilble`** — **author typos**, copy-pasted across the Plus! family. WMP
+  ignores an unknown attribute too, so matching them would be *less* faithful, not more. This is the
+  largest single false lead in the whole scan.
+* **`transparencyColor="white"` / `clippingColor="white"` (10 / 7 skins)** — feared to be losing the
+  declared key to the implicit magenta default. Traced: `colors(_:names:)`
+  (`WMPSceneBuilder.swift:820`) delegates to the name-aware `color(_:names:)`, so `declared` is
+  non-empty and `implicitColorKey` stays nil (`WMPSceneBuilder.swift:761`). Correct today.
+* **`mediacenter.effectType` read as a property (376 uses / 192 files / 130 archives)** — checked while landing W128
+  because `effectType` is an SDK `EFFECTS` *method* and the vocabulary gates reads. Every use is on
+  the `mediacenter` host receiver, answered by `readMediaCenter` before the element path. Not a gap
+  and not a regression risk.
+* **`<CONTROLS>` (77 skins), `<VIDEOSETTINGS>` (84), `windowed` (114), `allowAll`,
+  `dropDownVisible` (114)** — real gaps, but already tracked as W103 and the documented
+  refusals in this file (`<CONTROLS>`/`<VIDEOSETTINGS>` were W111, moved to
+  `LOW_QUALITY_TASKS.md` 2026-09-19 — they cost no pixels and no longer rank anything). Not
+  re-opened.
+
+---
+
+## Recognised, answered, and nothing behind them (`INERT`)
+
+This was `WMP_TASKS.md` § *2b* until 2026-09-19. It ranks nothing: it is the tier you do not take
+runtime work from.
+
+These do **not** stop a handler; they are the ranked list of "properties skins set that nothing
+renders", which is Phase 5 rendering work rather than runtime work. Top by skins:
+`playlist1.itemPlayingColor` / `.itemPlayingBackgroundColor` / `.disabledItemColor` (15 each),
+`timeN.upToolTip` (10 each), the `playlist1.itemSelected*` family (9 each). Full column:
+`inert_calls` in `census.tsv`. `vidback.alphaBlendTo` (14) was the second row here and is gone:
+W38 made it live, and `setColumnWidth` joined this tier in its place — recognised so it stops
+aborting its handler, counted `inert()` because nothing draws playlist columns.
+
+---
+
 ## Adding a member
 
-1. Measure first: `WMP_CALL_TRACE=1` over the corpus, and take the top `UNRECOGNISED` row.
+1. Measure first: `WMP_CALL_TRACE=1` over the corpus, and take the top `UNRECOGNISED` row. Check
+   § *Verified **not** gaps* before you open anything — the author-typo list there is the largest
+   single false lead in the whole scan.
 2. Implement it in `WMPObjectModel` — `live` if there is a host behind it, `inert()` if there is
    not, and leave it out entirely if neither is honest.
 3. Add it to `WMPJScriptCompatibility.members` in the same change; that table is what the census's

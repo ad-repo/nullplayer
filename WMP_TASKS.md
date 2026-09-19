@@ -359,51 +359,15 @@ table while still doing nothing, which is exactly the state `onResize` was in.
 | W56 | Video and playback-position events | `onvideostart` 190/140, `onvideoend` 132/130, `onpositionchange` 147/41, `currentposition_onchange` 103/80 | **`currentposition_onchange` closed with W129** (amended 2026-09-11): it was one instance of the general `<attribute>_onchange` mechanism, and it is now raised from the host snapshot diff. It changed no pixel and that is the measured finding, not a disappointment — 96 of its 105 uses are `seek.value = player.controls.currentPosition`, and **W120 already supplies that number** from the slider's declared range. Do not re-open it as a rendering row. W102 supplies the hosted video surface and W124 supplies the live/event-state split, so the remaining `onvideostart`/`onvideoend` half is directly measurable rather than blocked. |
 | W121 | A handler that reads the `event` object | **30 handlers across the Skins Factory equaliser family**, measured 2026-09-09 as `value_onchange: ReferenceError: Can't find variable: event`; unmeasured for the other event kinds | Surfaced by W51 rather than caused by it: those handlers had never run at all before the host-driven direction was raised. `value_onchange="toolTip = Math.round(value); if (!event.shiftKey) eq.gainLevel9 = value;"` is the shape — an equaliser band that skips its write while shift is held, which is how that family links its ten bands — and the same gap applies to the user-driven direction and to `onkeydown`/`onkeypress`, where W53 already needs a key. WMP binds one `event` object per handler with the modifier and key state on it. Bind it the way `WMPScriptContext` already binds the bare `value` and an event's named arguments: for the duration of that one handler, then cleared, so a stale one cannot be read by an unrelated later handler. Count the whole class first — sweep the corpus's handler attributes for `event.` and split by event kind, since the modifier state a mouse handler wants and the `keyCode` a key handler wants come from different places. |
 
-### 2c-note. Verified **not** gaps — do not open a row for these
+**Verified *not* gaps — check before opening a row here.** The SDK conformance audit (2026-09-11)
+disproved nine candidate gaps, including the author-typo list (`scrollingAmmount`,
+`horizontalAlignemnt`, `donwImage`…) that is the largest single false lead in the whole scan. They
+rank nothing, so they are in `skills/wmp-skin-guide/reference/object-model.md` § *Verified **not**
+gaps*.
 
-The SDK conformance audit (2026-09-11) disproved nine candidate gaps, and **that is the more valuable
-half of it**: each is a plausible-looking gap that would otherwise cost a session to chase. Check
-this list before opening a row that came from reading the SDK against a corpus scan.
-
-* **`onresize` is dispatched.** `WMPMainWindowController.swift:1162` builds the event as `"resize"`;
-  handler names are stored with the `on` prefix stripped, so grepping the sources for `onresize`
-  finds only the census table. 47 uses / 19 skins already work.
-* **`nineGridMargins`, `resizeImages`, `elementType`, `bottom`, `right`, `accDescription`** — ambient
-  attributes with **zero corpus uses**. Absent from the engine and correctly so.
-* **`moveSizeTo` and `slideTo`** — ambient methods, **zero calls** corpus-wide. (`resizeTo` is also
-  zero and is implemented anyway.) All three are in the vocabulary after W128, which costs nothing:
-  the vocabulary is the SDK's list, not a demand tally.
-* **`<COLUMN>`, `<ITEM>`, `<SETTINGS>`** — SDK elements with zero corpus uses.
-* **`eq.reset()` / `eq.nextPreset()` / `eq.previousPreset()`** — 104 / 91 / 87 skins, and all three
-  are implemented (`WMPObjectModel.swift:811-817`). A naive receiver-filtered scan reports them as
-  missing; they are not.
-* **`scrollingAmmount` / `scrolingDelay` (25 skins, 54 uses), `horizontalAlignemnt` (3), `donwImage`,
-  `tootip`, `hegiht`, `visilble`** — **author typos**, copy-pasted across the Plus! family. WMP
-  ignores an unknown attribute too, so matching them would be *less* faithful, not more. This is the
-  largest single false lead in the whole scan.
-* **`transparencyColor="white"` / `clippingColor="white"` (10 / 7 skins)** — feared to be losing the
-  declared key to the implicit magenta default. Traced: `colors(_:names:)`
-  (`WMPSceneBuilder.swift:820`) delegates to the name-aware `color(_:names:)`, so `declared` is
-  non-empty and `implicitColorKey` stays nil (`WMPSceneBuilder.swift:761`). Correct today.
-* **`mediacenter.effectType` read as a property (376 uses / 192 files / 130 archives)** — checked while landing W128
-  because `effectType` is an SDK `EFFECTS` *method* and the vocabulary gates reads. Every use is on
-  the `mediacenter` host receiver, answered by `readMediaCenter` before the element path. Not a gap
-  and not a regression risk.
-* **`<CONTROLS>` (77 skins), `<VIDEOSETTINGS>` (84), `windowed` (114), `allowAll`,
-  `dropDownVisible` (114)** — real gaps, but already tracked as W103 and the documented
-  `object-model.md` refusals (`<CONTROLS>`/`<VIDEOSETTINGS>` were W111, moved to
-  `LOW_QUALITY_TASKS.md` 2026-09-19 — they cost no pixels and no longer rank anything). Not
-  re-opened.
-
-### 2b. Recognised, answered, and nothing behind them (`INERT`)
-
-These do **not** stop a handler; they are the ranked list of "properties skins set that nothing
-renders", which is Phase 5 rendering work rather than runtime work. Top by skins:
-`playlist1.itemPlayingColor` / `.itemPlayingBackgroundColor` / `.disabledItemColor` (15 each),
-`timeN.upToolTip` (10 each), the `playlist1.itemSelected*` family (9 each). Full column:
-`inert_calls` in `census.tsv`. `vidback.alphaBlendTo` (14) was the second row here and is gone:
-W38 made it live, and `setColumnWidth` joined this tier in its place — recognised so it stops
-aborting its handler, counted `inert()` because nothing draws playlist columns.
+**`INERT` — recognised, answered, and nothing behind them — ranks nothing either** and is in that
+same file, § *Recognised, answered, and nothing behind them*. It is Phase 5 rendering work, not
+runtime work.
 
 ## Tier 3 — drawing the skin's own controls (Phase 5)
 
