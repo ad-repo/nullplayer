@@ -650,6 +650,21 @@ queue, with the object model as the security boundary — see Amendment 2 in
 
 ## Static scene and image contracts
 
+- **What WMP does with a `backgroundImage` whose frame is not its bitmap is unsettled, and it must be
+  measured before the rule changes (W123).** `Ice` authors
+  `<button image="Pl-xp.bmp" width="196" height="144">` over a bitmap that is really 196x**44**,
+  inside `<subview id="Drawerbutton2" backgroundimage="Pl-xp.bmp" width="313" height="144">`. Both
+  were stretched and therefore agreed; the button is now drawn at its own 196x44 (W122) and **a seam
+  appears in the lower shell**. **1 view measured** (`Ice/videoView`) out of the 545-image corpus
+  capture; the wider class — every `backgroundImage` whose frame is not its bitmap — is unmeasured.
+  Reproduce with `WMP_SKIN=…/Ice.wmz WMP_RENDER_PROBE=videoView`. **It cannot be answered by
+  extending W122**: `Ice`'s own frame tiles all author `backgroundtiled="true"`, which suggests WMP
+  does not stretch and a skin tiles deliberately — but `Vidcolorbox` is
+  `horizontalAlignment="stretch" verticalAlignment="stretch"` with an untiled `Vid-bg.bmp`, and
+  `LostPlanet`'s stretch tiles are 61 px of window frame that would punch through. Check
+  `reference/skins/README.md`'s counter-evidence table first, and settle it together with W240 —
+  `Radio` is in both, and in `harness.md`'s *17 views, 4 mismatched* table.
+
 - **A `.wmz` is 1x artwork and this app draws it on a 2x display, so the upscale is done by Lanczos
   ahead of the draw — never by CoreGraphics' own filter.** This is the one rendering rule that is
   about *resolution* rather than geometry, and it is settled:
@@ -1104,6 +1119,15 @@ queue, with the object model as the security boundary — see Amendment 2 in
   `WMPResourceStrings` holds only ids the corpus itself names and answers the empty string for the
   rest; it is wired into all three routes a skin reaches them by — a readout's `value`, a tooltip,
   and `theme.loadString`. **Add a row only when something in the corpus states the text.**
+  **A `res://` id can also be localisation plumbing rather than a label, and `""` is not an answer
+  for it (W236).** `netgen.wms` (`Revert`, `Revert (1)`) sets `fontFace="res://-/RT_STRING/#1888"` on
+  all three metadata readouts and
+  `scrollingDirection="jscript:theme.loadString('res://wmploc/RT_STRING/#1910');"` beside them —
+  12 uses of 2 ids across 2 archives, measured 2026-09-19 by the W195 census. `wmploc.dll` holds the
+  font family and the scroll direction for the shipping language, which is how one markup file
+  serves an RTL locale. Declining to invent a *label* is right; a `fontFace` and a
+  `scrollingDirection` are attributes with real defaults, and what the scene does with an empty one
+  has never been measured.
 - **`<RETURNBUTTON>` is the command, not a button that happens to be there (W191).** 19 uses across
   15 archives and **15 author no `onClick` at all** — the element's own behaviour is the return to
   the media centre, so treating the kind as an ordinary button left the library unreachable from
@@ -1785,6 +1809,12 @@ pile onto each other (measured: four windows on one slot). A shared cursor is wh
 an arrangement. `WinampModernMainWindowController.arrangeWindows` is the recipe; the `.wmz` routine
 is that recipe with the player re-centred first.
 
+**A row here names the seam an audit found; the seam the *user* hits may be a different one in the
+same family.** W217's G4 was written against Snap To Default, and the defect reported from the
+running app was `positionSubWindow` — four lines away, never audited, and no amount of reading found
+it. The app was launched, ten windows were opened and their frames were read back. **Measure the
+moment the user described, not only the seam the row names.**
+
 **The `.wmp` case in `fallbackMainSize` is dead** — the branch above it returns first — and is kept
 only for exhaustiveness. `ui-guide` § *Off-Screen Window Recovery* names all four families and says
 which of them the sweep reaches.
@@ -1799,6 +1829,36 @@ every screen is `rescuedOrigin` failing. Two legs cannot be exercised by hand an
 tests (`Tests/NullPlayerAppTests/WMPSnapToDefaultTests.swift`): a genuinely stranded window — a
 `.wmz` window is not movable by its background and macOS clamps a drag at the screen edge, so one
 cannot be produced with the mouse — and a window taller than the display.
+
+### `isRunningModernUI` is a two-way switch in a four-family world
+
+**`WindowManager.isRunningModernUI` answers `false` for `WMPMainWindowController` by construction**
+(`WindowManager.swift:388`), so a guard written to mean *"Classic, not Modern"* silently admits WMP
+and `.wal` too. This is W217's G4 generalised, and one instance has already cost a full live-QA
+cycle: `tightenClassicCenterStackIfNeeded` grew `circle`'s 192x82 borderless player to
+`Skin.mainWindowSize.height` on the mouse-up of the first click, and closed with W213 by gating on
+`isRunningWMPUI`.
+
+Four sites remain (code audit 2026-09-17; no corpus sweep can see this), ranked as W214 in the order
+they are worth taking:
+
+1. **`handleCenterStackWindowWillClose`** (`:2036`) slides windows and re-docks children on Classic
+   geometry, reachable in WMP mode because our fallback EQ/playlist/spectrum windows do open there.
+   **Confirmed live by W237**, which closed 2026-09-19 by gating the library resize it reached
+   through `updateDockedChildWindows`; the slide and the re-dock are still ungated.
+2. **`normalizedCenterStackRestoredFrame`** (`:5501`) rewrites restored PeppyMeter and
+   NetworkMonitor heights by Classic rules — *exactly* the windows that wear a skin's borrowed frame
+   in WMP mode. `HostedWindowBorderLayout` already records an analyser coming back `387x219` where
+   its siblings came back `321x145`, so these two rules may already be fighting. Needs
+   `WMP_BORDER_TRACE=1` beside it: whichever rule currently wins is load-bearing for someone.
+3. `applyClassicVisualizationDefaults` (`:4610`) writes Classic visualization defaults during a WMP
+   session.
+4. `expectedMainHeightForCurrentHT` (`:5534`).
+
+**Do not gate them in one sweep.** Each is a shared-`App/` path and `CLAUDE.md`'s rule binds: gate on
+the mode, prove Classic and Original byte-identical, and measure each separately. Verify with
+`WMP_SIZE_TRACE=1` — its `MISMATCH` line fires exactly when a window is about to be forced off its
+own scene — and `WMP_PLACE_TRACE=1`.
 
 ### The centre stack does not size a `.wmz` window
 
@@ -2227,6 +2287,30 @@ Three rules come out of W218, and the first is the one worth carrying to unrelat
   click lands on it, so a rule that only holds from the second transaction holds for nobody.
 
 ## Drawing the skin's own controls
+
+- **`hoverDownImage` is never selected, and the fix is not just a name (W132).** `button-element`:
+  "the image displayed when the **BUTTON** is in the down state and the user hovers over it with the
+  mouse pointer." `WMPSceneBuilder.swift:490-493` resolves `.down` to `["downImage", "image"]` and
+  never consults it. **126 nodes across 62 skins** (`BUTTON` 86, `BUTTONGROUP` 38, `MUTEBUTTON` 2),
+  and **every one also authors `downImage`** — checked, zero exceptions — so the fallback is the
+  correct down artwork missing only its hover lighting. **Deliberately ranked low, and kept rather
+  than dropped** because the sticky case is the one a user looks at for seconds at a time:
+  repeat/shuffle/mute left toggled on. `WMPInteractionState.swift:63` collapses a pressed node and a
+  sticky-down node into the same `.down`, so **this needs a distinct hover-down face in the state
+  machine before the attribute has anywhere to go**, and it needs the live loop for the same reason
+  W131 did.
+- **Hosted `PLAYLIST` chrome attributes are unread, and verification halves the row (W133).**
+  `playlist-element` defines 37 attributes; the engine reads background/foreground/itemPlaying
+  colours via `WMPSurfacePalette` and nothing else. **Most of the corpus authors values that *agree*
+  with what the overlay already does** — `playlistItemsVisible="false"` is 3 skins against 117
+  authoring `"true"`, `moveButtonsVisible` is `"false"` in all 57 skins that author it,
+  `checkboxesVisible` is `"false"` in 24 of 32 — so only the genuine differences rank:
+  `columnsVisible="true"` **74 skins** (with `columns` in 131), `leftStatus`/`rightStatus` 27,
+  `dropDownImage`/`dropDownBackgroundImage` 27/25, `toolbarVisible="true"` 12, `toolbarMargin` 14.
+  `disabledItemColor`'s 74 have no meaning here at all — there are no disabled tracks. **The
+  substance is column headers, which the overlay draws none of.** `dropDownVisible="true"`
+  (114 skins) is explicitly **not** part of it: a documented deliberate refusal in `object-model.md`
+  pending W66.
 
 - **A `<BUTTONGROUP>`'s artwork is a sheet the size of the whole group, and every state of it is
   painted through the group's mapping mask (W154).** The dead area a sheet carries around its

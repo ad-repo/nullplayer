@@ -669,6 +669,26 @@ whole readout lived in two mechanisms the sweep was not looking at. **Ask for a 
 sweeping**, then read that skin's `.wms` — the markup says what the readout is made of, and the two
 defects behind it (W120, W51) were both visible in a single 200-character tag.
 
+### The residue `WMP_RENDER_OCCLUDED` does not explain (W149)
+
+Reproduce with `WMP_SKIN=<corpus> WMP_RENDER_HOST=playing WMP_RENDER_OCCLUDED=1` and read the
+`reached=rect-only` lines. **11 controls remain unreachable after W148**, re-measured 2026-09-12
+after W150 (was 16; `Gold`'s five containers and four others were the position-map half). It is the
+residue that rule does not explain rather than a regression from it.
+
+**10 of the original 16 are `<BUTTONGROUP>` *containers* with no mapping children** — `Gold`'s five
+stacked `drawerButton*` at one 144x123 rect, `The_Doobie_Brothers`, `Plus! SlimLine`,
+`Plus! Professional` — and a group with no `<BUTTONELEMENT>` dispatches nothing however it is ranked.
+**Decide whether those should be hit targets at all before counting them as work.**
+
+The six that are real: `Sports`'s `eq2`–`eq8` sliders answer to `pl2`/`pl3`/`pl4` `<TEXT>` nodes
+drawn over them — the same question in reverse, since a `<TEXT>` keeps its box because glyphs are not
+a hit shape (`WMPHitCoverageBuilder`), and that skin trades 7 sliders for the 3 texts it gained;
+`anime`'s `plHandle` answers to `closepl`; `STALKER`'s `blankRate4` to a plain `<BUTTON>` while its
+other four stars work; `T3-Skynet_Media_Player`'s `timeSign` is authored at `x=-25` and is mostly off
+its own canvas. **Name the node before ranking the count**, the same rule this file states for
+`unresolved`.
+
 ### Read the probe for what is *absent*
 
 **A widget is not in the PNG, so a sweep that compares only images cannot see one appear or go.**
@@ -861,6 +881,21 @@ capture.
 with a markup `wmpprop:player.status` binding"; the answer was 14, and the extra 7 were skins whose
 `onLoad` reaches a metadata updater. A prediction that is wrong in the *smaller* direction is
 information; being unable to predict at all means the change's reach was never measured.
+
+### Attributing a live report to the change in front of you
+
+**Build a baseline worktree at the parent commit before attributing a live report to your change.**
+Three reports on 2026-09-09 were assumed to be W55's and behaved identically at the parent; it cost
+one build and moved all three out of that change's ledger.
+
+**A NullPlayer surface wearing a borrowed `.wmz` ring is not the scene, and no scene probe reaches
+it.** W177-W179 were reported together on 2026-09-15 and all three closed by 2026-09-19. None was
+reachable from `WMP_RENDER_APPKIT`, which measures a skin's *own* views against their scene. W179's
+evidence was a `WMP_HOSTED_FRAME` line, a `WMP_HOSTED_FRAME_DUMP` PNG and a capture of the live
+library window, **in that order**. Two of its lessons outlived it and are in `SKILL.md`: the ring a
+window wears is chosen per *view*, so a defect in the bottom bar can be a defect in donor selection
+two steps upstream; and a row's own starting instruction can be stale — W179's named the client
+hole, which was already correct. **Re-drive a screen-only row before taking it.**
 
 ### A baseline worktree needs the vendored frameworks linked in
 

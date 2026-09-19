@@ -76,7 +76,15 @@ color theme selected in xsn"*, *"on the xsn the issue is there are 2 eq windows"
    `pl1_8`, 2-8 authored `alphaBlend="0"`) and `htcpStartupPl()` cross-fades between them from the
    `htcpID` / `winAlpha` preferences, read in the view's own `onLoad`. "Hyper-Transient Color
    Phasing", trademarked in a comment block in `xsn.js`. Anything that reads this skin's appearance
-   from markup alone gets variant 1 forever.
+   from markup alone gets variant 1 forever. `WMPHostedFrameTemplate` builds the ring through
+   `WMPSceneBuilder` **from markup alone** (86 of 180 archives declare a ring), so a skin whose
+   colour scheme is a *script* decision always gets its opening one. **The fix is to run the donor
+   view's `load` off-screen** (`WMPScriptRuntime.transact`, whose overrides `dispatch` deliberately
+   discards) and build the ring with the overrides it commits, re-running when the skin's
+   preferences change; the template must then keep **every** candidate per ring role rather than the
+   first declaration. **It settles on the chosen colour and does not animate the phase** — running a
+   closed window's timer to match a cross-fade is out of proportion to what it buys. `xsn_sports`
+   was measured 2026-09-12; the pattern is stacked variants and is **unmeasured across the corpus**.
 
 **And xsn is the reason the donor view is ranked rather than taken.** `WMPHostedFrameTemplate` looks
 for the best eight-piece ring in the skin, and xsn wraps the *same* ring around `upgradeView` — the

@@ -139,6 +139,33 @@ and refusing `hoverFontStyle` on a `TEXT` would abort the handler that sets it, 
 the whole of `InitControls`. An unauthored, undrawn property is stored and answers `inert`, so the
 census can rank "properties skins set that nothing renders" instead of losing them.
 
+### The `<VIDEOSETTINGS>` element (W103)
+
+**94 uses across 94 of 177 archives**, one per skin, 93 of them in a view of their own — the
+brightness / contrast / hue / saturation panel. The corpus's own tooltip vocabulary is unambiguous
+about what the sliders are: `brightness` 80, `hue` 80, `saturation` 79, `contrast` 78, plus
+`reset …` ×20 each. **NullPlayer's video path exposes none of the four, so this is a decision, not
+drawing work**: either `inert()` — the trap `INERT` exists for — or add the four controls to the
+video path and bind them honestly. **Do not resolve them to a value this player never applies**; a
+slider that moves and changes nothing is the worse of the two outcomes. It has been answerable since
+W102 landed: the video path exists, so the question is what to bind, not whether there is anything
+to bind to.
+
+### The `<NETWORK>` element (W104)
+
+**6 uses across 4 of 177 archives**, the smallest surface in the corpus. `<NETWORK>` is an object,
+not a control — it authors no attributes at all corpus-wide, so `WMPSceneBuilder.isNonLayout`
+treating it as non-layout is correct and stays. What a skin reads off it is **stream** state:
+`player.network.downloadProgress` and `player.network.bufferingProgress` already resolve
+(`WMPPropertyRegistry.swift:126`), and `bandwidth`, `receivedPackets` and `lostPackets` are the
+members behind the `network bandwidth` (12) and `buffering progress` (10) tooltips.
+
+**Feed it from the streaming player's own statistics, never from Flow.** `Windows/NetworkMonitor`
+measures *interface* throughput for the whole machine, a different quantity from this stream's
+bitrate and buffer, and wiring one to the other would draw a confident wrong number. Flow is still
+the right *window* for it — 4 skins declare a network view and nothing else in this app claims that
+menu slot — but the object and the window are two separate answers.
+
 ### The `<EQUALIZERSETTINGS>` element
 
 `enable` / `enabled` is handled at load time as declared host state: it turns NullPlayer's existing
@@ -194,6 +221,15 @@ users with an empty drawer.
 `dropdownVisible` (12 of the 13) asks for a playlist *chooser* above the rows. It is unhonoured
 here exactly as it is on `PLAYLIST`, because it needs `player.mediaCollection` — that is W66's
 question, and faking it with playlists this player invented is the thing W66 exists to refuse.
+
+**W66 is a `LISTBOX` with a control and nothing to put in it: 8 skins, 16 uses, measured 2026-09-07
+over 177 archives.** Every one is `plListBox1`/`plListBox2`, a playlist chooser the skin fills from
+script by walking WMP's media collection (`getSelPlaylist()`). The control now exists, draws and
+reports its selection; what it cannot do is have rows, because the object model answers nothing for
+`player.mediaCollection` — so a skin's `onLoad` appends nothing and the box stays empty. **That is a
+host-surface decision — what a `.wmz` may see of this player's library — not drawing work**, and it
+is deliberately not faked with rows this player invented. W136 is what answering it would let the
+skins actually do.
 
 **Recognition for routing is deliberately wider than the modelled kinds.** `WMPSkinSurfaces` matches
 on the authored tag, so any tag ending in `PLAYLIST` counts as a skin-owned playlist even before it
@@ -560,9 +596,41 @@ objects, this engine has no JS object to stand for either, and all 77 of their c
 skin function (`updateAlbumArt()`, `getVisMeta()`, `updateMetadata('playlist')`) rather than reading
 the bare name. Binding a scalar in their place would answer a question the skin never asked.
 
+**The `event` object is the one named binding still missing, and it is W121.** WMP binds one `event`
+object per handler with the modifier and key state on it.
+`value_onchange="toolTip = Math.round(value); if (!event.shiftKey) eq.gainLevel9 = value;"` is the
+shape — an equaliser band that skips its write while shift is held, which is how the Skins Factory
+family links its ten bands. **30 handlers across that family** were measured 2026-09-09 as
+`value_onchange: ReferenceError: Can't find variable: event`; the other event kinds are unmeasured.
+Surfaced by W51 rather than caused by it: those handlers had never run at all before the host-driven
+direction was raised. The same gap applies to the user-driven direction and to
+`onkeydown`/`onkeypress`, where W53 already needs a key. Bind it the way the bare `value` and the
+named arguments above are bound — for the duration of that one handler, then cleared. **Count the
+whole class first**: sweep the corpus's handler attributes for `event.` and split by event kind,
+since the modifier state a mouse handler wants and the `keyCode` a key handler wants come from
+different places.
+
 **`WMPScriptConstants` carries the whole enumeration for the same reason.** A skin switches over all
 of `WMPOpenState`, and one missing global (`osMediaWaiting`, in Corona's case) is a `ReferenceError`
 that costs the handler — the W37 class rather than a gap in a table nothing reads.
+
+---
+
+## An unqualified name in a handler resolves against its own element first (W216)
+
+In WMP an event handler's unqualified names resolve against the element the handler is **on**, before
+anything else. It is why one file writes `visEffects.next()` in one place and a bare `next()` in
+another and expects both to work. This engine resolves neither: `circle`'s
+`<EFFECTS onClick="previous();">` throws `ReferenceError: Can't find variable: previous` and
+`pharaoh` authors the same idiom as `next();`, so clicking either skin's visualizer does nothing.
+
+**2 archives known, corpus reach unmeasured**, and it must be measured before it is sized: the
+demand is in `onClick`, which the census never drives. That is the blind spot that recorded W100 at
+2 skins when the true number was 162. Scan the decoded script text for a bare call whose name is an
+element method — `next`, `previous`, `play`, `pause`, `stop`, `close`, `minimize` — and print the
+encoding breakdown, the way `harness.md` § *Auditing one authored control across the whole corpus*
+prescribes. Verify with `WMP_RENDER_CLICK` on `circle` at `vMain@69,68`, the visualizer's fringe;
+the handler error is on the `CLICK` line.
 
 ---
 
@@ -668,6 +736,31 @@ markup `timerInterval` starts it before any script runs. Corona's compact view c
 panel entirely through this — `RegisterTimerEvent` then `view.timerInterval = leastInterval` — and its
 player view declares `timerInterval="4000"` to drive its transport readouts. Wiring `setTimeout` and
 not this left both views frozen in their authored state with no diagnostic anywhere to say why.
+
+---
+
+## Recognising an event is not dispatching it
+
+**`WMPAttributeValue.handlerNames` decides what becomes a `.handler` at all, and
+`WMPCorpusReportHarness.supportedEvents` decides what counts as implemented.** An event needs a name
+in the first **and a dispatch site** to be either. Neither list was ever printed by the harness, so
+the whole class of "events the markup declares and nothing ever raises" was invisible:
+`WMPCompatibilityReport` collected the counts and compared them, and `compatibilityLines` emitted
+only tags and members. That is how `onResize` sat unrecognised through three phases. It is now
+`UNKNOWN event <name> ×<n>`.
+
+**Do not add a name to `handlerNames` or `supportedEvents` without its dispatch site.** A recognised
+event nothing raises drops out of the tally while still doing nothing — exactly the state `onResize`
+was in. Classification is one line; the dispatch site is the real cost, and it is different per
+event.
+
+Measured 2026-09-08 over the 179 archives: **4,114 uses**, down from 6,823 (see `harness.md` for
+what W51/W52 drained, and for why the distinct-*name* count is not the figure to quote). `onresize`
+is absent from that list because it closed in the same change that added the instrument;
+`value_onchange`, `openstate_onchange` and `playstate_onchange` are absent because they are now
+accepted spellings of events this engine does dispatch. Reproduce with
+`scripts/wmp_render_sweep.sh capture <dir> --allow-dirty` and tally `UNKNOWN event` in
+`<dir>/raw.txt` by name and by containing `SKIN` block.
 
 ---
 

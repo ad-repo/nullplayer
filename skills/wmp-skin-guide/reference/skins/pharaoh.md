@@ -65,11 +65,68 @@ does not clear it.
 
 ### Still open
 
-`W201` (the `pyrevolver.gif` back button draws as an opaque 21x30 black box over a 21x16
-declaration), `W202` (`visScarab` never gets a hosted surface, so scarab mode's 903-px hole stays
-black), `W203` (`<DURATIONTEXT>` never resolves a height, so the face reads `1:03 /` with nothing
-after it), `W204` (`pharaoh_ros.js`'s `OnOpenStateChange` overwrites `pharaoh.js`'s in the one
-shared `JSContext`).
+**`W201` — the `pyrevolver.gif` back button draws as an opaque 21x30 black box over a 21x16
+declaration.** Scarab mode's only route back to the player is
+`<button left="56" top="17" width="21" height="16" upToolTip="Sphinx mode" image="pyrevolver.gif"
+onClick="ToggleScarab(false);">`. `pyrevolver.gif` is a **140x128 logical screen whose 16 frames are
+each a 21x16 block at 0,0** — 6.7% of the declared area — and the area the frame block does not cover
+is painted rather than left alone. It is the extreme of a class: **27 files in 12 archives** of the
+corpus's 4,303 GIFs have frame blocks smaller than their logical screen, the rest within a few pixels
+(`Age_of_Mythology` 198x173 vs 193x172, `bruteforce` 289x111 vs 289x101, `xsn_sports` 205x70 vs
+191x70, `Official_Xbox_MP71` 23x18 vs 16x10 ×6), measured by a header scan of every `.gif` entry,
+first frame's image block against the screen descriptor. **The button still clicks** — driven live, a
+click at `66,25` returns to the sphinx view — so this is artwork, not input, and it is why the
+reporter read the scarab as a dead end. **The cause is an observation, not a diagnosis**: the two
+candidates are the screen-versus-block size and the GIF's uninitialised screen area, and neither has
+been isolated. **Check `Age_of_Mythology`'s `open_shutter.gif` before changing anything** — it is
+already load-bearing for the one-shot terminator rule (`README.md`).
+
+**`W202` — an `<EFFECTS visible="false">` that a script later makes visible never gets a hosted
+surface**, so scarab mode's 903-px hole stays black.
+`<effects id="visScarab" zIndex="-1" visible="false" left="1" top="7" width="129" height="79">` is
+made visible by `ToggleScarab(true)` and the `#FF00FF` its `scarab.bmp` cuts for it never fills.
+**Measured live after W199**: the sphinx view's surface mounts and animates
+(`VisualizationGLView: Setting up ProjectM with viewport 174x148`, 1,595 of 1,608 hole pixels
+changing between captures) and **no second `Setting up ProjectM` line is ever logged for the
+scarab** — the surface is never created, rather than created and hidden. The population is
+**57 nodes in 54 archives** declaring `visible="false"` on an `<EFFECTS>`/`<WMPEFFECTS>`
+(`Erektorset`, `Plus! SlimLine` and `Sports` twice each); **how many are turned on by script is the
+number to measure next**. Rank it on that population, not on pharaoh — the scarab's hole is small.
+Drive it with `defaults write NullPlayer wmpSkinName -string pharaoh`, the debug build, and a click
+at the window's `262,107`, then **read the log, not the screen**.
+
+**`W203` — `<DURATIONTEXT>` never renders**, so the face reads `1:03 /` with nothing after the slash.
+`<currentPositionText>` at `57,86` and the literal `/` at `103,86` both draw;
+`<durationText left="108" top="86" width="45" fontSize="8" justification="Left">` produces no `PROBE`
+line at all and is the view's single `unresolved`.
+`WMP_SKIN=…/pharaoh.wmz WMP_RENDER_UNRESOLVED=1 WMP_RENDER_HOST=playing` names the dimension:
+`UNRESOLVED view-2/11 durationText id=- size=missing literal geometry (height)`.
+**`<currentPositionText>` beside it declares no `height` either and resolves to 45x10**, so the
+missing piece is a glyph-height fallback this one tag does not get, not anything the skin failed to
+author — **which means a `<DURATIONTEXT>` anywhere is dead**, not just this one. Only 2 nodes in 2
+archives (`pharaoh`, `circle`), kept as a row because it is a *visible* readout on a shipped
+Microsoft skin.
+
+**`W204` — every view in a skin shares one script scope, so a second `scriptFile` silently
+overwrites the first's functions.** One `JSContext` serves every view by design —
+`WMPScriptContext.restoreElements(for:)` swaps each window's live elements in for the length of its
+own transaction, because every view root is called `view` — but **a program's top-level functions are
+not swapped**, so the last `scriptFile` evaluated wins for the whole skin. `pharaoh.js` and
+`pharaoh_ros.js` each define `OnOpenStateChange`, `UpdateMetadata` and `vidIsRunning`; the rosetta's
+wins, so the *player's* `player.OpenState_onchange` runs the rosetta's handler and dies on the first
+identifier that view does not have:
+`SCRIPT-DIAG view-2 [handler-error] onLoad[0]: ReferenceError: Can't find variable: bgVid (line 50)`,
+reproducible with `WMP_SKIN=…/pharaoh.wmz WMP_RENDER_HOST=playing`. **It is invisible with a stopped
+player**, which is why no sweep has shown it — the handler's `else` branch touches nothing
+view-specific — so a default-state capture cannot measure it. The population is **7 of 185 archives**
+declaring two or more `scriptFile` programs that define the same top-level function name:
+`Plus! SlimLine`, `Sports` and `holiday_skin` collide on six each (`Init`, `OnOpenStateChange`,
+`OnPlayStateChange`, `EndVideo`, `StartVideo`/`OnClose`, `OnTimerTick`), `pharaoh` on two,
+`9SeriesDefault` and `corona` on `OpenMedia`, `portals` on `init`/`shutdown` — a scan of every
+`function <name>(` in each program a `scriptFile` names, decoded as `WMPTextDecoder` does; **re-run
+it before ranking**. `pharaoh`'s own symptom is bounded (its video pane never auto-opens) and the row
+is ranked on the other six. **The shape of the fix is per-view function scope; what that costs a skin
+whose views deliberately share a helper is the question to answer first.**
 
 ## What was ruled out
 

@@ -38,10 +38,33 @@ window's *title bar* and the top of its *inner border*, not just a corner.
 |---|---|---|
 | "the animation fps is low in general" | Every rebuild restarted the repaint loop — this skin's own 100 ms view timer restarted it ten times a second — and a 0/1-cs GIF delay was clamped to 0.1s | W142 |
 | "the playlist and eq windows are not properly constructed and the window border and details are not correct and there are large gaps" | `verticalAlignment="center"` was read as a margin, so both side columns of all five windows collapsed to `top=0` and painted over the corner pieces that carry the title bar and inner border | W143 |
-| "ALXMorph does nothing — no animation and nothing reacts" | The `mainView` starvation class; `alphaBlendTo` (W38), `backgroundImage` from script (W75) and an unset-preference default (W76) were each load-bearing | W68 (open) |
+| "ALXMorph does nothing — no animation and nothing reacts" | The animation half was `alphaBlendTo` (W38), `backgroundImage` from script (W75) and an unset-preference default (W76), all closed. The starvation half was never real — see below | W68 (moved to `LOW_QUALITY_TASKS.md` 2026-09-19), remainder **W242** |
 | "in all the alien type skins the numeric display is illegible" | A `<BUTTON>`'s `image` was scaled to its authored frame, blowing one tenth of one digit up ten times | W122 |
 | "the animation sometimes does not fully run when first opened — it runs what appears to be half" | The animation clock was per **view**, not per image: the epoch was set on the first animated GIF in the view and `AlienMorph` assigns its shutter a second later from `timerInterval="1000"`, so anything that animated first stole that much off the head | W182 (closed 2026-09-15) |
 | "ALXMorph's animation runs so quickly, it is basically the same animation as AlienMorph" | Not the engine — the two archives author the same shutter at 0 cs and 2 cs, and only 0/1 cs was being floored | closed 2026-09-15, `WMPImageStore.asFastAsPossibleCentiseconds` |
+
+## The five hit targets (W242)
+
+**What survives of W68, restated as the question its own evidence supports.** That row argued from a
+starvation number that has since evaporated — `ALXMorph/mainView` quoted at 15 unresolved of 15
+nodes, re-measured 2026-09-19 as **3**, all in classes since proven phantom (`<controls>` W111, a
+`locSub` string table W232, an anonymous wrapper whose children all resolve W231). Twelve of the
+fifteen were string-table text. **Do not re-derive anything from that row's figures**; the full
+re-measurement is in `LOW_QUALITY_TASKS.md` § W68.
+
+**The observation underneath it was never disproved.** The view the skin *opens on* dispatches
+**5 hit targets** where its own `eqView` dispatches **24**, and the family was live-reported as
+"ALXMorph does nothing — no animation and nothing reacts". `ALXMorph`, `AlienMorph` and
+`AlienwareTeleport` were measured 2026-09-19; the other three of the six are unmeasured.
+
+**Ask it as a hits question, not an unresolved one.** The nodes resolve, the commands draw (7 of
+them), and the shell is on screen, so whatever is missing is **hit construction or occlusion, not
+layout**. `WMP_RENDER_OCCLUDED=1` is the instrument W149 uses for exactly this and **it has never
+been pointed at this family** — run it before opening the markup.
+
+**Two halves of W68 are settled and must not be re-opened.** The animation half is **closed**
+(W38, W75, W76). The AppKit half is **cleared** — `ALXMorph/mainView` diffs to zero against its own
+hosted render (W71), so nothing here is an overlay defect and the whole of it is scene-side.
 
 ## What was ruled out
 
