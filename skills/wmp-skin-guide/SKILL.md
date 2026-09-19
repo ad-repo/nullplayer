@@ -1785,6 +1785,10 @@ pile onto each other (measured: four windows on one slot). A shared cursor is wh
 an arrangement. `WinampModernMainWindowController.arrangeWindows` is the recipe; the `.wmz` routine
 is that recipe with the player re-centred first.
 
+**The `.wmp` case in `fallbackMainSize` is dead** — the branch above it returns first — and is kept
+only for exhaustiveness. `ui-guide` § *Off-Screen Window Recovery* names all four families and says
+which of them the sweep reaches.
+
 **The contract is that one press is enough and a second press is a no-op.** Verify it that way:
 `diff` the window list across two presses, do not judge it by eye.
 

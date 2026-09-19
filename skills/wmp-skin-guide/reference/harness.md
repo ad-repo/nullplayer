@@ -1841,6 +1841,32 @@ the two empty-value cases W240 split off as malformed authoring (`STALKER`'s `vi
 justification was that it distorts this ranking, and it does not distort the part of it that ranks
 anything. See `LOW_QUALITY_TASKS.md`.
 
+### The empty-value class, and why a coercion to zero is not the fix (W241)
+
+An attribute authored with an **empty value** is dropped, and the nodes it costs are controls rather
+than wrappers. Measured 2026-09-19 over 185 archives with the W231-extended `WMP_RENDER_UNRESOLVED`:
+**21 nodes across 4 archives** — `Beck` 11 (the ten `eq1`…`eq10` bands plus a `<text width="">`),
+`Revert` and `Revert (1)` 8 each (one shared node plus the seven `vwPL` buttons), `STALKER` 1
+(`vidBack`, an empty `backgroundImage`), `WWC` 1 (`introAnim`, an empty `top`). **The corpus-wide
+count of `<attr>=""` in markup is unmeasured**, and it is the first thing to take: count it with a
+decoder-faithful scan (§ *Counting a tag across the corpus* — the census cannot see an attribute
+*value*), then decide what WMP does with one.
+
+**An empty attribute is not a missing attribute.** WMP may fall back to the ambient default where
+this engine drops the node, which would draw Beck's ten bands at their bitmap height. Every one of
+those bands authors a literal `left`/`top`, so each was deliberately placed and each reports
+`[expected number or geometry reference]`.
+
+**Do not fix it as a parse-level coercion of `""` to zero.** A zero-height slider is as invisible as
+an unresolved one, and `Revert`'s seven buttons — `horizontalAlignment="stretch"
+verticalAlignment="stretch"` with no size, each alone in its own `<SUBVIEW>` — would still have no
+size at all. **Verify on `Beck` first**: it is the one case where the defect is ten adjacent controls
+in a single row, so a correct fix is unmistakable in the PNG.
+
+The shape is the same one W240 split off as malformed authoring, which is why the two are taken
+together: W240 is the node that has a size available and refuses it, this is the node whose size was
+authored as nothing at all.
+
 ---
 
 ## After the starvation classes (179-archive corpus, 2026-09-09)
