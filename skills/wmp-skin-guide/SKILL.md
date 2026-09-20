@@ -2076,6 +2076,18 @@ than its routing:**
   or ends) and reports that as `volume`/`muted` while a video cast is active. `.toggleMute` joins
   the branch for the same reason: it was muting the audio queue standing behind the film.
 
+**`WMPAudioEngineHost.videoCast` is the seam that makes this branch testable, and it exists because
+both of those shipped.** The branch is only reachable with a real Chromecast on the network, so
+nothing in the suite had ever entered it: a unit slip and a missing readback both reached a user.
+`WMPVideoCastTransport` is the whole of what the host asks a cast to do — `isCasting`, `isPlaying`,
+`currentTime`, `duration`, `title`, `togglePlayPause`, `stop`, `seek(fraction:)`, `setVolume` — and
+`WMPWindowManagerVideoCast` is the only implementation the app installs, each member forwarding to
+the `WindowManager` call it always did. `WMPVideoCastTransportTests` installs a fake and drives
+`perform`/`snapshot` directly; **it is proof rather than coverage — re-introducing either defect
+turns its six tests into eight failures**, which is the check to repeat before trusting it. Note the
+seam's own signature is the fix to the first defect: `seek(fraction:)` cannot be handed seconds
+without saying so.
+
 **And closing the player quits the app** (`closeViewWindow` → `WMPMainWindowController.terminateApplication`),
 as Classic's and Original's own close buttons do and as real WMP does. Ordering the window out left
 the app running behind an empty screen — reported as *"the close button does not exit"*, and before

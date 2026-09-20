@@ -1,6 +1,46 @@
 import Foundation
 import NullPlayerCore
 
+/// **The cast-side transport the WMP host drives while a film is on a television.**
+///
+/// A seam rather than direct `WindowManager` calls for one reason: the branch behind it is only
+/// reachable with a real Chromecast on the network, and it has already shipped two defects that a
+/// test could have caught — a seek handed seconds to a call that takes a fraction, and a volume
+/// read back off the idle audio queue. `WMPWindowManagerVideoCast` is the only implementation the
+/// app ever installs; a test installs its own and drives `perform` and `snapshot` directly.
+@MainActor
+protocol WMPVideoCastTransport {
+    /// Whether a film is casting **and** WMP is the family showing it.
+    var isCasting: Bool { get }
+    var isPlaying: Bool { get }
+    var currentTime: TimeInterval { get }
+    var duration: TimeInterval { get }
+    var title: String? { get }
+    func togglePlayPause()
+    func stop()
+    /// **A fraction of the film, not a time.** `WindowManager.seekVideoCast` multiplies by the
+    /// cast's own duration itself.
+    func seek(fraction: Double)
+    func setVolume(_ level: Float)
+}
+
+/// The app's implementation: every call is `WindowManager`'s own cast-aware one.
+@MainActor
+struct WMPWindowManagerVideoCast: WMPVideoCastTransport {
+    var isCasting: Bool {
+        let manager = WindowManager.shared
+        return manager.uiMode.controllerFamily == .wmp && manager.isVideoCastingActive
+    }
+    var isPlaying: Bool { WindowManager.shared.videoPlaybackState == .playing }
+    var currentTime: TimeInterval { WindowManager.shared.videoCurrentTime }
+    var duration: TimeInterval { WindowManager.shared.videoDuration }
+    var title: String? { WindowManager.shared.videoTitle }
+    func togglePlayPause() { WindowManager.shared.toggleVideoPlayPause() }
+    func stop() { WindowManager.shared.stopVideo() }
+    func seek(fraction: Double) { WindowManager.shared.seekVideoCast(position: fraction) }
+    func setVolume(_ level: Float) { WindowManager.shared.setVideoCastVolume(level) }
+}
+
 @MainActor
 final class WMPAudioEngineHost: WMPHost {
     private let engine: AudioEngine
@@ -49,10 +89,10 @@ final class WMPAudioEngineHost: WMPHost {
     /// window controls dont control it". Classic has always routed this way
     /// (`MainWindowView` → `WindowManager.isVideoActivePlayback` → `toggleVideoPlayPause`); this is
     /// the same rule on the WMP side, and the manager's own cast-aware calls do the work.
-    private static var castingVideo: Bool {
-        let manager = WindowManager.shared
-        return manager.uiMode.controllerFamily == .wmp && manager.isVideoCastingActive
-    }
+    private static var castingVideo: Bool { videoCast.isCasting }
+
+    /// The cast transport this host drives. The app never replaces it; a test does.
+    static var videoCast: any WMPVideoCastTransport = WMPWindowManagerVideoCast()
 
     /// The artwork WMP exposes belongs to the presentation currently visible to the user. A local
     /// video takes precedence over the audio queue for the same reason `snapshot` does below.
@@ -112,12 +152,12 @@ final class WMPAudioEngineHost: WMPHost {
             // The readouts follow the cast, not the audio queue standing idle behind it. There is
             // no local picture, so `result.video` stays empty and the skin's `<VIDEO>` box is dark
             // — which is what a film playing on a television looks like from here.
-            let manager = WindowManager.shared
+            let cast = Self.videoCast
             syncCastVolumeLatch()
-            result.state = manager.videoPlaybackState == .playing ? .playing : .paused
-            result.currentTime = Self.finite(manager.videoCurrentTime)
-            result.duration = Self.finite(manager.videoDuration)
-            result.metadata = WMPMediaMetadata(title: manager.videoTitle ?? "")
+            result.state = cast.isPlaying ? .playing : .paused
+            result.currentTime = Self.finite(cast.currentTime)
+            result.duration = Self.finite(cast.duration)
+            result.metadata = WMPMediaMetadata(title: cast.title ?? "")
             result.volume = Double(max(0, min(1, castVolume)))
             result.muted = castVolume == 0
             result.playlistCount = max(1, result.playlistCount)
@@ -160,31 +200,31 @@ final class WMPAudioEngineHost: WMPHost {
 
     func perform(_ action: WMPTransportAction, value: WMPHostValue?) {
         if Self.castingVideo {
-            let manager = WindowManager.shared
+            let cast = Self.videoCast
             switch action {
             // `toggleVideoPlayPause` is a toggle, so a skin's *separate* play and pause buttons
             // have to ask what the cast is doing first — pressing play on a playing cast would
             // otherwise pause the television.
             case .play:
-                if manager.videoPlaybackState != .playing { manager.toggleVideoPlayPause() }
+                if !cast.isPlaying { cast.togglePlayPause() }
                 return
             case .pause:
-                if manager.videoPlaybackState == .playing { manager.toggleVideoPlayPause() }
+                if cast.isPlaying { cast.togglePlayPause() }
                 return
-            case .stop: manager.stopVideo(); return
+            case .stop: cast.stop(); return
             // `seekVideoCast` takes a *fraction*, not a time — it multiplies by the cast's own
             // duration itself. Handing it seconds squared the seek past the end of the film, and
             // the receiver answered IDLE, which reads here as "media ended" and tore the cast down.
             case .seek:
-                if let fraction = value?.finiteNumber, manager.videoDuration > 0 {
-                    manager.seekVideoCast(position: max(0, min(1, fraction)))
+                if let fraction = value?.finiteNumber, cast.duration > 0 {
+                    cast.seek(fraction: max(0, min(1, fraction)))
                 }
                 return
             case .volume:
                 if let volume = value?.finiteNumber {
                     syncCastVolumeLatch()
                     castVolume = Float(max(0, min(1, volume)))
-                    manager.setVideoCastVolume(castVolume)
+                    cast.setVolume(castVolume)
                 }
                 return
             // Muting the television, not the audio queue standing idle behind it — which is what
@@ -193,7 +233,7 @@ final class WMPAudioEngineHost: WMPHost {
                 syncCastVolumeLatch()
                 if castVolume > 0 { preMuteCastVolume = castVolume; castVolume = 0 }
                 else { castVolume = max(0.01, min(1, preMuteCastVolume)) }
-                manager.setVideoCastVolume(castVolume)
+                cast.setVolume(castVolume)
                 return
             // A cast film is one item with nowhere to skip to, and `next`/`previous` must not fall
             // through to the audio queue and start a track behind it.
