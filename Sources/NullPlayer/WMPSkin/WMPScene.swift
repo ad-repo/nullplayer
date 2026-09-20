@@ -448,6 +448,9 @@ struct WMPHitMetadata: Hashable, Codable {
     /// Authored by nearly the whole corpus — `upToolTip` alone is 4,789 uses across 176 of 179
     /// archives — and shown by nothing until 2026-09-08.
     let toolTip: String?
+    /// This node's own `onClick` already issues `action`, so a click must not post it as well —
+    /// `WMPTransportAction.handlerOwnsAction`, which is where the measurement and the rule are.
+    let handlerOwnsAction: Bool
 
     init(stableID: Int, nodeID: String?, kind: String, frame: WMPRect, clipRect: WMPRect?,
          zIndex: Int, documentOrder: Int, paintOrder: Int? = nil,
@@ -455,7 +458,7 @@ struct WMPHitMetadata: Hashable, Codable {
          mappingImage: WMPMappingImage?, mappingTargets: [WMPHitTarget],
          coverage: WMPHitCoverage? = nil,
          cursor: WMPCursor? = nil, tabStop: Bool = true, positionMap: WMPPositionMap? = nil,
-         toolTip: String? = nil) {
+         toolTip: String? = nil, handlerOwnsAction: Bool = false) {
         self.stableID = stableID; self.nodeID = nodeID; self.kind = kind; self.frame = frame
         self.clipRect = clipRect; self.zIndex = zIndex; self.documentOrder = documentOrder
         // A hand-built fixture that states no traversal position is ordered by document order,
@@ -465,7 +468,7 @@ struct WMPHitMetadata: Hashable, Codable {
         self.mappingImage = mappingImage; self.mappingTargets = mappingTargets
         self.coverage = coverage
         self.cursor = cursor; self.tabStop = tabStop; self.positionMap = positionMap
-        self.toolTip = toolTip
+        self.toolTip = toolTip; self.handlerOwnsAction = handlerOwnsAction
     }
 }
 

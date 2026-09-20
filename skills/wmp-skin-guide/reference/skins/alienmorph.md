@@ -38,12 +38,35 @@ window's *title bar* and the top of its *inner border*, not just a corner.
 |---|---|---|
 | "the animation fps is low in general" | Every rebuild restarted the repaint loop — this skin's own 100 ms view timer restarted it ten times a second — and a 0/1-cs GIF delay was clamped to 0.1s | W142 |
 | "the playlist and eq windows are not properly constructed and the window border and details are not correct and there are large gaps" | `verticalAlignment="center"` was read as a margin, so both side columns of all five windows collapsed to `top=0` and painted over the corner pieces that carry the title bar and inner border | W143 |
-| "ALXMorph does nothing — no animation and nothing reacts" | The animation half was `alphaBlendTo` (W38), `backgroundImage` from script (W75) and an unset-preference default (W76), all closed. The starvation half was never real — see below | W68 (moved to `LOW_QUALITY_TASKS.md` 2026-09-19), remainder **W242** |
+| "ALXMorph does nothing — no animation and nothing reacts" | The animation half was `alphaBlendTo` (W38), `backgroundImage` from script (W75) and an unset-preference default (W76), all closed. The starvation half was never real and the 5-hit half was an intro (W242, retired) — the reacting half was the engine dispatching one click twice | W68 (moved to `LOW_QUALITY_TASKS.md` 2026-09-19), **W243** |
 | "in all the alien type skins the numeric display is illegible" | A `<BUTTON>`'s `image` was scaled to its authored frame, blowing one tenth of one digit up ten times | W122 |
 | "the animation sometimes does not fully run when first opened — it runs what appears to be half" | The animation clock was per **view**, not per image: the epoch was set on the first animated GIF in the view and `AlienMorph` assigns its shutter a second later from `timerInterval="1000"`, so anything that animated first stole that much off the head | W182 (closed 2026-09-15) |
 | "ALXMorph's animation runs so quickly, it is basically the same animation as AlienMorph" | Not the engine — the two archives author the same shutter at 0 cs and 2 cs, and only 0/1 cs was being floored | closed 2026-09-15, `WMPImageStore.asFastAsPossibleCentiseconds` |
 
-## The five hit targets (W242)
+## The five hit targets (W242, closed as measured — and what it found instead)
+
+**W242 asked a question its own instrument answered no.** `WMP_RENDER_OCCLUDED=1` had never been
+pointed at this family; run over all six archives it reports `recovered=0 lost=0
+unreachable-either-way=0` on every view of every skin. Nothing here is occluded.
+
+**The 5 hits are the authored resting state, not a loss.** This player keeps its whole transport —
+volume, seek, mute, the vis/eq/pl buttons, the metadata line — inside `mainBackGroup1`, authored
+`visible="false"`, and `alienware.js`'s `toggleShutter()` sets it visible off the view's own 800 ms
+intro timer. The census measures at t=0, before that. With `WMP_RENDER_SETTLE=3`, `ALXMorph`,
+`AlienMorph`, `AlienwareTeleport` and `ALXVortex` all report **14 hits**, and driving the twelve
+points decoded from `m_set1/2/3_map.png` hits twelve different elements. `Alienware Invader`'s 0 is
+honest too: its `mainView` is a 568-frame PNG sequence at 50 ms — **~28 seconds of intro** — before
+either of its groups is revealed, short-circuited only by `player.playState==3`. `Darkstar` authors 4.
+**Retired 2026-09-20; do not re-derive a defect from the 5-vs-24 comparison** — it compares a view
+behind an intro with one that has none.
+
+**What the live run found in its place is W243**, and it is not this family's defect but the
+engine's: a `<NEXTELEMENT>` whose own `onClick` calls `player.controls.next()` was dispatched twice,
+so one click on Next advanced two tracks. `SKILL.md` § *Which control a click reaches* carries the
+rule and its 73-element reach; this skin is the case it was measured on because its transport is
+authored in exactly that shape.
+
+### What W68 left behind
 
 **What survives of W68, restated as the question its own evidence supports.** That row argued from a
 starvation number that has since evaporated — `ALXMorph/mainView` quoted at 15 unresolved of 15
@@ -52,15 +75,15 @@ nodes, re-measured 2026-09-19 as **3**, all in classes since proven phantom (`<c
 fifteen were string-table text. **Do not re-derive anything from that row's figures**; the full
 re-measurement is in `LOW_QUALITY_TASKS.md` § W68.
 
-**The observation underneath it was never disproved.** The view the skin *opens on* dispatches
-**5 hit targets** where its own `eqView` dispatches **24**, and the family was live-reported as
-"ALXMorph does nothing — no animation and nothing reacts". `ALXMorph`, `AlienMorph` and
-`AlienwareTeleport` were measured 2026-09-19; the other three of the six are unmeasured.
+**The observation underneath it was that the view the skin opens on dispatches 5 hit targets where
+its own `eqView` dispatches 24**, with the family live-reported as "ALXMorph does nothing — no
+animation and nothing reacts". Both halves are now answered above: the 5 is an intro, and the
+"nothing reacts" was W243, found by driving the app rather than by counting hits.
 
-**Ask it as a hits question, not an unresolved one.** The nodes resolve, the commands draw (7 of
-them), and the shell is on screen, so whatever is missing is **hit construction or occlusion, not
-layout**. `WMP_RENDER_OCCLUDED=1` is the instrument W149 uses for exactly this and **it has never
-been pointed at this family** — run it before opening the markup.
+**The lesson the row leaves is about the counting.** A hit tally taken at t=0 is a tally of a scene
+the user never sees in a skin that opens behind an animation, and comparing two views' tallies
+compares their authoring as much as the engine. **Settle before ranking a `hits` count**, exactly as
+`harness.md` says to dump a view before taking a `starved.tsv` row.
 
 **Two halves of W68 are settled and must not be re-opened.** The animation half is **closed**
 (W38, W75, W76). The AppKit half is **cleared** — `ALXMorph/mainView` diffs to zero against its own

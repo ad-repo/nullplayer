@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **A Media Player skin's Next button no longer skips two tracks.** On skins whose markup names the
+  command in its own click handler as well as in the button, one press was acting twice: Next and
+  Previous jumped two tracks at a time, and any button that toggles something flipped it back
+  immediately, which looked like the control was dead. 73 buttons across 19 of the installed skins
+  were affected. Pressing one now does what it says once.
+
 - **A Media Player skin's video window no longer opens enormous on a modern film.** Play a 1440p or
   4K video under most `.wmz` skins and the skin's own script sized its window to the film's pixel
   dimensions — *Combat Flight Simulator 3* asked for 2580x1532 on a 2560x1440 clip — so its close,

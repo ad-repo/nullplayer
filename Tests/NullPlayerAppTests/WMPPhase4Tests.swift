@@ -94,6 +94,61 @@ final class WMPPhase4Tests: XCTestCase {
         XCTAssertNil(WMPTransportAction.authoredAction(for: graph.nodes(id: "scripted")[0]))
     }
 
+    /// **One press must reach the host once (W243).** A `<NEXTELEMENT>` carries `.next` by being
+    /// one, and 73 transport elements across 19 corpus archives *also* spell `player.controls.next()`
+    /// in their own `onClick`. `WMPMainView.mouseUp` raised the handler and then posted the action,
+    /// so one click on `ALXMorph`'s Next advanced two tracks of a three-index cue.
+    ///
+    /// The three cases below are the whole rule, and the second and third are why it is a dedupe
+    /// rather than "an authored handler wins": three corpus elements author a handler that only
+    /// plays a sound and rely on the tag for the transport, and a plain `<BUTTON>` whose action was
+    /// *derived* from its handler literal would be left with nothing at all.
+    func testHandlerThatReissuesItsOwnTransportCommandOwnsTheClick() throws {
+        let document = try WMPXMLParser().parse("""
+        <VIEW><NEXTELEMENT id="doubled" onClick="checkSoundPref('click.wav');player.controls.next()"/>
+        <STOPELEMENT id="sound" onClick="checkSoundPref('click.wav')"/>
+        <BUTTON id="derived" onClick="player.controls.next()"/></VIEW>
+        """, path: "transport.wms")
+        let graph = WMPObjectGraph(document: document)
+        let doubled = graph.nodes(id: "doubled")[0], sound = graph.nodes(id: "sound")[0]
+        let derived = graph.nodes(id: "derived")[0]
+        XCTAssertEqual(WMPTransportAction.authoredAction(for: doubled), .next)
+        XCTAssertTrue(WMPTransportAction.handlerOwnsAction(.next, on: doubled))
+        XCTAssertEqual(WMPTransportAction.authoredAction(for: sound), .stop)
+        XCTAssertFalse(WMPTransportAction.handlerOwnsAction(.stop, on: sound))
+        XCTAssertEqual(WMPTransportAction.authoredAction(for: derived), .next)
+        XCTAssertFalse(WMPTransportAction.handlerOwnsAction(.next, on: derived))
+    }
+
+    /// The flag has to survive the trip a click actually takes — builder to `WMPHitMetadata` to the
+    /// mapping child `WMPHitTester` hands back — because every doubled element measured in the
+    /// corpus is a `<BUTTONGROUP>` child and the view reads it off the target, not the node.
+    func testMappedTransportChildCarriesHandlerOwnershipToTheHitTester() async throws {
+        let sheet = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { _, _ in [10, 10, 10, 255] })
+        let mapping = try WMPSkinTestSupport.encodedImage(width: 20, height: 10,
+            rgba: Self.flood(20, 10) { x, _ in x < 10 ? [255, 0, 0, 255] : [0, 255, 0, 255] })
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="20" height="10"><BUTTONGROUP id="transport"
+            left="0" top="0" width="20" height="10" image="normal.png"
+            mappingImage="map.png"><PLAYELEMENT id="play" mappingColor="#FF0000"/>
+            <NEXTELEMENT id="next" mappingColor="#00FF00"
+            onClick="checkSoundPref('click.wav');player.controls.next()"/></BUTTONGROUP></VIEW></THEME>
+            """.utf8)), WMPTestArchiveEntry("normal.png", data: sheet),
+            WMPTestArchiveEntry("map.png", data: mapping)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        let play = try XCTUnwrap(tester.hitTest(WMPPoint(x: 2, y: 2)))
+        let next = try XCTUnwrap(tester.hitTest(WMPPoint(x: 17, y: 2)))
+        XCTAssertEqual(play.action, .play)
+        XCTAssertFalse(play.handlerOwnsAction, "no handler, so the tag is the only source of the click")
+        XCTAssertEqual(next.action, .next, "the action stays: it is what disables and labels the control")
+        XCTAssertTrue(next.handlerOwnsAction)
+    }
+
     func testSceneBuildCreatesSemanticMappedTargetsAndStateArtwork() async throws {
         // Sheets the size of the group, because that is what a `<BUTTONGROUP>` authors: the
         // artwork is not stretched to a frame it does not fill, so a 2x1 sprite in a 20x10 group

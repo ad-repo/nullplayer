@@ -16,7 +16,8 @@ same change that closes them, so this file stays a list of work that is still op
 
 **A row with a defect in the *row* goes to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md), which is
 neither the archive nor a rejection of the work.** Six went there on 2026-09-19 — W68, W239, W73,
-W111, W135 and W67 — and two left real work behind that is ranked here: W242 and W241. **Read that
+W111, W135 and W67 — and two left real work behind: W241, ranked here, and W242, which was ranked
+here until 2026-09-20 and is now archived (it retired as measured and found W243 on the way). **Read that
 file before re-opening any number, and re-measure before reviving anything from it.**
 
 **Every table on this page is in rank order, top down, and the tiers themselves are ranked by the
@@ -75,11 +76,14 @@ Phase 6 recovered of it is `harness.md` § *After Phase 6*; the traps a live rep
 
 **W68 was this tier's other row and moved to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md) on
 2026-09-19 with its central number false.** Do not re-derive anything from its figures; what survived
-it is W242.
+it was W242, **retired 2026-09-20 as measured** — the Alienware family's 5 hit targets are a
+transport authored behind an 800 ms intro, `WMP_RENDER_OCCLUDED=1` is clean across all six archives,
+and the live half of the report was the engine dispatching one click twice (**W243**, closed the
+same day). Both are in [the archive](docs/wmp-skin/wmp-backlog-archive.md); **the rule W242 leaves
+behind is that a `hits` count taken at t=0 is a count of a scene nobody sees in a skin that opens
+behind an animation — settle before ranking one.**
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W242 | `ALXMorph/mainView` draws its whole shell and dispatches **5 hit targets** where its own `eqView` dispatches 24 | 6 skins in the Alienware/ALX family; `ALXMorph`, `AlienMorph` and `AlienwareTeleport` measured 2026-09-19, the other three unmeasured | Not blocked. **Ask it as a hits question, not an unresolved one** — the nodes resolve and the shell is on screen, so this is hit construction or occlusion. First step: point `WMP_RENDER_OCCLUDED=1` at the family, which has never been done, before opening the markup. Evidence: `skins/alienmorph.md` § *The five hit targets (W242)*. |
+**The tier is empty of rows and stays for the same reason the others do.**
 
 
 ## Tier 1d — what the Phase 6 instruments do and do not reach

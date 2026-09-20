@@ -12,6 +12,10 @@ struct WMPHitTarget: Hashable, Codable {
     /// is on the target and not only on `WMPHitMetadata`: `alx_dl.wms` gives one of four
     /// `<BUTTONELEMENT>`s inside a single mapping image the tip "Open Media File".
     var toolTip: String?
+    /// This element's own `onClick` already issues `action`, so the click must not post it as well
+    /// — `WMPTransportAction.handlerOwnsAction`. A mapping child carries its own, because every
+    /// doubled transport element measured in the corpus is a `<BUTTONGROUP>` child.
+    var handlerOwnsAction: Bool = false
 }
 
 struct WMPHitTester {
@@ -33,7 +37,7 @@ struct WMPHitTester {
             }
             return WMPHitTarget(stableID: hit.stableID, nodeID: hit.nodeID, kind: hit.kind,
                                 frame: hit.frame, action: hit.action, sticky: hit.sticky,
-                                enabled: hit.enabled)
+                                enabled: hit.enabled, handlerOwnsAction: hit.handlerOwnsAction)
         }
         return nil
     }

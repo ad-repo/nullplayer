@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W243.** Check this file before reusing any number — the live backlog is a
+**The next free number is W244.** Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -38,6 +38,77 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+## W243 — one press reached the host twice, and W242 was the row that found it, 2026-09-20
+
+**Closed 2026-09-20, and it is the answer to W242 rather than a row that was ever opened on its own.**
+Taking W242 top-down led to the Alienware family, and driving the live app there found the engine
+dispatching a single click twice.
+
+**`WMPMainView.mouseUp` raised the element's authored `onClick` and then applied
+`WMPHitTarget.action`.** A `<NEXTELEMENT onClick="checkSoundPref('click.wav');player.controls.next()">`
+states the same command twice — once by being a `<NEXTELEMENT>` and once in its handler — so both
+were sent. **Measured live on `ALXMorph` with the three-index cue** (`scripts/testdata.sh path
+cue-flac`): one click on Next logged `NowPlayingManager: Updated now playing - Second Index` and
+`- Third Index` **10 ms apart**, and one click on pause logged `AudioEngine.pause()` twice.
+
+**Reach: 73 transport elements across 19 of the 182 measurable archives** — `next` 17 uses / 16
+skins, `previous` 15 / 14, `play` 20 / 19, `stop` 14 / 13, `pause` 7 / 7 — counted over the
+`scripts/wmp_markup_census.sh` flat files (185 installed, 1 excluded, 2 unreadable). Only `next` and
+`previous` are visible to a user as a doubled press; `play`, `pause` and `stop` are idempotent and
+hid the defect for the whole of Phase 4 onward, and a `sticky` toggle driven this way simply returns
+to where it started — which reads as a dead control, not a doubled one.
+
+**The fix is a dedupe, and the engine already had the rule.**
+`WMPTransportAction.handlerOwnsAction` decides at scene build whether a node's own `onClick` issues
+the action its *tag* carries; the flag rides on `WMPHitMetadata` and on every mapping child, and
+`mouseUp` skips the implicit post when it is set. This is what
+`WMPMainWindowController.dispatchScriptEvent` has done for `<RETURNBUTTON>` since W191, where
+`anemone` and `modernblue` spell `view.returnToMediaCenter()` themselves and posting the command too
+would toggle the library open and shut again on one click. **Two things it deliberately is not:**
+not "an authored handler wins" — 3 corpus elements author a handler that only plays a sound and rely
+on the tag for the transport — and not applied to an action *derived* from a plain `<BUTTON>`'s own
+handler literal, which is the Phase 4 fallback and would be left with nothing. The keyboard
+activation path carried the mirror defect (it posted the action and never ran the handler) and is
+now the same rule.
+
+**Why no headless instrument ever saw it.** `WMP_RENDER_CLICK` runs the authored handler and prints
+the host command it produced; it never applies `WMPHitTarget.action`, so the probe printed one
+`command=next` where the app sent two. The flag's row in `harness.md` now says so. **The general
+lesson is the one `live-ui-testing` exists for**: a probe that models half the dispatch path agrees
+with the app on every skin that does not exercise the other half.
+
+Verified live after the fix on the same cue: Next advances one track, Prev goes back one, pause logs
+once, play resumes, and the shutter toggle — a scripted control with no semantic action — still
+fires once. `WMPPhase4Tests` covers the rule and the trip through the hit tester.
+
+## W242 — the five hit targets were an intro, retired 2026-09-20
+
+**Retired 2026-09-20 as measured, not fixed**, and its first step is what retired it. The row
+required `WMP_RENDER_OCCLUDED=1` be pointed at the Alienware/ALX family before the markup was opened;
+run over all six archives it reports `recovered=0 lost=0 unreachable-either-way=0` on **every view of
+every skin**. Nothing in the family is occluded.
+
+The row as it stood in `WMP_TASKS.md`:
+
+> | W242 | `ALXMorph/mainView` draws its whole shell and dispatches **5 hit targets** where its own `eqView` dispatches 24 | 6 skins in the Alienware/ALX family; `ALXMorph`, `AlienMorph` and `AlienwareTeleport` measured 2026-09-19, the other three unmeasured | Not blocked. **Ask it as a hits question, not an unresolved one** — the nodes resolve and the shell is on screen, so this is hit construction or occlusion. First step: point `WMP_RENDER_OCCLUDED=1` at the family, which has never been done, before opening the markup. Evidence: `skins/alienmorph.md` § *The five hit targets (W242)*. |
+
+**The 5 is the authored resting state.** This player keeps its whole transport inside
+`mainBackGroup1`, authored `visible="false"`, and `alienware.js`'s `toggleShutter()` reveals it off
+the view's own 800 ms intro timer — so the census, which measures at t=0, counts the four buttons of
+`mainBackGroup2` plus the four time digits. With `WMP_RENDER_SETTLE=3`, `ALXMorph`, `AlienMorph`,
+`AlienwareTeleport` and `ALXVortex` each report **14 hits**, and the twelve points decoded from
+`m_set1/2/3_map.png` hit twelve different elements. The two unmeasured members are measured now:
+`Alienware_Darkstar_WMP11` authors 4, and `Alienware Invader` reports 0 because its `mainView` is a
+**568-frame PNG sequence at 50 ms — ~28 seconds of intro** — before either of its groups is revealed.
+
+**What the row's live half was really about is W243 above**, found by driving the app it named.
+
+**The lesson worth keeping is about the counting, and it generalises past this family.** A `hits`
+tally taken at t=0 is a tally of a scene the user never sees whenever a skin opens behind an
+animation, and ranking one view's tally against another's compares their authoring as much as the
+engine. **Settle before ranking a `hits` count**, the same rule `harness.md` already states for
+dumping a view before taking a `starved.tsv` row.
 
 ## W231 — `<SUBVIEW>` was the largest unexplained block in the residue, 2026-09-19
 

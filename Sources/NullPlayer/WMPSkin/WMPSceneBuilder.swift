@@ -1549,13 +1549,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
                             guard colors.values.contains(child.stableID) else { return nil }
                             let childEnabled = literalString(child, "enabled")?.caseInsensitiveCompare("false") != .orderedSame
                                 && !interactionState.disabledNodesForScene.contains(child.stableID)
+                            let childAction = WMPTransportAction.authoredAction(for: child)
                             return WMPHitTarget(stableID: child.stableID, nodeID: child.xmlID,
                                 kind: child.kind.description, frame: frame,
-                                action: WMPTransportAction.authoredAction(for: child),
+                                action: childAction,
                                 sticky: literalString(child, "sticky")?.caseInsensitiveCompare("true") == .orderedSame,
                                 enabled: childEnabled,
                                 toolTip: toolTip(child, state: interactionState.visualState(for: child.stableID),
-                                                  literal: literalString))
+                                                  literal: literalString),
+                                handlerOwnsAction: childAction.map {
+                                    WMPTransportAction.handlerOwnsAction($0, on: child)
+                                } ?? false)
                         }
                     }
                 }
@@ -1600,7 +1604,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     mappingTargets: mappingTargets, coverage: coverage, cursor: cursor,
                     tabStop: literalString(node, "tabStop")?.caseInsensitiveCompare("false") != .orderedSame,
                     positionMap: positionMap,
-                    toolTip: toolTip(node, state: visualState, literal: literalString)))
+                    toolTip: toolTip(node, state: visualState, literal: literalString),
+                    handlerOwnsAction: WMPTransportAction.authoredAction(for: node).map {
+                        WMPTransportAction.handlerOwnsAction($0, on: node)
+                    } ?? false))
             }
 
             if let ownClipMask { clipMaskStack.append(ownClipMask) }

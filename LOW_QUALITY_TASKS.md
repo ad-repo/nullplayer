@@ -33,7 +33,7 @@ Re-measured 2026-09-19: the row quotes `ALXMorph/mainView` as `15 nodes, 8 comma
 
 Beyond the stale numbers, the row had become a research log rather than a task — a single table cell of roughly 1,500 words quoting six rows that have since closed inside it (W38, W54, W75, W76, W143, W71) and deferring its own ranking to a file that disagrees with it.
 
-**Its live remainder was preserved, not discarded**: `mainView` drawing its shell with only 5 hit targets is still unexplained and is now **W242**, asked as a hits question instead of an unresolved one.
+**Its live remainder was preserved, not discarded**: `mainView` drawing its shell with only 5 hit targets became **W242**, asked as a hits question instead of an unresolved one. **W242 retired 2026-09-20**: the 5 is a transport authored behind an 800 ms intro and the family is clean under `WMP_RENDER_OCCLUDED=1`, while the *reacting* half of the original report was real and closed as **W243** — one click dispatched twice. Both are in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md).
 
 **The row, verbatim:**
 

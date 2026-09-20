@@ -197,6 +197,17 @@ extension WMPTransportAction {
     }
 
     static func authoredAction(for node: WMPNode) -> WMPTransportAction? {
+        if let kindAction = kindAction(for: node) { return kindAction }
+        let statements = statements(ofHandler: "onClick", on: node)
+        // Phase 4 accepts only exact, non-script transport literals. General handlers remain off.
+        guard statements.count == 1, let normalized = statements.first else { return nil }
+        return literalAction(normalized)
+    }
+
+    /// The action the **tag itself** carries, before any handler is read. Separate from
+    /// `authoredAction` because the two sources are not interchangeable: this one is the element's
+    /// own behaviour, while the handler fallback below is how a plain `<BUTTON>` is given one.
+    private static func kindAction(for node: WMPNode) -> WMPTransportAction? {
         switch node.kind {
         // Both spellings of every transport control carry the same action: `<PLAYELEMENT>` is the
         // region of a `BUTTONGROUP`'s mapping image and `<PLAYBUTTON>` the standalone button, and
@@ -214,15 +225,47 @@ extension WMPTransportAction {
         case .muteButton: return .toggleMute
         case .repeatButton: return .toggleRepeat
         case .shuffleButton: return .toggleShuffle
-        default: break
+        default: return nil
         }
-        guard let attribute = node.attribute(named: "onClick"),
-              case let .handler(_, source) = attribute.value else { return nil }
-        let statements = source.lowercased().split(separator: ";").map {
+    }
+
+    /// **A handler that issues the element's own command owns the click, and the engine must not
+    /// post the command as well.** `<NEXTELEMENT onClick="player.controls.next()">` says one thing
+    /// twice: the kind carries `.next` and the handler calls it, so dispatching both skipped two
+    /// tracks on one press — measured live on `ALXMorph` with a three-index cue, First → Second →
+    /// Third 10 ms apart. **73 transport elements across 19 of the 182 measurable archives** author
+    /// this shape (`next` 17 uses / 16 skins, `previous` 15 / 14, `play` 20 / 19, `stop` 14 / 13,
+    /// `pause` 7 / 7), counted over the `wmp_markup_census.sh` flat files.
+    ///
+    /// **It has to be a dedupe rather than "the handler wins".** Three corpus elements author an
+    /// `onClick` that does something else entirely — a sound effect — and rely on the kind for the
+    /// transport itself, so dropping the implicit action wherever a handler exists would kill them.
+    ///
+    /// This is the rule `WMPMainWindowController.dispatchScriptEvent` already applies to
+    /// `<RETURNBUTTON>`, where `anemone` and `modernblue` spell `view.returnToMediaCenter()`
+    /// themselves and posting the command too would toggle the library open and shut again.
+    /// **Nothing headless saw this**: `WMP_RENDER_CLICK` runs the authored handler and prints its
+    /// host command, and never applies `WMPHitTarget.action` the way `WMPMainView` does.
+    /// **Only where the tag is the source of the action.** A plain `<BUTTON>` whose action was
+    /// *derived* from its own handler literal is the Phase 4 fallback above, and suppressing the
+    /// command there would leave the button with nothing but the handler it was standing in for.
+    static func handlerOwnsAction(_ action: WMPTransportAction, on node: WMPNode) -> Bool {
+        guard kindAction(for: node) == action else { return false }
+        return statements(ofHandler: "onClick", on: node).contains { literalAction($0) == action }
+    }
+
+    /// One authored handler, lowercased, whitespace stripped, split into statements, with the
+    /// skins' own sound-effect call dropped — `checkSoundPref('button.wav');player.controls.next()`
+    /// is a transport statement with a noise in front of it.
+    private static func statements(ofHandler name: String, on node: WMPNode) -> [String] {
+        guard let attribute = node.attribute(named: name),
+              case let .handler(_, source) = attribute.value else { return [] }
+        return source.lowercased().split(separator: ";").map {
             String($0).filter { !$0.isWhitespace }
         }.filter { !$0.isEmpty && !$0.hasPrefix("checksoundpref(") }
-        guard statements.count == 1, let normalized = statements.first else { return nil }
-        // Phase 4 accepts only exact, non-script transport literals. General handlers remain off.
+    }
+
+    private static func literalAction(_ normalized: String) -> WMPTransportAction? {
         if normalized == "player.controls.play()" { return .play }
         if normalized == "player.controls.pause()" { return .pause }
         if normalized == "player.controls.stop()" { return .stop }

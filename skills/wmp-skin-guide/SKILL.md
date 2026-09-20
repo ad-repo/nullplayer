@@ -35,7 +35,7 @@ entry moves to `docs/wmp-skin/wmp-backlog-archive.md` in the same change that cl
 defect in the **row** rather than in the work — stale past the point of trust, not a unit of work,
 stripped of its own justification — moves to `LOW_QUALITY_TASKS.md` instead, which is neither the
 archive nor a rejection; six went there in one audit on 2026-09-19, and two of them left real work
-behind (W241, W242). Re-measure anything revived from it.
+behind (W241; and W242, retired 2026-09-20 after finding W243). Re-measure anything revived from it.
 
 **The `phase-*-handoff.md` files are unverified narrative.** Check every claim in them against the
 code before relying on it: phase 7 asserts that WMP "remains explicitly unavailable in release/MAS
@@ -551,6 +551,26 @@ a dispatch defect — it is a control the pointer never reached at all.
   harsh and `corona` clean; driven live, they are identical — 21 commits apiece, Mario through its
   `value` binding and corona through `target.action` — and the markup changes only the 22nd. How
   harsh it sounds is the material and the distance dragged, not the authoring.
+- **A transport element that issues its own command in `onClick` owns the click, and the engine must
+  not post the command as well (W243).** `<NEXTELEMENT onClick="player.controls.next()">` says the
+  same thing twice — the kind carries `.next` and the handler calls it — and `WMPMainView.mouseUp`
+  raised the handler *and* applied `WMPHitTarget.action`, so **one click on `ALXMorph`'s Next
+  advanced two tracks** of a three-index cue (First → Second → Third, 10 ms apart, driven live).
+  `WMPTransportAction.handlerOwnsAction` decides it at scene build and the flag rides on the hit and
+  on every mapping child; the keyboard activation path had the mirror defect — it posted the action
+  and never ran the handler at all. **Reach: 73 elements across 19 of 182 archives** (`next` 17 uses
+  / 16 skins, `previous` 15 / 14, `play` 20 / 19, `stop` 14 / 13, `pause` 7 / 7), counted over
+  `wmp_markup_census.sh`'s flat files. **It is a dedupe and not "an authored handler wins"**: three
+  corpus elements author a handler that only plays a sound and rely on the tag for the transport,
+  and it is scoped to actions that come from the *tag*, so the Phase 4 fallback that derives an
+  action from a plain `<BUTTON>`'s own literal keeps it. This is the rule `dispatchScriptEvent`
+  already applied to `<RETURNBUTTON>`, where `anemone` and `modernblue` spell
+  `view.returnToMediaCenter()` themselves. **Why it outlived every headless sweep:**
+  `WMP_RENDER_CLICK` runs the authored handler and prints its host command and never applies
+  `action`, so the probe shows one command where the app sent two — `harness.md` § *The probe flags*
+  states the gap on the flag itself. The symptoms are shaped like the engine losing a click, not
+  doubling one: `play`/`pause`/`stop` are idempotent and hide it, a `sticky` toggle driven this way
+  returns to where it started, and only `next`/`previous` show the skip.
 - **A control the host has greyed out is still a control, and the window does not move under it
   (W154).** `WMPMainView.interactiveTarget` answers `nil` for a disabled target exactly as it does
   for bare artwork, and `mouseDown` reads that as "no control here" — so pressing a greyed transport

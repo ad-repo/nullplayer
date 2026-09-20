@@ -585,7 +585,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         if case .beginScan = capturedTarget.action { onAction?(.endScan, nil); return }
         guard result.activated == capturedTarget.stableID else { return }
         onScriptEvent?("click", capturedTarget.nodeID, capturedTarget.stableID)
-        guard let action = capturedTarget.action,
+        // The handler raised above already issues this element's own command where the skin spelled
+        // it out, and posting it here as well is one press acting twice — a `<NEXTELEMENT>` that
+        // skips two tracks. `WMPTransportAction.handlerOwnsAction` holds the rule and its reach.
+        guard let action = capturedTarget.action, !capturedTarget.handlerOwnsAction,
               action != .seek, action != .volume, action != .balance else { return }
         onAction?(action, nil)
     }
@@ -601,7 +604,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // enabled control tabs through all of them instead.
         let targets = scene.hits.filter(\.tabStop).flatMap { hit in hit.mappingTargets.isEmpty
             ? [WMPHitTarget(stableID: hit.stableID, nodeID: hit.nodeID, kind: hit.kind,
-                frame: hit.frame, action: hit.action, sticky: hit.sticky, enabled: hit.enabled)]
+                frame: hit.frame, action: hit.action, sticky: hit.sticky, enabled: hit.enabled,
+                handlerOwnsAction: hit.handlerOwnsAction)]
             : hit.mappingTargets }.filter(\.enabled)
         if event.keyCode == 48, !targets.isEmpty {
             let current = targets.firstIndex { $0.stableID == interaction.focusedNode } ?? -1
@@ -614,7 +618,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             return super.keyDown(with: event)
         }
         if event.keyCode == 49 || event.keyCode == 36 {
-            if let action = target.action { onAction?(action, nil) }
+            // Same rule as `mouseUp`: where the element's own handler issues its command, the
+            // handler is the click and the action must not be posted alongside it.
+            if let action = target.action, !target.handlerOwnsAction { onAction?(action, nil) }
             else { onScriptEvent?("click", target.nodeID, target.stableID) }
             return
         }
@@ -644,7 +650,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         return scene.hits.flatMap { hit -> [NSAccessibilityElement] in
             let targets = hit.mappingTargets.isEmpty
                 ? [WMPHitTarget(stableID: hit.stableID, nodeID: hit.nodeID, kind: hit.kind,
-                    frame: hit.frame, action: hit.action, sticky: hit.sticky, enabled: hit.enabled)]
+                    frame: hit.frame, action: hit.action, sticky: hit.sticky, enabled: hit.enabled,
+                    handlerOwnsAction: hit.handlerOwnsAction)]
                 : hit.mappingTargets
             return targets.compactMap { target in
                 let element = NSAccessibilityElement()
