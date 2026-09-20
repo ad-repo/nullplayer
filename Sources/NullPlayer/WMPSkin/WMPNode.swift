@@ -182,6 +182,31 @@ final class WMPNode {
         attributes.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 
+    /// The attribute only if the skin actually **stated a value** for it.
+    ///
+    /// **An attribute authored with an empty value is not the same as an attribute carrying an
+    /// empty value, and for geometry it is not an attribute at all (W241).** `<attr>=""` is
+    /// authored 970 times across 135 of the 182 measured archives, and the geometry share of that
+    /// was costing whole control groups: every "did the skin state this dimension?" test is
+    /// `attribute(named:) == nil`, so a present-but-empty `height` closed the intrinsic-size gate
+    /// that an *absent* `height` opens — and the node then resolved no size and was never painted.
+    /// `Beck`'s ten EQ bands are the case: `eq1`…`eq10` each author `left`, `top`, `height=""` and
+    /// no `width` at all, with a real `foregroundImage`/`thumbImage` to be sized from.
+    ///
+    /// **This is not a coercion of `""` to zero**, which would be as invisible as the unresolved
+    /// node it replaced. It says the dimension was never stated, so the ambient default answers it
+    /// — 0 for an origin, the artwork's own size for an extent — which is what WMP does.
+    ///
+    /// Deliberately *not* used for strings, handlers or colours: `tooltip=""` (299 uses) and
+    /// `value=""` (101) are authored absences whose current outcome is already right, and the
+    /// resource path implements this rule for itself in `WMPArchive.resolve`.
+    func statedAttribute(named name: String) -> WMPAttribute? {
+        guard let attribute = attribute(named: name),
+              !attribute.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return attribute
+    }
+
     fileprivate func append(_ node: WMPNode) {
         node.parent = self
         children.append(node)

@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **Controls that a Media Player skin left an empty size on now draw.** Where a skin's markup wrote
+  something like `height=""` instead of leaving the attribute out, the control was dropped
+  altogether rather than falling back to the size of its own artwork. The clearest case is the
+  *Beck* skin, whose graphic equalizer drew ten empty slots where its ten frequency sliders should
+  be; they are there now, along with its RESET label. The *Wild Well Control* skin's opening
+  animation, which had never played at all, plays too.
+
 - **A Media Player skin's Next button no longer skips two tracks.** On skins whose markup names the
   command in its own click handler as well as in the button, one press was acting twice: Next and
   Previous jumped two tracks at a time, and any button that toggles something flipped it back

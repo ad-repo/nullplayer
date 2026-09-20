@@ -16,9 +16,11 @@ same change that closes them, so this file stays a list of work that is still op
 
 **A row with a defect in the *row* goes to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md), which is
 neither the archive nor a rejection of the work.** Six went there on 2026-09-19 — W68, W239, W73,
-W111, W135 and W67 — and two left real work behind: W241, ranked here, and W242, which was ranked
-here until 2026-09-20 and is now archived (it retired as measured and found W243 on the way). **Read that
-file before re-opening any number, and re-measure before reviving anything from it.**
+W111, W135 and W67 — and two left real work behind, both now archived: **W241**, closed 2026-09-20
+(the empty-value class; its corpus number came out **970 uses / 135 of 182 archives**, and the
+geometry share of it was the whole defect), and W242, which was ranked here until 2026-09-20 (it
+retired as measured and found W243 on the way). **Read that file before re-opening any number, and
+re-measure before reviving anything from it.**
 
 **Every table on this page is in rank order, top down, and the tiers themselves are ranked by the
 order they appear.** Take the first row of the highest tier that is not blocked. A row whose Reach is
@@ -99,8 +101,7 @@ anything driven by live playback remain outside every headless instrument here. 
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W241 | **An attribute authored with an empty value is dropped, and it is taking whole control groups with it** | **21 nodes across 4 archives** (`Beck` 11, `Revert` and `Revert (1)` 8 each, `STALKER` 1, `WWC` 1), measured 2026-09-19 over 185 archives; the corpus-wide count of `<attr>=""` in markup is **unmeasured and is the first thing to take** | Not blocked. Count `=""` across the corpus's markup with a decoder-faithful scan, then decide what WMP does with one; take it together with W240, and verify on `Beck`. Evidence: `harness.md` § *The empty-value class, and why a coercion to zero is not the fix*. |
-| W240 | **An unresolved node that carries a bitmap takes zero instead of the image's size** | **7 `<SUBVIEW>` nodes across 6 archives**, inside a wider class of **33 of the corpus's 458 unresolved nodes** that carry a bitmap, measured 2026-09-19 over 185 archives with the W231-extended `WMP_RENDER_UNRESOLVED` | Not blocked. Count the 33 first, then settle the rule together with W123 — `Radio` is in both. Not a one-line fallback, and `jsa:` is not part of it and must not be implemented. Evidence: `harness.md` § *After the subview class*. |
+| W240 | **An unresolved node that carries a bitmap takes zero instead of the image's size** | **6 `<SUBVIEW>` nodes across 5 archives** — was 7 across 6 until W241 closed `WWC`'s `introAnim` on 2026-09-20 — inside a wider class of **33 of the corpus's 458 unresolved nodes** that carry a bitmap, measured 2026-09-19 over 185 archives with the W231-extended `WMP_RENDER_UNRESOLVED`; **the 33 is pre-W241 and is a ceiling, not a count** | Not blocked. Re-count the 33 first (W241 closed part of it), then settle the rule together with W123 — `Radio` is in both. Not a one-line fallback, and `jsa:` is not part of it and must not be implemented. `STALKER`'s `vidBack` is still here and is the empty-`backgroundImage` case W241 deliberately left: an empty resource already falls through to the next name, so what it lacks is a size, not a bitmap. Evidence: `harness.md` § *After the subview class*. |
 | W236 | **Two ids are read as a `fontFace` and a `scrollingDirection`, and answering them with the empty string is not the same as answering them** | **12 uses / 2 ids across 2 archives** (`Revert`, `Revert (1)`), measured 2026-09-19 by the W195 census | Not blocked. These are localisation plumbing, not labels, and `""` is not an answer for an attribute with a real default. First step: measure what the scene does with an empty `fontFace` — if it falls back to the view font the row closes as a note; if not, three readouts on both `Revert` releases draw in the wrong face. Not a W195 defect. Evidence: `SKILL.md` § *Static scene and image contracts*, the `res://wmploc.dll` bullet. |
 
 ## Tier 1g — the window system, not the scene

@@ -91,6 +91,7 @@ denominator because none of them is a tag the census can match:
 | **1 archive, 3 attributes** | `wmpprop:` bound to a colour, matching `([A-Za-z]+[Cc]olor)\s*=\s*"\s*wmpprop:` over every `.wms` — `Colorchooser` and nothing else |
 | **17 views, 4 mismatched** | views declaring a literal `width`/`height` **and** a resolvable background image, with the BMP/PNG header read for its real size — the 4 are `Colorchooser`, `Cubist`, `Radio`, `Tomb Raider 2` |
 | **7 archives, 58 assignments** | `\.\s*zIndex\s*=` over `.wms` **and** `.js` together, because the write is as often in an inline handler as in a program |
+| **970 uses, 135 archives** | `<attr>=""` — an attribute authored with an **empty value** (W241). The census matches a *name*, never a value, so this needed its own scan, and the scan needs the tag grammar rather than a flat grep: `x = ""` inside a `<SCRIPT>` body is a script assignment and not authored markup. Count attributes **inside a tag span** only, skip script bodies, and print the encoding breakdown (2026-09-20: 81 UTF-16-BOM / 75 cp1252 / 19 UTF-8 / 9 UTF-8-BOM over the 182 measured). Reconciles with the census's `flat/*.txt` to the exact total, which is the check worth repeating — the flat files keep attribute values, so grepping them is the cheap second opinion the rule above asks for |
 
 The last is the one to copy the shape of: a property a skin writes from script is not findable by
 scanning markup alone, and scanning only `.js` would have missed `Colorchooser`, whose whole
@@ -863,6 +864,9 @@ capture.
 - **`Scooby-Doo_2/infoView` differs run to run.** Its `loadInfoPrefs` calls `randomPic()`, which is
   `parseInt(Math.random() * 10)` over five character PNGs. It is the only image in the 535 that
   moves on its own, and it will read as collateral damage from whatever you just changed.
+  **Still the only one at 553 images (W241, 2026-09-20)**, where it cost a round of investigation
+  anyway: the confirmation is one capture of the *same* tree twice, and it is faster than reasoning
+  about why the change could have reached that view.
 - **The invariants half used to be mostly noise and is not any more, as of 2026-09-19
   (`d72c3970`).** A no-op change reported hundreds of "changed lines" that were entirely `loadms`
   timings and `SCRIPT inline:` tally **ordering** — the same counts printed in a different sequence,
@@ -1909,9 +1913,13 @@ The seven image-bearing nodes are the whole of what is real here. Every one auth
 | `Radio` | (anonymous) | `corner_pieces.bmp` |
 | `XBOX` | `xLogo` | `x_logo.jpg` |
 | `STALKER` | `vidBack` | `backgroundImage` authored **empty** |
-| `WWC` | `introAnim` | `top` authored **empty**, drags a `<BUTTON>` in |
+| ~~`WWC`~~ | ~~`introAnim`~~ | `top` authored **empty**, drags a `<BUTTON>` in — **closed by W241, 2026-09-20** |
 
-The last two are malformed authoring rather than the size rule and should be split from it.
+The last two are malformed authoring rather than the size rule and were split from it as W241.
+**One of the two is now closed**, so this table is 6 nodes across 5 archives, and the wider
+*33 of 458* below it is a pre-W241 ceiling rather than a count — re-measure it before ranking on
+it. `STALKER`'s `vidBack` is the half W241 deliberately left: an empty resource already falls
+through to the next name (`WMPArchive.resolve`), so what that node lacks is a size, not a bitmap.
 
 **`XBOX`'s is an author typo and is the clearest statement of the rule.** `xLogo` authors
 `width="jsa:centerBox.width"` where the `<video>` two lines above it in the same `centerBox` authors
@@ -1957,31 +1965,62 @@ the two empty-value cases W240 split off as malformed authoring (`STALKER`'s `vi
 justification was that it distorts this ranking, and it does not distort the part of it that ranks
 anything. See `LOW_QUALITY_TASKS.md`.
 
-### The empty-value class, and why a coercion to zero is not the fix (W241)
+### The empty-value class: an empty attribute is not an attribute (W241, closed 2026-09-20)
 
-An attribute authored with an **empty value** is dropped, and the nodes it costs are controls rather
-than wrappers. Measured 2026-09-19 over 185 archives with the W231-extended `WMP_RENDER_UNRESOLVED`:
-**21 nodes across 4 archives** — `Beck` 11 (the ten `eq1`…`eq10` bands plus a `<text width="">`),
-`Revert` and `Revert (1)` 8 each (one shared node plus the seven `vwPL` buttons), `STALKER` 1
-(`vidBack`, an empty `backgroundImage`), `WWC` 1 (`introAnim`, an empty `top`). **The corpus-wide
-count of `<attr>=""` in markup is unmeasured**, and it is the first thing to take: count it with a
-decoder-faithful scan (§ *Counting a tag across the corpus* — the census cannot see an attribute
-*value*), then decide what WMP does with one.
+An attribute authored with an **empty value** was dropped, and the nodes it cost were controls
+rather than wrappers. Measured 2026-09-19 over 185 archives with the W231-extended
+`WMP_RENDER_UNRESOLVED`: **21 nodes across 4 archives** — `Beck` 11 (the ten `eq1`…`eq10` bands plus
+a `<text width="">`), `Revert` and `Revert (1)` 8 each (one shared node plus the seven `vwPL`
+buttons), `STALKER` 1 (`vidBack`, an empty `backgroundImage`), `WWC` 1 (`introAnim`, an empty
+`top`).
 
-**An empty attribute is not a missing attribute.** WMP may fall back to the ambient default where
-this engine drops the node, which would draw Beck's ten bands at their bitmap height. Every one of
-those bands authors a literal `left`/`top`, so each was deliberately placed and each reports
-`[expected number or geometry reference]`.
+**The corpus-wide count the row demanded first is 970 uses across 135 of the 182 measured
+archives**, and it is the number that scoped the fix. Taken 2026-09-20 by the decoder-faithful scan
+in § *Counting a tag across the corpus*, reconciled against `wmp_markup_census.sh`'s flat files —
+both sides 970/135 exactly. The leaders are `tooltip` 299 / 85 skins, `backgroundImage` 101 / 46,
+`value` 101 / 22, `upToolTip` 54 / 13, `clippingColor` and `clippingImage` 38 / 3 each,
+`transparencyColor` 37 / 5, `height` **36 / 3**, `fontStyle` 27 / 6.
 
-**Do not fix it as a parse-level coercion of `""` to zero.** A zero-height slider is as invisible as
-an unresolved one, and `Revert`'s seven buttons — `horizontalAlignment="stretch"
-verticalAlignment="stretch"` with no size, each alone in its own `<SUBVIEW>` — would still have no
-size at all. **Verify on `Beck` first**: it is the one case where the defect is ten adjacent controls
-in a single row, so a correct fix is unmistakable in the PNG.
+**Read that distribution before touching anything: 970 is the denominator, not the blast radius.**
+Almost all of it is authored absence that already behaved correctly. `tooltip=""` is a tooltip the
+skin declined to write; `value=""` is a readout that starts blank. The *resource* half was already
+right too and needed no change — `WMPArchive.resolve` returns nil for an empty path and
+`resolveResource` falls through to the next name, so `backgroundImage=""` does not shadow the
+`foregroundImage` behind it. That is why the fix is geometry-only.
 
-The shape is the same one W240 split off as malformed authoring, which is why the two are taken
-together: W240 is the node that has a size available and refuses it, this is the node whose size was
-authored as nothing at all.
+**Where it actually broke: statedness, not parsing.** Every "did the skin state this dimension?"
+test in `WMPSceneBuilder` is `attribute(named:) == nil`, so a *present-but-empty* `height` closed the
+intrinsic-size gate that an *absent* `height` opens. The value parsed fine and then **counted as a
+statement**, the node resolved no size, and it was never painted. The seam is
+`WMPNode.statedAttribute(named:)` — the attribute only if a value was actually stated — routed
+through the geometry gates and `WMPInitialLayoutResolver`, and through nothing else. Strings,
+handlers and colours are deliberately untouched.
+
+**It was never a parse-level coercion of `""` to zero**, and the reason is worth keeping: a
+zero-height slider is exactly as invisible as an unresolved one, so that fix would have closed the
+row and changed no pixel. The two guards the tests hold are the same statement from both sides — an
+authored `height="0"` **is** a statement and still outranks the artwork (`corona`'s compact view
+collapses a pane deliberately), and `height="abc"` is still a finding rather than an absence.
+
+**What moved, over the full 184-archive sweep:** 10 changed invariant lines of 4,069; **551 images
+identical, 2 differing, none lost, none new**. `Beck/view-2` 26→37 nodes, 25→46 commands, 20→31
+hits, 4→15 widgets, **12 unresolved → 1**. `WWC/mainView` 3→2 unresolved. `Revert`/`Revert (1)` did
+not move, exactly as predicted — their seven buttons author no size *at all* and are a different
+rule. `STALKER`'s `vidBack` did not move either; it is the W240 split-off.
+
+**`Beck`'s PNG is byte-identical across the fix, and that is not a failed fix — it is the limit of
+the dump.** The ten bands are `<SLIDER>`s, so they became **AppKit-hosted widgets the scene image
+does not contain**, and `WMP_RENDER_APPKIT` reports `hosted=0/15` because the headless host paints
+no widget at all. The backlog row's own instruction — "a correct fix is unmistakable in the PNG" —
+was wrong about which instrument could see it. **Read `WMP_RENDER_PROBE`'s `WIDGET` lines for a
+control that is a widget, and then run the app**; the bands land at 10x134 on the authored 22 px
+pitch, and the equalizer tray goes from ten empty slots to ten working sliders on screen. Reaching
+it takes a click: Beck's tray opens on the `eqb.gif` button at `view-2@27,157`, which widens the
+window to 636x304.
+
+The shape is the same one W240 split off as malformed authoring, which is why the two were ranked
+together: W240 is the node that has a size available and refuses it, this was the node whose size was
+authored as nothing at all. **W240 is still open** and this change does not touch it.
 
 ---
 

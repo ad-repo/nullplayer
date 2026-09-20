@@ -39,6 +39,55 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+## W241 — an attribute authored with an empty value was dropped, closed 2026-09-20
+
+The row as it stood in `WMP_TASKS.md`:
+
+> | W241 | **An attribute authored with an empty value is dropped, and it is taking whole control groups with it** | **21 nodes across 4 archives** (`Beck` 11, `Revert` and `Revert (1)` 8 each, `STALKER` 1, `WWC` 1), measured 2026-09-19 over 185 archives; the corpus-wide count of `<attr>=""` in markup is **unmeasured and is the first thing to take** | Not blocked. Count `=""` across the corpus's markup with a decoder-faithful scan, then decide what WMP does with one; take it together with W240, and verify on `Beck`. Evidence: `harness.md` § *The empty-value class, and why a coercion to zero is not the fix*. |
+
+**The number the row demanded first is 970 uses across 135 of the 182 measured archives**, taken
+2026-09-20 with a decoder-faithful scan and reconciled against `wmp_markup_census.sh`'s flat files —
+both sides 970/135 exactly. Leaders: `tooltip` 299 / 85 skins, `backgroundImage` 101 / 46, `value`
+101 / 22, `upToolTip` 54 / 13, `clippingColor` and `clippingImage` 38 / 3 each, `transparencyColor`
+37 / 5, `height` **36 / 3**, `fontStyle` 27 / 6.
+
+**That distribution is what scoped the fix, and it scoped it down.** 970 is the denominator, not
+the blast radius: nearly all of it is authored absence that already behaved correctly, and the
+*resource* half needed no change at all because `WMPArchive.resolve` already returns nil for an
+empty path. The defect was geometry and only geometry.
+
+**Where it broke was statedness, not parsing.** Every "did the skin state this dimension?" test in
+`WMPSceneBuilder` is `attribute(named:) == nil`, so a present-but-empty `height` closed the
+intrinsic-size gate that an absent `height` opens. The value parsed fine and then counted as a
+statement. `WMPNode.statedAttribute(named:)` is the seam — the attribute only if a value was
+actually stated — routed through the geometry gates and `WMPInitialLayoutResolver` and nothing else.
+
+**The row's instruction not to coerce `""` to zero was right and is now a test.** A zero-height
+slider is as invisible as an unresolved one. The two guards hold the same statement from both
+sides: an authored `height="0"` **is** a statement and still outranks the artwork, and `height="abc"`
+is still a finding rather than an absence.
+
+**What moved, over the full 184-archive sweep:** 10 changed invariant lines of 4,069; **551 images
+identical, 2 differing, none lost, none new**. `Beck/view-2` 26→37 nodes, 25→46 commands, 20→31
+hits, 4→15 widgets, **12 unresolved → 1**. `WWC/mainView` 3→2 unresolved — its `introAnim`, which
+had never drawn at all, so the skin's whole intro animation was missing. `Revert`/`Revert (1)` did
+not move, exactly as the row predicted: their seven buttons author no size *at all* and are a
+different rule. `STALKER`'s `vidBack` did not move either; it is the W240 split-off. The second
+differing image was `Scooby-Doo_2/infoView`, which moves run to run on its own — see `harness.md`
+§ *A sweep has one nondeterministic output*.
+
+**The row was wrong about one thing, and it is worth keeping.** "A correct fix is unmistakable in
+the PNG" — it is not: `Beck`'s PNG is byte-identical across the fix, because the ten bands are
+`<SLIDER>`s and became **AppKit-hosted widgets the scene image does not contain**
+(`WMP_RENDER_APPKIT` reports `hosted=0/15`). Read `WMP_RENDER_PROBE`'s `WIDGET` lines for a control
+that is a widget, then run the app. On screen the equalizer tray goes from ten empty slots to ten
+working sliders; the tray opens on the `eqb.gif` button at `view-2@27,157`, widening the window to
+636x304.
+
+**W240 is still open and this change does not touch it.** The two were ranked together because they
+are the same shape from opposite ends — W240 is the node that has a size available and refuses it,
+W241 was the node whose size was authored as nothing at all.
+
 ## W243 — one press reached the host twice, and W242 was the row that found it, 2026-09-20
 
 **Closed 2026-09-20, and it is the answer to W242 rather than a row that was ever opened on its own.**

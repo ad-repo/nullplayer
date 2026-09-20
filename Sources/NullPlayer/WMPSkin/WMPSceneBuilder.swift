@@ -526,7 +526,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             switch layoutResolver.resolve(node, property: property) {
             case let .value(value): return value
             case let .unresolved(reason):
-                guard let attribute = node.attribute(named: name) else { return nil }
+                guard let attribute = node.statedAttribute(named: name) else { return nil }
                 recordUnresolved(node, attribute: name, value: "\(attribute.rawValue) [\(reason)]")
                 return nil
             }
@@ -807,16 +807,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // never had the bug, which is why the rows were the right *width* in the wrong
                 // place. Overrides first, then the markup, then the default.
                 let left = parseDimension(node, "left")
-                    ?? (node.attribute(named: "left") == nil ? 0 : nil)
+                    ?? (node.statedAttribute(named: "left") == nil ? 0 : nil)
                 let top = parseDimension(node, "top")
-                    ?? (node.attribute(named: "top") == nil ? 0 : nil)
+                    ?? (node.statedAttribute(named: "top") == nil ? 0 : nil)
                 var width = parseDimension(node, "width")
                 var height = parseDimension(node, "height")
 
                 if isStringConstantText(node, overrides, literalString) { return }
 
                 if width == nil || height == nil,
-                   node.attribute(named: "width") == nil || node.attribute(named: "height") == nil,
+                   node.statedAttribute(named: "width") == nil
+                       || node.statedAttribute(named: "height") == nil,
                    let (_, path) = try resource(node, names: intrinsicSizeResourceNames(for: node.kind)) {
                     let intrinsic = try imageStore.image(for: path).size
                     // `width`/`height` are already non-nil here only when a script override
@@ -825,16 +826,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // that outranks one the skin computed: Corona's compact view collapses
                     // `svVideo` to height 0 through its own timer, and the background bitmap kept
                     // stamping 241 back over it, leaving a black panel across the whole window.
-                    if node.attribute(named: "width") == nil, width == nil { width = intrinsic.width }
-                    if node.attribute(named: "height") == nil, height == nil { height = intrinsic.height }
+                    if node.statedAttribute(named: "width") == nil, width == nil { width = intrinsic.width }
+                    if node.statedAttribute(named: "height") == nil, height == nil { height = intrinsic.height }
                 }
                 if isText(node.kind), width == nil || height == nil,
                    let glyphs = intrinsicTextSize(node, literal: literalNumber,
                                                   literalString: literalString) {
-                    if node.attribute(named: "width") == nil, width == nil { width = glyphs.width }
-                    if node.attribute(named: "height") == nil, height == nil { height = glyphs.height }
+                    if node.statedAttribute(named: "width") == nil, width == nil { width = glyphs.width }
+                    if node.statedAttribute(named: "height") == nil, height == nil { height = glyphs.height }
                 }
-                if node.attribute(named: "height") == nil, height == nil,
+                if node.statedAttribute(named: "height") == nil, height == nil,
                    let intrinsicHeight = widgetKind(node.kind)?.intrinsicHeight {
                     height = intrinsicHeight
                 }
@@ -1919,8 +1920,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                  height: max(extent.height, nested.height))
                 continue
             }
-            guard let left = child.attribute(named: "left") == nil ? 0 : literal(child, "left"),
-                  let top = child.attribute(named: "top") == nil ? 0 : literal(child, "top") else { continue }
+            guard let left = child.statedAttribute(named: "left") == nil ? 0 : literal(child, "left"),
+                  let top = child.statedAttribute(named: "top") == nil ? 0 : literal(child, "top") else { continue }
             var width = literal(child, "width")
             var height = literal(child, "height")
             if width == nil || height == nil,

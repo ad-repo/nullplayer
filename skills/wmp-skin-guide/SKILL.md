@@ -1423,6 +1423,22 @@ queue, with the object model as the security boundary — see Amendment 2 in
   artwork beneath still drew the buttons. `Cablemusic`'s presets, stop, close, minimize, next and
   previous effect, shrink, bandwidth and all three drawer tabs are one such group each: "most
   buttons don't work". The mapping image is definitionally the group's own pixel grid.
+- **An attribute authored with an empty value is not an attribute, and for geometry it never was
+  one** (W241). `<attr>=""` is authored **970 times across 135 of the 182 measured archives**, and
+  the engine's every "did the skin state this dimension?" test is `attribute(named:) == nil` — so a
+  present-but-empty `height` closed the intrinsic-size gate that an *absent* `height` opens, and
+  the node resolved no size and was never painted. `Beck` authors `height=""` on each of its ten
+  `eq1`…`eq10` bands over a real `foregroundImage`, and its equalizer tray drew ten empty slots.
+  Ask the statedness question through `WMPNode.statedAttribute(named:)`, never
+  `attribute(named:)`, anywhere a missing attribute has an ambient default — 0 for an origin, the
+  artwork's own size for an extent.
+  **Three things this rule is not.** It is not a coercion of `""` to zero: a zero-height slider is
+  as invisible as an unresolved one, so that closes the row and changes no pixel. It is not for
+  strings, handlers or colours — `tooltip=""` (299 uses) and `value=""` (101) are authored absences
+  that already behave correctly, and widening it there makes 970 the blast radius instead of the
+  denominator. And it is not the resource path, which implements the rule for itself:
+  `WMPArchive.resolve` returns nil for an empty path, so `backgroundImage=""` already falls through
+  to the `foregroundImage` behind it. See `reference/harness.md` § *The empty-value class*.
 - **`STATUSTEXT` and `CURRENTPOSITIONTEXT` are text controls with native WMP values, not unknown
   tags.** Model them as text for intrinsic sizing and paint; synthesize the latter's value from
   `player.controls.currentPositionString`. WMP right-aligns an otherwise-unqualified

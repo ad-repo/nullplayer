@@ -53,7 +53,7 @@ struct WMPInitialLayoutResolver {
             case .width: result = .value(canvas.width)
             case .height: result = .value(canvas.height)
             }
-        } else if let attribute = node.attribute(named: property.rawValue) {
+        } else if let attribute = node.statedAttribute(named: property.rawValue) {
             result = resolve(attribute, for: node, property: property, depth: depth + 1)
         } else if property == .left || property == .top {
             result = .value(0)
