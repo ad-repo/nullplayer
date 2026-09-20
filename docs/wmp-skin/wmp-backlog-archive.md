@@ -26,7 +26,8 @@ which is **not** the (now closed) W235 in this file. Those comments mean that de
 
 **W211 was never issued.** W219-W224 were opened and closed the same day, 2026-09-17; W225, W226,
 W228 and W232-W233 on 2026-09-18; all are archived. W236 was opened 2026-09-19 out of W195's
-closure, W237 and W239 were opened 2026-09-19 (**W237 closed 2026-09-19**), and W238 was issued and
+closure and **closed 2026-09-20** (archived below), W237 and W239 were opened 2026-09-19
+(**W237 closed 2026-09-19**), and W238 was issued and
 closed by another session — which is why an earlier note naming W237 as the next free number was
 already wrong when it was written.
 
@@ -38,6 +39,74 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+## W236 — a `res://` id read as a `fontFace`, closed 2026-09-20
+
+The row as it stood in `WMP_TASKS.md` when it was taken, the last row of Tier 1f:
+
+> | W236 | **Two ids are read as a `fontFace` and a `scrollingDirection`, and answering them with the empty string is not the same as answering them** | **12 uses / 2 ids across 2 archives** (`Revert`, `Revert (1)`), measured 2026-09-19 by the W195 census | Not blocked. These are localisation plumbing, not labels, and `""` is not an answer for an attribute with a real default. First step: measure what the scene does with an empty `fontFace` — if it falls back to the view font the row closes as a note; if not, three readouts on both `Revert` releases draw in the wrong face. Not a W195 defect. Evidence: `SKILL.md` § *Static scene and image contracts*, the `res://wmploc.dll` bullet. |
+
+**The row's first step decided it, and it came out on the second branch.** An unusable `fontFace`
+does *not* fall back to the view font. `CTFontCreateWithName` never fails: a name it cannot match is
+silently substituted, and both candidates substitute to the same thing. Measured 2026-09-20 at the
+sizes `netgen.wms` authors:
+
+| face asked for | face used | line height @7pt |
+|---|---|---|
+| `res://-/RT_STRING/#1888` | **Helvetica** | 7.00 |
+| `""` | **Helvetica** | 7.00 |
+| *unstated* → `"Arial"` | Arial | 8.05 |
+
+So the three metadata readouts on both `Revert` releases drew in a face nothing in the markup asked
+for — **and routing the attribute through `WMPResourceStrings` would have changed nothing**, which
+is the row's title measured rather than argued. The blank is not the defect; the blank and the URL
+are the same wrong answer.
+
+**The fix is W240's and W241's rule one step further out: an unusable value is an unstated value.**
+`WMPTextMetrics.face(_:)` takes the authored candidates in order, puts each through
+`WMPResourceStrings`, skips any that resolves empty, and otherwise answers
+`WMPTextMetrics.defaultFace`. The resolution runs *first* rather than the URL being rejected
+outright, so a family ever earned for `#1888` is used the moment the table row lands — the same seam
+either way. All four face reads now go through it: `WMPSceneBuilder`'s paint and its
+`intrinsicTextSize`, and `WMPObjectModel`'s `intrinsicTextSize` and `measuredTextWidth`. The two
+object-model sites already skipped an empty face and were unreachable by the `res://` case; they are
+now consistent with the builder, which matters because a face a script clears at runtime reaches the
+builder the same way an authored one does.
+
+**No family was invented for `#1888`.** `wmploc.dll` holds the shipping language's font family — how
+one markup file serves an RTL locale — and the table's rule is that a row is earned by the corpus
+stating the wording. Falling back to the engine's own default is the honest answer; naming a face
+would be the invention the table exists to refuse.
+
+**Reach, re-measured 2026-09-20 over the 185 installed archives**: **953 literal `fontFace`/
+`fontType` uses, 6 of them `res://` — 3 each in `Revert` and `Revert (1)` — and 0 empty.** So the
+rule moves those six and nothing else in the corpus; every other readout keeps the face it had.
+Reproduce by scanning each archive's decoded `.wms`/`.js` for `font(Face|Type)="…"` and tallying the
+empty and `res://` values. (The row's own "12 uses / 2 ids" counts both attributes; the 6 is the
+`fontFace` half, which is the half that drew anything.)
+
+**The `scrollingDirection` half closed as a note.** `#1910` is read nowhere in `Sources` — the
+builder consumes `scrolling`, `scrollingDelay` and `scrollingAmount`, and nothing consumes a
+direction — so its empty answer moves no pixel and will not until a scroll direction is implemented.
+**Check that an attribute is consumed at all before ranking what it is answered with**: half this
+row was a defect in an attribute that reaches the screen and half was a question about one that does
+not, and only the first was worth a change.
+
+**This defect has no headless signature, and the render dump either side of the fix is identical.**
+`txt1`/`txt2`/`txt3` are `value=""` in markup and filled by `vwPlayer_UpdateMetadata()`, which is
+gated on `player.openState == 13`; headlessly nothing is open, so `RENDER-DUMP vwPlayer: 256x130,
+11 nodes, 7 commands` carries no text command at all. **A sweep `compare` would have reported this
+change as a no-op and been right about every archive it measured** — the readouts only exist once a
+track is playing, which is exactly the class `harness.md` § *The probe flags* warns a clean sweep
+does not cover. It was verified by playing a track under the skin, and the live signature is weak
+by nature: Helvetica → Arial at 7 and 10 pt, with a line box about 1pt taller.
+
+`WMPResourceFontFaceTests` holds it down — seven cases, including the equality with an absent
+`fontFace` that is the actual claim, the `fontType` fallthrough (21 corpus skins author it and the
+rule must not swallow it), an authored face that must not move, and an assertion that CoreText still
+substitutes rather than failing, without which the other cases would prove nothing.
+
+`swift test`: 2,489 executed, 18 skipped, 0 failures.
 
 ## W245 — the sweep's damage detector dropped a quarter of the corpus, closed 2026-09-20
 

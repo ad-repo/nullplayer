@@ -683,9 +683,8 @@ final class WMPObjectModel {
             .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
               !value.isEmpty else { return nil }
         let style = (element.properties["fontstyle"]?.string ?? "").lowercased()
-        let face = ["fontface", "fonttype"].lazy
-            .compactMap { element.properties[$0]?.string }
-            .first { !$0.isEmpty } ?? "Arial"
+        let face = WMPTextMetrics.face(element.properties["fontface"]?.string,
+                                       element.properties["fonttype"]?.string)
         let size = CGFloat(max(1, element.properties["fontsize"]?.number ?? 12))
         let bold = style.contains("bold"), italic = style.contains("italic")
         return WMPSize(
@@ -698,9 +697,8 @@ final class WMPObjectModel {
     private static func measuredTextWidth(_ element: WMPScriptElement) -> CGFloat {
         guard let value = element.properties["value"]?.string, !value.isEmpty else { return 0 }
         let style = (element.properties["fontstyle"]?.string ?? "").lowercased()
-        let face = ["fontface", "fonttype"].lazy
-            .compactMap { element.properties[$0]?.string }
-            .first { !$0.isEmpty } ?? "Arial"
+        let face = WMPTextMetrics.face(element.properties["fontface"]?.string,
+                                       element.properties["fonttype"]?.string)
         let size = element.properties["fontsize"]?.number ?? 12
         return WMPTextMetrics.width(of: value, fontName: face, fontSize: CGFloat(max(1, size)),
                                     bold: style.contains("bold"), italic: style.contains("italic"))

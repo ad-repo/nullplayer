@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **The *Revert* skin's track, artist and album lines are back in the skin's own typeface.** Its
+  markup names the font by pointing at a Windows resource file — that is how one skin file serves a
+  different font per language — and with no such file on a Mac the three lines were quietly drawn in
+  a substituted face at a slightly different height. They now use the same default face as every
+  other Media Player readout that names no font at all.
+
 - **The Xbox skin's video window shows its logo again.** With no film playing, that window is
   meant to sit behind the green Xbox logo; it was a plain black rectangle instead, because the
   skin's markup has a typo where it states the logo's size and the whole element was being dropped

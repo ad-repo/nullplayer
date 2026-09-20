@@ -10,6 +10,34 @@ import Foundation
 /// 180 corpus archives write `textWidth`. A measurement the script could not reach answered 0, so
 /// every one of those skins concluded its text fits and turned scrolling off.
 enum WMPTextMetrics {
+    /// **The face a node is drawn in, from its authored candidates in order — and the fallback is
+    /// this engine's own default rather than CoreText's.**
+    ///
+    /// `CTFontCreateWithName` never fails: a name it cannot match silently becomes Helvetica. So a
+    /// face that is empty, or that is a `res://wmploc.dll/RT_STRING/#<id>` this player cannot
+    /// resolve, does *not* land on the `"Arial"` every unstated readout in the corpus is drawn in —
+    /// it lands on Helvetica, a different face at a different height, with nothing in the markup
+    /// asking for it. `netgen.wms` (`Revert`, `Revert (1)`) authors
+    /// `fontFace="res://-/RT_STRING/#1888"` on all three metadata readouts (W236): `wmploc.dll`
+    /// holds the shipping language's font family, which is how one markup file serves an RTL
+    /// locale, and there is no honest family to invent for it here. **An unusable face is therefore
+    /// an unstated one** — the same reading `W240`/`W241` gave an unreadable and an empty geometry
+    /// attribute — so those three readouts take the default face instead of a substituted one.
+    ///
+    /// A resource URL is put through `WMPResourceStrings` rather than rejected outright, so that a
+    /// future table row naming a real family is used the moment it is earned.
+    static func face(_ candidates: String?...) -> String {
+        for candidate in candidates {
+            guard let resolved = WMPResourceStrings.resolved(candidate) else { continue }
+            let trimmed = resolved.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return defaultFace
+    }
+
+    /// The face a `<TEXT>` is drawn in when its markup and its script both leave one unstated.
+    static let defaultFace = "Arial"
+
     /// The face name CoreText is asked for. `fontStyle` is a set — the corpus writes
     /// "bold underline" and "UNDERLINE, bold" — and only bold/italic are a face request.
     static func fontName(_ base: String, bold: Bool, italic: Bool) -> String {

@@ -64,10 +64,16 @@ import Foundation
 /// - **Not user-visible text at all** — `#1888` is read as a `fontFace` and `#1910` as a
 ///   `scrollingDirection`; `#2108`/`#2114` are `accKeyboardShortcut` key names. These are
 ///   localisation plumbing, and answering them with a label would be worse than answering blank.
+///   **Blank is still not the same as an answer, and W236 is where the difference was paid.**
+///   A face this table cannot resolve does not fall back to the engine's `"Arial"` — CoreText
+///   substitutes Helvetica for any name it cannot match — so `WMPTextMetrics.face(_:)` reads an
+///   unresolved `res://` face as an *unstated* one. The resolution still runs first: the moment a
+///   family is earned for `#1888` it is used rather than skipped.
 ///
 /// **Some rows here are correct and still invisible, which is not the same as blank.** The scene
-/// builder reads `toolTip`/`upToolTip`/`downToolTip` and `value`, and the object model answers
-/// `theme.loadString`; it does not read `accName`, `accKeyboardShortcut`, `fontFace`,
+/// builder reads `toolTip`/`upToolTip`/`downToolTip`, `value` and — since W236, through
+/// `WMPTextMetrics.face(_:)` — `fontFace`/`fontType`, and the object model answers
+/// `theme.loadString`; it does not read `accName`, `accKeyboardShortcut`,
 /// `scrollingDirection`, or `<theme author=… copyright=…>`. So of the 133 literal uses, 90 sit in
 /// an attribute that reaches the screen today and **58 of those now resolve, against 13 before**
 /// — while `2109`, `2130`, `3904`, `3905`, `3908` (`accName` only) and `1998`/`1999` (theme

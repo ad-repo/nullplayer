@@ -1546,7 +1546,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 case .down, .normal: textColorNames = ["foregroundColor", "color"]
                 }
                 let text = WMPSceneText(value: value,
-                    fontName: literalString(node, "fontFace") ?? literalString(node, "fontType") ?? "Arial",
+                    fontName: WMPTextMetrics.face(literalString(node, "fontFace"),
+                                                  literalString(node, "fontType")),
                     fontSize: max(1, literalNumber(node, "fontSize") ?? 12),
                     bold: style.contains("bold"), italic: style.contains("italic"),
                     underline: style.contains("underline"),
@@ -2001,7 +2002,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                    literal: (WMPNode, String) -> CGFloat?,
                                    literalString: (WMPNode, String) -> String?) -> WMPSize? {
         guard let value = literalString(node, "value") else { return nil }
-        let face = literalString(node, "fontFace") ?? literalString(node, "fontType") ?? "Arial"
+        let face = WMPTextMetrics.face(literalString(node, "fontFace"),
+                                       literalString(node, "fontType"))
         let size = max(1, literal(node, "fontSize") ?? 12)
         let style = (literalString(node, "fontStyle") ?? "").lowercased()
         let bold = style.contains("bold"), italic = style.contains("italic")

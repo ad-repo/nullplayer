@@ -1139,15 +1139,31 @@ queue, with the object model as the security boundary — see Amendment 2 in
   `WMPResourceStrings` holds only ids the corpus itself names and answers the empty string for the
   rest; it is wired into all three routes a skin reaches them by — a readout's `value`, a tooltip,
   and `theme.loadString`. **Add a row only when something in the corpus states the text.**
-  **A `res://` id can also be localisation plumbing rather than a label, and `""` is not an answer
-  for it (W236).** `netgen.wms` (`Revert`, `Revert (1)`) sets `fontFace="res://-/RT_STRING/#1888"` on
-  all three metadata readouts and
+  **A `res://` id can also be localisation plumbing rather than a label, and neither `""` nor the
+  raw URL is an answer for it (W236, closed 2026-09-20).** `netgen.wms` (`Revert`, `Revert (1)`) sets
+  `fontFace="res://-/RT_STRING/#1888"` on all three metadata readouts and
   `scrollingDirection="jscript:theme.loadString('res://wmploc/RT_STRING/#1910');"` beside them —
   12 uses of 2 ids across 2 archives, measured 2026-09-19 by the W195 census. `wmploc.dll` holds the
   font family and the scroll direction for the shipping language, which is how one markup file
-  serves an RTL locale. Declining to invent a *label* is right; a `fontFace` and a
-  `scrollingDirection` are attributes with real defaults, and what the scene does with an empty one
-  has never been measured.
+  serves an RTL locale, and declining to invent a *label* for either is right.
+  **What the scene did with the unanswerable one was fall back to CoreText's default rather than to
+  this engine's**: `CTFontCreateWithName` never fails, so the URL and the `""` it resolves to both
+  became **Helvetica** — line height 7.00 at the 7pt those readouts author, against `Arial`'s 8.05 —
+  a face nothing in the markup asked for. **An unusable face is an unstated face**, the reading W240
+  gave an unreadable geometry value and W241 an empty one, so `WMPTextMetrics.face(_:)` is the one
+  seam all four face reads go through (the builder's paint and intrinsic size, the object model's
+  `intrinsicTextSize` and `measuredTextWidth`) and it answers `WMPTextMetrics.defaultFace`. The URL
+  still goes through `WMPResourceStrings` rather than being rejected, so a family ever earned for
+  `#1888` is used the moment the row lands. **Reach re-measured 2026-09-20 over the 185 installed
+  archives: 953 literal `fontFace`/`fontType` uses, 6 of them `res://` (3 each in the two `Revert`
+  releases) and 0 empty** — the rule moves those six and nothing else in the corpus.
+  **`scrollingDirection` closed as a note, not a defect**: it is read nowhere in `Sources` — the
+  builder consumes `scrolling`, `scrollingDelay` and `scrollingAmount` only — so answering it would
+  move no pixel until a scroll direction is implemented. **The defect has almost no visual
+  signature and no headless one at all**: those readouts are `value=""` in markup and filled by
+  `vwPlayer_UpdateMetadata()`, which is gated on `player.openState == 13`, so a render dump of
+  `Revert` is blank there and identical either side. Verify by playing a track under the skin —
+  `harness.md` § *The probe flags* on what a clean sweep does not prove.
 - **`<RETURNBUTTON>` is the command, not a button that happens to be there (W191).** 19 uses across
   15 archives and **15 author no `onClick` at all** — the element's own behaviour is the return to
   the media centre, so treating the kind as an ordinary button left the library unreachable from

@@ -109,9 +109,17 @@ anything driven by live playback remain outside every headless instrument here. 
 
 ## Tier 1f — the residue of the starvation classes
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W236 | **Two ids are read as a `fontFace` and a `scrollingDirection`, and answering them with the empty string is not the same as answering them** | **12 uses / 2 ids across 2 archives** (`Revert`, `Revert (1)`), measured 2026-09-19 by the W195 census | Not blocked. These are localisation plumbing, not labels, and `""` is not an answer for an attribute with a real default. First step: measure what the scene does with an empty `fontFace` — if it falls back to the view font the row closes as a note; if not, three readouts on both `Revert` releases draw in the wrong face. Not a W195 defect. Evidence: `SKILL.md` § *Static scene and image contracts*, the `res://wmploc.dll` bullet. |
+**Empty: W236 was this tier's last row and closed 2026-09-20.** Both of its ids were measured and
+neither was a starvation defect in the sense the tier is named for. What it leaves behind is in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md) and is worth reading before answering any
+unresolvable attribute with a blank: **a fallback this engine does not make itself is made for it
+somewhere else** — `CTFontCreateWithName` never fails, so an unresolved `fontFace` was silently
+Helvetica rather than the `Arial` an unstated one takes, and `""` would have landed in the same
+place. The rule is W240's and W241's one step further out: *an unusable value is an unstated value*.
+The other id, `scrollingDirection`, closed as a note because **nothing in `Sources` reads it** —
+check that an attribute is consumed at all before ranking what it is answered with.
+
+**The tier is empty of rows and stays for the same reason the others do.**
 
 ## Tier 1g — the window system, not the scene
 
