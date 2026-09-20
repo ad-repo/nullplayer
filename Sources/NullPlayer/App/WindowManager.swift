@@ -884,9 +884,10 @@ class WindowManager {
     /// macOS posts this repeatedly while a display reconfigures, and the frames are not settled until
     /// it stops, so the sweep is coalesced onto the next runloop pass rather than run per notification.
     @objc private func handleScreenParametersDidChange(_ notification: Notification) {
-        // Winamp Modern only. A display reconfiguration leaves Classic and Original exactly where
-        // they were before this branch, which is what the other families expect.
-        guard appliesWinampModernPlacement else { return }
+        // Winamp Modern and WMP. A display reconfiguration leaves Classic and Original exactly
+        // where they were before this branch, which is what the other families expect; in `.wmz`
+        // an unplugged display used to strand every borderless window permanently (W217 G3).
+        guard appliesPlacementRecovery else { return }
         guard !isScreenParameterSweepScheduled else { return }
         isScreenParameterSweepScheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -1010,6 +1011,23 @@ class WindowManager {
     /// placement moved Classic's sub-windows too, and cost four confidently static-reasoned fixes,
     /// two of them regressions, before anyone launched the app.
     var appliesWinampModernPlacement: Bool { uiMode.controllerFamily == .winampModern }
+
+    /// Whether this session gets the *recovery* half of the placement rules: the session-wide
+    /// restore correction, the off-screen safety net, and the sweeps that follow the moments which
+    /// strand a window.
+    ///
+    /// Separate from `appliesWinampModernPlacement`, which stays what it says — the `.wal`
+    /// *arrangement*. `.wmz` earns this one for the same reason `.wal` did and with a sharper edge:
+    /// its windows are sized by the skin, its auxiliary views are placed by a generated tiling, and
+    /// every one of them is **borderless**, so a window pushed off the display has no title bar to
+    /// drag back (W217 G2/G3).
+    ///
+    /// Classic and Original stay out, and that exclusion is the load-bearing part: B56 is the record
+    /// of what happens when these corrections reach families whose window positions people have laid
+    /// their desktops out around.
+    var appliesPlacementRecovery: Bool {
+        uiMode.controllerFamily == .winampModern || uiMode.controllerFamily == .wmp
+    }
 
     private var winampModernHostedController: WinampModernMainWindowController? {
         guard uiMode.controllerFamily == .winampModern else { return nil }
@@ -4799,10 +4817,10 @@ class WindowManager {
         // wide skin, past the edge of the display — every window is re-sized around the main window
         // as an anchor and nothing was checking where they landed.
         //
-        // Winamp Modern only: a `.wal` skin's windows are sized by the skin and can grow far past
-        // what Classic's fixed sprite geometry ever produces. Classic keeps the UI Size behaviour it
-        // had before this branch.
-        if appliesWinampModernPlacement {
+        // Winamp Modern and WMP: a skin-sized window can grow far past what Classic's fixed sprite
+        // geometry ever produces, and a `.wmz` scene is scaled by the same UI Size control. Classic
+        // keeps the UI Size behaviour it had before this branch.
+        if appliesPlacementRecovery {
             ensureAllWindowsOnScreen()
         }
     }
@@ -5962,16 +5980,17 @@ class WindowManager {
     /// survives the rescue; only what that offset cannot save is then moved on its own, accepting
     /// overlap with its neighbours. Overlapping windows are preferable to hidden ones.
     ///
-    /// Per `CLAUDE.md` this runs in all three modes **deliberately**: an unreachable window is
-    /// equally unusable in Classic, Original/Modern and Winamp Modern, and the rule it applies —
-    /// reachable means the top-left corner is on some screen — is mode-independent. It is verified
-    /// separately in each.
+    /// It runs in the two families whose windows are sized and placed by a skin — Winamp Modern
+    /// and WMP — and **deliberately not** in Classic or Original, where a window parked mostly past
+    /// an edge is a placement people chose rather than damage to repair (B56). The rule it applies —
+    /// reachable means the top-left corner is on some screen — is mode-independent; the decision to
+    /// apply it is not. It is verified separately in each.
     func ensureAllWindowsOnScreen() {
-        // Winamp Modern only, enforced here as well as at every call site. The call-site guards say
-        // *why* each moment needs the sweep; this one makes the restriction structural, so a caller
-        // added later cannot quietly reintroduce the sweep into Classic or Original — which is the
-        // exact way B56 reached them.
-        guard appliesWinampModernPlacement else { return }
+        // Winamp Modern and WMP only, enforced here as well as at every call site. The call-site
+        // guards say *why* each moment needs the sweep; this one makes the restriction structural,
+        // so a caller added later cannot quietly reintroduce the sweep into Classic or Original —
+        // which is the exact way B56 reached them.
+        guard appliesPlacementRecovery else { return }
 
         let screens = visibleScreenFrames()
         guard !screens.isEmpty else { return }
@@ -5992,6 +6011,11 @@ class WindowManager {
             if handled.contains(id) { continue }
             // A window on its way to the Dock has no meaningful frame to correct.
             if miniaturizingWindowIds.contains(id) || window.isMiniaturized { continue }
+            // A child window is positioned *by its parent* — the hosted video output is glued over
+            // a skin's `<VIDEO>` box by `addChildWindow` in both `.wal` and `.wmz`. AppKit moves it
+            // with the parent, so rescuing it on its own either displaces it off the box or, if the
+            // parent is rescued afterwards, moves it twice.
+            if window.parent != nil { continue }
             if WindowPlacement.isReachable(window.frame, screens: screens) { continue }
 
             // The cluster this window belongs to, moved as one.

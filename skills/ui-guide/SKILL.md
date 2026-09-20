@@ -1004,7 +1004,7 @@ placement path defers to this ranking.
 | `groupOffset(union:into:)` | One offset for a whole docked cluster, preserving every relative position |
 
 **Reachability is the top-left corner, not the whole frame.** That corner carries the title bar and
-drag area in all three modes, and the definition deliberately leaves the classic habit of parking a
+drag area in every family, and the definition deliberately leaves the classic habit of parking a
 window mostly past the bottom or right edge intact — that window is *placed*, not stranded, and a
 sweep that yanked it back would be the bug.
 
@@ -1030,15 +1030,26 @@ sites:
   macOS posts it repeatedly while a display reconfigures and the frames are not settled until it stops
 - end of `applyUIScaleLevelChangeIfNeeded`
 - after a `.wal` skin load in `ContextMenuBuilder` (three sites)
+- after a `.wmz` skin load, at the end of `WMPMainWindowController.reloadSelectedSkin`'s load task —
+  **one** site rather than three, because all three WMP menu entry points funnel through that async
+  task and a `ContextMenuBuilder` call would fire before the load finished
 
-**This sweep is gated to Winamp Modern**, structurally in `ensureAllWindowsOnScreen()` and again at
-every call site. There are **four** families, not three, and they divide like this: `.wal` is in the
-sweep; Classic and Original are deliberately out, because a window parked mostly past an edge is a
-placement they have laid their desktops out around and this sweep reads it as damage to repair (B56
-is the record of it reaching them); `.wmz` is out and **should not be** — it is W217 G3, still open,
-and it is the one family whose windows are borderless and cannot be dragged back. Until that closes,
-`.wmz` gets its recovery from the two seams it does share, `positionSubWindow`'s tiling branch and
-its own Snap To Default routine, both of which clamp every slot onto the visible frame.
+**This sweep is gated to the two skin-sized families**, structurally in `ensureAllWindowsOnScreen()`
+and again at every call site. There are **four** families and they divide like this: `.wal` and
+`.wmz` are in the sweep; Classic and Original are deliberately out, because a window parked mostly
+past an edge is a placement they have laid their desktops out around and this sweep reads it as
+damage to repair (B56 is the record of it reaching them).
+
+The gate is `WindowManager.appliesPlacementRecovery`. It is deliberately **not**
+`appliesWinampModernPlacement`, which stays what it says — the `.wal` *arrangement*. A seam that is
+about recovery takes the first; a seam that is about how `.wal` lays its windows out takes the
+second. `.wmz` joined the recovery half on W217 G2/G3 (2026-09-20); before that a display change
+stranded its borderless windows permanently, with no title bar to drag them back by.
+
+**A child window is skipped.** The hosted video output is glued over a skin's `<VIDEO>` box with
+`addChildWindow` in both `.wal` and `.wmz`, and it is in the managed graph. AppKit moves a child with
+its parent, so rescuing one on its own displaces it off the box — or moves it twice, if the parent is
+rescued afterwards.
 
 The rule itself — reachable means the top-left corner is on some screen — is mode-independent, and
 `App/WindowPlacement.swift` is its single definition in every family. Verify a change to it
@@ -1056,6 +1067,12 @@ the same as changed.
 `correctedRestoredFrames` sees the main frame and every sub-frame **together** (they were decoded up
 front at the `applySettingsStateAfterReload` seam for exactly this reason) so one offset can bring the
 whole docked session back.
+
+The correction is gated `appliesPlacementRecovery` at the call site, so the function itself stays
+pure and directly testable. **Whatever it returns for `main` is what the player must actually be
+restored to** — `restoreWindowFrames` computed the correction, used it for every other window, and
+handed the WMP controller the raw saved rect, which measured G2 and then discarded it for the one
+window a `.wmz` session always has.
 
 ### Winamp Modern tiler
 

@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **A Media Player skin's windows can no longer be stranded off the screen.** These windows have no
+  title bar — most skins make them unmovable by their own artwork — so once one walked past an edge
+  there was nothing left to drag it back by. Unplugging a display, changing its resolution or
+  resizing the Dock left every one of them at coordinates that no longer existed, permanently. The
+  app now brings them back at the moments that strand them: a display change, a UI Size change, a
+  skin load, and the end of restoring a saved session. A session saved on a wide desktop and
+  reopened on a narrower one is also moved back as **one group**, so windows you had docked together
+  arrive still touching instead of piled on top of each other. Picture-in-place video stays exactly
+  where the skin puts it throughout.
+
 - **A long playlist in a Media Player skin scrolls again.** Every skin's playlist is drawn by the
   same list, and it was being pulled back onto the track that is playing roughly twelve times a
   second — so the wheel moved it and it sprang straight back, and no row more than a screen away

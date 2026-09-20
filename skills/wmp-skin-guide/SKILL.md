@@ -1879,7 +1879,28 @@ is why the rules below are contracts rather than preferences.
 | One of NullPlayer's own windows opens | `WindowManager.positionSubWindow` | the same `tiledOrigin` → `rescuedOrigin` pair, sharing the `.wal` branch |
 | Snap To Default | `WindowManager.snapWMPToDefaultPositions` | the player re-centred, then one `WinampModernTiler` walked over every window, then an unconditional reachability pass |
 | A resize | per-family | top-left anchored, so growth cannot strand the reachable corner |
-| A display change, a restore onto a smaller desktop | `ensureAllWindowsOnScreen`, `correctedRestoredFrames` | **not run in `.wmz`** — W217 G1–G3, still open |
+| A display change, a UI Size change, a skin load | `WindowManager.ensureAllWindowsOnScreen` | run, gated `appliesPlacementRecovery` (W217 G3) |
+| A restore onto a smaller desktop | `AppStateManager.correctedRestoredFrames` | run, same gate — one offset for the whole session, and the corrected `main` is what the player is restored to (W217 G2) |
+| The player's own restored frame | `WMPWindowRestorePolicy.safeFrame` | a **second, weaker** definition of "on screen" — W217 G1, still open |
+
+**The recovery gate is `WindowManager.appliesPlacementRecovery`, never `appliesWinampModernPlacement`.**
+The second one stays what it says — the `.wal` *arrangement* — and the two are not interchangeable.
+A seam about getting a window back on screen takes the first; a seam about how `.wal` lays its
+windows out takes the second. `.wmz` is in the first and out of the second, and
+`WMPPlacementRecoveryTests` pins exactly that, because widening the wrong one would hand `.wmz`
+`.wal` layout behaviour it must not have.
+
+**Classic and Original stay out of both, and that exclusion is the load-bearing part.** B56 is the
+record of what happens when these corrections reach a family whose window positions people have laid
+their desktops out around. Every site switched for W217 G2/G3 was switched to a gate that still
+excludes them, and the one unconditional edit — the sweep's child-window skip — lives inside a
+function they never enter.
+
+**The hosted video output is a child window and the sweep skips it.** `WMPVideoSurface` glues it over
+the skin's `<VIDEO>` box with `addChildWindow`, and it is in `managedWindowRecords`, so the sweep
+walks it. AppKit carries a child with its parent: rescuing it alone displaces it off the box, and if
+the parent is rescued afterwards it moves twice. `.wal` had the same latent defect and the skip fixes
+both.
 
 **`positionSubWindow` and Snap To Default both branched on `.winampModern` alone until W217, and
 `.wmz` fell through to the Classic stack.** That stack opens each window flush under the lowest one
@@ -1909,6 +1930,12 @@ moment the user described, not only the seam the row names.**
 only for exhaustiveness. `ui-guide` § *Off-Screen Window Recovery* names all four families and says
 which of them the sweep reaches.
 
+**`restoreWindowPositions` (`WindowManager.swift`) is the one recovery seam still `.wal`-only**, and
+deliberately: it re-applies raw `UserDefaults` frames, and in `.wmz` that would fight
+`WMPWindowRestorePolicy` over the player's frame. It is the last user of
+`appliesWinampModernPlacement` outside the `.wal` arrangement, and it is the right place to look
+when G1 is taken up.
+
 **The contract is that one press is enough and a second press is a no-op.** Verify it that way:
 `diff` the window list across two presses, do not judge it by eye.
 
@@ -1919,6 +1946,12 @@ every screen is `rescuedOrigin` failing. Two legs cannot be exercised by hand an
 tests (`Tests/NullPlayerAppTests/WMPSnapToDefaultTests.swift`): a genuinely stranded window — a
 `.wmz` window is not movable by its background and macOS clamps a drag at the screen edge, so one
 cannot be produced with the mouse — and a window taller than the display.
+
+**The recovery half's pure geometry is `Tests/NullPlayerAppTests/WMPPlacementRecoveryTests.swift`**:
+the gate in all four families, the docked cluster that comes back touching rather than overlapping,
+and the AppKit contract the child-window skip rests on. Its live half — an unplugged display, a
+resolution change, a restore onto a smaller desktop — has no headless instrument and was verified by
+driving the app.
 
 ### A skin may not size a window from the decoder, and no `.wmz` window is a dead end
 

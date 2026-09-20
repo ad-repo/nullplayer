@@ -485,6 +485,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     throw WMPFailure(WMPDiagnostic(.invalidGeometry,
                         "The skin contains no renderable WMP view."))
                 }
+                // The one moment a `.wmz` skin load is finished: the player is bound, its panels
+                // are materialized and the dispatcher has been adopted. A `.wmz` window's size
+                // *is* the skin, so switching to a larger one grows the player in place around its
+                // top-left and re-tiles its panels around that — off the display, for a skin wide
+                // or tall enough. This is the `.wal` skin-load sweep's counterpart (W217 G3); the
+                // three menu entry points all funnel through here, so there is one site rather
+                // than three.
+                WindowManager.shared.ensureAllWindowsOnScreen()
             } catch is CancellationError {
                 return
             } catch {

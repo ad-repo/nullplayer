@@ -145,8 +145,14 @@ again — placement happens once per window, so a window the user has moved is n
 It is the `.wmz` counterpart of `WINAMP_MODERN_PLACE_TRACE`, and it exists for one question a
 screenshot answers badly: **a skin that opens five panels at load has five windows to fit**.
 
-**Since W217 a stranded `.wmz` window is recoverable — Snap To Default has a `.wmz` routine — so a
-`[wmp/place]` frame outside every screen is a defect and not merely a warning.** The same flag now
+**Since W217 a stranded `.wmz` window is recoverable — Snap To Default has a `.wmz` routine, and
+since G2/G3 (2026-09-20) the off-screen safety net and the session restore correction run in `.wmz`
+too — so a `[wmp/place]` frame outside every screen is a defect and not merely a warning.** It is
+also now transient rather than permanent: the sweep runs after a display change, a UI Size change, a
+skin load and the post-restore settle, so a trace taken at placement time can show a frame the app
+has already corrected by the time you look at the window. **Read the window back with
+`winhelper windows` before calling a `[wmp/place]` line a live defect** — placement and the settled
+layout are two different measurements, and only the second is what the user sees. The same flag now
 also prints `[place/tile] hosted <frame>` for NullPlayer's own windows opening in WMP mode (they
 share the `.wal` tiling branch of `positionSubWindow`) and one `snap-to-default` line per window on
 each press. Read the frames back with `app-control`'s `winhelper windows`, never off a screenshot,

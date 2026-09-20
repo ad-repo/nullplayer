@@ -946,13 +946,18 @@ class AppStateManager {
             }
         }
 
-        // Winamp Modern only, and gated at the call site so `correctedRestoredFrames` stays a pure,
+        // Winamp Modern and WMP, gated at the call site so `correctedRestoredFrames` stays a pure,
         // directly-testable function. Classic and Original restore the frames they saved, verbatim —
         // a window parked mostly past an edge there is a *placement*, and this sweep would move it.
         //
         // A session saved on a screen that is not here any more is suspect even when its frames
         // happen to land on a present one, so the correction runs unconditionally in that case.
-        let appliesPlacementCorrection = wm.appliesWinampModernPlacement
+        //
+        // `.wmz` joined on W217 G2: its auxiliary origins were rescued one window at a time inside
+        // the materializer's `place()`, which is exactly the per-window clamping the whole-session
+        // group offset exists to prevent — a docked WMP cluster restored onto a smaller desktop came
+        // back overlapping instead of touching.
+        let appliesPlacementCorrection = wm.appliesPlacementRecovery
         let screenContextChanged = appliesPlacementCorrection
             && Self.savedScreenIsMissing(state.mainScreenVisibleFrame,
                                          screens: Self.currentScreenFrames())
@@ -1070,10 +1075,10 @@ class AppStateManager {
             // once — anything the frame correction could not anticipate (a skin clamping its own
             // size after the fact, a stack that grew when UI Size was restored) is caught here.
             //
-            // Winamp Modern only: in the other families nothing resized the windows behind the
+            // Winamp Modern and WMP: in the other families nothing resized the windows behind the
             // session's back, so there is nothing for the sweep to catch and everything for it to
             // disturb.
-            if wm.appliesWinampModernPlacement {
+            if wm.appliesPlacementRecovery {
                 wm.ensureAllWindowsOnScreen()
             }
         }
@@ -1346,8 +1351,11 @@ class AppStateManager {
         // Main window exists at this point, so we can restore its frame directly
         if let frameString = state.mainWindowFrame,
            let controller = wm.mainWindowController as? WMPMainWindowController {
-            controller.restoreFrame(NSRectFromString(frameString), skinName: state.wmpSkinName,
-                                    viewID: state.wmpViewID)
+            // The session-wide correction, not the raw saved rect (W217 G2). It differs only in
+            // position, and only when the session came back stranded — the size is still the
+            // skin's to decide, inside `restoreFrame`.
+            controller.restoreFrame(correctedMainFrame ?? NSRectFromString(frameString),
+                                    skinName: state.wmpSkinName, viewID: state.wmpViewID)
         } else if let frameString = state.mainWindowFrame,
            let controller = wm.mainWindowController,
            let window = controller.window {
