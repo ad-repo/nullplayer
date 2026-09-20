@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W246.** (W244 and W245 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, and the sweep damage-detector row, closed the same day and archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W247.** (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g and the sweep damage-detector row, both closed the same day and archived below, and the `Xbox Live Skin` playlist-scrolling row, which is open in Tier 1c.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -39,6 +39,62 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+## W244 — a view that sizes itself in `onLoad`, closed 2026-09-20
+
+The row as it stood in `WMP_TASKS.md` when it was taken, the first row of Tier 1g:
+
+> | W244 | **A view that resizes itself in `onLoad` is rendered at the size it asked for and shown in a window that is still the authored one** | **every `.wmz` session whose skin sizes a view from `onLoad`; the corpus population is unmeasured and is the first thing to take.** Reported live 2026-09-20 on `Xbox Live Skin`/`eqView`, whose picture is reproducible headlessly | Not blocked. `<view id="eqView" width="423" height="343" minWidth="429" minHeight="197" onLoad="loadEQPrefs()">` and `loadEQPrefs()` is three lines — `view.width = view.minWidth; view.height = view.minHeight` — so the skin opens at 423x343 and **immediately collapses itself to 429x197**, which is the compact EQ its artwork is drawn for. … **First step is to find out whether the load transaction's `WMPScriptOutput.viewSize` reaches the window at all.** |
+
+**It does not, and that is the whole of the defect.** Neither load path read `output.viewSize`:
+`reloadSelectedSkin` rebuilt the player view with `requestedSize: scene.canvasSize` and `loadView`
+rebuilt every other view with `requestedSize: base.canvasSize` — both the **pre-`onLoad`** canvas.
+`WMPSceneBuilder.buildOffMain` resolves its canvas as `resizeLimits.clamp(requestedSize ??
+defaultSize)` and the script's assignment lives in `defaultSize`, so a non-nil `requestedSize` wins
+and the assignment was discarded. The handler path has honoured it since W113/W190
+(`assignedWindowSize`); the load paths were four hundred lines away and never had.
+
+**The scene and the window disagreed, and the expressions sided with the scene.** Every
+`jscript:view.height` answered the 197 the script assigned while the canvas around them stayed 343,
+so `eqView`'s frame pieces pinned `top="jscript:view.height-181"` were drawn 16 from the top of a
+343-tall canvas — 146 px short of the bottom edge they are pinned to — and the band below them was
+bare window. That is the reported black band with two white seams where the rails and corners no
+longer meet; the rails `f_left_s.png`/`f_right_s.png` author no `height` and stayed at their
+bitmaps' 50 px through all of it.
+
+**The harness could not see it and never could have.** `WMPRenderDumpTests.measure` ends with
+`build(viewID:, requestedSize: probe.requestedSize, overrides:)`, and `probe.requestedSize` is nil
+unless `WMP_RENDER_SIZE` is set — so the override won there and `RENDER-DUMP eqView: 429x197` was
+the right picture from the start. **A dump that disagrees with the window is this class**, and no
+sweep can rank it.
+
+The fix is `WMPMainWindowController.loadedCanvas(assigned:opened:)`, called by both load paths.
+`viewSize` is nil unless that transaction assigned the root's own width or height, and the runtime
+has already clamped it to the view's limits and refused it for a decoder-driven size (W99), so a
+view whose `onLoad` sizes nothing is built exactly as before.
+
+**Measured A/B in a debug build, `winhelper windows`, on the installed archive** — the change backed
+out and restored in the same tree, both paths driven:
+
+| Path | Backed out | With `loadedCanvas` |
+|---|---|---|
+| `eqView` as the startup view (`reloadSelectedSkin`) | `429x343` | **`429x197`** |
+| `eqView` opened by `mainStartUp`'s `theme.openView` (`loadView`) | `429x343` | **`429x197`** |
+
+`[wmp/size] eqView -> (429.0, 197.0)` on the fixed run, and no `MISMATCH` line from
+`WMP_SIZE_TRACE`.
+
+**The row's second question did not reproduce.** It recorded the live window as ~429x376 and named
+`HostedWindowBorderLayout`'s growth as the candidate for the ~33 pt over the authored 343. The
+backed-out measurement is **429x343 exactly** — nothing was added — so there is no border-growth
+defect here to take, and the 376 belongs to whatever state the reporter's window was in rather than
+to this path. **Corpus population is still unmeasured**: `loadedCanvas` is now correct for every
+skin that sizes a view from `onLoad`, but how many do was never counted and the count would rank
+nothing now that the row is closed.
+
+Tests: `Tests/NullPlayerAppTests/WMPLoadAssignedViewSizeTests.swift`. Rule:
+`skills/wmp-skin-guide/SKILL.md` § *A view sizes itself in its own `onLoad`, and the first scene is
+built at the size it asked for*.
 
 ## W236 — a `res://` id read as a `fontFace`, closed 2026-09-20
 

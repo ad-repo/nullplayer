@@ -2014,6 +2014,37 @@ its own to show**, instead of `nil`. The old rule — a skin draws its own contr
 titlebar then has no route back at all; `Snap To Default` and `Exit` are the two rows that matter.
 The video rect and the visualization rect still answer first, so nothing the skin owns changed.
 
+### A view sizes itself in its own `onLoad`, and the first scene is built at the size it asked for
+
+**`WMPSceneBuilder` resolves its canvas as `resizeLimits.clamp(requestedSize ?? defaultSize)`, and a
+script's `view.width`/`view.height` assignment lives in `defaultSize`.** So a caller that passes a
+`requestedSize` *overrides the script*, silently — which is correct for a user drag and wrong for
+the pass that opens a view, because the load transaction has already run by then.
+
+Both load paths did exactly that: `reloadSelectedSkin` (the player view) and `loadView` (every other
+view) handed the builder the **pre-`onLoad`** canvas, so the scene, the window and `activeScene`
+were all built at the authored size and the skin's own assignment was thrown away. The handler path
+has honoured the assignment since W113/W190 (`assignedWindowSize`); the load paths never did (W244).
+
+`WMPMainWindowController.loadedCanvas(assigned:opened:)` is the seam, and both paths call it.
+`WMPScriptOutput.viewSize` is nil unless *that* transaction assigned the root's own width or height,
+and the runtime has already clamped it to the view's limits and refused it outright for a
+decoder-driven size (W99) — so a view whose `onLoad` sizes nothing is built exactly as before.
+
+**The symptom is a scene laid out for a window nobody is looking at, not a wrong-sized picture.**
+`Xbox Live Skin`'s `eqView` is `width="423" height="343" minWidth="429" minHeight="197"` and its
+`loadEQPrefs()` is three lines — `view.width = view.minWidth; view.height = view.minHeight`, the
+compact equaliser its artwork is drawn for. Every `jscript:view.height` in the view answered the
+197 the script assigned while the canvas around them stayed 343, so the frame pieces pinned
+`top="jscript:view.height-181"` sat 146 px short of the bottom they belong to and what was left was
+a black band with two white seams where the rails and corners no longer meet. **The harness could
+not see it**: its final rebuild passes `requestedSize: probe.requestedSize`, which is nil with no
+`WMP_RENDER_SIZE`, so the override won and `RENDER-DUMP eqView: 429x197` was the correct picture all
+along. A dump that disagrees with the window is this class.
+
+Measured A/B in a debug build with `winhelper windows`, on the real archive: **429x343** backed out
+against **429x197** with the fix, on the player path and the `theme.openView` path alike.
+
 ### `isRunningModernUI` is a two-way switch in a four-family world
 
 **`WindowManager.isRunningModernUI` answers `false` for `WMPMainWindowController` by construction**

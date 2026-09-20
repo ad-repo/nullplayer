@@ -420,7 +420,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         pendingRestoredViewID = nil
                     }
                     var resolved = try await builder.build(viewID: registration.id,
-                        requestedSize: scene.canvasSize, overrides: output.overrides)
+                        requestedSize: Self.loadedCanvas(assigned: output.viewSize,
+                                                         opened: scene.canvasSize),
+                        overrides: output.overrides)
                     var overrides = output.overrides
                     // The player view opens under the same rule as every other one (W211): a view
                     // laid out at a size it was not authored at has been resized, and the skin's
@@ -1333,7 +1335,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     return
                 }
                 var scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                    .build(viewID: registration.id, requestedSize: base.canvasSize,
+                    .build(viewID: registration.id,
+                           requestedSize: Self.loadedCanvas(assigned: output.viewSize,
+                                                            opened: base.canvasSize),
                            overrides: output.overrides)
                 var overrides = output.overrides
                 // **The window opened at a size the view was never authored at, which is a resize
@@ -2470,6 +2474,29 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                                          property: name)] = .number(1)
         }
         return overrides
+    }
+
+    /// **The canvas a view's first scene is built at: the size its own `onLoad` asked for, or
+    /// failing that the one it opened with (W244).**
+    ///
+    /// `WMPSceneBuilder` resolves its canvas as `resizeLimits.clamp(requestedSize ?? defaultSize)`,
+    /// and a script's `view.width`/`view.height` assignment lives in `defaultSize` — so handing the
+    /// builder the *pre*-`onLoad` canvas silently discarded the assignment, and the scene, the
+    /// window and `activeScene` were all built at the authored size. `Xbox Live Skin`'s `eqView` is
+    /// `width="423" height="343" minWidth="429" minHeight="197"` and its `loadEQPrefs()` is three
+    /// lines — `view.width = view.minWidth; view.height = view.minHeight` — the compact equaliser
+    /// its artwork is drawn for. Measured live: the window stayed **429x343** while the scene the
+    /// harness dumps is 429x197, so the frame pieces pinned `top="jscript:view.height-181"`
+    /// travelled to a bottom that was not there and left a black band with two white seams where
+    /// the rails and corners no longer meet.
+    ///
+    /// **The handler path has honoured this since W113/W190** (`assignedWindowSize`); the two load
+    /// paths never did, which is the whole of the defect. `viewSize` is nil unless *this*
+    /// transaction assigned the root's own width or height, and the runtime has already clamped it
+    /// to the view's limits and refused it outright for a decoder-driven size (W99) — so a view
+    /// whose `onLoad` sizes nothing is built exactly as before.
+    nonisolated static func loadedCanvas(assigned: WMPSize?, opened: WMPSize) -> WMPSize {
+        assigned ?? opened
     }
 
     /// **A view that opens at a size it was never authored at has already been resized, and its

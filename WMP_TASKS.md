@@ -87,7 +87,11 @@ same day). Both are in [the archive](docs/wmp-skin/wmp-backlog-archive.md); **th
 behind is that a `hits` count taken at t=0 is a count of a scene nobody sees in a skin that opens
 behind an animation — settle before ranking one.**
 
-**The tier is empty of rows and stays for the same reason the others do.**
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W246 | **A large playlist cannot be scrolled properly** | **unmeasured.** Reported live 2026-09-20 on `Xbox Live Skin`; the surface is the hosted `<PLAYLIST>` overlay, which is **175 uses across 170 of 179 archives** (Tier 1e's table), so if the cause is the overlay rather than the skin the population is nearly the whole corpus | Not blocked, and **not yet reproduced** — capture the reporter's gesture before ranking. The skin's `plView` authors `<playlist id="playlist1" width="jscript:plFrame.width" …>` with **no scrollbar of its own**, so this is the overlay's own scrolling and not a skin-authored slider bound to it. **The candidate is `WMPPlaylistSurfaceView.scrollWheel` (`WMPWidgetViews.swift:103`): it advances `firstVisibleIndex` by exactly ±1 per event and ignores `scrollingDeltaY`'s magnitude**, so a trackpad flick or a long list moves one row at a time and there is no thumb, no page scroll and no scroll-to-end — measure it before assuming it is the whole report, because "properly" may also mean the rows the `columns` attribute declares or a selection that scrolls out from under the highlight. There is no headless instrument for this: a sweep sees the default state only (W73's caveat), so **drive the app** — `live-ui-testing`, and `harness.md` § *Debugging a live defect*. Load a playlist long enough to need it (`scripts/testdata.sh`, `app-control` § Route C) and read `winhelper` gestures against the drawn rows. Evidence: `object-model.md` § *Playlist kinds*. |
+
+**This tier ranks above every other because no instrument here reaches it**; W246 is the only row.
 
 
 ## Tier 1d — what the Phase 6 instruments do and do not reach
@@ -126,10 +130,19 @@ check that an attribute is consumed at all before ranking what it is answered wi
 A row lands here when the defect is in `App/WindowManager.swift`, `App/AppStateManager.swift` or
 `WMPMainWindowController`'s presentation path — where a window is sized, placed, restored, rescued
 and reset — and would reproduce identically on a skin that renders perfectly. **The controller was
-added to that list on 2026-09-20 with W244**: the tier's three rules below are about a window rather
-than a scene and hold verbatim there, and the alternative was a size defect filed under a drawing
-tier. Tier 1e is its nearest neighbour and is deliberately separate: that tier is about *which*
-window a surface belongs in, this one about the window's own size and place.
+added to that list on 2026-09-20 with W244, which closed the same day**: the tier's three rules
+below are about a window rather than a scene and held verbatim there, and the alternative was a size
+defect filed under a drawing tier. Tier 1e is its nearest neighbour and is deliberately separate:
+that tier is about *which* window a surface belongs in, this one about the window's own size and
+place.
+
+**What W244 leaves behind is in [the archive](docs/wmp-skin/wmp-backlog-archive.md) and is worth
+reading before trusting a dump.** Its scene was right and its window was wrong, and the harness
+could not have seen that: a dump's final rebuild passes no `requestedSize` unless `WMP_RENDER_SIZE`
+is set, so it honoured the script assignment the app was discarding. **A dump that disagrees with
+the window is a class no sweep can rank.** The row's second question — ~33 pt of unexplained window
+growth, with `HostedWindowBorderLayout` named as the candidate — **did not reproduce**: the
+backed-out measurement is the authored size exactly, so there is nothing there to take.
 
 Three rules follow, and they are why these rows do not rank against a starved view:
 
@@ -146,7 +159,6 @@ Three rules follow, and they are why these rows do not rank against a starved vi
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W244 | **A view that resizes itself in `onLoad` is rendered at the size it asked for and shown in a window that is still the authored one** | **every `.wmz` session whose skin sizes a view from `onLoad`; the corpus population is unmeasured and is the first thing to take.** Reported live 2026-09-20 on `Xbox Live Skin`/`eqView`, whose picture is reproducible headlessly | Not blocked. `<view id="eqView" width="423" height="343" minWidth="429" minHeight="197" onLoad="loadEQPrefs()">` and `loadEQPrefs()` is three lines — `view.width = view.minWidth; view.height = view.minHeight` — so the skin opens at 423x343 and **immediately collapses itself to 429x197**, which is the compact EQ its artwork is drawn for. The harness honours that: `RENDER-DUMP eqView: 429x197` and the dump is the correct picture, while the pre-`onLoad` build is `429x343` (`RESIZE` names both). On screen the window is ~429x376 — near the authored 343 rather than the 197 the script asked for — so the scene is laid out for a window nobody is looking at: the content panel keeps its own size at the top, the frame pieces pinned `top="jscript:view.height-181"` travel to the new bottom, the stretch rails `f_left_s.png`/`f_right_s.png` author no `height` and stay at their bitmaps' 50px, and what is left is a black band with two white seams where rails and corners no longer meet. **Reproduce the picture with** `WMP_SKIN=<Xbox Live Skin.wmz> WMP_RENDER_SIZE=429x376 WMP_RENDER_DUMP=<dir>` — it is your screenshot, so the *layout* needs no live session and only the *size* does. **First step is to find out whether the load transaction's `WMPScriptOutput.viewSize` reaches the window at all**: the mechanism exists for handler transactions (`WMPMainWindowController.swift:2276`, `:2891`, W113/W190) and the question is whether the first present runs through it. The ~33pt between 343 and 376 is a second question and `HostedWindowBorderLayout`'s growth is the candidate — measure it, do not assume it. **Verify live** with `WMP_SIZE_TRACE=1` (its `MISMATCH` line is the only instrument that sees the window layer disagreeing with the scene) and `WMP_RESIZE_TRACE=1`; Classic and Original must be byte-identical. Not W213, which was a window forced to a size by the *user*; this one is the skin asking and being ignored. Evidence: `SKILL.md` § *Window placement and recovery*. |
 | W217 | `.wmz` shares the `.wal` *placement* seams but none of its *recovery* seams, so a stranded WMP window has no route back | **every `.wmz` session**; the gaps are structural, not per-skin (code audit 2026-09-16, no corpus sweep needed) | **G4 closed 2026-09-18. Three gaps remain, and the audit's step 2 takes G2 and G3 together.** (G1) `WMPWindowRestorePolicy.safeFrame` (`WMPMainWindowController.swift:2621`) is a second, weaker definition of "on screen" — an 80pt strip and a 24pt bottom margin rather than `WindowPlacement`'s top-left-corner rule. (G2) `correctedRestoredFrames` is gated `appliesWinampModernPlacement` (`AppStateManager.swift:955`), so WMP gets neither the whole-session group offset nor the `savedScreenIsMissing` force. (G3) `ensureAllWindowsOnScreen()` returns early in WMP and all six call sites re-guard, so a display or resolution change strands WMP windows **permanently**. First step: read `~/.claude/plans/wmp-window-placement-compliance.md` — the rule-by-rule table, the line numbers and the four-step plan. **Verify live** (`WMP_PLACE_TRACE=1`, `Halo 2` as the load case, `Corona` as the control), reading frames back through `app-control`'s `winhelper windows`; Classic and Original must be byte-identical. Evidence: `SKILL.md` § *Window placement and recovery*. |
 | W214 | **`isRunningModernUI` is a two-way switch in a four-family world, so every `!isRunningModernUI` branch treats a `.wmz` window as Classic** | 4 sites, every `.wmz` session (code audit 2026-09-17; no corpus sweep can see this) | Not blocked. This is W217's G4 generalised, and one instance already cost a full live-QA cycle (closed with W213). **Do not gate the four in one sweep** — each is a shared-`App/` path, so gate on the mode and prove Classic and Original byte-identical, separately per site. First step: `handleCenterStackWindowWillClose` (`:2036`), the one confirmed live. Verify with `WMP_SIZE_TRACE=1` and `WMP_PLACE_TRACE=1`. Evidence: `SKILL.md` § *`isRunningModernUI` is a two-way switch in a four-family world*, which ranks all four. |
 

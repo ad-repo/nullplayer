@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **A Media Player skin that resizes one of its own windows as it opens is now obeyed.** Some skins
+  open a panel at one size and immediately shrink it to a compact layout their artwork is actually
+  drawn for — the *Xbox Live* skin's equalizer does exactly that. The window kept the larger size
+  while everything inside it was laid out for the smaller one, so the panel's border pieces sat well
+  above the bottom edge and left a black band with two white seams across it. The window now opens
+  at the size the skin asks for.
+
 - **The *Revert* skin's track, artist and album lines are back in the skin's own typeface.** Its
   markup names the font by pointing at a Windows resource file — that is how one skin file serves a
   different font per language — and with no such file on a Mac the three lines were quietly drawn in
