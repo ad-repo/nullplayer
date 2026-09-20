@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **The Xbox skin's video window shows its logo again.** With no film playing, that window is
+  meant to sit behind the green Xbox logo; it was a plain black rectangle instead, because the
+  skin's markup has a typo where it states the logo's size and the whole element was being dropped
+  rather than falling back to the picture's own dimensions. Media Player does the same fallback, so
+  the logo is back, centred where the skin puts it.
+
 - **Controls that a Media Player skin left an empty size on now draw.** Where a skin's markup wrote
   something like `height=""` instead of leaving the attribute out, the control was dropped
   altogether rather than falling back to the size of its own artwork. The clearest case is the

@@ -1902,45 +1902,93 @@ wrapper the skin never meant to size is not a starved view, and counting it as o
 misclassification the string table was. **Named/anonymous does not separate anything**: 128 named,
 50 anonymous, and both distribute the same way.
 
-### The residue is a size fallback, and it is ranked as W240
+### The residue is a size fallback, and it was one node — W240, closed 2026-09-20
 
-The seven image-bearing nodes are the whole of what is real here. Every one authors a literal origin
-— it was deliberately placed — and every one has a bitmap that states the size we refuse to take:
+**Everything between the heading and here was re-measured when the row was taken, and the numbers
+below replace the ones that ranked it.** The section as first written said seven image-bearing nodes
+inside a wider class of *33 of 458*; the row was then re-counted on 2026-09-20 over the 185 installed
+archives, against a pre-W241 baseline (`72a6bee2`) built in a worktree, and both numbers were wrong
+in ways worth keeping on the page.
 
-| skin | node | bitmap |
-|---|---|---|
-| `Age_of_Mythology_MP7`, `Age_of_Mythology_MPXP` | `shutterSub` | `open_shutter.gif` |
-| `Radio` | (anonymous) | `corner_pieces.bmp` |
-| `XBOX` | `xLogo` | `x_logo.jpg` |
-| `STALKER` | `vidBack` | `backgroundImage` authored **empty** |
-| ~~`WWC`~~ | ~~`introAnim`~~ | `top` authored **empty**, drags a `<BUTTON>` in — **closed by W241, 2026-09-20** |
+Reproduce with `WMP_SKIN=<corpus> WMP_RENDER_UNRESOLVED=1 swift test --filter
+WMPRenderDumpTests/testSweepsSkinOrCorpus`, then classify the `bg=` field.
 
-The last two are malformed authoring rather than the size rule and were split from it as W241.
-**One of the two is now closed**, so this table is 6 nodes across 5 archives, and the wider
-*33 of 458* below it is a pre-W241 ceiling rather than a count — re-measure it before ranking on
-it. `STALKER`'s `vidBack` is the half W241 deliberately left: an empty resource already falls
-through to the next name (`WMPArchive.resolve`), so what that node lacks is a size, not a bitmap.
+| | pre-W241 (`72a6bee2`) | after W241 (`1f092489`) |
+|---|---:|---:|
+| `UNRESOLVED` lines | **458** | **446** |
+| — `bg=` names a bitmap | 18 lines / 17 nodes / 13 archives | **17 lines / 16 nodes / 12 archives** |
+| — `bg=` authored **empty** | 15 | **5** |
+| — no `bg=` at all | 425 | 424 |
 
-**`XBOX`'s is an author typo and is the clearest statement of the rule.** `xLogo` authors
-`width="jsa:centerBox.width"` where the `<video>` two lines above it in the same `centerBox` authors
-`jscript:centerBox.width` — `jsa:` is **6 uses / 3 archives**, all the Xbox family, all this one
-node, never in script text (decoder-faithful scan, encodings 158 UTF-16-BOM / 146 cp1252 / 89 UTF-8
-/ 9 UTF-8-BOM over 402 files, `Need_for_Speed_Underground` and `SplinterCellWMPSkin` unreadable as
-always). WMP cannot parse it either — so this is **not** a dialect to implement, and matching the
-typo would be less faithful, not more, exactly as with `scrollingAmmount`. What WMP *does* do is
-fall back to the ambient default, and the bitmap is there, so the logo draws at its natural size
-centred in the video box. Ours draws nothing. `videoBox@1x.png` shows the frame and an empty black
-`centerBox`.
+The 458 reproduces this section's original figure exactly, so the instrument and the corpus agree
+with the archive across a month.
 
-**Do not take this as a one-line change.** The fallback would reach beyond `<SUBVIEW>` — 33 of the
-458 unresolved nodes corpus-wide carry a bitmap — and `Age_of_Mythology`'s `open_shutter.gif` is
-already load-bearing for the one-shot GIF terminator rule (`reference/skins/README.md`), while
-`Radio` is one of the four skins in the *17 views, 4 mismatched* table above, where a literal size
-and its bitmap's real size disagree. Measure the class before changing the rule; that is W240.
+**`33 of 458` was a miscount, not a ceiling, and the arithmetic says how.** `18 + 15 = 33`: the
+original tally read the field with a pattern like `bg=(\S+)`, and a node authoring
+`backgroundImage=""` prints `bg= kids=none`, so the pattern captured `kids=none` and counted it as a
+bitmap. W241's own class was therefore counted inside the bitmap class — which is also exactly why
+the number *looked* like a pre-W241 ceiling that W241 would lower. It lowered it by one node.
+**The general rule is that a probe field which can be empty must be parsed to its delimiter**, and a
+count that moves when a neighbouring row closes is a count to re-derive rather than annotate.
 
-**This was a measurement-only change with no UI signature.** The probe is emitted only under its own
-flag, so no sweep output, invariant or PNG moves; `swift test` is 2,454 passing and the corpus
-capture is the verification.
+**Naming a bitmap is not having one.** Of the 16, only 3 name a bitmap that resolves —
+`WMP_RENDER_BITMAPS=1` says so: 5 `QualityIcon` nodes (`9SeriesDefault` ×2, `corona` ×2, `Compact`)
+name `res://wmploc/RT_IMAGE/…`, a wmploc.dll resource nothing here can ever resolve, and 8 name a
+skin-local file that is **absent from its own archive** — `nprlogo.gif`, `pl_resizer.png` (both
+QuickSilver releases, two views each), `corner_pieces.bmp`, `shim.bmp`, `presets.bmp` — verified
+against each archive's own entry list rather than inferred from a resolver miss. Those 13 have no
+size available to WMP either, so they are phantoms of the kind the section above cleared. **`Radio`
+left the row that way**, and with it the tie to W123 that had been holding both.
+
+**And having one is not keeping it.** Two of the surviving three are `Age_of_Mythology_MP7` and
+`_MPXP`'s `shutterSub`, and `aom.js:188` does `shutterSub.backgroundImage = ""` inside
+`initShutter()` — so at measure time the skin has deliberately cleared its own artwork and there is
+nothing to take a size from. Its sibling `shutterTrigger`, same origin and same file, resolves to
+198x173 through the intrinsic-size fallback that already existed, which is the proof both that the
+fallback works and that the row's premise — *"the image's size we refuse to take"* — was wrong.
+**Read the effective resource, not the markup: the `bg=` field prints what the node authored, and a
+script override is consulted ahead of it.**
+
+**So the whole corpus was `XBOX`'s `xLogo`, and its cause was statedness rather than the fallback.**
+`xLogo` authors `width="jsa:centerBox.width"` where the `<video>` two lines above it in the same
+`centerBox` authors `jscript:centerBox.width` — `jsa:` is **6 uses / 3 archives**, all the Xbox
+family, all this one node, never in script text (decoder-faithful scan, encodings 158 UTF-16-BOM /
+146 cp1252 / 89 UTF-8 / 9 UTF-8-BOM over 402 files, `Need_for_Speed_Underground` and
+`SplinterCellWMPSkin` unreadable as always). WMP cannot parse it either — so this is **not** a
+dialect to implement, and matching the typo would be less faithful, not more, exactly as with
+`scrollingAmmount`. What WMP *does* do is fall back to the ambient default, and the bitmap is there.
+The intrinsic-size gate is `statedAttribute(named:) == nil`, and `jsa:…` **is** stated, so the typo
+closed the same gate an empty value closed before W241.
+
+**The fix is W241's rule one step out: a geometry value the grammar rejects outright states
+nothing.** `WMPInitialLayoutResolver.Resolution.unresolved` carries `interpretable:`, the parser's
+own failures come back `false`, and dependency failures — unknown object, cycle, depth, a reference
+whose target failed — stay `true`, because a script may still satisfy those and stamping a bitmap
+over one is the `corona`/`svVideo` regression the builder's intrinsic-size comment warns about.
+**Extents only.** The first cut applied it to `left`/`top` as well and
+`WMPGeometryTests.testInitialLayoutExpressionsResolveReferencesAliasesForwardReadsAndRejectCode`
+caught it: `left="JScript:danger();"` silently became 0. An origin has no content-derived default,
+so an unreadable one stays a rejection — which is the engine's refusal to evaluate code in a
+geometry slot, and is not something to trade for a corpus of one.
+
+Corpus sweep either side: **one changed invariant line** — `XBOX/videoBox` 28→29 nodes, 26→27
+commands, 2 unresolved→1 — and two removed `UNRESOLVED` lines, both `xLogo`. `x_logo.jpg` now draws
+at 167x153 centred at 116,81 where `videoBox@1x.png` was an empty black `centerBox`.
+`WMPUnreadableGeometryValueTests` holds it down, 3 of its 5 cases failing at `1f092489`.
+
+**Two process lessons this row cost, both cheap to reuse.** A sweep through
+`scripts/wmp_render_sweep.sh` reported **48 of 184 archives damaged by interleaved writes**, which
+puts a skin into `compare`'s *not compared* list and would have hidden the one line this change
+moves; the direct `swift test` invocation above dumps no PNGs, printed no damage, and is the right
+instrument for an invariants diff. And the pre-W241 baseline had to be built in a worktree —
+`git worktree add` plus symlinks for `Frameworks/` **and** for the frameworks and dylibs under
+`.build/arm64-apple-macosx/debug/`, without which the test bundle builds and then fails to `dlopen`
+VLCKit.
+
+**W231 itself was a measurement-only change with no UI signature.** The probe is emitted only under
+its own flag, so no sweep output, invariant or PNG moved for it; `swift test` was 2,454 passing and
+the corpus capture was the verification. W240, above, is the change that followed it and does move a
+pixel.
 
 ### What was under the phantoms, once they were cleared
 

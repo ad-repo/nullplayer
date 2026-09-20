@@ -1439,6 +1439,21 @@ queue, with the object model as the security boundary — see Amendment 2 in
   denominator. And it is not the resource path, which implements the rule for itself:
   `WMPArchive.resolve` returns nil for an empty path, so `backgroundImage=""` already falls through
   to the `foregroundImage` behind it. See `reference/harness.md` § *The empty-value class*.
+- **A geometry value the grammar cannot read is unstated too, and for extents only** (W240). W241's
+  rule one step out: `XBOX`'s `xLogo` authors `width="jsa:centerBox.width"` where the `<video>` two
+  lines above it in the same container writes `jscript:` — a typo WMP cannot parse either, so WMP
+  falls back to the ambient default and draws the logo at `x_logo.jpg`'s own size, while the gate
+  here saw a *stated* width and drew nothing. `WMPInitialLayoutResolver.Resolution.unresolved`
+  carries `interpretable:` and the parser's own failures come back `false`; a **dependency**
+  failure — unknown object, cycle, depth, a reference whose target failed — stays `true`, because a
+  script may still satisfy it and stamping a bitmap over one is the `corona`/`svVideo` regression.
+  **Extents only, and that boundary is the point**: an origin has no content-derived default, so an
+  unreadable `left` stays a rejection and `left="JScript:danger();"` is still refused rather than
+  drawn at 0. `jsa:` is **not** a dialect to implement — answering a typo the way WMP answers it is
+  not the same as matching it, exactly as with `scrollingAmmount`. **The row was ranked on
+  `33 of 458` unresolved nodes carrying a bitmap and was really one node**: 13 of 16 name a bitmap
+  that cannot resolve, two more clear their own artwork from script, and the 33 was an empty `bg=`
+  field captured by a loose pattern. See `reference/harness.md` § *The residue is a size fallback*.
 - **`STATUSTEXT` and `CURRENTPOSITIONTEXT` are text controls with native WMP values, not unknown
   tags.** Model them as text for intrinsic sizing and paint; synthesize the latter's value from
   `player.controls.currentPositionString`. WMP right-aligns an otherwise-unqualified

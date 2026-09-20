@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W244.** Check this file before reusing any number — the live backlog is a
+**The next free number is W245.** (W244 was issued 2026-09-20 for the `onLoad` self-resize row in Tier 1g.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -38,6 +38,73 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+## W240 — an unresolved node whose bitmap resolves took zero instead of the image's size, closed 2026-09-20
+
+The row as it stood in `WMP_TASKS.md` when it was taken, in Tier 1f:
+
+> | W240 | **An unresolved node that carries a bitmap takes zero instead of the image's size** | **6 `<SUBVIEW>` nodes across 5 archives** — was 7 across 6 until W241 closed `WWC`'s `introAnim` on 2026-09-20 — inside a wider class of **33 of the corpus's 458 unresolved nodes** that carry a bitmap, measured 2026-09-19 over 185 archives with the W231-extended `WMP_RENDER_UNRESOLVED`; **the 33 is pre-W241 and is a ceiling, not a count** | Not blocked. Re-count the 33 first (W241 closed part of it), then settle the rule together with W123 — `Radio` is in both. Not a one-line fallback, and `jsa:` is not part of it and must not be implemented. `STALKER`'s `vidBack` is still here and is the empty-`backgroundImage` case W241 deliberately left: an empty resource already falls through to the next name, so what it lacks is a size, not a bitmap. Evidence: `harness.md` § *After the subview class*. |
+
+**The row asked for a re-count first and the re-count dismantled it.** Measured 2026-09-20 over the
+185 installed archives, against a pre-W241 baseline (`72a6bee2`) built in a worktree: 446 unresolved
+nodes now, **458 before W241 — reproducing the recorded figure exactly**, which is what makes the
+rest of the comparison trustworthy. The full table is in `harness.md` § *The residue is a size
+fallback*; three findings decided the row.
+
+**`33 of 458` was a miscount, not a pre-W241 ceiling.** Pre-W241 the sweep carried 18 lines naming a
+bitmap and 15 whose `bg=` was authored **empty**, and `18 + 15 = 33`: the original tally read the
+field with a pattern like `bg=(\S+)`, which captures the *next* field when the value is empty. W241's
+own class was being counted inside the bitmap class, which is also why the number read as a ceiling
+W241 would lower — it lowered it by one node. **A probe field that can be empty must be parsed to
+its delimiter, and a count that moves when a neighbouring row closes is a count to re-derive.**
+
+**Naming a bitmap is not having one.** Of the 16 nodes naming one after W241, `WMP_RENDER_BITMAPS=1`
+says only 3 name a bitmap that resolves: 5 `QualityIcon` nodes name `res://wmploc/RT_IMAGE/…`, which
+nothing here can ever resolve, and 8 name a skin-local file **absent from its own archive** —
+verified against each archive's own entry list, not inferred from a resolver miss. Those 13 have no
+size available to WMP either. **`Radio` left the row that way, taking the tie to W123 with it**, and
+W123 now stands alone.
+
+**And having one is not keeping it.** Two of the three survivors were `Age_of_Mythology_MP7` and
+`_MPXP`'s `shutterSub`, and `aom.js:188` does `shutterSub.backgroundImage = ""` in `initShutter()` —
+the skin clears its own artwork before anything measures it. Its sibling `shutterTrigger`, same
+origin and same file, resolves to 198x173 through the intrinsic-size fallback **that already
+existed**, which proved both that the fallback works and that the row's premise — the image's size
+we refuse to take — was wrong. Read the *effective* resource: `bg=` prints the markup, and a script
+override is consulted ahead of it.
+
+**So the corpus was one node, and its cause was statedness rather than the fallback.** `XBOX`'s
+`xLogo` authors `width="jsa:centerBox.width"` where the `<video>` two lines above it in the same
+`centerBox` writes `jscript:`. The intrinsic-size gate is `statedAttribute(named:) == nil` and
+`jsa:…` **is** stated, so the typo closed exactly the gate an empty value closed before W241. The
+fix is that rule one step out: `WMPInitialLayoutResolver.Resolution.unresolved` carries
+`interpretable:`, the parser's own failures come back `false`, and dependency failures — unknown
+object, cycle, depth, a reference whose target failed — stay `true`, because a script may still
+satisfy those and stamping a bitmap over one is the `corona`/`svVideo` regression. `jsa:` is still
+**not** implemented: answering a typo the way WMP answers it is not matching it.
+
+**Extents only, and the boundary was found by a test rather than by reasoning.** The first cut
+applied the rule to `left`/`top` as well, and
+`WMPGeometryTests.testInitialLayoutExpressionsResolveReferencesAliasesForwardReadsAndRejectCode`
+failed: `left="JScript:danger();"` silently became 0. An origin has no content-derived default to
+fall back to, so an unreadable one stays a rejection — the engine's refusal to evaluate code in a
+geometry slot is not something to trade for a corpus of one.
+
+**What moved:** over the 185 archives, **one changed invariant line** — `XBOX/videoBox` 28→29 nodes,
+26→27 commands, **2 unresolved → 1** — and two removed `UNRESOLVED` lines, both `xLogo`.
+`x_logo.jpg` draws at 167x153 centred at 116,81, where `videoBox@1x.png` had the frame and an empty
+black `centerBox`. `swift test` 2,477 executed, 0 failures.
+`WMPUnreadableGeometryValueTests` holds it down; 3 of its 5 cases fail at `1f092489`, and the other
+two are the guards — an unreadable extent with no artwork stays unresolved, and an unreadable origin
+stays refused.
+
+**Two process notes.** `scripts/wmp_render_sweep.sh capture` reported **48 of 184 archives damaged
+by interleaved writes** on both the before and the after capture, which puts a skin — `XBOX` among
+them — into `compare`'s *not compared* list; the invariants diff was taken through the direct
+`swift test` invocation instead, which dumps no PNGs and printed no damage. And a pre-W241 baseline
+needs a worktree plus symlinks for `Frameworks/` **and** for the frameworks and dylibs under
+`.build/arm64-apple-macosx/debug/`, without which the test bundle builds and then fails to `dlopen`
+VLCKit.
 
 ## W241 — an attribute authored with an empty value was dropped, closed 2026-09-20
 
@@ -84,9 +151,9 @@ that is a widget, then run the app. On screen the equalizer tray goes from ten e
 working sliders; the tray opens on the `eqb.gif` button at `view-2@27,157`, widening the window to
 636x304.
 
-**W240 is still open and this change does not touch it.** The two were ranked together because they
-are the same shape from opposite ends — W240 is the node that has a size available and refuses it,
-W241 was the node whose size was authored as nothing at all.
+**W240 was still open when this landed and closed the same day, above.** The two were ranked
+together because they looked like the same shape from opposite ends; the re-count showed W240 was
+one node and a near-sibling of this rule rather than its mirror.
 
 ## W243 — one press reached the host twice, and W242 was the row that found it, 2026-09-20
 

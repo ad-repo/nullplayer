@@ -525,11 +525,45 @@ struct WMPSceneBuilder: @unchecked Sendable {
             guard let property = WMPInitialLayoutResolver.Property(rawValue: name.lowercased()) else { return nil }
             switch layoutResolver.resolve(node, property: property) {
             case let .value(value): return value
-            case let .unresolved(reason):
-                guard let attribute = node.statedAttribute(named: name) else { return nil }
+            case let .unresolved(reason, interpretable):
+                // An *extent* the grammar cannot read at all is about to be answered by the
+                // artwork's own size in `statesDimension`, so recording it here would report a
+                // starved node that is not one — and if there is no artwork, the size guard below
+                // still records it as `missing literal geometry` (W240). An **origin** is not in
+                // that bargain: there is no ambient default to take a position from, and
+                // `left="JScript:danger();"` must stay a rejection rather than quietly become 0.
+                let answerable = !interpretable && (name.lowercased() == "width"
+                                                    || name.lowercased() == "height")
+                guard !answerable, let attribute = node.statedAttribute(named: name) else { return nil }
                 recordUnresolved(node, attribute: name, value: "\(attribute.rawValue) [\(reason)]")
                 return nil
             }
+        }
+
+        /// Did the skin **state** this dimension, in the sense the ambient default cares about?
+        ///
+        /// Three things answer no, and they are one rule: the attribute is absent, it is present
+        /// with an empty value (W241), or it carries a value this grammar rejects outright (W240).
+        /// In all three WMP falls back to its ambient default — 0 for an origin, the artwork's own
+        /// size for an extent — because none of them is a statement of geometry. A *well-formed*
+        /// expression whose references are not known yet is the opposite case and stays stated:
+        /// a script may still satisfy it, and stamping the bitmap's size over it is the regression
+        /// the intrinsic-size gate's own comment warns about.
+        func statesDimension(_ node: WMPNode, _ name: String) -> Bool {
+            guard node.statedAttribute(named: name) != nil else { return false }
+            // Extents only. An origin has no content-derived default to fall back to, so an
+            // unreadable `left` stays a rejection — which is what keeps `left="JScript:danger();"`
+            // out of the scene instead of drawing it at 0.
+            guard let property = WMPInitialLayoutResolver.Property(rawValue: name.lowercased()),
+                  property == .width || property == .height else {
+                return true
+            }
+            // The resolver memoizes per node and property, so this is the same lookup
+            // `parseDimension` already made.
+            if case .unresolved(_, false) = layoutResolver.resolve(node, property: property) {
+                return false
+            }
+            return true
         }
 
         /// The extent this node states **in its own markup**, with a geometry binding read the way
@@ -816,8 +850,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 if isStringConstantText(node, overrides, literalString) { return }
 
                 if width == nil || height == nil,
-                   node.statedAttribute(named: "width") == nil
-                       || node.statedAttribute(named: "height") == nil,
+                   !statesDimension(node, "width") || !statesDimension(node, "height"),
                    let (_, path) = try resource(node, names: intrinsicSizeResourceNames(for: node.kind)) {
                     let intrinsic = try imageStore.image(for: path).size
                     // `width`/`height` are already non-nil here only when a script override
@@ -826,16 +859,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // that outranks one the skin computed: Corona's compact view collapses
                     // `svVideo` to height 0 through its own timer, and the background bitmap kept
                     // stamping 241 back over it, leaving a black panel across the whole window.
-                    if node.statedAttribute(named: "width") == nil, width == nil { width = intrinsic.width }
-                    if node.statedAttribute(named: "height") == nil, height == nil { height = intrinsic.height }
+                    if !statesDimension(node, "width"), width == nil { width = intrinsic.width }
+                    if !statesDimension(node, "height"), height == nil { height = intrinsic.height }
                 }
                 if isText(node.kind), width == nil || height == nil,
                    let glyphs = intrinsicTextSize(node, literal: literalNumber,
                                                   literalString: literalString) {
-                    if node.statedAttribute(named: "width") == nil, width == nil { width = glyphs.width }
-                    if node.statedAttribute(named: "height") == nil, height == nil { height = glyphs.height }
+                    if !statesDimension(node, "width"), width == nil { width = glyphs.width }
+                    if !statesDimension(node, "height"), height == nil { height = glyphs.height }
                 }
-                if node.statedAttribute(named: "height") == nil, height == nil,
+                if !statesDimension(node, "height"), height == nil,
                    let intrinsicHeight = widgetKind(node.kind)?.intrinsicHeight {
                     height = intrinsicHeight
                 }

@@ -11,7 +11,18 @@ struct WMPInitialLayoutResolver {
 
     enum Resolution: Equatable {
         case value(CGFloat)
-        case unresolved(String)
+        /// `interpretable: false` means the authored value is **not a geometry expression at
+        /// all** — the grammar above rejected it outright — as opposed to a well-formed one whose
+        /// dependencies are not known yet. The two look identical in a count and are opposite in
+        /// what the skin meant: a dependency failure may be satisfied by a later script write, so
+        /// the dimension stays stated, while a value this grammar cannot read was never a
+        /// statement of size and the ambient default answers it, exactly as an absent or empty one
+        /// does (W240, extending W241). `XBOX`'s `xLogo` authors `width="jsa:centerBox.width"`
+        /// where the `<video>` two lines above it in the same container writes `jscript:` — WMP
+        /// cannot parse `jsa:` either and falls back to the bitmap, so the logo draws at
+        /// `x_logo.jpg`'s natural size; matching the typo instead would be less faithful, not
+        /// more, exactly as with `scrollingAmmount`.
+        case unresolved(String, interpretable: Bool = true)
     }
 
     private struct Key: Hashable {
@@ -83,7 +94,9 @@ struct WMPInitialLayoutResolver {
         case let .binding(kind, path) where kind == .property:
             source = path
         default:
-            return .unresolved("unsupported geometry value")
+            // A `<resource>` or `<color>` in a geometry slot is not geometry either, and takes the
+            // same answer the grammar's own rejection does.
+            return .unresolved("unsupported geometry value", interpretable: false)
         }
 
         do {
@@ -94,7 +107,7 @@ struct WMPInitialLayoutResolver {
             }
             return validated(value, property: property)
         } catch let error as WMPInitialLayoutExpressionError {
-            return .unresolved(error.description)
+            return .unresolved(error.description, interpretable: !error.isSyntax)
         } catch {
             return .unresolved("invalid geometry expression")
         }
@@ -127,7 +140,10 @@ struct WMPInitialLayoutResolver {
         }
         switch resolve(target, property: property, depth: depth) {
         case let .value(value): return value
-        case let .unresolved(reason): throw WMPInitialLayoutExpressionError(reason)
+        // The *referring* expression is well-formed whatever the target's own attribute says, so
+        // this is a dependency failure and never a syntax one: a reference that cannot be
+        // satisfied leaves the referrer's dimension stated.
+        case let .unresolved(reason, _): throw WMPInitialLayoutExpressionError(reason)
         }
     }
 
@@ -187,7 +203,16 @@ private indirect enum WMPInitialLayoutExpression {
 
 private struct WMPInitialLayoutExpressionError: Error, CustomStringConvertible {
     let description: String
-    init(_ description: String) { self.description = description }
+    /// The grammar rejected the text itself, rather than failing to satisfy a reference in a
+    /// well-formed expression. Only this kind says the value was never geometry — see
+    /// `WMPInitialLayoutResolver.Resolution.unresolved(_:interpretable:)`. A limit such as the
+    /// nesting ceiling is deliberately *not* syntax: the text is geometry, we declined to evaluate
+    /// it, and falling back to the artwork there would answer a question the skin did ask.
+    let isSyntax: Bool
+    init(_ description: String, syntax: Bool = false) {
+        self.description = description
+        self.isSyntax = syntax
+    }
 }
 
 private struct WMPInitialLayoutParser {
@@ -208,7 +233,7 @@ private struct WMPInitialLayoutParser {
         token = try nextToken()
         let result = try parseAdditive()
         if token == .symbol(";") { token = try nextToken() }
-        guard token == .end else { throw WMPInitialLayoutExpressionError("unexpected trailing input") }
+        guard token == .end else { throw WMPInitialLayoutExpressionError("unexpected trailing input", syntax: true) }
         return result
     }
 
@@ -242,7 +267,7 @@ private struct WMPInitialLayoutParser {
             if token == .symbol(".") {
                 token = try nextToken()
                 guard case let .identifier(property) = token else {
-                    throw WMPInitialLayoutExpressionError("expected property after '.'")
+                    throw WMPInitialLayoutExpressionError("expected property after '.'", syntax: true)
                 }
                 token = try nextToken()
                 return .reference(WMPInitialLayoutReference(object: first, property: property))
@@ -261,12 +286,12 @@ private struct WMPInitialLayoutParser {
             }
             token = try nextToken()
             let expression = try parseAdditive()
-            guard token == .symbol(")") else { throw WMPInitialLayoutExpressionError("missing ')'") }
+            guard token == .symbol(")") else { throw WMPInitialLayoutExpressionError("missing ')'", syntax: true) }
             depth -= 1
             token = try nextToken()
             return expression
         default:
-            throw WMPInitialLayoutExpressionError("expected number or geometry reference")
+            throw WMPInitialLayoutExpressionError("expected number or geometry reference", syntax: true)
         }
     }
 
@@ -295,7 +320,7 @@ private struct WMPInitialLayoutParser {
             }
             let raw = String(characters[start..<index])
             guard let value = Double(raw), value.isFinite else {
-                throw WMPInitialLayoutExpressionError("invalid numeric literal")
+                throw WMPInitialLayoutExpressionError("invalid numeric literal", syntax: true)
             }
             return .number(CGFloat(value))
         }
@@ -308,6 +333,6 @@ private struct WMPInitialLayoutParser {
             }
             return .identifier(String(characters[start..<index]))
         }
-        throw WMPInitialLayoutExpressionError("unsupported token '\(character)'")
+        throw WMPInitialLayoutExpressionError("unsupported token '\(character)'", syntax: true)
     }
 }
