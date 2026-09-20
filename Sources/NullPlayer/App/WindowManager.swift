@@ -5471,7 +5471,7 @@ class WindowManager {
     /// Height for a restored PeppyMeter frame. Collapses the previous double-height default
     /// down to the current 1.75x landscape floor, but otherwise honors a user-stretched height
     /// so the window remembers its size like the other stack windows.
-    private func restoredPeppyMeterHeight(saved: CGFloat, floor: CGFloat, legacyDoubleHeight: CGFloat) -> CGFloat {
+    private static func restoredPeppyMeterHeight(saved: CGFloat, floor: CGFloat, legacyDoubleHeight: CGFloat) -> CGFloat {
         if abs(saved - legacyDoubleHeight) <= 2 { return floor }
         return max(floor, saved)
     }
@@ -5605,25 +5605,54 @@ class WindowManager {
         return normalized
     }
 
+    /// The frame a restored PeppyMeter or NetworkMonitor takes outside the NullPlayer-modern family.
+    ///
+    /// Classic floors both by its own sprite arithmetic and snaps a legacy double-height PeppyMeter
+    /// to the current floor — a migration for a size old builds used to save.
+    ///
+    /// **A `.wmz` session keeps the frame it saved (W214).** `isRunningModernUI` answers false for
+    /// the WMP controller, so both Classic rules ran over windows that wear the skin's borrowed
+    /// frame. Measured 2026-09-20: a `.wmz` PeppyMeter saved at 380x290 came back 34 pt short,
+    /// because 290 is exactly Classic's legacy double height (145x2) and the rule snapped it to
+    /// Classic's 254 floor while every sibling restored at its saved height. A `.wmz` session never
+    /// had the legacy size the migration exists for, and the centre stack has no claim on these
+    /// heights (W237). Gate the rule, not the predicate — `isRunningModernUI` answers a four-family
+    /// question for ~15 other call sites. `.wal` never reaches here: `showPeppyMeter` and
+    /// `showNetworkMonitor` route winampModern to its hosted controller first.
+    static func normalizedClassicCenterStackRestoredFrame(
+        _ frame: NSRect,
+        kind: CenterStackWindowKind,
+        peppyMeterFloor: CGFloat,
+        peppyMeterLegacyDoubleHeight: CGFloat,
+        networkMonitorMinimumHeight: CGFloat,
+        preservingSavedFrame: Bool
+    ) -> NSRect {
+        guard kind == .peppyMeter || kind == .networkMonitor else { return frame }
+        guard !preservingSavedFrame else { return frame }
+        guard kind == .peppyMeter else {
+            return normalizedClassicNetworkMonitorRestoredFrame(frame, minimumHeight: networkMonitorMinimumHeight)
+        }
+        var normalized = frame
+        let topY = normalized.maxY
+        normalized.size.height = restoredPeppyMeterHeight(
+            saved: normalized.height,
+            floor: peppyMeterFloor,
+            legacyDoubleHeight: peppyMeterLegacyDoubleHeight
+        )
+        normalized.origin.y = topY - normalized.size.height
+        return normalized
+    }
+
     private func normalizedCenterStackRestoredFrame(_ frame: NSRect, kind: CenterStackWindowKind) -> NSRect {
         guard isRunningModernUI else {
-            guard kind == .peppyMeter || kind == .networkMonitor else { return frame }
-            var normalized = frame
-            let topY = normalized.maxY
-            if kind == .peppyMeter {
-                normalized.size.height = restoredPeppyMeterHeight(
-                    saved: normalized.height,
-                    floor: (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded(),
-                    legacyDoubleHeight: (SkinElements.SpectrumWindow.windowSize.height * 2 * classicScaleMultiplier).rounded()
-                )
-            } else {
-                return Self.normalizedClassicNetworkMonitorRestoredFrame(
-                    frame,
-                    minimumHeight: SkinElements.SpectrumWindow.minSize.height * classicScaleMultiplier
-                )
-            }
-            normalized.origin.y = topY - normalized.size.height
-            return normalized
+            return Self.normalizedClassicCenterStackRestoredFrame(
+                frame,
+                kind: kind,
+                peppyMeterFloor: (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded(),
+                peppyMeterLegacyDoubleHeight: (SkinElements.SpectrumWindow.windowSize.height * 2 * classicScaleMultiplier).rounded(),
+                networkMonitorMinimumHeight: SkinElements.SpectrumWindow.minSize.height * classicScaleMultiplier,
+                preservingSavedFrame: isRunningWMPUI
+            )
         }
         let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
         return Self.normalizedModernCenterStackRestoredFrame(

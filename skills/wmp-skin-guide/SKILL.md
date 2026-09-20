@@ -2148,26 +2148,78 @@ cycle: `tightenClassicCenterStackIfNeeded` grew `circle`'s 192x82 borderless pla
 `Skin.mainWindowSize.height` on the mouse-up of the first click, and closed with W213 by gating on
 `isRunningWMPUI`.
 
-Four sites remain (code audit 2026-09-17; no corpus sweep can see this), ranked as W214 in the order
-they are worth taking:
+Four sites were audited 2026-09-17 (no corpus sweep can see this) and ranked as W214 in the order
+they were worth taking. **The first two were measured on 2026-09-20 and only one of them was a
+defect**; two remain:
 
-1. **`handleCenterStackWindowWillClose`** (`:2036`) slides windows and re-docks children on Classic
-   geometry, reachable in WMP mode because our fallback EQ/playlist/spectrum windows do open there.
-   **Confirmed live by W237**, which closed 2026-09-19 by gating the library resize it reached
-   through `updateDockedChildWindows`; the slide and the re-dock are still ungated.
-2. **`normalizedCenterStackRestoredFrame`** (`:5501`) rewrites restored PeppyMeter and
-   NetworkMonitor heights by Classic rules — *exactly* the windows that wear a skin's borrowed frame
-   in WMP mode. `HostedWindowBorderLayout` already records an analyser coming back `387x219` where
-   its siblings came back `321x145`, so these two rules may already be fighting. Needs
-   `WMP_BORDER_TRACE=1` beside it: whichever rule currently wins is load-bearing for someone.
+1. **`handleCenterStackWindowWillClose`** (`:2036`) — **measured clean 2026-09-20, nothing to gate.**
+   What W213 and W237 left ungated there is `slideUpWindowsBelow` plus the child re-dock, and both
+   are mode-agnostic: `classicTogglePlaylist` and every other Windows-menu toggle run the identical
+   sequence (slide → tighten → notify → `updateDockedChildWindows`) in a `.wmz` session with **no
+   guard at all**, so gating the close path would make the close box and the menu disagree. The
+   slide is also provably safe — it lands a window in the slot the closed one vacated, which was on
+   screen by construction, and the WMP tiler's clamp has nothing left to do. Driven live under
+   `AlienMorph`: PeppyMeter closed by its own close box left its neighbours untouched, and two
+   further closes at the top of a contiguous column slid the windows below up by exactly the closing
+   height. **The live route to this function in WMP is a surface's own close box** (`PeppyMeterView`,
+   `CavaView`, … all hit-test one) — the aux windows are borderless there, with no titlebar button
+   and no ⌘W; `teardownModeDependentWindows` reaches it too but every window is already `orderOut`,
+   so the slide's `isVisible` guard makes it inert.
+2. **`normalizedCenterStackRestoredFrame`** (`:5608`) — **closed 2026-09-20**, and it was the real
+   one. See *A restored `.wmz` window keeps the size it saved* below.
 3. `applyClassicVisualizationDefaults` (`:4610`) writes Classic visualization defaults during a WMP
-   session.
+   session. **Take this one next.**
 4. `expectedMainHeightForCurrentHT` (`:5534`).
 
 **Do not gate them in one sweep.** Each is a shared-`App/` path and `CLAUDE.md`'s rule binds: gate on
 the mode, prove Classic and Original byte-identical, and measure each separately. Verify with
 `WMP_SIZE_TRACE=1` — its `MISMATCH` line fires exactly when a window is about to be forced off its
 own scene — and `WMP_PLACE_TRACE=1`.
+
+**And measure the site before gating it: an audited site is a candidate, not a defect.** Site 1 read
+as one for three days on the strength of the predicate alone, and the measurement found the rule it
+still runs is the rule the menu already runs ungated. What an audit of `!isRunningModernUI` can say
+is *this code is reachable in WMP*; whether the code is Classic's geometry or nobody's is a separate
+question, and the answer is on screen.
+
+### A restored `.wmz` window keeps the size it saved (W214, closed 2026-09-20)
+
+`normalizedCenterStackRestoredFrame` rewrites a restored **PeppyMeter** and **NetworkMonitor** by
+Classic's own sprite arithmetic — PeppyMeter's floor (`SpectrumWindow.windowSize.height * 1.75`) and
+its legacy double-height migration, NetworkMonitor's spectrum-derived minimum — and
+`isRunningModernUI` is false for the WMP controller, so both ran over the two windows that wear a
+skin's borrowed frame.
+
+**The measurement is the arithmetic, and it is worth keeping because it is how a hosted-window
+restore can be checked at all.** In a `.wmz` session every hosted window comes back at *its saved
+frame plus the borrowed ring* — measured `+36 x +34` under `AlienMorph`:
+
+| window | saved | restored | |
+|---|---|---|---|
+| Cava | 368x145 | 404x179 | saved + ring |
+| Flow | 368x145 | 404x179 | saved + ring |
+| Waveform | 418x262 | 454x296 | saved + ring |
+| **PeppyMeter** | **380x290** | **416x288** | **254 + ring** |
+
+One window disagreeing with its siblings by exactly the ring is the whole diagnosis: 290 is Classic's
+legacy double height (`145x2`) and 254 is Classic's floor (`145x1.75`), so the migration snapped a
+height a `.wmz` session chose for a legacy size it never had.
+
+The fix is `WindowManager.normalizedClassicCenterStackRestoredFrame(…, preservingSavedFrame:)`, a
+pure static the instance method calls with `isRunningWMPUI` — **gate the rule, not the predicate**,
+as W237 did. `.wal` never reaches it: `showPeppyMeter` and `showNetworkMonitor` route winampModern to
+its hosted controller first. Pinned by `Tests/NullPlayerAppTests/WindowRestoreGeometryTests.swift`
+§ *A restored `.wmz` PeppyMeter / Flow keeps the size the session saved (W214)*, both sides of the
+flag.
+
+**Reproducing it needs the restore path, which means two launches and a pinned default.**
+`defaults write NullPlayer rememberStateEnabled -bool true` (it is off in most measurement recipes,
+which is exactly why this class was invisible), size the window with
+`osascript -e 'tell application "System Events" to tell (first process whose unix id is <pid>) to set
+size of (first window whose name is "NullPlayer PeppyMeter") to {416, 290}'`, ⌘Q, relaunch, and read
+`winhelper windows`. The saved frames themselves are in the `savedAppState` JSON blob of the
+`NullPlayer` domain — `peppyMeterWindowFrame` and its siblings — which is the cheapest way to confirm
+what the app actually wrote before blaming the restore.
 
 ### The centre stack does not size a `.wmz` window
 

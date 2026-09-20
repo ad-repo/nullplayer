@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **A Media Player skin's meter and network windows come back the size you left them.** The
+  PeppyMeter and Flow windows were the only two whose saved height was rewritten on the way back in,
+  by a rule that belongs to the Classic skin — including a migration that shrinks a window left at
+  one particular height, which no Media Player session ever had a reason to save. A meter left 290
+  points tall reopened 34 points shorter, while every window beside it reopened exactly as saved.
+  Both now reopen at the size the session ended with. Classic and Original are unchanged.
+
 - **A Media Player skin's windows can no longer be stranded off the screen.** These windows have no
   title bar — most skins make them unmovable by their own artwork — so once one walked past an edge
   there was nothing left to drag it back by. Unplugging a display, changing its resolution or
