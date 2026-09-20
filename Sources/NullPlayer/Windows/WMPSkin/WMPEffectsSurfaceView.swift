@@ -128,7 +128,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// Playback state is what decides whether anything is drawn at all, and the selection is what
     /// decides what. Both arrive on the same snapshot the rest of the window refreshes from.
     func update(_ snapshot: WMPHostSnapshot) {
-        let active = snapshot.state == .playing
+        let active = snapshot.state.isRunning
         guard active != isActive else { return }
         isActive = active
         applySelection()

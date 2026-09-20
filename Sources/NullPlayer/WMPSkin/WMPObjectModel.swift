@@ -355,6 +355,15 @@ final class WMPObjectModel {
         // has to leave the demand tally, which is how `alphaBlendTo` came to be ranked as the
         // largest open row while it worked.
         case "status": return .value(.string(snapshot.statusText))
+        // **`player.fullScreen` is the Player's own property, not only the `<VIDEO>` element's.**
+        //
+        // 35 corpus archives read or write it, every Alienware/ALX frame among them, and an
+        // unrecognised member aborts the handler it appears in. `alienware.js`'s
+        // `onChangeVidPlayerState()` reaches `if(!player.fullScreen){ checkSnapStatus(); }` from
+        // `onLoadVid()`, so the throw took the four statements after it with it — including
+        // `toggleVidDrawer('0')`, which is what closes the video settings drawer at load.
+        // Reported 2026-09-20 as "the video adjustment drawer is open by default".
+        case "fullscreen": return .value(.bool(snapshot.video.fullScreen))
         case "isonline": inert(); return .value(.bool(true))
         case "enabled": inert(); return .value(.bool(true))
         case "versioninfo": inert(); return .value(.string("12.0.0.0"))
@@ -861,6 +870,11 @@ final class WMPObjectModel {
         case ("eq", "currentpreset"):
             applyPreset(index: Int(value.number ?? 0))
             return .value(value)
+        // The write half of the member above. The same host command the `<VIDEO>` element's own
+        // `fullScreen` write posts, so the two spellings drive one picture.
+        case ("player", "fullscreen"):
+            hostCommand("setVideoFullScreen", .bool(value.truth))
+            return .value(.bool(value.truth))
         case ("theme", "currentviewid"):
             hostCommand("setCurrentView", .string(value.string ?? ""))
             return .value(value)
@@ -1453,6 +1467,7 @@ enum WMPScriptConstants {
         case .stopped: return 1
         case .paused: return 2
         case .playing: return 3
+        case .transitioning: return 9
         }
     }
 }

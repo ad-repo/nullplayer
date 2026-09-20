@@ -7,6 +7,17 @@ final class WMPAudioEngineHost: WMPHost {
     private var scanTimer: Timer?
     private var scanDirection: WMPScanDirection?
     private var preMuteVolume: Float = 0.2
+    /// **A cast device's volume is write-only from here, so the skin's slider needs a memory.**
+    ///
+    /// `ChromecastManager.getVolume()` is a stub returning 1.0 and nothing parses a level out of
+    /// `RECEIVER_STATUS`, so while a film is on the television there is no readback to poll. The
+    /// snapshot was answering `engine.volume` — the idle audio queue's — so every drag of the
+    /// skin's volume slider sent its command and then snapped back to the queue's level on the
+    /// next tick. Reported 2026-09-20 as "the volume wont work it raises then snaps back to
+    /// quiet". Track what was last commanded instead, seeded at the 1.0 a fresh cast starts at.
+    private var castVolume: Float = 1
+    private var preMuteCastVolume: Float = 0.2
+    private var wasCastingVideo = false
     private var spectrumConsumerActive = false
     private let spectrumConsumerID = "wmp.main.effects"
     /// VLC drops both `hasVideoOut` and `videoSize` while it rebuilds the output for a media that
@@ -102,14 +113,18 @@ final class WMPAudioEngineHost: WMPHost {
             // no local picture, so `result.video` stays empty and the skin's `<VIDEO>` box is dark
             // — which is what a film playing on a television looks like from here.
             let manager = WindowManager.shared
+            syncCastVolumeLatch()
             result.state = manager.videoPlaybackState == .playing ? .playing : .paused
             result.currentTime = Self.finite(manager.videoCurrentTime)
             result.duration = Self.finite(manager.videoDuration)
             result.metadata = WMPMediaMetadata(title: manager.videoTitle ?? "")
+            result.volume = Double(max(0, min(1, castVolume)))
+            result.muted = castVolume == 0
             result.playlistCount = max(1, result.playlistCount)
             videoEventLatch.reset()
             return result
         }
+        syncCastVolumeLatch()
         guard let video = Self.localVideoSessionController,
               let identity = Self.videoIdentity(video) else {
             videoEventLatch.reset()
@@ -121,7 +136,10 @@ final class WMPAudioEngineHost: WMPHost {
             return result
         }
 
-        result.state = video.isPlaying ? .playing : .paused
+        // Running, but the decoder has not answered with a size yet — see `WMPHostSnapshot.State`.
+        result.state = video.isPlaying
+            ? (video.hasVideoOutput && video.presentationSize.width > 0 ? .playing : .transitioning)
+            : .paused
         result.currentTime = Self.finite(video.currentTime)
         result.duration = Self.finite(video.duration)
         result.metadata = WMPMediaMetadata(title: video.currentTitle ?? "")
@@ -154,15 +172,28 @@ final class WMPAudioEngineHost: WMPHost {
                 if manager.videoPlaybackState == .playing { manager.toggleVideoPlayPause() }
                 return
             case .stop: manager.stopVideo(); return
+            // `seekVideoCast` takes a *fraction*, not a time — it multiplies by the cast's own
+            // duration itself. Handing it seconds squared the seek past the end of the film, and
+            // the receiver answered IDLE, which reads here as "media ended" and tore the cast down.
             case .seek:
                 if let fraction = value?.finiteNumber, manager.videoDuration > 0 {
-                    manager.seekVideoCast(position: max(0, min(1, fraction)) * manager.videoDuration)
+                    manager.seekVideoCast(position: max(0, min(1, fraction)))
                 }
                 return
             case .volume:
                 if let volume = value?.finiteNumber {
-                    manager.setVideoCastVolume(Float(max(0, min(1, volume))))
+                    syncCastVolumeLatch()
+                    castVolume = Float(max(0, min(1, volume)))
+                    manager.setVideoCastVolume(castVolume)
                 }
+                return
+            // Muting the television, not the audio queue standing idle behind it — which is what
+            // the fall-through to `engine` below would have done.
+            case .toggleMute:
+                syncCastVolumeLatch()
+                if castVolume > 0 { preMuteCastVolume = castVolume; castVolume = 0 }
+                else { castVolume = max(0.01, min(1, preMuteCastVolume)) }
+                manager.setVideoCastVolume(castVolume)
                 return
             // A cast film is one item with nowhere to skip to, and `next`/`previous` must not fall
             // through to the audio queue and start a track behind it.
@@ -301,6 +332,16 @@ final class WMPAudioEngineHost: WMPHost {
         scanTimer?.invalidate()
         scanTimer = nil
         scanDirection = nil
+    }
+
+    /// A cast starts at the receiver's own full volume, so the remembered level is only valid
+    /// for the life of one cast session.
+    private func syncCastVolumeLatch() {
+        let casting = Self.castingVideo
+        defer { wasCastingVideo = casting }
+        guard casting != wasCastingVideo else { return }
+        castVolume = 1
+        preMuteCastVolume = 0.2
     }
 
     private func startScanning(_ direction: WMPScanDirection) {

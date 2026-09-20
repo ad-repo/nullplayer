@@ -39,6 +39,7 @@ window's *title bar* and the top of its *inner border*, not just a corner.
 | "the animation fps is low in general" | Every rebuild restarted the repaint loop — this skin's own 100 ms view timer restarted it ten times a second — and a 0/1-cs GIF delay was clamped to 0.1s | W142 |
 | "the playlist and eq windows are not properly constructed and the window border and details are not correct and there are large gaps" | `verticalAlignment="center"` was read as a margin, so both side columns of all five windows collapsed to `top=0` and painted over the corner pieces that carry the title bar and inner border | W143 |
 | "ALXMorph does nothing — no animation and nothing reacts" | The animation half was `alphaBlendTo` (W38), `backgroundImage` from script (W75) and an unset-preference default (W76), all closed. The starvation half was never real and the 5-hit half was an intro (W242, retired) — the reacting half was the engine dispatching one click twice | W68 (moved to `LOW_QUALITY_TASKS.md` 2026-09-19), **W243** |
+| "when i start the video the video player window does not open" + "the video adjustment drawer is open by default" | One handler, two symptoms: `onChangeVidPlayerState()` reads `player.fullScreen`, which was unrecognised on the Player object and therefore **threw** — taking `toggleVidDrawer('0')` with it — and before that, in the interval where `playState` said 3 and `imageSourceWidth` was still 0, its `view.close()` shut the video window inside 200 ms of the app opening it | closed 2026-09-20, `player.fullScreen` + `State.transitioning`; see `reference/object-model.md` § *What a property read answers* rule 8 |
 | "in all the alien type skins the numeric display is illegible" | A `<BUTTON>`'s `image` was scaled to its authored frame, blowing one tenth of one digit up ten times | W122 |
 | "the animation sometimes does not fully run when first opened — it runs what appears to be half" | The animation clock was per **view**, not per image: the epoch was set on the first animated GIF in the view and `AlienMorph` assigns its shutter a second later from `timerInterval="1000"`, so anything that animated first stole that much off the head | W182 (closed 2026-09-15) |
 | "ALXMorph's animation runs so quickly, it is basically the same animation as AlienMorph" | Not the engine — the two archives author the same shutter at 0 cs and 2 cs, and only 0/1 cs was being floored | closed 2026-09-15, `WMPImageStore.asFastAsPossibleCentiseconds` |
@@ -90,6 +91,14 @@ compares their authoring as much as the engine. **Settle before ranking a `hits`
 hosted render (W71), so nothing here is an overlay defect and the whole of it is scene-side.
 
 ## What was ruled out
+
+- **Not the routing, and not `controlView`'s event-only `<VIDEO>`.** The obvious reading of "the
+  video window does not open" is that `WMPSkinSurfaces` picked the windowless dispatcher over
+  `videoView`; it does not — an anonymous, unsized `<VIDEO>` is refused by `matches`, and a probe
+  on the live reveal printed `provides=1 ids=videoView open=mainView player=1` followed by
+  `openView=videoView`. The window *was* opened every time. What closed it was the skin, one
+  transaction later, and only a log of the host commands coming **back out of `videoView`** showed
+  that.
 
 - **Not the resize path.** The W143 frame was broken at the view's own authored `389x247`, before any
   resize — which is the whole distinction that identified it, since at the authored size a margin

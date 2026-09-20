@@ -272,6 +272,40 @@ final class WMPVideoTests: XCTestCase {
         await runtime.teardown()
     }
 
+    /// The two halves of the `ALXMorph` video defect (2026-09-20): the Player's own `fullScreen`
+    /// resolves, and a picture that has not reported a size yet is `psTransitioning`, not
+    /// `psPlaying` — which is what stops `onChangeVidPlayerState()` reaching its `view.close()`.
+    func testPlayerFullScreenResolvesAndAnOpeningMediaIsTransitioning() async throws {
+        let skin = try await load("""
+        <THEME><VIEW id="main" width="400" height="300">
+          <VIDEO id="vid" width="300" height="200"/>
+          <TEXT id="out" width="100" height="20"/>
+        </VIEW></THEME>
+        """)
+        let suite = "WMPVideoTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let runtime = WMPScriptRuntime(preferences: WMPPreferenceStore(skinData: Data(suite.utf8),
+                                                                      defaults: defaults))
+        var snapshot = WMPHostSnapshot()
+        snapshot.state = .transitioning
+        snapshot.playlistCount = 1
+        let handler = """
+          out.value = player.playState + '/' + player.currentMedia.imageSourceWidth
+            + '/' + player.controls.isAvailable('Stop');
+          if (!player.fullScreen) player.fullScreen = true;
+        """
+        let output = await runtime.transact(skin: skin, viewID: "main",
+            size: WMPSize(width: 400, height: 300), snapshot: snapshot,
+            event: .init(name: "click", targetID: "vid", handlers: [handler]))
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" },
+                       "an unrecognised player.fullScreen aborts the whole handler")
+        let readout = output.overrides.properties.first { $0.key.property == "value" }?.value.string
+        XCTAssertEqual(readout, "9/0/true")
+        XCTAssertEqual(output.hostCommands.filter { $0.action == "setVideoFullScreen" }.count, 1)
+        await runtime.teardown()
+    }
+
     @MainActor
     func testVideoHandlersAreClassifiedAndRemainScopedToTheirView() async throws {
         let skin = try await load("""

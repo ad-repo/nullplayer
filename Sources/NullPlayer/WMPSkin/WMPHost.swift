@@ -78,7 +78,22 @@ struct WMPEqualizerSnapshot: Hashable, Codable {
 }
 
 struct WMPHostSnapshot: Hashable, Codable {
-    enum State: String, Hashable, Codable { case stopped, playing, paused }
+    /// **`transitioning` is a media that is opening, and WMP has always had it (`wmppsTransitioning`).**
+    ///
+    /// It exists for one interval this engine could not describe before: VLC is running a video but
+    /// has not reported the picture's size yet, so `player.currentMedia.imageSourceWidth` is 0. A
+    /// `.wmz` that reads `playState == 3` in that interval concludes the media has no picture at
+    /// all — the Alienware/ALX family's `onChangeVidPlayerState()` calls `view.close()` on exactly
+    /// that reading, which shut the skin's own video window inside 200 ms of opening it. Reporting
+    /// the transition keeps those handlers on their fall-through path until the decoder answers,
+    /// and the `playstatechange` edge to `playing` is what then reveals the picture — the same
+    /// sequence WMP itself produces. Everywhere else in this engine it behaves as playing.
+    enum State: String, Hashable, Codable {
+        case stopped, playing, paused, transitioning
+
+        /// Whether the transport is running, which is every question but `player.playState`'s.
+        var isRunning: Bool { self == .playing || self == .transitioning }
+    }
     var state: State = .stopped
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 0
@@ -125,6 +140,8 @@ struct WMPHostSnapshot: Hashable, Codable {
     var statusText: String {
         switch state {
         case .playing: return "Playing"
+        // WMP's own wording while a media is opening.
+        case .transitioning: return "Opening media"
         case .paused: return "Paused"
         // WMP says `Ready` before anything is open and `Stopped` once something is and is not
         // running, which is the same split `isEnabled(.play)` already makes.
@@ -134,8 +151,8 @@ struct WMPHostSnapshot: Hashable, Codable {
 
     func isEnabled(_ action: WMPTransportAction) -> Bool {
         switch action {
-        case .play: return playlistCount > 0 && state != .playing
-        case .pause: return state == .playing
+        case .play: return playlistCount > 0 && !state.isRunning
+        case .pause: return state.isRunning
         case .stop: return state != .stopped
         case .previous, .next: return playlistCount > 1
         case .seek, .beginScan: return duration > 0

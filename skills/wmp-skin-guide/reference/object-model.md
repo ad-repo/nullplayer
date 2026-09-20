@@ -128,6 +128,39 @@ Three rules, each of which was a live defect first:
    `WMPImage_*` spelling is accepted: in particular `WMPImage_AdBanner` remains unresolved because
    NullPlayer has no equivalent surface.
 
+8. **`player.fullScreen` is the Player's own member, and `playState` tells the truth while a media
+   opens (2026-09-20).** Two halves of one live defect, reported as *"when i start the video the
+   video player window does not open"* and *"the video adjustment drawer is open by default"* on
+   `ALXMorph`.
+
+   - **`player.fullScreen` (read and write).** It existed only on the `<VIDEO>` element, so the
+     Player spelling was `UNRECOGNISED` — and an unrecognised member **throws and takes the rest of
+     the handler with it**. `alienware.js`'s `onChangeVidPlayerState()` reaches
+     `if(!player.fullScreen){ checkSnapStatus(); }` from `onLoadVid()`, so the four statements after
+     it never ran, `toggleVidDrawer('0')` among them — which is the call that closes the video
+     settings drawer at load. **35 of the installed archives read or write it**, every
+     Alienware/ALX frame among them. The read answers `snapshot.video.fullScreen`; the write posts
+     the same `setVideoFullScreen` host command the element's own `fullScreen` write does, so the
+     two spellings drive one picture.
+   - **`WMPHostSnapshot.State.transitioning` → `playState` 9 (`psTransitioning`).** VLC reports no
+     picture size for a few hundred milliseconds after `play`, and the engine was calling that
+     interval `playing`. A `.wmz` that checks — and this family is the corpus's most-shared example
+     — reads `playState == 3` with `imageSourceWidth == 0`, concludes the media has no picture, and
+     calls `view.close()` **in the `onLoad` of the window the app has just opened for it**: the
+     skin's video window opened and shut itself inside 200 ms and the user saw nothing open at all.
+     The state is emitted only from the local-video branch of `WMPAudioEngineHost.snapshot`, while
+     `video.isPlaying` is true and `hasVideoOutput`/`presentationSize` are not yet; it answers as
+     *running* everywhere else in this engine (`State.isRunning` — transport availability, the
+     `<EFFECTS>` tap, the unskinned player), so the only thing that can see it is a skin asking
+     `player.playState`. The `playstatechange` edge to `playing` on the tick the decoder answers is
+     what then reveals the picture, which is WMP's own sequence.
+
+   **The lesson worth keeping: deferring the open is not the fix, and it deadlocks.** The first
+   attempt held the reveal back until the picture had a size — and VLC produces no output until it
+   has a window, so the window waited on a picture that was waiting on the window, and the view
+   never opened again in any run. The engine has to open the window and *describe the state
+   honestly*; it must not wait for a decoder it is starving.
+
 ## Elements
 
 Every element id is a global, and a write to one of its properties mutates the retained graph and

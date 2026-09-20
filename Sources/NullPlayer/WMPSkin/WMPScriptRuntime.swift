@@ -245,7 +245,8 @@ struct WMPJScriptCall: Hashable, Codable, Sendable {
 enum WMPJScriptCompatibility {
     static let members: [String: Set<String>] = [
         "player": ["controls", "settings", "currentMedia", "currentPlaylist", "network",
-                   "playState", "openState", "status", "isOnline", "enabled", "versionInfo"],
+                   "playState", "openState", "status", "isOnline", "enabled", "versionInfo",
+                   "fullScreen"],
         "controls": ["play", "pause", "stop", "previous", "next", "fastForward", "fastReverse",
                      "currentPosition", "currentPositionString", "currentItem", "isAvailable",
                      "playItem"],

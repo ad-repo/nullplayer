@@ -64,9 +64,9 @@ final class WMPUnskinnedMainView: NSView {
     }
 
     func refresh(_ snapshot: WMPHostSnapshot) {
-        playPauseButton.title = snapshot.state == .playing ? "Ⅱ" : "▶"
+        playPauseButton.title = snapshot.state.isRunning ? "Ⅱ" : "▶"
         previousButton.isEnabled = snapshot.isEnabled(.previous)
-        playPauseButton.isEnabled = snapshot.isEnabled(snapshot.state == .playing ? .pause : .play)
+        playPauseButton.isEnabled = snapshot.isEnabled(snapshot.state.isRunning ? .pause : .play)
         stopButton.isEnabled = snapshot.isEnabled(.stop)
         nextButton.isEnabled = snapshot.isEnabled(.next)
         muteButton.title = snapshot.muted ? "Unmute" : "Mute"
@@ -95,7 +95,7 @@ final class WMPUnskinnedMainView: NSView {
     @objc private func previousPressed() { host?.perform(.previous, value: nil) }
     @objc private func playPausePressed() {
         guard let host else { return }
-        host.perform(host.snapshot.state == .playing ? .pause : .play, value: nil)
+        host.perform(host.snapshot.state.isRunning ? .pause : .play, value: nil)
         refresh(host.snapshot)
     }
     @objc private func stopPressed() { host?.perform(.stop, value: nil) }

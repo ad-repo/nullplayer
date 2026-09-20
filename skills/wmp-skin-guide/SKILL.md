@@ -2057,6 +2057,25 @@ to chromecast", "main window controls dont control it"):
   through, because a cast film has nowhere to skip to and the audio queue must not start behind it.
   Classic has always routed this way through `isVideoActivePlayback`; this is the same rule.
 
+**Two more halves of that branch, reported 2026-09-20 ("when you seek it disconnects", "the volume
+wont work it raises then snaps back to quiet"), both about the seam's *units and readback* rather
+than its routing:**
+
+- **`WindowManager.seekVideoCast(position:)` takes a fraction, not a time** — it multiplies by the
+  cast's own duration itself. The `.seek` branch was handing it `fraction * videoDuration`, so the
+  target came out `fraction × duration²`, the receiver honoured it, hit EOF and answered
+  `MEDIA_STATUS … IDLE` — which `CastManager` reads as "media ended" once `hasSeenActive` is true
+  and tears the session down. A drag on the seek bar disconnected the Chromecast. Original mode
+  never hit it because `VideoPlayerWindowController`'s own slider passes the fraction.
+- **A cast device's volume is write-only from here, so the skin's slider needs a memory.**
+  `ChromecastManager.getVolume()` is a stub returning 1.0 and nothing parses a level out of
+  `RECEIVER_STATUS`, so there is no readback to poll; the snapshot was answering `engine.volume` —
+  the idle audio queue's — and every drag sent its command and then snapped the slider back on the
+  next tick, which then *re-sent* that stale level to the television. `WMPAudioEngineHost` now
+  remembers the level it last commanded (seeded at 1.0 per cast session, reset when a cast begins
+  or ends) and reports that as `volume`/`muted` while a video cast is active. `.toggleMute` joins
+  the branch for the same reason: it was muting the audio queue standing behind the film.
+
 **And closing the player quits the app** (`closeViewWindow` → `WMPMainWindowController.terminateApplication`),
 as Classic's and Original's own close buttons do and as real WMP does. Ordering the window out left
 the app running behind an empty screen — reported as *"the close button does not exit"*, and before
