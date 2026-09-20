@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W246.** (W244 and W245 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g and the sweep damage-detector row in Tier 1d.) Check this file before reusing any number — the live backlog is a
+**The next free number is W246.** (W244 and W245 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, and the sweep damage-detector row, closed the same day and archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -38,6 +38,50 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+## W245 — the sweep's damage detector dropped a quarter of the corpus, closed 2026-09-20
+
+The row as it stood in `WMP_TASKS.md` when it was taken, in Tier 1d:
+
+> | W245 | **`wmp_render_sweep.sh`'s damage detector reports a quarter of the corpus as damaged, wrongly, and `compare` drops every one of them from the invariants diff** | **48 of 184 archives, every capture** — measured 2026-09-20 over two captures whose damaged sets are **identical**, which is itself the tell: interleaved writes are not deterministic | Not blocked, and it is a defect in the instrument every engine-wide change is verified through. **The cause is arithmetic, not interleaving.** The detector's second arm compares a block's `views=` against its `RENDER-DUMP ` line count, and a view with a **0x0 canvas emits two such lines** — `RENDER-DUMP view-2: 0x0, 1 nodes, …` and then `RENDER-DUMP view-2 FAILED [WMP0035] Canvas and backing scale must be positive.` when the PNG write refuses the empty canvas. `XBOX.wmz` declares `views=5` and prints 6, so it is flagged; there are **76 such 0x0 views** corpus-wide, exactly matching the 76 `RENDER-DUMP … FAILED` lines, and they cluster into 48 archives. **What it costs is the comparison**: `compare` leaves a damaged skin's lines out, so a quarter of the corpus is silently unverified — and `XBOX` was on that list while W240 was closed against its one changed line, which had to be diffed through a direct `swift test` instead. **No line is actually being lost.** The one `UNRESOLVED` line that differs between a dump sweep (445) and a direct run (446) is `Darkling.wmz`'s `viewWrapper`, and `Darkling` is the sole entry in `scripts/wmp_corpus_exclusions.txt` — the sweep farms it out and the direct run does not. First step: decide whether a failed PNG write should print a second `RENDER-DUMP` line at all, or whether the detector should count views rather than lines; the first is the smaller change and makes `PNG`/`RENDER-DUMP` one line per view per outcome. **Then re-check the real interleaving claim the detector was written for**, which is documented from a 180-archive run and may or may not still reproduce once the false positives are gone. Evidence: `harness.md` § *The residue is a size fallback*, the process note at its end. |
+
+**The row named the cause and it held.** `WMPRenderer` refuses a `0x0` canvas by contract (W6 admits
+the windowless view; `WMP0035` is the refusal), and the harness caught that refusal at the per-view
+level, where the only thing it could say was `RENDER-DUMP <view> FAILED`. A view that had already
+printed its stats line therefore printed two `RENDER-DUMP ` lines, the sweep compared that count
+against the block's own `views=`, and every archive holding such a view was called a damaged log.
+**76 such views corpus-wide, clustering into 48 of 184 archives** — and `compare` leaves a damaged
+skin's lines out of the invariants diff, so a quarter of the corpus went unverified on every
+engine-wide change made through this instrument.
+
+**Both halves are closed, because either one alone leaves the class open.** The emitter reports a
+refused *write* as `PNG <view> FAILED <error>`, so `RENDER-DUMP ` is one line per view per outcome —
+its stats, or `FAILED` when the scene never built at all. And the detector counts **distinct view
+ids** rather than lines, which is what `wmp_skin_census.sh` has done since W32; the sweep was never
+given the same fix, and that gap is what cost the month. A third line went with them: the "skins
+that failed to load" report grepped a bare ` FAILED `, so it listed all 76 per-view refusals under a
+heading saying the skin had not loaded. It is anchored on `^SKIN ` and the real count is 0.
+
+**Verified against a baseline worktree at `797fb71d`, 184 archives each side.** Damaged **48 → 0**.
+The full invariants diff over all 184 — including the 48 `compare` used to drop — is **exactly 76
+changed lines, every one the same view reporting the same reason under the new prefix**, checked
+pair by pair, all of them `[WMP0035] Canvas and backing scale must be positive`. All **553 PNGs
+byte-identical**; invariant line count unchanged at 7,406.
+
+**The interleaving the detector was written for is unfired here, not disproven.** Three consecutive
+184-archive captures came back byte-identical with zero damaged, and the prefix-scan arm fired on
+nothing in any of them; the 180-archive run that lost three blocks predates this tree and the
+buffered `print` behind it is gone. Both arms stay, and a hand-deleted `RENDER-DUMP` line is still
+caught — `WMPDumpLineAccountingTests.testABlockThatLostAViewIsStillReportedAsDamaged` is that case.
+The same file pins the emitter and the id counting, and runs the script's **own** `PYDAMAGED` block
+rather than a copy of it, so a change to the script the sweep actually runs cannot pass while a
+restatement in Swift stays green. Two of its five cases were proved by reverting each half in turn.
+
+**The two tells are the reusable part.** An identical "damaged" set across two runs is arithmetic,
+not interleaving — interleaving is not deterministic. And an exact match between a flagged count and
+an already-explained one (76 flagged lines, 76 known `WMP0035` refusals) names the cause outright.
+Both were on the page before the row was taken. Evidence: `harness.md` § *Traps the scripts enforce*
+and § *The residue is a size fallback*.
 
 ## W240 — an unresolved node whose bitmap resolves took zero instead of the image's size, closed 2026-09-20
 

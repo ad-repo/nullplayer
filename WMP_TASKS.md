@@ -52,9 +52,11 @@ is a rendering or runtime defect, and only a dumped PNG or a `SCRIPT-DIAG` line 
 whose evidence is a census column is by that fact measuring structure, not result.
 
 **Before quoting or scaling any number on this page, check `harness.md` § *Numbers that are void, and
-why*.** Five classes of count here must be re-measured rather than carried forward: anything against
+why*.** Six classes of count here must be re-measured rather than carried forward: anything against
 the 14-skin denominator, anything captured before rev `61f8955a`, any `COMPAT`/`UNKNOWN tag` number
-taken before W215 closed on 2026-09-19, the stale view counts, and `WMP0035`/`WMP0032`/`WMP0033`.
+taken before W215 closed on 2026-09-19, the stale view counts, `WMP0035`/`WMP0032`/`WMP0033`, and
+**anything read out of a sweep `compare` before W245 closed on 2026-09-20**, which silently left 48
+of 184 archives out of the invariants diff.
 
 **Before issuing a number, read `docs/wmp-skin/wmp-backlog-archive.md` § *Issuing a number*.** It
 holds the next free number, the two renumbered IDs (W196 → W217, W171 → W218), the `W235` source-
@@ -90,16 +92,20 @@ behind an animation — settle before ranking one.**
 
 ## Tier 1d — what the Phase 6 instruments do and do not reach
 
-**Empty from 2026-09-19 until W245 opened it on 2026-09-20**, and the tier exists because a genuine
-gap in instrument reach ranks above a skin-side defect when one is found. W239 and W73 moved to
+**Empty again: W245 opened this tier on 2026-09-20 and closed the same day**, and the tier exists
+because a genuine gap in instrument reach ranks above a skin-side defect when one is found. What
+W245 leaves behind is in [the archive](docs/wmp-skin/wmp-backlog-archive.md) and is worth reading
+before trusting any run-to-run check: **an identical "damaged" set across two runs is arithmetic,
+not interleaving**, and **a flagged count that exactly matches an already-explained one names its
+own cause**. The sweep's damage detector had silently dropped 48 of 184 archives from every
+invariants comparison, so any figure taken from a sweep `compare` before 2026-09-20 covers three
+quarters of the corpus rather than all of it. W239 and W73 moved to
 [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md); **W73's caveat is still true and still matters** — a
 clean sweep proves only the default state, and a tab, a hover, a drawer, the window's shape and
 anything driven by live playback remain outside every headless instrument here. It is prose in
 `harness.md` § *The probe flags*, where a reader meets it before trusting a capture.
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W245 | **`wmp_render_sweep.sh`'s damage detector reports a quarter of the corpus as damaged, wrongly, and `compare` drops every one of them from the invariants diff** | **48 of 184 archives, every capture** — measured 2026-09-20 over two captures whose damaged sets are **identical**, which is itself the tell: interleaved writes are not deterministic | Not blocked, and it is a defect in the instrument every engine-wide change is verified through. **The cause is arithmetic, not interleaving.** The detector's second arm compares a block's `views=` against its `RENDER-DUMP ` line count, and a view with a **0x0 canvas emits two such lines** — `RENDER-DUMP view-2: 0x0, 1 nodes, …` and then `RENDER-DUMP view-2 FAILED [WMP0035] Canvas and backing scale must be positive.` when the PNG write refuses the empty canvas. `XBOX.wmz` declares `views=5` and prints 6, so it is flagged; there are **76 such 0x0 views** corpus-wide, exactly matching the 76 `RENDER-DUMP … FAILED` lines, and they cluster into 48 archives. **What it costs is the comparison**: `compare` leaves a damaged skin's lines out, so a quarter of the corpus is silently unverified — and `XBOX` was on that list while W240 was closed against its one changed line, which had to be diffed through a direct `swift test` instead. **No line is actually being lost.** The one `UNRESOLVED` line that differs between a dump sweep (445) and a direct run (446) is `Darkling.wmz`'s `viewWrapper`, and `Darkling` is the sole entry in `scripts/wmp_corpus_exclusions.txt` — the sweep farms it out and the direct run does not. First step: decide whether a failed PNG write should print a second `RENDER-DUMP` line at all, or whether the detector should count views rather than lines; the first is the smaller change and makes `PNG`/`RENDER-DUMP` one line per view per outcome. **Then re-check the real interleaving claim the detector was written for**, which is documented from a 180-archive run and may or may not still reproduce once the false positives are gone. Evidence: `harness.md` § *The residue is a size fallback*, the process note at its end. |
+**The tier is empty of rows and stays for the same reason the others do.**
 
 ## Tier 1f — the residue of the starvation classes
 

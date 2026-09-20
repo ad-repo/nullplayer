@@ -169,9 +169,16 @@ for line in open(sys.argv[1], errors="replace"):
 
 # A splice is only the *visible* half of a lost write. Two of the three losses in the 180-archive
 # run left no spliced prefix at all — one block simply stopped, and the prefix-scan above saw
-# nothing. `views=` is the block's own declaration of how many RENDER-DUMP lines must follow it
-# (a view that fails still emits `RENDER-DUMP <view> FAILED`), so a short block is arithmetic, not
+# nothing. `views=` is the block's own declaration of how many views must report (a view that
+# fails to build still emits `RENDER-DUMP <view> FAILED`), so a short block is arithmetic, not
 # inference. Rejected archives carry no LOAD line and are not blocks with missing rows.
+#
+# Count **distinct view ids**, not `RENDER-DUMP ` lines, the way `wmp_skin_census.sh` does. A view
+# that reports its stats and then hits a second failure emits two lines for one view, and counting
+# lines called that a lost log block: 48 of 184 archives were flagged that way (W245), and `compare`
+# leaves a damaged skin's lines out, so a quarter of the corpus went silently unverified. The
+# emitter no longer prints a second `RENDER-DUMP ` line for a refused PNG write, and counting ids
+# here means the next such pair cannot recreate the class.
 for name, lines in blocks.items():
     loads = [line for line in lines if line.startswith("LOAD ")]
     if len(loads) > 1:
@@ -180,8 +187,9 @@ for name, lines in blocks.items():
     if not loads:
         continue
     declared = re.search(r"\bviews=(\d+)", loads[0])
-    dumps = sum(1 for line in lines if line.startswith("RENDER-DUMP "))
-    if declared and int(declared.group(1)) != dumps:
+    reported = {m.group(1) for m in
+                (re.match(r"RENDER-DUMP (\S+?):? (?:FAILED|\d)", line) for line in lines) if m}
+    if declared and int(declared.group(1)) != len(reported):
         damaged.append(name)
 
 for name in dict.fromkeys(damaged):
@@ -198,9 +206,12 @@ PYDAMAGED
     fi
     # A skin that fails to load prints SKIN <file> FAILED and the sweep carries on, which is right,
     # but it should never pass unremarked — 10 of 14 do today and driving that to 0 is Phase 2.
-    if grep -q ' FAILED ' "$out/invariants.txt"; then
+    # Anchored on `SKIN `: a bare ` FAILED ` also matches the per-view refusals (76 `PNG … FAILED`
+    # corpus-wide, all of them the windowless `WMP0035` class), and listing those under a heading
+    # that says a skin did not load reported 76 loading failures where there are none.
+    if grep -q '^SKIN .* FAILED ' "$out/invariants.txt"; then
         echo "wmp_render_sweep: skins that failed to load:" >&2
-        grep ' FAILED ' "$out/invariants.txt" >&2
+        grep '^SKIN .* FAILED ' "$out/invariants.txt" >&2
     fi
 }
 

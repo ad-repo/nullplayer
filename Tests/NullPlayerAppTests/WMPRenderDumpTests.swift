@@ -1043,8 +1043,21 @@ enum WMPHarness {
                     + "\(WMPNumber.format(CGFloat(cadence.shortestDelay))) bounds=\(cadence.bounds)")
             }
             for clock in probe.animationClocks {
-                let record = try await renderer.dump(scene: scene, to: dump, clock: clock)
-                WMPHarnessOutput.emit("PNG \(viewID): \(record.pngFilename)")
+                // A refused write is reported as a `PNG` outcome, never as a second `RENDER-DUMP`
+                // line. The view has already reported its stats above; letting this throw printed
+                // `RENDER-DUMP <view> FAILED` after it, so the one windowless-view class the
+                // renderer correctly refuses (`WMP0035`, 76 views corpus-wide) made every block
+                // holding one print more `RENDER-DUMP ` lines than its `LOAD` line declared
+                // `views=`. Both sweep and census read that arithmetic as a lost log block and
+                // dropped 48 of 184 archives from the invariants comparison (W245). `RENDER-DUMP`
+                // is now one line per view per outcome: stats, or FAILED when the scene never
+                // built at all.
+                do {
+                    let record = try await renderer.dump(scene: scene, to: dump, clock: clock)
+                    WMPHarnessOutput.emit("PNG \(viewID): \(record.pngFilename)")
+                } catch {
+                    WMPHarnessOutput.emit("PNG \(viewID) FAILED \(oneLine(error))")
+                }
             }
         }
     }

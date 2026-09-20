@@ -943,6 +943,8 @@ SCRIPT-DIAG <view> [<code>] <message>
 RESIZE <view>: <W>x<H> -> <W>x<H>, handlers=<n>
 RENDER-DUMP <view>: <W>x<H>, <n> nodes, <c> commands, <h> hits, <w> widgets, <u> unresolved
 RENDER-DUMP <view> FAILED <error>
+     one line per view per outcome: its stats, or FAILED when the scene never built at all.
+     A refused *write* is a PNG outcome and never a second RENDER-DUMP line — see W245.
 ANIMATION <view>: shortestDelay=<s> bounds=<rect>
 WIDGET <view>/<stableID> <kind> id=<id> frame=<f> clip=<c> visible=<f|none>
 PROBE <view>/<stableID> <kind> id=<id> frame=<f> clip=<c> z=<n> paint=<…> attrs=[…]
@@ -966,6 +968,7 @@ APPKIT <view>: <W>x<H>@<n>x differing=<n>/<n> (<pct>) hosted=<n>/<n> outside=<n>
 APPKIT <view>/<stableID> <kind> id=<id> frame=<rect> differing=<n> (<pct>)
 APPKIT <view>: SKIPPED <why>
 PNG <view>: <filename>
+PNG <view> FAILED <error>   the write was refused; the view's own RENDER-DUMP line still stands
 ```
 
 `APPKIT` is the only line that has run an `NSView.draw`. Everything else in this file measures the
@@ -1279,14 +1282,19 @@ reason, and that is the gap this paragraph closes.
 - **The damage detectors stay, and one of them is arithmetic.** A splice is only the *visible* half
   of a lost write, and the invisible half is the common one: that same run lost three blocks and the
   prefix scan saw **one**, because the splice consumes the record prefix that would have betrayed
-  it. So both scripts also check each loaded block's `RENDER-DUMP` count against the `views=` its own
-  `LOAD` line declares (a view that fails still emits `RENDER-DUMP <view> FAILED`), and flag a
-  second `LOAD` inside one block. **Count distinct view ids, not lines.** A view that lays out and
-  then fails to rasterize emits *both* — the stats dump and the `FAILED` one — so when W32 admitted
-  `Nautical` (one view, laid out, then `WMP0015` on `vol_slider.bmp`) the arithmetic read 2 against
-  `views=1` and called the block damaged when nothing had been lost. Reading a live defect as a lost
-  log block is this check's own failure mode, pointed the wrong way, and it survived a solo re-run —
-  which is what distinguishes it from a real splice. Damaged skins are listed in `damaged.txt`, get a row carrying
+  it. So both scripts also check each loaded block's view count against the `views=` its own
+  `LOAD` line declares (a view that fails to *build* still emits `RENDER-DUMP <view> FAILED`), and
+  flag a second `LOAD` inside one block. **Count distinct view ids, not lines.** A view that lays
+  out and then fails downstream can emit *two* lines about itself — so when W32 admitted `Nautical`
+  (one view, laid out, then `WMP0015` on `vol_slider.bmp`) the arithmetic read 2 against `views=1`
+  and called the block damaged when nothing had been lost. Reading a live defect as a lost log block
+  is this check's own failure mode, pointed the wrong way, and it survived a solo re-run — which is
+  what distinguishes it from a real splice. **The census was fixed at W32 and the sweep was not,
+  which cost a quarter of the corpus for a month**: the sweep still counted lines, and a refused PNG
+  write printed a second `RENDER-DUMP … FAILED`, so **48 of 184 archives** were flagged until W245
+  closed both halves on 2026-09-20 — a refused write is now a `PNG <view> FAILED` line, and the
+  sweep counts ids. `WMPDumpLineAccountingTests` pins the emitter, the id counting and the
+  short-block case, running the script's own `PYDAMAGED` block rather than a copy of it. Damaged skins are listed in `damaged.txt`, get a row carrying
   identity and nothing else, and are left out of the diff. Re-run one alone with
   `--corpus <a directory holding just that archive>`. Their PNGs are unaffected and still compare.
 - **Compare pixels, not alpha.** Pillow 9.5 made `getbbox()` on an RGBA image consider the alpha
@@ -1304,6 +1312,18 @@ reason, and that is the gap this paragraph closes.
   archive reports the same handler tally in a different order each time. It inflates the invariants
   diff with churn that is not a change; open as W64. Until it is fixed, read a large invariants diff
   by what the `RENDER-DUMP`, `BITMAPS` and `LOAD` lines say, not by the line count.
+- **A detector's own false positives cost more than the thing it detects.** The `views=` arithmetic
+  silently dropped **48 of 184 archives** from every invariants comparison for a month (W245), and
+  the damage it was reporting was not real. Two tells were on the page the whole time and are worth
+  reusing on any run-to-run check: **an identical "damaged" set across two runs** is arithmetic, not
+  interleaving, because interleaving is not deterministic; and **an exact match between a flagged
+  count and an explained one** — 76 flagged lines against 76 known-refused `WMP0035` writes — names
+  the cause outright. **Re-measured after the fix, over three consecutive 184-archive captures: 0
+  damaged, byte-identical invariants each time, and the prefix-scan arm fired on nothing.** So the
+  interleaving these checks were written for is *unfired here*, not disproven — the 180-archive run
+  that lost three blocks predates this tree and the buffered `print` that caused it is gone. Both
+  arms stay: a hand-deleted `RENDER-DUMP` line is still caught, which is the test that keeps them
+  honest.
 - **A large image diff is read by looking, and by which way it went.** 198 of 545 changed in the
   Phase 5 sweep. Counting the *drawn* (alpha > 8) pixels in each pair and sorting sorts the whole
   set into "changed colour within the same silhouette" and "lost or gained content", and the second
@@ -1373,10 +1393,18 @@ that must not be scaled, quoted or re-derived. Re-measure instead.
   `effects`. The member half of that row did not close and is the larger number now; see the archive.
 * **Any view count of 579, 574, 567, 515, 508, 506 or 482.** Re-measured 2026-09-09 over 179
   archives.
-* **`WMP0035` is harness noise, not a defect.** Re-measured 2026-09-09: **62 `RENDER-DUMP … FAILED
-  [WMP0035]`** across the 179-archive sweep, and every one is a view with no window — `controlView`
-  ×25, `previewView` ×16, `mediaSwitcherView` ×12, `view-2` ×3, `versionView` ×3, and
-  `vGhost`/`vGhostAutoDetect`/`playview` ×1. That is the windowless class `SKILL.md` describes, whose
+* **Any coverage claim made from a sweep `compare` before 2026-09-20.** W245 closed that day: the
+  damage detector was flagging **48 of 184 archives** as damaged on every run and `compare` leaves a
+  damaged skin's lines out, so an invariants diff from before it saw three quarters of the corpus.
+  The PNG comparison was never affected — only the lines.
+* **`WMP0035` is harness noise, not a defect, and since W245 it is not a `RENDER-DUMP` line
+  either.** Re-measured 2026-09-09: **62 `RENDER-DUMP … FAILED [WMP0035]`** across the 179-archive
+  sweep, and every one is a view with no window — `controlView` ×25, `previewView` ×16,
+  `mediaSwitcherView` ×12, `view-2` ×3, `versionView` ×3, and
+  `vGhost`/`vGhostAutoDetect`/`playview` ×1. **The current number is 76 over 184 archives**
+  (2026-09-20), and they print as **`PNG <view> FAILED [WMP0035]`**: the view reports its stats on
+  its own `RENDER-DUMP` line and the refused *write* is a `PNG` outcome. Grep the old prefix and you
+  will now count zero of them, which is a renamed line rather than a fixed class. That is the windowless class `SKILL.md` describes, whose
   honest size is `0x0` and which `WMPRenderer` correctly refuses; the 25 matches the 25 archives that
   author a `controlView` exactly. A FAILED line on a view that *does* have a canvas is still worth
   chasing. **`WMP0032` and `WMP0033` are both zero corpus-wide** (2026-09-09), so neither a layout
@@ -1980,14 +2008,14 @@ at 167x153 centred at 116,81 where `videoBox@1x.png` was an empty black `centerB
 `scripts/wmp_render_sweep.sh` reported **48 of 184 archives damaged by interleaved writes**, which
 puts a skin into `compare`'s *not compared* list — `XBOX` among them, so the one line this change
 moves would have been dropped from the diff. The direct `swift test` invocation above dumps no PNGs,
-printed no damage, and is the right instrument for an invariants diff. **Those 48 are false
-positives and are ranked as W245**: the detector compares a block's `views=` against its
-`RENDER-DUMP ` line count, and a 0x0 canvas prints two of those lines — the dump and then a
-`FAILED [WMP0035]` when the PNG write refuses the empty canvas. 76 views corpus-wide, 48 archives,
-and the same set on every run, which is the tell: interleaving is not deterministic. Nothing is
-actually being lost — the single `UNRESOLVED` line that separates a dump sweep (445) from a direct
-run (446) is `Darkling.wmz`, the sole entry in `wmp_corpus_exclusions.txt`, which the sweep farms
-out and the direct run does not. And the pre-W241 baseline had to be built in a worktree —
+printed no damage, and is the right instrument for an invariants diff. **Those 48 were false
+positives, were ranked as W245, and it closed on 2026-09-20**: the detector compared a block's
+`views=` against its `RENDER-DUMP ` line count, and a 0x0 canvas printed two of those lines — the
+dump and then a `FAILED [WMP0035]` when the PNG write refused the empty canvas. 76 views
+corpus-wide, 48 archives, and the same set on every run, which is the tell: interleaving is not
+deterministic. Nothing was actually being lost — the single `UNRESOLVED` line that separates a dump
+sweep (445) from a direct run (446) is `Darkling.wmz`, the sole entry in
+`wmp_corpus_exclusions.txt`, which the sweep farms out and the direct run does not. And the pre-W241 baseline had to be built in a worktree —
 `git worktree add` plus symlinks for `Frameworks/` **and** for the frameworks and dylibs under
 `.build/arm64-apple-macosx/debug/`, without which the test bundle builds and then fails to `dlopen`
 VLCKit.

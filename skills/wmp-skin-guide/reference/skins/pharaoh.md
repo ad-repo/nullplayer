@@ -181,7 +181,8 @@ WMP_RENDER_DUMP=/tmp/wmp/ph WMP_RENDER_PROBE=all WMP_RENDER_UNRESOLVED=1 WMP_REN
 ```
 
 Two traps in reading that capture. `vGhost` and `vGhostAutoDetect` print
-`RENDER-DUMP … FAILED [WMP0035] Canvas and backing scale must be positive` and **that is correct** —
-they are windowless by construction (W6). And a scene with an `<EFFECTS>` is **two rasters**
+`PNG … FAILED [WMP0035] Canvas and backing scale must be positive` — a `RENDER-DUMP … FAILED` line
+before W245 — and **that is correct**: they are windowless by construction (W6), they report their
+`0x0` stats on their own `RENDER-DUMP` line, and only the *write* is refused. And a scene with an `<EFFECTS>` is **two rasters**
 (W139): `render(scene:).image` is only the layer below the surface, so the container's keyed artwork
 is in `overlayImage` and a test that reads the first one alone sees a window that is not there.
