@@ -29,6 +29,20 @@ final class WMPAudioEngineHost: WMPHost {
         return video
     }
 
+    /// **A film sent to a Chromecast is still the session the skin's transport belongs to.**
+    ///
+    /// `localVideoSessionController` answers nil the moment a cast starts — by design, because
+    /// there is no local player to drive any more — and everything below it then fell through to
+    /// `AudioEngine`: the skin's play button started the audio queue behind the film, its clock
+    /// read the queue's, and nothing on the skin could pause the TV. Reported 2026-09-19 as "main
+    /// window controls dont control it". Classic has always routed this way
+    /// (`MainWindowView` → `WindowManager.isVideoActivePlayback` → `toggleVideoPlayPause`); this is
+    /// the same rule on the WMP side, and the manager's own cast-aware calls do the work.
+    private static var castingVideo: Bool {
+        let manager = WindowManager.shared
+        return manager.uiMode.controllerFamily == .wmp && manager.isVideoCastingActive
+    }
+
     /// The artwork WMP exposes belongs to the presentation currently visible to the user. A local
     /// video takes precedence over the audio queue for the same reason `snapshot` does below.
     var artworkTrack: Track? {
@@ -83,6 +97,19 @@ final class WMPAudioEngineHost: WMPHost {
                 speakerSize: engine.wmpWOWController.speakerSize,
                 preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
             effects: WMPEffectSelection.shared.snapshot)
+        if Self.castingVideo {
+            // The readouts follow the cast, not the audio queue standing idle behind it. There is
+            // no local picture, so `result.video` stays empty and the skin's `<VIDEO>` box is dark
+            // — which is what a film playing on a television looks like from here.
+            let manager = WindowManager.shared
+            result.state = manager.videoPlaybackState == .playing ? .playing : .paused
+            result.currentTime = Self.finite(manager.videoCurrentTime)
+            result.duration = Self.finite(manager.videoDuration)
+            result.metadata = WMPMediaMetadata(title: manager.videoTitle ?? "")
+            result.playlistCount = max(1, result.playlistCount)
+            videoEventLatch.reset()
+            return result
+        }
         guard let video = Self.localVideoSessionController,
               let identity = Self.videoIdentity(video) else {
             videoEventLatch.reset()
@@ -114,6 +141,35 @@ final class WMPAudioEngineHost: WMPHost {
     }
 
     func perform(_ action: WMPTransportAction, value: WMPHostValue?) {
+        if Self.castingVideo {
+            let manager = WindowManager.shared
+            switch action {
+            // `toggleVideoPlayPause` is a toggle, so a skin's *separate* play and pause buttons
+            // have to ask what the cast is doing first — pressing play on a playing cast would
+            // otherwise pause the television.
+            case .play:
+                if manager.videoPlaybackState != .playing { manager.toggleVideoPlayPause() }
+                return
+            case .pause:
+                if manager.videoPlaybackState == .playing { manager.toggleVideoPlayPause() }
+                return
+            case .stop: manager.stopVideo(); return
+            case .seek:
+                if let fraction = value?.finiteNumber, manager.videoDuration > 0 {
+                    manager.seekVideoCast(position: max(0, min(1, fraction)) * manager.videoDuration)
+                }
+                return
+            case .volume:
+                if let volume = value?.finiteNumber {
+                    manager.setVideoCastVolume(Float(max(0, min(1, volume))))
+                }
+                return
+            // A cast film is one item with nowhere to skip to, and `next`/`previous` must not fall
+            // through to the audio queue and start a track behind it.
+            case .next, .previous, .beginScan, .endScan: return
+            default: break
+            }
+        }
         if let video = Self.localVideoController {
             switch action {
             case .play:

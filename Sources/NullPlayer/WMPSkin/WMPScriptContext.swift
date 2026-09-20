@@ -345,6 +345,7 @@ final class WMPScriptContext: @unchecked Sendable {
              boundValues: [Int: WMPJSONValue] = [:],
              retiredGeometry: Set<WMPScenePropertyAddress> = [],
              screen: WMPSize = WMPObjectModel.defaultScreen,
+             usableScreen: WMPSize = WMPObjectModel.defaultScreen,
              animatesTweens: Bool = false,
              tweenFrame: WMPTweenFrame? = nil) async -> WMPScriptRunResult {
         await withCheckedContinuation { continuation in
@@ -354,6 +355,7 @@ final class WMPScriptContext: @unchecked Sendable {
                                                        geometry: geometry, boundValues: boundValues,
                                                        retiredGeometry: retiredGeometry,
                                                        screen: screen,
+                                                       usableScreen: usableScreen,
                                                        animatesTweens: animatesTweens,
                                                        tweenFrame: tweenFrame))
             }
@@ -400,6 +402,7 @@ final class WMPScriptContext: @unchecked Sendable {
                          boundValues: [Int: WMPJSONValue] = [:],
                          retiredGeometry: Set<WMPScenePropertyAddress> = [],
                          screen: WMPSize = WMPObjectModel.defaultScreen,
+                         usableScreen: WMPSize = WMPObjectModel.defaultScreen,
                          animatesTweens: Bool = false,
                          tweenFrame: WMPTweenFrame? = nil) -> WMPScriptRunResult {
         model.beginTransaction(snapshot: snapshot, preferences: preferences,
@@ -555,11 +558,18 @@ final class WMPScriptContext: @unchecked Sendable {
                       value.isFinite, value >= 0 else { return nil }
                 return value
             }
+            // **The display is the last word, and it is applied after the view's own floor.** A
+            // skin's `SnapToVideo()` sizes this view from the decoder, so a 2560x1440 clip asks
+            // 84 corpus views for a window bigger than any desktop — see `WMPSize.fitted(within:)`.
+            // The floor is the skin's and the ceiling is the machine's, so where a view declares a
+            // `minWidth` larger than the screen the screen still wins: `min(max(…))` composed this
+            // way lands on the ceiling, which is a window the user can still reach the edges of.
             let drawn = WMPSize(
                 width: CGFloat(min(max(assignedWidth, limit("minwidth") ?? assignedWidth),
                                    limit("maxwidth") ?? .greatestFiniteMagnitude)),
                 height: CGFloat(min(max(assignedHeight, limit("minheight") ?? assignedHeight),
                                     limit("maxheight") ?? .greatestFiniteMagnitude)))
+                .fitted(within: usableScreen)
             if drawn.width != size.width || drawn.height != size.height {
                 // The size the window is about to be, written back before anything reads it: the
                 // clamp is the builder's answer, and a script that reads `view.height` after

@@ -1830,6 +1830,123 @@ tests (`Tests/NullPlayerAppTests/WMPSnapToDefaultTests.swift`): a genuinely stra
 `.wmz` window is not movable by its background and macOS clamps a drag at the screen edge, so one
 cannot be produced with the mouse — and a window taller than the display.
 
+### A skin may not size a window from the decoder, and no `.wmz` window is a dead end
+
+**Three rules, and the live defect needed all three.** The first attempt shipped with only the
+second and the reporter's answer was *"the window is still too large … it should not open full
+screen"*:
+
+1. **A view size computed from the decoder is refused, and the view keeps its own canvas** —
+   `WMPVideoPresentation.isMediaDrivenViewSize`. The picture is fitted into the authored box, which
+   is what this engine has always done with the `corona`/`Classic` shell formula; that refusal now
+   covers the zoom formula too.
+2. **Whatever size is left is fitted into the display's *usable* area** — `WMPSize.fitted(within:)`,
+   applied in the same transaction clamp that enforces the view's own `minWidth`/`maxWidth` (W99).
+   A backstop, not the answer: a window the size of the whole desktop is still the wrong window.
+3. **A size an earlier session filed away is not handed back if it fills or exceeds that area** —
+   `WMPMainWindowController.restorableViewSize`. `WMPViewFrameStore` keeps whatever the window came
+   to rest at, so the defect outlived its own fix: the view stopped *growing* and went on *opening*
+   at 1800x1130 every launch. **A fix to a size a skin computes is not a fix until the sizes it
+   already wrote are dealt with.**
+
+The corpus sizes its video view from the *decoder*:
+`view.width = player.currentMedia.imageSourceWidth * (zoom/100) + <shell>` is
+`Combat_Flight_Simulator_3`'s `SnapToVideo()` and 80 other archives author the same shape, against a
+2002 idea of how big a clip gets. Seed a 2560x1440 source and **83 views across 80 archives** ask
+for a window around 2600x1600 — `Plus! SlimLine/perfectVSkin` for 5720x3480 — against **zero** views
+over 1440x810 with no video playing. Reported 2026-09-19 as *"a massive window with no right click
+context controls"* on a 2560x1440 `.mp4`. Three things to keep straight:
+
+- **Recognising the zoom formula needs no authored video box, and sometimes no authored view size
+  either.** A `<VIDEO>` sized `width="jscript:centerBox.width"` off a sibling has no literal box, and
+  `Official_Xbox` authors the *view* as `width="player.currentMedia.imageSourceWidth+91"` — its
+  `minWidth` is the only number in the markup. Requiring either left 31 archives unrecognised, and
+  a skin that is only clamped is a skin that opens full screen.
+- **What separates the zoom formula from ordinary layout is that the picture is most of the
+  window.** `zoom × source` is ≥ 85 % of the assignment on both axes for every archive that authors
+  it (96–99 % for `Combat_Flight_Simulator_3` and `Official_Xbox`); without that bound a drawer
+  growing 300x200 → 400x260 beside a 320x240 clip matches `zoom = 0.5` and the skin's own drawer
+  would be refused as a decoder resize.
+- **The ceiling is the visible frame, not the resolution** (`WMPMainWindowController.usableScreenSize`).
+  Clamped to the full frame the window's bottom edge sits under the Dock, which is exactly where
+  this corpus draws its video drawer, its zoom and its resize grip. `event.screenWidth` keeps
+  answering the *resolution* — that is what WMP means by it and what `Compact.wmz` divides by.
+- **The clamped number has to reach the overrides, not only `viewSize`.** The builder re-applies the
+  view's own floor from the markup and has no rule of its own for the display, so leaving the raw
+  assignment in `overrides.geometry` builds the scene at the size the script asked for while the
+  window and every `jscript:view.width` carry the clamped one — W213's scene/window disagreement.
+- **`isMediaDrivenViewSize` is tested on the *raw* assignment, before the clamp.** It recognises a
+  size by its formula, and a clamped number is not that formula any more: testing the clamped one
+  stopped `corona`, `Classic`, `9SeriesDefault` and `Compact` being recognised at all, and the
+  engine then *kept* an assignment it exists to discard — all four grew from their authored canvas
+  to the whole screen. Only the corpus sweep showed it; the single-skin check was green.
+
+The instrument is `WMP_RENDER_LIMITS=1 WMP_RENDER_HOST='playing,video=2560x1440'` over the corpus,
+read as `canvas=` per view, with the same run minus `video=` as the control: 83 views over the
+ceiling before, **none** after, and the 23 views that still differ from the control are the skin's
+own layout reacting to a playing video (largest: `Asia/vidWindow` 621x404).
+
+**None of that was enough to tell whether it worked**, and the first two rounds of this fix were
+handed back by the reporter. What settled it was driving the app: `Windows ▸ Library Browser` →
+**Movies** → double-click, then `winhelper windows`. `Combat_Flight_Simulator_3/videoView` reads
+**1800x1130 before and 380x351 after** on the reporter's own 2560x1440 film. A right-click posted
+with a `CGEvent` tool puts a 221x211 menu window on the list, which is how the menu half was
+checked; `pgrep` after clicking the skin's own X is how the close half was. See
+§ *Debugging a live defect*.
+
+**The hosted picture carries NullPlayer's own overlay — play, subtitles, casting, fullscreen — and
+the view is built wide enough to hold it.** For four phases `WMPVideoSurface` switched the command
+bar off on the grounds that a `.wmz` draws its own transport; what that left was a skin's video
+window with no route to a subtitle, an audio track or a cast device except a right-click. Reported
+2026-09-19 as *"it is still not using the standard overlay with play, sub and casting controls"*.
+Three parts, and the third is the one that is easy to miss:
+
+- The bar does not compress — its controls are one required constraint chain — so a box narrower
+  than its fitting width pushes the parked window out through the skin's chrome. `WMPSceneBuilder`
+  therefore builds a view carrying a `<VIDEO>` to a width where its box reaches
+  `videoControlBarWidth` (395, measured from the bar itself). The box follows, because every corpus
+  box is authored `view.width` minus a constant shell. A *fixed* view is never widened: it is
+  pinned to its canvas at both ends and growing one is W213.
+- The parked window takes the pointer now (`ignoresMouseEvents = false`), because an overlay nobody
+  can click is not one. The cost is the 21 `onClick` / 15 `onDblClick` attributes the corpus
+  authors on `<VIDEO>`; their equivalents are on the bar.
+- **A refused decoder-driven resize has to drop the whole transaction's geometry, not just the
+  root's two numbers.** Every `jscript:` expression in that view resolved against the size the
+  handler assigned, so restoring the root alone left `Combat_Flight_Simulator_3`'s `centerBox` and
+  `videoWin` — `jscript:view.width-20` — at **1900x969 inside a 380x351 window**, which is the box
+  the picture is parked over. `overrides.geometry` is restored to what the last committed
+  transaction held; on a first transaction that is empty, and the builder's own resolution against
+  the authored canvas is exactly the layout wanted.
+
+**A film sent to a cast device is still the skin's session, and the window that drives it stays on
+screen.** Two halves, both reported 2026-09-19 ("the video player window disappeared when i casted
+to chromecast", "main window controls dont control it"):
+
+- `WMPVideoSurface.update` unparks the picture's window the moment `hasVideo` goes false, which is
+  one host tick after a cast starts — and it unparked it *hidden*. It now reveals it when
+  `controller.isCastingVideo`, so the window that is the cast remote in every other family is the
+  cast remote here too.
+- `WMPAudioEngineHost.localVideoSessionController` answers nil during a cast (there is no local
+  player to drive), and everything below it fell through to `AudioEngine`: the skin's play button
+  started the audio queue *behind* the film and its clock read the queue's. `castingVideo` is the
+  branch that was missing — transport routes to `WindowManager`'s cast-aware calls and the snapshot
+  reports the cast's state, position, duration and title. `next`/`previous` return rather than fall
+  through, because a cast film has nowhere to skip to and the audio queue must not start behind it.
+  Classic has always routed this way through `isVideoActivePlayback`; this is the same rule.
+
+**And closing the player quits the app** (`closeViewWindow` → `WMPMainWindowController.terminateApplication`),
+as Classic's and Original's own close buttons do and as real WMP does. Ordering the window out left
+the app running behind an empty screen — reported as *"the close button does not exit"*, and before
+that as the frozen-skin defect the `playerWindowIsACorpse` revival existed for. Both are gone with
+the corpse state. `terminateApplication` is a seam **only** so `WMPPhase9Tests` can drive a real
+player close without taking the test runner down with it.
+
+**And `WMPMainView.menu(for:)` now answers the host's own menu everywhere the skin has nothing of
+its own to show**, instead of `nil`. The old rule — a skin draws its own controls and its own menus
+— holds right up until those controls are off the screen edge, and a borderless window with no
+titlebar then has no route back at all; `Snap To Default` and `Exit` are the two rows that matter.
+The video rect and the visualization rect still answer first, so nothing the skin owns changed.
+
 ### `isRunningModernUI` is a two-way switch in a four-family world
 
 **`WindowManager.isRunningModernUI` answers `false` for `WMPMainWindowController` by construction**

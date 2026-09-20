@@ -63,7 +63,14 @@ skin-authored HTML, and native-object reflection are unsupported. Video tags sho
 NullPlayer-owned placeholder; `<EFFECTS>` uses bounded native Spikes, Bars, Ambience, Cava, and
 vis_classic renderers inside the skin-authored rectangle rather than loading Windows effect
 plug-ins. Right-click Cava and vis_classic to use their normal tuning and profile controls; those
-choices are kept separate from their standalone windows. Skin scripts run in a persistent
+choices are kept separate from their standalone windows. Video playing inside a skin carries NullPlayer's usual
+overlay — play/pause, subtitles, audio tracks and casting — and the skin's video window opens wide
+enough to hold it; right-click the picture as well for track settings, and right-click anywhere else on
+a skin window for NullPlayer's own menu — Snap To Default, Always On Top, Minimize All and Exit —
+which is the way back from a skin whose own controls have ended up somewhere awkward. Closing the
+skin's player window quits NullPlayer, as the Classic and Original close buttons do. A skin's video
+window keeps its own size whatever the film's pixel dimensions are — the picture is scaled to fit
+inside it — and no skin window opens larger than the space your display has. Skin scripts run in a persistent
 in-process JavaScript context on a dedicated serial queue, behind a restricted host object model.
 They do not run in a killable helper process. A script that never returns can stall its script
 queue; there is no process-level timeout recovery for that context.

@@ -255,8 +255,17 @@ final class WMPPhase9Tests: XCTestCase {
         try await waitUntil { controller.openViewIDs == ["main", "playlist"] }
         let panel = try XCTUnwrap(controller.materializedAuxiliaryWindows.first)
 
+        // **And closing the player quits the app** — reported 2026-09-19 as "the close button does
+        // not exit". Stubbed rather than called: the real one is `NSApp.terminate`, which would
+        // take this test runner down with it at exactly this line.
+        var quits = 0
+        let terminate = WMPMainWindowController.terminateApplication
+        WMPMainWindowController.terminateApplication = { quits += 1 }
+        defer { WMPMainWindowController.terminateApplication = terminate }
+
         let window = try XCTUnwrap(controller.window)
         XCTAssertTrue(controller.windowShouldClose(window))
+        XCTAssertEqual(quits, 1, "closing the player is closing NullPlayer")
         XCTAssertTrue(controller.openViewIDs.isEmpty)
         XCTAssertFalse(panel.isVisible, "a panel must never outlive the player it was opened from")
         XCTAssertFalse(window.isMiniaturized, "closing the player must not minimize the app window")

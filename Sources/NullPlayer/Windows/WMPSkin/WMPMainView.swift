@@ -459,8 +459,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// — so the event arrives here and the widget frames are what decide. **For video this is the
     /// only route to subtitles and audio-track selection**: the picture is parked in a window that
     /// takes no mouse events, and the command bar carrying those controls is switched off in a
-    /// skin, so without this there is no way to turn a subtitle on. Anywhere else on a `.wmz` there
-    /// is no host menu to show: the skin draws its own controls and its own menus.
+    /// skin, so without this there is no way to turn a subtitle on. **Anywhere else the host's own
+    /// menu**, which is the floor under a window the skin has put out of reach.
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         if let video = videoSurface?.menu(at: point) { return video }
@@ -468,7 +468,18 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             guard let effects = view as? WMPEffectsSurfaceView, effects.frame.contains(point) else { continue }
             return effects.buildMenu()
         }
-        return super.menu(for: event)
+        // **Everywhere else the host's own menu, so a `.wmz` window is never a dead end.** This
+        // answered nil for four phases on the reasoning that a skin draws its own controls and its
+        // own menus, and that holds right up until those controls are somewhere the pointer cannot
+        // reach: a `.wmz` window is borderless and has no titlebar, so a skin that sized itself
+        // off a 2560x1440 decoder put its close, zoom and resize art past the screen edge with
+        // nothing left to recover the window with. Reported on `Combat_Flight_Simulator_3`
+        // 2026-09-19 as "a massive window with no right click context controls" — the size half is
+        // `WMPSize.fitted(within:)` and this is the floor under it. `Snap To Default` and `Exit`
+        // are the two rows that matter here, and it is the same menu Classic's own main window
+        // shows: `buildMenu` already suppresses the compact-mode rows for `.wmp`, whose skins own
+        // their views. The skin still wins wherever it has something of its own to show.
+        return ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)
     }
 
     override func mouseMoved(with event: NSEvent) {

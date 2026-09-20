@@ -4,6 +4,34 @@
 
 ### Fixed
 
+- **A Media Player skin's video window no longer opens enormous on a modern film.** Play a 1440p or
+  4K video under most `.wmz` skins and the skin's own script sized its window to the film's pixel
+  dimensions — *Combat Flight Simulator 3* asked for 2580x1532 on a 2560x1440 clip — so its close,
+  zoom and drawer controls ended up off the edge of the screen with no title bar to drag the window
+  back by. The video window now keeps its own size and the picture is scaled to fit inside it, the
+  same way it already worked for a handful of older skins. A window that an earlier version had
+  already blown up and remembered is no longer restored at that size either. 80 of the installed
+  skins were affected.
+
+- **Video in a Media Player skin now has NullPlayer's normal controls on it.** The picture inside a
+  `.wmz` skin's video window had no play/pause, no subtitle or audio-track picker and no casting
+  button — the overlay was switched off there, leaving the skin's own buttons and nothing else. It
+  is on now, and the skin's video window opens wide enough to hold it.
+
+- **Casting a video from a Media Player skin no longer leaves you with nothing to control it.** The
+  video window vanished the moment the film moved to a Chromecast, and the skin's own play, pause,
+  stop, seek and volume controls drove the audio queue behind it instead of the cast. The window
+  stays as the cast remote, and the skin's transport and readouts follow the film on the TV.
+
+- **Closing a Media Player skin now quits NullPlayer.** The skin's own close button ordered its
+  window away and left the app running with nothing on screen, reachable only from the Dock. It now
+  exits, the way the Classic and Original close buttons do.
+
+- **Right-clicking a Media Player skin window now always opens NullPlayer's menu.** Previously only
+  the skin's video and visualization areas answered a right-click and everywhere else did nothing,
+  so a skin window that had put its own controls somewhere unreachable left you with no way out.
+  *Snap To Default* and *Exit* are there now wherever the skin has no menu of its own.
+
 - **NullPlayer's own windows now borrow the right window from a Media Player skin.** Where a `.wmz`
   dresses several of its own windows in the same artwork — its playlist and its video window, say —
   this app could pick the video one, and then the library, equalizer and the rest wore a border with

@@ -135,12 +135,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// preference and let this view's `onTimer` read it back and act (W89). It outlives a view
     /// switch on purpose — it is the way back from the panel it opened — so only teardown and a
     /// skin reload stop it.
-    /// **The player was closed and its window is still here.** The controller keeps one
-    /// `playerWindow` for its life, so "there is no presentation" is not a state `showWindow` can
-    /// read off the window — and it is also the state every launch is in for the moment before the
-    /// first present lands, where a rebuild would cancel the session load that is already running.
-    /// Set only by a close that took the player down; cleared by the rebuild that answers it.
-    private var playerWindowIsACorpse = false
     private var dispatcherViewID: String?
     private var dispatcherTimerTask: Task<Void, Never>?
     /// The dispatcher's `onTimer` sources, resolved once. `handlers` walks the whole graph, and at
@@ -362,7 +356,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let skinData = try await Task.detached { try Data(contentsOf: skin.archive.sourceURL) }.value
                 let runtime = WMPScriptRuntime(
                     preferences: WMPPreferenceStore(skinData: skinData, defaults: importer.defaults))
-                await runtime.setScreen(Self.screenSize(for: window))
+                await runtime.setScreen(Self.screenSize(for: window),
+                                        usable: Self.usableScreenSize(for: window))
                 var candidates = Self.startupCandidates(
                     persisted: importer.selectedViewID,
                     declared: WMPDeclaredHostState.authoredStartupViewID(in: skin),
@@ -1290,8 +1285,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // `<EFFECTS height="jscript:vMain.height">` filling the extra 63 px as a bar spectrum
         // hanging off the bottom of the skin (reported 2026-09-17). The origin is not gated the
         // same way: where the user put a window is the user's decision at any size.
+        // **And a stored size is only worth restoring while it is still a window on this machine.**
+        // The store files whatever the window came to rest at, so a skin that sized its own video
+        // view from the decoder left that size behind for every later launch — the defect outlived
+        // its own fix, because the window no longer *grows* but was still *restored* huge. A size
+        // at or past the display is not a size a user chose (macOS clamps a drag at the screen
+        // edge), so it is dropped and the view opens at its own canvas again.
         let savedSize = Self.authoredResizable(in: skin, viewID: registration.id)
-            ? frameStore.size(skin: skinName, view: registration.id) : nil
+            ? frameStore.size(skin: skinName, view: registration.id)
+                .flatMap { Self.restorableViewSize($0, for: window) } : nil
         let savedOrigin = frameStore.origin(skin: skinName, view: registration.id)
         let task = Task { [weak self] in
             guard let self else { return }
@@ -1442,6 +1444,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// **Close one window.** `view.close()`, `theme.closeView(name)` and the macOS close control all
     /// arrive here.
     ///
+    /// How closing the player quits the app. **A seam only so a unit test can close a player
+    /// window without taking the test runner down with it** — `WMPPhase9Tests` asserts that the
+    /// panels go with the player, which means driving the real close path. The app never replaces
+    /// it.
+    static var terminateApplication: () -> Void = { NSApp.terminate(nil) }
+
     /// Closing the **player** closes the whole skin UI: the player window is the one WMP's own close
     /// control means, and leaving panels up with no player behind them is the W96 class of defect
     /// this change exists to delete. Closing an auxiliary window closes only it, and the player —
@@ -1452,6 +1460,23 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // NVIDIA's close is an in-place mode transition, not a window closing at all.
         if closeNVIDIAEmbeddedMode(presentation) { return false }
         if presentation.isPlayer {
+            // **Closing the player closes NullPlayer, as it does in every other family.** Classic
+            // and Original both terminate from their own close button
+            // (`MainWindowView`/`ModernMainWindowView` — `NSApplication.terminate`), and real WMP
+            // quits when its player window is closed. `applicationShouldTerminateAfterLastWindowClosed`
+            // is false, so ordering this window out left the app running with nothing on screen
+            // and nothing but the Dock to get it back. Reported 2026-09-19 as "the close button
+            // does not exit"; before that it was reported as a *frozen* skin, because the window
+            // the controller keeps for its whole life outlived the presentation and could be
+            // ordered back in with no scene, no hit map and no timer behind it (`Disney_Mix_Central`
+            // and the 23 other Skins Factory archives, whose close button writes a preference that
+            // their windowless `controlView` dispatcher turns into this call 100 ms later).
+            // Quitting answers both, and the corpse state it used to leave no longer exists.
+            //
+            // **The close handlers are flushed before the teardown, not after it.** Every open
+            // view's `onClose` is where a `.wmz` saves its state, and the teardown posts them as a
+            // `Task` that a process on its way out never gets to run.
+            flushCloseHandlersOnTermination()
             for other in materializer.openPresentations where other !== presentation {
                 closeAuxiliaryWindow(other)
             }
@@ -1460,7 +1485,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             materializer.remove(presentation, closing: true)
             closeScriptView(viewID, size: size)
             persistOpenViews()
-            playerWindowIsACorpse = true
+            Self.terminateApplication()
             return true
         }
         closeAuxiliaryWindow(presentation)
@@ -1635,7 +1660,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // reads it to decide how far it may grow itself — `Compact`'s drawers do it on every open.
         if let scriptRuntime {
             let size = Self.screenSize(for: window)
-            Task { await scriptRuntime.setScreen(size) }
+            let usable = Self.usableScreenSize(for: window)
+            Task { await scriptRuntime.setScreen(size, usable: usable) }
         }
         let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: origin)
@@ -1659,6 +1685,38 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     static func screenSize(for window: NSWindow?) -> WMPSize {
         guard let frame = (window?.screen ?? NSScreen.main)?.frame else {
+            return WMPObjectModel.defaultScreen
+        }
+        return WMPSize(width: frame.width, height: frame.height)
+    }
+
+    /// How big a `.wmz` window may be and still be reachable: the display's visible frame, which is
+    /// the desktop minus the menu bar and the Dock. **Not `screenSize`** — a borderless window
+    /// clamped to the full frame hangs its bottom edge under the Dock, and the corpus draws its
+    /// video drawer, its zoom and its resize grip along that edge. Every view size the skin or its
+    /// script asks for is fitted into this; see `WMPSize.fitted(within:)`.
+    /// A stored view size, or nil where it is one this display cannot show as a window.
+    ///
+    /// Two shapes are refused: past the usable area in either axis — the raw decoder size, 2580x1532
+    /// for a 1440p film under `Combat_Flight_Simulator_3` — and *filling* it in both, which is what
+    /// the same size looks like once it has been fitted to the display and filed away. Nobody drags
+    /// a borderless skin window to exactly the whole desktop; macOS clamps the drag at the edge, so
+    /// this is the fingerprint of a size the skin set rather than one the user chose. A window
+    /// genuinely dragged to the full height *or* the full width of the screen keeps its restore.
+    ///
+    /// `WMPSize.fitted(within:)` is the other half: it stops the size being created, and this stops
+    /// the ones already on disk being handed back. Without both, the fix outlives nothing — the
+    /// window stops growing and goes on *opening* at the size an earlier session filed.
+    static func restorableViewSize(_ size: WMPSize, for window: NSWindow?) -> WMPSize? {
+        let ceiling = usableScreenSize(for: window)
+        guard size.width > 0, size.height > 0 else { return nil }
+        if size.width > ceiling.width || size.height > ceiling.height { return nil }
+        if size.width >= ceiling.width, size.height >= ceiling.height { return nil }
+        return size
+    }
+
+    static func usableScreenSize(for window: NSWindow?) -> WMPSize {
+        guard let frame = (window?.screen ?? NSScreen.main)?.visibleFrame else {
             return WMPObjectModel.defaultScreen
         }
         return WMPSize(width: frame.width, height: frame.height)
@@ -1736,36 +1794,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func skinDidChange() {}
     func windowVisibilityDidChange() {}
 
-    /// **Showing the player again after the skin closed it rebuilds it. The window outlives the
-    /// presentation, and revealing the corpse is what "the playlist is frozen" was.**
-    ///
-    /// The controller owns one `playerWindow` for its whole life and the materializer hands it to
-    /// whichever view is the player; `closeViewWindow` tears that presentation down and orders the
-    /// window out, but the `NSWindow` object stays — it is this controller's `window`. So
-    /// `WindowManager.showMainWindow` → `showWindow(_:)` ordered a window back in that had no
-    /// presentation behind it: the last picture the skin drew, no scene, no hit map, no timer.
-    /// Every click landed on nothing and the trace recorded **zero presents** afterwards.
-    ///
-    /// Reported on `Disney_Mix_Central` as *"if you close the playlist you do not return to the
-    /// main window … when you bring the playlist back into focus the playlist is frozen"*, and the
-    /// route in is the Skins Factory close button: it writes `exitView`, the windowless
-    /// `controlView` dispatcher reads it back 100 ms later and posts `view.close()`, and W89 runs a
-    /// dispatcher's commands against the player. **24 corpus archives carry that dispatcher and the
-    /// close button is in every one of them**, so this is the whole family, not one skin — and the
-    /// same dead window is reachable by any other close of the player.
-    ///
-    /// `reloadSelectedSkin` rather than a re-present: the close discarded the script view and
-    /// stopped nothing else, so the session has to be built again from the archive. It also runs
-    /// the skin's own `onLoad`, which is what clears the latched preference — Disney's
-    /// `onLoadMain` writes `exitView` back to `false`, and without that the dispatcher's next tick
-    /// would close the window this call just rebuilt.
-    override func showWindow(_ sender: Any?) {
-        if playerWindowIsACorpse {
-            playerWindowIsACorpse = false
-            reloadSelectedSkin()
-        }
-        super.showWindow(sender)
-    }
     func setNeedsDisplay() { window?.contentView?.needsDisplay = true }
 
     /// The `os*` value `player.openState` answers — the same derivation the object model and

@@ -15,6 +15,29 @@ struct WMPSize: Hashable, Codable {
     static let zero = WMPSize(width: 0, height: 0)
 }
 
+/// **No `.wmz` window may be sized past the display it is on, however the size was asked for.**
+///
+/// A skin sizes its video view from the *decoder's* pixel dimensions — `SnapToVideo()` and its
+/// siblings are `view.width = player.currentMedia.imageSourceWidth * (zoom/100) + <shell>` — and
+/// the corpus was authored when a large clip was 640x480. Seed a 2560x1440 source and **84 views
+/// across 80 archives** ask for a window around 2600x1600 (`Plus! SlimLine/perfectVSkin` asks for
+/// 5720x3480); measured with `WMP_RENDER_LIMITS=1 WMP_RENDER_HOST='playing,video=2560x1440'`, against
+/// **zero** views over 1440x810 with no video seeded. A `.wmz` window is borderless and has no
+/// titlebar to drag, so a window larger than the desktop puts the skin's own close, zoom and resize
+/// controls past the screen edge and there is nothing left to recover it with — reported on
+/// `Combat_Flight_Simulator_3` as "a massive window with no controls".
+///
+/// The ceiling is the display's **usable** area, not its resolution: clamped to the full frame the
+/// window's bottom sits under the Dock, which is where the corpus draws its video drawers and its
+/// resize grip. `event.screenWidth`/`screenHeight` keep answering the resolution — that is what WMP
+/// means by them and `Compact.wmz` divides by it.
+extension WMPSize {
+    func fitted(within ceiling: WMPSize?) -> WMPSize {
+        guard let ceiling, ceiling.width > 0, ceiling.height > 0 else { return self }
+        return WMPSize(width: min(width, ceiling.width), height: min(height, ceiling.height))
+    }
+}
+
 struct WMPRect: Hashable, Codable, CustomStringConvertible {
     var x: CGFloat
     var y: CGFloat

@@ -131,6 +131,52 @@ final class WMPVideoTests: XCTestCase {
         XCTAssertFalse(newMediaWithoutOutput.hasVideo)
     }
 
+    /// **The zoom formula, which is the shape 80-odd archives author.**
+    /// `view.width = imageSourceWidth * (zoom/100) + <shell>` — `Combat_Flight_Simulator_3` adds
+    /// 20 and 92, `Official_Xbox` 91 and 179 — and on a 2560x1440 film every one of them asks for
+    /// a window around 2600x1600. Recognised as a growth whose picture is most of the window, with
+    /// the leftover on each axis no larger than the window the skin authored.
+    func testMediaDrivenViewResizeIsRecognizedForTheZoomFormula() {
+        let source = WMPVideoSnapshot(width: 2560, height: 1440)
+        // Combat Flight Simulator 3 at 100 %, then at its own 150 % and 200 % zoom steps.
+        for zoom in [1.0, 1.5, 2.0] {
+            XCTAssertTrue(WMPVideoPresentation.isMediaDrivenViewSize(
+                WMPSize(width: 2560 * zoom + 20, height: 1440 * zoom + 92),
+                authoredViewSize: WMPSize(width: 380, height: 351),
+                authoredVideoSize: nil, source: source), "zoom \(zoom)")
+        }
+        // Official Xbox, whose `<VIDEO>` has no authored box to read at all.
+        XCTAssertTrue(WMPVideoPresentation.isMediaDrivenViewSize(
+            WMPSize(width: 2651, height: 1619),
+            authoredViewSize: WMPSize(width: 398, height: 400),
+            authoredVideoSize: nil, source: source))
+    }
+
+    /// **What the zoom formula must not reach: the skin's own layout.** A drawer opening beside a
+    /// small clip lands on `zoom = 0.5` for both axes with the shell absorbing the rest, and would
+    /// be refused as a decoder resize — the picture being *most of the window* is what separates
+    /// them. The other two are a shrink (compact mode) and a window that is not a growth at all.
+    func testAnOrdinaryLayoutAssignmentIsNotAMediaDrivenResize() {
+        let small = WMPVideoSnapshot(width: 320, height: 240)
+        XCTAssertFalse(WMPVideoPresentation.isMediaDrivenViewSize(
+            WMPSize(width: 400, height: 260),
+            authoredViewSize: WMPSize(width: 300, height: 200),
+            authoredVideoSize: nil, source: small),
+            "a drawer 100 px wider is not a window built around a 320x240 picture: the picture "
+            + "is 80 % of it, and the real shape is 96-99 %")
+        XCTAssertFalse(WMPVideoPresentation.isMediaDrivenViewSize(
+            WMPSize(width: 475, height: 373),
+            authoredViewSize: WMPSize(width: 593, height: 600),
+            authoredVideoSize: WMPSize(width: 320, height: 240),
+            source: WMPVideoSnapshot(width: 1920, height: 1080)),
+            "compact mode shrinks, and a shrink is never this")
+        XCTAssertFalse(WMPVideoPresentation.isMediaDrivenViewSize(
+            WMPSize(width: 2580, height: 1532),
+            authoredViewSize: WMPSize(width: 380, height: 351),
+            authoredVideoSize: nil, source: WMPVideoSnapshot()),
+            "and with no picture there is nothing to have been sized from")
+    }
+
     func testMediaDrivenViewResizeIsRecognizedOnlyForLegacySourceSizeFormula() {
         let source = WMPVideoSnapshot(width: 1920, height: 1080)
         XCTAssertTrue(WMPVideoPresentation.isMediaDrivenViewSize(

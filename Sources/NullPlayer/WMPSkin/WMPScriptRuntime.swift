@@ -472,6 +472,11 @@ actor WMPScriptRuntime {
     /// when the window moves to another one; headlessly it stays at the harness default so a
     /// corpus sweep reads the same on every machine.
     private var screen = WMPObjectModel.defaultScreen
+    /// The **usable** part of that display — the desktop minus the menu bar and the Dock — and the
+    /// ceiling every view size is fitted into. Separate from `screen` because the two answer
+    /// different questions: `screen` is what `event.screenWidth` means to a skin, and this is how
+    /// big a window may actually be and still be reachable. See `WMPSize.fitted(within:)`.
+    private var usableScreen = WMPObjectModel.defaultScreen
 
     init(preferences: WMPPreferenceStore,
          executionSeconds: TimeInterval = WMPPhase0Limits.scriptExecutionSeconds) {
@@ -479,9 +484,10 @@ actor WMPScriptRuntime {
         self.executionSeconds = executionSeconds
     }
 
-    func setScreen(_ size: WMPSize) {
+    func setScreen(_ size: WMPSize, usable: WMPSize? = nil) {
         guard size.width > 0, size.height > 0 else { return }
         screen = size
+        if let usable, usable.width > 0, usable.height > 0 { usableScreen = usable }
     }
 
     /// `geometry` is the layout the skin is currently *drawn* at, keyed by stable id — the local
@@ -563,13 +569,16 @@ actor WMPScriptRuntime {
                                        preferences: preferences.values(), event: event,
                                        geometry: geometry, boundValues: boundValues,
                                        retiredGeometry: Set((scriptAssignedGeometry[scope] ?? [:]).keys),
-                                       screen: screen, animatesTweens: animatesTweens,
+                                       screen: screen, usableScreen: usableScreen,
+                                       animatesTweens: animatesTweens,
                                        tweenFrame: tweenFrame)
         register(tweens: result.tweens, in: scope)
 
         var diagnostics = startupDiagnostics + result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
         var overrides = overrides(for: scope)
+        /// The geometry this transaction started from, kept for a refused decoder-driven resize.
+        let baselineGeometry = overrides.geometry
         for change in boundChanges {
             overrides.properties[change.address] = change.value
         }
@@ -766,25 +775,46 @@ actor WMPScriptRuntime {
         // transaction's size and every `jscript:view.height` expression all carrying a number
         // nothing is ever drawn at. The transaction applies the same clamp to the view element and
         // reports it here, so the one answer reaches all three.
-        if let drawn = result.drawnViewSize, assigned != nil { assigned = drawn }
+        // **The decoder-driven test reads the *raw* assignment, before any clamp.** It recognises
+        // a size by its formula — the authored shell plus the decoder's dimensions minus the
+        // authored video box — and a clamped number is no longer that formula. Testing the clamped
+        // one instead stopped `corona`, `Classic`, `9SeriesDefault` and `Compact` being recognised
+        // at all the moment the display ceiling touched them, and the engine then *kept* an
+        // assignment it exists to discard: all four grew from their authored canvas to the whole
+        // screen. Measured corpus-wide, which is the only way that showed up.
         let mediaDrivenResize = assigned.map {
             Self.isMediaDrivenViewResize(in: skin, viewID: viewID, assigned: $0,
                                          source: snapshot.video)
         } ?? false
-        if mediaDrivenResize, let root = skin.views.first(where: {
-            $0.id.caseInsensitiveCompare(viewID) == .orderedSame
-        })?.node {
-            // Do not retain a decoder-sized root assignment either. Otherwise the next binding-only
-            // transaction would treat it as the view's default even though this transaction kept
-            // the authored window size. Restore any pre-existing scripted size, if there was one.
-            for property in ["width", "height"] {
-                let address = WMPScenePropertyAddress(stableID: root.stableID, property: property)
-                if let previous = self.overrides(for: scope).geometry[address] {
-                    overrides.geometry[address] = previous
-                } else {
-                    overrides.geometry.removeValue(forKey: address)
-                }
+        if let drawn = result.drawnViewSize, assigned != nil {
+            assigned = drawn
+            // **The overrides are what the builder sizes the canvas from, so a clamp that is not
+            // also the builder's own rule has to be written into them.** The view's floor is one
+            // the builder re-applies from the markup; the display ceiling is not, and leaving the
+            // raw assignment here built the scene at the size the script asked for while the
+            // window, the script and every `jscript:view.width` carried the clamped one — which is
+            // exactly the scene/window disagreement W213 names.
+            if let root = skin.views.first(where: {
+                $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+            })?.node {
+                overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
+                                                           property: "width")] = drawn.width
+                overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
+                                                           property: "height")] = drawn.height
             }
+        }
+        if mediaDrivenResize {
+            // **A refused resize takes its whole layout with it, not just the root's two numbers.**
+            // Every `jscript:` expression in the view resolved against the size the handler
+            // assigned, so keeping those while refusing the window is the W99 disagreement at its
+            // widest: measured on `Combat_Flight_Simulator_3` with a 2560x1440 film, the root came
+            // back to its authored 380x351 while `centerBox`/`videoWin` — authored
+            // `jscript:view.width-20` — stayed **1900x969** inside it, which is the box the picture
+            // is parked over. Restoring the geometry the last committed transaction held drops all
+            // of it together; where there is none (the first transaction, which is when a view
+            // opens onto a film already playing) the builder resolves the expressions itself
+            // against the authored canvas, which is exactly the layout that was wanted.
+            overrides.geometry = baselineGeometry
         }
         let repaint = Set(result.repaintHints.compactMap { plan.idToStableID[WMPPath.fold($0)] })
         scriptAssignedGeometry[scope] = scriptAssigned
@@ -996,18 +1026,40 @@ actor WMPScriptRuntime {
         let authoredViewSize = authoredSize(of: root),
         let video = descendant(of: root, matching: { node in
             node.kind == .video || node.kind == .wmpVideo
-        }),
-        let authoredVideoSize = authoredVideoSize(of: video, authoredViewSize: authoredViewSize) else {
+        }) else {
             return false
         }
+        // **The authored video box is optional, because for half the corpus there isn't one.**
+        // A `<VIDEO>` sized `width="jscript:centerBox.width"` off a *sibling* rather than off the
+        // view resolves to no literal here, and requiring it made the whole test answer false: 31
+        // of the archives that size their window from the decoder — `xsn_sports`, `Blinx`, the
+        // XBOX family, `Plus! SlimLine` — were never recognised at all and survived only by being
+        // clamped to the display. The shell formula needs the box; the zoom formula does not.
+        let box = authoredVideoSize(of: video, authoredViewSize: authoredViewSize)
         return WMPVideoPresentation.isMediaDrivenViewSize(assigned,
-            authoredViewSize: authoredViewSize, authoredVideoSize: authoredVideoSize, source: source)
+            authoredViewSize: authoredViewSize, authoredVideoSize: box, source: source)
     }
 
+    /// The size the markup states for a view, per axis: its literal, else its declared floor.
+    ///
+    /// **The floor is not a fallback for tidiness — for two archives it is the only number there
+    /// is.** `Official_Xbox` authors `<VIEW id="videoBox" width="player.currentMedia.\
+    /// imageSourceWidth+91" height="400" minWidth="398" minHeight="400">`: the *markup itself* is
+    /// decoder-driven, so a literal-only read answered nil, the decoder test never ran, and its
+    /// `SnapToVideo()` (`x + 91` / `y + 179`, the same shape as 80 other archives) survived to
+    /// become a full-screen window on a 1440p clip.
     private nonisolated static func authoredSize(of node: WMPNode) -> WMPSize? {
-        guard let width = WMPNumber.literal(node.attribute(named: "width")),
-              let height = WMPNumber.literal(node.attribute(named: "height")),
-              width > 0, height > 0 else { return nil }
+        func dimension(_ name: String, floor: String) -> CGFloat? {
+            if let literal = WMPNumber.literal(node.attribute(named: name)), literal > 0 {
+                return literal
+            }
+            guard let declared = WMPNumber.literal(node.attribute(named: floor)), declared > 0 else {
+                return nil
+            }
+            return declared
+        }
+        guard let width = dimension("width", floor: "minWidth"),
+              let height = dimension("height", floor: "minHeight") else { return nil }
         return WMPSize(width: width, height: height)
     }
 

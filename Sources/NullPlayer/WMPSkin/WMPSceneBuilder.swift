@@ -10,17 +10,57 @@ struct WMPSceneBuilder: @unchecked Sendable {
         self.imageStore = imageStore ?? WMPImageStore(provider: loadedSkin.archive)
     }
 
+    /// **The width the hosted picture's own command bar needs, and the floor a view carrying a
+    /// `<VIDEO>` is built to.**
+    ///
+    /// The picture in a `.wmz` is NullPlayer's video window parked over the skin's video box, and
+    /// the play/subtitle/cast overlay goes with it. That bar does not compress — its controls are
+    /// one required constraint chain — so in a box narrower than its fitting width it forces the
+    /// parked window wider than the box and pushes the picture out through the skin's chrome. Most
+    /// of the corpus authors a box narrower than that: `Combat_Flight_Simulator_3`'s is 360pt
+    /// inside a 380pt view. Widening the *view* widens the box with it, because every one of these
+    /// boxes is `view.width` minus a constant shell.
+    ///
+    /// Measured from the bar itself rather than written down twice —
+    /// `VideoPlayerWindowController.videoControlBarMinimumWidth` is 395 — and pinned by
+    /// `WMPVideoControlBarFloorTests` so a change to the bar's own controls fails there rather than
+    /// silently cropping the picture in every skin.
+    static let videoControlBarWidth: CGFloat = 395
+
     /// Layout, resource resolution, and image metadata/decode stay off the main thread even when a
     /// UI caller initiates the transaction.
+    ///
+    /// **A view with a video box is built twice when its box is too narrow for the command bar.**
+    /// The box's width is almost always an expression off the view's own (`jscript:view.width-20`),
+    /// so it cannot be read before the first pass and it follows the view exactly on the second.
     func build(viewID: String, requestedSize: WMPSize? = nil,
                interactionState: WMPInteractionState = WMPInteractionState(),
                dirtyNodeIDs: Set<Int>? = nil,
                overrides: WMPSceneOverrides = .empty) async throws -> WMPScene {
         try await Task.detached(priority: .userInitiated) {
-            try buildOffMain(viewID: viewID, requestedSize: requestedSize,
-                             interactionState: interactionState, dirtyNodeIDs: dirtyNodeIDs,
-                             overrides: overrides)
+            let scene = try buildOffMain(viewID: viewID, requestedSize: requestedSize,
+                                         interactionState: interactionState,
+                                         dirtyNodeIDs: dirtyNodeIDs, overrides: overrides)
+            guard let widened = Self.videoBarShortfall(in: scene) else { return scene }
+            return try buildOffMain(viewID: viewID, requestedSize: widened,
+                                    interactionState: interactionState,
+                                    dirtyNodeIDs: dirtyNodeIDs, overrides: overrides)
         }.value
+    }
+
+    /// The canvas this scene needs for its video box to carry the command bar, or nil when it
+    /// already does, has no video box, or is not resizable — a fixed view is pinned to its canvas
+    /// at both ends (`WMPWindowSizeLimits.forScene`), and growing one would be a window whose scene
+    /// it is not (W213).
+    static func videoBarShortfall(in scene: WMPScene) -> WMPSize? {
+        guard scene.isResizable,
+              let video = scene.widgets.last(where: { $0.kind == .video }),
+              video.frame.width > 0, video.frame.width + 0.5 < videoControlBarWidth else {
+            return nil
+        }
+        let widened = scene.canvasSize.width + (videoControlBarWidth - video.frame.width)
+        guard widened > scene.canvasSize.width else { return nil }
+        return WMPSize(width: widened, height: scene.canvasSize.height)
     }
 
     private func buildOffMain(viewID: String, requestedSize: WMPSize?,

@@ -19,7 +19,13 @@ final class WMPVideoSurface {
               let widget = scene.widgets.last(where: {
                   $0.kind == .video && ($0.videoPresentation?.alpha ?? 1) > 0
               }) else {
-            detach(reveal: false)
+            // **A cast takes the picture away, not the session — so the window is handed back
+            // visible.** Sending the film to a Chromecast stops the local decoder, `hasVideo` goes
+            // false on the next host tick and this used to unpark the window *hidden*: the film
+            // went to the television and every control over it went with it. Reported 2026-09-19 as
+            // "the video player window disappeared when i casted to chromecast". It is the same
+            // window that drives the cast in every other mode, so it stays on screen as the remote.
+            detach(reveal: controller?.isCastingVideo == true)
             return
         }
         let scaleX = view.bounds.width / max(1, scene.canvasSize.width)
@@ -44,16 +50,20 @@ final class WMPVideoSurface {
         let image = presentation.imageRect(source: CGSize(width: video.width, height: video.height),
                                            bounds: frame)
             .offsetBy(dx: -visible.minX, dy: -visible.minY)
-        controller.showsVideoControlBar = false
-        // **The picture is click-through, except while its own track panel is up.** 21 `onClick`
-        // and 15 `onDblClick` attributes are authored on corpus `<VIDEO>` elements and those
-        // handlers belong to the skin's scene, so the parked window must not swallow the event —
-        // it passes through to `WMPMainView`, which hit-tests the widget frames. The one thing
-        // that does need a pointer is the slide-out track panel (subtitle delay, external subtitle
-        // tracks), which is drawn *inside* this window. Deriving the flag here rather than toggling
-        // it when the panel opens makes it self-healing: `update` re-asserts it on every host tick,
-        // so a panel dismissed by any route gets the click-through back within one tick.
-        controller.window?.ignoresMouseEvents = !controller.isTrackSelectionPanelVisible
+        // **The picture keeps NullPlayer's own overlay — play, subtitles, casting, fullscreen.**
+        // A `.wmz` draws its own transport, and for four phases that was the argument for switching
+        // the bar off here; what it left was a skin's video window with no route to a subtitle, an
+        // audio track or a cast device except a right-click most people never try. Reported
+        // 2026-09-19 as "it is still not using the standard overlay with play, sub and casting
+        // controls". The bar does not compress, so the box it lands in is built wide enough for it
+        // — `WMPSceneBuilder.videoControlBarWidth`, applied to the *view*, which every corpus box
+        // follows because it is authored `view.width` minus a shell.
+        controller.showsVideoControlBar = true
+        // **And the window takes the pointer, because an overlay nobody can click is not one.**
+        // The cost is the 21 `onClick` and 15 `onDblClick` attributes the corpus authors on
+        // `<VIDEO>`; their nearest equivalents (play/pause, fullscreen) are on the bar itself, and
+        // the skin's own controls outside the picture are untouched.
+        controller.window?.ignoresMouseEvents = false
         controller.window?.alphaValue = presentation.alpha
         controller.configureWMPVideoOutput(imageRect: image,
                                             maintainAspectRatio: presentation.maintainAspectRatio)
