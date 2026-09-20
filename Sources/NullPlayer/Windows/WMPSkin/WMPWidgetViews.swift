@@ -6,7 +6,12 @@ final class WMPPlaylistSurfaceView: NSView {
     private var snapshot = WMPHostSnapshot()
     private var selectedIndex = -1
     private var lastPlayingIndex = -1
-    private var firstVisibleIndex = 0
+    /// The row drawn at the top. `private(set)` rather than `private` so the W246 scrolling tests
+    /// can read the position back: the alternative is asserting on rendered text, which measures
+    /// the font rather than the scroll.
+    private(set) var firstVisibleIndex = 0
+    /// Points of precise scrolling delta not yet worth a whole row.
+    private var scrollRemainder: CGFloat = 0
     private let rowHeight: CGFloat = 18
     private var style = WMPSurfacePalette(viewID: "").surfaceStyle
 
@@ -30,15 +35,27 @@ final class WMPPlaylistSurfaceView: NSView {
         // shared by every skin that declares a `<PLAYLIST>`, so it was all of them. A click or an
         // arrow key still moves the highlight; the next track change takes it back, the way WMP's
         // own playlist does.
+        var trackChanged = false
         if snapshot.playlistIndex != lastPlayingIndex {
             lastPlayingIndex = snapshot.playlistIndex
             if snapshot.playlistItems.indices.contains(snapshot.playlistIndex) {
                 selectedIndex = snapshot.playlistIndex
+                trackChanged = true
             }
         }
         if selectedIndex < 0 { selectedIndex = snapshot.playlistIndex }
         selectedIndex = min(selectedIndex, snapshot.playlistItems.count - 1)
-        scrollSelectionIntoView()
+        // **Scrolling to the selection is an event, not a state (W246).** A host refresh arrives
+        // ~12 times a second whether or not anything moved, and pulling the scroll position back
+        // onto `selectedIndex` from every one of them clamped `firstVisibleIndex` into
+        // `selected - visibleRows + 1 ... selected` permanently: a wheel gesture moved the list and
+        // the next refresh put it back within ~85 ms. Measured live on `Xbox Live Skin` with a
+        // 200-row playlist — 70 wheel events down reached row 19 and stopped, 40 back up reached
+        // row 2 and stopped, because the playing row was pinned to the bottom and then the top of
+        // an 11-row window. The list could not be scrolled at all beyond one page around the
+        // current track. A refresh that changes nothing now only *clamps* the scroll position into
+        // the list; the track change is what still scrolls it, the way WMP's own playlist does.
+        if trackChanged { scrollSelectionIntoView() } else { clampScroll() }
         if drawnItems != snapshot.playlistItems || drawnPlaying != snapshot.playlistIndex
             || drawnSelection != selectedIndex || drawnScroll != firstVisibleIndex {
             needsDisplay = true
@@ -58,11 +75,18 @@ final class WMPPlaylistSurfaceView: NSView {
     /// clamp it when the playlist shrinks under it.
     private func scrollSelectionIntoView() {
         let visibleRows = max(1, Int(bounds.height / rowHeight))
-        let maximum = max(0, snapshot.playlistItems.count - visibleRows)
         if selectedIndex >= 0 {
             firstVisibleIndex = max(firstVisibleIndex, selectedIndex - visibleRows + 1)
             firstVisibleIndex = min(firstVisibleIndex, selectedIndex)
         }
+        clampScroll()
+    }
+
+    /// Keep the scroll position inside the list without moving it otherwise — the half of
+    /// `scrollSelectionIntoView` that a refresh which changed nothing is still entitled to run.
+    private func clampScroll() {
+        let visibleRows = max(1, Int(bounds.height / rowHeight))
+        let maximum = max(0, snapshot.playlistItems.count - visibleRows)
         firstVisibleIndex = max(0, min(maximum, firstVisibleIndex))
     }
 
@@ -101,10 +125,25 @@ final class WMPPlaylistSurfaceView: NSView {
         if event.clickCount > 1 { onAction?(.playPlaylistItem(index), nil) }
     }
 
+    /// A wheel event carries a distance, and this surface used to read only its sign (W246): every
+    /// event moved the list by exactly one row, so a trackpad flick that delivers hundreds of
+    /// points of precise delta moved a 200-row playlist one row, and reaching its end took one
+    /// event per row. Precise deltas accumulate in points — a fractional remainder is kept so slow
+    /// scrolling is not rounded away to nothing — and line deltas move a row each, carrying the
+    /// system's own wheel acceleration with them.
     override func scrollWheel(with event: NSEvent) {
-        let visibleRows = max(1, Int(bounds.height / rowHeight))
-        let maximum = max(0, snapshot.playlistItems.count - visibleRows)
-        firstVisibleIndex = max(0, min(maximum, firstVisibleIndex + (event.scrollingDeltaY > 0 ? -1 : 1)))
+        let rows: Int
+        if event.hasPreciseScrollingDeltas {
+            scrollRemainder -= event.scrollingDeltaY
+            rows = Int((scrollRemainder / rowHeight).rounded(.towardZero))
+            scrollRemainder -= CGFloat(rows) * rowHeight
+        } else {
+            scrollRemainder = 0
+            rows = -Int(event.scrollingDeltaY.rounded(event.scrollingDeltaY < 0 ? .down : .up))
+        }
+        guard rows != 0 else { return }
+        firstVisibleIndex += rows
+        clampScroll()
         needsDisplay = true
     }
 

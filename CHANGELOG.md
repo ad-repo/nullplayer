@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **A long playlist in a Media Player skin scrolls again.** Every skin's playlist is drawn by the
+  same list, and it was being pulled back onto the track that is playing roughly twelve times a
+  second — so the wheel moved it and it sprang straight back, and no row more than a screen away
+  from the current track could be reached at all. A 200-track playlist would not scroll past its
+  twentieth row. The list now stays where you put it, the wheel moves it as far as the gesture is
+  worth instead of one row per notch (a trackpad flick now carries), and the playing track is
+  still brought into view when the track changes.
+
 - **A Media Player skin that resizes one of its own windows as it opens is now obeyed.** Some skins
   open a panel at one size and immediately shrink it to a compact layout their artwork is actually
   drawn for — the *Xbox Live* skin's equalizer does exactly that. The window kept the larger size

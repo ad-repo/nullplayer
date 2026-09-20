@@ -87,11 +87,25 @@ same day). Both are in [the archive](docs/wmp-skin/wmp-backlog-archive.md); **th
 behind is that a `hits` count taken at t=0 is a count of a scene nobody sees in a skin that opens
 behind an animation — settle before ranking one.**
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W246 | **A large playlist cannot be scrolled properly** | **unmeasured.** Reported live 2026-09-20 on `Xbox Live Skin`; the surface is the hosted `<PLAYLIST>` overlay, which is **175 uses across 170 of 179 archives** (Tier 1e's table), so if the cause is the overlay rather than the skin the population is nearly the whole corpus | Not blocked, and **not yet reproduced** — capture the reporter's gesture before ranking. The skin's `plView` authors `<playlist id="playlist1" width="jscript:plFrame.width" …>` with **no scrollbar of its own**, so this is the overlay's own scrolling and not a skin-authored slider bound to it. **The candidate is `WMPPlaylistSurfaceView.scrollWheel` (`WMPWidgetViews.swift:103`): it advances `firstVisibleIndex` by exactly ±1 per event and ignores `scrollingDeltaY`'s magnitude**, so a trackpad flick or a long list moves one row at a time and there is no thumb, no page scroll and no scroll-to-end — measure it before assuming it is the whole report, because "properly" may also mean the rows the `columns` attribute declares or a selection that scrolls out from under the highlight. There is no headless instrument for this: a sweep sees the default state only (W73's caveat), so **drive the app** — `live-ui-testing`, and `harness.md` § *Debugging a live defect*. Load a playlist long enough to need it (`scripts/testdata.sh`, `app-control` § Route C) and read `winhelper` gestures against the drawn rows. Evidence: `object-model.md` § *Playlist kinds*. |
+**Empty since 2026-09-20: W246 was this tier's only row and closed the day it opened** — the
+`Xbox Live Skin` playlist would not scroll because every host refresh pulled it back onto the
+playing track, which was every skin's playlist and not that skin's (174 of 182 archives share the
+view; the numbers and the A/B are in [the archive](docs/wmp-skin/wmp-backlog-archive.md)).
 
-**This tier ranks above every other because no instrument here reaches it**; W246 is the only row.
+**The tier stays, and it still ranks above every other, because no instrument here reaches it.** A
+sweep renders the settled default state and never scrolls, hovers, drags or plays, so a
+byte-identical sweep across a change like W246's is *unmeasured*, not unchanged. Work that only a
+driven app can see belongs here and outranks anything a script can rank. W246 also left the live
+loop better equipped than it found it: `winhelper` has a `scroll` verb
+(`skills/app-control/SKILL.md` § Route C) and a long playlist now costs one environment variable
+(`skills/app-control/reference/test-data.md` § *A playlist long enough to scroll*).
+
+**Two rows could be opened out of W246 and deliberately were not**, because neither reproduces the
+report and neither has been reached for: the hosted `<PLAYLIST>` has **no scrollbar** of any kind
+(no thumb, no page scroll, no drag-to-position — and the corpus authors none against it either),
+and the `columns` attribute is parsed and ignored (`Xbox Live Skin` asks for
+`Title;Artist;Album;Type;Length`; the surface draws title and artist). **Measure the reach of
+either before ranking it** — the census command is in the archive entry.
 
 
 ## Tier 1d — what the Phase 6 instruments do and do not reach

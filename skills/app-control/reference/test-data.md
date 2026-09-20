@@ -53,6 +53,30 @@ exactly like a playback bug. `playlist-m3u` and `video-short` are both in that s
 | `video-short` | **a local-library scan, then open it from the browser's MOVIES tab** — that is the only route to the video window; `WindowManager.toggleVideoPlayer` returns early until a video has been opened this way. Or `"$BIN" --cli --file <path> --cast <device>`; without `--cast` the CLI refuses: *"Video casting in CLI mode requires --cast <Chromecast or DLNA TV>."* |
 | `library-dir` | a local-library scan of the folder; see `local-library` |
 
+### A playlist long enough to scroll, from one env var
+
+No row here is a long playlist, and driving 200 files in through the GUI is a Route D session per
+launch. **A `.cue` is the way in**: `NULLPLAYER_PLAY` accepts one, `AudioEngine.tracksForCueOrSibling`
+expands it, and every `INDEX` becomes a playlist row — so a cue written over `audio-long` is an
+arbitrary-length playlist that costs one environment variable. This is what reproduced W246:
+
+```bash
+cp tmp/testdata/audio-long.mp3 "$SCRATCH/big.mp3"
+{ echo 'FILE "big.mp3" MP3'
+  for i in $(seq 1 200); do s=$(( (i-1)*6 ))
+    printf '  TRACK %02d AUDIO\n    TITLE "Row %03d of 200"\n    INDEX 01 %02d:%02d:00\n' \
+           $i $i $(( s/60 )) $(( s%60 ))
+  done
+} > "$SCRATCH/big.cue"
+NULLPLAYER_PLAY="$SCRATCH/big.cue" ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode wmp
+```
+
+**Number the rows in their titles.** "Row 137 of 200" on screen is the scroll position, read
+straight off a capture; identical titles measure nothing. And keep the tracks long enough for the
+measurement: 6-second rows advance the playing track every 6 seconds, and any surface that follows
+the playing track will fight the gesture you are testing — which is a true behaviour, but it is not
+the one under test. Widen the `INDEX` spacing when the follow gets in the way.
+
 **The row an agent gets wrong is `audio-short`.** A seek, a drag, a two-capture comparison or any
 session long enough to read a log needs `audio-long`. Five seconds is not a test; it is a race
 against the track ending.

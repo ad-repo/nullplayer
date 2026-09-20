@@ -82,6 +82,28 @@ func move(_ points: [CGPoint]) {
     }
 }
 
+/// Wheel events at one point.
+///
+/// `units` is the whole difference between the two devices and a surface may read only one of
+/// them: `.pixel` is a trackpad — a precise, continuous delta in points, which is what
+/// `hasPreciseScrollingDeltas` reports and what a per-point scroller consumes — and `.line` is a
+/// mouse wheel, whose delta is a line count. A view that scrolls under one and not the other is
+/// not a flaky view; post both before believing either.
+func scroll(_ x: Double, _ y: Double, count: Int, delta: Int32, precise: Bool) {
+    let p = CGPoint(x: x, y: y)
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?
+        .post(tap: .cghidEventTap)
+    usleep(150_000)
+    for _ in 0..<count {
+        let event = CGEvent(scrollWheelEvent2Source: nil, units: precise ? .pixel : .line,
+                            wheelCount: 1, wheel1: delta, wheel2: 0, wheel3: 0)
+        event?.location = p
+        if precise { event?.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1) }
+        event?.post(tap: .cghidEventTap)
+        usleep(40_000)
+    }
+}
+
 func pairs(_ label: String, _ raw: ArraySlice<String>, minimum: Int) -> [CGPoint] {
     let numbers = raw.compactMap(Double.init)
     guard numbers.count >= minimum, numbers.count % 2 == 0 else {
@@ -103,10 +125,18 @@ case "dblclick":
         FileHandle.standardError.write("usage: winhelper dblclick <x> <y>\n".data(using: .utf8)!); exit(1)
     }
     dblclick(x, y)
+case "scroll":
+    guard args.count >= 6, let x = Double(args[2]), let y = Double(args[3]),
+          let count = Int(args[4]), let delta = Int32(args[5]) else {
+        FileHandle.standardError.write(
+            "usage: winhelper scroll <x> <y> <count> <delta> [line|precise]\n".data(using: .utf8)!)
+        exit(1)
+    }
+    scroll(x, y, count: count, delta: delta, precise: args.count > 6 && args[6] == "precise")
 case "move":
     move(pairs("move", args.dropFirst(2), minimum: 2))
 case "drag":
     drag(pairs("drag", args.dropFirst(2), minimum: 4))
 default:
-    FileHandle.standardError.write("usage: winhelper windows|click|dblclick|move|drag\n".data(using: .utf8)!); exit(1)
+    FileHandle.standardError.write("usage: winhelper windows|click|dblclick|scroll|move|drag\n".data(using: .utf8)!); exit(1)
 }

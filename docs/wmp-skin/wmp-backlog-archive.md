@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W247.** (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g and the sweep damage-detector row, both closed the same day and archived below, and the `Xbox Live Skin` playlist-scrolling row, which is open in Tier 1c.) Check this file before reusing any number — the live backlog is a
+**The next free number is W247.** (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -39,6 +39,74 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+## W246 — the playlist was pinned to the playing track, closed 2026-09-20
+
+The row as it stood in `WMP_TASKS.md` when it was taken, the only row of Tier 1c:
+
+> | W246 | **A large playlist cannot be scrolled properly** | **unmeasured.** Reported live 2026-09-20 on `Xbox Live Skin`; the surface is the hosted `<PLAYLIST>` overlay, which is **175 uses across 170 of 179 archives** (Tier 1e's table), so if the cause is the overlay rather than the skin the population is nearly the whole corpus | Not blocked, and **not yet reproduced** — capture the reporter's gesture before ranking. The skin's `plView` authors `<playlist id="playlist1" width="jscript:plFrame.width" …>` with **no scrollbar of its own**, so this is the overlay's own scrolling and not a skin-authored slider bound to it. **The candidate is `WMPPlaylistSurfaceView.scrollWheel` (`WMPWidgetViews.swift:103`): it advances `firstVisibleIndex` by exactly ±1 per event and ignores `scrollingDeltaY`'s magnitude**, so a trackpad flick or a long list moves one row at a time and there is no thumb, no page scroll and no scroll-to-end — measure it before assuming it is the whole report, because "properly" may also mean the rows the `columns` attribute declares or a selection that scrolls out from under the highlight. There is no headless instrument for this: a sweep sees the default state only (W73's caveat), so **drive the app** — `live-ui-testing`, and `harness.md` § *Debugging a live defect*. Load a playlist long enough to need it (`scripts/testdata.sh`, `app-control` § Route C) and read `winhelper` gestures against the drawn rows. Evidence: `object-model.md` § *Playlist kinds*. |
+
+**The row's candidate was real and was the smaller half. The list was not scrolling slowly; past
+one page around the playing track it was not scrolling at all.** `update(_:)` called
+`scrollSelectionIntoView()`, and that method does not merely scroll — it clamps `firstVisibleIndex`
+into `selected - visibleRows + 1 ... selected`. A host refresh enters `update(_:)` ~12 times a
+second whether or not anything moved (the W224 comment in the same method says so), so every wheel
+gesture was undone within ~85 ms.
+
+**Reproduced by driving the debug build**, `Xbox Live Skin`/`plView` (`playlist1`, 312x172 → 11
+rows), a 200-row playlist and playback running. Wheel events posted with a `scroll` verb added to
+`winhelper` for this, each capture `screencapture -o -x -l <id>` at 880x686 against a 440x343
+window:
+
+| Gesture | Before | After |
+|---|---|---|
+| 70 events down, from row 1 | **stops at row 19** — the playing row pinned to the top | row 71 at the top, one row per event |
+| 40 events up | **stops at row 2** — the playing row pinned to the bottom | row 1 reachable from anywhere |
+| 12 × 60 points, precise (trackpad) | ~1 row | ~40 rows, the points it is worth |
+| a hard flick | ~1 row | row 200 in the last slot, no overscroll |
+
+**The reach is the whole corpus, and it is measured.** `scripts/wmp_markup_census.sh` over the
+installed corpus on 2026-09-20 — 185 archives, 182 measured after `Darkling` and two
+repaired-header archives — reports `PLAYLIST` at 179 uses across **161 of 182** skins and
+`ITEMSPLAYLIST` at 13 uses across **13 of 182**. A census restricted to those 13 reports `PLAYLIST`
+at **0**, so W97's claim that none of them declares a `PLAYLIST` beside it re-measures true and the
+two sets add: **174 of 182 archives get this exact view**. (The row's own figure — 175 uses across
+170 of 179 — came from Tier 1e's older table and is superseded by this one.) `DROPDOWNPLAYLIST`
+(2 skins) is an `NSPopUpButton` on a different class and is untouched.
+
+The fix is in `WMPPlaylistSurfaceView`: a refresh runs `clampScroll()` alone — the half that keeps
+the position inside the list, which a shrinking playlist still needs — and a **track change** or a
+**keystroke** is what scrolls. `scrollWheel` reads the delta rather than its sign: precise deltas
+accumulate in points with a fractional remainder kept, so slow trackpad scrolling is not rounded
+away, and line deltas move a row each carrying the system's own wheel acceleration.
+
+**Nothing outside WMP is touched.** The class lives in `Windows/WMPSkin/WMPWidgetViews.swift` and
+is referenced only from `WMPMainView.swift`; no shared file changed, so the Classic-safety rule is
+not in play. Verified live on a second skin as well — `Revert`/`vwPL` (`ctrlPlaylist`, 256x260, 13
+rows) scrolls freely where it would have been pinned.
+
+**A corpus render sweep would have proved nothing here and was not run.** This is a refresh-timing
+and input change; the sweep renders the settled default state and never scrolls, so a
+byte-identical sweep across it is unmeasured rather than unchanged (W73's caveat, and the rule that
+a byte-identical sweep across a hover/drag/timer/playback change measures nothing).
+
+**Two things the row asked about are real and were not the report, so neither was fixed.** There is
+still **no scrollbar** — the corpus authors no thumb against a hosted `<PLAYLIST>` and this surface
+offers none, so no page scroll and no drag-to-position — and the `columns` attribute
+(`name=Title;artist=Artist;album=Album;FileType=Type;duration=Length;` on `Xbox Live Skin`) is
+still drawn as title and artist. Either could be opened as its own row; neither reproduces the
+report.
+
+**The follow-the-playing-track pull-back is unchanged and is deliberate** (W224, reported against
+`nvidia`): a track change still brings the playing row into view, which is what WMP's own playlist
+does. It is very visible against a fixture of 6-second tracks and rare against real ones.
+
+Tests: `Tests/NullPlayerAppTests/WMPPlaylistScrollTests.swift` — ten cases; **six fail against the
+old code** and the other four are the invariants the fix deliberately keeps (track change,
+keystroke, end clamp, short list). Rules: `skills/wmp-skin-guide/SKILL.md` § *The playlist
+highlight is ours*; the `winhelper scroll` verb and the two wheel-unit traps are
+`skills/app-control/SKILL.md` § Route C; the long-playlist cue fixture is
+`skills/app-control/reference/test-data.md` § *A playlist long enough to scroll*.
 
 ## W244 — a view that sizes itself in `onLoad`, closed 2026-09-20
 

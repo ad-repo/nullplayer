@@ -1782,6 +1782,29 @@ reasoning.
   `scrollSelectionIntoView()` pulls `firstVisibleIndex` the minimum distance to keep that row on
   screen, so a playing track past the visible rows no longer scrolls away. This surface has no
   `NSScrollView` — `firstVisibleIndex` and the wheel handler are the whole of its scrolling.
+- **Scrolling to the selection is an event, not a state, and a host refresh is not one (W246).**
+  `scrollSelectionIntoView()` does not merely *scroll*: it clamps `firstVisibleIndex` into
+  `selected - visibleRows + 1 ... selected`. Calling it from `update(_:)` — which a host refresh
+  enters ~12 times a second whether or not anything moved — therefore pinned the list to the
+  playing track permanently: a wheel gesture moved it and the next refresh put it back within
+  ~85 ms. Reported live 2026-09-20 on `Xbox Live Skin` as *"a large playlist cannot be scrolled
+  properly"*, and it was not a rate defect but a total one — with a 200-row playlist, **70 wheel
+  events down reached row 19 and stopped and 40 back up reached row 2 and stopped**, because the
+  playing row was pinned first to the top and then to the bottom of an 11-row window. Rows 20-200
+  could not be reached at all. A refresh now runs `clampScroll()` alone (the half that keeps the
+  position inside the list, which is what a shrinking playlist still needs); a **track change** and
+  a **keystroke** are what scroll. The wheel also read only the *sign* of `scrollingDeltaY`, so a
+  trackpad flick carrying hundreds of points moved one row: precise deltas now accumulate in points
+  with a fractional remainder kept, line deltas move a row each and carry the system's own
+  acceleration. **This is one view shared by 174 of the 182 measured archives** — 161 declare
+  `PLAYLIST`, 13 declare `ITEMSPLAYLIST` and none of those 13 declares a `PLAYLIST` beside it
+  (`scripts/wmp_markup_census.sh`, 2026-09-20) — so it was every skin's playlist, not one skin's.
+  `WMPPlaylistScrollTests` holds all of it down; six of its ten cases fail against the old code and
+  the other four are the invariants the fix deliberately keeps. **What is still missing is a
+  scrollbar**: the corpus authors no thumb of its own against a hosted `<PLAYLIST>` and this
+  surface offers none, so there is no page scroll and no drag-to-position — and the `columns`
+  attribute (`Title;Artist;Album;Type;Length` on `Xbox Live Skin`) is still drawn as title and
+  artist. Neither was the report.
 - **A `.wmz` main window's width is not a zoom.** `playlistChromeScale` is
   `mainWindow.width / Skin.baseMainSize.width` — true of a *classic* player, whose 275px grid means
   its width is the size the user chose. A `.wmz` main window is the skin's own canvas: Corona's is

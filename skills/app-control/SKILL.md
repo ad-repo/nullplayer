@@ -200,6 +200,7 @@ osascript -e "tell application \"System Events\" to tell (first process whose un
 | `winhelper windows` | `id layer x y w h alpha title`, on-screen windows owned by NullPlayer |
 | `winhelper click <x> <y>` | `mouseMoved`, then down/up **with `mouseEventClickState = 1`** |
 | `winhelper dblclick <x> <y>` | two clicks, the second at `clickState = 2` |
+| `winhelper scroll <x> <y> <count> <delta> [line\|precise]` | `count` wheel events at one point; `precise` is a trackpad (points), `line` (the default) a mouse wheel (lines) |
 | `winhelper move <x> <y> …` | `mouseMoved` through the path, 250 ms apart |
 | `winhelper drag <x> <y> …` | press, `leftMouseDragged` through the path, release at the last point |
 | `osascript menu.applescript mode\|skin\|list\|closeaux <pid> …` | the Skins / Windows menu verbs |
@@ -216,6 +217,17 @@ osascript -e "tell application \"System Events\" to tell (first process whose un
   is no name fallback: `process "NullPlayer"` is ambiguous whenever the installed build is also
   running, which is how it gets driven by accident.
 - **A contextual menu is not drivable. That is Route D.**
+- **A wheel gesture has two devices and a surface may read only one (W246).** `.line` events carry
+  a line count and `.pixel` events a precise, continuous delta in points — the trackpad's, and the
+  only one `hasPreciseScrollingDeltas` is true for. A list that advances one row per event however
+  hard you flick is reading the delta's *sign*; one that ignores a flick entirely may be reading
+  the other unit. Post both before concluding anything, and remember a scroll is **state the
+  screen holds, not a log line** — capture the window, do not grep for it.
+- **A scroll position can be undone faster than you can capture it.** WMP's playlist was pulled
+  back onto the playing track by every host refresh, ~12 a second, so the gesture *did* land and
+  the picture 80 ms later showed it had not. If a gesture seems not to take, capture immediately
+  after it **and** again a second later: two different pictures mean something is fighting you,
+  not that the event missed.
 
 **Confirm it took:** the subsystem's live trace shows the gesture. A `WMP_SEEK_TRACE=1` drag prints
 one `performSlider` per point and **exactly one** commit; a commit per move is the W156 regression.
