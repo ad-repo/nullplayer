@@ -40,6 +40,62 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+## W217 — `.wmz` had the placement seams and none of the recovery ones, closed 2026-09-20
+
+**All four gaps are closed: G4 on 2026-09-18, G2 and G3 on 2026-09-20, and G1 the same day.** The
+row was the whole of the `.wmz` placement/recovery audit
+(`~/.claude/plans/wmp-window-placement-compliance.md`, and renumbered from W196), and it emptied
+Tier 1g of everything but W214.
+
+The row as it stood in `WMP_TASKS.md` when G1 was taken, the last gap:
+
+> | W217 | `.wmz` shares the `.wal` *placement* seams but none of its *recovery* seams, so a stranded WMP window has no route back | **every `.wmz` session**; the gaps are structural, not per-skin (code audit 2026-09-16, no corpus sweep needed) | **G4 closed 2026-09-18; G2 and G3 closed 2026-09-20. One gap remains.** (G1) `WMPWindowRestorePolicy.safeFrame` (`WMPMainWindowController.swift:2621`) is a second, weaker definition of "on screen" — an 80pt strip and a 24pt bottom margin rather than `WindowPlacement`'s top-left-corner rule, and it picks its screen by first-intersection rather than largest-intersection. It is the audit's step 3, and step 2 is what unblocked it: the session-wide correction now runs in front of that call. Replace the body with `WindowPlacement.isReachable`/`hostScreen`/`rescued`, or delete the call in `restoreFrame` and let the correction plus the settle sweep own it; `Tests/NullPlayerAppTests/WMPPhase3Tests.swift:108-112` pins the current behaviour and changes with it. **Look at `restoreWindowPositions` (`WindowManager.swift`) in the same pass** — it is the one recovery seam still `.wal`-only and the last user of `appliesWinampModernPlacement` outside the `.wal` arrangement. First step: read `~/.claude/plans/wmp-window-placement-compliance.md`. **Verify live** (`WMP_PLACE_TRACE=1`, `Halo 2` as the load case, `Corona` as the control), reading frames back through `app-control`'s `winhelper windows`; Classic and Original must be byte-identical. Evidence: `SKILL.md` § *Window placement and recovery*. |
+
+**G1 was deleted rather than rewritten, and the reason is the part worth keeping.** The row offered
+two shapes — replace `WMPWindowRestorePolicy.safeFrame`'s body with
+`WindowPlacement.isReachable`/`hostScreen`/`rescued`, or delete the call and let the correction plus
+the settle sweep own it. Reading the call site chose the second: **the clamp was measured against a
+size the window never has.** `restoreFrame` stores the frame in `pendingRestoredFrame`, and the apply
+at the other end keeps only its top-left — width and height come from the loaded scene, because a
+`.wmz` window's size *is* the skin. A validation of the saved rectangle was validating a rectangle
+that does not survive the next statement, so porting it to the right rule would have made a correct
+rule out of a measurement of the wrong object.
+
+**What owns reachability instead is the pair of seams G2 and G3 put either side of it**: the
+whole-session group correction before (`AppStateManager.correctedRestoredFrames`, whose `main` is
+what `restoreWindowFrames` hands the controller) and `ensureAllWindowsOnScreen()` after the skin has
+sized the window — the load site at the end of the skin load task for the skinned path, the
+post-restore settle for the unskinned one. A per-window clamp in between is exactly the clamping the
+group offset exists to prevent: it ran *on the corrected frame* and could undo it.
+
+**The other three ways it was wrong**, kept because the class recurs: an 80pt strip and a 24pt bottom
+margin is not `WindowPlacement`'s top-left-corner rule; the strip it guaranteed on a borderless
+`.wmz` window can be pure artwork with nothing on it to grab; and it picked its screen with
+`first(where: intersects)` rather than largest-intersection then nearest-by-centre, so a frame
+straddling two displays could be clamped onto whichever one came first in `NSScreen.screens`.
+
+**`restoreWindowPositions` (`WindowManager.swift`) was the row's second instruction and it has no
+callers.** It was carried on the page as "the one recovery seam still `.wal`-only" and "the right
+place to look when G1 is taken up"; looking found that nothing in `Sources` or `Tests` invokes it. It
+is dead code re-applying raw `UserDefaults` frames, so its `.wal`-only gate is not a recovery gap any
+user can reach, and it was left untouched rather than have a gate widened for a path that never runs.
+**Check that before reviving it** — in `.wmz` it would run behind the session correction and undo it,
+which is the same defect G1 was.
+
+**The blast radius is the smallest of the four gaps: one `.wmz`-only file.** G2 and G3 were shared
+`App/` code and needed the gate argued site by site; G1 touches `WMPMainWindowController.swift` and
+nothing else, so Classic and Original are byte-identical by construction rather than by reasoning.
+Full suite green (2,519 tests).
+
+**Two tests, and the pair is deliberate**
+(`Tests/NullPlayerAppTests/WMPPlacementRecoveryTests.swift`): the controller keeps the top-left it is
+handed for a frame far outside any display, and the seam above still rescues that same frame. Either
+alone would pass while `.wmz` restore had no on-screen rule at all. The vertical half of the first
+one is ordinary on purpose — **AppKit constrains a `setFrame` whose top is above the screen itself**,
+so a fixture reaching for the top edge measures AppKit's rule instead of ours (it cost one failing
+run to find). Evidence: `wmp-skin-guide` § *Window placement and recovery*, `ui-guide`
+§ *Off-Screen Window Recovery*.
+
 ## W246 — the playlist was pinned to the playing track, closed 2026-09-20
 
 The row as it stood in `WMP_TASKS.md` when it was taken, the only row of Tier 1c:

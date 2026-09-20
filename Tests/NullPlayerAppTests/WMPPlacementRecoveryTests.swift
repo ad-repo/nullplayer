@@ -146,6 +146,62 @@ final class WMPPlacementRecoveryTests: XCTestCase {
         XCTAssertTrue(WindowPlacement.isReachable(corrected["main"]!, screens: [region]))
     }
 
+    // MARK: - G1, the second definition of "on screen" that is no longer there
+
+    /// `restoreFrame` re-derived its own idea of on-screen, and this is the frame that proves it
+    /// does not any more.
+    ///
+    /// `WMPWindowRestorePolicy.safeFrame` preserved an 80pt strip of the saved rect and allowed the
+    /// frame to sit with 24pt above the screen bottom, picking its screen by *first* intersection.
+    /// A saved rect this far to the right came back clamped to `screen.maxX - 80` — a borderless
+    /// `.wmz` window showing 80pt of artwork with nothing on it to grab. The controller now keeps
+    /// the frame it was handed, because the two seams either side of it own reachability:
+    /// `correctedRestoredFrames` before (G2) and `ensureAllWindowsOnScreen` after the skin has
+    /// sized the window (G3).
+    func testTheRestoredFrameIsNotClampedByTheControllerItself() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WMPG1-\(UUID().uuidString)", isDirectory: true)
+        let suite = "WMPG1.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = WMPMainWindowController(
+            importer: WMPSkinImporter(directoryURL: root, defaults: defaults))
+        defer {
+            controller.prepareForUITeardown()
+            controller.window?.close()
+        }
+
+        // Far right of any attached display, so the assertion does not depend on this machine's
+        // screens: every definition of "safe" would have moved it, and none runs here now. The
+        // *vertical* placement is deliberately ordinary — AppKit constrains a frame whose top is
+        // above the screen itself, which would measure its rule rather than ours.
+        let saved = NSRect(x: 200_000, y: 300, width: 327, height: 294)
+        controller.restoreFrame(saved, skinName: nil, viewID: nil)
+
+        let restored = try XCTUnwrap(controller.window?.frame)
+        XCTAssertEqual(restored.minX, saved.minX,
+                       "the saved left edge survived: no local clamp ran")
+        XCTAssertEqual(restored.maxY, saved.maxY,
+                       "and so did the saved top edge — the size is the player's, the top-left is the session's")
+    }
+
+    /// The responsibility moved, it did not vanish: the same frame is rescued by the seam that owns
+    /// the rule. If this ever fails while the test above passes, `.wmz` restore has no on-screen
+    /// rule at all.
+    func testTheSeamAboveStillRescuesTheFrameTheControllerNoLongerTouches() {
+        let saved = NSRect(x: 200_000, y: 300, width: 327, height: 294)
+        XCTAssertFalse(WindowPlacement.isReachable(saved, screens: [region]))
+
+        let corrected = AppStateManager.correctedRestoredFrames(["main": saved],
+                                                                screens: [region],
+                                                                force: false)
+        let main = corrected["main"]
+        XCTAssertNotNil(main)
+        XCTAssertTrue(WindowPlacement.isReachable(main!, screens: [region]),
+                      "the session correction is what hands `restoreFrame` its frame")
+        XCTAssertEqual(main?.size, saved.size, "a rescue moves, it never resizes")
+    }
+
     // MARK: - G3, the contract the sweep's skip rests on
 
     /// The safety net now skips any window with a `parent`, and this is why.

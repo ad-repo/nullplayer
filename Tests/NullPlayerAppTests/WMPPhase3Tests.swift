@@ -103,18 +103,6 @@ final class WMPPhase3Tests: XCTestCase {
         controller.window?.close()
     }
 
-    func testRestorePolicyPreservesSafeTopLeftAndClampsOffscreenFrames() {
-        let screen = NSRect(x: 0, y: 0, width: 1000, height: 800)
-        let safe = WMPWindowRestorePolicy.safeFrame(
-            NSRect(x: 100, y: 200, width: 400, height: 300), screens: [screen])
-        XCTAssertEqual(safe, NSRect(x: 100, y: 200, width: 400, height: 300))
-
-        let repaired = WMPWindowRestorePolicy.safeFrame(
-            NSRect(x: 2000, y: 1600, width: 400, height: 300), screens: [screen])
-        XCTAssertLessThanOrEqual(repaired.maxY, screen.maxY)
-        XCTAssertLessThanOrEqual(repaired.minX, screen.maxX - 24)
-    }
-
     func testFrameRestoreRequiresExactWMPSelectionIdentity() {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WMPPhase3Identity-\(UUID().uuidString)", isDirectory: true)

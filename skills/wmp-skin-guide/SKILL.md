@@ -1881,7 +1881,7 @@ is why the rules below are contracts rather than preferences.
 | A resize | per-family | top-left anchored, so growth cannot strand the reachable corner |
 | A display change, a UI Size change, a skin load | `WindowManager.ensureAllWindowsOnScreen` | run, gated `appliesPlacementRecovery` (W217 G3) |
 | A restore onto a smaller desktop | `AppStateManager.correctedRestoredFrames` | run, same gate — one offset for the whole session, and the corrected `main` is what the player is restored to (W217 G2) |
-| The player's own restored frame | `WMPWindowRestorePolicy.safeFrame` | a **second, weaker** definition of "on screen" — W217 G1, still open |
+| The player's own restored frame | `WMPMainWindowController.restoreFrame` | no rule of its own: it keeps the top-left it is handed, which is the corrected one (W217 G1) |
 
 **The recovery gate is `WindowManager.appliesPlacementRecovery`, never `appliesWinampModernPlacement`.**
 The second one stays what it says — the `.wal` *arrangement* — and the two are not interchangeable.
@@ -1930,11 +1930,13 @@ moment the user described, not only the seam the row names.**
 only for exhaustiveness. `ui-guide` § *Off-Screen Window Recovery* names all four families and says
 which of them the sweep reaches.
 
-**`restoreWindowPositions` (`WindowManager.swift`) is the one recovery seam still `.wal`-only**, and
-deliberately: it re-applies raw `UserDefaults` frames, and in `.wmz` that would fight
-`WMPWindowRestorePolicy` over the player's frame. It is the last user of
-`appliesWinampModernPlacement` outside the `.wal` arrangement, and it is the right place to look
-when G1 is taken up.
+**`restoreWindowPositions` (`WindowManager.swift`) has no callers, in any family.** It was named as
+the one recovery seam still `.wal`-only and as the right place to look when G1 was taken up; taking
+G1 up found that nothing in `Sources` or `Tests` invokes it. It is dead code that re-applies raw
+`UserDefaults` frames, and its `.wal`-only gate is therefore not a recovery gap any user can reach.
+It was left untouched rather than have its gate widened for a path that never runs — **check that
+before reviving it**, because in `.wmz` re-applying a raw saved rect would run behind the session
+correction and undo it.
 
 **The contract is that one press is enough and a second press is a no-op.** Verify it that way:
 `diff` the window list across two presses, do not judge it by eye.
@@ -1949,7 +1951,9 @@ cannot be produced with the mouse — and a window taller than the display.
 
 **The recovery half's pure geometry is `Tests/NullPlayerAppTests/WMPPlacementRecoveryTests.swift`**:
 the gate in all four families, the docked cluster that comes back touching rather than overlapping,
-and the AppKit contract the child-window skip rests on. Its live half — an unplugged display, a
+the AppKit contract the child-window skip rests on, and G1's pair — the controller keeping the frame
+it is handed, and the seam above still rescuing that same frame, so a regression in either is
+distinguishable from a regression in both. Its live half — an unplugged display, a
 resolution change, a restore onto a smaller desktop — has no headless instrument and was verified by
 driving the app.
 
@@ -2196,9 +2200,13 @@ arithmetic; the live path has no headless probe.
 is not named in `isRunningModernUI`, so a `.wal` session still answers whichever value the user last
 left in the persisted preference.
 
-**`WMPWindowRestorePolicy.safeFrame` is a second, weaker definition of "on screen"** (an 80pt strip,
-a 24pt bottom margin, and `first(where: intersects)` rather than `hostScreen`). It is W217 G1 and is
-still there; nothing new may call it.
+**`WMPWindowRestorePolicy.safeFrame` was a second, weaker definition of "on screen"** (an 80pt strip,
+a 24pt bottom margin, and `first(where: intersects)` rather than `hostScreen`). It was deleted with
+W217 G1 on 2026-09-20 rather than rewritten against `WindowPlacement`, because **the clamp was
+measured against a size the window never has**: `restoreFrame` keeps only the saved top-left and the
+apply takes width and height from the loaded scene. A validation of the saved rectangle was
+validating a rectangle that does not survive the next statement. See § *Window placement and
+recovery* for the two seams that own reachability instead.
 
 ## Debugging a live defect
 

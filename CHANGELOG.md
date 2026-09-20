@@ -12,7 +12,9 @@
   skin load, and the end of restoring a saved session. A session saved on a wide desktop and
   reopened on a narrower one is also moved back as **one group**, so windows you had docked together
   arrive still touching instead of piled on top of each other. Picture-in-place video stays exactly
-  where the skin puts it throughout.
+  where the skin puts it throughout. A saved position is also no longer nudged on the way in by an
+  older, weaker rule of its own — it could leave a window showing a strip of artwork with nothing on
+  it to grab, which on a window with no title bar is the same as being stranded.
 
 - **A long playlist in a Media Player skin scrolls again.** Every skin's playlist is drawn by the
   same list, and it was being pulled back onto the track that is playing roughly twelve times a

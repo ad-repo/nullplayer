@@ -688,7 +688,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let viewMatches = selectedView?.caseInsensitiveCompare(viewID ?? "") == .orderedSame
             || (selectedView == nil && viewID == nil)
         guard nameMatches, viewMatches else { return }
-        pendingRestoredFrame = WMPWindowRestorePolicy.safeFrame(frame, screens: NSScreen.screens.map(\.visibleFrame))
+        // The saved rect, not a locally re-derived "safe" one (W217 G1). There used to be a
+        // second definition of on-screen here — an 80 pt strip and a 24 pt bottom margin,
+        // picking its screen by first intersection — and it was wrong three times over: it is
+        // not `WindowPlacement`'s top-left-corner rule, the strip it guarantees on a
+        // borderless `.wmz` window can be pure artwork with nothing to grab, and it clamped
+        // against the *saved* size when the size that lands is the skin's (see the
+        // `pendingRestoredFrame` apply below, which keeps only the top-left). Reachability is
+        // owned by the two seams that run either side of this one: the whole-session group
+        // correction before it (G2, `AppStateManager.correctedRestoredFrames`, which is what
+        // `restoreWindowFrames` hands us) and `ensureAllWindowsOnScreen()` after the skin has
+        // sized the window (G3, the load site above and the post-restore settle).
+        pendingRestoredFrame = frame
         pendingRestoredViewID = viewID
         if loadedSkin != nil { reloadSelectedSkin() }
         else if skinName == nil, let safe = pendingRestoredFrame {
@@ -3305,17 +3316,5 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Whether any open WMP window is showing a view that provides `surface`.
     func anyOpenViewProvides(_ surface: WMPSkinSurface) -> Bool {
         materializer?.anyOpenView(where: { skinSurfaces.view($0, provides: surface) }) ?? false
-    }
-}
-
-enum WMPWindowRestorePolicy {
-    static func safeFrame(_ frame: NSRect, screens: [NSRect]) -> NSRect {
-        guard let screen = screens.first(where: { $0.intersects(frame) }) ?? screens.first else { return frame }
-        var result = frame
-        // Preserve the saved top-left anchor where possible while keeping a usable strip visible.
-        let visibleStrip: CGFloat = min(80, max(24, frame.width))
-        result.origin.x = min(screen.maxX - visibleStrip, max(screen.minX - frame.width + visibleStrip, result.origin.x))
-        result.origin.y = min(screen.maxY - frame.height, max(screen.minY - frame.height + 24, result.origin.y))
-        return result
     }
 }

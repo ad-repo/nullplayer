@@ -1074,6 +1074,15 @@ restored to** — `restoreWindowFrames` computed the correction, used it for eve
 handed the WMP controller the raw saved rect, which measured G2 and then discarded it for the one
 window a `.wmz` session always has.
 
+**And nothing downstream may re-derive the rule.** `.wmz` carried a private one —
+`WMPWindowRestorePolicy.safeFrame`, an 80pt strip and a 24pt bottom margin, picking its screen by
+first intersection — that ran on the corrected frame and clamped it again per window, which is the
+clamping `groupOffset` exists to prevent. It was deleted with W217 G1 (2026-09-20). The lesson
+generalises past the gate: it validated the *saved* rectangle, and in `.wmz` the size that lands is
+the skin's, so it was enforcing a rule on a rectangle that did not survive the next statement. A
+restore path's job is to hand on the corrected top-left; the sweep that runs once the window is at
+its final size is what checks the result.
+
 ### Winamp Modern tiler
 
 `WinampModernTiler.nextSlot` clamps its slot back onto the region on both axes. This **reverses** the

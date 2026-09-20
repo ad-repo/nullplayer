@@ -146,10 +146,16 @@ A row lands here when the defect is in `App/WindowManager.swift`, `App/AppStateM
 and reset — and would reproduce identically on a skin that renders perfectly. **The controller was
 added to that list on 2026-09-20 with W244, which closed the same day**: the tier's three rules
 below are about a window rather than a scene and held verbatim there, and the alternative was a size
-defect filed under a drawing tier. **W217's G2 and G3 closed here on 2026-09-20** and are the tier's
-own second rule in miniature: neither the restore correction nor the off-screen safety net has a
-headless instrument, both were verified by driving the app, and the sweep that would have ranked them
-sees the settled default state on one screen and never a display change at all. Tier 1e is its nearest neighbour and is deliberately separate:
+defect filed under a drawing tier. **W217 closed here on 2026-09-20, all four gaps** — G4 on
+2026-09-18, G2 and G3 and then G1 on 2026-09-20 — and it is the tier's own second rule in miniature:
+neither the restore correction nor the off-screen safety net has a headless instrument, all of them
+were verified by driving the app, and the sweep that would have ranked them sees the settled default
+state on one screen and never a display change at all. **What G1 leaves behind is in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md) and outlives the row**: the seam it deleted was
+clamping the *saved* rectangle when the size that lands is the skin's, so it was enforcing a rule on
+a rectangle that did not survive the next statement — **check what a validation is measuring before
+porting it to the right rule** — and `restoreWindowPositions`, carried on this page as the last
+`.wal`-only recovery seam, turned out to have **no callers at all**. Tier 1e is its nearest neighbour and is deliberately separate:
 that tier is about *which* window a surface belongs in, this one about the window's own size and
 place.
 
@@ -164,9 +170,10 @@ backed-out measurement is the authored size exactly, so there is nothing there t
 Three rules follow, and they are why these rows do not rank against a starved view:
 
 - **Reach is not a corpus number.** A gate on `uiMode.controllerFamily` affects every `.wmz` session
-  equally, so `scripts/wmp_skin_census.sh` says nothing about it. Both rows below reach every `.wmz`
-  session and are ranked against each other by what a user can do about the result — a stranded
-  borderless window has no route back at all.
+  equally, so `scripts/wmp_skin_census.sh` says nothing about it. The row below reaches every `.wmz`
+  session, and rows here are ranked against each other by what a user can do about the result — a
+  stranded borderless window has no route back at all, which is why W217 outranked W214 until it
+  closed.
 - **No headless instrument reaches it.** `WMP_PLACE_TRACE` sees the one moment a window is *placed*;
   a render dump has no screen, no second display and no restore. Verify by driving the app —
   `skills/live-ui-testing`, and `harness.md` § *Debugging a live defect*.
@@ -176,7 +183,6 @@ Three rules follow, and they are why these rows do not rank against a starved vi
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W217 | `.wmz` shares the `.wal` *placement* seams but none of its *recovery* seams, so a stranded WMP window has no route back | **every `.wmz` session**; the gaps are structural, not per-skin (code audit 2026-09-16, no corpus sweep needed) | **G4 closed 2026-09-18; G2 and G3 closed 2026-09-20. One gap remains.** (G1) `WMPWindowRestorePolicy.safeFrame` (`WMPMainWindowController.swift:2621`) is a second, weaker definition of "on screen" — an 80pt strip and a 24pt bottom margin rather than `WindowPlacement`'s top-left-corner rule, and it picks its screen by first-intersection rather than largest-intersection. It is the audit's step 3, and step 2 is what unblocked it: the session-wide correction now runs in front of that call. Replace the body with `WindowPlacement.isReachable`/`hostScreen`/`rescued`, or delete the call in `restoreFrame` and let the correction plus the settle sweep own it; `Tests/NullPlayerAppTests/WMPPhase3Tests.swift:108-112` pins the current behaviour and changes with it. **Look at `restoreWindowPositions` (`WindowManager.swift`) in the same pass** — it is the one recovery seam still `.wal`-only and the last user of `appliesWinampModernPlacement` outside the `.wal` arrangement. First step: read `~/.claude/plans/wmp-window-placement-compliance.md`. **Verify live** (`WMP_PLACE_TRACE=1`, `Halo 2` as the load case, `Corona` as the control), reading frames back through `app-control`'s `winhelper windows`; Classic and Original must be byte-identical. Evidence: `SKILL.md` § *Window placement and recovery*. |
 | W214 | **`isRunningModernUI` is a two-way switch in a four-family world, so every `!isRunningModernUI` branch treats a `.wmz` window as Classic** | 4 sites, every `.wmz` session (code audit 2026-09-17; no corpus sweep can see this) | Not blocked. This is W217's G4 generalised, and one instance already cost a full live-QA cycle (closed with W213). **Do not gate the four in one sweep** — each is a shared-`App/` path, so gate on the mode and prove Classic and Original byte-identical, separately per site. First step: `handleCenterStackWindowWillClose` (`:2036`), the one confirmed live. Verify with `WMP_SIZE_TRACE=1` and `WMP_PLACE_TRACE=1`. Evidence: `SKILL.md` § *`isRunningModernUI` is a two-way switch in a four-family world*, which ranks all four. |
 
 ## Tier 1h — the borrowed window frame
