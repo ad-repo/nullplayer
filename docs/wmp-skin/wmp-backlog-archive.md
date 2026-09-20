@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W245.** (W244 was issued 2026-09-20 for the `onLoad` self-resize row in Tier 1g.) Check this file before reusing any number — the live backlog is a
+**The next free number is W246.** (W244 and W245 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g and the sweep damage-detector row in Tier 1d.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**

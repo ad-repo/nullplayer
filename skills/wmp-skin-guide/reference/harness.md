@@ -1978,9 +1978,16 @@ at 167x153 centred at 116,81 where `videoBox@1x.png` was an empty black `centerB
 
 **Two process lessons this row cost, both cheap to reuse.** A sweep through
 `scripts/wmp_render_sweep.sh` reported **48 of 184 archives damaged by interleaved writes**, which
-puts a skin into `compare`'s *not compared* list and would have hidden the one line this change
-moves; the direct `swift test` invocation above dumps no PNGs, printed no damage, and is the right
-instrument for an invariants diff. And the pre-W241 baseline had to be built in a worktree —
+puts a skin into `compare`'s *not compared* list — `XBOX` among them, so the one line this change
+moves would have been dropped from the diff. The direct `swift test` invocation above dumps no PNGs,
+printed no damage, and is the right instrument for an invariants diff. **Those 48 are false
+positives and are ranked as W245**: the detector compares a block's `views=` against its
+`RENDER-DUMP ` line count, and a 0x0 canvas prints two of those lines — the dump and then a
+`FAILED [WMP0035]` when the PNG write refuses the empty canvas. 76 views corpus-wide, 48 archives,
+and the same set on every run, which is the tell: interleaving is not deterministic. Nothing is
+actually being lost — the single `UNRESOLVED` line that separates a dump sweep (445) from a direct
+run (446) is `Darkling.wmz`, the sole entry in `wmp_corpus_exclusions.txt`, which the sweep farms
+out and the direct run does not. And the pre-W241 baseline had to be built in a worktree —
 `git worktree add` plus symlinks for `Frameworks/` **and** for the frameworks and dylibs under
 `.build/arm64-apple-macosx/debug/`, without which the test bundle builds and then fails to `dlopen`
 VLCKit.
