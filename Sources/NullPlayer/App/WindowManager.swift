@@ -4683,12 +4683,36 @@ class WindowManager {
         defaults.set(true, forKey: "visClassicFitToWidth")
     }
 
+    /// Which families may have Classic's visualization defaults written over their session.
+    ///
+    /// **W214.** `isRunningModernUI` answers a two-way question in a four-family world: it is
+    /// `false` for `.wmz` as much as for `.classic`, so a guard written to mean "not Modern"
+    /// admitted a WMP session. Pure so both sides of the gate can be pinned without a running
+    /// window — gate the rule, not the predicate, as `normalizedClassicCenterStackRestoredFrame`
+    /// does.
+    static func appliesClassicVisualizationDefaults(
+        isRunningModernUI: Bool,
+        isRunningWMPUI: Bool
+    ) -> Bool {
+        !isRunningModernUI && !isRunningWMPUI
+    }
+
     private func applyClassicVisualizationDefaults(notify: Bool) {
         // Classic and modern skins are independent. WindowManager still loads the
         // remembered classic skin at startup so it is ready if the user switches UI
         // modes, but its visualization defaults must not overwrite modern scoped
         // profile preferences while the modern UI is active.
-        guard !isRunningModernUI else { return }
+        //
+        // W214: `!isRunningModernUI` is false for `.wmz` as well as `.classic`, so picking a
+        // classic skin from Skins > Classic while WMP is running used to rewrite the WMP
+        // session's own vis keys to classic's defaults and post the live profile-load
+        // commands — measured on screen as the Spectrum Analyzer flipping from "Enhanced" to
+        // vis_classic / "Purple Neon" while the WMP window never changed at all. Gate on the
+        // mode: `.classic` and `.winampModern` are untouched, only `.wmz` is excluded.
+        guard Self.appliesClassicVisualizationDefaults(
+            isRunningModernUI: isRunningModernUI,
+            isRunningWMPUI: isRunningWMPUI
+        ) else { return }
 
         let classicProfile = Self.classicVisClassicProfileName
         writeClassicVisualizationDefaultKeys(for: .all, defaults: .standard)

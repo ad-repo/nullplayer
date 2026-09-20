@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **Picking a Classic skin while running a Media Player skin no longer wipes out your
+  visualization.** The Skins menu lists every Classic skin whatever skin you are running, and
+  choosing one from a Media Player session quietly reset the analyzer — its mode, its colour profile
+  and its fit-to-width — to the Classic skin's own defaults. The Spectrum Analyzer changed in front
+  of you mid-track, and the change outlived the session. A Media Player session now keeps the
+  visualization you gave it. Classic, Modern and Original are unchanged: there, loading a skin still
+  applies that skin's defaults exactly as before.
+
 - **A Media Player skin's meter and network windows come back the size you left them.** The
   PeppyMeter and Flow windows were the only two whose saved height was rewritten on the way back in,
   by a rule that belongs to the Classic skin — including a migration that shrinks a window left at

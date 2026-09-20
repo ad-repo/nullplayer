@@ -2149,8 +2149,8 @@ cycle: `tightenClassicCenterStackIfNeeded` grew `circle`'s 192x82 borderless pla
 `isRunningWMPUI`.
 
 Four sites were audited 2026-09-17 (no corpus sweep can see this) and ranked as W214 in the order
-they were worth taking. **The first two were measured on 2026-09-20 and only one of them was a
-defect**; two remain:
+they were worth taking. **Three were measured on 2026-09-20 and two of them were defects**; one
+remains:
 
 1. **`handleCenterStackWindowWillClose`** (`:2036`) — **measured clean 2026-09-20, nothing to gate.**
    What W213 and W237 left ungated there is `slideUpWindowsBelow` plus the child re-dock, and both
@@ -2167,9 +2167,10 @@ defect**; two remain:
    so the slide's `isVisible` guard makes it inert.
 2. **`normalizedCenterStackRestoredFrame`** (`:5608`) — **closed 2026-09-20**, and it was the real
    one. See *A restored `.wmz` window keeps the size it saved* below.
-3. `applyClassicVisualizationDefaults` (`:4610`) writes Classic visualization defaults during a WMP
-   session. **Take this one next.**
-4. `expectedMainHeightForCurrentHT` (`:5534`).
+3. **`applyClassicVisualizationDefaults`** (`:4700`) — **closed 2026-09-20**, and it was the second
+   real one. See *A `.wmz` session keeps the visualization it was given* below.
+4. `expectedMainHeightForCurrentHT` (`:5534`). **Take this one next**, and measure it before gating
+   it.
 
 **Do not gate them in one sweep.** Each is a shared-`App/` path and `CLAUDE.md`'s rule binds: gate on
 the mode, prove Classic and Original byte-identical, and measure each separately. Verify with
@@ -2181,6 +2182,51 @@ as one for three days on the strength of the predicate alone, and the measuremen
 still runs is the rule the menu already runs ungated. What an audit of `!isRunningModernUI` can say
 is *this code is reachable in WMP*; whether the code is Classic's geometry or nobody's is a separate
 question, and the answer is on screen.
+
+### A `.wmz` session keeps the visualization it was given (W214, closed 2026-09-20)
+
+`applyClassicVisualizationDefaults` guarded on `!isRunningModernUI`, which is `false` for the WMP
+controller, so it ran in full during a `.wmz` session: it wrote Classic's six scoped visualization
+keys and posted the live `.visClassicProfileCommand` reloads.
+
+**The route is a menu item, not a launch.** Skins > Classic lists every installed `.wsz` in WMP mode,
+and `selectClassicSkin` -> `loadSkin` -> `loadClassicSkin` reaches this. Launch is clean and was
+measured so: `WindowManager.swift:850` skips `loadDefaultSkin()` for `.wmz`, and `AppStateManager`
+restores a classic skin only in `.classic`.
+
+**Measured live under `AlienMorph`, analyzer open, track playing — one click on `ascii`:**
+
+| key | before | after (pre-fix) |
+|---|---|---|
+| `mainWindowVisMode` / `modernMainWindowVisMode` | `Matrix` | `vis_classic` |
+| `spectrumQualityMode` | `Enhanced` | `vis_classic` |
+| `visClassicLastProfileName.mainWindow` / `.spectrumWindow` | `Lavender Pink Tips` | `Purple Neon` |
+| `visClassicFitToWidth.mainWindow` | `0` | `1` |
+
+**The screen is what makes it a defect rather than a key diff**: the open Spectrum Analyzer flipped
+from the Enhanced LED matrix to the vis_classic "Purple Neon" analyzer mid-playback, while the WMP
+main window never changed at all — the classic skin the user picked is invisible in WMP, but their
+visualization is gone with it.
+
+The fix is `WindowManager.appliesClassicVisualizationDefaults(isRunningModernUI:isRunningWMPUI:)`, a
+pure static the guard calls — **gate the rule, not the predicate**, as site 2 did. Verified by
+driving the same gesture in all four families: `.wmz` keeps its own keys, `.classic` and
+`.winampModern` still land on `Purple Neon`, and `.modern` reaches them through the designed
+`reloadUI` -> classic branch (`:7962`). Pinned by
+`Tests/NullPlayerAppTests/WMPClassicVisualizationDefaultsTests.swift`, both sides of the gate.
+
+**Two traps this one set.** *"Switch to Classic" is not the test* — that item changes family and
+`reloadUI` re-applies Classic's defaults on purpose, so it looks identical to the defect and is not
+it; the test is a **skin name** further down the same submenu, with the title bar still reading
+Windows Media Player afterwards. And *these keys are global, not per-family*, so once a family switch
+has reset them the reset is still there when you come back to `.wmz` — start from a fresh WMP launch
+or you will measure the previous family's reset.
+
+**What is still there and was deliberately not taken**: `selectClassicSkin` (`ContextMenuBuilder.swift:4796`)
+and `loadDefaultClassicSkin` (`:4534`) branch on the same two-way predicate, so in WMP they take the
+"already in classic mode" branch and load a classic skin without switching family — the user picks a
+skin and nothing visible happens. Same class, two more sites, and W214's own rule says not to gate
+them in the same sweep.
 
 ### A restored `.wmz` window keeps the size it saved (W214, closed 2026-09-20)
 
