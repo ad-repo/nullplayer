@@ -96,6 +96,15 @@ so a fixture reaching for the top edge measures AppKit's rule instead of ours (i
 run to find). Evidence: `wmp-skin-guide` § *Window placement and recovery*, `ui-guide`
 § *Off-Screen Window Recovery*.
 
+**The live leg was deferred, and this row is closed without it.** G2, G3 and G4 were each verified by
+driving the app; G1 was not. What is unverified is what no headless instrument reaches — a restore
+onto a smaller desktop, an unplugged display, a resolution change — measured the way the section
+prescribes (`WMP_PLACE_TRACE=1`, `Halo 2` as the load case, `Corona` as the control, frames read back
+through `winhelper windows`). The argument for closing anyway is that G1 *removes* a step rather than
+adding one, and the seams it defers to were themselves verified live two days earlier; the risk it
+leaves is a restore path whose only remaining check now runs a beat later than it used to. **If a
+`.wmz` window ever comes back unreachable after a display change, start here.**
+
 ## W246 — the playlist was pinned to the playing track, closed 2026-09-20
 
 The row as it stood in `WMP_TASKS.md` when it was taken, the only row of Tier 1c:

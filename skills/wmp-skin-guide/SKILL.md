@@ -1953,7 +1953,10 @@ cannot be produced with the mouse — and a window taller than the display.
 the gate in all four families, the docked cluster that comes back touching rather than overlapping,
 the AppKit contract the child-window skip rests on, and G1's pair — the controller keeping the frame
 it is handed, and the seam above still rescuing that same frame, so a regression in either is
-distinguishable from a regression in both. Its live half — an unplugged display, a
+distinguishable from a regression in both. **G1's live leg is outstanding**: unlike G2, G3 and G4 it
+was closed on the unit pair alone, so a restore onto a smaller desktop, an unplugged display and a
+resolution change have not been driven against it. It is the first thing to run if a `.wmz` window
+comes back unreachable. Its live half — an unplugged display, a
 resolution change, a restore onto a smaller desktop — has no headless instrument and was verified by
 driving the app.
 
