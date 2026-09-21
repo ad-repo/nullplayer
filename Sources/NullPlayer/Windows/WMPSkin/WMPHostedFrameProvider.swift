@@ -379,6 +379,16 @@ final class WMPHostedFrameProvider {
     }
 
     private func store(_ artwork: SkinnedSurfaceFrameArtwork, for key: Key) {
+        #if DEBUG
+        if let directory = ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_DUMP"] {
+            let url = URL(fileURLWithPath: directory, isDirectory: true)
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let bitmap = NSBitmapImageRep(cgImage: artwork.image)
+            try? bitmap.representation(using: .png, properties: [:])?.write(
+                to: url.appendingPathComponent("\(key.width)x\(key.height)-frame.png"))
+            Self.trace("dump \(key.width)x\(key.height) content=\(artwork.contentRect) over=\(artwork.paintsOverContent)")
+        }
+        #endif
         // The new skin has answered for this size, so the old one's frame has nothing left to cover.
         outgoing.removeValue(forKey: key)
         cache[key] = artwork
