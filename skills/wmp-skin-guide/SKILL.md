@@ -165,9 +165,12 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   lookup falls back to the nearest held frame within the same 15%, because a skin change is usually
   a size change too: different borders move every hosted window by the difference, and the
   reporter's pair moves the library 890 → 887. After: all 51 of those draws are
-  `standin=outgoing from=550x890`, and no frame is bare. **That size change is W249 and this does not
-  fix it** — the dock and `HostedWindowBorderLayout` both own a docked window's height, so the slide
-  still costs a donor render per switch; it is now paid behind a correct frame instead of bare chrome.
+  `standin=outgoing from=550x890`, and no frame is bare. **An outer-size change is expected when
+  borders differ.** W249 attributed it to a docking conflict, but live retesting preserved the
+  interior: 890 → 887 → 890 with 822 points inside, and 890 → 893 → 890 with 825 points inside.
+  Its cited trace prints before the resize, not after a refusal. The row and reproducible evidence
+  moved to `LOW_QUALITY_TASKS.md` on 2026-09-20; do not restore that diagnosis without a settled
+  interior change. A new skin still needs its own donor render, held behind the outgoing frame.
 - **The stand-in is primed before any window opens, so a first open is never unskinned (W230).**
   Learning a ring donor's borders *is* composing a ring — `WMPHostedFrameTemplate.border` does it at
   the reference size when the skin loads — and the composition used to be discarded, so the first

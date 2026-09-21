@@ -23,7 +23,52 @@ The live backlogs are [`WMP_TASKS.md`](WMP_TASKS.md) and
 
 ## `.wmz` — Windows Media Player
 
-Moved 2026-09-19 by an audit of the whole page, at rev `2f59b4e3`.
+### W249 — A pre-resize trace was read as a refused resize
+
+**Moved 2026-09-20 after live measurement on `caffef9e`, with no behavior change.**
+The row's decisive line is emitted by `HostedWindowBorderLayout.apply()` **before**
+`apply(size:to:)`. `frame=550x890 … target=550x893` therefore says what the rule is about
+to request, not that the dock refused it. The settled frame and interior are needed too.
+
+The reported AlienMorph / ALXVortex pair was driven in the local debug app with
+`WMP_BORDER_TRACE=1 WMP_FRAME_TRACE=1 WMP_SIZE_TRACE=1 WMP_PLACE_TRACE=1
+./scripts/kill_build_run.sh --debug --log /tmp/w249-before.log -- -uiMode wmp
+-rememberStateEnabled false` (one shell command). Select AlienMorph through the temporary
+`wmpSkinName` defaults preference, not a launch argument: an argument pins the selection
+and defeats menu switching. Open Windows → Library Browser; switch using
+`osascript skills/app-control/scripts/menu.applescript skin <pid> 'Media Player' <name>`.
+Read the settled trace after each prewarm completes, and independently measure with
+`skills/app-control/scripts/winhelper windows` and capture with
+`screencapture -o -x -l <window-id> <output.png>`.
+
+| Run | Settled outer heights | Interior heights throughout |
+|---|---|---|
+| AlienMorph → ALXVortex → AlienMorph → ALXVortex | 890 → 887 → 890 → 887 | 822 |
+| ALXVortex → AlienMorph → ALXVortex, after resizing and explicitly side-docking the library | 890 → 893 → 890 | 825 |
+
+For the second run, the ALXVortex player was `(680,279,339,329)` and the library
+`(1048,279,550,887)` in `winhelper` screen coordinates. Resize its bottom edge with
+`winhelper drag 1320 1163 1320 1166`, then dock it with
+`winhelper drag 1300 297 1271 297`. The library landed at `(1019,279,550,890)`, exactly
+against the player's right edge. On AlienMorph, the row's **exact cited trace** appeared,
+followed by `frame=550x893 interior=490x825 border=42/30/26/30 target=550x893`.
+The reverse switch settled at `frame=550x890 interior=490x825 border=42/30/23/30 target=550x890`.
+Each switch queued just its target size, not a second conflicting size. The live window
+captures `/tmp/w249-morph-825.png` and `/tmp/w249-vortex-825.png` showed the content in its
+borrowed frame. The 3-point upward shift on growth was the existing screen clamp, not an
+interior-height change.
+
+This is counter-evidence to the row's stated universal mechanism, not proof that every
+possible docking configuration is sound. **Reviving it requires a reproducible setup and a
+settled before/after interior change without a user resize**, with the frame mutation that
+caused it identified. Do not infer refusal from a pre-apply line or a normal change of outer
+height: `890 − (42 + 26) == 887 − (42 + 23) == 822`.
+
+**The row, verbatim:**
+
+> | W249 | **A docked hosted window's height is owned by two rules at once, so every skin change slides its interior by the difference between the two skins' borders** | every `.wmz` session in which a hosted window is docked and the skin it is changing to lends a different border — the corpus's rings and panels differ freely, so this is most pairs, not an exotic one | Reproduced on demand 2026-09-20 on the reporter's own pair: **AlienMorph** lends 42/30/**26**/30 and **ALXVortex** 42/30/**23**/30, and the docked library walks 890 → 887 → 890 across switches while its recorded interior walks 825 → 822 → 825. The trace is one line of `WMP_BORDER_TRACE`: `frame=550x890 interior=490x825 border=42/30/26/30 target=550x893` — `HostedWindowBorderLayout` asks for 893, **the dock refuses the three points because it owns that height**, and the interior is then re-read against the new border from a frame the dock imposed. It is the W238 residue class in a new place and the same shape: two halves of a rule disagreeing about one number, each pass leaving a residue. **Do not answer it by widening the 2 pt `lastApplied` tolerance** — that constant is a guess about how far the docking pass settles, and the defect is that a frame we did not choose is read as the user's intent at all; W238 closed by making a read a round trip rather than by loosening one. The question the row has to answer first is which rule owns a docked window's height, because today both do. **W248's outgoing-frame hold makes this invisible, not absent** (`SKILL.md` § *Every NullPlayer window in WMP mode is the skin's or is themed*): the window now wears the outgoing skin's ring across the gap, so the slide costs a full donor render per switch rather than a second of bare chrome. Verify by driving the app — no headless instrument sees a dock. |
+
+The following entries moved 2026-09-19 by an audit of the whole page, at rev `2f59b4e3`.
 
 ### W68 — The Alienware/ALX family draws a shell and nothing in it reacts
 
@@ -102,4 +147,3 @@ Reopen only if a `.cur`/`.ani` decoder arrives for some other reason, at which p
 **The row, verbatim:**
 
 > | W67 | `.cur` and `.ani` cursors | **~70 uses**, a handful of skins (`resize.cur` 26, `over.ani` 23, `sizetopright.cur` 12, `size2_m.cur` 6) | The remainder after the named cursors landed: Windows cursor formats, which no macOS decoder reads. They resolve to no cursor rather than to a wrong one. Worth doing only with a `.cur`/`.ani` decoder, and worth almost nothing without one. |
-

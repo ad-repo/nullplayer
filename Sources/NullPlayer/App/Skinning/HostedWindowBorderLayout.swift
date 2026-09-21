@@ -149,14 +149,11 @@ final class HostedWindowBorderLayout {
         // then its own render. The loop above has just grown these windows to this border, so their
         // frames *are* the target.
         //
-        // **And it is asked for both sizes a window in transition can land on.** The target this
-        // rule computes is not always the size the window ends up at: the library is docked, the
-        // dock owns its height, and two skins lending different borders — `ALXVortex` 42/30/23/30
-        // against `ALXMorph` 42/30/26/30 — leave the rule asking for 893 while the window stays at
-        // 890. Whichever wins, a ring for it is wanted *now*; the loser costs one speculative render
-        // off screen, which is the whole currency this method spends. The 3-point disagreement
-        // underneath is W249 — the dock and this rule both own a docked window's height — and
-        // nothing here fixes it.
+        // Include both the computed target and the actual frame; the provider deduplicates them.
+        // W249 inferred a docking refusal from a trace printed BEFORE apply(size:to:). Live
+        // retesting reached 893 and preserved the 825-point interior in both directions. A
+        // pre-apply frame/target difference does not establish a competing size owner; see
+        // LOW_QUALITY_TASKS.md for the measurements and the evidence needed to revive that claim.
         var sizes: [CGSize] = []
         for entry in WindowManager.shared.hostedBorderWindows {
             guard let window = entry.window, window.frame.width > 0, window.frame.height > 0
