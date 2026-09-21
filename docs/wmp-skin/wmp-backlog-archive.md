@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W251.** (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W252.** (**W251 was issued 2026-09-21** for the live half of W104 and is open in Tier 1e. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -39,6 +39,73 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+
+## W104 — `<NETWORK>` answered nothing, and two members aborted the handler that asked (closed 2026-09-21)
+
+Carried in Tier 1e as "`<NETWORK>` answers nothing, and Flow is not what it means" — **6 uses across
+4 of 177 archives, the smallest surface in the corpus**. It closed as **answered-inert**: the
+quantity `<NETWORK>` measures is a network *session* this player does not have, no number was
+invented for one, and every value it returns is the zero it returned before.
+
+**What was actually wrong was not the element but the members read off it.** Measured 2026-09-21
+over 184 archives and 400 script/markup files, decoded the way `WMPTextDecoder` does (156
+UTF-16-BOM / 146 cp1252 / 89 UTF-8 / 9 UTF-8-BOM), matching `\bnetwork\s*\.\s*([A-Za-z_]\w*)`:
+
+| Member | uses | archives | Before |
+|---|---:|---:|---|
+| `downloadProgress` | 58 | 42 | **unrecognised — aborted the handler** |
+| `bufferingProgress` | 26 | 11 | answered |
+| `receptionQuality` | 9 | 4 | answered |
+| `bitRate` | 9 | 8 | answered, live |
+| `bandWidth` | 9 | 7 | inert `0` |
+| `sourceProtocol` | 6 | 3 | inert `""` |
+| `maxBitRate` | 3 | 3 | **unrecognised — aborted the handler** |
+| `framesSkipped` / `lostPackets` / `receivedPackets` | **0** | 0 | inert `0` |
+
+**The rule this row leaves behind: split a member count by resolution path before ranking it.**
+`downloadProgress`'s 58 uses across 42 archives reads as 42 archives of dead handlers and is
+**one**. 55 of the uses are `wmpprop:` bindings, resolved by `WMPPropertyRegistry` since W93 — a
+separate resolution of the same path from `WMPObjectModel.readNetwork`. Only **3 script reads, all
+in `tubeframe.wmz`**, ever reached the switch. Ranking the unsplit number would have put a
+one-archive fix above `<VIDEOSETTINGS>`'s 94.
+
+**The same split is why the defect survived a reading of the dossier.** `object-model.md` said
+`downloadProgress` and `bufferingProgress` "already resolve" and cited `WMPPropertyRegistry.swift`
+— true of a `<TEXT value="wmpprop:…">` binding, false of every script read. **A citation naming one
+resolution path is not a claim about the other**; both files are now explicit about which is which.
+
+**A third gap, found on the way, is the `alphaBlendTo` trap repeating.**
+`WMPJScriptCompatibility.members` documents itself as "derived from the one object model rather than
+restated, so a member cannot be listed here and missing there" — it is in fact a literal list, and
+`sourceProtocol` had been answered in `readNetwork` since W101's `Corona` case while staying absent
+from it, so the census went on ranking demand for a member the engine answered. The list is synced
+and `WMPNetworkMemberTests` is the check the comment's invariant implies.
+
+**What it does not do, and the choice behind that.** `bufferingProgress` is a field **nothing in
+this app ever writes**, so `downloadProgress` now answers a dead `0`. In `tubeframe` that is
+*visibly* wrong rather than merely absent: `GetMetaData` prints `downloadProgress + "% downloaded"`
+whenever the value is under 100, so its rotating readout goes from **blank** to
+**`Playing: 0% downloaded`** instead of falling through to the `bitRate` branch that would read
+`Playing: 128 K bits/second`. The alternative considered and declined was a constant `100` — truer
+for a player where the media has always fully arrived, but it would flip ~36 archives' buffer bars
+from empty to full off one unmeasured constant, which is a third of the corpus repainted to make one
+skin read right. **The trap `WMPHost.statusText` describes in prose is now reached rather than
+predicted**: a `< 100` test against a field nobody writes reports every skin permanently buffering.
+`Compact.wmz` shows the same trap from the other side — `UpdateReceptionQuality` opens with
+`if (player.network.bufferingProgress < 100) return;` and has always returned early, so its
+`maxBitRate` read is unreachable either way.
+
+**The live half stays open and is the successor**: feed `bufferingProgress` and `receptionQuality`
+from the streaming player's own statistics, **never from Flow** — `Windows/NetworkMonitor` measures
+*interface* throughput for the whole machine, a different quantity from this stream's buffer, and
+wiring one to the other would draw a confident wrong number. Both readouts come right together when
+the field goes live. Flow remains the right *window* for a `<NETWORK>` view; the object and the
+window are two separate answers, and neither was taken here.
+
+**Verified**: `tubeframe.wmz`'s readout populates where it was blank (live, the only skin in the
+corpus with a visible signature for this); `WMPNetworkMemberTests`, both cases, confirmed failing
+against the unfixed object model before being accepted as passing.
 
 
 ## W250 — a hosted window opens onto palette chrome wherever the prewarm did not reach (closed 2026-09-21)

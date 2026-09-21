@@ -222,12 +222,12 @@ the trap that rule exists for.
 | `<PLAYLIST>` family | 175 | 170 | 162 | yes (W93, W97) | — |
 | `<EQUALIZERSETTINGS>` | 170 | 163 | 147 | yes, as the skin's own bound sliders | — |
 | `<VIDEOSETTINGS>` | 94 | 94 | 93 | no | **W103** |
-| `<NETWORK>` | 6 | 4 | 4 | object-only, correctly | **W104** |
+| `<NETWORK>` | 6 | 4 | 4 | object-only, correctly (W104) | **W251** |
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | W103 | `<VIDEOSETTINGS>` binds 94 skins' sliders to controls this player does not have | **94 uses across 94 of 177 archives**, one per skin, 93 of them in a view of their own | **Blocked on a decision, not on drawing work**: either `inert()` the brightness/contrast/hue/saturation panel, or add the four controls to the video path and bind them honestly. **Do not resolve them to a value this player never applies** — a slider that moves and changes nothing is the worse outcome. Answerable since W102 landed. Evidence: `object-model.md` § *The `<VIDEOSETTINGS>` element (W103)*. |
-| W104 | `<NETWORK>` answers nothing, and Flow is not what it means | **6 uses across 4 of 177 archives**; the smallest surface in the corpus | Not blocked. **Feed it from the streaming player's own statistics, never from Flow** — `NetworkMonitor` measures interface throughput for the whole machine, which would draw a confident wrong number. Flow is still the right *window*; the object and the window are two separate answers. Evidence: `object-model.md` § *The `<NETWORK>` element (W104)*. |
+| W251 | `<NETWORK>`'s live numbers: `bufferingProgress` and `receptionQuality` are fields nothing writes | **26 + 9 script uses across 11 and 4 of 184 archives**, plus **55 `wmpprop:` buffer-bar bindings across ~36** riding the same field (measured 2026-09-21; `harness.md` § *Grepping the corpus's script text*) | Successor to **W104, closed 2026-09-21** ([archive](docs/wmp-skin/wmp-backlog-archive.md)), which made the member surface answer instead of abort but left the value a dead `0`. **Feed both from the streaming player's own statistics, never from Flow** — `NetworkMonitor` measures interface throughput for the whole machine and would draw a confident wrong number. **The cost of leaving it is already on screen**: `tubeframe.wmz` reads `Playing: 0% downloaded` on every track because its `GetMetaData` prints the field whenever it is under 100, and ~36 archives draw a permanently empty buffer bar. A constant `100` was declined as unmeasured; the live field corrects both together. Flow is still the right *window* for a `<NETWORK>` view — the object and the window are two separate answers. Evidence: `object-model.md` § *The `<NETWORK>` element (W104)*. |
 
 
 ## Tier 2 — the script runtime, after Phase 3

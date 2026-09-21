@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **A Media Player skin that asks about the network connection no longer loses the readout it was
+  filling.** Reading a download or bitrate figure off the player was enough to kill the whole script
+  the skin was running at the time, so everything that handler had left to do — the rest of a status
+  line, a track readout, an icon — silently never happened. `tubeframe`'s rotating status display
+  was blank for this reason and now fills. The figures themselves are still zero: this player has no
+  streaming-session statistics to report, and nothing here invents one. Classic, Original and Modern
+  are unchanged.
+
 - **A Media Player skin's windows open at their finished size, wearing the skin — every window,
   every skin, including the ones restored when the app starts.** They used to arrive in stages: the
   window appeared at one size, jumped to another, was grown a third time to make room for the skin's

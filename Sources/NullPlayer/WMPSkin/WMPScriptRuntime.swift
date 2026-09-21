@@ -257,7 +257,13 @@ enum WMPJScriptCompatibility {
                   "sourceURL"],
         "playlist": ["count", "name", "item", "attributeCount", "getAttributeName",
                      "setColumnResizeMode", "setColumnWidth"],
-        "network": ["bufferingProgress", "receptionQuality", "bandWidth", "bitRate", "framesSkipped",
+        // `downloadProgress`, `sourceProtocol` and `maxBitRate` joined this list when they stopped
+        // being unrecognised (W104). The first two were the drift this comment's own invariant is
+        // meant to prevent: `sourceProtocol` had been answered in `readNetwork` since W101's Corona
+        // case while staying absent here, so the census went on ranking demand for a member the
+        // engine already answered — the `alphaBlendTo` trap named on `theme` below.
+        "network": ["bufferingProgress", "downloadProgress", "receptionQuality", "bandWidth",
+                    "bitRate", "maxBitRate", "sourceProtocol", "framesSkipped",
                     "lostPackets", "receivedPackets"],
         "eq": ["enhancedAudio", "wowLevel", "truBassLevel", "speakerSize", "currentSpeakerName", "enabled", "bypass", "bands", "presetCount", "presetTitle", "currentPreset",
                "currentPresetTitle", "nextPreset", "previousPreset", "reset",

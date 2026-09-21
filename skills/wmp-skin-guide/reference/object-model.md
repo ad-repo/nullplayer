@@ -188,10 +188,43 @@ to bind to.
 
 **6 uses across 4 of 177 archives**, the smallest surface in the corpus. `<NETWORK>` is an object,
 not a control — it authors no attributes at all corpus-wide, so `WMPSceneBuilder.isNonLayout`
-treating it as non-layout is correct and stays. What a skin reads off it is **stream** state:
-`player.network.downloadProgress` and `player.network.bufferingProgress` already resolve
-(`WMPPropertyRegistry.swift:126`), and `bandwidth`, `receivedPackets` and `lostPackets` are the
-members behind the `network bandwidth` (12) and `buffering progress` (10) tooltips.
+treating it as non-layout is correct and stays.
+
+**The element is the smallest surface here; the members read off it are not, and the two must not be
+confused.** Measured 2026-09-21 over 184 archives and 400 script/markup files, decoding each the way
+`WMPTextDecoder` does (156 UTF-16-BOM / 146 cp1252 / 89 UTF-8 / 9 UTF-8-BOM) and matching
+`\bnetwork\s*\.\s*(member)` — the census matches a *tag* and can never answer this, so it needs the
+script-text scan in `harness.md` § *Grepping the corpus's script text*:
+
+| Member | uses | archives | Answers |
+|---|---:|---:|---|
+| `downloadProgress` | 58 | 42 | `bufferingProgress`'s field (**W104**; was unrecognised) |
+| `bufferingProgress` | 26 | 11 | the field, which nothing in this app writes |
+| `receptionQuality` | 9 | 4 | the field, which nothing in this app writes |
+| `bitRate` | 9 | 8 | live, from `Track.bitrate` (W-`Cablemusic`) |
+| `bandWidth` | 9 | 7 | inert `0` |
+| `sourceProtocol` | 6 | 3 | inert `""` |
+| `maxBitRate` | 3 | 3 | inert `0` (**W104**; was unrecognised) |
+| `framesSkipped` / `lostPackets` / `receivedPackets` | **0** | 0 | inert `0`, no reader in the corpus |
+
+**Split a member count by resolution path before ranking it.** `downloadProgress`'s 58 looks like 42
+archives of broken handlers and is one: **55 of the uses are `wmpprop:` bindings**, which
+`WMPPropertyRegistry` has resolved since W93 — a separate resolution of the same path from
+`WMPObjectModel.readNetwork`. Only **3 script reads, all in `tubeframe.wmz`**, ever reached the
+switch that was aborting. The earlier claim here that `downloadProgress` and `bufferingProgress`
+"already resolve" cited `WMPPropertyRegistry` and was true of a `<TEXT value="wmpprop:…">` binding
+and false of every script read, which is why the defect survived a reading of this file.
+
+**`bufferingProgress` is answered, and it is a dead `0`.** Nothing in the app writes the field
+(`WMPHost.swift`), so `downloadProgress` now answers zero too — and in `tubeframe` that is *visibly*
+wrong rather than merely absent: its `GetMetaData` prints `downloadProgress + "% downloaded"`
+whenever the value is under 100, so the readout reads `Playing: 0% downloaded` instead of falling
+through to its `bitRate` branch. That was taken deliberately over a constant `100`, which is the
+truer answer for a player where the media has always fully arrived but would flip ~36 archives'
+buffer bars from empty to full off one unmeasured constant. **The trap `WMPHost.statusText` names in
+prose is now reached rather than predicted**: a `< 100` test against a field nobody writes reports
+every skin permanently buffering. Making the field live is what corrects both readouts together, and
+it is the option below.
 
 **Feed it from the streaming player's own statistics, never from Flow.** `Windows/NetworkMonitor`
 measures *interface* throughput for the whole machine, a different quantity from this stream's

@@ -436,7 +436,24 @@ final class WMPObjectModel {
 
     private func readNetwork(_ name: String) -> WMPMemberValue {
         switch name {
-        case "bufferingprogress": return .value(.number(snapshot.bufferingProgress))
+        // **`downloadProgress` is the corpus's most-read network member, and the count is not the
+        // blast radius** (measured 2026-09-21, 184 archives, 400 script/markup files): 58 uses
+        // across 42 archives, but **55 of them are `wmpprop:` bindings that already resolved** in
+        // `WMPPropertyRegistry` — a separate resolution of the same path, right since W93. Only
+        // **3 script reads, all in `tubeframe.wmz`**, reached this switch and aborted the handler.
+        // So `object-model.md`'s "both already resolve" was true of a `<TEXT value=...>` binding
+        // and false of a script read, and splitting the two is what found the one real case.
+        //
+        // **This answers `0`, and in `tubeframe` that is visibly wrong on purpose.** Its
+        // `GetMetaData` prints `downloadProgress + "% downloaded"` whenever the value is under 100,
+        // so the readout reads `Playing: 0% downloaded` rather than falling through to its bitrate
+        // branch — the trap `WMPHost.statusText` names, now reached instead of predicted. The
+        // alternative was a constant 100, which is the truer answer for a player where the media
+        // has always fully arrived, but it would flip ~36 archives' buffer bars from empty to full
+        // off one unmeasured constant. Answering the field this engine actually has beats inventing
+        // a better one; make it live (W104's option B) and both readouts come right together.
+        case "bufferingprogress", "downloadprogress":
+            return .value(.number(snapshot.bufferingProgress))
         case "receptionquality": return .value(.number(snapshot.receptionQuality))
         // **`bitRate` is a real number this player has, and it was aborting a handler.**
         // `Cablemusic`'s `handlePlayStateChange` reaches `UpdateBitrate()` before it reaches the
@@ -446,7 +463,13 @@ final class WMPObjectModel {
         // app after the first one (`player.currentMedia.sourceURL`) was closed. `Track.bitrate` is
         // kilobits; WMP's unit is bits per second, and the skin prints it with a `bps` suffix.
         case "bitrate": return .value(.number(snapshot.bitrate))
-        case "bandwidth", "framesskipped", "lostpackets", "receivedpackets":
+        // `maxBitRate` is the stream's ceiling across its authored bands, which a player with no
+        // multi-bitrate session has no value for. Inert zero, and it joins this group rather than
+        // answering `bitrate`: 3 archives read it (`9SeriesDefault`, `Compact`, `corona`) and all
+        // three print it beside the live rate, where echoing one into the other would draw a
+        // confident wrong number. `framesSkipped`, `lostPackets` and `receivedPackets` have **no
+        // reader in the corpus at all** and are answered only so a handler cannot abort on one.
+        case "bandwidth", "maxbitrate", "framesskipped", "lostpackets", "receivedpackets":
             inert(); return .value(.number(0))
         // The transport a stream arrived over — `mms`, `http`, `rtsp` — which is a property of the
         // network session WMP had and this player does not. `Corona`'s `OnStatusChange` reads it
