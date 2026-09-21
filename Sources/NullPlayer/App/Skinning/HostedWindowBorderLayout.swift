@@ -45,6 +45,8 @@ final class HostedWindowBorderLayout {
     /// choosing a new interior.
     private var isApplying = false
     private var observers: [NSObjectProtocol] = []
+    /// Windows kept invisible until the skin can dress them (W250), by identity.
+    private var holds: [ObjectIdentifier: Hold] = [:]
 
     init() {
         // **Guarded like its siblings below, and for the same reason (W238).** This one is posted
@@ -77,10 +79,25 @@ final class HostedWindowBorderLayout {
             forName: NSWindow.didResizeNotification, object: nil, queue: .main) { [weak self] note in
                 MainActor.assumeIsolated { self?.windowDidResize(note.object as? NSWindow) }
             })
+        // **A window closed while held has to be given its opacity back (W250)**, or the next open
+        // finds it at alpha 0 with nothing left to reveal it.
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, let window = note.object as? NSWindow else { return }
+                    self.reveal(ObjectIdentifier(window), reason: "closed")
+                }
+            })
     }
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
+        // This rule is torn down when the mode changes, which is exactly when a held window would
+        // be left invisible with nothing listening for its frame.
+        for held in holds.values {
+            held.timer.invalidate()
+            held.window?.alphaValue = held.alpha
+        }
     }
 
     // MARK: - The rule
@@ -117,6 +134,9 @@ final class HostedWindowBorderLayout {
             apply(size: target, to: window)
         }
         prewarmRecentlyOpened(border)
+        // **After the loop, not before it (W250).** A held window may have just been grown, and the
+        // question a hold asks is about the size it is at now.
+        releaseSettledHolds()
     }
 
     // MARK: - Before the window opens
@@ -171,10 +191,14 @@ final class HostedWindowBorderLayout {
         WindowManager.shared.prewarmHostedSurfaceFrames(sizes)
     }
 
-    /// How many windows deep the prewarm goes. Four is what a user has open at once in the traces
-    /// this rule was built from; past that the queue is speculating about windows that session is
-    /// not going to touch, and each entry costs a full donor render.
-    private static let prewarmDepth = 4
+    /// How many windows deep the prewarm goes. **Every hosted window there is (W250).** Four was
+    /// what a user has open at once, and it made the prewarm a guarantee for four windows and
+    /// nothing for the other four — `ALXVortex` 2026-09-21 queued `PeppyMeter, Cava, Waveform,
+    /// PlexBrowser` and the spectrum analyser opened onto palette chrome. The open itself is what
+    /// guarantees the frame now (`hold(_:until:)`), so this list is a latency measure rather than a
+    /// correctness one, and it costs a serial background render per entry for sizes this user's own
+    /// defaults say they do open.
+    private static let prewarmDepth = 8
 
     private static let recencyKey = "hostedWindowRecency"
 
@@ -224,7 +248,7 @@ final class HostedWindowBorderLayout {
     /// `showWindow(nil)`**. Guarded on the window not yet being visible, so a second call on a
     /// window already up is a no-op rather than a resize the user did not ask for.
     func prepare(_ window: NSWindow) {
-        guard Self.presizes, !window.isVisible,
+        guard !window.isVisible,
               window.frame.width > 0, window.frame.height > 0,
               let entry = WindowManager.shared.hostedBorderWindows.first(where: { $0.window === window })
         else { return }
@@ -232,14 +256,135 @@ final class HostedWindowBorderLayout {
         let insets = Self.borderInPlay(fallback: entry.fallback)
         let target = Self.outerSize(interior: interior.size, border: insets)
         let minimum = Self.outerSize(interior: interior.minimum, border: insets)
-        window.minSize = NSSize(width: minimum.width, height: minimum.height)
         Self.trace(window, interior: interior.size, insets: insets, target: target,
                    donor: WindowManager.shared.hostedSurfaceBorderInsets != nil)
         Self.rememberOpened(window)
-        guard abs(target.width - window.frame.width) > 1.5
-                || abs(target.height - window.frame.height) > 1.5 else { return }
-        apply(size: target, to: window)
+        // **The presize switch still withholds everything it withheld before (W250).** The hold
+        // below is a separate question with a separate switch, so the two can be measured apart.
+        if Self.presizes {
+            window.minSize = NSSize(width: minimum.width, height: minimum.height)
+            if abs(target.width - window.frame.width) > 1.5
+                || abs(target.height - window.frame.height) > 1.5 {
+                apply(size: target, to: window)
+            }
+        }
+        // **Last, and independent of whether anything was resized (W250).** A window already at its
+        // target still opens into a skin that may have no frame for it, and that is the case the
+        // presize half of W248 cannot touch.
+        hold(window, until: Self.presizes ? target : window.frame.size)
     }
+
+    // MARK: - Holding the open until the skin can dress it
+
+    /// **A hosted window is not shown until the skin can dress it (W250).**
+    ///
+    /// W248 stopped a cold window wearing a *stretched* ring, and what it left in its place is flat
+    /// palette chrome: `WMPHostedFrameProvider.artwork(for:)` refuses a stand-in past 15% of the
+    /// last-rendered size, so a window opening at a size nothing has been rendered for draws
+    /// NullPlayer's own chrome until its build lands. Measured on `ALXVortex` 2026-09-21 — the
+    /// spectrum analyser opened 368x145, drew palette chrome twenty times over
+    /// `standin=out-of-scale from=550x893`, and was re-dressed 263 ms later.
+    ///
+    /// The prewarm was W248's cover for that and it cannot be the guarantee: it speculates from
+    /// persisted interiors, so it reaches no window this user has never opened, and no window
+    /// whose size it could not know. **The guarantee has to live on the open itself**, where the
+    /// size is known exactly and the window is still off screen — which is this, and which is why
+    /// it is the last thing `prepare(_:)` does.
+    ///
+    /// The window is made transparent rather than kept out of the window list: it is about to be
+    /// ordered front by its own show path, which this rule does not own and must not fight. It is
+    /// revealed the moment the skin has a final answer for the size it is at — a frame, a refusal,
+    /// or no frame to lend — and a `budget` timer reveals it regardless, so no failure anywhere
+    /// below can strand a window the user asked for.
+    private func hold(_ window: NSWindow, until target: CGSize) {
+        guard Self.holdsOpens, holds[ObjectIdentifier(window)] == nil,
+              !Self.isDressed(at: target)
+        else { return }
+        // **Only a settled border makes `target` a real size (W250).** A window opening while the
+        // skin is still resolving is sized against its *own* chrome, so demanding that size buys a
+        // full donor render of a frame nothing will ever wear — two of them at launch, measured
+        // 2026-09-21 — and worse, the frame it produces can settle the hold and reveal the window
+        // at a size `apply()` is about to grow. The hold still runs; it just waits for the border
+        // before it names a size.
+        if WindowManager.shared.hostedSurfaceBordersAreSettled {
+            WindowManager.shared.demandHostedSurfaceFrame(for: target)
+        }
+        let key = ObjectIdentifier(window)
+        // A window held once and revealed at alpha 0 would never be seen again, so a zero reading —
+        // our own previous hold, interrupted — restores to opaque rather than to what it found.
+        let restore = window.alphaValue > 0 ? window.alphaValue : 1
+        window.alphaValue = 0
+        let timer = Timer.scheduledTimer(withTimeInterval: Self.holdBudget, repeats: false) { _ in
+            MainActor.assumeIsolated { self.reveal(key, reason: "budget") }
+        }
+        holds[key] = Hold(window: window, alpha: restore, timer: timer, since: Date())
+        Self.traceHold(window, size: target, budget: Self.holdBudget)
+    }
+
+    /// Reveal every held window the skin can now dress, asked at the size each one is **at** rather
+    /// than the size it was held for: `apply()` may have grown it since, and a window revealed
+    /// against a stale size is revealed wearing chrome, which is the defect.
+    private func releaseSettledHolds() {
+        for (key, held) in holds {
+            guard let window = held.window else {
+                reveal(key, reason: "gone")
+                continue
+            }
+            if Self.isDressed(at: window.frame.size) {
+                reveal(key, reason: "frame")
+            } else if WindowManager.shared.hostedSurfaceBordersAreSettled {
+                // **The size a window is held at can change under it.** A window held at launch is
+                // held against its own chrome, and the loop above has just grown it to the donor's
+                // border — so the size it now needs is one nothing has been asked for. Demanding it
+                // here makes the hold self-terminating rather than dependent on the prewarm having
+                // guessed the same number.
+                WindowManager.shared.demandHostedSurfaceFrame(for: window.frame.size)
+            }
+        }
+    }
+
+    private func reveal(_ key: ObjectIdentifier, reason: String) {
+        guard let held = holds.removeValue(forKey: key) else { return }
+        held.timer.invalidate()
+        held.window?.alphaValue = held.alpha
+        Self.traceReveal(held.window, reason: reason, waited: Date().timeIntervalSince(held.since))
+    }
+
+    /// Whether a window of `size` would be drawn wearing the skin rather than palette chrome: the
+    /// border has resolved **and** the skin has a final answer for that size. Both halves, because
+    /// a skin still resolving answers "no frame" for every size and that is not an answer.
+    private static func isDressed(at size: CGSize) -> Bool {
+        WindowManager.shared.hostedSurfaceBordersAreSettled
+            && WindowManager.shared.hostedSurfaceHasSettledFrameAnswer(for: size)
+    }
+
+    private struct Hold {
+        weak var window: NSWindow?
+        let alpha: CGFloat
+        let timer: Timer
+        let since: Date
+    }
+
+    /// `WMP_HOSTED_HOLD=0` — show a hosted window the instant its controller does, restoring the
+    /// pre-W250 open where it appears wearing palette chrome and is re-dressed when its frame
+    /// lands. The A/B switch for W250.
+    private static let holdsOpens = ProcessInfo.processInfo.environment["WMP_HOSTED_HOLD"] != "0"
+
+    /// `WMP_HOSTED_HOLD_MS` — how long a held window may stay invisible before it is shown
+    /// regardless. It is a backstop, not a budget the common case spends: the prewarm and the
+    /// demand this rule issues mean a settled skin answers immediately. Past it the user gets the
+    /// pre-W250 behaviour rather than a window that never appears, which is the only failure mode
+    /// worse than the one being fixed.
+    ///
+    /// **Four seconds, from the worst case measured rather than from taste.** A restored window at
+    /// launch waits for three things in series: the skin to render (≈0.4 s), the donor's borders to
+    /// resolve, and its own ring — and on `ALXVortex` 2026-09-21 the library came out at 2.09 s of
+    /// which 1.4 s was the ring alone. A budget set near that number turns a slower donor into the
+    /// flash this rule exists to remove, so it is set clear of it.
+    private static let holdBudget: TimeInterval = {
+        let stated = ProcessInfo.processInfo.environment["WMP_HOSTED_HOLD_MS"].flatMap(Double.init)
+        return max(0, (stated ?? 4000) / 1000)
+    }()
 
     /// `WMP_HOSTED_PRESIZE=0` — withhold the pre-show growth and restore the pre-W248 open, where a
     /// hosted window appears at its own size and is grown a turn later. The A/B switch for the half
@@ -269,6 +414,26 @@ final class HostedWindowBorderLayout {
             + "border=\(Int(insets.titleHeight))/\(Int(insets.leftBorder))/"
             + "\(Int(insets.bottomBorder))/\(Int(insets.rightBorder)) "
             + "target=\(Int(target.width))x\(Int(target.height))")
+        #endif
+    }
+
+    /// `WMP_BORDER_TRACE=1` — the two ends of a W250 hold. `hold` is a window kept off screen
+    /// because the skin has no answer for its size yet; `reveal` closes it and carries the wait in
+    /// milliseconds and **why** it ended — `frame` is the skin answering, `budget` is it running
+    /// out of time, and a run full of `budget` is the fix failing rather than working.
+    private static func traceHold(_ window: NSWindow, size: CGSize, budget: TimeInterval) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["WMP_BORDER_TRACE"] != nil else { return }
+        NSLog("[wmp/border] hold \(window.accessibilityIdentifier()) "
+            + "size=\(Int(size.width))x\(Int(size.height)) budgetMs=\(Int(budget * 1000))")
+        #endif
+    }
+
+    private static func traceReveal(_ window: NSWindow?, reason: String, waited: TimeInterval) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["WMP_BORDER_TRACE"] != nil else { return }
+        NSLog("[wmp/border] reveal \(window?.accessibilityIdentifier() ?? "gone") "
+            + "reason=\(reason) waitedMs=\(Int((waited * 1000).rounded()))")
         #endif
     }
 

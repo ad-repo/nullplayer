@@ -141,15 +141,56 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   wears palette chrome — and nothing about that build needs the window: the size is
   `persisted interior + donorInsets`, both known once the skin has loaded. `WMPHostedFrameProvider.prewarm(_:)`
   builds them **serially** while nothing is on screen waiting, and `HostedWindowBorderLayout`
-  chooses the sizes from the interiors it already persists, **most-recently-opened first and capped
-  at four** (`hostedWindowRecency`): the eleven persisted interiors span two controller families and
-  rendering all of them would put minutes of speculative work behind every skin load. A fresh
-  install therefore prewarms nothing and learns from the first session that opens anything.
-  **Once per skin, guarded on the provider's `generation`** — two skins can lend identical borders
-  with an emptied cache between them, so "the border changed" is the wrong test. A speculative
+  chooses the sizes from the interiors it already persists, **most-recently-opened first**
+  (`hostedWindowRecency`): the eleven persisted interiors span two controller families and rendering
+  all of them would put minutes of speculative work behind every skin load. A fresh install
+  therefore prewarms nothing and learns from the first session that opens anything. **The cap was
+  four and is now eight, and the guard was once-per-skin and is now once-per-size — both because of
+  W250 below**; at four it covered the library and left the spectrum analyser opening onto the
+  palette, and once-per-skin fixed the queue on the first broadcast so a window whose size only
+  became knowable later never got a speculative build at all. `prewarmedSizes` is cleared by
+  `reset()`, which also answers two skins that lend identical borders with an emptied cache between
+  them — "the border changed" was always the wrong test. A speculative
   failure records nothing: `refused` and the template-dropping verdicts belong to the drawing path,
   which has a window behind it. Measured on `ALXVortex` 2026-09-20: `prewarm queued=550x890` at
   load, 1.277 s, and then a cold library open with **zero** misses and zero builds.
+- **A hosted window is not shown until the skin can dress it (W250). This is the guarantee; the
+  prewarm is only an optimisation of it.** W248 refused a stand-in past 15% and what it left in its
+  place was *flat palette chrome*, so every window the prewarm did not reach opened onto bare chrome
+  — a worse picture than the stretched ring it replaced. The prewarm could never be the guarantee:
+  it speculates from persisted interiors, so it reaches no window this user has not opened and no
+  size it could not know, and it was capped at four of eight. Measured on `ALXVortex` 2026-09-21,
+  reported as *"still showing in other skins and even in ALX skins on other non library windows"*:
+  the spectrum analyser opened 368x145 and drew palette chrome **20 times** over
+  `standin=out-of-scale from=550x893` before its ring landed 263 ms later.
+  `HostedWindowBorderLayout.hold(_:until:)` is the answer and it is the **last** thing
+  `prepare(_:)` does — the window is already positioned and sized and is still off screen, so the
+  size is exact and nothing is on screen to wait. It is made transparent rather than kept out of the
+  window list, because the show path belongs to the controller and this rule must not fight it, and
+  it is revealed when `hostedSurfaceHasSettledFrameAnswer(for:)` says the skin has a *final* answer
+  for the size it is **at** — a frame, a refusal, or a skin that lends nothing. Three things that
+  are easy to get wrong, each of which was:
+  - **A held window's size changes under it**, so the reveal is asked at `window.frame.size`, never
+    at the size it was held for, and a hold that is not yet settled demands the live size — which
+    makes it self-terminating rather than dependent on the prewarm having guessed the same number.
+  - **A hold must never be computed against an unresolved border.** While the skin is resolving,
+    `prepare(_:)` sizes the window against its *own* chrome, so demanding that size buys a full
+    donor render of a frame nothing will wear — two of them at launch, 296 ms and 1342 ms — and
+    worse, that frame settles the hold and reveals the window at a size `apply()` is about to grow.
+    So `isDressed(at:)` is `hostedSurfaceBordersAreSettled && hasSettledFrameAnswer`, both halves.
+  - **A skin on its way is a third state** (`WMPMainWindowController.isResolvingHostedFrames`). The
+    provider is configured only once the player has *rendered*, so before that it has no template
+    and answers "I lend no frame" for every size — indistinguishable from the settled truth for a
+    skin that really lends none. That is how a **restored** hosted window came up at launch wearing
+    palette chrome: `ALXVortex` 2026-09-21, Cava and the library drew **155** times before the
+    donor's borders had resolved. It folds into `hostedSurfaceBordersAreSettled`, so a resize read
+    during a skin load is not trusted either.
+
+  Every failure path reveals: a `WMP_HOSTED_HOLD_MS` timer (default 4000 ms), `willClose`, and
+  `deinit`. **A `reveal … reason=budget` line is this rule failing**, not working — the healthy
+  outcome is `reason=frame`, and the measured spread is 276 ms for a cold analyser to 2.09 s for the
+  library at launch, of which 1.4 s is the ring render alone. `WMP_HOSTED_HOLD=0` is the A/B switch.
+  Every non-`.wmp` family answers "settled" unconditionally, or the hold would never end.
 - **A skin change holds the outgoing skin's frames until the incoming skin can replace them
   (W248).** `configure(skin:)` emptied the cache the instant a new skin arrived, so every hosted
   window on screen was stripped to flat palette chrome for the length of one scene build — measured

@@ -148,6 +148,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// app-authored unskinned player is up, which is what makes NullPlayer's playlist and equalizer
     /// available there.
     private(set) var skinSurfaces = WMPSkinSurfaces.empty
+    /// **Whether a skin load is still on its way to the hosted-frame provider (W250).** Set when a
+    /// load starts and cleared the moment the provider has been told what the skin lends — with a
+    /// donor or with nothing. Deliberately *not* cleared on cancellation: a cancelled load is one a
+    /// newer load replaced, and that newer load has already set this again.
+    private(set) var isResolvingHostedFrames = false
 
     /// The colours NullPlayer's *own* windows are drawn in while this skin is presented — see
     /// `WMPSurfacePalette`. Nil whenever the app-authored unskinned player is up, which is what makes
@@ -327,6 +332,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     func reloadSelectedSkin() {
         restoreVisualizationSettings()
+        // **A skin on its way is not a skin that lends nothing (W250).** The frame provider is only
+        // configured once the player has *rendered*, so between here and there it has no template
+        // and answers every hosted window "I lend no frame" — which is indistinguishable from the
+        // settled truth for a skin that really lends none, and is how a restored hosted window came
+        // up at launch wearing palette chrome: measured on `ALXVortex` 2026-09-21, Cava and the
+        // library drew 155 times on the palette before the donor's borders had resolved. This flag
+        // is the third state, and `HostedWindowBorderLayout` holds an open while it is set.
+        isResolvingHostedFrames = true
         loadTask?.cancel()
         stopDispatcher()
         materializer.teardown()
@@ -998,6 +1011,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // The frame is adopted whether or not the palette moved: they answer different questions
         // and a view switch can leave the colours identical while the ring changes.
         hostedFrames.configure(skin: skin, playerViewID: viewID)
+        // The provider now knows what this skin lends, so a held window's question has a real
+        // answer even if that answer is "nothing".
+        isResolvingHostedFrames = false
         guard palette != currentSurfacePalette else { return }
         currentSurfacePalette = palette
         NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
@@ -1006,6 +1022,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private func clearSurfacePalette() {
         skinSurfaces = .empty
         hostedFrames.reset()
+        isResolvingHostedFrames = false
         guard currentSurfacePalette != nil else { return }
         currentSurfacePalette = nil
         NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)

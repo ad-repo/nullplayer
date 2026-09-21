@@ -63,10 +63,14 @@ final class WMPHostedFrameProvider {
     /// skin answers for that size — with a frame, or with a refusal.
     private var outgoing: [Key: SkinnedSurfaceFrameArtwork] = [:]
     private var generation = 0
-    /// The skin whose speculative frames have been queued, so `prewarm` runs once per skin however
-    /// often it is called. Not cleared by `reset()`: the generation it holds can never come round
-    /// again, and a stale value is answered by the inequality.
-    private var prewarmedGeneration: Int?
+    /// The sizes this skin has already had speculative builds queued for, so `prewarm` does no work
+    /// twice however often the caller's broadcast fires. **Per size rather than per skin (W250)**:
+    /// once-per-skin closed the queue the first time it ran, so a hosted window whose size only
+    /// became knowable later — the user opened it, or resized another one — never got a speculative
+    /// build at all and paid for its render on screen. A size is recorded when it is *queued*, not
+    /// when it succeeds, so a build that produces nothing is not retried on every broadcast.
+    /// Cleared by `reset()`, which is where a skin ends.
+    private var prewarmedSizes: Set<Key> = []
 
     /// **The border this skin adds around a hosted window's interior, independent of any window
     /// (W207).** Resolved once per skin, because the growth that gives a window room for the border
@@ -142,6 +146,7 @@ final class WMPHostedFrameProvider {
         inFlight.removeAll()
         refused.removeAll()
         outgoing.removeAll()
+        prewarmedSizes.removeAll()
         mostRecent = nil
         donorInsets = nil
     }
@@ -218,18 +223,18 @@ final class WMPHostedFrameProvider {
     /// `HostedWindowBorderLayout`. This type only knows how to render one.
     func prewarm(_ sizes: [CGSize]) {
         guard Self.prewarms, let template, let builder, let renderer else { return }
-        // **Once per skin, and the skin is what `generation` counts.** The caller runs on a
-        // broadcast that fires many times over a skin's life, and the obvious guard there — "the
-        // donor's border changed" — is wrong for two skins that lend the same four numbers: the
-        // cache was emptied by `reset()` between them and nothing would have refilled it.
-        guard prewarmedGeneration != generation else { return }
-        prewarmedGeneration = generation
+        // **Per size, not per skin (W250).** The caller runs on a broadcast that fires many times
+        // over a skin's life, and the sizes it can name grow as windows open and are resized. A
+        // once-per-skin guard here meant the first broadcast fixed the queue for ever, so the
+        // windows that came later were the ones that paid for their render on screen. `reset()`
+        // clears this set, which is also the answer to two skins that lend the same four borders.
         var queue: [Key] = []
         for size in sizes where size.width > 0 && size.height > 0 {
             let key = Key(size)
-            guard cache[key] == nil, !refused.contains(key), !inFlight.contains(key),
-                  !queue.contains(key) else { continue }
+            guard !prewarmedSizes.contains(key), cache[key] == nil, !refused.contains(key),
+                  !inFlight.contains(key), !queue.contains(key) else { continue }
             queue.append(key)
+            prewarmedSizes.insert(key)
             inFlight.insert(key)
         }
         guard !queue.isEmpty else { return }
@@ -288,6 +293,34 @@ final class WMPHostedFrameProvider {
                 abs(lhs.size.height - key.size.height) + abs(lhs.size.width - key.size.width)
                     < abs(rhs.size.height - key.size.height) + abs(rhs.size.width - key.size.width)
             }
+    }
+
+    /// **Whether this skin has a *final* answer for `size` right now (W250).**
+    ///
+    /// Three things count as final and they are not the same thing: a frame rendered for exactly
+    /// this size, a refusal recorded for it, and a skin that lends no frame at all. Anything else
+    /// means a window opening at this size would draw NullPlayer's own palette chrome while a
+    /// render that has not finished — or has not started — catches up, and that flash is the whole
+    /// of W250. `artwork(for:)` cannot answer this: it is the drawing seam, so asking it schedules
+    /// work and it answers a stand-in rather than the truth.
+    func hasSettledAnswer(for size: CGSize) -> Bool {
+        guard template != nil, size.width > 0, size.height > 0 else { return true }
+        let key = Key(size)
+        return cache[key] != nil || refused.contains(key)
+    }
+
+    /// **Render `size` now, because a window is about to open at it (W250).**
+    ///
+    /// `prewarm` speculates from persisted interiors and is capped; this is the size a window is
+    /// being opened at this instant, which is knowable exactly and is never speculative. Idempotent
+    /// — `schedule` drops a size already in flight, so demanding one the prewarm queue is already
+    /// building joins that build rather than duplicating it.
+    func demand(_ size: CGSize) {
+        guard template != nil, size.width > 0, size.height > 0 else { return }
+        let key = Key(size)
+        guard cache[key] == nil, !refused.contains(key) else { return }
+        Self.trace("demand \(key.width)x\(key.height)")
+        schedule(key)
     }
 
     /// **The frame actually rendered for `size` — no stand-in, and no build scheduled (W238).**

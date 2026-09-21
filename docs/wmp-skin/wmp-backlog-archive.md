@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W247.** (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W251.** (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -39,6 +39,56 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+
+## W250 — a hosted window opens onto palette chrome wherever the prewarm did not reach (closed 2026-09-21)
+
+**Reported**, on the W248 fix: *"the fix for the chrome showing during window launches is not
+adequately fixed, it is still showing in other skins and even in ALX skins it is showing on other
+non library windows"*.
+
+**What W248 actually did.** It extended the 15% stand-in tolerance from panels to every donor, which
+was right — stretching a ring primed at the donor's reference size onto a 550x890 library is the
+defect it was closing. But the thing it left in place of the stretched ring is **flat palette
+chrome**, and its cover for that was the prewarm, which is structurally incapable of being a
+guarantee:
+
+| Gap | Where |
+|---|---|
+| `prewarmDepth = 4` over **eight** `hostedBorderWindows` participants | `HostedWindowBorderLayout` |
+| a window with no `hostedInteriorSize2.<id>` contributes no size at all | same |
+| `prewarmedGeneration` fires the queue **once per skin**; a window opened later never re-queues | `WMPHostedFrameProvider` |
+| the provider has no template until the player has *rendered*, so a restored window at launch is told the skin lends nothing | `WMPMainWindowController` |
+
+**Measured live on `ALXVortex`, 2026-09-21**, debug build, `WMP_FRAME_TRACE=1 WMP_BORDER_TRACE=1`:
+
+- `prewarm queued=368x254,339x148,598x432,550x893` — the library and three others; the spectrum
+  analyser is not in it.
+- Opening it: `miss 368x145 standin=out-of-scale from=550x893` ×20, then `built 368x145 ok=true
+  ms=263`. Twenty draws of NullPlayer's own chrome, on a skin whose library opens perfectly.
+- At launch with Cava and the library restored: **155** `miss` draws before `insets ok=true`, with
+  `[wmp/border] run donorBorder=none windows=2` — the windows were up and dressed in the palette
+  before the donor's borders existed at all.
+
+**Closed by moving the guarantee off the prewarm and onto the open**: `HostedWindowBorderLayout`
+holds a hosted window invisible from `prepare(_:)` until the skin has a *final* answer for the size
+it is at. The full contract, the three traps it took to get right, and the flags are in `SKILL.md`
+§ *Every NullPlayer window in WMP mode is the skin's or is themed* and in
+`reference/harness.md` (`WMP_HOSTED_HOLD`, `WMP_HOSTED_HOLD_MS`). The prewarm survives as a latency
+measure — eight deep and per-size rather than four and per-skin.
+
+**Verified live, same day, same build.** All eight hosted windows across `ALXVortex` and
+`ALXMorph`, plus a live skin switch and a launch with windows restored: every `reveal` line says
+`reason=frame` and never `budget`; every window ends at `alpha=1.0` at its grown size. Winamp Modern
+opens the same windows with **zero** holds. `swift test`: 2538 passed. Accepted by the reporter.
+
+**What it cost and what it did not fix.** A window now waits — 276 ms for a cold analyser, 2.09 s
+for the library at launch, of which 1.4 s is the ring render itself. And a hosted window drawing in
+the gap between `configure(skin:)` and `donorInsets` resolving still schedules a full donor render
+at its *pre-border* size (two at launch: 296 ms and 1342 ms) for frames nothing ever wears.
+Suppressing that needs the provider to tell "borders not resolved yet" from "this skin resolves no
+borders at all", and getting it wrong leaves every hosted window on the palette for ever. It costs
+latency inside the hold, not correctness, and is deliberately not attempted here.
 
 ## W217 — `.wmz` had the placement seams and none of the recovery ones, closed 2026-09-20
 

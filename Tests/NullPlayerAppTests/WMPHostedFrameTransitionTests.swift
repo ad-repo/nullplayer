@@ -210,10 +210,12 @@ final class WMPHostedFrameTransitionTests: XCTestCase {
         _ = try await waitForRender(provider, at: Self.windowSize)
     }
 
-    /// **Once per skin**, however often the caller asks. `apply()` runs on a broadcast that fires
-    /// many times over a skin's life, and the prewarm is speculative work: a second pass would queue
-    /// renders for sizes the first pass already decided against.
-    func testPrewarmRunsOncePerSkin() async throws {
+    /// **Once per size, not once per skin (W250).** `apply()` runs on a broadcast that fires many
+    /// times over a skin's life and the sizes it can name *grow* as windows open and are resized,
+    /// so a once-per-skin guard fixed the queue on the first broadcast and every window that came
+    /// later paid for its render on screen. A size the first pass never heard of must still be
+    /// built.
+    func testPrewarmCoversASizeLearnedAfterTheFirstPass() async throws {
         let provider = WMPHostedFrameProvider()
         let loaded = try await ringSkin(corner: 40, red: 20)
         XCTAssertTrue(provider.configure(skin: loaded, playerViewID: nil))
@@ -223,9 +225,31 @@ final class WMPHostedFrameTransitionTests: XCTestCase {
 
         let second = CGSize(width: 360, height: 280)
         provider.prewarm([second])
-        try await Task.sleep(nanoseconds: 300_000_000)
 
-        XCTAssertNil(provider.renderedArtwork(for: second),
-                     "a second prewarm ran for the same skin")
+        _ = try await waitForRender(provider, at: second)
+    }
+
+    // MARK: - The open that waits for its frame
+
+    /// **A skin with no answer for a size is what `hold(_:until:)` waits on (W250).** The predicate
+    /// separates three states a drawing view cannot tell apart: nothing rendered yet (a window
+    /// opening here would wear palette chrome), a frame rendered for exactly this size, and a skin
+    /// that lends nothing at all — the last of which is settled immediately, or the hold would
+    /// never end.
+    func testSettledAnswerIsFalseOnlyWhileAFrameIsStillOwed() async throws {
+        let provider = WMPHostedFrameProvider()
+        XCTAssertTrue(provider.hasSettledAnswer(for: Self.windowSize),
+                      "a provider with no skin owes no frame and must not hold an open")
+
+        let loaded = try await ringSkin(corner: 40, red: 20)
+        XCTAssertTrue(provider.configure(skin: loaded, playerViewID: nil))
+        XCTAssertFalse(provider.hasSettledAnswer(for: Self.windowSize),
+                       "a size nothing has been rendered for is not an answer")
+
+        provider.demand(Self.windowSize)
+        _ = try await waitForRender(provider, at: Self.windowSize)
+
+        XCTAssertTrue(provider.hasSettledAnswer(for: Self.windowSize),
+                      "a rendered frame settles the size it was rendered for")
     }
 }

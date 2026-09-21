@@ -4,17 +4,21 @@
 
 ### Fixed
 
-- **A Media Player skin's windows open at their finished size, wearing the skin, the first time
-  you open them.** The library and its siblings used to arrive in stages: the window appeared at one
-  size, jumped to another, was grown a third time to make room for the skin's border, and drew the
-  skin's frame stretched out of shape at each of those sizes before the real one snapped in — worst
-  on skins whose player is nothing like the shape of the window borrowing its frame. The window is
-  now sized before it is ever shown, so there is no resize to watch; a frame that would have to be
-  stretched onto a window it was not drawn for is no longer used at all; and the skin's frame is
-  rendered while the skin loads, for the windows you actually open, so opening one is immediate
-  rather than a second of plain chrome. **Changing skins no longer strips them either**: a window
-  keeps the frame it is wearing until the new skin has one ready for it, instead of dropping to
-  plain chrome for a second in between. Classic, Original and Modern are unchanged.
+- **A Media Player skin's windows open at their finished size, wearing the skin — every window,
+  every skin, including the ones restored when the app starts.** They used to arrive in stages: the
+  window appeared at one size, jumped to another, was grown a third time to make room for the skin's
+  border, and drew the skin's frame stretched out of shape at each of those sizes before the real
+  one snapped in — worst on skins whose player is nothing like the shape of the window borrowing its
+  frame. The window is now sized before it is ever shown, so there is no resize to watch; a frame
+  that would have to be stretched onto a window it was not drawn for is no longer used at all; and
+  **a window is not shown until the skin can dress it**, so there is no moment of plain chrome to
+  catch, whichever window you open and however slow the skin is to draw its frame. Windows restored
+  at startup wait for the skin the same way, instead of coming up plain and being re-dressed a beat
+  later. The skin's frames are also rendered while the skin loads — now for every window you use
+  rather than the last four — so in practice opening one is immediate. **Changing skins no longer
+  strips them either**: a window keeps the frame it is wearing until the new skin has one ready for
+  it, instead of dropping to plain chrome for a second in between. Classic, Original and Modern are
+  unchanged.
 
 - **Picking a Classic skin while running a Media Player skin no longer wipes out your
   visualization.** The Skins menu lists every Classic skin whatever skin you are running, and

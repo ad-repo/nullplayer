@@ -1113,6 +1113,40 @@ class WindowManager {
         }
     }
 
+    /// **Whether the hosting skin has a final answer for a window of `size` (W250).**
+    ///
+    /// Final means one of three things: a frame already rendered for exactly this size, a refusal
+    /// recorded for it, or a skin (or a mode) that lends no frame at all. False means a window
+    /// opening at this size would appear wearing NullPlayer's own palette chrome and be re-dressed
+    /// under the user's eyes when the render lands, which is what `HostedWindowBorderLayout` holds
+    /// the open for.
+    ///
+    /// Every family but `.wmp` lends nothing, so every one of them is always settled — a hold there
+    /// would be a hold that never ends.
+    func hostedSurfaceHasSettledFrameAnswer(for size: CGSize) -> Bool {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern: return true
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController else { return true }
+            return MainActor.assumeIsolated { controller.hostedFrames.hasSettledAnswer(for: size) }
+        }
+    }
+
+    /// **Render the hosting skin's frame for `size` now, because a window is opening at it (W250).**
+    ///
+    /// The sibling of `prewarmHostedSurfaceFrames(_:)` and the opposite of it in one respect: that
+    /// one speculates from persisted interiors and is capped, this one names the exact size a
+    /// window is being opened at. Idempotent, and it joins rather than duplicates a build the
+    /// prewarm queue already has in flight.
+    func demandHostedSurfaceFrame(for size: CGSize) {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern: return
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController else { return }
+            MainActor.assumeIsolated { controller.hostedFrames.demand(size) }
+        }
+    }
+
     /// **Whether a hosted window's frame can be read back as interior + border right now (W238).**
     ///
     /// `hostedSurfaceBorderInsets` answers nil for two different situations and only one of them is
@@ -1131,7 +1165,14 @@ class WindowManager {
         case .wmp:
             guard let controller = mainWindowController as? WMPMainWindowController else { return true }
             return MainActor.assumeIsolated {
-                !controller.hostedFrames.lendsFrame || controller.hostedFrames.donorInsets != nil
+                // **A skin still on its way is a third state and it is not settled (W250).** The
+                // provider is configured only once the player has rendered, so before that it has
+                // no template and `lendsFrame` is false — the same reading a skin that lends
+                // nothing gives, and the one that let a restored hosted window come up at launch
+                // wearing palette chrome. Nothing measured against a border that is about to
+                // arrive is worth keeping, which is what this predicate has always meant.
+                guard !controller.isResolvingHostedFrames else { return false }
+                return !controller.hostedFrames.lendsFrame || controller.hostedFrames.donorInsets != nil
             }
         }
     }
