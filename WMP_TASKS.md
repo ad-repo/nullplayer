@@ -183,9 +183,9 @@ Three rules follow, and they are why these rows do not rank against a starved vi
 
 **W249 moved to [LOW_QUALITY_TASKS.md](LOW_QUALITY_TASKS.md) on 2026-09-20:** its claimed docking refusal did not reproduce. The cited border trace prints before applying the size; live return trips preserved both an 822-point and an 825-point interior. See that entry for the measurements and the evidence needed to revive it.
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W214 | **`isRunningModernUI` is a two-way switch in a four-family world, so every `!isRunningModernUI` branch treats a `.wmz` window as Classic** | 1 of 4 sites left, every `.wmz` session (code audit 2026-09-17; no corpus sweep can see this) | Not blocked. This is W217's G4 generalised, and one instance already cost a full live-QA cycle (closed with W213). **Do not gate the remaining site in a sweep with anything else** — it is a shared-`App/` path, so gate on the mode and prove Classic and Original byte-identical. **Three sites were measured 2026-09-20 and two were defects**: `normalizedCenterStackRestoredFrame` closed (a `.wmz` PeppyMeter saved at 380x290 came back 34 pt short, snapped by Classic's legacy double-height migration), `applyClassicVisualizationDefaults` closed (picking a classic skin from Skins > Classic while WMP ran rewrote the session's six vis keys and flipped the open Spectrum Analyzer off the mode the user chose, live, while the WMP window never changed), and `handleCenterStackWindowWillClose` **measured clean**. **The rule they leave behind is that an audited `!isRunningModernUI` site is a candidate, not a defect: measure it on screen before gating it.** First step now: `expectedMainHeightForCurrentHT` (`:5534`). Verify with `WMP_SIZE_TRACE=1` and `WMP_PLACE_TRACE=1`. Evidence: `SKILL.md` § *`isRunningModernUI` is a two-way switch in a four-family world*, § *A restored `.wmz` window keeps the size it saved (W214, closed 2026-09-20)* and § *A `.wmz` session keeps the visualization it was given (W214, closed 2026-09-20)*. **Two more sites of the same class are known and unranked** — `selectClassicSkin` and `loadDefaultClassicSkin` in `ContextMenuBuilder.swift` load a classic skin in WMP without switching family, so nothing visible happens. |
+**Empty: W214’s remaining candidate, `expectedMainHeightForCurrentHT`, is unreachable in WMP.**
+All callers require `isRunningModernUI`, directly or through their caller. Removed from the active
+backlog after the call-site audit on 2026-09-20; no runtime change was needed.
 
 ## Tier 1h — the borrowed window frame
 
@@ -200,9 +200,7 @@ measured clean while the window was visibly wrong
 slots, W209/W210/W212 pixels, W230/W238 arrival — are in `SKILL.md` § *Every NullPlayer window in
 WMP mode is the skin's or is themed*, with the rows themselves in the archive.
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W234 | **Broken borders and content in the wrong rectangle, on every hosted window at once, while the skin's own window is right** | unmeasured — reported 2026-09-18 as the standing condition of the hosted windows, not as one skin's defect; the population is every hosted window under a skin that lends a frame, ~120 of 185 archives (88 rings + 32 panels, W207's measurement) | **The reporter's framing is the finding: "the main windows are fine, it is all the other windows", "broken borders, misplaced center data", "all the same UI look over and over."** Ten windows failing the same way against a player view that never does is one contract unhonoured at ten call sites, not ten defects. Not blocked; W230 was the same seam at first open and may share a cause. First step is one capture, not a matrix: read `WMP_HOSTED_FRAME_DUMP` against the live window on one skin the reporter names. Evidence: `SKILL.md` § *Triage a hosted-window defect before choosing a seam* and § *Evidence proportional to a hosted-window change*. |
+**Empty: W234 was parked in [`skins/blinx.md`](skills/wmp-skin-guide/reference/skins/blinx.md) on 2026-09-21.** The defect is real and reproduces — `Blinx`'s borrowed frame splits at every window larger than the donor's own 475x332 — but it is **not ready to be picked up**: three fixes have been built, measured and reverted, and the remaining direction changes how every hosted window is sized. The row, its measurements and the two live-QA traps are in that dossier, verbatim. Take it out again deliberately, not because it was ranked.
 
 ## Tier 1e — a surface the skin owns and this engine does not host
 
