@@ -120,6 +120,54 @@ window) is outside it; one that draws chrome is inside it, and there is no third
 - Exact artwork may include below-floor or extent scaling. During pending renders the provider
   can return a scaled previous image; a panel allows this only within 15% on both axes.
   `wasScaledToFit` is not a readiness flag.
+- **A hosted window is sized before it is shown, and a stand-in is refused when it would be a
+  different window's (W248).** The first open was four visible stages, all of them *after* the
+  window was on screen: it appeared at the size its controller built it, jumped to the positioned
+  frame, was grown to `interior + donorBorder` a runloop turn later by a notification observer that
+  cannot fire until the window is visible, and drew a stretched ring at each of those sizes until a
+  render at the last one landed. Reported 2026-09-20 as *"the window loads with stretched graphics,
+  might resize and then snaps in"*. Neither W230 nor W238 could reach it — both worked *inside* that
+  sequence. The two halves of the answer are `HostedWindowBorderLayout.prepare(_:)`, which is
+  `apply()`'s loop body for one window run **before `showWindow(nil)`** while the window is still off
+  screen (nothing in the target needs it to be visible: the donor's border is per-skin and the
+  interior is persisted or just-positioned), and the 15% stand-in tolerance, which now holds **every
+  donor** rather than only panels — a first open finds `mostRecent` holding the ring W230 primed at
+  the *donor's reference size*, and stretching 389x247 onto a 550x890 library is the reported defect.
+  **`showPlexBrowser` and `showProjectM` positioned the window after showing it** and were reordered;
+  the other six already positioned first. Verified live on `ALXVortex` 2026-09-20 — the reporter's
+  words were *"it loaded chrome and then the skin with no resize"*.
+- **The wait for a ring belongs to the skin load, not to the user's click (W248).** What A and C
+  left was the render itself — **1.28 s** for `ALXVortex`'s library ring, during which the window
+  wears palette chrome — and nothing about that build needs the window: the size is
+  `persisted interior + donorInsets`, both known once the skin has loaded. `WMPHostedFrameProvider.prewarm(_:)`
+  builds them **serially** while nothing is on screen waiting, and `HostedWindowBorderLayout`
+  chooses the sizes from the interiors it already persists, **most-recently-opened first and capped
+  at four** (`hostedWindowRecency`): the eleven persisted interiors span two controller families and
+  rendering all of them would put minutes of speculative work behind every skin load. A fresh
+  install therefore prewarms nothing and learns from the first session that opens anything.
+  **Once per skin, guarded on the provider's `generation`** — two skins can lend identical borders
+  with an emptied cache between them, so "the border changed" is the wrong test. A speculative
+  failure records nothing: `refused` and the template-dropping verdicts belong to the drawing path,
+  which has a window behind it. Measured on `ALXVortex` 2026-09-20: `prewarm queued=550x890` at
+  load, 1.277 s, and then a cold library open with **zero** misses and zero builds.
+- **A skin change holds the outgoing skin's frames until the incoming skin can replace them
+  (W248).** `configure(skin:)` emptied the cache the instant a new skin arrived, so every hosted
+  window on screen was stripped to flat palette chrome for the length of one scene build — measured
+  on the reporter's own pair, AlienMorph → ALXVortex, 2026-09-20: **51 draws on bare chrome, 1.29
+  s**. *The prewarm cannot reach this case*, and that is the point worth remembering: the window is
+  already open when the skin changes, so it asks for its frame the same instant the prewarm queues
+  it and both wait on the one build. There is no "before" left to move the work into. What the
+  window was wearing a moment ago, though, is real, complete, correctly-proportioned artwork for
+  exactly that size — the wrong *skin* for a beat, which is a far smaller lie than a stretched ring
+  or than nothing at all. So `outgoing` carries the old cache across the change and each entry is
+  dropped the moment the new skin answers for that size, **with a frame or with a refusal**; a skin
+  that lends nothing carries nothing, because its windows *should* go back to the palette. The
+  lookup falls back to the nearest held frame within the same 15%, because a skin change is usually
+  a size change too: different borders move every hosted window by the difference, and the
+  reporter's pair moves the library 890 → 887. After: all 51 of those draws are
+  `standin=outgoing from=550x890`, and no frame is bare. **That size change is W249 and this does not
+  fix it** — the dock and `HostedWindowBorderLayout` both own a docked window's height, so the slide
+  still costs a donor render per switch; it is now paid behind a correct frame instead of bare chrome.
 - **The stand-in is primed before any window opens, so a first open is never unskinned (W230).**
   Learning a ring donor's borders *is* composing a ring — `WMPHostedFrameTemplate.border` does it at
   the reference size when the skin loads — and the composition used to be discarded, so the first

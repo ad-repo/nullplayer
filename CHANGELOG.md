@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- **A Media Player skin's windows open at their finished size, wearing the skin, the first time
+  you open them.** The library and its siblings used to arrive in stages: the window appeared at one
+  size, jumped to another, was grown a third time to make room for the skin's border, and drew the
+  skin's frame stretched out of shape at each of those sizes before the real one snapped in — worst
+  on skins whose player is nothing like the shape of the window borrowing its frame. The window is
+  now sized before it is ever shown, so there is no resize to watch; a frame that would have to be
+  stretched onto a window it was not drawn for is no longer used at all; and the skin's frame is
+  rendered while the skin loads, for the windows you actually open, so opening one is immediate
+  rather than a second of plain chrome. **Changing skins no longer strips them either**: a window
+  keeps the frame it is wearing until the new skin has one ready for it, instead of dropping to
+  plain chrome for a second in between. Classic, Original and Modern are unchanged.
+
 - **Picking a Classic skin while running a Media Player skin no longer wipes out your
   visualization.** The Skins menu lists every Classic skin whatever skin you are running, and
   choosing one from a Media Player session quietly reset the analyzer — its mode, its colour profile

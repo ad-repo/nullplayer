@@ -1178,6 +1178,40 @@ class WindowManager {
         ]
     }
 
+    /// **Grow a hosted window to interior + border before it is ordered front (W248).**
+    ///
+    /// `HostedWindowBorderLayout` can only reach a window once it is visible — it is driven by
+    /// `didBecomeKey` and by the layout notification a show posts on its way out — so the growth
+    /// lands a runloop turn after the window is already on screen and the user watches it resize.
+    /// Nothing about the target needs the window to be visible, so every show path calls this
+    /// **after it has positioned the window and before `showWindow(nil)`**, and the pass that
+    /// follows finds the window already at its target.
+    ///
+    /// A no-op in every mode that lends no border: the rule then adds the window's own chrome back
+    /// around the interior it already has, which is the size it is at.
+    /// **Build the hosting skin's frames for windows that are not open yet (W248).**
+    ///
+    /// A donor ring is a scene build per size and a slow one, so a hosted window opened cold wears
+    /// palette chrome until it lands. The sizes are knowable at skin load — `HostedWindowBorderLayout`
+    /// computes them from the interiors it persists — and this hands them to the family that can
+    /// render them. Speculative work with nothing waiting on it: a size that fails here is not
+    /// recorded as refused, and a window that opens mid-queue is served by the drawing path as usual.
+    ///
+    /// A `switch` on the family for the same reason its siblings are one.
+    func prewarmHostedSurfaceFrames(_ sizes: [CGSize]) {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern: return
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController else { return }
+            MainActor.assumeIsolated { controller.hostedFrames.prewarm(sizes) }
+        }
+    }
+
+    func presizeHostedWindow(_ window: NSWindow?) {
+        guard let window else { return }
+        MainActor.assumeIsolated { hostedBorderLayout?.prepare(window) }
+    }
+
     /// Whether the loaded `.wal` skin registered any settings of its own (Phase 27.3). Safe default
     /// in every other mode, per the mode-guarding rule in CLAUDE.md — the menu asks this before it
     /// offers an entry point, so a skin that registers nothing shows no menu item at all.
@@ -2147,9 +2181,11 @@ class WindowManager {
             // Keep rapid skin toggles synchronous with the browser's visible state.
             plexBrowserWindowController?.window?.animationBehavior = .none
         }
-        plexBrowserWindowController?.showWindow(nil)
-        applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
-        // Position window to match the vertical stack
+        // **Positioned, then grown, then shown (W248).** This block used to run *after*
+        // `showWindow(nil)`, so the library appeared at whatever size its controller built it and
+        // jumped to the remembered frame in front of the user — the first of the two resizes
+        // reported on 2026-09-20. None of it needs the window to be visible: the docked helpers
+        // take the window as a parameter and exclude it from the cluster they measure.
         if let window = plexBrowserWindowController?.window {
             // Priority: explicit restored frame (launch / mode-rebuild) → remembered session
             // frame (reopen after hide/close) → default right-of-stack layout (first-ever open).
@@ -2174,6 +2210,9 @@ class WindowManager {
                 }
             }
         }
+        presizeHostedWindow(plexBrowserWindowController?.window)
+        plexBrowserWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
         plexBrowserWindowController?.refreshLibraryBackdrop()
         postLayoutChangeNotification()
     }
@@ -3667,9 +3706,8 @@ class WindowManager {
         if let presetIndex, presetIndex >= 0 {
             projectMWindowController?.restorePresetSelection(index: presetIndex)
         }
-        projectMWindowController?.showWindow(nil)
-        applyAlwaysOnTopToWindow(projectMWindowController?.window)
-        // Position window to match the vertical stack
+        // **Positioned, then grown, then shown (W248)** — the same reordering as `showPlexBrowser`,
+        // and for the same reason. `showWindow(nil)` starts the display link, so it stays last.
         if let window = projectMWindowController?.window {
             if isNewWindow, let frame = restoredFrame, frame != .zero {
                 // Use restored frame from state restoration (first creation only)
@@ -3687,6 +3725,9 @@ class WindowManager {
                 }
             }
         }
+        presizeHostedWindow(projectMWindowController?.window)
+        projectMWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(projectMWindowController?.window)
         postLayoutChangeNotification()
     }
     
@@ -3839,6 +3880,9 @@ class WindowManager {
             }
         }
         
+        // W248: grown to interior + border while still off screen, so the window the user
+        // sees is never resized under them a turn later.
+        presizeHostedWindow(spectrumWindowController?.window)
         spectrumWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(spectrumWindowController?.window)
         notifyMainWindowVisibilityChanged()
@@ -3915,6 +3959,9 @@ class WindowManager {
             }
         }
 
+        // W248: grown to interior + border while still off screen, so the window the user
+        // sees is never resized under them a turn later.
+        presizeHostedWindow(audioAnalysisWindowController?.window)
         audioAnalysisWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(audioAnalysisWindowController?.window)
         notifyMainWindowVisibilityChanged()
@@ -3989,6 +4036,9 @@ class WindowManager {
             }
         }
 
+        // W248: grown to interior + border while still off screen, so the window the user
+        // sees is never resized under them a turn later.
+        presizeHostedWindow(peppyMeterWindowController?.window)
         peppyMeterWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(peppyMeterWindowController?.window)
         notifyMainWindowVisibilityChanged()
@@ -4086,6 +4136,9 @@ class WindowManager {
             }
         }
 
+        // W248: grown to interior + border while still off screen, so the window the user
+        // sees is never resized under them a turn later.
+        presizeHostedWindow(networkMonitorWindowController?.window)
         networkMonitorWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(networkMonitorWindowController?.window)
         notifyMainWindowVisibilityChanged()
@@ -4159,6 +4212,9 @@ class WindowManager {
             }
         }
 
+        // W248: grown to interior + border while still off screen, so the window the user
+        // sees is never resized under them a turn later.
+        presizeHostedWindow(cavaWindowController?.window)
         cavaWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(cavaWindowController?.window)
         notifyMainWindowVisibilityChanged()
@@ -4247,6 +4303,9 @@ class WindowManager {
             }
         }
 
+        // W248: grown to interior + border while still off screen, so the window the user
+        // sees is never resized under them a turn later.
+        presizeHostedWindow(waveformWindowController?.window)
         waveformWindowController?.showWindow(nil)
         waveformWindowController?.updateTrack(audioEngine.currentTrack)
         waveformWindowController?.updateTime(current: audioEngine.currentTime, duration: audioEngine.duration)

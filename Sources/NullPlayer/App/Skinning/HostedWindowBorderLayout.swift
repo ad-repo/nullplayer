@@ -116,7 +116,139 @@ final class HostedWindowBorderLayout {
                     || abs(target.height - window.frame.height) > 1.5 else { continue }
             apply(size: target, to: window)
         }
+        prewarmRecentlyOpened(border)
     }
+
+    // MARK: - Before the window opens
+
+    /// **Ask the skin for the frames the windows that are not open will want (W248).**
+    ///
+    /// A ring is a full scene build per size — 1.28 s for the library's on `ALXVortex` — so a window
+    /// opened cold wears palette chrome for the length of it. The size is knowable long before the
+    /// click: it is this rule's own `interior + border`, and the interior is persisted across
+    /// launches by `persist(_:for:)`. So the sizes are computed here, at the first pass after a skin
+    /// resolves its border, and handed to the provider to build while nothing is waiting on them.
+    ///
+    /// **Only the windows this user actually opens**, most-recent-first and capped: the persisted
+    /// interiors cover eleven windows across two controller families, and rendering all of them
+    /// would put minutes of speculative work behind every skin load to serve a list of windows most
+    /// of which will not be opened. The recency list is written by `prepare(_:)`, which is the one
+    /// place every hosted window's open passes through — so a fresh install prewarms nothing, and
+    /// learns what to prewarm from the first session that opens anything.
+    private func prewarmRecentlyOpened(_ border: SkinnedSurfaceChrome.Metrics?) {
+        // Once-per-skin is the provider's own guard (`prewarmedGeneration`), not a comparison of
+        // borders here: two skins can lend the same four numbers with an emptied cache between them.
+        guard let border else { return }
+        // **A window that is already open is asked for the size it is at, not the size defaults
+        // remembers it by.** The stored interior is a reading from some earlier session and it can
+        // be points away from the live one, which is exactly the case a skin *switch* is: the cache
+        // has just been emptied under a window that is on screen this instant. Measured on
+        // `ALXVortex` 2026-09-20 — the prewarm queued 550x887 from defaults while the library stood
+        // at 550x890, so the one window that needed a frame was the one window that did not get
+        // one: 49 draws on palette chrome, then 587 on a stretched copy of the ring built for 887,
+        // then its own render. The loop above has just grown these windows to this border, so their
+        // frames *are* the target.
+        //
+        // **And it is asked for both sizes a window in transition can land on.** The target this
+        // rule computes is not always the size the window ends up at: the library is docked, the
+        // dock owns its height, and two skins lending different borders — `ALXVortex` 42/30/23/30
+        // against `ALXMorph` 42/30/26/30 — leave the rule asking for 893 while the window stays at
+        // 890. Whichever wins, a ring for it is wanted *now*; the loser costs one speculative render
+        // off screen, which is the whole currency this method spends. The 3-point disagreement
+        // underneath is W249 — the dock and this rule both own a docked window's height — and
+        // nothing here fixes it.
+        var sizes: [CGSize] = []
+        for entry in WindowManager.shared.hostedBorderWindows {
+            guard let window = entry.window, window.frame.width > 0, window.frame.height > 0
+            else { continue }
+            sizes.append(Self.outerSize(interior: seededInterior(for: window, fallback: entry.fallback).size,
+                                        border: border))
+            sizes.append(window.frame.size)
+        }
+        // Then the windows that are not open, which is all defaults can speak for.
+        sizes += Self.recentlyOpened().compactMap { identifier in
+            Self.storedInterior(forKey: "hostedInteriorSize2.\(identifier)")
+                .map { Self.outerSize(interior: $0, border: border) }
+        }
+        guard !sizes.isEmpty else { return }
+        WindowManager.shared.prewarmHostedSurfaceFrames(sizes)
+    }
+
+    /// How many windows deep the prewarm goes. Four is what a user has open at once in the traces
+    /// this rule was built from; past that the queue is speculating about windows that session is
+    /// not going to touch, and each entry costs a full donor render.
+    private static let prewarmDepth = 4
+
+    private static let recencyKey = "hostedWindowRecency"
+
+    /// The hosted windows this user opened most recently, most recent first.
+    private static func recentlyOpened() -> [String] {
+        (UserDefaults.standard.array(forKey: recencyKey) as? [String] ?? [])
+            .prefix(prewarmDepth)
+            .map { $0 }
+    }
+
+    /// Note that a window was opened, so the next skin load knows to build its frame first. Written
+    /// on the pre-show pass rather than on a resize: it is the *opening* that this orders.
+    private static func rememberOpened(_ window: NSWindow) {
+        let identifier = window.accessibilityIdentifier()
+        guard !identifier.isEmpty else { return }
+        var recency = (UserDefaults.standard.array(forKey: recencyKey) as? [String] ?? [])
+        recency.removeAll { $0 == identifier }
+        recency.insert(identifier, at: 0)
+        UserDefaults.standard.set(Array(recency.prefix(prewarmDepth * 2)), forKey: recencyKey)
+    }
+
+    private static func storedInterior(forKey key: String) -> CGSize? {
+        guard let stored = UserDefaults.standard.dictionary(forKey: key),
+              let width = (stored["w"] as? Double).map({ CGFloat($0) }),
+              let height = (stored["h"] as? Double).map({ CGFloat($0) }),
+              width > 0, height > 0
+        else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    /// **The same rule, for one window, before it is ordered front (W248).**
+    ///
+    /// `apply()` can only run once a window is visible — it is driven by `didBecomeKey` and by the
+    /// layout notification a show posts on its way out, and the observers are registered with
+    /// `queue: .main`, so the growth lands a runloop turn *after* the window the user asked for is
+    /// already on screen. That turn is one of the two visible jumps reported on 2026-09-20 as
+    /// "the window loads with stretched graphics, might resize and then snaps in": the window
+    /// appears wearing its own chrome at its own size and is then resized under the user's eyes.
+    ///
+    /// Nothing about the target needs the window to be visible. The donor's border is resolved once
+    /// per skin without reference to any window (W207) and the interior is either persisted or the
+    /// size the controller just positioned the window at, so the whole computation can be done while
+    /// the window is still off screen. This is that computation — `apply()`'s loop body for one
+    /// window — and after it `apply()` finds the window already at its target and skips it.
+    ///
+    /// Called by each hosted window's show path **after it has positioned the window and before
+    /// `showWindow(nil)`**. Guarded on the window not yet being visible, so a second call on a
+    /// window already up is a no-op rather than a resize the user did not ask for.
+    func prepare(_ window: NSWindow) {
+        guard Self.presizes, !window.isVisible,
+              window.frame.width > 0, window.frame.height > 0,
+              let entry = WindowManager.shared.hostedBorderWindows.first(where: { $0.window === window })
+        else { return }
+        let interior = seededInterior(for: window, fallback: entry.fallback)
+        let insets = Self.borderInPlay(fallback: entry.fallback)
+        let target = Self.outerSize(interior: interior.size, border: insets)
+        let minimum = Self.outerSize(interior: interior.minimum, border: insets)
+        window.minSize = NSSize(width: minimum.width, height: minimum.height)
+        Self.trace(window, interior: interior.size, insets: insets, target: target,
+                   donor: WindowManager.shared.hostedSurfaceBorderInsets != nil)
+        Self.rememberOpened(window)
+        guard abs(target.width - window.frame.width) > 1.5
+                || abs(target.height - window.frame.height) > 1.5 else { return }
+        apply(size: target, to: window)
+    }
+
+    /// `WMP_HOSTED_PRESIZE=0` — withhold the pre-show growth and restore the pre-W248 open, where a
+    /// hosted window appears at its own size and is grown a turn later. The A/B switch for the half
+    /// of W248 that is about *when* a window is sized, as `WMP_FRAME_STANDIN` is for the half about
+    /// what is drawn while its frame is still being rendered.
+    private static let presizes = ProcessInfo.processInfo.environment["WMP_HOSTED_PRESIZE"] != "0"
 
     private static func traceRun(_ border: SkinnedSurfaceChrome.Metrics?) {
         #if DEBUG

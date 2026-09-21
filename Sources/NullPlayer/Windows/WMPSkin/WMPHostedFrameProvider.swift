@@ -47,7 +47,26 @@ final class WMPHostedFrameProvider {
     /// squashing the window borders to the window size".
     private var refused: Set<Key> = []
     private var mostRecent: SkinnedSurfaceFrameArtwork?
+    /// **The skin that is on its way out, kept until the one coming in can replace it (W248).**
+    ///
+    /// A ring is a scene build per size — 1.27 s for the library's on `ALXVortex` — and a skin
+    /// change used to empty the cache the instant the new skin arrived, so every hosted window on
+    /// screen was stripped to flat palette chrome and waited out that render. Measured on the
+    /// reporter's own pair, AlienMorph → ALXVortex, 2026-09-20: 51 draws on chrome, then the frame.
+    /// **The prewarm cannot reach this case** — the window is already open when the skin changes, so
+    /// it asks for its frame the same instant the prewarm queues it and both wait on one build.
+    ///
+    /// What the window was wearing a moment ago is real, complete, correctly-proportioned artwork
+    /// for exactly this size. It is the wrong *skin* for a beat, and that is a far smaller lie than
+    /// a stretched ring (which is why the 15% rule below still refuses one) or than nothing at all.
+    /// So it is carried across the change, per size, and each entry is dropped the moment the new
+    /// skin answers for that size — with a frame, or with a refusal.
+    private var outgoing: [Key: SkinnedSurfaceFrameArtwork] = [:]
     private var generation = 0
+    /// The skin whose speculative frames have been queued, so `prewarm` runs once per skin however
+    /// often it is called. Not cleared by `reset()`: the generation it holds can never come round
+    /// again, and a stale value is answered by the inequality.
+    private var prewarmedGeneration: Int?
 
     /// **The border this skin adds around a hosted window's interior, independent of any window
     /// (W207).** Resolved once per skin, because the growth that gives a window room for the border
@@ -61,7 +80,12 @@ final class WMPHostedFrameProvider {
     func configure(skin: WMPLoadedSkin, playerViewID: String?) -> Bool {
         let derived = WMPHostedFrameTemplate.derive(from: skin, playerViewID: playerViewID)
         if derived == template, builder != nil { return derived != nil }
+        // Held across `reset()`, and only when something is coming in to replace it: a skin that
+        // lends no frame at all *should* put its windows back on palette chrome, and holding the
+        // last skin's ring over it would be dressing them in a skin the user has left.
+        let carried = derived != nil ? cache : [:]
         reset()
+        outgoing = carried
         guard let derived else { return false }
         template = derived
         let store = WMPImageStore(provider: skin.archive)
@@ -117,6 +141,7 @@ final class WMPHostedFrameProvider {
         order.removeAll()
         inFlight.removeAll()
         refused.removeAll()
+        outgoing.removeAll()
         mostRecent = nil
         donorInsets = nil
     }
@@ -126,7 +151,7 @@ final class WMPHostedFrameProvider {
     /// Never blocks: a size that has not been rendered yet schedules its render and is answered with
     /// the last frame scaled to fit, or with nil when nothing has been rendered at all.
     func artwork(for size: CGSize) -> SkinnedSurfaceFrameArtwork? {
-        guard let template, size.width > 0, size.height > 0 else { return nil }
+        guard template != nil, size.width > 0, size.height > 0 else { return nil }
         let key = Key(size)
         if let cached = cache[key] {
             touch(key)
@@ -139,27 +164,130 @@ final class WMPHostedFrameProvider {
             return nil
         }
         schedule(key)
-        // **The stand-in is for a resize, not for a different window.** A ring is laid out by its
-        // author at every size and stretching yesterday's by a few points is invisible for the frame
-        // or two before the real one lands. A *panel* is a nine-patch whose whole point is that its
-        // borders keep their thickness, so stretching one from 550x464 onto a 350x170 window is the
-        // squash the user sees — and it is the one thing the slice exists to avoid. Past 15% in
-        // either axis a panel answers nil instead and the window wears the palette for that frame.
+        // **What this window was wearing a moment ago, while the new skin builds its own.** Exact
+        // artwork for exactly this size, and the only wrong thing about it is whose skin it is.
+        if let held = outgoingArtwork(for: key) {
+            Self.trace("miss \(key.width)x\(key.height) standin=outgoing "
+                + "from=\(Int(held.size.width))x\(Int(held.size.height))")
+            return held.matches(size: key.size) ? held : held.scaled(to: key.size)
+        }
+        // **The stand-in is for a resize, not for a different window (W248).** A ring is laid out by
+        // its author at every size and stretching yesterday's by a few points is invisible for the
+        // frame or two before the real one lands. Stretching it onto a *different window* is not:
+        // the tolerance below was written for panels, whose borders are a nine-patch that must keep
+        // its thickness, but a ring carries the same defect in a form the slice cannot excuse —
+        // a first open finds `mostRecent` holding the ring W230 primed at the **donor's reference
+        // size**, and a donor nothing like the library's shape is stretched onto 603x594 without
+        // limit. Reported 2026-09-20 as "the window loads with stretched graphics". So the 15% test
+        // is every donor's, and past it the window wears flat palette chrome for the one render
+        // rather than geometry that visibly deforms.
         guard let stale = mostRecent else {
             Self.trace("miss \(key.width)x\(key.height) standin=none")
             return nil
         }
-        if template.panelNodeID != nil {
+        if !Self.standsInAtAnyScale {
             let widthRatio = stale.size.width > 0 ? size.width / stale.size.width : 0
             let heightRatio = stale.size.height > 0 ? size.height / stale.size.height : 0
             guard (0.85...1.15).contains(widthRatio), (0.85...1.15).contains(heightRatio) else {
-                Self.trace("miss \(key.width)x\(key.height) standin=panel-refused")
+                Self.trace("miss \(key.width)x\(key.height) standin=out-of-scale "
+                    + "from=\(Int(stale.size.width))x\(Int(stale.size.height))")
                 return nil
             }
         }
         Self.trace("miss \(key.width)x\(key.height) standin=scaled "
             + "from=\(Int(stale.size.width))x\(Int(stale.size.height))")
         return stale.scaled(to: key.size)
+    }
+
+    /// **Render the frames the hosted windows are going to ask for, before they ask (W248).**
+    ///
+    /// A ring is a full scene build per size and it is not cheap — `ALXVortex` measured **1.28 s**
+    /// for the library's 550x890 on 2026-09-20 — so a window opened cold wears palette chrome for
+    /// that long and then the skin arrives under the user's eyes. Nothing about the build needs the
+    /// window: the size is `persisted interior + donorInsets`, both known once the skin has loaded.
+    /// So the wait is moved off the user's click and onto the skin load, where there is nothing on
+    /// screen to wait for it.
+    ///
+    /// **Serial, deliberately.** These are speculative builds for windows that may never open, and
+    /// firing them concurrently would put every core on work nobody asked for while the skin the
+    /// user *is* looking at is still settling. One at a time, each one answerable the moment it
+    /// lands. A size already cached, refused or in flight is skipped — a real window that opens
+    /// mid-queue is served by `artwork(for:)` as usual and its build is not duplicated.
+    ///
+    /// The caller decides *which* sizes, because the interiors and their recency belong to
+    /// `HostedWindowBorderLayout`. This type only knows how to render one.
+    func prewarm(_ sizes: [CGSize]) {
+        guard Self.prewarms, let template, let builder, let renderer else { return }
+        // **Once per skin, and the skin is what `generation` counts.** The caller runs on a
+        // broadcast that fires many times over a skin's life, and the obvious guard there — "the
+        // donor's border changed" — is wrong for two skins that lend the same four numbers: the
+        // cache was emptied by `reset()` between them and nothing would have refilled it.
+        guard prewarmedGeneration != generation else { return }
+        prewarmedGeneration = generation
+        var queue: [Key] = []
+        for size in sizes where size.width > 0 && size.height > 0 {
+            let key = Key(size)
+            guard cache[key] == nil, !refused.contains(key), !inFlight.contains(key),
+                  !queue.contains(key) else { continue }
+            queue.append(key)
+            inFlight.insert(key)
+        }
+        guard !queue.isEmpty else { return }
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let generation = self.generation
+        Self.trace("prewarm queued=" + queue.map { "\($0.width)x\($0.height)" }.joined(separator: ","))
+        Task { [weak self] in
+            for key in queue {
+                let started = DispatchTime.now()
+                let produced = try? await template.artwork(builder: builder, renderer: renderer,
+                                                           size: key.size, backingScale: scale)
+                guard let self else { return }
+                let elapsed = Double(DispatchTime.now().uptimeNanoseconds
+                    - started.uptimeNanoseconds) / 1e6
+                let stop = await MainActor.run { () -> Bool in
+                    // The skin changed under the queue: every remaining size belongs to a donor
+                    // that is gone, and `reset()` has already emptied `inFlight`.
+                    guard self.generation == generation else { return true }
+                    self.inFlight.remove(key)
+                    Self.trace("prewarmed \(key.width)x\(key.height) "
+                        + "ok=\(produced != nil) ms=\(Int(elapsed.rounded()))")
+                    // **A refusal here is not recorded.** `schedule` marks a size refused because a
+                    // window is drawing at it and must stop asking every frame; a speculative build
+                    // that fails has no window behind it, and a size this pass could not produce
+                    // must still get its real answer — including the template-dropping verdicts —
+                    // from the drawing path if a window ever does open at it.
+                    guard let produced else { return false }
+                    self.store(produced, for: key)
+                    NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
+                    return false
+                }
+                if stop { return }
+            }
+        }
+    }
+
+    /// The outgoing skin's frame for `key`, or the nearest one it has **within the same 15% the
+    /// stand-in is held to**.
+    ///
+    /// The nearest is needed because a skin change is usually a *size* change as well: the two
+    /// skins lend different borders, so `HostedWindowBorderLayout` grows or shrinks every hosted
+    /// window by the difference, and the window asks for a size the outgoing skin was never asked
+    /// for. The reporter's own pair moves the library 890 → 887 — three points, 0.3%, invisible
+    /// stretched and the difference between a correct frame and bare chrome for 1.3 s. Past the
+    /// tolerance nothing is offered, for the reason the tolerance exists at all.
+    private func outgoingArtwork(for key: Key) -> SkinnedSurfaceFrameArtwork? {
+        if let exact = outgoing[key] { return exact }
+        return outgoing.values
+            .filter { candidate in
+                guard candidate.size.width > 0, candidate.size.height > 0 else { return false }
+                let widthRatio = key.size.width / candidate.size.width
+                let heightRatio = key.size.height / candidate.size.height
+                return (0.85...1.15).contains(widthRatio) && (0.85...1.15).contains(heightRatio)
+            }
+            .min { lhs, rhs in
+                abs(lhs.size.height - key.size.height) + abs(lhs.size.width - key.size.width)
+                    < abs(rhs.size.height - key.size.height) + abs(rhs.size.width - key.size.width)
+            }
     }
 
     /// **The frame actually rendered for `size` — no stand-in, and no build scheduled (W238).**
@@ -224,6 +352,9 @@ final class WMPHostedFrameProvider {
                         NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
                         return
                     }
+                    // A refusal is an answer too: this skin will not dress this window, so the
+                    // outgoing skin's frame stops standing in and the window takes the palette.
+                    self.outgoing.removeValue(forKey: key)
                     if !unslicable { self.refused.insert(key) }
                     // **A panel that cannot be sliced lends nothing, and only the artwork pass
                     // knows** (W207): the four slice lines come from the *resolved* hole, so a
@@ -248,6 +379,8 @@ final class WMPHostedFrameProvider {
     }
 
     private func store(_ artwork: SkinnedSurfaceFrameArtwork, for key: Key) {
+        // The new skin has answered for this size, so the old one's frame has nothing left to cover.
+        outgoing.removeValue(forKey: key)
         cache[key] = artwork
         mostRecent = artwork
         touch(key)
@@ -267,6 +400,18 @@ final class WMPHostedFrameProvider {
     /// switch in the same binary, which is the only honest way to ask whether a frame that looks
     /// wrong looks wrong *because* of the priming.
     private static let primes = ProcessInfo.processInfo.environment["WMP_FRAME_PRIME"] != "0"
+
+    /// `WMP_HOSTED_PREWARM=0` — never build a frame for a window that is not open, and restore the
+    /// pre-W248 first open, where the render starts when the user opens the window and they watch
+    /// palette chrome for the length of it. The third of W248's A/B switches.
+    private static let prewarms = ProcessInfo.processInfo.environment["WMP_HOSTED_PREWARM"] != "0"
+
+    /// `WMP_FRAME_STANDIN=always` — restore the pre-W248 stand-in, where a ring was stretched onto
+    /// any window size while its own render was in flight and only a panel was held to 15%. The A/B
+    /// switch for the half of W248 that is about what is *drawn* during the gap, as its sibling
+    /// `WMP_HOSTED_PRESIZE` is for the half about when the window is sized.
+    private static let standsInAtAnyScale =
+        ProcessInfo.processInfo.environment["WMP_FRAME_STANDIN"] == "always"
 
     private static let traces = ProcessInfo.processInfo.environment["WMP_FRAME_TRACE"] != nil
 
