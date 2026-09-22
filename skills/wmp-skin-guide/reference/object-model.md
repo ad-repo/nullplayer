@@ -686,19 +686,62 @@ that costs the handler — the W37 class rather than a gap in a table nothing re
 
 In WMP an event handler's unqualified names resolve against the element the handler is **on**, before
 anything else. It is why one file writes `visEffects.next()` in one place and a bare `next()` in
-another and expects both to work. This engine resolves neither: `circle`'s
-`<EFFECTS onClick="previous();">` throws `ReferenceError: Can't find variable: previous` and
-`pharaoh` authors the same idiom as `next();`, so clicking either skin's visualizer does nothing.
+another and expects both to work, and why `<BUTTONELEMENT onClick="player.settings.mute = down">`
+reads the button it is written on.
 
-**2 archives known, corpus reach unmeasured**, and it must be measured before it is sized: the
-demand is in `onClick`, which the census never drives. That is the blind spot that recorded W100 at
-2 skins when the true number was 162. Scan the decoded script text for a bare call whose name is an
-element method — `next`, `previous`, `play`, `pause`, `stop`, `close`, `minimize` — and print the
-encoding breakdown, the way `harness.md` § *Auditing one authored control across the whole corpus*
-prescribes. Verify with `WMP_RENDER_CLICK` on `circle` at `vMain@69,68`, the visualizer's fringe;
-the handler error is on the `CLICK` line.
+**Closed 2026-09-22.** A markup handler is evaluated inside `with (__wmpWrap('element:<owner>'))` —
+the same scope a geometry expression gets — at all four dispatch sites in `WMPScriptContext`: the
+event, `value_onchange`, `<attribute>_onchange` and the completion cascade. It is **not** wrapped in
+a function: a handler's `var` is the skin's global (`corona` declares `g_playlistIsVisible` in one
+handler and reads it in every other), and a `with` block keeps it there. The `value` and
+`<attribute>` globals the call sites bind stay, because they are bound for the element that *raised*
+the event, which is not always the one the handler is written on.
 
----
+**What made it safe is `WMPObjectModel.recognises`, and it was wrong at both edges.** The `with`
+proxy asks it for every identifier, and it is deliberately narrower than the open property surface
+the read path answers with — an element that claims every name swallows the skin's own functions.
+The corpus sweep found both corrections; neither was visible from the code:
+
+- **An authored *handler* attribute is not a name the element owns.** A `<VIEW onLoad="OnLoad();">`
+  authors `onload`, so the element answered the bare `OnLoad` with the attribute's own text and
+  `corona`'s entire startup died on `OnLoad is not a function`. `recognises` now declines any
+  `on*`/`*_onchange` name; WMP raises those, it does not expose them as properties.
+- **The computed properties `readElement` answers from the host must be claimed.** `textWidth`, the
+  `<EFFECTS>` selection (`currentEffectType`, `currentPreset`, and the two titles) and the `<VIDEO>`
+  flags are not authored and not standard, so a bare `textWidth` threw while `metadata.textWidth`
+  beside it answered — `Asia`'s `onEndMove="scrolling = textWidth > width"`, which is how a marquee
+  decides to scroll at all. `computedElementProperties` is that list and lives next to
+  `readElement`; **a computed property added there and not here is readable qualified and invisible
+  bare.**
+
+**Measured 2026-09-21 over the 184-archive corpus** with
+`python3 scripts/wmp_handler_scope_census.py`, which scans the decoded script text — the census
+drives `onLoad` and this demand is in `onClick`, which is the W100 blind spot — and repairing the
+`01 00 01 00` local headers the way `WMPArchiveHeaderRepair` does, without which
+`Need_for_Speed_Underground` and `SplinterCellWMPSkin` drop out silently. The scan's encoding
+breakdown, which a correct one reproduces: 158 UTF-16-BOM / 146 cp1252 / 89 UTF-8 / 9 UTF-8-BOM.
+
+| half of the class | measured |
+|---|---|
+| unqualified **call** — the recorded row | **31 uses / 20 archives**: `previous()` 10, `next()` 8, `alphaBlendTo` 4, `nextEffect` 1. Resolving a handler through the call graph (handler → the skin's own function, three levels) adds **nothing**: the idiom is written in the attribute itself. |
+| unqualified **property**, net of the `value` and `<attr>_onchange` globals already bound | **255 unresolved reads + 249 silent writes / 100 archives**: `down` 196/89, `toolTip=` 114/40, `left`/`top` 108/9, `width` 34/25, `scrolling` 20/17 |
+
+**The call half is the row and is not what carries it.** `player.settings.mute = down` on a sticky
+mute button is 89 archives on its own; before this a read threw
+`ReferenceError: Can't find variable: down` — so the button latched and the player never muted —
+while a write silently made a global and never reached the element, which is `toolTip='Seek'` and
+`scrolling=false` reporting success and changing nothing.
+
+Reproduce either half with `WMP_RENDER_CLICK`: `circle` at `vMain@69,68` (the visualizer fringe)
+posts `command=stepEffect value=-1`, and `9SeriesDefault` at `vPlayer@394,309` — the mute button's
+mapping colour, found the way harness.md § *Auditing one authored control* prescribes, **median
+pixel, never the first** — posts `command=setMute value=1`. Both printed the `ReferenceError` on the
+`CLICK` line before. The corpus sweep across the change is **551 of 553 images identical and every
+structural invariant byte-identical**; the two that moved are `Revert (1)`, whose authored idle fade
+now runs, and `Scooby-Doo_2`, which differs run to run on its own `Math.random()`. Corpus
+handler-errors went 69 → 68 — three gone, two new on `Asia`'s own double-escaped `textWidth&gt;width`
+that only became reachable once the statement before it ran.
+`Tests/NullPlayerAppTests/WMPHandlerElementScopeTests.swift` holds both halves and both guards.
 
 ## Ambient `<attribute>_onchange` handlers
 

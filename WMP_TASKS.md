@@ -87,7 +87,16 @@ same day). Both are in [the archive](docs/wmp-skin/wmp-backlog-archive.md); **th
 behind is that a `hits` count taken at t=0 is a count of a scene nobody sees in a skin that opens
 behind an animation — settle before ranking one.**
 
-**Empty since 2026-09-20: W246 was this tier's only row and closed the day it opened** — the
+**Two rows opened here 2026-09-21, both reported live while W216 was being accepted.** Neither has
+a headless signature: the first is a picture that never appears and the second is motion, and no
+instrument on this page draws a second frame.
+
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W252 | **A skin's own `<VIDEO>` rect stays hidden, so a video plays with no picture in the skin** | `Revert` reported live 2026-09-21; **corpus reach unmeasured** — 268 `<VIDEO>` views in 170 archives is the population, not this defect's | Not blocked. **Localised to the skin's own gate, not to the hosted surface**: `Revert`'s `vwPlayer_SelectVideoOrVis()` shows `ctrlVideo` only when `player.openState == 13` **and** `player.currentMedia.imageSourceWidth/Height` are both > 0, and hides it otherwise — so a zero size at the moment the handler runs latches the visualizer on and nothing ever raises the function again. `openState` answers 13 whenever `playlistCount > 0`, so **measure `imageSourceWidth` at the instant `openstatechange` fires**, with a real film — `WMPHostSnapshot.transitioning` exists for exactly the interval where VLC has not reported a size yet (the Alienware family's `view.close()` is the sibling case). Drive it: `skills/live-ui-testing`, video from `scripts/testdata.sh path video-*`, and read `WMP_CALL_TRACE`'s `currentmedia.imagesourcewidth` rows, not the screen. **`Revert` and `Revert (1)` are the same markup** for this row. |
+| W253 | **A tween started in `onLoad` lands its endpoint in one frame, because the load transaction carries no clock** | **108 of 184 archives** reach a tween from an `onLoad` (`moveTo` 473 uses / 104 archives, `alphaBlendTo` 456 / 37), measured 2026-09-21 — **but that is the population and most of it is startup layout, where landing the endpoint is right** | Not blocked, and deliberately ranked below W252 because the visible half is small. W194 gave `moveTo`/`resizeTo`/`alphaBlendTo` a real duration by passing `animatesTweens:` from the click and view-timer paths **and nowhere else** — the initial `load` transaction (`WMPMainWindowController` ~line 1348) passes nothing and never calls `startTweenLoop`, so a tween authored in `onLoad` jumps. `Revert (1)`'s `onLoad="vwPlayer_OnLoad();alphaBlendTo(40,9000);"` is the clean case: a 9-second fade to translucent arrives fully faded on the first frame. **Decide what a skin means by animating at load before widening the clock** — a drawer that slides in every launch is worse than one that is simply open, which is why the 108 is not the size of this row. Evidence: archive entry W194, and `skills/wmp-skin-guide/reference/harness.md` on why no capture can see motion. |
+
+**W246 was this tier's previous row and closed the day it opened, 2026-09-20** — the
 `Xbox Live Skin` playlist would not scroll because every host refresh pulled it back onto the
 playing track, which was every skin's playlist and not that skin's (174 of 182 archives share the
 view; the numbers and the A/B are in [the archive](docs/wmp-skin/wmp-backlog-archive.md)).
@@ -221,14 +230,28 @@ the trap that rule exists for.
 | `<EFFECTS>` / `<WMPEFFECTS>` | 178 | 171 | 144 | yes (W101) | — |
 | `<PLAYLIST>` family | 175 | 170 | 162 | yes (W93, W97) | — |
 | `<EQUALIZERSETTINGS>` | 170 | 163 | 147 | yes, as the skin's own bound sliders | — |
-| `<VIDEOSETTINGS>` | 94 | 94 | 93 | no | **W103** |
-| `<NETWORK>` | 6 | 4 | 4 | object-only, correctly (W104) | **W251** |
+| `<VIDEOSETTINGS>` | 94 | 94 | 93 | no | — |
+| `<NETWORK>` | 6 | 4 | 4 | object-only, correctly (W104) | — |
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W103 | `<VIDEOSETTINGS>` binds 94 skins' sliders to controls this player does not have | **94 uses across 94 of 177 archives**, one per skin, 93 of them in a view of their own | **Blocked on a decision, not on drawing work**: either `inert()` the brightness/contrast/hue/saturation panel, or add the four controls to the video path and bind them honestly. **Do not resolve them to a value this player never applies** — a slider that moves and changes nothing is the worse outcome. Answerable since W102 landed. Evidence: `object-model.md` § *The `<VIDEOSETTINGS>` element (W103)*. |
-| W251 | `<NETWORK>`'s live numbers: `bufferingProgress` and `receptionQuality` are fields nothing writes | **26 + 9 script uses across 11 and 4 of 184 archives**, plus **55 `wmpprop:` buffer-bar bindings across ~36** riding the same field (measured 2026-09-21; `harness.md` § *Grepping the corpus's script text*) | Successor to **W104, closed 2026-09-21** ([archive](docs/wmp-skin/wmp-backlog-archive.md)), which made the member surface answer instead of abort but left the value a dead `0`. **Feed both from the streaming player's own statistics, never from Flow** — `NetworkMonitor` measures interface throughput for the whole machine and would draw a confident wrong number. **The cost of leaving it is already on screen**: `tubeframe.wmz` reads `Playing: 0% downloaded` on every track because its `GetMetaData` prints the field whenever it is under 100, and ~36 archives draw a permanently empty buffer bar. A constant `100` was declined as unmeasured; the live field corrects both together. Flow is still the right *window* for a `<NETWORK>` view — the object and the window are two separate answers. Evidence: `object-model.md` § *The `<NETWORK>` element (W104)*. |
+**Empty since 2026-09-21: both rows moved to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md) the same
+day, for two different defects in the rows.** **W251** instructed that `bufferingProgress` and
+`receptionQuality` be fed from the streaming player's own statistics, and that player keeps no such
+statistics — a `.buffering` state and a bare `didFinishBuffering` edge are the whole surface, so the
+source it named was false while the cost it described stayed on screen. **W103** had been *blocked on
+a decision, not on drawing work* since W102 landed on 2026-09-10: `inert()` the four
+`<VIDEOSETTINGS>` sliders, or add brightness, contrast, hue and saturation to the video path and bind
+them honestly. A question is not a unit of work, and keeping it at the top of a ranked tier made the
+tier read as though it had work available. **Read both entries before re-opening either number, and
+re-measure — W103's reach was taken over 177 archives on 2026-09-07.**
 
+**The rule the tier is named for is unchanged and neither move weakens it**: a surface recognised for
+*routing* and not hosted draws the user an empty drawer, so a hosting row still lands before the
+routing that stands NullPlayer's own window aside. W103's own prohibition outlives its row and is the
+reason it could not simply be answered with a number — **do not resolve a control to a value this
+player never applies**; a slider that moves and changes nothing is the worse outcome.
+
+**The tier stays empty of rows and stays on the page**, for the same reason the tiers above it do: a
+new surface, or a hosted one that stops being hosted, comes back here.
 
 ## Tier 2 — the script runtime, after Phase 3
 
@@ -251,14 +274,19 @@ Reproduce with `scripts/wmp_render_sweep.sh capture <dir> --allow-dirty` and tal
 `WMP: unimplemented <member>` and `Can't find variable: <name>` in `<dir>/raw.txt` by name and by
 containing `SKIN` block.
 
-**W216 is first and its Reach is unmeasured.** It is placed on the W100 precedent — the census drives
-`onLoad` and this demand is in `onClick`, which is how W100 read as 2 skins when the true number was
-162 — and it is the only row here that stops a *click* rather than a load. **If it comes back small
-it drops below W39.**
+**W216 closed 2026-09-22 and is archived**; it headed this tier as *unmeasured* and the measurement
+is the part worth keeping. The recorded reach was 2 archives, the call half came back at **31 uses /
+20 archives**, and the half nobody had counted — the element's own *properties*, read and written
+bare in its handlers — came back at **255 unresolved reads + 249 silent writes across 100 of 184
+archives**. **A row whose Reach is a count of one idiom is a count of one idiom**: `down` alone
+(196 uses / 89 archives) outweighed the class the row was named for. The scan that produced it, the
+two arbiter corrections the corpus sweep forced, and the `WMP_RENDER_CLICK` reproductions are in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
+`skills/wmp-skin-guide/reference/object-model.md` § *An unqualified name in a handler resolves
+against its own element first (W216)*.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W216 | **An unqualified call in an event handler does not resolve against the element the handler is on** | 2 archives known (`circle`, `pharaoh`), **corpus reach unmeasured** | Blocked on its own measurement: **measure the reach before sizing it**, the way `harness.md` § *Auditing one authored control across the whole corpus* prescribes, because the demand is in `onClick` and the census never drives it. Verify with `WMP_RENDER_CLICK` on `circle` at `vMain@69,68`. Evidence: `object-model.md` § *An unqualified name in a handler resolves against its own element first (W216)*. |
 | W39 | `eq.speakerSize` | 18 skins | Plus `eq.enableSplineTension` and `eq.enhancedAudio` at 1 each. WMP's speaker/spatial settings; the engine has no equivalent, so this is an honest `inert()` candidate rather than a feature. |
 | W42 | A skin function is missing because its program never registered | ~12 skins, 1–2 each | `skin_init`, `loadVidPrefs`, `UpdateMetaData`, `checkForContent`, `Init`, `gears`… Each is one skin's own function, so the cause is upstream: a `.js` that failed to resolve, evaluated with an error, or is a `res://` entry. Diagnose from `SCRIPT`/`SCRIPTS` lines before writing any object-model code. |
 | W136 | SDK element methods this engine does not implement, now that they are tallied at all (W128) | `plListBox1/2.deleteAll()` **10 skins** (7 census-visible), `playlist2.copy()` 8, `playlist2.abortCopy()` 8, `playlist1.deleteSelected()` 5, `fileList.insertItem()` 3 | **Blocked on W66's media-collection decision** — every `deleteAll` call is inside the skin's own `try`/`catch` (`fillListBox()`, `warcraft.js:1584`), and the box has nothing to put in it until `player.mediaCollection` answers. This row is what that decision would let the skins actually do. **The census sees only `deleteAll`**: the rest sit in click handlers, so measure them through the live loop or a click-driving sweep before ranking them against each other. Reproduce by tallying `UNRECOGNISED` in `render.txt`. |

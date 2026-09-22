@@ -23,6 +23,73 @@ The live backlogs are [`WMP_TASKS.md`](WMP_TASKS.md) and
 
 ## `.wmz` — Windows Media Player
 
+### W103 — A question about what to bind, carried in a ranked file as work
+
+**Moved 2026-09-21 by decision, with no behavior change.** The row has been **blocked on a decision,
+not on drawing work** in its own words since W102 landed on 2026-09-10, and it names the two answers
+itself: `inert()` the brightness/contrast/hue/saturation panel, or add the four controls to the video
+path and bind them honestly. Nothing in it can be taken, verified or closed until someone picks one,
+so it is a question rather than a unit of work, and a ranked file is the wrong place to keep a
+question — it sat at the top of Tier 1e making the tier read as though it had available work.
+
+**Its own content is sound and nothing here disputes it.** The prohibition it carries is the most
+valuable line in the row and survives the move: **do not resolve the four sliders to a value this
+player never applies** — a slider that moves and changes nothing is worse than one that is plainly
+inert. The `<VIDEOSETTINGS>` element and what a skin asks of it are documented independently in
+`skills/wmp-skin-guide/reference/object-model.md` § *The `<VIDEOSETTINGS>` element (W103)*, which is
+where a reader should start whichever way the decision goes.
+
+**Its numbers are stale and must not be carried forward.** 94 uses across 94 of 177 archives was
+measured 2026-09-07; the corpus has been 184-185 archives since. Re-run
+`scripts/wmp_markup_census.sh` before quoting the reach again.
+
+**To revive it, answer the question first and open the answer as the row.** "Make the panel inert"
+is a small, closable row with a definite end state. "Add brightness, contrast, hue and saturation to
+the video path" is a video-subsystem project that a `.wmz` row then consumes, and it belongs to the
+video path's own backlog rather than to this page. Either is takeable; the choice between them is
+not.
+
+**The row, verbatim:**
+
+> | W103 | `<VIDEOSETTINGS>` binds 94 skins' sliders to controls this player does not have | **94 uses across 94 of 177 archives**, one per skin, 93 of them in a view of their own | **Blocked on a decision, not on drawing work**: either `inert()` the brightness/contrast/hue/saturation panel, or add the four controls to the video path and bind them honestly. **Do not resolve them to a value this player never applies** — a slider that moves and changes nothing is the worse outcome. Answerable since W102 landed. Evidence: `object-model.md` § *The `<VIDEOSETTINGS>` element (W103)*. |
+
+### W251 — Live network numbers sourced from statistics that do not exist
+
+**Moved 2026-09-21 on a source audit, with no behavior change.** The row's one instruction is
+"feed both from the streaming player's own statistics", and the streaming player has no such
+statistics to feed from. `Audio/StreamingAudioPlayer.swift` exposes an `AudioPlayerState` that
+includes `.buffering` (`:173`), the bare edge `audioPlayerDidFinishBuffering` (`:901`),
+`audioPlayerStateChanged` (`:905`) and `audioPlayerUnexpectedError` (`:926`). There is no loaded
+byte range, no buffered duration, no bitrate-against-throughput, and no packet or rebuffer counter
+anywhere beneath it.
+
+So the row cannot be taken in the shape it is in. What the available signals would actually support:
+
+- `bufferingProgress` could only be *state*-derived — `0` while `.buffering`, `100` once playing.
+  That is a two-valued field rather than progress, and it sits a hair from the constant `100` the
+  row itself records as **declined as unmeasured**. It is a decision, not the work the row describes.
+- `receptionQuality` has no honest source at all. Counting rebuffer events would be a metric this
+  codebase invented, not the one WMP means.
+- Local files are the only clean case: no network is involved, so a settled full value is truthful
+  rather than a guess.
+
+**The cost the row describes is real and was not re-measured here** — `tubeframe.wmz` reading
+`Playing: 0% downloaded`, and the buffer bars riding the same field. It is the *source* that is
+false, and W104's own closure is untouched by this: the members answer instead of aborting the
+handler, which is what that row claimed.
+
+**To revive it, bring the statistics first.** Real numbers mean work below the skin layer — reaching
+StreamingKit's internal buffer accounting, or moving the streaming path onto `AVPlayer`, where
+`loadedTimeRanges` and `isPlaybackLikelyToKeepUp` exist. That is an audio-subsystem project with its
+own justification, and a `.wmz` row is one small consumer of it. Re-measure the corpus reach at that
+point rather than carrying the numbers below forward. If instead the two-valued state-derived field
+is wanted on its own merits, open it as a *decision* row alongside W103 and say plainly on the page
+that it is a state flag spelled as a percentage.
+
+**The row, verbatim:**
+
+> | W251 | `<NETWORK>`'s live numbers: `bufferingProgress` and `receptionQuality` are fields nothing writes | **26 + 9 script uses across 11 and 4 of 184 archives**, plus **55 `wmpprop:` buffer-bar bindings across ~36** riding the same field (measured 2026-09-21; `harness.md` § *Grepping the corpus's script text*) | Successor to **W104, closed 2026-09-21** ([archive](docs/wmp-skin/wmp-backlog-archive.md)), which made the member surface answer instead of abort but left the value a dead `0`. **Feed both from the streaming player's own statistics, never from Flow** — `NetworkMonitor` measures interface throughput for the whole machine and would draw a confident wrong number. **The cost of leaving it is already on screen**: `tubeframe.wmz` reads `Playing: 0% downloaded` on every track because its `GetMetaData` prints the field whenever it is under 100, and ~36 archives draw a permanently empty buffer bar. A constant `100` was declined as unmeasured; the live field corrects both together. Flow is still the right *window* for a `<NETWORK>` view — the object and the window are two separate answers. Evidence: `object-model.md` § *The `<NETWORK>` element (W104)*. |
+
 ### W249 — A pre-resize trace was read as a refused resize
 
 **Moved 2026-09-20 after live measurement on `caffef9e`, with no behavior change.**

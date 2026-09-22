@@ -948,6 +948,12 @@ mkdir -p /tmp/base/.build/arm64-apple-macosx/{Frameworks,debug}
 The `--allow-dirty` this then needs is safe **for the baseline worktree only** — the untracked thing
 making it dirty is a symlink to a framework. Never pass it to hide real edits.
 
+**Link the files, never the directory.** `Frameworks/` is *partly* tracked — `libprojectm-4/` and
+`libaubio/` are headers in git — so replacing the whole directory with one symlink deletes twelve
+tracked files, and `capture` then refuses the worktree for a dirt it was handed. Measured 2026-09-21
+while capturing W216's baseline: the failure reads as a capture that will not start rather than as a
+link done wrong.
+
 ## The line grammar
 
 Machine-readable, one fact per line, inside a `SKIN <file.wmz>` block. `scripts/wmp_skin_census.sh`
@@ -1237,6 +1243,28 @@ two hashes. Do not read it as collateral from a change.
 The companion number, from the markup census's own attribute counts: **4,979 of the 6,076
 `transparencyColor` declarations in the corpus (82%, 142 skins) are `#ff00ff`.** That is why the
 default is that colour and not another.
+
+### `python3 scripts/wmp_handler_scope_census.py [json-out]`
+
+**What a handler names without qualifying it**, over the installed corpus: every unqualified *call*
+of an element-method name — resolved through the skin's own functions to three levels — and every
+unqualified *property* reference that names an attribute the handler's own element authored, split
+into reads and writes. It is the instrument W216 was measured with (31 calls / 20 archives; 255
+reads + 249 writes / 100 archives, 2026-09-21).
+
+**The census cannot answer this and neither can a sweep**: `wmp_skin_census.sh` drives `onLoad`,
+this demand is in `onClick`, and that is the blind spot § *Auditing one authored control across the
+whole corpus* exists for. So it reads the decoded script text directly, the way `WMPTextDecoder`
+does, and **repairs the `01 00 01 00` local file headers the way `WMPArchiveHeaderRepair` does** —
+without that, `Need_for_Speed_Underground` and `SplinterCellWMPSkin` are dropped on a `BadZipFile`
+and a scan that does not print what it skipped reads as a clean corpus. It prints the **encoding
+breakdown as calibration**: a correct run over 184 archives reproduces 158 UTF-16-BOM / 146 cp1252 /
+89 UTF-8 / 9 UTF-8-BOM, and a run that does not has decoded something differently from the engine.
+
+**It nets out what the engine already binds** — `value`, and the changing attribute inside an
+`<attribute>_onchange` — so the count is the residue a handler cannot reach, not the population of
+bare names. Extending it to another class of name means changing `VOCAB` or `is_handler`, both at
+the top of the file.
 
 ### `scripts/wmp_render_sweep.sh capture|compare`
 

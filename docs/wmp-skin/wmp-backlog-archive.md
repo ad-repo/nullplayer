@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W252.** (**W251 was issued 2026-09-21** for the live half of W104 and is open in Tier 1e. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W254.** (**W252 and W253 were issued 2026-09-21** and are open in Tier 1c of [`WMP_TASKS.md`](../../WMP_TASKS.md) — the `Revert` video rect that never shows a picture, and the `onLoad` tween that lands in one frame because the load transaction carries no clock; both were reported live and neither has a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -40,6 +40,81 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+
+## W216 — an unqualified name in a handler now resolves against its own element (closed 2026-09-22)
+
+Carried at the head of Tier 2a as *"an unqualified **call** in an event handler does not resolve
+against the element the handler is on"*, at a recorded reach of **2 archives** (`circle`, `pharaoh`)
+and explicitly blocked on its own measurement.
+
+**The measurement is the part of this row worth keeping.** The census drives `onLoad` and this
+demand is in `onClick`, so the reach had to come from the decoded script text (the W100 blind spot,
+which recorded a title-bar button at 2 skins when 162 authored it). Scanned 2026-09-21 with
+`python3 scripts/wmp_handler_scope_census.py` over the 184-archive corpus, decoding the way
+`WMPTextDecoder` does and repairing the `01 00 01 00` local
+file headers the way `WMPArchiveHeaderRepair` does — **without the repair,
+`Need_for_Speed_Underground` and `SplinterCellWMPSkin` are simply absent**, and a scan that drops
+two archives on a `BadZipFile` it never prints reads as a clean corpus. Encoding breakdown, the
+calibration a correct scan reproduces: 158 UTF-16-BOM / 146 cp1252 / 89 UTF-8 / 9 UTF-8-BOM.
+
+| half of the class | measured |
+|---|---|
+| unqualified **call** — what the row was named for | **31 uses / 20 archives**: `previous()` 10, `next()` 8, `alphaBlendTo` 4, `nextEffect` 1 |
+| unqualified **property**, net of the `value` and `<attr>_onchange` globals the engine already bound | **255 unresolved reads + 249 silent writes / 100 archives**: `down` 196/89, `toolTip=` 114/40, `left`/`top` 108/9, `width` 34/25, `scrolling` 20/17 |
+
+**The rule this leaves behind: a Reach that counts one idiom is a count of that idiom, not of the
+class.** The row's own number was the call form; the property form is five times larger and reaches
+a hundred archives, and `down` alone — `<BUTTONELEMENT onClick="player.settings.mute = down">`,
+196 uses across 89 archives — outweighs everything the row named. It is also the half with no error
+to find: an unqualified *read* threw `ReferenceError` and killed the handler, but an unqualified
+*write* silently created a global, so `toolTip='Seek'` and `scrolling=false` reported success and
+changed nothing. **Split a demand count by resolution path before ranking it** (the W104 lesson) and
+by *form* before believing it covers the class.
+
+**Closed by giving a markup handler the scope WMP gives it**: it is evaluated inside
+`with (__wmpWrap('element:<owner>'))`, the same scope a geometry expression already had, at all four
+dispatch sites in `WMPScriptContext` — event, `value_onchange`, `<attribute>_onchange`, completion.
+Not function-wrapped: a handler's `var` is the skin's global (`corona` declares
+`g_playlistIsVisible` in one handler and reads it in every other) and a `with` block keeps it there.
+The `value` and `<attribute>` globals stay bound, because they belong to the element that *raised*
+the event, which is not always the one the handler is written on. The comment this replaced had
+rejected `with(element)` as changing name resolution for every handler in the corpus to buy six
+assignments; that reasoning was right about the risk and wrong about the size of the prize.
+
+**Both corrections that made it safe came from the corpus sweep, and neither was visible from the
+code.** `WMPObjectModel.recognises` — deliberately narrower than the open property surface the read
+path answers with, so an element cannot swallow the skin's own functions — was wrong at both edges:
+
+- It **claimed the element's own handler attributes**. A `<VIEW onLoad="OnLoad();">` authors
+  `onload`, so the bare `OnLoad` resolved to the attribute's text and `corona`'s entire startup died
+  on `OnLoad is not a function`. It now declines any `on*`/`*_onchange` name.
+- It **did not claim the computed properties `readElement` answers from the host**. `textWidth`, the
+  `<EFFECTS>` selection and the `<VIDEO>` flags are neither authored nor standard, so a bare
+  `textWidth` threw while `metadata.textWidth` beside it answered — `Asia`'s
+  `onEndMove="scrolling = textWidth > width"` is how a marquee decides to scroll at all.
+  `computedElementProperties` is that list and sits next to `readElement`; **a computed property
+  added there and not here is readable qualified and invisible bare.**
+
+**Verified against the running engine, not inferred.** `WMP_RENDER_CLICK` on `circle`
+at `vMain@69,68` printed `Can't find variable: previous` and now posts `command=stepEffect value=-1`;
+`9SeriesDefault` at `vPlayer@394,309` — the mute button, reached through its group's mapping bitmap
+at the **median** pixel of its colour — printed `Can't find variable: down` and now posts
+`command=setMute value=1`. Corpus sweep either side of the change: **every structural invariant
+byte-identical, 551 of 553 images identical**. The two that moved are `Revert (1)`, whose authored
+`onLoad` fade now runs, and `Scooby-Doo_2`, which differs run-to-run on its own `Math.random()` —
+confirmed by capturing the same build twice, because **an image diff in a skin that randomises is
+not evidence about a change**. Corpus handler-errors 69 → 68: three gone, two new on `Asia`'s own
+double-escaped `textWidth&gt;width`, which only became reachable once the statement before it ran.
+
+`Tests/NullPlayerAppTests/WMPHandlerElementScopeTests.swift` holds both halves of the class and both
+guards; five of its six fail on the pre-change engine and the sixth — the `OnLoad` shadow — fails on
+the change *without* the arbiter correction, which is what makes it a guard rather than a comment.
+
+Original row:
+
+| W216 | **An unqualified call in an event handler does not resolve against the element the handler is on** | 2 archives known (`circle`, `pharaoh`), **corpus reach unmeasured** | Blocked on its own measurement: **measure the reach before sizing it**, the way `harness.md` § *Auditing one authored control across the whole corpus* prescribes, because the demand is in `onClick` and the census never drives it. Verify with `WMP_RENDER_CLICK` on `circle` at `vMain@69,68`. Evidence: `object-model.md` § *An unqualified name in a handler resolves against its own element first (W216)*. |
+
+---
 
 ## W104 — `<NETWORK>` answered nothing, and two members aborted the handler that asked (closed 2026-09-21)
 

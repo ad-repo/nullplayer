@@ -2674,6 +2674,17 @@ of these was invisible to the harness and visible in the first minute of live QA
 - Fail closed per handler, never per session: an unrecognised member aborts that one handler and is
   tallied as measured demand. There is no session-wide script kill switch — a skin puts its whole
   startup in one handler, and a kill switch makes that invisible rather than visible.
+- **A handler's scope starts at the element it is written on (W216).** A markup handler runs inside
+  `with (__wmpWrap('element:<owner>'))`, so `previous()`, `down` and `toolTip='Seek'` mean the
+  element's own method and properties — the corpus writes it that way in 20 archives for calls and
+  100 for properties. **The arbiter is `WMPObjectModel.recognises`, not the open read surface**, and
+  the two rules it enforces are what make the scope safe: an element never claims its own
+  `on*`/`*_onchange` attribute names (a `<VIEW onLoad="OnLoad();">` would otherwise swallow the
+  skin's `OnLoad` function), and it *does* claim the computed properties `readElement` answers from
+  the host, which `computedElementProperties` lists beside it — **a computed property added to one
+  and not the other is readable qualified and invisible bare**. See
+  `reference/object-model.md` § *An unqualified name in a handler resolves against its own element
+  first (W216)*.
 - **An inert member that answers a constant is still a phantom.** `mediacenter` was the largest
   cause of a dead handler in the corpus — 159 `ReferenceError`s across 110 of 179 archives (W37) —
   and every one of its nine members is honestly `inert()`: there is no video surface, one effect

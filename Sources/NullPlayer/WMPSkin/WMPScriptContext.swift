@@ -498,7 +498,8 @@ final class WMPScriptContext: @unchecked Sendable {
                 // Fail closed per handler, never per session. A skin puts its whole startup in one
                 // handler, so one missing member costs many unrelated features — and the demand
                 // tally is what makes that visible. A session-wide kill switch made it invisible.
-                if let error = invokeHandler(source, label: "\(event.name)[\(index)]") {
+                if let error = invokeHandler(source, label: "\(event.name)[\(index)]",
+                                             owner: event.targetID) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(event.name)[\(index)]: \(error)"))
                 }
@@ -636,7 +637,8 @@ final class WMPScriptContext: @unchecked Sendable {
             // path binds it: `drawSeekDigits(value)` is the whole of what these handlers are.
             context.setObject(Self.jsAny(value), forKeyedSubscript: "value" as NSString)
             defer { context.setObject(nil, forKeyedSubscript: "value" as NSString) }
-            if let error = invokeHandler(source, label: "value_onchange") {
+            if let error = invokeHandler(source, label: "value_onchange",
+                                         owner: ownerID(forStableID: stableID)) {
                 result.diagnostics.append(.init(code: "handler-error",
                                                 message: "value_onchange: \(error)"))
             }
@@ -691,7 +693,8 @@ final class WMPScriptContext: @unchecked Sendable {
                 context.setObject(Self.jsAny(mutation.value),
                                   forKeyedSubscript: handler.attribute as NSString)
                 defer { context.setObject(nil, forKeyedSubscript: handler.attribute as NSString) }
-                if let error = invokeHandler(handler.source, label: "\(property)_onchange") {
+                if let error = invokeHandler(handler.source, label: "\(property)_onchange",
+                                             owner: mutation.targetID) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(property)_onchange: \(error)"))
                 }
@@ -729,7 +732,8 @@ final class WMPScriptContext: @unchecked Sendable {
                 let token = "\(completion.stableID).\(completion.event)"
                 guard fired.insert(token).inserted else { continue }
                 raised = true
-                if let error = invokeHandler(source, label: "on\(completion.event)") {
+                if let error = invokeHandler(source, label: "on\(completion.event)",
+                                             owner: ownerID(forStableID: completion.stableID)) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "on\(completion.event): \(error)"))
                 }
@@ -834,7 +838,24 @@ final class WMPScriptContext: @unchecked Sendable {
         return (Self.jsonValue(value), nil)
     }
 
-    private func invokeHandler(_ source: String, label: String) -> String? {
+    /// **A handler resolves an unqualified name against the element it is authored on (W216).**
+    ///
+    /// WMP puts that element at the front of the handler's scope chain, and the corpus writes
+    /// against it both ways: `<EFFECTS onClick="previous();">` in 20 archives calls the element's
+    /// own method, and 100 archives name one of its own properties bare — `player.settings.mute =
+    /// down` on a sticky mute button (196 uses across 89 archives), `toolTip='Seek'` on release,
+    /// `scrolling = textWidth > width` on a marquee. Without the scope a read throws
+    /// `ReferenceError: Can't find variable: down` and the handler dies on that statement, while a
+    /// write silently makes a global and never reaches the element.
+    ///
+    /// It is the same `with (__wmpWrap(...))` the geometry expressions are evaluated in, and it is
+    /// safe here for the same reason it is safe there: `WMPObjectModel.recognises` — not the open
+    /// property surface the read path answers with — decides whether a name belongs to the element
+    /// or falls through to the globals, so an element cannot swallow the skin's own functions.
+    ///
+    /// The `value` and `<attribute>` globals the call sites bind stay: they are bound for the
+    /// element that *raised* the event, which is not always the one the handler is written on.
+    private func invokeHandler(_ source: String, label: String, owner: String? = nil) -> String? {
         // The handler boundary is where a tween's endpoint lands: WMP is animating for the
         // duration the call named, so the rest of *this* handler must still read the element where
         // it was. See `WMPObjectModel.tween(_:_:_:duration:)`.
@@ -846,7 +867,18 @@ final class WMPScriptContext: @unchecked Sendable {
             function.call(withArguments: [])
             return lastException
         }
-        return evaluate(source, label: label)
+        guard let owner, model.element(owner) != nil else { return evaluate(source, label: label) }
+        // Not wrapped in a function: a handler's `var` is the skin's global, and the corpus holds
+        // its state in exactly those — `corona`'s `g_playlistIsVisible` is declared in one handler
+        // and read by every other. A `with` block keeps them where they were.
+        let scope = "with (__wmpWrap('element:\(WMPPath.fold(owner))')) {\n\(source)\n}"
+        return evaluate(scope, label: label)
+    }
+
+    /// The element a stable id names, as `invokeHandler`'s owner. The cascades below key their
+    /// handlers by stable id because an element's *identifier* is not unique across views (W89).
+    private func ownerID(forStableID stableID: Int) -> String? {
+        model.elements.values.first(where: { $0.stableID == stableID })?.id
     }
 
     @discardableResult

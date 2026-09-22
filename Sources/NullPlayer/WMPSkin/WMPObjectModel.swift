@@ -248,9 +248,22 @@ final class WMPObjectModel {
             // Corona's `GetEqSliderLeft(1)` resolved to an empty string and all ten equaliser
             // sliders lost their geometry.
             if name == "id" { return true }
+            // **An authored *handler* attribute is not a name the element owns in scope (W216).**
+            // `<VIEW onLoad="OnLoad();">` authors `onload`, so an element that claims every
+            // attribute it declares answers the bare `OnLoad` in its own handler with the
+            // attribute's text instead of letting the skin's function of that name resolve —
+            // `corona`'s whole startup died on `OnLoad is not a function`. WMP raises these; it
+            // does not expose them as properties, and nothing in the corpus reads one back.
+            if name.hasPrefix("on") || name.hasSuffix("_onchange") { return false }
             if element.properties[name] != nil { return true }
             if element.authored.contains(name) { return true }
             if Self.standardElementProperties.contains(name) { return true }
+            // The computed properties `readElement` answers from the host rather than from the
+            // element's own state. They are not authored and not standard, so without them a
+            // handler's bare `textWidth` falls through to the globals and throws while the
+            // qualified `metadata.textWidth` beside it answers — `Asia`'s marquee is the case:
+            // `onEndMove="scrolling = textWidth > width"`.
+            if Self.computedElementProperties(element).contains(name) { return true }
             if elementMethod(element, name) != nil { return true }
             if element.kind == .view, readViewHost(name) != nil { return true }
             return false
@@ -592,6 +605,22 @@ final class WMPObjectModel {
     /// read-only in WMP too, so a write stays unrecognised rather than being quietly accepted.
     static let mediaCenterWritableMembers: Set<String> = Set(mediaCenterDefaults.keys)
         .subtracting(["contrastmode"])
+
+    /// What `readElement` computes for a kind, as the `with` scope's own list. Kept beside it:
+    /// a computed property added there and not here is readable qualified and invisible bare.
+    private static func computedElementProperties(_ element: WMPScriptElement) -> Set<String> {
+        var names: Set<String> = ["textwidth"]
+        switch element.kind {
+        case .popup: names.insert("itemcount")
+        case .effects:
+            names.formUnion(["currenteffecttype", "currenteffecttitle",
+                             "currentpreset", "currentpresettitle"])
+        case .video, .wmpVideo:
+            names.formUnion(["fullscreen", "shrinktofit", "stretchtofit", "maintainaspectratio"])
+        default: break
+        }
+        return names
+    }
 
     private func readElement(_ element: WMPScriptElement, _ name: String) -> WMPMemberValue {
         if let method = elementMethod(element, name) { _ = method; return .function }
