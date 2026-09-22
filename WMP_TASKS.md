@@ -71,6 +71,25 @@ to anyone using the app, and is why the tier stays.
 
 ## Tier 1c — live-reported, not yet reproduced headlessly
 
+| ID | Item | Reach | Notes |
+|---|---|---|---|
+| W256 | **An equaliser slider cannot be dragged.** Reported live 2026-09-22 on `elvis` and `anemone`; the reporter's correction is the whole of the row — *"manual control of the sliders are the problem, not the eq function"*, so this is the gesture reaching the control, not the value reaching the audio engine | **Unmeasured.** The two skins reported are the *two different surfaces* this can be, which is why it is one row: `elvis` draws its own 8-band EQ (`<equalizerSettings id="ElvisEQS">` and `<slider id="eq1..8">` in `elvis.wms:60-71`), and **`anemone.wms` contains no `<equalizerSettings>` and not one `slider` element at all**, so its EQ is NullPlayer's native window wearing WMP theming. Establish which surface fails before scaling anything: if it is the skin's own sliders, 165 of 184 archives bind a slider to `gainLevel*`; if it is the native fallback, 19 archives have no `<equalizerSettings>` and land there | **No headless instrument reaches this and none on this page ever will**: a sweep renders the settled default state and never drags. Drive the app — `skills/live-ui-testing`, `harness.md` § *Debugging a live defect*, and `app-control` Route C for a CGEvent drag. **`elvis`'s EQ is behind a toggle and `Elvis_eq` is authored `visible="false"`**, so open the panel first. Two things already measured are *not* this defect and must not be folded into it: `elvis`'s `Init` still aborts at `elvis.js:21` on `volume_slider`, an element that exists nowhere in the archive, and the named-element half below is about the value, not the gesture |
+
+**A second, separate defect was measured while this row was being written, and it is about the value
+rather than the drag — do not close W256 with it.** `eq` is a bound global on the path `eq`
+(`WMPObjectModel.read`, `case "eq": return readEqualizer(name)`), so a skin whose
+`<EQUALIZERSETTINGS>` is *named* something else never reaches `readEqualizer` at all: `ElvisEQS.gainLevel1`
+falls through to the element's own property bag, round-trips perfectly, and changes no audio.
+**14 of 184 archives name it something other than `eq` and all 14 reference it by that name** —
+`elvis` (`ElvisEQS`), `Frostbite` (`eq2`), `Gorillaz`/`Navigator`/`Ursula`/`robbie`/`v2_underworld`
+(`equal`), `Plus! Bionic Dot` and `Plus!_The_Bionic_Dot` (`eq22`), `Plus! Hard Boiled` (`eggEQS`),
+`Plus! HueShifter` (`hueshifterEQS`), `Plus! Plasma Ball` (`bublEQ`), `Plus! SlimLine`
+(`perfectEQS`/`perfectVEQS`) and `TDK` (`eqsettings`). Measured 2026-09-22 over 184 archives by
+matching `<equalizerSettings …>` in every `.wms` and its `id`; the 154 that spell it `eq` are
+unaffected. `object-model.md` § *The `eq` object and the element are one surface (W39)* states the
+two spellings answer the same values, and that is true only for the id `eq`. **Give this its own
+number when it is taken** — W39's rule is the place it belongs.
+
 **The 2026-09-08 live-QA list was never captured, and that is still the largest known hole on this
 page.** The reporter drove Phase 5, reported "tons of issues", the session ended before the list was
 written down, and so no count here includes them: every Phase 5 closure in the archive is
@@ -297,6 +316,20 @@ than constant are in [the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
 `skills/wmp-skin-guide/reference/object-model.md` § *The `eq` object and the element are one surface
 (W39)*.
 
+**W42 headed this tier and closed 2026-09-22; it is archived.** All three causes it named
+measure **zero** across 184 archives — every declared `scriptFile` resolves (the only two
+unregistered `.js` in the corpus are leftovers nothing calls), no program in the corpus evaluates
+with an error, and **no callee anywhere traces to a `res://` script**: the 118 archives that declare
+`res://wmploc.dll/RT_TEXT/#132` are correctly `status=unsupported` and nothing needs it. Four of the
+row's six names — `skin_init`, `loadVidPrefs`, `checkForContent`, `Init` — had already gone with
+W163's basename fallback, and `gears` is an element that exists in no `.wms`. **A row's stated
+*cause* can be void while its class is real**: what was left under the name was a skin calling its
+own function in the wrong case, 16 of 184 archives, closed in the same change. The measurement, the
+last-resort alias and the three archives that forbid a blanket fold are in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
+`skills/wmp-skin-guide/reference/object-model.md` § *A skin's own function, called in the wrong
+case (W42)*.
+
 **W216 closed 2026-09-22 and is archived**; it headed this tier as *unmeasured* and the measurement
 is the part worth keeping. The recorded reach was 2 archives, the call half came back at **31 uses /
 20 archives**, and the half nobody had counted — the element's own *properties*, read and written
@@ -310,7 +343,6 @@ against its own element first (W216)*.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W42 | A skin function is missing because its program never registered | ~12 skins, 1–2 each | `skin_init`, `loadVidPrefs`, `UpdateMetaData`, `checkForContent`, `Init`, `gears`… Each is one skin's own function, so the cause is upstream: a `.js` that failed to resolve, evaluated with an error, or is a `res://` entry. Diagnose from `SCRIPT`/`SCRIPTS` lines before writing any object-model code. |
 | W136 | SDK element methods this engine does not implement, now that they are tallied at all (W128) | `plListBox1/2.deleteAll()` **10 skins** (7 census-visible), `playlist2.copy()` 8, `playlist2.abortCopy()` 8, `playlist1.deleteSelected()` 5, `fileList.insertItem()` 3 | **Blocked on W66's media-collection decision** — every `deleteAll` call is inside the skin's own `try`/`catch` (`fillListBox()`, `warcraft.js:1584`), and the box has nothing to put in it until `player.mediaCollection` answers. This row is what that decision would let the skins actually do. **The census sees only `deleteAll`**: the rest sit in click handlers, so measure them through the live loop or a click-driving sweep before ranking them against each other. Reproduce by tallying `UNRECOGNISED` in `render.txt`. |
 | W40 | An element the skin names is in another view | 8 + 4 + 2 + 2 + 2 skins | `Can't find variable: vidinfo` (8, new behind W37), `Can't find variable: pl` (4), `playlistframe.setColumnResizeMode (no such element)` (2), `pl.setColumnWidth` (2), `vidZoom`/`videoWin` (2 each, also new behind W37). Handlers are now scoped per view, but a script's *globals* are the current view's elements only. Find out what WMP does with a cross-view reference before choosing. |
 | W41 | `player.currentMedia.sourceURL` | 4 skins | Small and real. **`theme.closeView` was the other half of this row and closed 2026-09-11 with W141**; what is left is the source URL. |

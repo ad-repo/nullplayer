@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W256.** (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W257.** (**W256 was issued 2026-09-22** for the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; it is open in `WMP_TASKS.md` Tier 1c.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -39,6 +39,62 @@ now chosen per view rather than by document order, and the three symptoms the ro
 already been closed by the hosted-frame work that landed after its report. **W215** closed: the
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
+
+
+## W42 — the missing skin function, whose three stated causes all measure zero (closed 2026-09-22)
+
+**The row as carried named a cause that does not exist.** It read:
+
+> | W42 | A skin function is missing because its program never registered | ~12 skins, 1–2 each |
+> `skin_init`, `loadVidPrefs`, `UpdateMetaData`, `checkForContent`, `Init`, `gears`… Each is one
+> skin's own function, so the cause is upstream: a `.js` that failed to resolve, evaluated with an
+> error, or is a `res://` entry. Diagnose from `SCRIPT`/`SCRIPTS` lines before writing any
+> object-model code. |
+
+Re-measured 2026-09-22 over 184 archives (`scripts/wmp_render_sweep.sh capture`, 7146 invariant
+lines, 553 images). **Every one of the three causes comes back empty:**
+
+| Stated cause | Measured |
+|---|---|
+| a `.js` that failed to resolve | **0.** Every declared `scriptFile` resolves. Two archives hold an unregistered `.js` — `Navigator`'s `Kopia av nav.js` and `Sports`' leftover `saltmine.js` — and nothing calls either |
+| a `.js` that evaluated with an error | **0** `script-error` diagnostics in the whole corpus |
+| a `res://` entry | 118 archives declare `res://wmploc.dll/RT_TEXT/#132`, correctly `status=unsupported`, and **no callee in the corpus traces to it**. `SetVisibility` (Creed, `Heart_Butterfly`, `Israeli`…) and `detplay` (the US military family) look like it and are not: both are *skin-template* functions that sibling archives in the same lineage declare locally and these dropped |
+
+Four of the row's six names — `skin_init`, `loadVidPrefs`, `checkForContent`, `Init` — no longer
+appear at all; W163's basename fallback closed them when it landed. `gears` is an element that
+exists in no `.wms` in its archive, so there is no program to register.
+
+**What was actually under the name: a skin calls its own function in the wrong case.**
+JavaScriptCore resolves a global by exact spelling, the call throws `ReferenceError`, and every
+statement after it in that handler is lost. `elvis.js`'s `Init()` calls `UpdateMetaData()` against
+`function UpdateMetadata` on line 17 — the two `setColumnResizeMode` calls, the volume slider's
+position, the video/visualization pane and `OnPlayStateChange()` all went with it. **16 of 184
+archives**, measured by folding every bare `name(` call site against every `function` declaration in
+the archive.
+
+The fix is `WMPScriptContext.aliasCaseFoldedGlobals`: **last resort, never a fold** — only for a
+spelling that resolves to nothing, only when exactly one global case-folds to it, only when that
+global is a function. It runs after the whole program set has evaluated (the declaration is usually
+below the call) and again per markup handler. Sweep across the change: **550 of 553 images
+identical**, one invariants line moved (`hueshifterSkin` 32→33 nodes, 29→31 commands). Full detail,
+the three archives that forbid a blanket fold, and the corpus numbers are in
+`skills/wmp-skin-guide/reference/object-model.md` § *A skin's own function, called in the wrong
+case (W42)*.
+
+**Three things this row leaves behind:**
+
+- **A row's stated cause can be void while its class is real.** Three causes measuring zero is a
+  reason to re-file the row, not to drop the work — the class was one measurement away.
+- **A collateral diff is not automatically counter-evidence; take the same-mode control first.**
+  `Scooby-Doo_2/infoView` moved in the before/after and looked like a skin outside the change being
+  damaged. It differs identically **run to run in the same mode** on its own `Math.random()`, and
+  one control capture was the whole investigation. Compare `check-what-a-new-rule-matches`: the
+  mirror trap is trusting a diff you have not controlled for.
+- **A fix inside a queue empties nothing, and the next error is the proof it worked.** Each skin
+  that advanced now stops at its *next* genuine gap — `elvis` `:17`→`:21` on `volume_slider`,
+  `Plus! HueShifter` `:15`→`:19`, `TDK` line 2→188 on `g_fUserHasSized` — names that exist in their
+  archives in no spelling at all. `Plus! Plasma Ball` is correctly unchanged and still throws.
+  `object-model.md` rule 2 in one afternoon.
 
 
 ## W39 — the `eq` members that abort a handler, and the crossfade that was ranked as inert (closed 2026-09-22)

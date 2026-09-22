@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- **Several Media Player skins now finish setting themselves up when they open.** A handful of these
+  skins were written with the capitalisation of one of their own function names typed inconsistently
+  — `UpdateMetaData` in one place, `UpdateMetadata` in another — and NullPlayer stopped dead at that
+  point, silently abandoning everything the skin meant to do after it. On `elvis`, for instance,
+  that was the track information, the playlist columns, the volume knob's position and the choice
+  between the video and visualization panes, none of which ever ran. Sixteen of the installed skins
+  hit this, including `Plus! HueShifter`, `TDK`, `portals` and the US military set, where it also
+  stopped the video panel opening and closing.
+
 - **A Media Player skin's crossfade button now actually crossfades.** Lots of these skins ship a
   "Turn On Crossfading" toggle in their equaliser drawer, and it did nothing at all — the button did
   not even light up, and on several skins the click sound went missing too, because the whole

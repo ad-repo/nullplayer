@@ -1420,4 +1420,151 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertEqual(reopened.overrides.geometry[width], 2,
                        "the saved value is there, so the skin takes its restore branch")
     }
+
+    // MARK: A skin's own function, called in the wrong case (W42)
+
+    /// **The call site is in the program, and the declaration is further down the same file.**
+    /// `elvis.js`'s `Init()` calls `UpdateMetaData()` against `function UpdateMetadata`, so the
+    /// `onLoad` threw `ReferenceError` on line 17 and lost the whole of `Init` below it — the
+    /// column modes, the volume slider's position and the video/visualization pane. The alias pass
+    /// therefore runs *after* the whole program set has evaluated, never before: the name a call
+    /// needs is usually declared below the call.
+    func testAProgramCallingItsOwnFunctionInTheWrongCaseStillResolves() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js" onLoad="Init();">
+            <SUBVIEW id="panel" left="0" top="0" width="100" height="100"/>
+        </VIEW></THEME>
+        """, js: """
+        function Init() { UpdateMetaData(); panel.width = 42; }
+        function UpdateMetadata() { panel.height = 40; }
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        func stableID(_ id: String) throws -> Int {
+            try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == id }?.stableID)
+        }
+        let output = await runtime.transact(skin: skin, viewID: "main",
+                                            size: WMPSize(width: 200, height: 200),
+                                            snapshot: WMPHostSnapshot(),
+                                            event: WMPJScriptEvent(name: "load", targetID: "main",
+                                                                   handlers: ["Init();"]))
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" },
+                       "the misspelled call must resolve, not throw: \(output.diagnostics)")
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: try stableID("panel"),
+                                                       property: "height")], 40)
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: try stableID("panel"),
+                                                       property: "width")], 42,
+                       "the statement *after* the misspelled call is the whole cost of the defect")
+    }
+
+    /// The other half of the corpus's shape: the call site is in the markup rather than the
+    /// program. `TDK.wms` binds `onLoad="onLoadVideo();"` against `function OnLoadVideo`, and six
+    /// archives bind `onClose="onCloseVideo();"` against `function OnCloseVideo`.
+    func testAMarkupHandlerCallingAFunctionInTheWrongCaseStillResolves() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js">
+            <SUBVIEW id="panel" left="0" top="0" width="100" height="100"/>
+            <BUTTON id="go" left="0" top="0" width="10" height="10" onClick="onCloseVideo();"/>
+        </VIEW></THEME>
+        """, js: "function OnCloseVideo() { panel.height = 40; }")
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await runtime.transact(skin: skin, viewID: "main",
+                                            size: WMPSize(width: 200, height: 200),
+                                            snapshot: WMPHostSnapshot(),
+                                            event: WMPJScriptEvent(name: "click", targetID: "go",
+                                                                   handlers: ["onCloseVideo();"]))
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" },
+                       "the misspelled call must resolve, not throw: \(output.diagnostics)")
+        let panel = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "panel" }?.stableID)
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: panel, property: "height")], 40)
+    }
+
+    /// **The alias is last resort and never a fold.** `Kids` declares both `StartVideo` and
+    /// `startVideo` with different bodies, and `Cablemusic` and `HOB` do the same with their own
+    /// pairs. A spelling that resolves exactly must keep resolving to itself; an ambiguous fold
+    /// must be declined even when the wanted spelling resolves to nothing.
+    func testTwoGlobalsDifferingOnlyByCaseAreNeverFoldedIntoEachOther() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js">
+            <SUBVIEW id="panel" left="0" top="0" width="100" height="100"/>
+            <BUTTON id="lower" left="0" top="0" width="10" height="10" onClick="startVideo();"/>
+            <BUTTON id="upper" left="0" top="20" width="10" height="10" onClick="StartVideo();"/>
+            <BUTTON id="third" left="0" top="40" width="10" height="10" onClick="STARTVIDEO();"/>
+        </VIEW></THEME>
+        """, js: """
+        function StartVideo() { panel.height = 11; }
+        function startVideo() { panel.height = 22; }
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let panel = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "panel" }?.stableID)
+        let address = WMPScenePropertyAddress(stableID: panel, property: "height")
+        for (target, source, expected) in [("lower", "startVideo();", 22.0),
+                                           ("upper", "StartVideo();", 11.0)] {
+            let output = await runtime.transact(
+                skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+                snapshot: WMPHostSnapshot(),
+                event: WMPJScriptEvent(name: "click", targetID: target, handlers: [source]))
+            XCTAssertEqual(output.overrides.geometry[address], expected,
+                           "\(source) must reach its own declaration, not the other spelling")
+        }
+        let ambiguous = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "third", handlers: ["STARTVIDEO();"]))
+        XCTAssertTrue(ambiguous.diagnostics.contains { $0.code == "handler-error" },
+                      "a third spelling case-folds to two declarations and must be declined")
+    }
+
+    /// A name the archive does not contain in any spelling must keep throwing. `Plus! Plasma Ball`
+    /// calls `UpdateMetaData()` and declares nothing like it, and inventing a no-op for that is the
+    /// `inert()` phantom this subsystem exists to avoid.
+    func testAFunctionDeclaredInNoSpellingStillThrows() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js">
+            <BUTTON id="go" left="0" top="0" width="10" height="10" onClick="UpdateMetaData();"/>
+        </VIEW></THEME>
+        """, js: "function somethingElse() { return 1; }")
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "go", handlers: ["UpdateMetaData();"]))
+        XCTAssertTrue(output.diagnostics.contains { $0.code == "handler-error" },
+                      "nothing case-folds to it, so it must still throw")
+    }
+
+    /// **The fold only ever reaches a function.** A global that is not one — the skin's own state,
+    /// or an element, which is an object — must be left exactly where it was even when a call site
+    /// folds onto its name. The assertion is on the *second* handler: the first throws either way,
+    /// so the only way to see the guard is to ask afterwards whether the name was invented.
+    func testACallSiteNeverAliasesOntoAGlobalThatIsNotAFunction() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js">
+            <SUBVIEW id="panel" left="0" top="0" width="100" height="100"/>
+            <BUTTON id="call" left="0" top="0" width="10" height="10" onClick="Flag();"/>
+            <BUTTON id="ask" left="0" top="20" width="10" height="10"
+                    onClick="panel.height = (typeof Flag == 'undefined') ? 40 : 11;"/>
+        </VIEW></THEME>
+        """, js: "var flag = 7;")
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let called = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "call", handlers: ["Flag();"]))
+        XCTAssertTrue(called.diagnostics.contains { $0.code == "handler-error" },
+                      "`flag` is a number, so `Flag()` must still throw")
+        let source = "panel.height = (typeof Flag == 'undefined') ? 40 : 11;"
+        let asked = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: "ask", handlers: [source]))
+        let panel = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "panel" }?.stableID)
+        XCTAssertEqual(asked.overrides.geometry[.init(stableID: panel, property: "height")], 40,
+                       "the failed call must not have left `Flag` behind as a global")
+    }
+
 }

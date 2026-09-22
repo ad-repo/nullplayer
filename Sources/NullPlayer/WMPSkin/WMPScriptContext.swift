@@ -206,6 +206,15 @@ final class WMPScriptContext: @unchecked Sendable {
     /// `view`, so a panel's transaction must not run against the player's objects.
     private var viewRegistries: [String: WMPObjectModel.ElementRegistry] = [:]
     private var installedViewID: String?
+    /// Hashes of sources whose call sites have already been offered to `aliasCaseFoldedGlobals` —
+    /// a handler on a timer is evaluated hundreds of times and the scan answers the same thing
+    /// every time. Hashes rather than sources: a program is up to 4 MiB and this lives for the
+    /// session. Bounded, because nothing stops a skin evaluating a string it just built.
+    private var scannedCallSites: Set<Int> = []
+    /// True only while `load` is evaluating the skin's programs. A program's call sites are scanned
+    /// *after* the whole set has run, never before: the name a call needs is usually declared
+    /// further down the same file.
+    private var isLoadingPrograms = false
 
     init(executionSeconds: TimeInterval = WMPPhase0Limits.scriptExecutionSeconds) {
         self.executionSeconds = executionSeconds
@@ -223,6 +232,7 @@ final class WMPScriptContext: @unchecked Sendable {
         queue.sync {
             var diagnostics: [WMPJScriptDiagnostic] = []
             var evaluated = Set<String>()
+            isLoadingPrograms = true
             for registration in order {
                 guard let path = registration.resolvedPath, let source = scripts[path],
                       evaluated.insert(path).inserted else { continue }
@@ -230,6 +240,11 @@ final class WMPScriptContext: @unchecked Sendable {
                     diagnostics.append(.init(code: "script-error",
                                              message: "\(registration.authoredPath): \(error)"))
                 }
+            }
+            isLoadingPrograms = false
+            for path in evaluated {
+                guard let source = scripts[path] else { continue }
+                aliasCaseFoldedGlobals(callSitesIn: source)
             }
             return diagnostics
         }
@@ -881,8 +896,88 @@ final class WMPScriptContext: @unchecked Sendable {
         model.elements.values.first(where: { $0.stableID == stableID })?.id
     }
 
+    /// **A skin calls its own function in the wrong case, and the handler dies on that statement.**
+    ///
+    /// `elvis.js`'s `Init()` calls `UpdateMetaData()` and declares `UpdateMetadata`; `TDK.wms` binds
+    /// `onLoad="onLoadVideo();"` against `function OnLoadVideo`. JavaScriptCore resolves a global by
+    /// exact spelling, so the call throws `ReferenceError: Can't find variable: …` and every
+    /// statement after it in that handler is lost — for `elvis` that is the whole of `Init` past
+    /// line 17: the column modes, the volume slider's position and the video/visualization pane.
+    /// 16 of the 184 installed archives hold one of these, including `Plus! HueShifter`, `TDK`,
+    /// `portals`, `deepbluesomething` and the five-skin US military family.
+    ///
+    /// The alias is **last resort and never a fold**: it is installed only for a spelling that
+    /// resolves to nothing at all, only when exactly one global case-folds to it, and only when
+    /// that global is a function. Three archives (`Kids`, `Cablemusic`, `HOB`) declare two
+    /// top-level names that differ only in case — `Kids` has both `StartVideo` and `startVideo`
+    /// with different bodies — and every one of their call sites resolves exactly, so none of them
+    /// reaches this path and an ambiguous fold is declined even if one did.
+    ///
+    /// Element ids cannot be aliased into: they are objects rather than functions.
+    private func aliasCaseFoldedGlobals(callSitesIn source: String) {
+        guard source.utf8.count <= WMPPhase0Limits.scriptBytes,
+              scannedCallSites.count < 4096,
+              scannedCallSites.insert(source.hashValue).inserted else { return }
+        var candidates: Set<String> = []
+        let scalars = Array(source.unicodeScalars)
+        var index = 0
+        func isStart(_ scalar: Unicode.Scalar) -> Bool {
+            CharacterSet.letters.contains(scalar) || scalar == "_" || scalar == "$"
+        }
+        func isPart(_ scalar: Unicode.Scalar) -> Bool {
+            isStart(scalar) || CharacterSet.decimalDigits.contains(scalar)
+        }
+        while index < scalars.count {
+            guard isStart(scalars[index]) else { index += 1; continue }
+            // A member call (`player.controls.play()`) belongs to the object model, not here.
+            if index > 0, scalars[index - 1] == "." || isPart(scalars[index - 1]) {
+                while index < scalars.count, isPart(scalars[index]) { index += 1 }
+                continue
+            }
+            let start = index
+            while index < scalars.count, isPart(scalars[index]) { index += 1 }
+            var lookahead = index
+            while lookahead < scalars.count, scalars[lookahead] == " " || scalars[lookahead] == "\t" {
+                lookahead += 1
+            }
+            guard lookahead < scalars.count, scalars[lookahead] == "(" else { continue }
+            var name = ""
+            name.unicodeScalars.append(contentsOf: scalars[start..<index])
+            guard !Self.jScriptKeywords.contains(name.lowercased()) else { continue }
+            candidates.insert(name)
+        }
+        guard !candidates.isEmpty else { return }
+        // A candidate is a JScript identifier by construction — letters, digits, `_` and `$` — so
+        // there is nothing in it a string literal has to escape.
+        let list = candidates.map { "\"\($0)\"" }.joined(separator: ",")
+        context.evaluateScript("""
+        (function(wanted) {
+            var folded = {};
+            for (var key in this) {
+                var lower = key.toLowerCase();
+                folded[lower] = (lower in folded) ? null : key;
+            }
+            for (var i = 0; i < wanted.length; i++) {
+                var name = wanted[i];
+                if (typeof this[name] !== 'undefined') { continue; }
+                var real = folded[name.toLowerCase()];
+                if (!real || typeof this[real] !== 'function') { continue; }
+                this[name] = this[real];
+            }
+        }).call(this, [\(list)]);
+        """)
+    }
+
+    /// Words a `name(` scan would otherwise offer as a call. None of them can alias — nothing
+    /// case-folds to them — but skipping them keeps the candidate list honest.
+    private static let jScriptKeywords: Set<String> = [
+        "if", "for", "while", "switch", "return", "function", "catch", "typeof", "new", "delete",
+        "void", "do", "else", "with", "in", "this", "case", "throw", "var", "instanceof"
+    ]
+
     @discardableResult
     private func evaluate(_ source: String, label: String) -> String? {
+        if !isLoadingPrograms { aliasCaseFoldedGlobals(callSitesIn: source) }
         lastException = nil
         // Every program and every markup handler goes through here, and every one of them is
         // JScript rather than JavaScript. `WMPJScriptDialect.liveForIn` is the reconciliation; see

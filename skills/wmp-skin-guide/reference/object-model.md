@@ -312,6 +312,19 @@ never see a member read:
 | `crossFadeWindow` | 40 | 35 | `sweetFadeDuration`, **milliseconds** |
 | `normalization` | 1 | 1 | `volumeNormalizationEnabled` |
 
+**"Both spellings" means the id `eq`, and that is narrower than it reads — corrected 2026-09-22.**
+The routing is `case "eq": return readEqualizer(name)` on the *path*, so a skin whose
+`<EQUALIZERSETTINGS>` is named anything else never reaches `readEqualizer` at all: `ElvisEQS.gainLevel1`
+falls through to the element's own property bag, round-trips perfectly and changes no audio.
+**14 of 184 archives name it something other than `eq` and all 14 reference it by that name** —
+`elvis` (`ElvisEQS`), `Frostbite` (`eq2`), `Gorillaz`/`Navigator`/`Ursula`/`robbie`/`v2_underworld`
+(`equal`), both Bionic Dots (`eq22`), `Plus! Hard Boiled` (`eggEQS`), `Plus! HueShifter`
+(`hueshifterEQS`), `Plus! Plasma Ball` (`bublEQ`), `Plus! SlimLine` (`perfectEQS`/`perfectVEQS`) and
+`TDK` (`eqsettings`); the 154 that spell it `eq` are unaffected. Reproduce by matching
+`<equalizerSettings …>` and its `id` in every `.wms`. **Open work, carried under W256's row in
+`WMP_TASKS.md` Tier 1c and needing its own number when it is taken** — it is about the value
+reaching the engine, not about W256's sliders refusing a drag.
+
 `eq.gainLevels(band) = value` (`Compact`, `Charlies_Angels_Full_Throttle`) stays unrecognised: it is
 assignment to the result of a call and not valid JScript, so answering it would be answering a typo.
 
@@ -826,6 +839,50 @@ now runs, and `Scooby-Doo_2`, which differs run to run on its own `Math.random()
 handler-errors went 69 → 68 — three gone, two new on `Asia`'s own double-escaped `textWidth&gt;width`
 that only became reachable once the statement before it ran.
 `Tests/NullPlayerAppTests/WMPHandlerElementScopeTests.swift` holds both halves and both guards.
+
+## A skin's own function, called in the wrong case (W42)
+
+**JavaScriptCore resolves a global by exact spelling, so a skin that misspells the case of its own
+function throws `ReferenceError` and loses every statement after it in that handler.** `elvis.js`'s
+`Init()` calls `UpdateMetaData()` against `function UpdateMetadata` on line 17: what went with it
+was the rest of `Init` — the two `setColumnResizeMode` calls, the volume slider's position, the
+video/visualization pane and `OnPlayStateChange()`. `TDK.wms` binds `onLoad="onLoadVideo();"`
+against `function OnLoadVideo`, and six archives bind `onClose="onCloseVideo();"` against
+`function OnCloseVideo`.
+
+`WMPScriptContext.aliasCaseFoldedGlobals` installs an alias, and it is **last resort, never a
+fold**: only for a spelling that resolves to nothing at all, only when exactly one global
+case-folds to it, and only when that global is a function. Element ids cannot be aliased into —
+they are objects — and a member call (`player.controls.Play()`) belongs to rule 4's
+case-insensitive lookup rather than here.
+
+It runs in two places because the corpus writes the call site in two places. A markup handler is
+scanned in `evaluate` before it runs; a **program** is scanned only after the whole set has
+evaluated, because the declaration a call needs is usually further down the same file — scanning
+`elvis.js` before it ran would have found nothing.
+
+**Three archives declare two top-level names that differ only in case, and they are the reason the
+alias is last resort rather than a fold.** `Kids` has both `StartVideo` and `startVideo` with
+different bodies, `Cablemusic` has `startProgram`/`StartProgram`, `HOB` has `eqIsOpen`/`EQIsOpen`.
+Every one of their call sites resolves exactly, so none of them reaches this path at all, and an
+ambiguous fold is declined even if one did.
+
+Measured 2026-09-22 over 184 archives: **16 hold a call site that resolves only case-folded** —
+`elvis`, `Plus! HueShifter`, `TDK`, `portals`, `deepbluesomething`, `Secura`, `activate`, `anemone`,
+`modernblue`, `holiday_skin`, `Stars and Stripes` and the five-skin US military family. The corpus
+sweep across the change is **550 of 553 images identical**, the two that moved being `elvis` and
+`Plus! HueShifter` drawing the metadata their handlers now reach, and the third `Scooby-Doo_2`,
+which differs run to run on its own `Math.random()` and was cleared with a same-mode control.
+
+**What this does not do is empty the class, and that is the expected shape** (rule 2: unimplemented
+is a queue). Each of the four skins that advanced now stops at its *next* genuine gap: `elvis`
+`elvis.js:17` → `:21` on `volume_slider`, `Plus! HueShifter` `:15` → `:19`, `TDK` line 2 → 188 on
+`g_fUserHasSized`. Those names exist nowhere in their archives in any spelling, so they still throw,
+and so does `Plus! Plasma Ball`'s `UpdateMetaData` — **a name no spelling reaches is not this
+defect, and inventing a no-op for it is the `inert()` phantom this file exists to prevent.**
+`Tests/NullPlayerAppTests/WMPScriptRuntimeTests.swift` holds both call-site halves and all three
+guards.
+
 
 ## Ambient `<attribute>_onchange` handlers
 
