@@ -580,6 +580,11 @@ actor WMPScriptRuntime {
                                        animatesTweens: animatesTweens,
                                        tweenFrame: tweenFrame)
         register(tweens: result.tweens, in: scope)
+        if WMPTweenTrace.enabled, !result.tweens.isEmpty || !(activeTweens[scope] ?? []).isEmpty {
+            WMPTweenTrace.log("transact view=\(viewID) event=\(event?.name ?? "-")"
+                + " clock=\(animatesTweens) frame=\(tweenFrame != nil)"
+                + " registered=\(result.tweens.count) live=\((activeTweens[scope] ?? []).count)")
+        }
 
         var diagnostics = startupDiagnostics + result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))

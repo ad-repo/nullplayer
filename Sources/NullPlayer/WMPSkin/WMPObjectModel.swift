@@ -2,6 +2,23 @@ import CoreGraphics
 import Foundation
 import NullPlayerCore
 
+/// `WMP_TWEEN_TRACE=1`: what the tween trio decided, at the point it decided it.
+///
+/// A tween is the one script effect with **no settled-state signature at all** — with a clock it
+/// arrives over time and without one it arrives at once, and both end on the same pixels — so a
+/// render dump, a sweep `compare` and a screenshot taken after it lands are all blind to it.
+/// Exists for W253: the load transaction was the window path that promised no clock, and telling
+/// "the call never ran" from "the call ran and was flattened" needs the decision itself, not the
+/// result. Writes to stderr, because a redirected `print` is block-buffered.
+enum WMPTweenTrace {
+    static let enabled = ProcessInfo.processInfo.environment["WMP_TWEEN_TRACE"] == "1"
+
+    static func log(_ message: @autoclosure () -> String) {
+        guard enabled else { return }
+        FileHandle.standardError.write(Data("[wmp/tween] \(message())\n".utf8))
+    }
+}
+
 /// How a member answered, and the only honest way to read a call trace.
 ///
 /// `.inert` exists because of the most expensive class of phantom bug the `.wal` engine paid for: a
@@ -1346,10 +1363,22 @@ final class WMPObjectModel {
                 // element inherits, which at full opacity is 255.
                 let current = element.properties[channel.property]?.number
                     ?? (channel.property == "alphablend" ? 255 : nil)
-                guard let current, current.isFinite, current != channel.value else { continue }
+                guard let current, current.isFinite, current != channel.value else {
+                    let held: String = element.properties[channel.property]?.number
+                        .map { "\($0)" } ?? "nil"
+                    let why: String = current == nil ? "no-current-value" : "already-there"
+                    WMPTweenTrace.log("drop \(element.id).\(channel.property)"
+                        + " to=\(channel.value) current=\(held) reason=\(why)")
+                    continue
+                }
                 resolved.append(.init(property: channel.property, from: current, to: channel.value))
             }
         }
+        let durationText: String = duration.map { "\($0)" } ?? "nil"
+        WMPTweenTrace.log("call \(element.id) duration=\(durationText)"
+            + " clock=\(animatesTweens) animates=\(animates)"
+            + " channels=[\(channels.map { "\($0.property)->\($0.value)" }.joined(separator: ","))]"
+            + " resolved=\(resolved.count)")
         guard animates, !resolved.isEmpty, tweens.count < WMPJScriptProtocol.maximumTweens else {
             for channel in channels {
                 tween(element, channel.property, .number(channel.value), duration: duration)

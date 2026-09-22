@@ -403,7 +403,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                                 viewID: registration.id))
                     let output = await runtime.transact(skin: skin, viewID: registration.id,
                         size: scene.canvasSize, snapshot: host.snapshot, event: loadEvent,
-                        geometry: scene.scriptGeometry)
+                        geometry: scene.scriptGeometry, animatesTweens: Self.animatesLoadTweens)
                     try Task.checkCancellation()
                     // **A view can declare itself windowless in its own `onLoad`, and the corpus
                     // does it by writing zero.** `Halo 2` opens on `previewView` — the skin-chooser
@@ -488,6 +488,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     if !switchedView {
                         applyTimerDelta(presentation, registered: output.timerRequests,
                                         cleared: output.clearedTimerTokens)
+                        WMPTweenTrace.log("load view=\(resolved.viewID)"
+                            + " clock=\(Self.animatesLoadTweens)"
+                            + " hasActiveTweens=\(output.hasActiveTweens)")
+                        startTweenLoop(presentation, hasActiveTweens: output.hasActiveTweens)
                     }
                     recordScriptDiagnostics(output.diagnostics)
                     await adoptDispatcher(in: skin, store: store, presenting: resolved.viewID)
@@ -1347,7 +1351,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                             viewID: registration.id))
                 let output = await scriptRuntime.transact(skin: skin, viewID: registration.id,
                     size: base.canvasSize, snapshot: host.snapshot, event: loadEvent,
-                    geometry: base.scriptGeometry)
+                    geometry: base.scriptGeometry, animatesTweens: Self.animatesLoadTweens)
                 // A windowless view — `controlView`, `pharaoh`'s `vGhost` — runs its script and
                 // hands off; it must never become a window. Whatever it asks for next is honoured,
                 // and if it asks for nothing nothing happens. A view can also declare itself
@@ -1425,6 +1429,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 guard !switchedAgain else { return }
                 applyTimerDelta(presentation, registered: output.timerRequests,
                                 cleared: output.clearedTimerTokens)
+                WMPTweenTrace.log("load view=\(registration.id)"
+                    + " clock=\(Self.animatesLoadTweens) hasActiveTweens=\(output.hasActiveTweens)")
+                startTweenLoop(presentation, hasActiveTweens: output.hasActiveTweens)
                 // Gated on an authored handler, like hover, and for the timers rather than the
                 // cost: a transaction's `timerRequests` are what *that* transaction registered, so
                 // an unconditional binding-only `viewchange` immediately posted an empty set and
@@ -3145,6 +3152,24 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// for against the one it got, and where the difference went. One line a second, never one a
     /// frame: an animated view repaints 20-30x/s and a per-frame line buries every other trace.
     static let animationTrace = ProcessInfo.processInfo.environment["WMP_ANIM_TRACE"] == "1"
+
+    /// **The `load` transaction carries a clock like every other window transaction (W253).**
+    ///
+    /// W194 gave the tween trio a real duration by promising `animatesTweens:` from the click and
+    /// view-timer paths, and left `load` out: an `onLoad` sequence chained through `onEndMove`
+    /// would present its pre-tween state and complete a beat later. But a window is a window
+    /// whichever transaction is running in it, and `startTweenLoop` was never reached from the
+    /// open path at all — so a tween a skin authored in `onLoad` landed its endpoint in one frame.
+    /// `Revert (1)`'s `onLoad="vwPlayer_OnLoad();alphaBlendTo(40,9000);"` is the clean case: a
+    /// nine-second fade to translucent that arrives fully faded before the window is shown.
+    ///
+    /// Nothing about the headless callers changes — a render dump, the corpus census and the
+    /// windowless dispatcher still promise no clock, so the settled state a sweep measures is what
+    /// it always was. This is the *window's* load only.
+    ///
+    /// `WMP_LOAD_TWEENS=0` puts the load transaction back on the instant path, so the question
+    /// "did this row cause what I am looking at?" is one launch rather than one build.
+    static let animatesLoadTweens = ProcessInfo.processInfo.environment["WMP_LOAD_TWEENS"] != "0"
 
     private func emitAnimationTrace(_ presentation: WMPViewPresentation, period: Int) {
         let elapsed = Date().timeIntervalSince(presentation.animationTraceWindowStart)

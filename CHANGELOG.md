@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **A Media Player skin that fades or slides itself in when it opens now does so.** Some skins are
+  written to arrive gradually — a window that fades to translucent over several seconds, a panel
+  that slides into place — and all of that was happening instantly, before the window was even on
+  screen, so nobody ever saw it. Those opening animations now play at the speed the skin asked for.
+  Where a skin finishes is unchanged; only how it gets there is different.
+
 - **A Media Player skin's video no longer spills a black panel out through the side of the window.**
   The picture is NullPlayer's video window parked over the skin's own video box, and it was carrying
   the play/subtitle/cast overlay with it — an overlay that cannot be made narrower than about 395

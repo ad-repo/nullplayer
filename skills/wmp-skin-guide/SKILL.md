@@ -1048,10 +1048,30 @@ queue, with the object model as the security boundary — see Amendment 2 in
   **The callback is the load-bearing half.** Moving `onEndMove` from end-of-handler to end-of-tween
   changes when 36 views chain their next step: `Compact` shrinks its own window inside
   `Playlist_OnEndMove`, so the window now shrinks a beat after the drawer starts closing, which is
-  what WMP does. It is enabled on the **click and view-timer paths only** — load, resize and close
-  still arrive settled, because an `onLoad` sequence chained through `onEndMove` (`Alienware
-  Invader`'s intro, the drawer template's 36 views) would otherwise present its pre-tween state and
-  complete a beat later.
+  what WMP does.
+- **And `load` carries a clock too, which is the half W194 left out (W253).** It was enabled on the
+  click and view-timer paths only, so a tween a skin authored in its `onLoad` still landed its
+  endpoint in one frame — `Revert (1)`'s `onLoad="vwPlayer_OnLoad();alphaBlendTo(40,9000);"` is the
+  clean case, a nine-second fade to translucent that arrived fully faded before the window was ever
+  shown. **`WMPMainWindowController` has two load sites and the row named the wrong one**: ~1348 is
+  `theme.openView`, the skin's *extra* windows, while the player itself opens on the skin-load walk
+  at ~404. Both now pass `animatesTweens:` and call `startTweenLoop`; fixing only the first
+  compiled, passed, and changed nothing on screen. `WMP_LOAD_TWEENS=0` is the A/B and
+  `WMP_TWEEN_TRACE=1` the instrument — see `reference/harness.md`.
+  **W194's stated risk did not materialise, and it was measured rather than reasoned about**: an
+  `onLoad` sequence chained through `onEndMove` now presents its pre-tween state and completes a
+  beat later, exactly as WMP does. Ten skins A/B'd at t=16 s — `9SeriesDefault`, `corona`,
+  `Back to the Future Trilogy`, `Plus! Professional`, `TripleX for XP`, `US Marine Corps`, `WoW`,
+  `Rave-MP`, `Revert` — settle byte-identical at identical window sizes.
+  **`Alienware Invader` is the one that cannot be A/B'd this way and is the trap worth keeping**:
+  it differed, and four runs of it produce four distinct hashes because its intro never settles, so
+  the diff is the skin's own animation and not the change. Its ON run ran **zero** tweens, which is
+  what says so. A skin that never settles needs a same-mode control before any comparison is read.
+  **The corpus numbers on this row are void.** `WMP_TASKS.md` carried 108 of 184 archives and a
+  static walk of `onLoad` handlers gives 67; both count markup rather than execution. `Blinx`'s only
+  `moveTo` sits inside a `/* */` block, and a walk that follows every call from `onLoad` follows
+  branches that never run. Only `WMP_TWEEN_TRACE` can count this, per skin, and it has not been run
+  corpus-wide.
 - **Compact mode is authored by 11 archives, and the button every skin has is not it — audited 2026-09-12.**
   The corpus splits three ways and conflating them wastes a session. **Real compact toggles: 11 skins**, by two
   mechanisms — a switch to a smaller view (`corona`, `9SeriesDefault` → `viewTiny`; `Main_Street` slim/mini;

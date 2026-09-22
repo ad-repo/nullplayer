@@ -87,8 +87,8 @@ same day). Both are in [the archive](docs/wmp-skin/wmp-backlog-archive.md); **th
 behind is that a `hits` count taken at t=0 is a count of a scene nobody sees in a skin that opens
 behind an animation — settle before ranking one.**
 
-**Two rows opened here 2026-09-21, both reported live while W216 was being accepted; W252 closed
-2026-09-22 and is in [the archive](docs/wmp-skin/wmp-backlog-archive.md).** Neither had a headless
+**Two rows opened here 2026-09-21, both reported live while W216 was being accepted; both closed
+2026-09-22 and are in [the archive](docs/wmp-skin/wmp-backlog-archive.md).** Neither had a headless
 signature — the first was a picture that never appears and the second is motion, and no instrument
 on this page draws a second frame. **W252 is now the worked example of what does reach that class:**
 it was closed against an app-side trace, `WMP_VIDEO_TRACE=1`, added in the same change and
@@ -96,9 +96,16 @@ documented in `reference/harness.md`. The trap it left behind is worth more than
 **`WMP_CALL_TRACE` is a `swift test` flag and prints nothing in the running app**, so the route this
 row itself recommended produces an empty capture that reads as "no member accesses".
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W253 | **A tween started in `onLoad` lands its endpoint in one frame, because the load transaction carries no clock** | **108 of 184 archives** reach a tween from an `onLoad` (`moveTo` 473 uses / 104 archives, `alphaBlendTo` 456 / 37), measured 2026-09-21 — **but that is the population and most of it is startup layout, where landing the endpoint is right** | Not blocked, and deliberately ranked below W252 because the visible half is small. W194 gave `moveTo`/`resizeTo`/`alphaBlendTo` a real duration by passing `animatesTweens:` from the click and view-timer paths **and nowhere else** — the initial `load` transaction (`WMPMainWindowController` ~line 1348) passes nothing and never calls `startTweenLoop`, so a tween authored in `onLoad` jumps. `Revert (1)`'s `onLoad="vwPlayer_OnLoad();alphaBlendTo(40,9000);"` is the clean case: a 9-second fade to translucent arrives fully faded on the first frame. **Decide what a skin means by animating at load before widening the clock** — a drawer that slides in every launch is worse than one that is simply open, which is why the 108 is not the size of this row. Evidence: archive entry W194, and `skills/wmp-skin-guide/reference/harness.md` on why no capture can see motion. |
+**W253 was this tier's last row and closed 2026-09-22** — the `onLoad` tween that landed its
+endpoint in one frame, because the load transaction promised no frame clock. It is in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md), and three things it leaves behind outlive it:
+**a row's line number is a starting point, not the seam** (it named `WMPMainWindowController` ~1348,
+which is `theme.openView`; the player opens on the skin-load walk at ~404, and fixing only the cited
+site compiled, passed its tests and moved nothing on screen); **a skin that never settles cannot be
+A/B'd by comparing settled captures** (`Alienware Invader` differed across four runs of the *same*
+mode, having run zero tweens — take a same-mode control first); and **both of this row's corpus
+numbers were void**, because 108 and a static walk's 67 both count markup rather than execution.
+`WMP_TWEEN_TRACE=1` is the instrument the row needed and now has.
 
 **W246 was this tier's previous row and closed the day it opened, 2026-09-20** — the
 `Xbox Live Skin` playlist would not scroll because every host refresh pulled it back onto the

@@ -267,4 +267,61 @@ final class WMPTweenTests: XCTestCase {
                                              snapshot: WMPHostSnapshot())
         XCTAssertNil(frame)
     }
+
+    // MARK: - The load transaction (W253)
+
+    /// **A tween authored in `onLoad` animates, because the load transaction carries a clock too.**
+    ///
+    /// W194 promised `animatesTweens:` from the click and view-timer paths and left `load` out, so
+    /// a skin that opens with a fade or a slide landed its endpoint in one frame. `Revert (1)`'s
+    /// `onLoad="vwPlayer_OnLoad();alphaBlendTo(40,9000);"` is the clean case — a nine-second fade
+    /// to translucent that arrived fully faded before the window was ever shown.
+    ///
+    /// **The `load` event is the whole point of these two.** Every test above drives a `click`, and
+    /// it was the event rather than anything about the call that decided the outcome — which is
+    /// also why the first attempt at this row was wired to the wrong transaction and still
+    /// compiled, passed, and changed nothing on screen.
+    private func fadingSkin() -> String {
+        "<THEME><VIEW id=\"main\" width=\"400\" height=\"200\" alphaBlend=\"255\""
+            + " onLoad=\"alphaBlendTo(40, 9000);\"/></THEME>"
+    }
+
+    private func dispatchLoad(_ runtime: WMPScriptRuntime, _ skin: WMPLoadedSkin,
+                              animates: Bool) async -> WMPScriptOutput {
+        await runtime.transact(
+            skin: skin, viewID: "main", size: canvas, snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(
+                name: "load", targetID: "main",
+                handlers: WMPMainWindowController.handlers(in: skin, event: "load",
+                                                           targetID: nil, viewID: "main")),
+            animatesTweens: animates)
+    }
+
+    private func alpha(_ output: WMPScriptOutput, _ skin: WMPLoadedSkin) throws -> WMPJSONValue? {
+        output.overrides.properties[.init(stableID: try stableID(skin, "main"),
+                                          property: "alphablend")]
+    }
+
+    func testATweenAuthoredInOnLoadIsHeldBackAndAnimated() async throws {
+        let skin = try await load(wms: fadingSkin())
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await dispatchLoad(runtime, skin, animates: true)
+        XCTAssertNotEqual(try alpha(output, skin), .number(40),
+                          "the fade has not arrived in the transaction that started it")
+        XCTAssertTrue(output.hasActiveTweens, "and the window that opened it is owed frames")
+    }
+
+    /// The invariant half, and the reason no sweep or render dump moved when this row landed: a
+    /// caller with no clock still gets the endpoint at the handler boundary, so the settled state
+    /// every headless probe measures is what it always was.
+    func testWithoutAClockAnOnLoadTweenStillArrivesAtOnce() async throws {
+        let skin = try await load(wms: fadingSkin())
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await dispatchLoad(runtime, skin, animates: false)
+        XCTAssertEqual(try alpha(output, skin), .number(40),
+                       "a render dump and the census still see the settled state")
+        XCTAssertFalse(output.hasActiveTweens)
+    }
 }

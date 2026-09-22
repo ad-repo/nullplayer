@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W256.** (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253, the `onLoad` tween that lands in one frame because the load transaction carries no clock, is open in Tier 1c of [`WMP_TASKS.md`](../../WMP_TASKS.md). Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W256.** (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -40,6 +40,66 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+
+## W253 — a tween authored in `onLoad` landed its endpoint in one frame (closed 2026-09-22)
+
+**Reported live 2026-09-21 alongside W252, and it is W194's remaining half.** That row gave
+`moveTo`/`resizeTo`/`alphaBlendTo` a real duration by passing `animatesTweens:` — a caller promising
+it will drive frames — from the click and view-timer paths, and deliberately left `load` out: an
+`onLoad` sequence chained through `onEndMove` would present its pre-tween state and complete a beat
+later. The consequence was that a window, which *does* have a clock, ran its first script with the
+clock switched off. `Revert (1)`'s `onLoad="vwPlayer_OnLoad();alphaBlendTo(40,9000);"` is the clean
+case: a nine-second fade to translucent that arrived fully faded before the window was ever shown.
+
+**The fix.** Both load transactions pass `animatesTweens:` and call `startTweenLoop` after
+`applyTimerDelta`. The headless callers are untouched — a render dump, the corpus census and the
+windowless dispatcher still promise no clock — so the settled state every probe measures is what it
+always was, and `WMP_LOAD_TWEENS=0` restores the old path in the same binary.
+
+**`WMPMainWindowController` has two load sites, and this row named the wrong one.** ~1348 is
+`theme.openView`, which opens a skin's *extra* windows; the player itself opens on the skin-load
+walk at ~404. The first attempt changed only the site the row pointed at — it compiled, its tests
+passed, and nothing on screen moved. **That is the entry's most reusable half: a row's line number
+is a starting point, not the seam.** The trace said `clock=false` while the captures said
+"unchanged", and only one of those two was diagnostic.
+
+**The instrument, added in the same change: `WMP_TWEEN_TRACE=1`** (`reference/harness.md`). A tween
+is the one script effect with **no settled-state signature at all** — with a clock it arrives over
+the duration, without one it arrives at once, and both end on the same pixels. No render dump, no
+sweep `compare` and no capture taken after it lands can tell them apart, so the instrument has to
+report the *decision* rather than the result: `clock=` is the caller's promise, `animates=` what the
+call did with it, `resolved=` how many channels survived, and `frame=true` counts the loop actually
+running.
+
+**The evidence.** `Revert (1)`, one binary, `WMP_LOAD_TWEENS` as the A/B, captured at 1 Hz:
+
+| | trace | captures |
+|---|---|---|
+| `=1` | `animates=true resolved=1`, 218 tween frames | 9 distinct frames, then settles `01919f38` |
+| `=0` | `animates=false resolved=0`, 2 lines | `01919f38` from the first capture |
+
+**W194's stated risk did not materialise, and it was measured rather than argued.** Ten skins A/B'd
+at t=16 s; nine settle byte-identical at identical window sizes — `9SeriesDefault`, `corona`,
+`Back to the Future Trilogy`, `Plus! Professional`, `TripleX for XP`, `US Marine Corps`, `WoW`,
+`Rave-MP`, `Revert`. An `onLoad` sequence chained through `onEndMove` now presents its pre-tween
+state and completes a beat later, which is what WMP does.
+
+**What it leaves behind.**
+
+- **A skin that never settles cannot be A/B'd by comparing settled captures, and it looks exactly
+  like a regression.** `Alienware Invader` was the tenth skin and the only one that differed. Four
+  runs of it produce four distinct hashes, because its intro loops forever — and its ON run had run
+  **zero** tweens, which is what said so before the control did. *Take a same-mode control before
+  reading any capture comparison on an animating skin.*
+- **Every corpus number this row carried is void.** `WMP_TASKS.md` said 108 of 184 archives; a
+  static walk of `onLoad` handlers through their called functions says 67. Both count markup, not
+  execution: `Blinx`'s only `moveTo` sits inside a `/* */` block, and a call walk follows branches
+  that never run. Only `WMP_TWEEN_TRACE` can count this, per skin, from a real launch — and it has
+  **not** been run corpus-wide, so no number here is quotable yet.
+- **The tests pin the semantics, not the wiring.** `WMPTweenTests` gained two `load`-event cases
+  (every one of the other eleven drives a `click`, which is why the event was never the variable
+  under test), but they call the runtime directly and would have passed against the broken
+  controller. The wiring is verified live and only live, which is this tier's whole premise.
 
 ## W254 — the hosted picture burst out of a fixed view's video box (closed 2026-09-22)
 
