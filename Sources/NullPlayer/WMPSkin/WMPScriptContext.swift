@@ -218,6 +218,15 @@ final class WMPScriptContext: @unchecked Sendable {
     /// *after* the whole set has run, never before: the name a call needs is usually declared
     /// further down the same file.
     private var isLoadingPrograms = false
+    /// The top-level functions each program defined or redefined, by resolved script path (W257).
+    private var programFunctions: [String: [String: JSValue]] = [:]
+    /// The exact names more than one program defines — the only ones a view scope rebinds.
+    private var contestedFunctions: Set<String> = []
+    /// Folded view id to the resolved paths of the scripts that view's own `scriptFile` names.
+    private var viewScriptPaths: [String: [String]] = [:]
+    /// Case-folded call-site alias to the global it was installed from, so a rebound function
+    /// takes its aliases with it.
+    private var installedAliases: [String: String] = [:]
 
     init(executionSeconds: TimeInterval = WMPPhase0Limits.scriptExecutionSeconds) {
         self.executionSeconds = executionSeconds
@@ -231,25 +240,110 @@ final class WMPScriptContext: @unchecked Sendable {
     /// Evaluates the skin's own programs once, in declaration order. Their globals live for the
     /// session, which is the whole point: a handler and a geometry expression must see the same
     /// `g_paneCurrent`.
-    func load(scripts: [String: String], order: [WMPScriptRegistration]) -> [WMPJScriptDiagnostic] {
+    ///
+    /// `viewScripts` says which of those programs each view's own `scriptFile` names, and is what
+    /// makes a name two programs both define resolve per view (`applyFunctionScope`, W257).
+    func load(scripts: [String: String], order: [WMPScriptRegistration],
+              viewScripts: [String: [String]] = [:]) -> [WMPJScriptDiagnostic] {
         queue.sync {
             var diagnostics: [WMPJScriptDiagnostic] = []
             var evaluated = Set<String>()
+            viewScriptPaths = viewScripts
+            programFunctions = [:]
+            contestedFunctions = []
             isLoadingPrograms = true
             for registration in order {
                 guard let path = registration.resolvedPath, let source = scripts[path],
                       evaluated.insert(path).inserted else { continue }
+                let before = globalFunctions()
                 if let error = evaluate(source, label: registration.authoredPath) {
                     diagnostics.append(.init(code: "script-error",
                                              message: "\(registration.authoredPath): \(error)"))
                 }
+                var defined: [String: JSValue] = [:]
+                for (name, value) in globalFunctions()
+                where !(before[name]?.isEqual(to: value) ?? false) {
+                    defined[name] = value
+                    if programFunctions.contains(where: { $0.value[name] != nil }) {
+                        contestedFunctions.insert(name)
+                    }
+                }
+                programFunctions[path] = defined
             }
             isLoadingPrograms = false
             for path in evaluated {
                 guard let source = scripts[path] else { continue }
                 aliasCaseFoldedGlobals(callSitesIn: source)
             }
+            applyFunctionScope()
             return diagnostics
+        }
+    }
+
+    /// `WMP_VIEW_SCRIPT_SCOPE=0` restores the pre-W257 binding, where the program evaluated last
+    /// wins every call in every view. An A/B switch in the same binary rather than a baseline
+    /// build: on `Plus! SlimLine` `=0` is the reported bounce and unset is the switch landing.
+    static let viewFunctionScopeEnabled =
+        ProcessInfo.processInfo.environment["WMP_VIEW_SCRIPT_SCOPE"] != "0"
+
+    /// Every top-level function the global object currently holds, by exact name.
+    ///
+    /// An element global is a `Proxy` over a function target, so `typeof` calls it a function too;
+    /// `__wmpPath` is what tells the two apart and is the one name the proxy answers for itself.
+    private func globalFunctions() -> [String: JSValue] {
+        let names = context.evaluateScript("""
+        (function () {
+            var found = [];
+            var names = Object.getOwnPropertyNames(this);
+            for (var i = 0; i < names.length; i++) {
+                var value;
+                try { value = this[names[i]]; } catch (e) { continue; }
+                if (typeof value !== 'function') { continue; }
+                if (value.__wmpPath) { continue; }
+                found.push(names[i]);
+            }
+            return found;
+        }).call(this);
+        """)?.toArray() as? [String] ?? []
+        var functions: [String: JSValue] = [:]
+        for name in names {
+            guard let value = context.objectForKeyedSubscript(name) else { continue }
+            functions[name] = value
+        }
+        return functions
+    }
+
+    /// **A view's handlers run its own view's functions, not the last program's (W204/W257).**
+    ///
+    /// A `.wmz` has one script scope for the whole skin, so two views that each declare their own
+    /// `scriptFile` and define the same top-level names silently collide: the program evaluated
+    /// last wins every call, in both views. `Plus! SlimLine` is the reported case — `perfect.js`
+    /// and `perfectV.js` each define `Init`, `savePrefs`, `switchSkin` and `EndVideo`, and the
+    /// horizontal view therefore ran the *vertical* view's `Init`, whose `EndVideo()` calls
+    /// `switchSkin('perfectVSkin')` and put the skin straight back where it came from. Reported
+    /// 2026-09-22 as "when I click the recycle it switches and instantly switches back".
+    ///
+    /// **Only a contested name is rebound, and only for a view that names its own scripts.** A
+    /// helper exactly one program defines is shared, which is what a skin whose views deliberately
+    /// share one `.js` is relying on; a view declaring no `scriptFile` keeps whatever the skin's
+    /// last program bound. Globals other than functions are untouched: they are one variable in one
+    /// scope here as they are in the markup, and nothing in the corpus resolves a *value* per view.
+    private func applyFunctionScope(for viewID: String? = nil) {
+        guard Self.viewFunctionScopeEnabled, !contestedFunctions.isEmpty else { return }
+        guard let key = (viewID.map { WMPPath.fold($0) } ?? installedViewID),
+              let paths = viewScriptPaths[key], !paths.isEmpty else { return }
+        var chosen: [String: JSValue] = [:]
+        for path in paths {
+            for (name, value) in programFunctions[path] ?? [:] where contestedFunctions.contains(name) {
+                chosen[name] = value
+            }
+        }
+        for (name, value) in chosen {
+            context.setObject(value, forKeyedSubscript: name as NSString)
+        }
+        for (alias, real) in installedAliases {
+            guard let value = chosen[real] else { continue }
+            context.setObject(value, forKeyedSubscript: alias as NSString)
         }
     }
 
@@ -299,6 +393,7 @@ final class WMPScriptContext: @unchecked Sendable {
             installElements(definitions)
             installedViewID = WMPPath.fold(viewID)
             refreshOtherViews()
+            applyFunctionScope()
         }
     }
 
@@ -312,6 +407,7 @@ final class WMPScriptContext: @unchecked Sendable {
             model.restoreElements(cached)
             installedViewID = WMPPath.fold(viewID)
             refreshOtherViews()
+            applyFunctionScope()
             return true
         }
     }
@@ -473,12 +569,14 @@ final class WMPScriptContext: @unchecked Sendable {
                     installElements(plan.elements)
                 }
                 refreshOtherViews(current: WMPPath.fold(plan.viewID))
+                applyFunctionScope(for: plan.viewID)
                 let result = perform(plan: plan, size: WMPSize(width: 0, height: 0),
                                      snapshot: snapshot, preferences: preferences, event: event,
                                      geometry: [:], currentViewID: currentViewID, screen: screen)
                 viewRegistries[WMPPath.fold(plan.viewID)] = model.captureElements()
                 model.restoreElements(presented)
                 refreshOtherViews()
+                applyFunctionScope()
                 continuation.resume(returning: result)
             }
         }
@@ -1029,9 +1127,12 @@ final class WMPScriptContext: @unchecked Sendable {
         // A candidate is a JScript identifier by construction — letters, digits, `_` and `$` — so
         // there is nothing in it a string literal has to escape.
         let list = candidates.map { "\"\($0)\"" }.joined(separator: ",")
-        context.evaluateScript("""
+        // The pairs it installs come back so that `applyFunctionScope` can carry an alias with the
+        // function it aliases when a view rebinds it (W257).
+        let installed = context.evaluateScript("""
         (function(wanted) {
             var folded = {};
+            var made = [];
             for (var key in this) {
                 var lower = key.toLowerCase();
                 folded[lower] = (lower in folded) ? null : key;
@@ -1042,9 +1143,12 @@ final class WMPScriptContext: @unchecked Sendable {
                 var real = folded[name.toLowerCase()];
                 if (!real || typeof this[real] !== 'function') { continue; }
                 this[name] = this[real];
+                made.push([name, real]);
             }
+            return made;
         }).call(this, [\(list)]);
-        """)
+        """)?.toArray() as? [[String]] ?? []
+        for pair in installed where pair.count == 2 { installedAliases[pair[0]] = pair[1] }
     }
 
     /// Words a `name(` scan would otherwise offer as a call. None of them can alias — nothing

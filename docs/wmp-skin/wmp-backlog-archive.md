@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W260.** (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued 2026-09-22** and is open in Tier 1c — a `theme.currentViewID` switch that lands and is immediately undone by the arriving view's own `Init()`, reported live on `Plus! SlimLine`. It is reachable only behind W40 and has no headless signature.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W260.** (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -84,6 +84,89 @@ idiom execute at all, which is `reachable-code-fires-latent-traps` for the third
 
 Corpus sweep: 551 of 553 images identical; the two are `Plus! SlimLine` drawing the chrome its
 `Init()` now reaches, and `Scooby-Doo_2`, cleared with a same-mode control.
+
+## W257 — a view switch landed and the arriving view put it straight back (closed 2026-09-22)
+
+**Reported live 2026-09-22 as "when I click the recycle it switches and instantly switches back".**
+`Plus! SlimLine`, vertical view, the orientation control: the horizontal view arrived and bounced
+home inside one transaction. Only reachable behind W40 — before the cross-view fix `Init()` threw on
+`perfectV_pl` at `PerfectV.js:20` and never reached the restore at `:22-27`, which is
+`reachable-code-fires-latent-traps` again.
+
+**It is W204's defect, and the row's open question had the wrong suspect.** The row asked which
+handler calls `savePrefs()` with the global `currView` reverted, and ruled out `Init()` on the
+grounds that it neither calls `savePrefs` nor writes that value. Both statements are true of
+*`perfect.js`'s* `Init`, and the `Init` that ran was **`perfectV.js`'s**: the skin declares
+`scriptFile="perfect.js"` on `perfectSkin` and `scriptFile="perfectV.js"` on `perfectVSkin`, both
+files define `Init`, `savePrefs`, `switchSkin` and `EndVideo` at top level, one script scope serves
+the whole skin, and the program evaluated last therefore won every call **in both views**. So the
+horizontal view ran the vertical view's `Init()`, whose `vidIsRunning` is false with nothing playing
+and which then calls `EndVideo()` → `switchSkin('perfectVSkin')` → `savePrefs()` — the seven keys in
+the row's own trace — → `theme.currentViewID='perfectVSkin'`.
+
+**Nothing was reverting the global.** The row's trace was read as "the global reverted", and the
+preference write it saw was a *different view's* `switchSkin` correctly writing the value that view
+believes in. The context really was not recreated and `loadPrefs()`'s `var` really does shadow;
+both checks were sound and both were answering a question that was not the defect.
+
+### The fix: a contested function name resolves per view
+
+`WMPScriptContext` records which top-level functions each program defines as it evaluates them,
+marks the names **two or more** programs define, and rebinds only those to the installed view's own
+scripts' versions whenever a view is installed, restored, or run as a windowless dispatcher
+(`applyFunctionScope`). Evaluation order inside one view's `scriptFile` list is unchanged, so a view
+naming two programs still takes the later one's definition.
+
+**What it deliberately does not do**, which is the question W204 said to answer first — what
+per-view scope costs a skin whose views share a helper:
+
+- a name exactly **one** program defines is untouched and reaches every view, as before;
+- a view that declares no `scriptFile` of its own keeps the skin's last-loaded binding;
+- non-function globals are left shared. `var currView` is one variable in one scope here as it is
+  in the markup, and no corpus skin resolves a *value* per view. The bounce needed only the
+  functions.
+
+Case-folded call-site aliases (W216's last-resort spelling fix) follow the function they alias.
+
+### What the rule actually matches, measured before it was trusted
+
+Views that each name their own `.js`, where two of those files define the same top-level name —
+**7 of 184 archives**, which independently reproduces W204's own figure:
+
+```
+Plus! SlimLine   17 contested   perfect.js / perfectV.js
+holiday_skin     22 contested   msholiday.js / gingerbread.js
+Sports            6 contested   ExtremeSports.js / saltmine.js
+pharaoh           2 contested   pharaoh.js / pharaoh_ros.js
+portals           2 contested   Portals.js / Portals2.js
+corona            1 contested   Corona.js / corona_tiny.js
+9SeriesDefault    1 contested   Corona.js / corona_tiny.js
+```
+
+**The census that produced it had to be written twice, and the second lesson is the same one W256
+paid for.** The first pass tried UTF-16 before UTF-8 and accepted any decode with no NUL bytes, so
+`gingerbread.js` and `pharaoh.js` — plain CP1252 text — came back as mojibake with **zero**
+functions in them, and the run reported 3 archives instead of 7. A decoder that cannot fail is as
+dangerous as a `grep` that prints nothing: sniff the BOM.
+
+### Verified
+
+- **Live**, the reported gesture on the reporter's own skin: `[wmp/dispatch] click … view=perfectVSkin
+  handlers=1 switchSkin('perfectSkin');` → `[wmp/pref] view=perfectSkin event=load
+  sawCurrView=perfectSkin writes=currView=perfectSkin,…`. The arriving view now saves **its own**
+  name and stays; before the fix that same line wrote `currView=perfectVSkin`. Both directions, and
+  the reporter then drove every control in both views.
+- `swift test`: 2574 tests, 0 failures. The new test is
+  `WMPScriptRuntimeTests.testAViewRunsTheFunctionsItsOwnScriptFileDefines`, and
+  **`WMP_VIEW_SCRIPT_SCOPE=0` fails it** — an A/B in one binary rather than a baseline build.
+- **Corpus sweep**, `=0` against `=1` over 184 archives: 551 of 553 images identical.
+  `holiday_skin/Globe` is the change working — that view declares `msholiday.js` and had been
+  running `gingerbread.js`'s `Init`, so its locality tab now highlights (`checkLocality()`) and one
+  visualiser control it hides stays hidden (29 → 28 nodes). `Scooby-Doo_2/infoView` is **not** this
+  change: three renders at the *same* setting produced two different hashes, one of them identical
+  to the `=0` capture. It draws from its own `Math.random()` — W42 and W40 both flagged and cleared
+  it the same way — so a corpus A/B on this engine needs a same-mode control before any single-image
+  diff is read.
 
 ## W258 — a boolean property written as a string was read back truthy (closed 2026-09-22)
 

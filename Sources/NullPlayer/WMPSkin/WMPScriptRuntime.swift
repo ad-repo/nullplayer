@@ -579,7 +579,8 @@ actor WMPScriptRuntime {
         // The elements are installed first on purpose: a skin's programs run top-level code that
         // touches its own elements, and WMP has the view before it has the script.
         if pendingLoad {
-            startupDiagnostics = context.load(scripts: skin.scriptSources, order: skin.scripts)
+            startupDiagnostics = context.load(scripts: skin.scriptSources, order: skin.scripts,
+                                              viewScripts: Self.viewScriptPaths(in: skin))
         }
 
         // **The host's own changes are resolved before the handlers, not after (W51).** They used
@@ -1255,6 +1256,30 @@ actor WMPScriptRuntime {
         return await transact(skin: skin, viewID: viewID, size: size, snapshot: snapshot,
                               event: nil, geometry: geometry, animatesTweens: true,
                               injecting: held)
+    }
+
+    /// Which programs each view's **own** `scriptFile` names, folded id to resolved path, in the
+    /// order the attribute writes them. `WMPLoadedSkin.scripts` is the skin-wide set and dedupes by
+    /// resolved path, so it cannot answer this on its own; the view node still carries the
+    /// attribute it was registered from. Consumed by `WMPScriptContext.applyFunctionScope` (W257).
+    nonisolated static func viewScriptPaths(in skin: WMPLoadedSkin) -> [String: [String]] {
+        var resolved: [String: String] = [:]
+        for registration in skin.scripts {
+            guard let path = registration.resolvedPath else { continue }
+            resolved[WMPPath.fold(registration.authoredPath)] = path
+        }
+        var paths: [String: [String]] = [:]
+        for view in skin.views {
+            guard let raw = view.node.attribute(named: "scriptFile")?.rawValue else { continue }
+            let declared = raw.split(separator: ";").compactMap { item -> String? in
+                let authored = item.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !authored.isEmpty else { return nil }
+                return resolved[WMPPath.fold(authored)]
+            }
+            guard !declared.isEmpty else { continue }
+            paths[WMPPath.fold(view.id)] = declared
+        }
+        return paths
     }
 
     func discardView(_ viewID: String) {

@@ -1567,4 +1567,61 @@ final class WMPScriptRuntimeTests: XCTestCase {
                        "the failed call must not have left `Flag` behind as a global")
     }
 
+    /// **Two views that each name their own `scriptFile` do not share the functions in them
+    /// (W204/W257).**
+    ///
+    /// `Plus! SlimLine` is the reported case: `perfect.js` and `perfectV.js` both define `Init`,
+    /// `savePrefs`, `switchSkin` and `EndVideo`, the program evaluated last won every call in both
+    /// views, and so the horizontal view ran the *vertical* view's `Init()` — whose `EndVideo()`
+    /// calls `switchSkin('perfectVSkin')` and put the skin straight back. Reported live 2026-09-22
+    /// as "when I click the recycle it switches and instantly switches back".
+    func testAViewRunsTheFunctionsItsOwnScriptFileDefines() async throws {
+        let wms = """
+        <THEME>
+            <VIEW id="a" width="200" height="200" scriptFile="a.js">
+                <SUBVIEW id="panelA" left="0" top="0" width="100" height="100"/>
+                <BUTTON id="goA" left="0" top="0" width="10" height="10" onClick="panelA.height = mark();"/>
+            </VIEW>
+            <VIEW id="b" width="200" height="200" scriptFile="b.js">
+                <SUBVIEW id="panelB" left="0" top="0" width="100" height="100"/>
+                <BUTTON id="goB" left="0" top="0" width="10" height="10" onClick="panelB.height = mark();"/>
+                <BUTTON id="sharedB" left="0" top="20" width="10" height="10"
+                        onClick="panelB.height = onlyInA();"/>
+            </VIEW>
+        </THEME>
+        """
+        let skin = try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data(wms.utf8)),
+            WMPTestArchiveEntry("a.js", data: Data("""
+            function mark() { return 41; }
+            function onlyInA() { return 77; }
+            """.utf8)),
+            WMPTestArchiveEntry("b.js", data: Data("function mark() { return 42; }".utf8)),
+        ]))
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        func stableID(_ id: String) throws -> Int {
+            try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == id }?.stableID)
+        }
+        func height(_ viewID: String, _ targetID: String, _ source: String) async -> CGFloat? {
+            let output = await runtime.transact(
+                skin: skin, viewID: viewID, size: WMPSize(width: 200, height: 200),
+                snapshot: WMPHostSnapshot(),
+                event: WMPJScriptEvent(name: "click", targetID: targetID, handlers: [source]))
+            let panel = try? stableID(viewID == "a" ? "panelA" : "panelB")
+            return panel.flatMap { output.overrides.geometry[.init(stableID: $0, property: "height")] }
+        }
+        // `b.js` is evaluated last, so before the view scope existed both of these answered 42.
+        let inB = await height("b", "goB", "panelB.height = mark();")
+        XCTAssertEqual(inB, 42)
+        let inA = await height("a", "goA", "panelA.height = mark();")
+        XCTAssertEqual(inA, 41, "view `a` must run `a.js`'s `mark`, not the last program's")
+        let backInB = await height("b", "goB", "panelB.height = mark();")
+        XCTAssertEqual(backInB, 42, "and switching back must put `b.js`'s own function back")
+        // A name only one program defines is not contested, so it stays shared — which is what a
+        // skin whose views deliberately share a helper is relying on.
+        let shared = await height("b", "sharedB", "panelB.height = onlyInA();")
+        XCTAssertEqual(shared, 77, "a helper exactly one program defines must reach every view")
+    }
+
 }

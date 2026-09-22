@@ -124,29 +124,23 @@ mode, having run zero tweens — take a same-mode control first); and **both of 
 numbers were void**, because 108 and a static walk's 67 both count markup rather than execution.
 `WMP_TWEEN_TRACE=1` is the instrument the row needed and now has.
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W257 | A `theme.currentViewID` switch lands and is immediately undone: the skin's own `Init()` puts the old view back | **1 archive measured** (`Plus! SlimLine`); **the class is unmeasured** — count the corpus's `onLoad` handlers that write `theme.currentViewID` from a preference before ranking it | Reported live 2026-09-22 as *"when I click the recycle it switches and instantly switches back"*. **Only reachable behind W40**: before the cross-view fix `Init()` threw on `perfectV_pl` at `PerfectV.js:20` and never reached the restore at `:22-27`, so this is `reachable-code-fires-latent-traps` again. **No headless signature** — `WMP_RENDER_CLICK perfectVSkin@266,9` issues `command=setCurrentView value=perfectSkin` correctly and the probe never follows a switch. Measure it with `WMP_CLICK_TRACE=1` in the debug app, which prints the dispatch, the press/release and every preference write. |
+**W257 was this tier's row and closed 2026-09-22** — the view switch that landed and was put
+straight back, and it was never the *switch* that was wrong. `Plus! SlimLine` declares a different
+`.js` on each of its two views, both define `Init`, `savePrefs`, `switchSkin` and `EndVideo`, one
+script scope serves the whole skin, and so the arriving horizontal view ran the **vertical** view's
+`Init()` — whose `EndVideo()` calls `switchSkin('perfectVSkin')` and saved the seven keys the row's
+trace recorded. It is [in the archive](docs/wmp-skin/wmp-backlog-archive.md) and it **spent no
+second number**: it is W204's defect, and it closed the scope half of that row on the way past.
 
-**What W257's trace already rules out, so nobody re-derives it.** The click, the handler lookup and
-the preference ordering are all correct, and each was measured rather than reasoned about:
-
-```
-click  view=perfectVSkin  writes currView=perfectSkin     ← switchSkin() ran, wrote the new view
-load   view=perfectSkin   saw   currView=perfectSkin      ← the arriving view read the NEW value
-                          writes currView=perfectVSkin    ← 7 keys, i.e. savePrefs(), global reverted
-load   view=perfectVSkin                                  ← bounced home
-```
-
-**The context is not recreated across the switch** (checked with a temporary trace, no new
-`WMPScriptContext`), so the skin's globals are not being reset by a re-evaluation of its programs —
-something during `perfectSkin`'s load calls `savePrefs()` with the global `currView` back at
-`"perfectVSkin"`. **Which handler does that is the open question and was not identified**; do not
-assume it is `Init()`, which neither calls `savePrefs` nor writes that value. `loadPrefs()` in
-`PerfectV.js:60` redeclares `currView` with `var` *inside the function*, so it shadows rather than
-writes the global — that is ruled out too. **W204 is the neighbour to read first**: this skin is one
-of its seven, so the `Init`, `savePrefs`, `switchSkin` and `currView` that run are `PerfectV.js`'s in
-both views.
+**Three things it leaves behind.** *A ruled-out suspect is only ruled out in the file you read it
+in* — the row cleared `Init()` by reading `perfect.js`, and the `Init` that ran was `perfectV.js`'s;
+in a shared scope, "which function is this" is a question about load order, not about the file the
+markup names. *A preference write that looks like a revert may be a different view writing the
+truth it holds* — nothing was reverting the global, and the two careful checks the row recorded
+(no new `WMPScriptContext`, `loadPrefs`'s shadowing `var`) were both sound and both aimed at a
+defect that was not there. And *`Scooby-Doo_2/infoView` draws from its own
+`Math.random()`*: three captures at one setting gave two hashes. Take a same-mode control before
+reading any single image out of a corpus A/B — W42 and W40 both cleared that skin the same way.
 
 **W246 was this tier's previous row and closed the day it opened, 2026-09-20** — the
 `Xbox Live Skin` playlist would not scroll because every host refresh pulled it back onto the
@@ -424,7 +418,7 @@ any of this as done.
 | W202 | An `<EFFECTS visible="false">` that a script later makes visible never gets a hosted surface | **57 nodes in 54 archives** declare `visible="false"` on an `<EFFECTS>`/`<WMPEFFECTS>`; **how many a script turns on is unmeasured and is the number to take next** | Not blocked. `pharaoh`'s scarab mode is the reproduction, but **rank it on the corpus population, not on pharaoh** — that hole is small. First step: drive pharaoh in the debug build and **read the log, not the screen**; no second `Setting up ProjectM` line is ever logged for the scarab. Evidence: `skins/pharaoh.md` § *Still open*. |
 | W201 | An animated GIF whose frame image blocks are smaller than its logical screen is drawn at the screen's size | **27 files in 12 archives** of the corpus's 4,303 GIFs (header scan, first frame's image block against the screen descriptor); `pharaoh/pyrevolver.gif` is the extreme at 6.7% of its declared area | Not blocked. **The cause is an observation, not a diagnosis** — screen-versus-block size and the GIF's uninitialised screen area are both candidates and neither has been isolated. **Check `Age_of_Mythology`'s `open_shutter.gif` before changing anything**; it is load-bearing for the one-shot terminator rule. Evidence: `skins/pharaoh.md` § *Still open*. |
 | W66 | A `LISTBOX` has a control and nothing to put in it | **8 skins**, 16 uses, measured 2026-09-07 over 177 archives | **Blocked on a decision, not on drawing work**: what a `.wmz` may see of this player's library. The control draws and reports its selection; it has no rows because nothing answers `player.mediaCollection`, and it is deliberately not faked. **Rank it with whatever answers the media-collection question**, and W136 with it. Evidence: `object-model.md` § *Playlist kinds*. |
-| W204 | Every view in a skin shares one script scope, so a second `scriptFile` silently overwrites the first's functions | **7 of 185 archives** declare two or more `scriptFile` programs defining the same top-level function name — `Plus! SlimLine`, `Sports` and `holiday_skin` collide on six each; re-run the scan before ranking | Not blocked. **It is invisible with a stopped player**, so a default-state sweep cannot measure it — reproduce with `WMP_RENDER_HOST=playing`. `pharaoh`'s own symptom is bounded and the row is ranked on the other six. **The shape of the fix is per-view function scope; what that costs a skin whose views deliberately share a helper is the question to answer first.** Evidence: `skins/pharaoh.md` § *Still open*. |
+| W204 | The residue of per-view script scope: a *value* a second `scriptFile` overwrites, and the six archives verified only on paper | **7 of 184 archives** name a different `.js` per view where two of them define the same top-level function (`Plus! SlimLine` 17 contested names, `holiday_skin` 22, `Sports` 6, `pharaoh` 2, `portals` 2, `corona`/`9SeriesDefault` 1) — re-derived 2026-09-22 with a BOM-sniffing decoder, which is the whole census: the first pass read two CP1252 files as UTF-16 and reported 3 | **The function half closed 2026-09-22 with W257** — `WMPScriptContext.applyFunctionScope` binds a contested name to the installed view's own programs; see [the archive](docs/wmp-skin/wmp-backlog-archive.md). What is left is deliberately smaller than the row was. **(a)** Top-level `var`s are still one variable in one scope, and no corpus skin has been shown to need otherwise — **measure a case before scoping values**, because two views' `Init`s writing one flag is also how these skins share state. **(b)** Only `Plus! SlimLine` (live) and `holiday_skin` (sweep) were verified; the other five are unverified in a *driven* state. Reproduce with `WMP_RENDER_HOST=playing` and `WMP_VIEW_SCRIPT_SCOPE=0` as the A/B. Evidence: `skins/pharaoh.md` § *Still open*. |
 | W149 | Controls still unreachable after W148, each for a different reason | **11 total**, re-measured 2026-09-12 after W150 (was 16) — `Sports` 7, `anime`, `STALKER`, `T3-Skynet_Media_Player`, `Plus! Professional` | Not blocked, and **smaller than it was: the `<BUTTONGROUP>`-with-no-mapping-children half closed 2026-09-22 with W259**, which took the corpus from 180 occluded rows to 165 and recovered 16 controls. **Re-measure before taking what is left** — the 11 predate it. **Name the node before ranking the count.** Reproduce with `WMP_RENDER_OCCLUDED=1` and read the `reached=rect-only` lines. Evidence: `harness.md` § *The residue `WMP_RENDER_OCCLUDED` does not explain (W149)*. |
 | W203 | `<DURATIONTEXT>` never renders | **2 nodes in 2 archives** (`pharaoh`, `circle`) — a one-line row kept only because it is a *visible* readout on a shipped Microsoft skin | Not blocked. The missing piece is a glyph-height fallback this one tag does not get — `<currentPositionText>` beside it declares no `height` either and resolves to 45x10 — **so a `<DURATIONTEXT>` anywhere is dead, not just this one**. Evidence: `skins/pharaoh.md` § *Still open*. |
 | W123 | A stretched `backgroundImage` and a natural-size foreground image draw the same bitmap at two different sizes | **1 view measured** (`Ice/videoView`); the wider class — every `backgroundImage` whose frame is not its bitmap — is **unmeasured** | Blocked on its own measurement: **measure the class before changing the rule**, and **not with W240**, which closed 2026-09-20: `Radio` left that row when `corner_pieces.bmp` was measured absent from its own archive, so the two never shared a skin and this row stands alone. It cannot be answered by extending W122, and `skins/README.md`'s counter-evidence table comes first. Evidence: `SKILL.md` § *Static scene and image contracts*. |

@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **A Media Player skin that offers two layouts now stays in the one you pick.** On
+  `Plus! SlimLine`, clicking the control that switches between the horizontal and vertical layouts
+  switched and then snapped straight back, so the horizontal view could not be reached at all.
+  These skins give each of their layouts its own script file, and the two files here define
+  functions of the same name — NullPlayer was running whichever file happened to be read last, in
+  both layouts, so arriving in the horizontal view ran the vertical view's setup code, which asked
+  to go back to vertical. Each layout now runs the functions from the script it actually names,
+  while a helper that only one script defines is still shared between them. Seven of the installed
+  skins are built this way, `holiday_skin` and `Sports` among them.
+
 - **Equaliser sliders on a Media Player skin can be dragged.** On `anemone` a band could be dragged
   all day and neither the sound nor the slider itself would change; on `elvis` most of the slider
   simply did not respond, and pressing the part of the track that should have moved it dragged the

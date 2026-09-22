@@ -887,6 +887,43 @@ throws nothing, and `SCRIPT-DIAG` stays silent — the only signature is the *ar
 command carries. `Tests/NullPlayerAppTests/WMPEqualizerSliderDragTests.swift` asserts the argument
 and keeps the control that shows the null.
 
+## A view runs the functions its own `scriptFile` names (W204/W257)
+
+**One `JSContext` serves the whole skin, so two views that each declare their own `.js` and define
+the same top-level name collide: the program evaluated last wins every call, in every view.** WMP
+gives each view the scope its own `scriptFile` list builds. `Plus! SlimLine` is the case that
+reported it — `perfect.js` on `perfectSkin`, `perfectV.js` on `perfectVSkin`, 17 names in common —
+and the horizontal view therefore ran the vertical view's `Init()`, whose `EndVideo()` calls
+`switchSkin('perfectVSkin')` and put the skin straight back where it had come from.
+
+`WMPScriptContext` records the top-level functions each program defines as it evaluates them, marks
+the names **two or more** programs define, and rebinds only those to the installed view's own
+programs whenever a view is installed, restored, or run as a windowless dispatcher
+(`applyFunctionScope`). Within one view's own list the later program still wins, which is
+evaluation order and unchanged.
+
+**The three things it leaves alone are the contract, not omissions:**
+
+- a name exactly **one** program defines stays shared and reaches every view — a skin whose views
+  deliberately share a helper is relying on that;
+- a view that declares no `scriptFile` of its own keeps the skin's last-loaded binding;
+- **non-function globals are one variable in one scope**, here as in the markup. `perfect.js`'s
+  `var currView = "perfectSkin"` and `perfectV.js`'s `"perfectVSkin"` are still the same variable.
+  No corpus skin has been shown to need otherwise, and two views' `Init`s writing one flag is also
+  how these skins share state — measure a case before scoping values (W204).
+
+A case-folded alias from the section below follows the function it aliases when a view rebinds it.
+
+**It reaches 7 of 184 archives** — `Plus! SlimLine` (17 contested names), `holiday_skin` (22),
+`Sports` (6), `pharaoh` (2), `portals` (2), `corona` and `9SeriesDefault` (1). That census is worth
+re-reading before trusting a re-run of it: the first pass tried UTF-16 before UTF-8 and accepted any
+decode with no NUL bytes, so two plain CP1252 `.js` files came back as mojibake with zero functions
+in them and the answer was 3 archives instead of 7. Sniff the BOM; a decoder that cannot fail is
+the same trap as a `grep` that prints nothing (W256).
+
+`WMP_VIEW_SCRIPT_SCOPE=0` restores the pre-W257 last-program-wins binding — the A/B, in one binary.
+
+
 ## A skin's own function, called in the wrong case (W42)
 
 **JavaScriptCore resolves a global by exact spelling, so a skin that misspells the case of its own

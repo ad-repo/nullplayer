@@ -321,6 +321,30 @@ re-play found the player stopped and reloaded the track from 0:00.
   AudioStreaming (state: paused)`. For a "the control does nothing" report on this engine, read the
   playback log before reaching for a WMP probe.
 
+### W257 — the orientation switch landed and `SlimLine` put it straight back
+
+*"when I click the recycle it switches and instantly switches back"*, reported 2026-09-22 against
+`Plus! SlimLine`, vertical view. The skin is the family's **two-view** shape and the only one here
+that declares a *different* `.js` per view: `scriptFile="perfect.js"` on `perfectSkin`,
+`scriptFile="perfectV.js"` on `perfectVSkin`. Both files define `Init`, `savePrefs`, `switchSkin`,
+`EndVideo` and 13 other names, one script scope serves the whole skin, and the last program
+evaluated therefore won every call in **both** views.
+
+So the arriving horizontal view ran `perfectV.js`'s `Init()` → `vidIsRunning` false →
+`EndVideo()` → `switchSkin('perfectVSkin')` → home again, inside the load transaction. The rule and
+what it deliberately leaves shared is `../object-model.md` § *A view runs the functions its own
+`scriptFile` names*; `WMP_VIEW_SCRIPT_SCOPE=0` is the A/B.
+
+**Two things about this skin are worth keeping.** It was only reachable once W40 landed — before
+that `Init()` threw on `perfectV_pl` at `PerfectV.js:20` and never reached the restore below it.
+And the row that reported it had cleared `Init()` as a suspect by reading `perfect.js`, which is the
+file the markup names and not the one that ran: **in a shared scope, "which function is this" is a
+question about load order.**
+
+`SlimLine` is also where `OnTimerTick` is called by both views' `onTimer` and declared in neither
+file — that still throws roughly three times a second and is W42's class (a name no spelling
+reaches), not this one.
+
 ## Ruled out — do not chase these again
 
 - **Interpolation *quality* was not the cause.** `.low` vs `.high` at 2x is **byte-identical** on
