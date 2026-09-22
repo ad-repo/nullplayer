@@ -1643,6 +1643,26 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     coverage = WMPHitCoverageBuilder.coverage(for: Array(ownPaint), frame: frame,
                                                              pixels: alphaPlane)
                 }
+                // **A `<BUTTONGROUP>` that resolved no mapping children is artwork, not a control
+                // (W149).** It is a hit target by *kind*, so one that names no regions still
+                // claimed its whole rectangle and swallowed everything drawn under it.
+                //
+                // `Plus! SlimLine`'s left drawer is the reported case: its `<BUTTONGROUP>` declares
+                // `mappingImage="perfectV_progressbar.jpg"` — the same file as its own `image`,
+                // not a map — so it has no regions and no handler, and its 173x32 rect lies across
+                // the bottom-left of the vertical body strip, exactly over `btnProgress`. The
+                // pointer hit the drawer instead of the arrow that closes it, so with the drawer
+                // open the arrow could never be pressed: `WMP_RENDER_OCCLUDED` reports
+                // `btnProgress … reached=neither by=[-#120:buttonGroup …]`, and live the click
+                // traced to `raw=buttonGroup#120`. Reported 2026-09-22 as *"the left arrow does not
+                // work"*.
+                //
+                // A group that authors its own handler, or carries a transport action, is a control
+                // and stays — this only drops the ones with nothing behind them.
+                let inertGroup = node.kind == .buttonGroup && mappingImage == nil
+                    && mappingTargets.isEmpty && !authorsInputHandler(node)
+                    && WMPTransportAction.authoredAction(for: node) == nil
+                if !inertGroup {
                 hits.append(WMPHitMetadata(stableID: node.stableID, nodeID: node.xmlID,
                     kind: node.kind.description, frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paintOrder: paintSequence,
@@ -1655,6 +1675,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     handlerOwnsAction: WMPTransportAction.authoredAction(for: node).map {
                         WMPTransportAction.handlerOwnsAction($0, on: node)
                     } ?? false))
+                }
             }
 
             if let ownClipMask { clipMaskStack.append(ownClipMask) }
