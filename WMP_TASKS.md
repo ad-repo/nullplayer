@@ -163,6 +163,17 @@ and the `columns` attribute is parsed and ignored (`Xbox Live Skin` asks for
 either before ranking it** — the census command is in the archive entry.
 
 
+**W260 was reported into this tier 2026-09-22 and closed the same day** — the `Stealth` elapsed
+readout that never moved, because a view authoring `onTimer` with no `timerInterval` got no timer at
+all. It is in [the archive](docs/wmp-skin/wmp-backlog-archive.md), and **the rule it leaves behind is
+this tier's own, sharpened**: the report was *"stealth does not play files at all"* and playback was
+never involved. **A dead readout and a dead transport are the same picture**, so reproduce the
+reporter's *sentence*, not their diagnosis — two headless probes had already agreed the reported
+thing worked (the play button was reachable, hit-tested to `action=play` and issued `command=play`),
+and agreeing with them would have closed a real defect as unreproducible. The second half:
+**an absent attribute is not a zero**; `authoredTimerInterval` folded "unstated" and "stated as off"
+into one return value and the SDK gives those two different meanings.
+
 ## Tier 1d — what the Phase 6 instruments do and do not reach
 
 **Empty again: W245 opened this tier on 2026-09-20 and closed the same day**, and the tier exists
@@ -367,10 +378,33 @@ two arbiter corrections the corpus sweep forced, and the `WMP_RENDER_CLICK` repr
 `skills/wmp-skin-guide/reference/object-model.md` § *An unqualified name in a handler resolves
 against its own element first (W216)*.
 
+**W41 closed 2026-09-22 and is archived**, and it is this page's own re-measure rule paying twice.
+The member had answered **since W115, two days before the row's other half went** — so the row as
+written had been done for a fortnight — and its "4 skins" was a hand count: the honest figure is
+**19 uses / 14 archives**. What was actually left was **the value, not the member**: every corpus
+consumer classifies the string and every classifier is Windows syntax, so a macOS `file:///Users/…`
+took the *network* branch and nine archives lit their net lamp for every local track, two with a
+buffering readout behind it. **A member that resolves can still be answered with a string nothing
+can read** — an `unimplemented` tally is blind to that entire class, and only the running app saw
+it. The spelling, the idiom split and the two secondary defects it left (a playlist item's
+`sourceURL` answering the item's *title*; the local-video path rebuilding `metadata` without it) are
+in [the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
+`skills/wmp-skin-guide/reference/object-model.md` § *`sourceURL` is spelled the way WMP spells it
+(W41)*.
+
+**W260 was opened and closed 2026-09-22, found while verifying W41 in the running app** — a view
+authoring `onTimer` with no `timerInterval` got no timer at all, because `authoredTimerInterval`
+answered `0` for an absent attribute and every caller reads `0` as *"this view has no timer"*.
+`Stealth` writes its elapsed readout from that handler and nothing else, so it sat at `00:00`
+through a whole track and was reported as the skin not playing. It is in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md). **The rule it leaves behind belongs to Tier 1c
+rather than here**: the reporter's words were *"stealth does not play files at all"* and playback was
+never involved — a dead readout and a dead transport are the same picture, so **reproduce the
+sentence, not the diagnosis**.
+
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | W136 | SDK element methods this engine does not implement, now that they are tallied at all (W128) | `plListBox1/2.deleteAll()` **10 skins** (7 census-visible), `playlist2.copy()` 8, `playlist2.abortCopy()` 8, `playlist1.deleteSelected()` 5, `fileList.insertItem()` 3 | **Blocked on W66's media-collection decision** — every `deleteAll` call is inside the skin's own `try`/`catch` (`fillListBox()`, `warcraft.js:1584`), and the box has nothing to put in it until `player.mediaCollection` answers. This row is what that decision would let the skins actually do. **The census sees only `deleteAll`**: the rest sit in click handlers, so measure them through the live loop or a click-driving sweep before ranking them against each other. Reproduce by tallying `UNRECOGNISED` in `render.txt`. |
-| W41 | `player.currentMedia.sourceURL` | 4 skins | Small and real. **`theme.closeView` was the other half of this row and closed 2026-09-11 with W141**; what is left is the source URL. |
 
 ### 2c. Events the markup declares and nothing ever raises
 

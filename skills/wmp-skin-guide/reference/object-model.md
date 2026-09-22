@@ -1071,6 +1071,61 @@ panel entirely through this — `RegisterTimerEvent` then `view.timerInterval = 
 player view declares `timerInterval="4000"` to drive its transport readouts. Wiring `setTimeout` and
 not this left both views frozen in their authored state with no diagnostic anywhere to say why.
 
+**An `onTimer` with no `timerInterval` beside it ticks at WMP's default second, not never (W260).**
+The SDK's default for the attribute is 1000 ms, and a view that asks for the event and leaves the
+period unstated is asking for that — which is exactly the period a clock wants.
+`authoredTimerInterval` answered `0` for an absent attribute and **every caller reads `0` as "this
+view has no timer"**, so the handler was registered and never once raised. `Stealth` writes its
+elapsed readout from `OnTimerTick()` and nothing else, so it sat at the authored `00:00` through a
+whole track while the visualizer ran beside it — reported as the skin not playing at all, which is
+the shape of this class: *nothing on screen says the timer is the thing that is missing.*
+**7 views in 7 archives** author it (`Stealth`, `digitaldj`, `Revert`, `Revert (1)`, `Grinch`,
+`Erektorset`, `Josie_and_the_Pussycats`), against 199 views / 90 archives that state a period;
+measured 2026-09-22 over 184.
+
+**An authored `0` still means off**, and must stay off — that is WMP's meaning for it and the corpus
+writes it deliberately (`corona`'s `viewTiny` opens stopped and starts its own clock from a script).
+Only an *absent* attribute takes the default, and only where the view authors the handler, so a view
+with no `onTimer` keeps costing nothing.
+
+---
+
+## `sourceURL` is spelled the way WMP spells it (W41)
+
+**Every corpus consumer of `player.currentMedia.sourceURL` classifies the string rather than opening
+it, and every classifier is written against Windows syntax** — `cd:` for a disc, a backslash for a
+file, anything else for the network. A macOS `file:///Users/…` matches none of them, so the member
+resolved, the handler ran to the end, and **nine archives lit their *network* lamp for every local
+track**, two of them with a buffering readout behind it. The member has answered since W115; the
+value was the whole of what was left under the row.
+
+So the conversion lives at the host boundary — `WMPAudioEngineHost.sourceURLSpelling`, the same seam
+that states `crossFadeWindow` in milliseconds because WMP does. A file URL is stated as the
+drive-rooted path a Windows player would state; **nothing else is touched**, because an `http://`,
+`mms://` or server URL is already the string WMP would report. Nothing in this engine reads the value
+back — it is a readout, never a route to the file.
+
+Re-measured 2026-09-22 over 184 archives with the `WMPTextDecoder` decode: **19 uses / 14 archives**,
+against the "4 skins" the row carried. The split is what makes the spelling decidable rather than a
+matter of taste:
+
+| Idiom | Archives | Needs |
+|---|---:|---|
+| `search(/cd:/i)` then `search(/\\/i)` — the CD/local/network lamp | 8 | a backslash |
+| the same, but `search(/:\\/i)` (`Kids`) | 1 | the drive colon too |
+| `indexOf('http')` (`Cablemusic`) | 1 | either spelling works |
+| `search('://')` to drop URLs from a query (`digitaldj`) | 1 | **not** `file://` |
+| `item(0).sourceURL.indexOf('wmpdvd:')` (`Compact`) | 1 | a playlist item's real URL |
+| displayed, as the last-resort middle line (`Revert`) | 2 | a path a person can read |
+
+**A playlist item's `sourceURL` answered the item's *title*** until the same change —
+`WMPPlaylistItemSnapshot` carried no URL at all — which is what `Compact` and `digitaldj` were
+testing. `name` is the title; `sourceURL` is the URL, spelled as above.
+
+**The two host paths that rebuild `metadata` must carry it.** A local film rebuilt the struct with a
+title only and dropped the source with it, so every classifier read a film as a stream; the cast path
+has no URL to state and honestly states none.
+
 ---
 
 ## Recognising an event is not dispatching it

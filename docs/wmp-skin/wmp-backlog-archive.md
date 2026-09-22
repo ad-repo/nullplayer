@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W260.** (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W261.** (**W41 and W260 closed 2026-09-22** and are archived below — `sourceURL` answered in a spelling no skin's classifier could read, and, found while verifying it in the running app, a view's `onTimer` with no `timerInterval` that never ticked. W41 was issued long ago and carried in Tier 2a, so it spends no new number.) (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -40,6 +40,99 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+
+## W41 — `sourceURL` resolved, and resolved to a string no skin could read (closed 2026-09-22)
+
+**The row as written had been done for a fortnight.** `player.currentMedia.sourceURL` has answered
+since **W115, closed 2026-09-09** — two days before this row's other half (`theme.closeView`) went
+with W141 — and nobody re-read the row against the archive. Its Reach was a hand count as well: the
+honest figure, measured 2026-09-22 over 184 archives with the `WMPTextDecoder` decode (encoding
+breakdown 158 UTF-16-BOM / 146 cp1252 / 89 UTF-8 / 9 UTF-8-BOM, the harness's own calibration), is
+**19 uses across 14 archives**, not "4 skins".
+
+**What was actually left is the value, not the member — and no tally on this page can see that
+class.** Every corpus consumer *classifies* this string rather than opening it, and every classifier
+is written against Windows syntax: `cd:` for a disc, a backslash for a file, anything else for the
+network. A macOS `file:///Users/…` matches none of them, so the member resolved, the handler ran to
+the end, nothing was ever counted as unimplemented — and **nine archives lit their *network* lamp for
+every local track**, two of them turning on a buffering readout behind it.
+
+| Idiom | Archives | What it needs |
+|---|---:|---|
+| `search(/cd:/i)` then `search(/\\/i)` — the CD/local/network lamp | 8 | a backslash |
+| the same, but `search(/:\\/i)` (`Kids`) | 1 | the drive colon too |
+| `indexOf('http')` (`Cablemusic`) | 1 | either spelling works |
+| `search('://')` to drop URLs from a query (`digitaldj`) | 1 | **not** `file://` |
+| `item(0).sourceURL.indexOf('wmpdvd:')` (`Compact`) | 1 | a playlist item's real URL |
+| displayed as the last-resort middle line (`Revert`, `Revert (1)`) | 2 | a path a person can read |
+
+**The conversion lives at the host boundary**, `WMPAudioEngineHost.sourceURLSpelling` — the same seam
+that states `crossFadeWindow` in milliseconds because WMP does. A file URL is stated as the
+drive-rooted path a Windows player would state; **nothing else is touched**, because an `http://`,
+`mms://` or server URL is already the string WMP would report. Nothing in this engine reads the value
+back, so the spelling is a readout and never a route to the file — which is what makes it a
+presentation conversion rather than a claim about the file system.
+
+**Two secondary defects closed with it, both in the same class of a value standing in for another.**
+A playlist item's `sourceURL` answered the item's **title** (`WMPPlaylistItemSnapshot` carried no URL
+at all), which is what `Compact` and `digitaldj` were testing; and the local-video path rebuilt
+`metadata` with a title only, dropping the source with it, so every classifier read a film as a
+stream. The cast path has no URL to state and honestly states none.
+
+**Verified in the running app, which is the only instrument that reached it**: `Stealth` on a local
+file lights **LOCAL**, red, where it lit NET before. `WMP_RENDER_HOST` has **no `url=` field**, so no
+headless probe here can seed a source at all — that gap is the row's parting note and is worth a
+flag if anything else in this class is ranked.
+
+**What it leaves behind.** *A member that resolves can still be answered with a string nothing can
+read.* The sweep's `unimplemented`/`Can't find variable` tallies rank the members a handler dies on
+and are structurally blind to a handler that runs to the end against a useless value — the same
+shape as W39's "check whether the player has the feature", one step further in: **check what the
+corpus does with the answer, not just that there is one.** And the corollary this row paid for
+twice: **re-read a row against the archive before taking it**, because a row is a claim about the
+past and W115 had already closed its headline.
+
+Pinned by `Tests/NullPlayerAppTests/WMPMediaSourceURLTests.swift`, whose last test runs the shipped
+classifier verbatim against both spellings — the old value still takes the net branch there, which is
+the assertion that would fail if the spelling were quietly reverted.
+
+## W260 — an `onTimer` with no `timerInterval` never ticked (closed 2026-09-22)
+
+**Found while verifying W41 in the running app, and reported as *"stealth does not play files at
+all"*.** It was never playback. `Stealth` authors `onTimer="OnTimerTick();"` on its `<VIEW>` with no
+`timerInterval` beside it; `authoredTimerInterval` answered `0` for an absent attribute and **every
+caller reads `0` as "this view has no timer"**, so the handler was registered and never once raised.
+`OnTimerTick()` is the only thing that writes that skin's elapsed readout, so it sat at the authored
+`00:00` for a whole track while the visualizer ran beside it and the transport worked perfectly.
+
+**WMP's SDK default for the attribute is 1000 ms**, and a view that asks for the event and leaves the
+period unstated is asking for that — which is exactly the period a clock wants. An authored `0` still
+means off and stays off: that is WMP's meaning for it and the corpus writes it deliberately
+(`corona`'s `viewTiny` opens stopped and starts its own clock from a script). Only an *absent*
+attribute takes the default, and only where the view authors the handler, so a view with no
+`onTimer` keeps costing nothing.
+
+**Reach: 7 views in 7 archives** — `Stealth`, `digitaldj`, `Revert`, `Revert (1)`, `Grinch`,
+`Erektorset`, `Josie_and_the_Pussycats` — against **199 views / 90 archives** that state a period and
+**7** that state `0`. Measured 2026-09-22 over 184 archives by parsing each `<VIEW>` tag span with
+the `WMPTextDecoder` decode; a bare `grep` cannot count this and would have reported a smaller number
+with a clean exit.
+
+**Verified by driving the app**, because nothing headless renders a second frame: `00:13` → `00:36`
+across two captures, then stop → `00:00`, play → `00:03` and advancing.
+
+**What it leaves behind, and it belongs to Tier 1c rather than to the runtime tier.** *A dead readout
+and a dead transport are the same picture.* The report named playback, the transport was provably
+fine at every step — the play button was reachable, hit-tested to `action=play` and issued
+`command=play` headlessly — and the defect was a clock. **Reproduce the reporter's sentence, not
+their diagnosis**: two headless probes had already agreed the reported thing worked, and agreeing
+with them would have closed the report as unreproducible. The second, smaller one: **an absent
+attribute is not a zero**; `authoredTimerInterval` folded "unstated" and "stated as off" into one
+return value, and the SDK gives those two different meanings.
+
+Pinned by `testAnOnTimerWithNoIntervalTakesWMPsDefaultSecond`,
+`testAViewWithNoTimerHandlerStartsNoTimer` and
+`testAnAuthoredZeroIntervalStaysOffAndAnAuthoredPeriodIsKept` in `WMPScriptRuntimeTests`.
 
 ## W40 — a script naming an element in another view (closed 2026-09-22)
 

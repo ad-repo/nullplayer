@@ -100,6 +100,24 @@ final class WMPAudioEngineHost: WMPHost {
         Self.localVideoController?.currentArtworkTrack ?? engine.currentTrack
     }
 
+    /// **What WMP would have called this media, in WMP's own spelling** (W41).
+    ///
+    /// Every corpus consumer of `sourceURL` classifies the string rather than opening it, and each
+    /// classifier is written against Windows syntax: `cd:` for a disc, a backslash for a file,
+    /// anything else for the network. A macOS `file:///Users/…` matches none of them, so nine
+    /// archives lit their *network* lamp — and two put a buffering readout behind it — for every
+    /// local track. So a file URL is stated as the drive-rooted path a Windows player would state,
+    /// and nothing else is touched: an `http://`, `mms://` or server URL is already the string WMP
+    /// would report, and `Cablemusic` (`indexOf('http')`) and `digitaldj` (`search('://')`) read it
+    /// straight. Nothing in this engine reads the value back — it is a readout, never a route to
+    /// the file — so the spelling is a presentation conversion in the same seam that states
+    /// `crossFadeWindow` in milliseconds because WMP does.
+    static func sourceURLSpelling(_ url: URL?) -> String {
+        guard let url else { return "" }
+        guard url.isFileURL else { return url.absoluteString }
+        return "C:" + url.path.replacingOccurrences(of: "/", with: "\\")
+    }
+
     private static func videoIdentity(_ video: VideoPlayerWindowController) -> String? {
         guard let track = video.currentArtworkTrack else {
             return video.currentTitle.map { "title:\($0)" }
@@ -126,7 +144,8 @@ final class WMPAudioEngineHost: WMPHost {
         let track = engine.currentTrack
         let playlistItems = engine.playlist.prefix(4_096).map {
             WMPPlaylistItemSnapshot(title: $0.title, artist: $0.artist ?? "",
-                                    duration: Self.finite($0.duration ?? 0))
+                                    duration: Self.finite($0.duration ?? 0),
+                                    sourceURL: Self.sourceURLSpelling($0.url))
         }
         let sourceLayout = engine.eqConfiguration
         let sourceGains = (0..<sourceLayout.bandCount).map { engine.getEQBand($0) }
@@ -138,7 +157,7 @@ final class WMPAudioEngineHost: WMPHost {
             bitrate: Double(track?.bitrate ?? 0) * 1_000,
             metadata: WMPMediaMetadata(title: track?.title ?? "", artist: track?.artist ?? "",
                                        album: track?.album ?? "",
-                                       sourceURL: track?.url.absoluteString ?? ""),
+                                       sourceURL: Self.sourceURLSpelling(track?.url)),
             playlistIndex: engine.currentIndex, playlistCount: engine.playlist.count,
             playlistItems: playlistItems,
             equalizer: WMPEqualizerSnapshot(enabled: engine.isEQEnabled(),
@@ -185,7 +204,11 @@ final class WMPAudioEngineHost: WMPHost {
             : .paused
         result.currentTime = Self.finite(video.currentTime)
         result.duration = Self.finite(video.duration)
-        result.metadata = WMPMediaMetadata(title: video.currentTitle ?? "")
+        // A film is still a media with a source, and the classifiers above read it (W41). The
+        // rebuild dropped it with the rest of the audio queue's metadata, so every skin reported a
+        // local film as a network stream.
+        result.metadata = WMPMediaMetadata(title: video.currentTitle ?? "",
+                                           sourceURL: Self.sourceURLSpelling(video.currentArtworkTrack?.url))
         result.volume = Double(video.volume)
         result.muted = video.volume == 0
         result.playlistCount = max(1, result.playlistCount)

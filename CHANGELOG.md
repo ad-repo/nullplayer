@@ -4,6 +4,22 @@
 
 ### Fixed
 
+- **A Media Player skin's elapsed time counts again.** On `Stealth` the readout sat at `00:00` for
+  the whole track while the visualizer played beside it, which looks exactly like a file that will
+  not play — and it was reported as one. These skins can ask for a once-a-second tick without
+  saying how often they want it, and NullPlayer read the missing setting as "no clock at all", so
+  the code that writes the time never ran. It now ticks once a second, as Media Player does. Seven
+  of the installed skins are written this way, `digitaldj`, `Revert` and `Grinch` among them; a skin
+  that deliberately turns its clock off still stays off.
+
+- **A Media Player skin can tell a local file from an internet stream again.** Skins with CD /
+  LOCAL / NET lamps — `Stealth`, `Thomas`, `elvis`, `Kids` and five others — lit NET for every
+  track, including files on your own disk, and two of them turned on a buffering readout that had
+  nothing to buffer. They ask the player where the track came from and read the answer the way
+  Windows writes it; NullPlayer was answering in a form none of them recognised. The playlist also
+  handed out a track's *title* where its location was asked for, which is what `Compact` and
+  `digitaldj` were reading, and a playing film reported no location at all.
+
 - **A Media Player skin that offers two layouts now stays in the one you pick.** On
   `Plus! SlimLine`, clicking the control that switches between the horizontal and vertical layouts
   switched and then snapped straight back, so the horizontal view could not be reached at all.

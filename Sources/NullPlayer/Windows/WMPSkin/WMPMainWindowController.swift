@@ -2489,15 +2489,39 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     /// The `timerInterval` the view declares in markup, which starts the view timer before any
     /// script has had a chance to change it.
+    ///
+    /// **An `onTimer` with no `timerInterval` beside it ticks at WMP's default second, not never.**
+    /// The SDK's default for the attribute is 1000 ms, and a view that asks for the event and
+    /// leaves the period unstated is asking for that — which is exactly the period a clock wants.
+    /// Answering 0 there read as "this view has no timer" at every caller, so the handler was
+    /// registered and never once raised: `Stealth`'s `OnTimerTick()` is the only thing that writes
+    /// its elapsed readout, so the skin sat at the authored `00:00` through a whole track while the
+    /// visualizer ran beside it — reported as the skin not playing at all. **7 views in 7 archives**
+    /// author the shape (`Stealth`, `digitaldj`, `Revert`/`Revert (1)`, `Grinch`, `Erektorset`,
+    /// `Josie_and_the_Pussycats`), measured over 184.
+    ///
+    /// **An authored `0` still means off**, and stays off: that is WMP's meaning for it and the
+    /// corpus writes it deliberately — `corona`'s `viewTiny` opens stopped and starts its own clock
+    /// from a script. Only an *absent* attribute takes the default, and only where the view
+    /// authors the handler, so a view with no `onTimer` keeps costing nothing.
     static func authoredTimerInterval(in skin: WMPLoadedSkin, viewID: String) -> Int {
         guard let view = skin.views.first(where: {
             $0.id.caseInsensitiveCompare(viewID) == .orderedSame
-        })?.node, let attribute = view.attributes.first(where: {
+        })?.node else { return 0 }
+        guard let attribute = view.attributes.first(where: {
             $0.name.caseInsensitiveCompare("timerInterval") == .orderedSame
-        }), case let .literal(raw) = attribute.value,
+        }) else {
+            return view.attributes.contains {
+                $0.name.caseInsensitiveCompare("onTimer") == .orderedSame
+            } ? Self.defaultTimerIntervalMilliseconds : 0
+        }
+        guard case let .literal(raw) = attribute.value,
               let milliseconds = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return 0 }
         return max(0, milliseconds)
     }
+
+    /// WMP's own default for `VIEW.timerInterval`.
+    static let defaultTimerIntervalMilliseconds = 1_000
 
     /// **The view's authored canvas, before its own floor is applied to it.**
     ///

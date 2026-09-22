@@ -47,6 +47,14 @@ struct WMPMediaMetadata: Hashable, Codable {
     /// reads anything else about it. `Cablemusic`'s `GenericProgramInfoBig()` opens with
     /// `pullString.indexOf('http')` to tell a stream from a file, and it is the third statement in
     /// the function that fills every readout in the player.
+    ///
+    /// **It is spelled the way WMP spells it, and the conversion lives at the host boundary** —
+    /// `WMPAudioEngineHost.sourceURLSpelling`, the same seam that states `crossFadeWindow` in
+    /// milliseconds because WMP does. What the corpus does with this string is classify it, and
+    /// every classifier is written against Windows syntax: nine archives light a CD/local/network
+    /// lamp off `search(/cd:/)` then `search(/\\/)` (`Kids` wants `:\\`), so a macOS
+    /// `file:///Users/…` falls through all of them and reports a local file as a network stream,
+    /// with a buffering readout behind it. A remote media keeps its URL untouched.
     var sourceURL = ""
 }
 
@@ -54,6 +62,11 @@ struct WMPPlaylistItemSnapshot: Hashable, Codable {
     let title: String
     let artist: String
     let duration: TimeInterval
+    /// `player.currentPlaylist.item(n).sourceURL`, spelled as `WMPMediaMetadata.sourceURL` is.
+    /// It answered the item's *title* until W41: `Compact` tests it for a `wmpdvd:` prefix and
+    /// `digitaldj`'s query filter drops any item whose URL contains `://`, so a title stood in for
+    /// a URL in both.
+    var sourceURL = ""
 }
 
 /// What the skin's `<EFFECTS>` rect is drawing, and the four members the corpus reads off it.

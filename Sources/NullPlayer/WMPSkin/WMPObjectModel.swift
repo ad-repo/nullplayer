@@ -402,7 +402,11 @@ final class WMPObjectModel {
             }
             let item = snapshot.playlistItems[index]
             switch name {
-            case "name", "sourceurl": return .value(.string(item.title))
+            case "name": return .value(.string(item.title))
+            // **Not the title.** `Compact` asks whether item 0 starts with `wmpdvd:` and
+            // `digitaldj`'s query filter drops any item whose URL contains `://` or ends `.asx`
+            // — both were reading a track name as a URL (W41).
+            case "sourceurl": return .value(.string(item.sourceURL))
             case "duration": return .value(.number(item.duration))
             case "durationstring": return .value(.string(WMPObjectModel.timeString(item.duration)))
             case "getiteminfo", "getiteminfobyatom": return .function

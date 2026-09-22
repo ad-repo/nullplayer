@@ -767,6 +767,48 @@ final class WMPScriptRuntimeTests: XCTestCase {
         await session.teardown()
     }
 
+    /// **W260 — an `onTimer` with no `timerInterval` beside it ticks at WMP's default second.**
+    ///
+    /// `authoredTimerInterval` answered 0 for an absent attribute and every caller reads 0 as "this
+    /// view has no timer", so the handler was registered and never once raised. `Stealth` writes its
+    /// elapsed readout from `OnTimerTick()` and nothing else, so the skin sat at the authored
+    /// `00:00` through a whole track while the visualizer ran beside it — reported as the skin not
+    /// playing at all. **7 views in 7 archives** author the shape, measured over 184.
+    func testAnOnTimerWithNoIntervalTakesWMPsDefaultSecond() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60" onTimer="OnTimerTick();"/></THEME>
+        """)
+        XCTAssertEqual(WMPMainWindowController.authoredTimerInterval(in: skin, viewID: "main"),
+                       WMPMainWindowController.defaultTimerIntervalMilliseconds,
+                       "the view asks for the event and leaves the period unstated")
+        XCTAssertEqual(WMPMainWindowController.defaultTimerIntervalMilliseconds, 1_000)
+    }
+
+    /// The default is taken only where the view authors the handler: a view with no `onTimer` must
+    /// keep costing nothing, which is 100+ archives' worth of transactions.
+    func testAViewWithNoTimerHandlerStartsNoTimer() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60"/></THEME>
+        """)
+        XCTAssertEqual(WMPMainWindowController.authoredTimerInterval(in: skin, viewID: "main"), 0)
+    }
+
+    /// **An authored `0` still means off.** That is WMP's meaning for it and the corpus writes it
+    /// deliberately — `corona`'s `viewTiny` opens stopped and starts its own clock from a script —
+    /// so the default must not reach past an attribute the skin actually stated. Its companion is
+    /// `testWritingViewTimerIntervalPostsAHostTimerCommand` above, which pins the same `0` against
+    /// a view that does author `onTimer`.
+    func testAnAuthoredZeroIntervalStaysOffAndAnAuthoredPeriodIsKept() async throws {
+        let off = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60" timerInterval="0" onTimer="Tick();"/></THEME>
+        """)
+        XCTAssertEqual(WMPMainWindowController.authoredTimerInterval(in: off, viewID: "main"), 0)
+        let stated = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60" timerInterval="4000" onTimer="Tick();"/></THEME>
+        """)
+        XCTAssertEqual(WMPMainWindowController.authoredTimerInterval(in: stated, viewID: "main"), 4_000)
+    }
+
     /// An element answers the geometry it is *drawn* at, not only what markup authored. Corona's
     /// `ResizeY` animates `svVideo` to 0 and gives up on the first tick if it reads 0 to begin
     /// with — which is what an authored-attributes-only model reports for an element sized by its
