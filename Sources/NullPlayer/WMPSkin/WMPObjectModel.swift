@@ -1093,7 +1093,35 @@ final class WMPObjectModel {
     }
 
     private func writeElement(_ element: WMPScriptElement, _ name: String,
-                              _ value: WMPJSONValue) -> WMPMemberValue {
+                              _ written: WMPJSONValue) -> WMPMemberValue {
+        // **A boolean property written as a quoted string is stored as a boolean, because the skin
+        // reads its own write back and JScript's `"false"` is true.**
+        //
+        // `Plus! SlimLine`'s bottom arrows are the reported case: `toggleProgressBar()` tests
+        // `if (progressBar.visible)` and assigns `progressBar.visible = "false"`. The scene was
+        // always right — it reads the mutation through `WMPJSONValue.truth`, which knows `"false"`
+        // — but the property bag handed the string straight back, so the next click read a truthy
+        // `"false"`, took the hide branch again, and the arrow worked exactly once. Reported live
+        // 2026-09-22 as *"the bottom arrows do not work reliably"*.
+        //
+        // **It is the element's bag that needs this and not the host objects**: `player.settings.mute`
+        // already applies `truth` on the way out and answers the *host's* state on the way back, so
+        // a string written there never survives to be re-read. Measured over the 184 installed
+        // archives — the property names a skin writes with a quoted `true`/`false`, and the set
+        // below is that list less the host-object ones: `enabled` 170 uses / 4 archives, `visible`
+        // 148 / 12, `tabStop` 60 / 1, `down` 16 / 2, `scrolling` 6 / 1, `fullScreen` 4 / 2. The
+        // ones that make it a *defect* rather than a stored oddity are the ones read back as a
+        // condition — `Plus! SlimLine`, `tubeframe`, `elvis` and `Heart_Butterfly`.
+        //
+        // Markup needs no part of this: `WMPScriptViewPlan.scalar` already turns an authored
+        // `visible="false"` into `.bool`, so this is the script path catching up with the markup.
+        // Only a *string* is wrong. A number written to one of these already reads back with the
+        // truthiness it was given — `0` is falsy in JScript as it is in `truth` — so narrowing to
+        // the string case keeps the coercion to the shape that actually lies.
+        var value = written
+        if case .string = written, Self.standardBooleanProperties.contains(name) {
+            value = .bool(written.truth)
+        }
         let videoProperty = (element.kind == .video || element.kind == .wmpVideo)
             && ["shrinktofit", "stretchtofit", "maintainaspectratio"].contains(name)
         if (element.kind == .video || element.kind == .wmpVideo), name == "fullscreen" {
@@ -1145,6 +1173,18 @@ final class WMPObjectModel {
         }
         return .value(value)
     }
+
+    /// The element properties WMP types as Boolean, so a script's quoted `"false"` is stored as one.
+    /// See `writeElement`. A name belongs here when WMP's own type is Boolean **and** something
+    /// reads it back — add the next one with the corpus count that found it.
+    static let standardBooleanProperties: Set<String> = [
+        "visible", "enabled", "down", "tabstop", "scrolling", "sticky",
+        // The `<VIDEO>` flags. `fullscreen` reaches the host through `truth` already; the other
+        // three are stored and read back by the skin that set them.
+        "fullscreen", "windowless", "stretchtofit", "shrinktofit", "maintainaspectratio",
+        // `<EQUALIZERSETTINGS>`'s two inert booleans, which are answered from the bag (W134).
+        "bypass", "enablesplinetension"
+    ]
 
     /// The `<VIEW>` attributes that bound a resize rather than describe a layout. See `writeElement`
     /// and `WMPSceneBuilder`'s `viewLimit`.
