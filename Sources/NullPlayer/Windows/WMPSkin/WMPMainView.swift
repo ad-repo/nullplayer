@@ -496,6 +496,15 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         guard let scene else { return }
         let point = skinPoint(from: event, sceneSize: scene.canvasSize)
         let target = interactiveTarget(at: point)
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1" {
+            let raw = hitTester?.hitTest(point)
+            NSLog("[wmp/click] at %.0f,%.0f raw=%@#%@ state=%@ interactive=%@",
+                  point.x, point.y, raw?.kind ?? "-", raw.map { $0.nodeID ?? "\($0.stableID)" } ?? "-",
+                  raw.map { "\(interaction.visualState(for: $0.stableID))" } ?? "-",
+                  target == nil ? "NO" : "yes")
+        }
+        #endif
         // **A control the host has greyed out is still a control, and the window does not move
         // under it (W154).** `interactiveTarget` answers nil for a disabled target exactly as it
         // does for bare artwork, and everything below reads that as "no control here" — so pressing
@@ -555,6 +564,15 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         if isDraggingWindow { finishWindowDrag(); return }
         guard let scene else { return }
         let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1" {
+            let p = skinPoint(from: event, sceneSize: scene.canvasSize)
+            NSLog("[wmp/click] UP at %.0f,%.0f over=%@ captured=%@ dragging=%@",
+                  p.x, p.y, target.map { $0.nodeID ?? "\($0.stableID)" } ?? "-",
+                  capturedTarget.map { $0.nodeID ?? "\($0.stableID)" } ?? "-",
+                  isDraggingWindow ? "YES" : "no")
+        }
+        #endif
         let result = interaction.release(over: target)
         notify(result.changed)
         defer { capturedTarget = nil; pendingSeek = nil }

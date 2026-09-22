@@ -607,6 +607,16 @@ actor WMPScriptRuntime {
         }
 
         var diagnostics = startupDiagnostics + result.diagnostics
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1", event?.name != "timer" {
+            NSLog("[wmp/pref] view=%@ event=%@ sawCurrView=%@ writes=%@", viewID,
+                  event?.name ?? "-", preferences.values()["currView"] ?? "-",
+                  result.preferenceWrites.map { "\($0.key)=\($0.value ?? "nil")" }
+                      .joined(separator: ",").isEmpty ? "-" :
+                      result.preferenceWrites.map { "\($0.key)=\($0.value ?? "nil")" }
+                      .joined(separator: ","))
+        }
+        #endif
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
         var overrides = overrides(for: scope)
         /// The geometry this transaction started from, kept for a refused decoder-driven resize.

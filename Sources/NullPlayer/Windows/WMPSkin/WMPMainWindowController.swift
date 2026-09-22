@@ -2134,6 +2134,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         guard let skin = loadedSkin else { return }
         let handlers = Self.handlers(in: skin, event: name, targetID: targetID,
                                      targetStableID: targetStableID, viewID: presentation.viewID)
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1", name != "timer" {
+            NSLog("[wmp/dispatch] %@ targetID=%@ stable=%@ view=%@ handlers=%d %@",
+                  name, targetID ?? "-", targetStableID.map(String.init) ?? "-",
+                  presentation.viewID, handlers.count,
+                  handlers.map { String($0.prefix(70)) }.joined(separator: " | "))
+        }
+        #endif
         // **A hover edge is only worth a transaction when the skin asked for one.** Every other
         // dispatch site here is a discrete act — a click, a keystroke, a view change — and runs the
         // transaction even with no authored handler, because the bindings have to settle. Hover is
@@ -3324,6 +3332,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // print `SCRIPT-DIAG`; without the same line here, a handler that throws in the running app
         // is indistinguishable from one that ran and did nothing.
         lastLoadDiagnostic = diagnostics.map { "[\($0.code)] \($0.message)" }.joined(separator: "\n")
+        #if DEBUG
+        // **The line the comment above promised, which was never printed.** `WMP_SCRIPT_TRACE=1`
+        // emits it; the field alone is only readable from the debug window, so a handler throwing
+        // once per timer tick in the running app left no trace at all.
+        if ProcessInfo.processInfo.environment["WMP_SCRIPT_TRACE"] == "1" {
+            for diagnostic in diagnostics {
+                NSLog("[wmp/script] %@: %@", diagnostic.code, diagnostic.message)
+            }
+        }
+        #endif
     }
 
     private func renderBackingScale(for presentation: WMPViewPresentation?) -> CGFloat {
