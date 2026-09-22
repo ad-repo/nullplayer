@@ -17,7 +17,7 @@ approximations, not the licensed SRS algorithms shipped in Windows Media Player.
 both playback pipelines use them; no skin parsing or AppKit code runs in their render callback.
 
 The skin uses `eq.enhancedAudio`, `eq.wowLevel`, `eq.truBassLevel`, `eq.speakerSize`, and the read-only
-`eq.currentSpeakerName`. They reach `WMPObjectModel`, then four typed commands through
+`eq.currentSpeakerName`. Those five reach `WMPObjectModel`, then four typed commands through
 `WMPMainWindowController` and `WMPAudioEngineHost`. Bound slider writes have matching
 `WMPTransportAction.boundAction` entries. `WMPEqualizerSnapshot` and `WMPObservablePropertyRegistry`
 return the same state to bindings; `WMPJScriptCompatibility` lists the implemented members.
@@ -34,6 +34,9 @@ The temporary -1 exists only in the script transaction; it sends no engine comma
 increment sends 0. Clamping -1 to 0 immediately would skip headphones on every wrap.
 Non-finite numeric writes are ignored; levels clamp to 0–100 and committed speaker indices to 0–2.
 
+`eq.crossFade`, `eq.crossFadeWindow` and `eq.normalization` are **not** part of this DSP and are not
+gated to WMP; see *Graph integration and mode isolation* below.
+
 Initial session settings: enhancements off, both strengths 50, headphones. The controller owns
 session state across track, stream and skin changes. It does not persist preferences across app
 launches and does not reuse or overwrite graphic-EQ, tuning, or normalization preferences.
@@ -49,6 +52,18 @@ New streaming nodes inherit all current settings immediately.
   AudioStreaming's `attach(node:)`. Streaming tempo remains owned by AudioStreaming's rate node.
 - Local graph reconnect and disconnect include the enhancement node, so device changes and sleep
   rebuilds cannot strand the effect outside the graph.
+
+**Crossfade is not part of this, and the contrast is the rule.** A `.wmz`'s crossfade button reaches
+`eq.crossFade` / `eq.crossFadeWindow`, which bind straight to `AudioEngine.sweetFadeEnabled` and
+`sweetFadeDuration` — the same app-wide Sweet Fades every other skin family drives from its own menu
+— and `eq.normalization` binds to `volumeNormalizationEnabled` the same way. Those three
+`WMPTransportAction` cases carry **no `.wmp` gate**, and `.setEQEnabled` beside them is the existing
+precedent. The WOW group is gated because WOW *is* WMP-only DSP that must never activate in Classic,
+Original or WAL; a setting the other families already own is the opposite case, and gating it would
+be scoping a preference the user shares. The only translation is units: WMP states the window in
+**milliseconds** (the corpus writes 7000), `sweetFadeDuration` is seconds, and that conversion lives
+at the host boundary in `WMPAudioEngineHost` and nowhere else. See
+[object-model.md](object-model.md) § *The `eq` object and the element are one surface (W39)*.
 
 `AudioEngine` seeds the controller's active gate from the stored WMP controller family.
 `WindowManager.uiMode` updates it on every mode assignment; host writes also require the WMP family.

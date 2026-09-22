@@ -41,6 +41,74 @@ corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UN
 taken before that date is inflated rather than merely stale.
 
 
+## W39 — the `eq` members that abort a handler, and the crossfade that was ranked as inert (closed 2026-09-22)
+
+**The row as carried was void in both directions.** It read:
+
+> | W39 | `eq.speakerSize` | 18 skins | Plus `eq.enableSplineTension` and `eq.enhancedAudio` at 1
+> each. WMP's speaker/spatial settings; the engine has no equivalent, so this is an honest
+> `inert()` candidate rather than a feature. |
+
+`speakerSize`, `enhancedAudio`, `wowLevel`, `truBassLevel` and `currentSpeakerName` were **all
+already live** — the WOW/TruBass work closed them and the row never caught up, which is the
+`alphaBlendTo` drift in a Reach column instead of a compatibility list. And the framing was wrong
+for what was actually left: the largest member in the class is a **feature this player has**.
+
+**Re-measured 2026-09-22 over 184 archives** with the script-text scan in
+[`harness.md`](../../skills/wmp-skin-guide/reference/harness.md) § *Grepping the corpus's script
+text*, decoding each `.wms`/`.js` the way `WMPTextDecoder` does and matching
+`\beq\s*\.\s*(member)`. The census cannot answer this at all — it matches a *tag*, never a member
+read.
+
+| Member | uses | archives | before | closed as |
+|---|---:|---:|---|---|
+| `crossFade` | 123 | 38 | **unrecognised** | `AudioEngine.sweetFadeEnabled` |
+| `enableSplineTension` | 68 | 51 | **unrecognised** | `INERT`, stored |
+| `splineTension` | 56 | 48 | **unrecognised** | `INERT`, stored |
+| `crossFadeWindow` | 40 | 35 | **unrecognised** | `sweetFadeDuration`, ms→s at the host |
+| `normalization` | 1 | 1 | **unrecognised** | `volumeNormalizationEnabled` |
+
+**WMP's crossfade is this player's Sweet Fades under another name**, so binding it was the honest
+close and `inert()` would have been W103's prohibition exactly — a control that lights and changes
+nothing. The rule the row leaves behind: **check whether the player already has the feature before
+ranking a member as inert**; the question is not what WMP called it.
+
+**The corpus idiom needs both resolution paths.** 38 archives author one sticky button —
+`onClick="eq.crossFade = !eq.crossFade;eq.crossFadeWindow=7000"` with
+`down="wmpprop:eq.crossFade"` — so the write goes through `WMPObjectModel` and the lit state through
+`WMPObservablePropertyRegistry`, which is a separate resolution of the same path. A member added to
+only one of them fades tracks and never lights.
+
+**What an unrecognised member cost, per skin.** Six of the 38 spellings (`ALXMorph`,
+`Batman Begins`, `Constantine`, `Disney_Mix_Central`, `Dreamcatcher`, `KungFuChaos`) put
+`checkSoundPref('click.wav')` *in front* of the write, so the throw took the click sound too.
+`Back to the Future Trilogy`'s `checkSplineTension()` aborted **after** clearing all three of its
+grouping buttons, leaving none lit — and that is why the two inert members are **stored rather than
+constant**: the handler reads `eq.enableSplineTension && eq.splineTension==2` back to decide which
+one to light, and a constant lights the same button whichever the user pressed. `false`/`0` is the
+honest default, because this equaliser's sliders do move independently.
+
+**No `.wmp` gate on the three live ones.** The WOW group beside them is gated because WOW *is*
+WMP-only DSP that must never activate in Classic, Original or WAL; crossfade and normalization are
+app-wide settings the other three families already drive from their own menus, and `.setEQEnabled`
+is the existing precedent on that switch. Gating them would have been scoping a preference the user
+shares. The units are the only translation: WMP states the window in **milliseconds** (every archive
+writes 7000), `sweetFadeDuration` is seconds, and the conversion lives in `WMPAudioEngineHost` and
+nowhere else.
+
+**`eq.gainLevels(band) = value`** (`Compact`, `Charlies_Angels_Full_Throttle`) stays unrecognised
+deliberately: it is assignment to the result of a call and is not valid JScript, so answering it
+would be answering a typo — the author-typo class in `object-model.md` § *Verified **not** gaps*.
+
+**Evidence.** `WMP_RENDER_CLICK='eqView@106,80'` on `Plus! Professional` prints
+`command=setCrossFade value=1` with `0 unresolved`, where it previously reached no command at all;
+`WMP_CALL_TRACE=1` on `Back to the Future Trilogy`'s load prints
+`eq.enablesplinetension read value=false INERT` followed by `splinetensionbtn1.down write
+value=true`, the statement that used to be unreachable. Tests:
+`Tests/NullPlayerAppTests/WMPEqualizerMemberTests.swift`. Knowledge:
+`skills/wmp-skin-guide/reference/object-model.md` § *The `eq` object and the element are one surface
+(W39)* and `audio-enhancements.md` § *Graph integration and mode isolation*.
+
 ## W253 — a tween authored in `onLoad` landed its endpoint in one frame (closed 2026-09-22)
 
 **Reported live 2026-09-21 alongside W252, and it is W194's remaining half.** That row gave

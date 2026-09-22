@@ -9,6 +9,9 @@ enum WMPTransportAction: Hashable, Codable {
     case toggleMute, toggleShuffle, toggleRepeat
     case playPlaylistItem(Int), removePlaylistItem(Int), movePlaylistItem(Int, Int)
     case setWOWEnabled, setWOWLevel, setTruBassLevel, setSpeakerSize
+    /// WMP's crossfade pair, which is this player's Sweet Fades. `setCrossFadeWindow` carries
+    /// **milliseconds**; the host converts.
+    case setCrossFade, setCrossFadeWindow, setNormalization
     case setEQEnabled, setEQBand(Int), setPreamp
     /// An index into `EQPreset.allPresets`. Every `<POPUP>` in the corpus is a preset menu, and
     /// `eq.currentPreset` is what its handler writes.
@@ -73,6 +76,18 @@ struct WMPEqualizerSnapshot: Hashable, Codable {
     var truBassLevel: Double = 50
     var speakerSize = 0
     var currentSpeakerName: String { ["Headphones", "Normal speakers", "Large speakers"][max(0, min(2, speakerSize))] }
+    /// **WMP's crossfade, which this player has as Sweet Fades** — the same feature under another
+    /// name, so these two are bound to it rather than answered inert. 38 corpus archives author the
+    /// pair, nearly all as one sticky button: `onClick="eq.crossFade = !eq.crossFade;
+    /// eq.crossFadeWindow=7000"` with `down="wmpprop:eq.crossFade"`, so the read half is what puts
+    /// the button in its lit state and the write half is what the click is for.
+    var crossFade = false
+    /// **Milliseconds, which `sweetFadeDuration` is not.** WMP states the window in ms (the corpus
+    /// writes 7000); the engine keeps seconds. The conversion lives at the host boundary.
+    var crossFadeWindow: Double = 5_000
+    /// Volume levelling. One corpus archive reads it (`Plus! Professional`, as an
+    /// `<equalizerSettings normalization="wmpprop:eq.normalization">`), and the player has it.
+    var normalization = false
     var preamp: Double = 0
     var gains: [Double] = Array(repeating: 0, count: 10)
 }
@@ -161,7 +176,9 @@ struct WMPHostSnapshot: Hashable, Codable {
         case let .movePlaylistItem(source, destination):
             return playlistItems.indices.contains(source) && playlistItems.indices.contains(destination)
         case .endScan, .volume, .balance, .toggleMute, .toggleShuffle, .toggleRepeat,
-             .setWOWEnabled, .setWOWLevel, .setTruBassLevel, .setSpeakerSize, .setEQEnabled, .setEQBand, .setPreamp, .setEQPreset,
+             .setWOWEnabled, .setWOWLevel, .setTruBassLevel, .setSpeakerSize,
+             .setCrossFade, .setCrossFadeWindow, .setNormalization,
+             .setEQEnabled, .setEQBand, .setPreamp, .setEQPreset,
              .setEffectType, .nextEffect, .previousEffect, .setEffectPreset, .nextEffectPreset:
             return true
         }
@@ -197,6 +214,9 @@ extension WMPTransportAction {
         case "eq.wowlevel": return .setWOWLevel
         case "eq.trubasslevel": return .setTruBassLevel
         case "eq.speakersize": return .setSpeakerSize
+        case "eq.crossfade": return .setCrossFade
+        case "eq.crossfadewindow": return .setCrossFadeWindow
+        case "eq.normalization": return .setNormalization
         case "eq.enabled", "eq.enable": return .setEQEnabled
         default: break
         }

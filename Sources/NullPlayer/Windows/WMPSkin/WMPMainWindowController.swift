@@ -2727,6 +2727,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             case "setTruBassLevel": host.perform(.setTruBassLevel, value: command.value.map { .number($0.number ?? 0) })
             case "setSpeakerSize": host.perform(.setSpeakerSize, value: command.value.map { .number($0.number ?? 0) })
             case "setWOWLevel": host.perform(.setWOWLevel, value: command.value.map { .number($0.number ?? 0) })
+            case "setCrossFade": host.perform(.setCrossFade, value: command.value.map { .number($0.number ?? 0) })
+            case "setCrossFadeWindow": host.perform(.setCrossFadeWindow, value: command.value.map { .number($0.number ?? 0) })
+            case "setNormalization": host.perform(.setNormalization, value: command.value.map { .number($0.number ?? 0) })
             case "setEQEnabled": host.perform(.setEQEnabled, value: command.value.map { .number($0.number ?? 0) })
             case let action where action.hasPrefix("setEQBand:"):
                 if let index = Int(action.dropFirst("setEQBand:".count)) {

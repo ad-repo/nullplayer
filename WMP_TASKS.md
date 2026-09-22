@@ -285,6 +285,18 @@ Reproduce with `scripts/wmp_render_sweep.sh capture <dir> --allow-dirty` and tal
 `WMP: unimplemented <member>` and `Can't find variable: <name>` in `<dir>/raw.txt` by name and by
 containing `SKIN` block.
 
+**W39 headed this tier and closed 2026-09-22; it is archived.** Its Reach was void in both
+directions and the row is the worked example of why a row is re-measured before it is taken: the
+headline member, `eq.speakerSize` at 18 skins, had been **live since the WOW/TruBass work landed**,
+and the class the row called an honest `inert()` candidate turned out to be **a feature this player
+already has** — WMP's crossfade is NullPlayer's Sweet Fades, 123 uses across 38 archives. **Check
+whether the player has the feature before ranking a member as inert**, and **re-measure a row whose
+evidence predates a change to the same subsystem**. The re-measured class, the two members that
+*are* honestly inert, and the rule that an inert value the corpus reads back must be *stored* rather
+than constant are in [the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
+`skills/wmp-skin-guide/reference/object-model.md` § *The `eq` object and the element are one surface
+(W39)*.
+
 **W216 closed 2026-09-22 and is archived**; it headed this tier as *unmeasured* and the measurement
 is the part worth keeping. The recorded reach was 2 archives, the call half came back at **31 uses /
 20 archives**, and the half nobody had counted — the element's own *properties*, read and written
@@ -298,7 +310,6 @@ against its own element first (W216)*.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W39 | `eq.speakerSize` | 18 skins | Plus `eq.enableSplineTension` and `eq.enhancedAudio` at 1 each. WMP's speaker/spatial settings; the engine has no equivalent, so this is an honest `inert()` candidate rather than a feature. |
 | W42 | A skin function is missing because its program never registered | ~12 skins, 1–2 each | `skin_init`, `loadVidPrefs`, `UpdateMetaData`, `checkForContent`, `Init`, `gears`… Each is one skin's own function, so the cause is upstream: a `.js` that failed to resolve, evaluated with an error, or is a `res://` entry. Diagnose from `SCRIPT`/`SCRIPTS` lines before writing any object-model code. |
 | W136 | SDK element methods this engine does not implement, now that they are tallied at all (W128) | `plListBox1/2.deleteAll()` **10 skins** (7 census-visible), `playlist2.copy()` 8, `playlist2.abortCopy()` 8, `playlist1.deleteSelected()` 5, `fileList.insertItem()` 3 | **Blocked on W66's media-collection decision** — every `deleteAll` call is inside the skin's own `try`/`catch` (`fillListBox()`, `warcraft.js:1584`), and the box has nothing to put in it until `player.mediaCollection` answers. This row is what that decision would let the skins actually do. **The census sees only `deleteAll`**: the rest sit in click handlers, so measure them through the live loop or a click-driving sweep before ranking them against each other. Reproduce by tallying `UNRECOGNISED` in `render.txt`. |
 | W40 | An element the skin names is in another view | 8 + 4 + 2 + 2 + 2 skins | `Can't find variable: vidinfo` (8, new behind W37), `Can't find variable: pl` (4), `playlistframe.setColumnResizeMode (no such element)` (2), `pl.setColumnWidth` (2), `vidZoom`/`videoWin` (2 each, also new behind W37). Handlers are now scoped per view, but a script's *globals* are the current view's elements only. Find out what WMP does with a cross-view reference before choosing. |

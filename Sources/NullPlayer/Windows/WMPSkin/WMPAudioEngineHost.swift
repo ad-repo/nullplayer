@@ -146,6 +146,9 @@ final class WMPAudioEngineHost: WMPHost {
                 wowLevel: engine.wmpWOWController.level,
                 truBassLevel: engine.wmpWOWController.bassLevel,
                 speakerSize: engine.wmpWOWController.speakerSize,
+                crossFade: engine.sweetFadeEnabled,
+                crossFadeWindow: Self.finite(engine.sweetFadeDuration) * 1_000,
+                normalization: engine.volumeNormalizationEnabled,
                 preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
             effects: WMPEffectSelection.shared.snapshot)
         if Self.castingVideo {
@@ -304,6 +307,22 @@ final class WMPAudioEngineHost: WMPHost {
             guard WindowManager.shared.uiMode.controllerFamily == .wmp,
                   let speaker = value?.finiteNumber, (0...2).contains(speaker) else { return }
             engine.wmpWOWController.setSpeakerSize(Int(speaker))
+        // **Crossfade and normalization are app-wide settings, so they carry no `.wmp` gate.**
+        // The WOW group above is gated because WOW *is* WMP-only DSP — retained WMP settings must
+        // never activate an effect in Classic, Original or WAL. Crossfade is the opposite case:
+        // it is the same Sweet Fades the other three families drive from their own menus, and a
+        // `.wmz`'s crossfade button is that setting's control while WMP is the skin on screen.
+        // `.setEQEnabled` below is the existing precedent for an app-wide control on this switch.
+        case .setCrossFade:
+            guard let enabled = value?.finiteNumber else { return }
+            engine.sweetFadeEnabled = enabled != 0
+        case .setCrossFadeWindow:
+            // The skin states milliseconds; `sweetFadeDuration` is seconds.
+            guard let milliseconds = value?.finiteNumber, milliseconds >= 0 else { return }
+            engine.sweetFadeDuration = min(20, milliseconds / 1_000)
+        case .setNormalization:
+            guard let enabled = value?.finiteNumber else { return }
+            engine.volumeNormalizationEnabled = enabled != 0
         case .setEQEnabled:
             guard let enabled = value?.finiteNumber else { return }
             engine.setEQEnabled(enabled != 0)

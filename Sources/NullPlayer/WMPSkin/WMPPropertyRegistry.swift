@@ -228,6 +228,12 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
         case "eq.trubasslevel": return .number(snapshot.equalizer.truBassLevel)
         case "eq.speakersize": return .number(Double(snapshot.equalizer.speakerSize))
         case "eq.currentspeakername": return .string(snapshot.equalizer.currentSpeakerName)
+        // The read half of the corpus's crossfade button: `down="wmpprop:eq.crossFade"` on the
+        // same node whose `onClick` writes it, so the lit state has to resolve here as well as in
+        // the object model or the button toggles the fade and never lights. 35 archives.
+        case "eq.crossfade": return .bool(snapshot.equalizer.crossFade)
+        case "eq.crossfadewindow": return .number(snapshot.equalizer.crossFadeWindow)
+        case "eq.normalization": return .bool(snapshot.equalizer.normalization)
         case "eq.preamp": return .number(snapshot.equalizer.preamp)
         case "player.controls.currentposition": return .number(snapshot.currentTime)
         case "player.controls.currentpositionstring": return .string(snapshot.elapsedText)

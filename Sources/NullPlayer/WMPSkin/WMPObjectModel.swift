@@ -536,6 +536,27 @@ final class WMPObjectModel {
                 ? EQPreset.allPresets[currentPresetIndex].name : ""))
         case "presettitle", "nextpreset", "previouspreset", "reset": return .function
         case "bands": return .value(.number(10))
+        // **Crossfade is Sweet Fades, so these are live and not inert.** The corpus's idiom is a
+        // sticky button whose handler is `eq.crossFade = !eq.crossFade;eq.crossFadeWindow=7000`,
+        // and with `crossFade` unrecognised the read threw before the `!` and took the whole
+        // handler with it — including the `checkSoundPref('click.wav')` in front of it on the
+        // Alienware, Batman, Constantine, Disney, Dreamcatcher and KungFuChaos spellings.
+        // 123 uses across 38 archives for `crossFade`, 40 across 35 for the window.
+        case "crossfade": return .value(.bool(snapshot.equalizer.crossFade))
+        case "crossfadewindow": return .value(.number(snapshot.equalizer.crossFadeWindow))
+        case "normalization": return .value(.bool(snapshot.equalizer.normalization))
+        // **Spline tension is how WMP's ten sliders drag each other, and this equaliser's do not.**
+        // Inert, and the value is stored because it is read back: `Back to the Future Trilogy`'s
+        // `checkSplineTension()` tests `eq.enableSplineTension && eq.splineTension==2` to decide
+        // which of its three grouping buttons is lit, so a constant would light the same one
+        // whatever was pressed. `false`/`0` is the honest default — independent sliders is exactly
+        // what this player does — and it is the same pair `inertEqualizerSettingsProperties`
+        // answers on the `<EQUALIZERSETTINGS>` element, so the two spellings agree.
+        // 68 uses across 51 archives, and 56 across 48.
+        case "enablesplinetension", "splinetension":
+            inert()
+            return .value(equalizerSessionSettings[name]
+                ?? Self.defaultInertEqualizerSettingsValue(for: name))
         default: return .unrecognised("eq member")
         }
     }
@@ -875,6 +896,8 @@ final class WMPObjectModel {
     // MARK: - Writes
 
     private var sessionSettings: [String: WMPJSONValue] = [:]
+    /// The `eq` members this engine stores and applies nothing for — see `readEqualizer`.
+    private var equalizerSessionSettings: [String: WMPJSONValue] = [:]
     /// Written by the skin, read back by the skin, and behind none of it is a host. See
     /// `readMediaCenter`.
     private var mediaCenterState: [String: WMPJSONValue] = [:]
@@ -928,6 +951,28 @@ final class WMPObjectModel {
             snapshot.equalizer.speakerSize = speaker
             if speaker >= 0 { hostCommand("setSpeakerSize", .number(Double(speaker))) }
             return .value(.number(Double(speaker)))
+        case ("eq", "crossfade"):
+            snapshot.equalizer.crossFade = value.truth
+            hostCommand("setCrossFade", .number(value.truth ? 1 : 0))
+            return .value(.bool(value.truth))
+        case ("eq", "crossfadewindow"):
+            guard let number = value.number, number.isFinite else {
+                return .value(.number(snapshot.equalizer.crossFadeWindow))
+            }
+            // WMP's own range. The corpus only ever writes 7000, but a window of zero is a cut and
+            // one of an hour is a stuck fade, so the bound is here rather than in the engine.
+            let window = max(0, min(20_000, number))
+            snapshot.equalizer.crossFadeWindow = window
+            hostCommand("setCrossFadeWindow", .number(window))
+            return .value(.number(window))
+        case ("eq", "normalization"):
+            snapshot.equalizer.normalization = value.truth
+            hostCommand("setNormalization", .number(value.truth ? 1 : 0))
+            return .value(.bool(value.truth))
+        case ("eq", "enablesplinetension"), ("eq", "splinetension"):
+            equalizerSessionSettings[name] = value
+            inert()
+            return .value(value)
         case ("eq", "enabled"):
             hostCommand("setEQEnabled", .number(value.truth ? 1 : 0))
             return .value(value)

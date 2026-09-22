@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- **A Media Player skin's crossfade button now actually crossfades.** Lots of these skins ship a
+  "Turn On Crossfading" toggle in their equaliser drawer, and it did nothing at all — the button did
+  not even light up, and on several skins the click sound went missing too, because the whole
+  handler gave up the moment it touched the setting. It now turns on Sweet Fades, which is
+  NullPlayer's own crossfade, and sets the fade length the skin asks for. The same goes for the
+  volume-levelling setting one skin reads.
+
+- **The equaliser slider-grouping buttons on a Media Player skin now show which one is selected.**
+  Some skins offer three ways for the ten equaliser sliders to move — independently, as a loose
+  group, or as a tight group. NullPlayer's sliders always move independently and still do, but the
+  buttons were left blank instead of showing that, and pressing one lit nothing.
+
 - **A Media Player skin that fades or slides itself in when it opens now does so.** Some skins are
   written to arrive gradually — a window that fades to translucent over several seconds, a panel
   that slides into place — and all of that was happening instantly, before the window was even on

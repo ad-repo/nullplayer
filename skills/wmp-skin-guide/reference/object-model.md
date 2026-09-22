@@ -280,6 +280,54 @@ mutation (W134). In particular, `bypass` is not silently treated as the inverse 
 audio-enhancement members; see [audio-enhancements.md](audio-enhancements.md) for their typed command
 path and the temporary -1 speaker-cycle rule. They are separate from the inert spline/bypass fields.
 
+#### The `eq` object and the element are one surface (W39)
+
+`eq` is a bound global on the path `eq`, not an element lookup, so `eq.enableSplineTension` reaches
+`readEqualizer` and never `<EQUALIZERSETTINGS>`'s own property table. Both spellings now answer the
+same values: the object stores the spline pair in its own session map and defaults it from
+`defaultInertEqualizerSettingsValue`, so a skin cannot see the two disagree.
+
+**Store an inert value rather than answering a constant when the corpus reads it back.** `Back to
+the Future Trilogy`'s `checkSplineTension()` clears its three grouping buttons and then tests
+`eq.enableSplineTension && eq.splineTension==2` to light one; a constant lights the same button
+whichever the user pressed. `false`/`0` is the honest default — independent sliders is what this
+player's equaliser does — and it is what the lit button then says.
+
+**Crossfade is not an inert candidate, and checking whether the player already has the feature is
+the step W39 was ranked without.** WMP's crossfade is this player's Sweet Fades under another name,
+so `eq.crossFade` and `eq.crossFadeWindow` bind to `AudioEngine.sweetFadeEnabled` and
+`sweetFadeDuration`, and `eq.normalization` to `volumeNormalizationEnabled`. The row had called the
+whole class an `inert()` candidate; `speakerSize`, its headline member at 18 skins, had in fact been
+live since the WOW/TruBass work landed.
+
+Re-measured 2026-09-22 over 184 archives with the script-text scan in
+[`harness.md`](harness.md) § *Grepping the corpus's script text* — the census matches a tag and can
+never see a member read:
+
+| Member | uses | archives | Answers |
+|---|---:|---:|---|
+| `crossFade` | 123 | 38 | `sweetFadeEnabled` |
+| `enableSplineTension` | 68 | 51 | `INERT`, stored |
+| `splineTension` | 56 | 48 | `INERT`, stored |
+| `crossFadeWindow` | 40 | 35 | `sweetFadeDuration`, **milliseconds** |
+| `normalization` | 1 | 1 | `volumeNormalizationEnabled` |
+
+`eq.gainLevels(band) = value` (`Compact`, `Charlies_Angels_Full_Throttle`) stays unrecognised: it is
+assignment to the result of a call and not valid JScript, so answering it would be answering a typo.
+
+**Both resolution paths have to answer or the control is half-wired.** The corpus idiom is one
+sticky button — `onClick="eq.crossFade = !eq.crossFade;eq.crossFadeWindow=7000"` with
+`down="wmpprop:eq.crossFade"` — so the write goes through `WMPObjectModel` and the lit state through
+`WMPObservablePropertyRegistry`, which is a separate resolution of the same path. A member added to
+only one of them fades tracks and never lights, or lights and fades nothing.
+
+**The statement after the read is what an unrecognised member costs.** Six of the 38 crossfade
+spellings (`ALXMorph`, `Batman Begins`, `Constantine`, `Disney_Mix_Central`, `Dreamcatcher`,
+`KungFuChaos`) put `checkSoundPref('click.wav')` in front of the write, so the throw took the click
+sound with it; `Back to the Future Trilogy` aborted *after* clearing all three grouping buttons,
+leaving none lit. Evidence: `Tests/NullPlayerAppTests/WMPEqualizerMemberTests.swift`, and a
+`WMP_RENDER_CLICK='eqView@106,80'` on `Plus! Professional` now prints `command=setCrossFade value=1`.
+
 ### The `<EFFECTS>` element
 
 `EFFECTS` and `WMPEFFECTS` are the same surface and both map to `.effects`. Only the second was ever
