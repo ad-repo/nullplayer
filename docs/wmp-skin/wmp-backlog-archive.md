@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W257.** (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W260.** (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued 2026-09-22** and is open in Tier 1c — a `theme.currentViewID` switch that lands and is immediately undone by the arriving view's own `Init()`, reported live on `Plus! SlimLine`. It is reachable only behind W40 and has no headless signature.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -40,6 +40,115 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+
+## W40 — a script naming an element in another view (closed 2026-09-22)
+
+**A `.wmz` has one script scope for the whole skin**, so a function in a shared `.js` names the view
+it was written for and runs from whichever view reaches it first. Only the on-screen view's elements
+were installed, so the name was unbound (`ReferenceError`, taking the rest of the handler with it)
+or bound-but-stale (`no such element`). One cause, two signatures.
+
+**The recorded Reach was void, and the way it was void is the lesson.** Classified against the
+sweep's own `raw.txt` rather than re-counted by hand, the corpus's 47 `Can't find variable` lines
+split **38 phantoms across 30 archives** against **10 cross-view errors across 9 archives**. The
+row's two largest numbers — `vidinfo` at 8 skins and `pl` at 4 — are phantoms: the names are
+declared **nowhere** in their archives in any spelling, which is W42's class and not this one. Three
+of the row's five cited names were phantoms; only `playlistframe` and `videoWin` were real.
+
+| class | measured 2026-09-22, 184 archives |
+|---|---|
+| **PHANTOM** — declared nowhere; WMP throws too | 38 errors / 30 archives — **not work** |
+| **CROSS-VIEW** — exists, in another view | **10 errors / 9 archives** |
+| SAME-VIEW / CROSS-VIEW, wrong case | 3 errors / 1 archive (`Ice`) — a separate defect, not taken |
+
+The archives the fix reaches: `Official_Xbox_MP71`, `Official_Xbox_XP`, `Plus! SlimLine`,
+`The_Sentinel_v.1.0`, `WWC`, `holiday_skin`, `portals`, `Creed`, `deepbluesomething`.
+
+**`WMPScriptContext.prepare(views:)`** makes every declared view's elements exist once per skin
+session and binds their ids; `element:<id>` resolves against the installed view first and any other
+live view second — a fallback, never a merge, because ids are unique per view and not across them
+(W89). Nothing runs there: no handler, no geometry expression.
+
+**`discardElements` resets a view rather than deleting it, and that is the half that cost a live
+round trip to find.** `WMPMainWindowController.switchView` discards **both** views — the one leaving
+and the one arriving — so deleting took the arriving view's own elements out of the fallback in the
+same breath, and `Plus! SlimLine` came back from a switch with no title bar and no progress bar,
+rendering exactly as it had before the fallback existed. In WMP the theme's element tree outlives
+any one window; a rebuilt registry is what `install` would have produced from the plan.
+
+**What it leaves behind.** A clean sweep across this change proves nothing about it: the defect is
+in a handler that only runs when a view is opened or switched, and the sweep renders the settled
+default state of each view independently. The round trip had to be driven. And the row opened
+**W257** the moment it landed — making `Init()` reachable is what let the corpus's view-restore
+idiom execute at all, which is `reachable-code-fires-latent-traps` for the third time on one branch.
+
+Corpus sweep: 551 of 553 images identical; the two are `Plus! SlimLine` drawing the chrome its
+`Init()` now reaches, and `Scooby-Doo_2`, cleared with a same-mode control.
+
+## W258 — a boolean property written as a string was read back truthy (closed 2026-09-22)
+
+**`Plus! SlimLine`'s drawer arrows worked exactly once.** `toggleProgressBar()` tests
+`if (progressBar.visible)` and assigns `progressBar.visible = "false"` — the quoted string. The
+scene was always right, reading the mutation through `WMPJSONValue.truth`, which knows `"false"`;
+the property bag handed the string straight back, and JScript's `if ("false")` is **true**, so the
+next press took the hide branch again and the drawer never returned. Reported live as *"the bottom
+arrows do not work reliably"*.
+
+A string written to a boolean-typed element property is now stored as a boolean. **Only a string is
+wrong** — a number already reads back with the truthiness it was given — so the coercion is narrowed
+to the shape that lies. Markup needed no part of it: `WMPScriptViewPlan.scalar` has always turned an
+authored `visible="false"` into `.bool`.
+
+**The property set is the corpus's, not a guess** — the names skins write with a quoted
+`true`/`false`, less the host-object ones: `enabled` **170 uses / 4 archives**, `visible` **148 /
+12**, `tabStop` **60 / 1**, `down` **16 / 2**, `scrolling` **6 / 1**, `fullScreen` **4 / 2**. The
+class is **404 writes across 17 of 184 archives**; the **23 in 4 archives** that read the property
+back as a condition — `Plus! SlimLine`, `tubeframe`, `elvis`, `Heart_Butterfly` — are where it is a
+defect rather than a stored oddity.
+
+**`player.settings.mute` is deliberately untouched** at 32 uses / 21 archives: it applies `truth` on
+the way out and answers the *host's* own state on the way back, so a string written there never
+survives to be re-read. **The defect is the element's own bag and nothing else.**
+
+Corpus sweep: **553 of 553 images identical** and every structural invariant byte-identical — which
+is the expected answer and proves only that nothing else moved. The sweep renders the settled
+default state and never clicks; `WMP_RENDER_CLICK` alternating `false`/`true`/`false`/`true` is what
+proves the fix.
+
+## W259 — an inert `<BUTTONGROUP>` swallowed the controls under it (closed 2026-09-22)
+
+**A `<BUTTONGROUP>` is a hit target by *kind***, so one that resolves no mapping regions still
+claimed its whole rectangle and answered every click inside it.
+
+`Plus! SlimLine`'s left drawer is the reported case. Its group declares
+`mappingImage="perfectV_progressbar.jpg"` — **the same file as its own `image`, not a map** — so it
+has no regions and no handler, and its 173x32 rect lies across the bottom-left of the vertical body
+strip, exactly over `btnProgress`. **With the drawer open, the drawer ate the click meant for the
+arrow that closes it**, which is why the report was *"the left arrow does not work on launch"* and
+why toggling the other drawer first bought one press. `WMP_RENDER_OCCLUDED` had been reporting
+`btnProgress … reached=neither by=[-#120:buttonGroup …]` all along, and live the press traced to
+`raw=buttonGroup#120` under `WMP_CLICK_TRACE`.
+
+A group with **no regions, no handler of its own and no transport action** is now artwork rather
+than a control, and a press there drags the window as bare artwork already does. **This closes the
+question W149 left open** — *"decide whether a `<BUTTONGROUP>` with no mapping children should be a
+hit target at all"* — which it had carried as 10 of its original 16.
+
+**Measured before and after with `WMP_RENDER_OCCLUDED=1` across 184 archives**, which is the
+measurement this class demands because the change *removes* hit targets and `harness.md` is explicit
+that the `rect-only` column is where a change takes controls away:
+
+| | before | after |
+|---|---:|---:|
+| occluded rows | 180 | **165** |
+
+**16 controls recovered**: `ElvisSkin`'s `ElvisProgress` slider, `hueshifterSkin`'s `btnEQ` and
+`btnPL`, `perfectSkin`'s `TL`/`TC`/`TR`, `perfectVSkin`'s `btnProgress`, and nine inert groups.
+**One row moves the other way and belongs to W40 rather than here**: `perfectSkin/38 btnEQ`, because
+the top drawer at `240,0 197x24` is now visible over the `btnEQ` group at `240,0 243x35`.
+
+Corpus sweep: 551 of 553 images identical, the two being W40's `Plus! SlimLine` chrome and
+`Scooby-Doo_2`'s own `Math.random()`.
 
 ## W256 — an equaliser slider cannot be dragged, which was three defects (closed 2026-09-22)
 
