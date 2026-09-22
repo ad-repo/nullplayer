@@ -227,6 +227,36 @@ final class WMPObjectModel {
 
     var elementIDs: [String] { elementOrder }
 
+    /// Every *other* live view's elements, folded id first, for the one lookup that is allowed to
+    /// leave the installed view (W40).
+    ///
+    /// A skin's views share one script scope, so a function declared in the shared `.js` is called
+    /// from whichever view's handler reaches it first and names elements of the view it was written
+    /// for: `Creed`'s `InfoPopup` runs the setup that configures `MainPlayer`'s `PlaylistFrame`,
+    /// `holiday_skin`'s `Globe` hides `gingerbread`'s `videoLayer`, and `WWC`'s video-view volume
+    /// slider clears `mainView`'s `mute`. In WMP those elements exist for as long as the theme does;
+    /// here the registries are swapped one at a time, so the name resolved against the installed
+    /// view and answered `no such element` — or threw `Can't find variable` outright when the
+    /// holding view had never been opened at all.
+    ///
+    /// **The installed view always wins.** Ids are unique per view and not across them (W89) — every
+    /// view root is `view` — so this is a fallback and never a merge.
+    private var otherViewElements: [String: WMPScriptElement] = [:]
+
+    func setOtherViewElements(_ registries: [ElementRegistry]) {
+        otherViewElements = [:]
+        for registry in registries {
+            for (key, element) in registry.elements where otherViewElements[key] == nil {
+                otherViewElements[key] = element
+            }
+        }
+    }
+
+    /// The element a receiver address names: the installed view first, then any other live view.
+    private func liveElement(_ key: String) -> WMPScriptElement? {
+        elements[key] ?? otherViewElements[key]
+    }
+
     func element(_ id: String) -> WMPScriptElement? { elements[WMPPath.fold(id)] }
 
     /// The element a stable id names. The dispatch sites know which *node* was hit even where the
@@ -334,7 +364,7 @@ final class WMPObjectModel {
     private func read(path: String, member: String) -> WMPMemberValue {
         let name = member.lowercased()
         if path.hasPrefix("element:") {
-            guard let element = elements[String(path.dropFirst("element:".count))] else {
+            guard let element = liveElement(String(path.dropFirst("element:".count))) else {
                 return .unrecognised("no such element")
             }
             // **The name a skin gave its `<EQUALIZERSETTINGS>` is another spelling of `eq` (W256).**
@@ -938,7 +968,7 @@ final class WMPObjectModel {
     private func write(path: String, member: String, value: WMPJSONValue) -> WMPMemberValue {
         let name = member.lowercased()
         if path.hasPrefix("element:") {
-            guard let element = elements[String(path.dropFirst("element:".count))] else {
+            guard let element = liveElement(String(path.dropFirst("element:".count))) else {
                 return .unrecognised("no such element")
             }
             // The read side's rule, on the write side: the equaliser owns the members that
@@ -1139,7 +1169,7 @@ final class WMPObjectModel {
     private func call(path: String, member: String, arguments: [WMPJSONValue]) -> WMPMemberValue {
         let name = member.lowercased()
         if path.hasPrefix("element:") {
-            guard let element = elements[String(path.dropFirst("element:".count))] else {
+            guard let element = liveElement(String(path.dropFirst("element:".count))) else {
                 return .unrecognised("no such element")
             }
             // The element is the `eq` object under the skin's own name, on this surface too

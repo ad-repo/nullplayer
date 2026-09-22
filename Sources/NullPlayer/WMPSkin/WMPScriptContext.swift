@@ -205,6 +205,9 @@ final class WMPScriptContext: @unchecked Sendable {
     /// (`restoreElements(for:)`) — one `JSContext` serves them all, and every view root is called
     /// `view`, so a panel's transaction must not run against the player's objects.
     private var viewRegistries: [String: WMPObjectModel.ElementRegistry] = [:]
+    /// Every declared view's element definitions, from `prepare`. Kept so `discardElements` can
+    /// hand a view back its markup state instead of deleting it out of the cross-view fallback.
+    private var preparedDefinitions: [String: [WMPScriptElementDefinition]] = [:]
     private var installedViewID: String?
     /// Hashes of sources whose call sites have already been offered to `aliasCaseFoldedGlobals` —
     /// a handler on a timer is evaluated hundreds of times and the scan answers the same thing
@@ -250,39 +253,105 @@ final class WMPScriptContext: @unchecked Sendable {
         }
     }
 
+    /// Make every view's live elements exist and bind a global for each of their ids, once per skin
+    /// session (W40).
+    ///
+    /// A `.wmz` has one script scope for the whole skin, so a function in the shared `.js` names
+    /// whatever view's elements it was written for and is called from whichever view gets there
+    /// first. Installing only the view on screen left those names unbound — `Official_Xbox_XP`'s
+    /// `mainBox` hides `videoBox`'s `videoWin`, `portals`' `mode2` hides `mode1`'s `ripple_button`
+    /// — and a bare unbound name is a `ReferenceError` that takes the rest of the handler with it.
+    /// WMP has the theme's whole element tree from the moment the skin loads; this is that, and the
+    /// fallback that reads through it is `WMPObjectModel.setOtherViewElements`.
+    ///
+    /// A view already in `viewRegistries` is left alone: this runs before the first `install`, so
+    /// there is nothing to preserve yet, but a re-`prepare` must never discard accumulated state.
+    /// Nothing here *runs* a view — no handler, no geometry expression — so a prepared view holds
+    /// exactly its markup until its own transaction opens it.
+    func prepare(views: [(id: String, elements: [WMPScriptElementDefinition])]) {
+        queue.sync {
+            let presented = installedViewID.map { _ in model.captureElements() }
+            for view in views {
+                let key = WMPPath.fold(view.id)
+                preparedDefinitions[key] = view.elements
+                guard viewRegistries[key] == nil else { continue }
+                installElements(view.elements)
+                viewRegistries[key] = model.captureElements()
+            }
+            if let presented { model.restoreElements(presented) } else { model.resetElements([]) }
+            refreshOtherViews()
+        }
+    }
+
+    /// A pristine registry for one view, built without disturbing the installed one.
+    private func pristineRegistry(_ definitions: [WMPScriptElementDefinition])
+        -> WMPObjectModel.ElementRegistry {
+        let presented = model.captureElements()
+        installElements(definitions)
+        let built = model.captureElements()
+        model.restoreElements(presented)
+        return built
+    }
+
     func install(elements definitions: [WMPScriptElementDefinition], for viewID: String) {
         queue.sync {
             stashInstalled()
             installElements(definitions)
             installedViewID = WMPPath.fold(viewID)
+            refreshOtherViews()
         }
     }
 
     /// Put a covered view's own live elements back, and say whether this session still had them.
-    /// A `false` answer means the caller must `install` from the plan instead.
+    /// A `false` answer means the caller must `install` from the plan instead — which, once
+    /// `prepare` has run, is only a view the skin does not declare.
     func restoreElements(for viewID: String) -> Bool {
         queue.sync {
             guard let cached = viewRegistries[WMPPath.fold(viewID)] else { return false }
             stashInstalled()
             model.restoreElements(cached)
             installedViewID = WMPPath.fold(viewID)
+            refreshOtherViews()
             return true
         }
     }
 
-    /// Forget a view's live elements. Its window has closed, or `theme.currentViewID` has replaced
-    /// it — either way the next time this id is opened it is a load, not a restore.
+    /// Forget a view's accumulated state. Its window has closed, or `theme.currentViewID` has
+    /// replaced it — either way the next time this id is opened it starts from its markup again.
+    ///
+    /// **It resets the view rather than deleting it, because the theme still has it (W40).** A
+    /// `theme.currentViewID` switch discards *both* views — the one leaving and the one arriving,
+    /// `WMPMainWindowController.switchView` — so deleting took the arriving view's own elements and
+    /// the departing view's out of the cross-view fallback in the same breath. `Plus! SlimLine`
+    /// is the case: switching back to `perfectSkin` ran its `Init()` against a session that no
+    /// longer had `perfectV_pl`, so it threw exactly as it did before the fallback existed and the
+    /// view came back with no title bar and no progress bar. Reported live 2026-09-22 as *"the left
+    /// button does not work in vertical mode, you get stuck in horizontal mode"*. In WMP the
+    /// theme's element tree outlives any one window, and a rebuilt registry is what `install` would
+    /// have produced from the plan — the same definitions, none of the state.
     func discardElements(for viewID: String) {
         queue.sync {
             let key = WMPPath.fold(viewID)
-            viewRegistries.removeValue(forKey: key)
+            if let definitions = preparedDefinitions[key] {
+                viewRegistries[key] = pristineRegistry(definitions)
+            } else {
+                viewRegistries.removeValue(forKey: key)
+            }
             if installedViewID == key { installedViewID = nil }
+            refreshOtherViews()
         }
     }
 
     private func stashInstalled() {
         guard let installedViewID else { return }
         viewRegistries[installedViewID] = model.captureElements()
+    }
+
+    /// Hand the model every live view's elements but the one installed, so `element:<id>` can fall
+    /// back out of the current view without ever shadowing it (W40).
+    private func refreshOtherViews(current: String? = nil) {
+        let key = current ?? installedViewID
+        model.setOtherViewElements(viewRegistries.compactMap { $0.key == key ? nil : $0.value })
     }
 
     private func installElements(_ definitions: [WMPScriptElementDefinition]) {
@@ -347,8 +416,10 @@ final class WMPScriptContext: @unchecked Sendable {
             pendingTimers.removeAll()
             pendingClearedTimers.removeAll()
             viewRegistries.removeAll()
+            preparedDefinitions.removeAll()
             installedViewID = nil
             model.resetElements([])
+            model.setOtherViewElements([])
         }
     }
 
@@ -401,11 +472,13 @@ final class WMPScriptContext: @unchecked Sendable {
                 } else {
                     installElements(plan.elements)
                 }
+                refreshOtherViews(current: WMPPath.fold(plan.viewID))
                 let result = perform(plan: plan, size: WMPSize(width: 0, height: 0),
                                      snapshot: snapshot, preferences: preferences, event: event,
                                      geometry: [:], currentViewID: currentViewID, screen: screen)
                 viewRegistries[WMPPath.fold(plan.viewID)] = model.captureElements()
                 model.restoreElements(presented)
+                refreshOtherViews()
                 continuation.resume(returning: result)
             }
         }

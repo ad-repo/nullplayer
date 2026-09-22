@@ -554,6 +554,15 @@ actor WMPScriptRuntime {
         if propertyRegistries[scope] == nil {
             propertyRegistries[scope] = WMPObservablePropertyRegistry(graph: skin.graph)
         }
+        // **Every view's elements exist from the moment the skin's context does (W40).** One script
+        // scope serves the whole skin, so a shared function names the view it was written for and
+        // runs from whichever view calls it; installing only the view on screen left those names
+        // unbound. This is markup only — no handler and no geometry expression runs here.
+        if pendingLoad {
+            context.prepare(views: skin.views.map {
+                ($0.id, WMPScriptViewPlan(skin: skin, viewID: $0.id).elements)
+            })
+        }
         // **Swap this view's own live elements in, and leave the other window's stashed.** A
         // `restoreElements` that answers true is a view this session has already run — its objects,
         // its accumulated state — and the context stashes whichever view was installed before it on
