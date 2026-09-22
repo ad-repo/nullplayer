@@ -205,21 +205,29 @@ struct WMPJScriptEvent: Hashable, Codable, Sendable {
 
     let name: String
     let targetID: String?
+    /// **The element that raised the event, when the markup never named it.** `targetID` is the
+    /// skin's own `id` attribute and the corpus leaves it off wherever it has no script to write:
+    /// `anemone`'s ten equaliser bands are `<SLIDER value_onchange="eq.gainLevel1=value;">` with no
+    /// `id` at all. The dispatch sites already know which node was hit — `handlers(in:event:)`
+    /// selects the handlers by stable id — so the runtime is told the same thing, and both the
+    /// bound `value` and the handler's own `with` scope resolve for an unnamed element too.
+    let targetStableID: Int?
     let handlers: [Handler]
     /// The modifiers held when the input that raised this event was dispatched. Empty for the
     /// transactions that are not input — a view timer, a host state change — which is what the
     /// skin's own `if (!event.shiftKey)` guards read as *no modifier*, the ordinary path.
     var modifiers: WMPEventModifiers = []
 
-    init(name: String, targetID: String?, handlers: [Handler],
+    init(name: String, targetID: String?, targetStableID: Int? = nil, handlers: [Handler],
          modifiers: WMPEventModifiers = []) {
-        self.name = name; self.targetID = targetID; self.handlers = handlers
+        self.name = name; self.targetID = targetID; self.targetStableID = targetStableID
+        self.handlers = handlers
         self.modifiers = modifiers
     }
 
-    init(name: String, targetID: String?, handlers: [String],
+    init(name: String, targetID: String?, targetStableID: Int? = nil, handlers: [String],
          arguments: [String: WMPJSONValue] = [:], modifiers: WMPEventModifiers = []) {
-        self.init(name: name, targetID: targetID,
+        self.init(name: name, targetID: targetID, targetStableID: targetStableID,
                   handlers: handlers.map { Handler(source: $0, arguments: arguments) },
                   modifiers: modifiers)
     }

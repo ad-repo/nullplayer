@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- **Equaliser sliders on a Media Player skin can be dragged.** On `anemone` a band could be dragged
+  all day and neither the sound nor the slider itself would change; on `elvis` most of the slider
+  simply did not respond, and pressing the part of the track that should have moved it dragged the
+  whole window around instead. Three separate things were behind it, and all three are fixed:
+  skins that never gave their sliders a name — around a third of the installed set — sent the
+  equaliser nothing when they were moved; a slider that draws only its knob, and no track behind
+  it, could only be grabbed by the knob itself when the whole track should work; and a skin that
+  calls its equaliser something other than the usual name was talking to nothing at all, which is
+  why `elvis`'s sliders stayed put even once they could be grabbed. Its Reset button now flattens
+  all eight bands too.
+
 - **Several Media Player skins now finish setting themselves up when they open.** A handful of these
   skins were written with the capitalisation of one of their own function names typed inconsistently
   — `UpdateMetaData` in one place, `UpdateMetadata` in another — and NullPlayer stopped dead at that

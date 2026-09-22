@@ -71,24 +71,22 @@ to anyone using the app, and is why the tier stays.
 
 ## Tier 1c — live-reported, not yet reproduced headlessly
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
-| W256 | **An equaliser slider cannot be dragged.** Reported live 2026-09-22 on `elvis` and `anemone`; the reporter's correction is the whole of the row — *"manual control of the sliders are the problem, not the eq function"*, so this is the gesture reaching the control, not the value reaching the audio engine | **Unmeasured.** The two skins reported are the *two different surfaces* this can be, which is why it is one row: `elvis` draws its own 8-band EQ (`<equalizerSettings id="ElvisEQS">` and `<slider id="eq1..8">` in `elvis.wms:60-71`), and **`anemone.wms` contains no `<equalizerSettings>` and not one `slider` element at all**, so its EQ is NullPlayer's native window wearing WMP theming. Establish which surface fails before scaling anything: if it is the skin's own sliders, 165 of 184 archives bind a slider to `gainLevel*`; if it is the native fallback, 19 archives have no `<equalizerSettings>` and land there | **No headless instrument reaches this and none on this page ever will**: a sweep renders the settled default state and never drags. Drive the app — `skills/live-ui-testing`, `harness.md` § *Debugging a live defect*, and `app-control` Route C for a CGEvent drag. **`elvis`'s EQ is behind a toggle and `Elvis_eq` is authored `visible="false"`**, so open the panel first. Two things already measured are *not* this defect and must not be folded into it: `elvis`'s `Init` still aborts at `elvis.js:21` on `volume_slider`, an element that exists nowhere in the archive, and the named-element half below is about the value, not the gesture |
+**W256 was this tier's row and closed 2026-09-22** — three defects under one live report, all in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md). What it leaves behind is one measurement rule,
+and it is the most expensive thing on this page: **a corpus number taken with `grep` is not a corpus
+number.** `grep` calls a cp1252 `.wms` binary and exits 0 having printed nothing, which is how this
+row came to state that `anemone` had no `<equalizerSettings>` and *"not one `slider` element at
+all"* — it has both, ten of them — and how its "19 archives" (really **99 of 184**) and
+`object-model.md`'s "14 name it something other than `eq`" (really **7**) were written. The row's whole
+"two different surfaces" framing rested on that absence, and there was only ever one surface.
+`harness.md` § *A corpus number taken with `grep` is not a corpus number* holds the rule; re-derive
+any number on this page whose command was a bare `grep`.
 
-**A second, separate defect was measured while this row was being written, and it is about the value
-rather than the drag — do not close W256 with it.** `eq` is a bound global on the path `eq`
-(`WMPObjectModel.read`, `case "eq": return readEqualizer(name)`), so a skin whose
-`<EQUALIZERSETTINGS>` is *named* something else never reaches `readEqualizer` at all: `ElvisEQS.gainLevel1`
-falls through to the element's own property bag, round-trips perfectly, and changes no audio.
-**14 of 184 archives name it something other than `eq` and all 14 reference it by that name** —
-`elvis` (`ElvisEQS`), `Frostbite` (`eq2`), `Gorillaz`/`Navigator`/`Ursula`/`robbie`/`v2_underworld`
-(`equal`), `Plus! Bionic Dot` and `Plus!_The_Bionic_Dot` (`eq22`), `Plus! Hard Boiled` (`eggEQS`),
-`Plus! HueShifter` (`hueshifterEQS`), `Plus! Plasma Ball` (`bublEQ`), `Plus! SlimLine`
-(`perfectEQS`/`perfectVEQS`) and `TDK` (`eqsettings`). Measured 2026-09-22 over 184 archives by
-matching `<equalizerSettings …>` in every `.wms` and its `id`; the 154 that spell it `eq` are
-unaffected. `object-model.md` § *The `eq` object and the element are one surface (W39)* states the
-two spellings answer the same values, and that is true only for the id `eq`. **Give this its own
-number when it is taken** — W39's rule is the place it belongs.
+**The "second, separate defect" this tier carried — the named `<EQUALIZERSETTINGS>` — closed with
+W256 rather than taking its own number**, because it was not separate: it is what kept `elvis`'s
+thumb from moving after the drag reached the control. It issued no new number. The corrected reach
+is 7 of 184 archives and the rule is `object-model.md` § *The `eq` object and the element are one
+surface (W39)*.
 
 **The 2026-09-08 live-QA list was never captured, and that is still the largest known hole on this
 page.** The reporter drove Phase 5, reported "tons of issues", the session ended before the list was

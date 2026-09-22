@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W257.** (**W256 was issued 2026-09-22** for the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; it is open in `WMP_TASKS.md` Tier 1c.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W257.** (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -40,6 +40,108 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+
+## W256 — an equaliser slider cannot be dragged, which was three defects (closed 2026-09-22)
+
+Reported live 2026-09-22 against `elvis` and `anemone`, with the reporter's own correction as the
+whole of the row:
+
+> *"manual control of the sliders are the problem, not the eq function"*
+
+**No headless instrument reaches this class and none ever will** — a sweep renders the settled
+default state and never drags — so the whole of it was driven in the debug build with
+`WMP_SEEK_TRACE=1`, a temporary transaction trace printing `output.calls`, and a temporary press
+trace dumping every hit candidate under the pointer with its coverage answer. The two reported
+skins turned out to be **three** defects, one of them in every skin's equaliser.
+
+### 1. A handler on an element the markup never named is handed nothing
+
+`anemone`'s ten bands are `<SLIDER value_onchange="eq.gainLevel1=value;">` with **no `id`**. Both
+the bound `value` global and the handler's own `with` scope (W216) were keyed on `event.targetID`,
+which is that attribute. The gesture reached the control perfectly — `performSlider` ran, the value
+swept 0 → 14 — and the handler wrote `eq.gainlevel1 = null` on every move. The band never changed,
+so the thumb settled straight back onto the host's unchanged gain: *a slider that cannot be
+dragged.* `WMPJScriptEvent` now carries `targetStableID`, which the dispatch sites already had.
+
+**70 `value_onchange` handlers across 35 of 184 archives** author no `id`; the wider class — any
+handler on an unnamed element, which also lost its scope — is **1,667 nodes / 101 archives**.
+
+### 2. A slider's region is the track it authored, not the artwork drawn in it
+
+`elvis`'s eight bands are `<slider width="10" height="75" thumbImage="elvis_eqknob.gif">` with no
+track sprite, so "a control is its artwork" read the 11x12 knob. The press trace is the finding:
+`eq1#42` was the **front-most** candidate at the pointer (`paint=6` against the tray's `paint=3`)
+and lost on `cov=false` alone, so the press fell through to `<buttonGroup>#38` behind it and
+*dragged the window*. Only a ~39 px band around the thumb answered at all. Coverage for a slider is
+now its frame; a `CUSTOMSLIDER` keeps its position map, which is a better answer than the frame
+rather than a worse one (W150).
+
+**448 sliders across 41 of 184 archives** paint a thumb and no track.
+
+### 3. The skin's own name for its `<EQUALIZERSETTINGS>` is another spelling of `eq`
+
+With 1 and 2 landed, `elvis` dragged over its whole track and the thumb still did not move. `eq` is
+a bound global on the *path* `eq`, so `<equalizerSettings id="ElvisEQS">` was an ordinary element:
+`ElvisEQS.gainLevel1 = value` landed in its own property bag, changed no audio, and the slider bound
+to `wmpprop:ElvisEQS.gainLevel1` — which resolves from the **host** — never moved. Two seams, neither
+adding a case per member: the registry folds the name to `eq` when it collects bindings, and
+`WMPObjectModel`'s read/write/call route an `element:` receiver of kind `.equalizerSettings` to the
+equaliser, falling through to the element on `unrecognised`.
+
+`enableSplineTension`, `splineTension` and `bypass` are excluded and stay the element's — W134's
+`testUnsupportedEqualizerSettingsRoundTripAsInertState` fails the moment they are not, which is the
+suite catching a real widening rather than a stale expectation.
+
+**This was carried under the row as a "second, separate defect" needing its own number. It took
+none**: it is not separate, it is the other half of the same report, and on `elvis` it is the half
+the reporter sees.
+
+### What it leaves behind: a corpus number taken with `grep` is not a corpus number
+
+**The most expensive thing here, and it is not about sliders.** `grep` decides a cp1252 `.wms` is
+binary — about half the corpus carries a `0xA9` copyright sign in the first line — and exits 0
+having printed nothing. Three claims were written that way and all three were false:
+
+| Claim | Measured by reading the bytes |
+|---|---|
+| the row: `anemone.wms` has no `<equalizerSettings>` and *"not one `slider` element at all"* | it has `<EQUALIZERSETTINGS id="eq">` and **ten** `<SLIDER>` bands |
+| the row: 19 archives have no `<equalizerSettings>` | **99 of 184** |
+| `object-model.md`: 14 name it something other than `eq` | **7** — `Frostbite` ships `eq2_slider.png` and declares no `<equalizerSettings>` at all, so the 14 was a filename match |
+
+The row's whole "two different surfaces" framing rested on the first of those, and there was only
+ever one surface: both reported skins draw their own bands.
+`harness.md` § *A corpus number taken with `grep` is not a corpus number* holds the rule.
+
+**Every number above comes back from one command**, `python3 scripts/wmp_slider_drag_census.py`,
+which reads each `.wms` out of its archive.
+
+### The sweep is the arbiter, and it agrees
+
+The slider-coverage change touches every skin's hit map, so it was A/B'd in one binary across the
+184-archive corpus with `WMP_RENDER_OCCLUDED=1` — the branch disabled, captured, re-enabled,
+captured:
+
+| | before | after |
+|---|---:|---:|
+| controls **lost** to occlusion, corpus-wide | 9 | **9** |
+| controls **recovered** | 104 | **104** |
+| `reached=` lines | 180 | **180** |
+
+**No control lost and none gained.** Every difference between the two captures is a `masks=N` count
+falling — a slider no longer carries a coverage mask, which is the change — plus three
+`reached=covered-only` lines whose `by=[…]` is now empty (`ElvisSkin`'s `ElvisProgress` and two
+`view-2` bands). Those three are the same controls, reachable exactly as before; with no mask there
+is simply nothing for the probe to name as covering them. **That empty `by=[]` is an artefact of the
+instrument, not a finding** — worth knowing before it is read as one.
+
+### Verified
+
+Driven live, both skins, debug build, with a track playing. `anemone`: band 1 dragged to +14 and
+stays up, band 2 to −14 and stays down, over the full 49 px track. `elvis`: bands 1 and 3 up, band 5
+at the bottom, and **RESET flattens all eight** — `ElvisEQS.Reset()` reaches the equaliser too, where
+before it was an element method call that did nothing. Suite **2,573 tests, 0 failures**;
+`Tests/NullPlayerAppTests/WMPEqualizerSliderDragTests.swift` holds all three halves, including the
+control that shows the null write.
 
 ## W42 — the missing skin function, whose three stated causes all measure zero (closed 2026-09-22)
 

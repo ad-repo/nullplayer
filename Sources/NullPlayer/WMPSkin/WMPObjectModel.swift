@@ -229,6 +229,13 @@ final class WMPObjectModel {
 
     func element(_ id: String) -> WMPScriptElement? { elements[WMPPath.fold(id)] }
 
+    /// The element a stable id names. The dispatch sites know which *node* was hit even where the
+    /// markup authored no `id`, and an element's identifier is not unique across views (W89), so
+    /// this is the address that always answers.
+    func element(stableID: Int) -> WMPScriptElement? {
+        elements.values.first { $0.stableID == stableID }
+    }
+
     // MARK: Member access
 
     /// `path` is a receiver address: a host object path (`player.controls`), `element:<id>`, or
@@ -329,6 +336,32 @@ final class WMPObjectModel {
         if path.hasPrefix("element:") {
             guard let element = elements[String(path.dropFirst("element:".count))] else {
                 return .unrecognised("no such element")
+            }
+            // **The name a skin gave its `<EQUALIZERSETTINGS>` is another spelling of `eq` (W256).**
+            //
+            // `eq` is a bound global on the *path* `eq`, so the routing below reached `readEqualizer` only
+            // for that one identifier: `<equalizerSettings id="ElvisEQS">` is an ordinary element, and
+            // `ElvisEQS.gainLevel1 = value` therefore landed in the element's own property bag — it
+            // round-tripped through the bag, changed no audio, and the band slider bound to
+            // `wmpprop:ElvisEQS.gainLevel1` never moved, because that binding resolves from the host.
+            // Reported live as "an equaliser slider cannot be dragged" on `elvis`. **7 of the 184
+            // measured archives name it something other than `eq`** — `scripts/wmp_slider_drag_census.py`.
+            //
+            // The element still answers everything the equaliser does not: `readEqualizer` ends in
+            // `unrecognised`, and a handler dies on its first unrecognised member, so an `<EQUALIZERSETTINGS>`
+            // property this engine has never heard of must keep falling through to the open element
+            // surface rather than aborting the handler that sets it.
+            //
+            // **The three the element keeps are the three it is the right home for.**
+            // `enableSplineTension`, `splineTension` and `bypass` are `inertEqualizerSettingsProperties`:
+            // bookkeeping this engine has no DSP for, whose authored value a skin reads straight
+            // back (W134). Those stay the element's, so a named `<EQUALIZERSETTINGS>` answers its
+            // own markup exactly as it always has; only the members that reach the audio are
+            // routed.
+            if element.kind == .equalizerSettings,
+               !Self.inertEqualizerSettingsProperties.contains(name) {
+                let answer = readEqualizer(name)
+                if case .unrecognised = answer {} else { return answer }
             }
             return readElement(element, name)
         }
@@ -908,6 +941,13 @@ final class WMPObjectModel {
             guard let element = elements[String(path.dropFirst("element:".count))] else {
                 return .unrecognised("no such element")
             }
+            // The read side's rule, on the write side: the equaliser owns the members that
+            // reach the audio, the element keeps its own bookkeeping (W256, W134).
+            if element.kind == .equalizerSettings,
+               !Self.inertEqualizerSettingsProperties.contains(name) {
+                let answer = write(path: "eq", member: member, value: value)
+                if case .unrecognised = answer {} else { return answer }
+            }
             return writeElement(element, name, value)
         }
         switch (path, name) {
@@ -1101,6 +1141,14 @@ final class WMPObjectModel {
         if path.hasPrefix("element:") {
             guard let element = elements[String(path.dropFirst("element:".count))] else {
                 return .unrecognised("no such element")
+            }
+            // The element is the `eq` object under the skin's own name, on this surface too
+            // (W256): `elvis`'s reset button is `onclick="ElvisEQS.Reset(); balance.Reset();"`,
+            // and the equaliser's own methods have to answer it or the handler dies on the first
+            // statement and takes the balance reset with it.
+            if element.kind == .equalizerSettings {
+                let answer = call(path: "eq", member: member, arguments: arguments)
+                if case .unrecognised = answer {} else { return answer }
             }
             return callElement(element, name, arguments)
         }

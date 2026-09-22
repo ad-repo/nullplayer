@@ -20,14 +20,40 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
     private var lastAppliedOrigin: WMPPropertyTransactionOrigin?
 
     init(graph: WMPObjectGraph) {
+        let equalizerNames = Self.equalizerNames(in: graph)
         bindings = graph.allNodes.flatMap { node -> [Binding] in
             let authored = node.attributes.compactMap { attribute -> Binding? in
                 guard case let .binding(kind, path) = attribute.value else { return nil }
                 return Binding(address: .init(stableID: node.stableID,
-                    property: attribute.name.lowercased()), kind: kind, path: path)
+                    property: attribute.name.lowercased()), kind: kind,
+                    path: Self.foldingEqualizerName(path, equalizerNames))
             }
             return authored + Self.implicit(for: node, authored: authored)
         }
+    }
+
+    /// The identifiers this skin gave its `<EQUALIZERSETTINGS>` elements, other than `eq` itself.
+    private static func equalizerNames(in graph: WMPObjectGraph) -> Set<String> {
+        Set(graph.allNodes.filter { $0.kind == .equalizerSettings }
+            .compactMap { $0.xmlID?.lowercased() })
+            .subtracting(["eq"])
+    }
+
+    /// **A skin's own name for its `<EQUALIZERSETTINGS>` is another spelling of `eq` (W256).**
+    ///
+    /// Every equaliser path below is matched on the literal first segment `eq`, so a band slider
+    /// bound to `wmpprop:ElvisEQS.gainLevel1` resolved through no host at all: `elviseqs` is not a
+    /// `hostRoot`, the binding was read as naming an element in the skin's own graph, and the thumb
+    /// stayed wherever the markup left it however far the band was dragged. Reported live as "an
+    /// equaliser slider cannot be dragged" on `elvis`. Folding the name here rather than adding a
+    /// case per member keeps one spelling downstream — `eqBand`, every `eq.` case and `hostRoots`
+    /// are untouched. **7 of the 184 measured archives name it something other than `eq`**
+    /// (`scripts/wmp_slider_drag_census.py`); every other skin declares no other name and folds
+    /// nothing.
+    private static func foldingEqualizerName(_ path: String, _ names: Set<String>) -> String {
+        guard !names.isEmpty, let dot = path.firstIndex(of: "."),
+              names.contains(path[path.startIndex..<dot].lowercased()) else { return path }
+        return "eq" + path[dot...]
     }
 
     /// **A semantic slider tag is itself a binding, and this is where it becomes one.**

@@ -605,6 +605,18 @@ a dispatch defect — it is a control the pointer never reached at all.
   the soft edges a pointer aims for. Measured before landing: **173 corpus sliders declare a key on
   a node with a position image and not one of them is a grey**, so no ramp value can be clipped by
   this.
+- **A slider's region is the track it authored, not the artwork drawn in it (W256).** Every other
+  control is its artwork; for a slider that rule reads the **thumb**, because a `<SLIDER>` paints a
+  thumb at the current value and nothing else unless the skin gave it a track sprite. `elvis`'s
+  eight bands are `<slider width="10" height="75" thumbImage="elvis_eqknob.gif">` with no track, so
+  coverage claimed the 11x12 knob: four fifths of each band rejected the pointer, the press fell
+  through to the tray's `<buttonGroup>` behind it, and pressing the track **dragged the window**.
+  Driven live, `eq1` was the front-most candidate at the press point and lost on coverage alone.
+  WMP moves the thumb to wherever the track is clicked, so the frame *is* the control — the skin
+  authored a 10x75 box because that is the box it wants pressed. **A `CUSTOMSLIDER` is the
+  exception and keeps its position map**, which is a better answer than the frame rather than a
+  worse one (W150). **Reach: 448 sliders across 41 of 184 archives** paint a thumb and no track, measured
+  2026-09-22 by `python3 scripts/wmp_slider_drag_census.py` (population B).
 - **Whatever advertises a control must agree with the hit tester.** `resetCursorRects` and the
   `stringForToolTip` widget fallback both scanned bounding boxes, so Pulsar's dead corners kept a
   hand cursor and a "Seek" tip over pixels that hit nothing — reported as *"a clickable artifact to
@@ -2699,6 +2711,15 @@ of these was invisible to the harness and visible in the first minute of live QA
   **Before ranking a "the control moves and nothing happens" defect, ask whether the markup declared
   a host state nothing reads** — this class is invisible to every image sweep and to the call trace
   alike: there is no script call to trace.
+- **A skin's own name for its `<EQUALIZERSETTINGS>` is another spelling of `eq` (W256).** `eq` is a
+  bound global on the *path* `eq`, so `<equalizerSettings id="ElvisEQS">` was an ordinary element:
+  `ElvisEQS.gainLevel1 = value` landed in its own property bag, reached no audio, and the band
+  slider bound to `wmpprop:ElvisEQS.gainLevel1` never moved, because that binding resolves from the
+  host. The name is folded to `eq` in `WMPObservablePropertyRegistry.init` for bindings and routed
+  in `WMPObjectModel`'s read/write/call for script; `enableSplineTension`, `splineTension` and
+  `bypass` stay the element's bookkeeping (W134). Reach **7 of 184 archives**; the full rule and the
+  numbers it replaces are `reference/object-model.md` § *The `eq` object and the element are one
+  surface (W39)*.
 
 ## Script, expression, and binding contracts
 

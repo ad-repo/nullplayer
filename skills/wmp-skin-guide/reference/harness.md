@@ -47,6 +47,27 @@ is why every count on this page carries the archive number it was taken over.
 `Project Gotham Racing 2`/`Project Gotham Racing 2 (1)`, `The Unit`/`TheUnit` — because they are
 different releases of the same skin with differing `.wms` and `.js`, and are separate test cases.
 
+### A corpus number taken with `grep` is not a corpus number
+
+**`grep` decides a `.wms` is binary and prints nothing, exiting 0.** About half the corpus's
+definitions are cp1252 and carry a `0xA9` copyright sign in the header comment of the very first
+line, which is not valid UTF-8; in a UTF-8 locale `grep` then reports *"binary file matches"* at
+best and, piped or with `-h`, silently prints nothing at all. A scan built that way does not fail —
+it produces a smaller number and a clean exit.
+
+Two backlog claims were written from exactly that and both were false (2026-09-22):
+
+- W256's row stated `anemone.wms` *"contains no `<equalizerSettings>` and not one `slider` element
+  at all"*. It has `<EQUALIZERSETTINGS id="eq" enabled="true"/>` and **ten** `<SLIDER>` bands, and
+  the row's whole "two different surfaces" framing rested on the absence.
+- The same row's *"19 archives have no `<equalizerSettings>`"* is **99 of 184** when the bytes are
+  read, and `object-model.md`'s *"14 name it something other than `eq`"* is **7**.
+
+So: **decode the bytes, do not grep them.** `scripts/wmp_markup_census.sh` already strips each
+`.wms` to ASCII first and is safe; an ad-hoc scan must read the entry out of the archive in Python
+(or pass `grep -a`, which is the weaker fix — it still mis-splits UTF-16). Everything in
+§ *Numbers that are void, and why* applies to anything a bare `grep` produced.
+
 ### Counting a tag across the corpus
 
 **Check `object-model.md` § *Verified **not** gaps* before you rank anything a scan turns up.** The
@@ -1201,6 +1222,21 @@ The standing entry is `Darkling.wmz`, authored against WMP's Party Mode host (`P
 this player has no equivalent of; its own `OnLoad` catches the missing host and draws a "designed for
 Party Mode" panel, exactly as real WMP does outside Party Mode. Record the reason in the file next to
 the entry, and treat removing a line as a decision.
+
+### `python3 scripts/wmp_slider_drag_census.py [--corpus <dir>]`
+
+The three W256 populations in one pass, over the installed corpus minus the exclusions:
+
+- **A** — elements authoring a handler and **no `id`** (1,667 nodes / 101 archives), and the
+  `value_onchange` subset (70 / 35). These are the handlers that used to run with no bound `value`
+  and no element scope; the defect has no signature but the *argument* a host command carries.
+- **B** — sliders painting a **thumb and no track** (448 / 41), whose hit region used to be the
+  knob. `<CUSTOMSLIDER>` is excluded: its `positionImage` is the authority on its region (W150).
+- **C** — archives whose `<EQUALIZERSETTINGS>` is named something other than `eq` (7).
+
+It reads each `.wms` out of its archive rather than grepping it, which is the whole reason it is
+committed — see § *A corpus number taken with `grep` is not a corpus number* above. Re-run it before
+quoting any of the four numbers.
 
 ### `python3 scripts/wmp_implicit_key.py [--corpus <dir>] [--color RRGGBB] [--tsv <file>] [--alpha only|none|any]`
 

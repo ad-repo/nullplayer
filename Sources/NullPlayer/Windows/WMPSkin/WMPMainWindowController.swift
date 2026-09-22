@@ -856,7 +856,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 #endif
                 self.scriptDidCommitSeek = false
                 self.dispatchScriptTransaction(presentation,
-                    WMPJScriptEvent(name: "mouseup", targetID: targetID, handlers: handlers))
+                    WMPJScriptEvent(name: "mouseup", targetID: targetID,
+                                    targetStableID: stableID, handlers: handlers))
                 // **The hold outlives the dispatch, not the call that made it.**
                 // `dispatchScriptTransaction` only *creates* a task, so releasing here released the
                 // element before the transaction ran — and the transaction then settled the
@@ -2159,6 +2160,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         dispatchScriptTransaction(presentation,
                                   WMPJScriptEvent(name: name, targetID: targetID,
+                                                  targetStableID: targetStableID,
                                                   handlers: handlers,
                                                   modifiers: Self.currentEventModifiers()),
                                   stickyLatch: name == "click"

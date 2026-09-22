@@ -1627,6 +1627,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     coverage = nil
                 } else if let positionMap {
                     coverage = positionMap.coverage()
+                // **A slider's region is the track it authored, not the artwork drawn in it
+                // (W256).** Every other control is its artwork, and for a slider that rule reads
+                // the *thumb*: `elvis`'s eight bands are `<slider width="10" height="75">` with a
+                // `thumbImage` and no track sprite at all, so coverage claimed the 11x12 knob and
+                // the other four fifths of each band rejected the pointer — the press fell through
+                // to the tray's `<buttonGroup>` behind it and dragged the window instead. WMP
+                // moves the thumb to wherever the track is clicked, so the frame is the control:
+                // the skin authored a 10x75 box because that is the box it wants pressed. A
+                // `CUSTOMSLIDER` is the exception above and keeps its position map, which is a
+                // *better* answer than the frame rather than a worse one (W150).
+                } else if isSlider(node.kind) {
+                    coverage = nil
                 } else {
                     coverage = WMPHitCoverageBuilder.coverage(for: Array(ownPaint), frame: frame,
                                                              pixels: alphaPlane)

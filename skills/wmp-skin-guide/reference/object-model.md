@@ -312,18 +312,34 @@ never see a member read:
 | `crossFadeWindow` | 40 | 35 | `sweetFadeDuration`, **milliseconds** |
 | `normalization` | 1 | 1 | `volumeNormalizationEnabled` |
 
-**"Both spellings" means the id `eq`, and that is narrower than it reads — corrected 2026-09-22.**
-The routing is `case "eq": return readEqualizer(name)` on the *path*, so a skin whose
-`<EQUALIZERSETTINGS>` is named anything else never reaches `readEqualizer` at all: `ElvisEQS.gainLevel1`
-falls through to the element's own property bag, round-trips perfectly and changes no audio.
-**14 of 184 archives name it something other than `eq` and all 14 reference it by that name** —
-`elvis` (`ElvisEQS`), `Frostbite` (`eq2`), `Gorillaz`/`Navigator`/`Ursula`/`robbie`/`v2_underworld`
-(`equal`), both Bionic Dots (`eq22`), `Plus! Hard Boiled` (`eggEQS`), `Plus! HueShifter`
-(`hueshifterEQS`), `Plus! Plasma Ball` (`bublEQ`), `Plus! SlimLine` (`perfectEQS`/`perfectVEQS`) and
-`TDK` (`eqsettings`); the 154 that spell it `eq` are unaffected. Reproduce by matching
-`<equalizerSettings …>` and its `id` in every `.wms`. **Open work, carried under W256's row in
-`WMP_TASKS.md` Tier 1c and needing its own number when it is taken** — it is about the value
-reaching the engine, not about W256's sliders refusing a drag.
+**"Both spellings" now means any name the skin gave the element — closed with W256, 2026-09-22.**
+The routing was `case "eq": return readEqualizer(name)` on the *path*, so a skin whose
+`<EQUALIZERSETTINGS>` is named anything else never reached `readEqualizer` at all: `ElvisEQS.gainLevel1`
+landed in the element's own property bag, changed no audio, and — the half that is visible on screen —
+the band slider bound to `wmpprop:ElvisEQS.gainLevel1` never moved, because *that* binding resolves
+from the host. Reported live as "an equaliser slider cannot be dragged" on `elvis`. Two seams carry
+it, and neither adds a case per member:
+
+- `WMPObservablePropertyRegistry.init` folds a binding path whose first segment names a declared
+  `<EQUALIZERSETTINGS>` to `eq`, so `eqBand`, every `eq.` case and `hostRoots` are untouched.
+- `WMPObjectModel`'s `read`/`write`/`call` route an `element:` receiver of kind `.equalizerSettings`
+  to the equaliser, **falling through to the element when the equaliser answers `unrecognised`** — a
+  handler dies on its first unrecognised member, so the open element surface has to stay.
+
+**`enableSplineTension`, `splineTension` and `bypass` are excluded and stay the element's.** They are
+`inertEqualizerSettingsProperties`: bookkeeping with no DSP behind it whose *authored* value a skin
+reads straight back (W134). Routing them answers the session's defaults over the markup, which is a
+named `<EQUALIZERSETTINGS>` losing its own attributes — and
+`testUnsupportedEqualizerSettingsRoundTripAsInertState` fails the moment it is tried.
+
+**The reach is 7 of the 184 measured archives, not the 14 stated here before 2026-09-22.**
+`elvis` (`ElvisEQS`), `TDK` (`eqsettings`) and `Gorillaz`/`Navigator`/`Ursula`/`robbie`/`v2_underworld`
+(`equal`). The seven names withdrawn — `Frostbite` (`eq2`), both Bionic Dots (`eq22`), `Plus! Hard
+Boiled` (`eggEQS`), `Plus! HueShifter`, `Plus! Plasma Ball`, `Plus! SlimLine` — declare **no
+`<EQUALIZERSETTINGS>` at all**; `Frostbite` ships `eq2_slider.png`, so the 14 was a filename match.
+Reproduce with `python3 scripts/wmp_slider_drag_census.py` (population C), which **reads the bytes
+rather than grepping them**: see § *A corpus number taken with `grep` is not a corpus number* in
+[`harness.md`](harness.md).
 
 `eq.gainLevels(band) = value` (`Compact`, `Charlies_Angels_Full_Throttle`) stays unrecognised: it is
 assignment to the result of a call and not valid JScript, so answering it would be answering a typo.
@@ -839,6 +855,37 @@ now runs, and `Scooby-Doo_2`, which differs run to run on its own `Math.random()
 handler-errors went 69 → 68 — three gone, two new on `Asia`'s own double-escaped `textWidth&gt;width`
 that only became reachable once the statement before it ran.
 `Tests/NullPlayerAppTests/WMPHandlerElementScopeTests.swift` holds both halves and both guards.
+
+### The element has to have an address, and the authored `id` is not one (W256)
+
+**Both the `with` scope above and the bound `value` global were keyed on `event.targetID`, which is
+the skin's own `id` attribute — and the corpus leaves it off wherever it has no script that needs to
+name the element.** `anemone`'s ten equaliser bands are
+`<SLIDER value_onchange="eq.gainLevel1=value;">` with no `id` at all, so the handler ran with no
+scope and no `value`: `eq.gainLevel1 = value` wrote **null** on every move of the drag, the band
+never changed, and the thumb settled straight back onto the host's unchanged gain. Reported live as
+"an equaliser slider cannot be dragged".
+
+`WMPJScriptEvent` now carries `targetStableID` beside `targetID`, and `WMPScriptContext.perform`
+resolves the raising element by stable id where the markup named none. **The dispatch sites already
+knew it** — `WMPMainWindowController.handlers(in:event:targetStableID:)` selects the handlers by
+stable id, because an element's identifier is not unique across views (W89) — so this is telling the
+runtime what the caller had in hand, not a new lookup.
+
+Measured 2026-09-22 over the 184-archive corpus with
+`python3 scripts/wmp_slider_drag_census.py` (populations A and A'), which reads each `.wms` out of
+its archive — never `grep`, see harness.md § *A corpus number taken with `grep` is not a corpus
+number*:
+
+| class | measured |
+|---|---|
+| `value_onchange` with no `id` — the reported case | **70 nodes / 35 of 184 archives** |
+| any handler with no `id` — the scope half | **1,667 nodes / 101 archives** |
+
+**A handler with no address is invisible to every other instrument**: it dispatches, it runs, it
+throws nothing, and `SCRIPT-DIAG` stays silent — the only signature is the *argument* the host
+command carries. `Tests/NullPlayerAppTests/WMPEqualizerSliderDragTests.swift` asserts the argument
+and keeps the control that shows the null.
 
 ## A skin's own function, called in the wrong case (W42)
 

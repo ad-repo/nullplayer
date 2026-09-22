@@ -485,9 +485,15 @@ final class WMPScriptContext: @unchecked Sendable {
             // *assignment* like `toolTip='Seek'` (6 uses) creates a global and costs nothing either
             // way, so only reads were ever blocked, and `with(element)` would change name
             // resolution for every handler in the corpus to buy those six.
+            // **The element that raised the event, by stable id where the markup named none
+            // (W256).** `anemone`'s ten equaliser bands author no `id`, so both this binding and
+            // the handler's own scope below were keyed on nil: the handler ran, `value` resolved to
+            // the undefined global, and `eq.gainLevel1 = value` wrote null — the band never moved
+            // and the thumb settled straight back onto the host's unchanged gain.
+            let eventOwner = event.targetID.flatMap(model.element)
+                ?? event.targetStableID.flatMap(model.element(stableID:))
             var boundEventValue = false
-            if let targetID = event.targetID, let target = model.element(targetID),
-               let value = target.properties["value"] {
+            if let value = eventOwner?.properties["value"] {
                 context.setObject(Self.jsAny(value), forKeyedSubscript: "value" as NSString)
                 boundEventValue = true
             }
@@ -514,7 +520,7 @@ final class WMPScriptContext: @unchecked Sendable {
                 // handler, so one missing member costs many unrelated features — and the demand
                 // tally is what makes that visible. A session-wide kill switch made it invisible.
                 if let error = invokeHandler(source, label: "\(event.name)[\(index)]",
-                                             owner: event.targetID) {
+                                             owner: eventOwner?.id) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(event.name)[\(index)]: \(error)"))
                 }
