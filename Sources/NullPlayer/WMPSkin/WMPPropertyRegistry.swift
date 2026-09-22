@@ -194,6 +194,22 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
             case "player.controls.previous": enabled = snapshot.isEnabled(.previous)
             case "player.controls.next": enabled = snapshot.isEnabled(.next)
             case "player.controls.currentposition": enabled = snapshot.isEnabled(.seek)
+            // **WMP names this capability `seek`, and a skin that asks for it by that name was
+            // being told no** (W255). `IWMPControls` carries both `currentPosition` and `seek`, so
+            // the same slider is authored either way; `default: return nil` sends an unanswered
+            // `wmpenabled:` to `.bool(false)`, which is the right default for a control this engine
+            // cannot drive and exactly wrong for one it can. `Revert` pays for it twice over,
+            // because its slider also mirrors its own gate —
+            // `<slider id="seek" enabled="wmpenabled:player.controls.seek"
+            // visible="wmpprop:seek.enabled">` — so a false `enabled` makes `mirroredVisibility`
+            // delete the node outright: not a greyed-out seek bar, **no seek bar at all**, for
+            // music and film alike. Reported live 2026-09-22 as "there are no seek controls for
+            // the movie"; the scene carried 12 nodes and the slider was not among them.
+            case "player.controls.seek": enabled = snapshot.isEnabled(.seek)
+            // The scan pair, unanswered for the same reason and gated on the same quantity — a
+            // transport can scan exactly when it can seek. 3 archives each.
+            case "player.controls.fastforward": enabled = snapshot.isEnabled(.beginScan(.forward))
+            case "player.controls.fastreverse": enabled = snapshot.isEnabled(.beginScan(.reverse))
             default: return nil
             }
             return .bool(enabled)

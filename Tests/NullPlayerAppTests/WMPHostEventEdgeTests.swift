@@ -81,4 +81,49 @@ final class WMPHostEventEdgeTests: XCTestCase {
         XCTAssertEqual(WMPMainWindowController.openState(nil), WMPScriptConstants.osUndefined,
                        "before anything is open")
     }
+
+    /// **W252 — a video played with no picture in the skin, because a media that was still opening
+    /// claimed to be open.**
+    ///
+    /// `Revert`'s `vwPlayer_SelectVideoOrVis()` shows its `<VIDEO>` only when
+    /// `player.openState == 13` *and* `imageSourceWidth`/`Height` are both above zero, and hides it
+    /// otherwise — and the only thing that raises it is `openstatechange`. Reported live
+    /// 2026-09-21; measured on the running app with `WMP_VIDEO_TRACE=1` and a 2560x1440 film:
+    ///
+    /// ```
+    /// VIDEOEDGE state=stopped->transitioning  openState=0->13   imageSource=0x0        events=[…, "openstatechange"]
+    /// VIDEOEDGE state=transitioning->playing  openState=13->13  imageSource=2560x1440  events=["videostart", "playstatechange"]
+    /// ```
+    ///
+    /// The one edge the skin gets arrives before VLC has reported a size, so the handler latches
+    /// the visualizer on, and the size arriving raises nothing. Reporting `osMediaOpening` for the
+    /// transition restores the second edge, which is the sequence WMP itself produces.
+    func testAMediaThatIsStillOpeningIsNotYetOpenSoTheSizeArrivingRaisesTheEdge() {
+        var opening = snapshot(.transitioning, open: 1)
+        XCTAssertEqual(WMPMainWindowController.openState(opening), WMPScriptConstants.osMediaOpening,
+                       "VLC is running the media and has not answered with a picture size")
+
+        var open = snapshot(.playing, open: 1)
+        open.video = WMPVideoSnapshot(width: 2560, height: 1440)
+        open.videoEvent = open.video
+        XCTAssertEqual(WMPMainWindowController.openState(open), WMPScriptConstants.osMediaOpen)
+        XCTAssertEqual(WMPMainWindowController.stateEdgeEvents(previous: opening, current: open),
+                       ["playstatechange", "openstatechange"],
+                       "the decoder answering is the edge Revert reads imageSourceWidth on")
+
+        // **A media opens once.** `transitioning` is raised again mid-film while VLC rebuilds its
+        // drawable output, and a `13 -> 12 -> 13` round trip there would hide and re-show the
+        // picture on every rebuild. The latched `videoEvent` survives that gap and keeps it open.
+        var rebuilding = snapshot(.transitioning, open: 1)
+        rebuilding.videoEvent = open.videoEvent
+        XCTAssertEqual(WMPMainWindowController.openState(rebuilding), WMPScriptConstants.osMediaOpen)
+        XCTAssertEqual(WMPMainWindowController.stateEdgeEvents(previous: open, current: rebuilding),
+                       ["playstatechange"],
+                       "a vout rebuild is not a media opening")
+
+        // Audio never transitions, so nothing outside video moves.
+        opening.state = .playing
+        XCTAssertEqual(WMPMainWindowController.openState(opening), WMPScriptConstants.osMediaOpen,
+                       "an audio track with no picture is open the moment it is queued")
+    }
 }

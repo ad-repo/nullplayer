@@ -1836,11 +1836,36 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     func setNeedsDisplay() { window?.contentView?.needsDisplay = true }
 
-    /// The `os*` value `player.openState` answers — the same derivation the object model and
-    /// `arguments(for:)` use. A nil snapshot is the state before anything was open.
+    /// **`WMP_VIDEO_TRACE=1` — the live instrument for W252**, and the only one that reaches it:
+    /// `WMP_CALL_TRACE` is a `swift test` harness flag and prints nothing in the running app, while
+    /// a sweep's host snapshot never transitions, so no headless probe can see this edge at all.
+    /// One line per host refresh that changes the open state, the play state or the picture size —
+    /// which is the whole of what `Revert`'s `vwPlayer_SelectVideoOrVis()` branches on.
+    static func traceVideoOpenEdge(previous: WMPHostSnapshot?, current: WMPHostSnapshot,
+                                   events: [String]) {
+        #if DEBUG
+        guard videoTraceEnabled else { return }
+        guard previous?.state != current.state
+                || openState(previous) != openState(current)
+                || previous?.video != current.video else { return }
+        let line = "VIDEOEDGE state=\(previous?.state.rawValue ?? "nil")->\(current.state.rawValue)"
+            + " openState=\(openState(previous))->\(openState(current))"
+            + " imageSource=\(Int(current.video.width))x\(Int(current.video.height))"
+            + " latched=\(current.videoEvent.hasVideo) events=\(events)\n"
+        FileHandle.standardError.write(Data(line.utf8))
+        #endif
+    }
+
+    #if DEBUG
+    private static let videoTraceEnabled = ProcessInfo.processInfo.environment["WMP_VIDEO_TRACE"] == "1"
+    #endif
+
+    /// The `os*` value `player.openState` answers. The derivation itself lives beside the
+    /// enumeration it answers from — `WMPScriptConstants.openState(for:)`, which is also what the
+    /// object model's `player.openState` reads, so the property, the argument and this edge can
+    /// never disagree. A nil snapshot is the state before anything was open.
     static func openState(_ snapshot: WMPHostSnapshot?) -> Int {
-        guard let snapshot, snapshot.playlistCount > 0 else { return WMPScriptConstants.osUndefined }
-        return WMPScriptConstants.osMediaOpen
+        WMPScriptConstants.openState(for: snapshot)
     }
 
     /// The two events that ride a host *state* edge, as a rule a test can drive.
@@ -1887,6 +1912,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         var events: [String] = []
         events += WMPVideoPresentation.events(previous: previous?.videoEvent, current: snapshot.videoEvent)
         events += Self.stateEdgeEvents(previous: previous, current: snapshot)
+        Self.traceVideoOpenEdge(previous: previous, current: snapshot, events: events)
         // **`status_onchange` is WMP's "the status string changed", and a clock tick is not that
         // (W119).** The bindings do have to settle ten times a second — the elapsed readout of 108
         // archives is `<TEXT value="wmpprop:player.controls.currentPositionString">` and 89 hang a
@@ -2177,8 +2203,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                           _ snapshot: WMPHostSnapshot) -> [String: WMPJSONValue] {
         switch event {
         case "openstatechange":
-            return ["NewState": .number(Double(snapshot.playlistCount > 0
-                ? WMPScriptConstants.osMediaOpen : WMPScriptConstants.osUndefined))]
+            return ["NewState": .number(Double(WMPScriptConstants.openState(for: snapshot)))]
         case "playstatechange":
             return ["NewState": .number(Double(WMPScriptConstants.playState(for: snapshot.state)))]
         case "status_onchange":

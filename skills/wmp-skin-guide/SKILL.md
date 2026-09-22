@@ -2129,6 +2129,22 @@ Three parts, and the third is the one that is easy to miss:
   `videoControlBarWidth` (395, measured from the bar itself). The box follows, because every corpus
   box is authored `view.width` minus a constant shell. A *fixed* view is never widened: it is
   pinned to its canvas at both ends and growing one is W213.
+- **And a view that is both fixed and narrow falls between those two, so the surface has to decide
+  as well (W254).** It can never be widened, and the window it hosts can never be narrowed, so the
+  bar's minimum simply wins: `Revert`'s `vwPlayer` is `resizable="false"` with a 92pt box and the
+  parked window took 395pt — a black slab three hundred points wide hanging out through the skin's
+  right edge, at the height of the video band. `WMPVideoSurface.barFits(box:minimumWidth:)` is the
+  guard, and it uses the same half-point tolerance the builder does so the two can never disagree
+  about which boxes are wide enough. **This is bar-or-picture rather than a layout choice, and in a
+  box the skin authored the picture wins** — real WMP draws no overlay inside a skin's video rect at
+  all; the transport there is the skin's own. Every view the builder *can* widen still gets the bar,
+  because it has already been widened by the time the surface runs.
+- **`setFrame` on the parked window is refused silently, and the engine already says so.**
+  `VideoPlayerWindowController.updateHostedOutputFrame` prints
+  `WinampModern video: box {W, H} refused, window took {W', H'}` on every hosted layout pass in a
+  DEBUG build, with **no flag** — it named W254 exactly, ten times a second, for as long as the path
+  had existed, and went unread because until W252 the `<VIDEO>` was never shown. Read it before
+  theorising about anything to do with the hosted picture's size.
 - The parked window takes the pointer now (`ignoresMouseEvents = false`), because an overlay nobody
   can click is not one. The cost is the 21 `onClick` / 15 `onDblClick` attributes the corpus
   authors on `<VIDEO>`; their equivalents are on the bar.

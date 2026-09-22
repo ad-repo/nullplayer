@@ -58,7 +58,24 @@ final class WMPVideoSurface {
         // controls". The bar does not compress, so the box it lands in is built wide enough for it
         // — `WMPSceneBuilder.videoControlBarWidth`, applied to the *view*, which every corpus box
         // follows because it is authored `view.width` minus a shell.
-        controller.showsVideoControlBar = true
+        //
+        // **But that widening is gated on `scene.isResizable` and a fixed view can never take it**
+        // (W254). `WMPSceneBuilder.videoBarShortfall` refuses to grow a view pinned to its canvas —
+        // correctly, because a window at a size its scene is not comes apart (W213) — so for a
+        // fixed view the box stays whatever the skin authored, the bar's required constraints give
+        // the parked window a minimum it cannot go under, and `setFrame` is silently refused:
+        // `Revert`'s `vwPlayer` is `resizable="false"` with a 92pt box and the window took 395pt,
+        // a black slab three hundred points wide hanging out through the skin's right edge, at the
+        // exact height of the video band. The engine's own hosted-frame diagnostic had been naming
+        // it all along — `box {92, 67} refused, window took {395, 67}`.
+        //
+        // So ask the box, not the skin: the bar goes on only where it fits. It does not compress,
+        // which makes this bar-or-picture rather than a layout choice, and inside a box the skin
+        // authored the picture is what the skin asked for. Every view that *can* be widened still
+        // gets the bar, because the builder has already widened it by the time we are here — this
+        // only ever fires on the boxes that were going to burst out of the window.
+        controller.showsVideoControlBar = Self.barFits(box: visible.width,
+                                                       minimumWidth: controller.videoControlBarMinimumWidth)
         // **And the window takes the pointer, because an overlay nobody can click is not one.**
         // The cost is the 21 `onClick` and 15 `onDblClick` attributes the corpus authors on
         // `<VIDEO>`; their nearest equivalents (play/pause, fullscreen) are on the bar itself, and
@@ -91,6 +108,15 @@ final class WMPVideoSurface {
         } else {
             controller.hostOutputWindow(over: anchor)
         }
+    }
+
+    /// Whether the command bar can be shown over a box this wide — the W254 rule, extracted so it
+    /// is a fact a test can assert rather than a line inside a method that needs a window, a VLC
+    /// session and a skin to reach. The half-point is the same tolerance
+    /// `WMPSceneBuilder.videoBarShortfall` compares with, so the builder and the surface agree
+    /// about which boxes are wide enough instead of disagreeing by a rounding error.
+    static func barFits(box width: CGFloat, minimumWidth: CGFloat) -> Bool {
+        width + 0.5 >= minimumWidth
     }
 
     /// The picture's menu, for a right-click that landed inside the box it is hosted in.

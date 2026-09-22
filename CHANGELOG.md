@@ -4,6 +4,33 @@
 
 ### Fixed
 
+- **A Media Player skin's video no longer spills a black panel out through the side of the window.**
+  The picture is NullPlayer's video window parked over the skin's own video box, and it was carrying
+  the play/subtitle/cast overlay with it — an overlay that cannot be made narrower than about 395
+  points. In a skin whose video box is smaller than that and whose window cannot be widened, the
+  window simply refused to shrink and sat there as a black slab hanging out past the skin's edge.
+  The overlay is now shown only where it actually fits; where it does not, the box shows what the
+  skin asked for, which is the picture. Skins whose windows can be widened to make room are
+  unaffected and keep the overlay.
+
+- **A seek bar that a Media Player skin asks for by name now appears and works.** Some skins ask the
+  player whether seeking is available using a different name for the same thing, and that name was
+  always answered "no" — which in at least one skin did not merely grey the seek bar out but removed
+  it from the window entirely, for music as well as video. The same applied to fast-forward and
+  rewind controls. Those controls are now answered the way the rest of the transport already was.
+
+- **Video now appears in a Media Player skin's own picture box instead of leaving it dark.** A skin
+  that decides between its video pane and its visualizer asks the player whether a media is open and
+  how big the picture is, and it asks once — when the player says something has opened. That was
+  being said too early, while the film was still being opened and before there was a picture to
+  measure, so the skin concluded there was no video at all, showed the visualizer, and was never
+  asked again for the rest of the film. The player now reports a media as *opening* until the
+  picture is there and *open* afterwards, which is the sequence these skins were written against;
+  the skin is asked a second time, with a real size, and the video appears. A film that is already
+  playing is unaffected by a decoder hiccup — a media that has shown a picture stays open, so the
+  video does not blink out and back. Audio playback is unchanged, and so are the Classic, Original
+  and Modern skin modes.
+
 - **A Media Player skin that asks about the network connection no longer loses the readout it was
   filling.** Reading a download or bitrate figure off the player was enough to kill the whole script
   the skin was running at the time, so everything that handler had left to do — the rest of a status

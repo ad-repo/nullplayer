@@ -161,6 +161,42 @@ Three rules, each of which was a live defect first:
    never opened again in any run. The engine has to open the window and *describe the state
    honestly*; it must not wait for a decoder it is starving.
 
+## An unanswered `wmpenabled:` can delete a control, not grey it (W255)
+
+`WMPObservablePropertyRegistry` owns both `wmpprop:` and `wmpenabled:`, and its `enabled` table is a
+literal `switch` over paths with `default: return nil`. `unansweredValue` turns that nil into
+`.bool(false)` — the right default, because a control this engine cannot drive should look dead
+rather than claim a feature that is not there.
+
+**What that default does not account for is a control that mirrors `visible` onto its own `enabled`.**
+`Revert` authors
+
+```xml
+<slider id="seek" enabled="wmpenabled:player.controls.seek" visible="wmpprop:seek.enabled" … />
+```
+
+A `visible="wmpprop:<element>.<property>"` is answered from the skin's own graph by
+`WMPSceneBuilder.mirroredVisibility` — **150 of the corpus's `visible="wmpprop:…"` attributes name an
+element rather than a host path** — and here the element it names is the slider itself. So the false
+`enabled` became a false `visible`, and the builder deletes a node whose `visible` override is false:
+`vwPlayer` built **12 nodes with no `slider` among them**. Not a greyed-out seek bar. No seek bar.
+
+Two consequences worth carrying:
+
+- **A missing control and a dead control are the same bug here.** When a report says a control *is
+  not there*, the `enabled` table is on the list of places to look, not just the hit map and the
+  layout. `WMP_RENDER_PROBE` answers it in one run: the node is simply absent from the dump.
+- **WMP spells some capabilities twice and a skin may author either.** `IWMPControls` carries both
+  `currentPosition` and `seek`; the table answered the first and defaulted the second. Before adding
+  a row, check whether the capability already has a sibling spelling that *is* answered, and gate
+  both on the same snapshot quantity so they can never disagree.
+
+Reach, over 185 archives, decoding script text the way `WMPTextDecoder` does (the census matches
+tags, never binding paths, so this needs the script-text scan in `harness.md`):
+`pause` 151 uses / 125 skins, `play` 36/30, `stop` 21/17, `previous` and `next` 11/10 each,
+`currentposition` 6/6, `fastforward` and `fastreverse` 3/3 each, **`seek` 2/2 — and those two are
+`Revert` and `Revert (1)`, the same markup, so one skin.**
+
 ## Elements
 
 Every element id is a global, and a write to one of its properties mutates the retained graph and

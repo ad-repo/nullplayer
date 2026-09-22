@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W254.** (**W252 and W253 were issued 2026-09-21** and are open in Tier 1c of [`WMP_TASKS.md`](../../WMP_TASKS.md) — the `Revert` video rect that never shows a picture, and the `onLoad` tween that lands in one frame because the load transaction carries no clock; both were reported live and neither has a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W256.** (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253, the `onLoad` tween that lands in one frame because the load transaction carries no clock, is open in Tier 1c of [`WMP_TASKS.md`](../../WMP_TASKS.md). Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -40,6 +40,162 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+
+## W254 — the hosted picture burst out of a fixed view's video box (closed 2026-09-22)
+
+**Reported live 2026-09-22, in the same session W252 closed, and caused by nothing but W252 closing
+it:** a black slab three hundred points wide hanging out through the right edge of `Revert`'s
+player, at exactly the height of the video band.
+
+**What it was.** `WMPVideoSurface.update` set `controller.showsVideoControlBar = true`
+unconditionally. That bar does not compress — its controls are one required Auto Layout chain — so
+the parked window has a minimum width derived from it (`videoControlBarMinimumWidth`, 395pt), and
+`setFrame` to anything narrower is *silently refused*. `WMPSceneBuilder` already compensates by
+widening the **view** so the box reaches 395 (`videoBarShortfall`), and that is gated on
+`scene.isResizable` — correctly, because forcing a fixed view to a size its scene is not is how a
+window comes apart (W213). So a view that is both **fixed and narrow** falls between the two: it can
+never be widened, and the window it hosts can never be narrowed. `Revert`'s `vwPlayer` is
+`resizable="false"` with a 92pt box.
+
+**The engine had been reporting it all along**, in `VideoPlayerWindowController`'s own DEBUG
+hosted-frame diagnostic:
+
+```
+WinampModern video: box {92, 67} refused, window took {395, 67}
+```
+
+That line exists precisely to catch a frame AppKit granted rather than the one asked for, and it was
+printing ten times a second. Nobody had read it because until W252 the `<VIDEO>` was never shown.
+
+**The fix.** Ask the box, not the skin: `showsVideoControlBar` is now
+`visible.width + 0.5 >= controller.videoControlBarMinimumWidth`. The bar goes on where it fits and
+comes off where it does not, which makes this bar-or-picture rather than a layout choice — and
+inside a box the skin authored, the picture is what the skin asked for. **Real WMP has no overlay
+bar inside a skin's video rect at all**; the transport there is the skin's own. Every view the
+builder *can* widen still gets the bar, because it has already been widened by the time the surface
+runs, so this only ever fires on the boxes that were going to burst the window. Verified live: the
+hosted window went from `395x67` to `92x67` at the authored rect, and the refusal diagnostic went
+from ten a second to **zero**.
+
+**What it leaves behind.** *A diagnostic nobody reads is not an instrument.* The refusal line named
+this defect exactly, in plain language, for as long as the hosting code has existed. It went unread
+because the path that triggers it was dead. When a fix makes dead code live — `reachable-code-fires-latent-traps` — **grep the log for the warnings that path already knew how to print** before
+driving anything.
+
+## W255 — `wmpenabled:player.controls.seek` was answered "no", and the slider vanished (closed 2026-09-22)
+
+**Reported live 2026-09-22 as "there are no seek controls for the movie"**, and it was not about the
+movie: the same skin had no seek bar for music either, and had not since the engine existed.
+
+**What it was.** `WMPPropertyRegistry`'s `wmpenabled:` table answers
+`player.controls.currentposition` and falls to `default: return nil` for everything else, which
+`unansweredValue` turns into `.bool(false)` — the right default for a control this engine cannot
+drive, and exactly wrong for one it can. `IWMPControls` carries **both** `currentPosition` and
+`seek`, so the same slider is authored either way, and `Revert` authors the other one.
+
+It then cost the control twice, because the slider mirrors its own gate:
+
+```xml
+<slider id="seek" enabled="wmpenabled:player.controls.seek" visible="wmpprop:seek.enabled" … />
+```
+
+`visible="wmpprop:seek.enabled"` names an element in the skin's own graph — that element being the
+slider itself — so `WMPSceneBuilder.mirroredVisibility` read the false `enabled` override and
+**deleted the node**. Not a greyed-out seek bar: no seek bar at all. The probe is unambiguous —
+`vwPlayer` built **12 nodes with no `slider` among them**, and afterwards 13 nodes, `4 hits`, with
+the fill at 71.6 of 242pt against a host seeded 1:03 into 3:33 (29.6%) and the thumb on it.
+
+**The fix.** Three rows added to the table: `player.controls.seek` on `isEnabled(.seek)`, and
+`player.controls.fastforward`/`fastreverse` on `isEnabled(.beginScan(_:))` — unanswered for the same
+reason and gated on the same quantity, since a transport can scan exactly when it can seek.
+
+**Reach, measured over 185 archives** (script text decoded the way `WMPTextDecoder` does; the census
+does not read `.js`, and `wmpenabled:` appears in both): `player.controls.seek` **2 uses / 2 skins**,
+and those two are `Revert` and `Revert (1)`, the same markup — so **one skin**. `fastforward` and
+`fastreverse` are 3 uses / 3 skins each. The rest of the table was already answered:
+`pause` 151/125, `play` 36/30, `stop` 21/17, `previous`/`next` 11/10 each,
+`currentposition` 6/6.
+
+**What it leaves behind.** *A falsy default on `enabled` can delete a control, not just grey it out*
+— any skin that mirrors `visible` onto its own `enabled` turns "this engine cannot answer" into "this
+node does not exist". That makes an unanswered `wmpenabled:` path a **content** defect of the kind
+the `visible` rule was written to prevent, and the registry's `default: return nil` the place to look
+when a control is reported missing rather than dead. The census command for sizing one is in this
+entry; `object-model.md` § *Verified **not** gaps* still applies before ranking anything it turns up.
+
+## W252 — a media that was still opening claimed to be open, so the skin's `<VIDEO>` never appeared (closed 2026-09-22)
+
+**The row, verbatim as it stood in Tier 1c:**
+
+| W252 | **A skin's own `<VIDEO>` rect stays hidden, so a video plays with no picture in the skin** | `Revert` reported live 2026-09-21; **corpus reach unmeasured** — 268 `<VIDEO>` views in 170 archives is the population, not this defect's | Not blocked. **Localised to the skin's own gate, not to the hosted surface**: `Revert`'s `vwPlayer_SelectVideoOrVis()` shows `ctrlVideo` only when `player.openState == 13` **and** `player.currentMedia.imageSourceWidth/Height` are both > 0, and hides it otherwise — so a zero size at the moment the handler runs latches the visualizer on and nothing ever raises the function again. `openState` answers 13 whenever `playlistCount > 0`, so **measure `imageSourceWidth` at the instant `openstatechange` fires**, with a real film — `WMPHostSnapshot.transitioning` exists for exactly the interval where VLC has not reported a size yet (the Alienware family's `view.close()` is the sibling case). Drive it: `skills/live-ui-testing`, video from `scripts/testdata.sh path video-*`, and read `WMP_CALL_TRACE`'s `currentmedia.imagesourcewidth` rows, not the screen. **`Revert` and `Revert (1)` are the same markup** for this row. |
+
+**What it was.** `player.openState` answered `osMediaOpen` (13) the instant the playlist was
+non-empty. A video's *only* `openstatechange` therefore landed before VLC had reported a picture
+size, and `Revert`'s `vwPlayer_SelectVideoOrVis()` — which is raised from `onLoad` and from
+`openstatechange` and from nowhere else — reads
+
+```js
+if (player.openState == 13) {
+    if (!vwPlayer_fVizOpened) {
+        if ((player.currentMedia.imageSourceWidth > 0) && (player.currentMedia.imageSourceHeight > 0))
+            fVideo = true;
+    }
+}
+ctrlVis.visible = !fVideo;
+ctrlVideo.visible = fVideo;
+```
+
+so it latched the visualizer on and nothing ever raised it again. `vwPlayer_fVizOpened` is declared
+`false` and never assigned, so it is not the gate; the size is.
+
+**The measurement, on the running app** — `WMP_VIDEO_TRACE=1`, `Revert`, the `Rush - Full Show`
+2560x1440 film opened from the browser's MOVIES tab:
+
+```
+VIDEOEDGE state=stopped->transitioning  openState=0->13   imageSource=0x0        latched=false events=["playstatechange", "openstatechange"]
+VIDEOEDGE state=transitioning->playing  openState=13->13  imageSource=2560x1440  latched=true  events=["videostart", "playstatechange"]
+```
+
+Two lines, and the whole defect is in them: the edge the skin reads arrives at `0x0`, and the size
+arriving raises no second edge.
+
+**The fix.** One derivation, `WMPScriptConstants.openState(for:)`, now read by the property, by
+`arguments(for:)`'s `NewState` and by `stateEdgeEvents` — they were three copies of the same
+expression and a fix to one would have left the others disagreeing. It reports `osMediaOpening`
+(12) while the media is transitioning *and has never reported a size*, `osMediaOpen` otherwise. The
+`12 -> 13` edge then raises `openstatechange` a second time with `imageSourceWidth` non-zero, which
+is the sequence WMP itself produces — `WMPHostSnapshot.State.transitioning` already existed for
+exactly this interval (it is what keeps the Alienware family's `view.close()` off its fall-through
+path; see `WMPHostSnapshot.State`).
+
+**Why it does not round-trip.** `transitioning` is raised again mid-film while VLC rebuilds its
+drawable output, and a `13 -> 12 -> 13` there would hide and re-show the picture on every rebuild.
+The gate is the **latched** `videoEvent`, not the live `video`: a media that has ever reported a
+size stays open. That is `WMPVideoEventLatch`'s existing job and this is its second consumer.
+
+**Audio never transitions**, so nothing outside video moves — which is what keeps this off the 109
+archives that author `OpenState_onchange` and the three that answer it by calling `play()` (W170).
+
+**What this row leaves behind, and it is worth more than the fix.**
+
+- **`WMP_CALL_TRACE` is harness-only.** It is read by `WMPRenderDumpTests` and prints nothing in the
+  running app. This row's own Notes recommended it for a live measurement; exporting it beside
+  `kill_build_run.sh` produced a silent, empty capture that reads as *no member accesses*. That is
+  `diagnostics-that-fail-silently` in its purest form, and the flag table in
+  [`reference/harness.md`](../../skills/wmp-skin-guide/reference/harness.md) now says so on the row.
+- **`WMP_VIDEO_TRACE=1` is the instrument that reaches the media-open sequence**, added in this
+  change and documented in the same table. A sweep seeds one host snapshot and never transitions, so
+  *no* headless probe sees any of these edges — this is W73's class and the reason Tier 1c exists.
+- **Three copies of one derivation is the shape of this defect, not an incidental.** The property,
+  the event argument and the edge each recomputed `playlistCount > 0 ? 13 : 0`. `arguments(for:)`
+  already carried a comment insisting the argument and the property "can never disagree"; they were
+  two expressions kept in step by hand, and a fourth reader would have made it three.
+
+**Corpus reach is still unmeasured, and deliberately so.** The row recorded 268 `<VIDEO>` views in
+170 archives as the *population*, not this defect's reach, and nothing here changes that: what the
+fix restores is an event edge, and which skins were reading the old one wrongly can only be found by
+driving each of them with a real film. The one confirmed case is `Revert`, whose markup is
+byte-identical to `Revert (1)`.
 
 ## W216 — an unqualified name in a handler now resolves against its own element (closed 2026-09-22)
 

@@ -361,8 +361,7 @@ final class WMPObjectModel {
         // the `ps*`/`os*` globals rather than against strings.
         case "playstate": return .value(.number(Double(WMPScriptConstants.playState(for: snapshot.state))))
         case "openstate":
-            return .value(.number(Double(snapshot.playlistCount > 0
-                ? WMPScriptConstants.osMediaOpen : WMPScriptConstants.osUndefined)))
+            return .value(.number(Double(WMPScriptConstants.openState(for: snapshot))))
         // Live since 2026-09-14 — see `WMPHostSnapshot.statusText` for the wording and for why
         // there is no buffering case. It must stay out of `inert()`: a member the runtime answers
         // has to leave the demand tally, which is how `alphaBlendTo` came to be ranked as the
@@ -1491,7 +1490,36 @@ final class WMPObjectModel {
 /// `ReferenceError` on its first state test and every later line of the handler is lost.
 enum WMPScriptConstants {
     static let osUndefined = 0
+    static let osMediaOpening = 12
     static let osMediaOpen = 13
+
+    /// **The `os*` value `player.openState` answers — the one derivation, read by the property, by
+    /// the `NewState` argument, and by the event edge (W252).**
+    ///
+    /// `osMediaOpen` used to be the answer the instant the queue was non-empty, so a media that was
+    /// still opening claimed to be open and **the only `openstatechange` a video ever raised landed
+    /// before the decoder had reported a picture size**. `Revert`'s `vwPlayer_SelectVideoOrVis()`
+    /// shows its `<VIDEO>` only when `player.openState == 13` *and*
+    /// `player.currentMedia.imageSourceWidth/Height` are both above zero, and hides it otherwise;
+    /// reading a zero size at that one edge latched the visualizer on, and nothing raised the
+    /// handler again for the rest of the film. Reported live 2026-09-21 as a video playing with no
+    /// picture in the skin.
+    ///
+    /// `WMPHostSnapshot.State.transitioning` is exactly the interval WMP spells `osMediaOpening`:
+    /// VLC is running the media and has not answered with a size yet. Reporting it keeps the
+    /// distinction WMP's own enumeration makes, and the `12 -> 13` edge that follows raises
+    /// `openstatechange` a second time — with `imageSourceWidth` now non-zero, which is the reading
+    /// the handler was written against. Audio never transitions, so nothing outside video moves.
+    ///
+    /// **A media only opens once.** `transitioning` is also raised mid-film while VLC rebuilds its
+    /// drawable output, and a `13 -> 12 -> 13` round trip there would hide and re-show `Revert`'s
+    /// picture on every rebuild. `videoEvent` is the latched snapshot that survives exactly that
+    /// gap (see `WMPVideoEventLatch`), so a media that has ever reported a size stays open.
+    static func openState(for snapshot: WMPHostSnapshot?) -> Int {
+        guard let snapshot, snapshot.playlistCount > 0 else { return osUndefined }
+        let opening = snapshot.state == .transitioning && !snapshot.videoEvent.hasVideo
+        return opening ? osMediaOpening : osMediaOpen
+    }
 
     static let values: [String: Int] = [
         // Open state

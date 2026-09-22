@@ -87,13 +87,17 @@ same day). Both are in [the archive](docs/wmp-skin/wmp-backlog-archive.md); **th
 behind is that a `hits` count taken at t=0 is a count of a scene nobody sees in a skin that opens
 behind an animation — settle before ranking one.**
 
-**Two rows opened here 2026-09-21, both reported live while W216 was being accepted.** Neither has
-a headless signature: the first is a picture that never appears and the second is motion, and no
-instrument on this page draws a second frame.
+**Two rows opened here 2026-09-21, both reported live while W216 was being accepted; W252 closed
+2026-09-22 and is in [the archive](docs/wmp-skin/wmp-backlog-archive.md).** Neither had a headless
+signature — the first was a picture that never appears and the second is motion, and no instrument
+on this page draws a second frame. **W252 is now the worked example of what does reach that class:**
+it was closed against an app-side trace, `WMP_VIDEO_TRACE=1`, added in the same change and
+documented in `reference/harness.md`. The trap it left behind is worth more than the fix —
+**`WMP_CALL_TRACE` is a `swift test` flag and prints nothing in the running app**, so the route this
+row itself recommended produces an empty capture that reads as "no member accesses".
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W252 | **A skin's own `<VIDEO>` rect stays hidden, so a video plays with no picture in the skin** | `Revert` reported live 2026-09-21; **corpus reach unmeasured** — 268 `<VIDEO>` views in 170 archives is the population, not this defect's | Not blocked. **Localised to the skin's own gate, not to the hosted surface**: `Revert`'s `vwPlayer_SelectVideoOrVis()` shows `ctrlVideo` only when `player.openState == 13` **and** `player.currentMedia.imageSourceWidth/Height` are both > 0, and hides it otherwise — so a zero size at the moment the handler runs latches the visualizer on and nothing ever raises the function again. `openState` answers 13 whenever `playlistCount > 0`, so **measure `imageSourceWidth` at the instant `openstatechange` fires**, with a real film — `WMPHostSnapshot.transitioning` exists for exactly the interval where VLC has not reported a size yet (the Alienware family's `view.close()` is the sibling case). Drive it: `skills/live-ui-testing`, video from `scripts/testdata.sh path video-*`, and read `WMP_CALL_TRACE`'s `currentmedia.imagesourcewidth` rows, not the screen. **`Revert` and `Revert (1)` are the same markup** for this row. |
 | W253 | **A tween started in `onLoad` lands its endpoint in one frame, because the load transaction carries no clock** | **108 of 184 archives** reach a tween from an `onLoad` (`moveTo` 473 uses / 104 archives, `alphaBlendTo` 456 / 37), measured 2026-09-21 — **but that is the population and most of it is startup layout, where landing the endpoint is right** | Not blocked, and deliberately ranked below W252 because the visible half is small. W194 gave `moveTo`/`resizeTo`/`alphaBlendTo` a real duration by passing `animatesTweens:` from the click and view-timer paths **and nowhere else** — the initial `load` transaction (`WMPMainWindowController` ~line 1348) passes nothing and never calls `startTweenLoop`, so a tween authored in `onLoad` jumps. `Revert (1)`'s `onLoad="vwPlayer_OnLoad();alphaBlendTo(40,9000);"` is the clean case: a 9-second fade to translucent arrives fully faded on the first frame. **Decide what a skin means by animating at load before widening the clock** — a drawer that slides in every launch is worse than one that is simply open, which is why the 108 is not the size of this row. Evidence: archive entry W194, and `skills/wmp-skin-guide/reference/harness.md` on why no capture can see motion. |
 
 **W246 was this tier's previous row and closed the day it opened, 2026-09-20** — the
