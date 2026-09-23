@@ -164,6 +164,53 @@ final class MissingFilesTests: XCTestCase {
         XCTAssertNotEqual(engine.state, .playing)
     }
 
+    /// Control for the test below: left alone, a track that will not open is skipped after the
+    /// half-second the error needs to be readable — so the harness can see an advance happen.
+    func testAFailedTrackAdvancesToTheNextEntry() throws {
+        let folder = try albumFolderWithAnUnreadableFile()
+        let next = folder.appendingPathComponent("next.mp3")
+        let engine = AudioEngine()
+        engine.setPlaylistTracks([Track(url: folder.appendingPathComponent("bad.mp3")), Track(url: next)])
+        let nextFailed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine) { note in
+            (note.userInfo?["track"] as? Track)?.url == next
+        }
+
+        engine.playTrack(at: 0)
+
+        wait(for: [nextFailed], timeout: 5)
+    }
+
+    /// Replacing the playlist inside that half-second left the pending advance armed. It read the
+    /// cleared `currentIndex` of -1 as the failed position and started the new playlist's first
+    /// entry — from `setPlaylistTracks`, which promises not to play anything.
+    func testReplacingThePlaylistCancelsAPendingSkipPastAFailedTrack() throws {
+        let folder = try albumFolderWithAnUnreadableFile()
+        let engine = AudioEngine()
+        engine.setPlaylistTracks([Track(url: folder.appendingPathComponent("bad.mp3")),
+                                  Track(url: folder.appendingPathComponent("next.mp3"))])
+        let failed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine)
+        engine.playTrack(at: 0)
+        wait(for: [failed], timeout: 5)
+
+        // Two entries: with one, the failure limit (`< playlist.count`) ends the queue before the
+        // stray advance can start anything, and the test passes without the fix.
+        engine.setPlaylistTracks([Track(url: folder.appendingPathComponent("replacement-1.mp3")),
+                                  Track(url: folder.appendingPathComponent("replacement-2.mp3"))])
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+
+        XCTAssertEqual(engine.currentIndex, -1)
+        XCTAssertNil(engine.currentTrack)
+    }
+
+    /// A present, non-empty folder holding `bad.mp3`, which is not audio — one bad file, not a
+    /// missing volume, so the failure path skips rather than stops.
+    private func albumFolderWithAnUnreadableFile() throws -> URL {
+        let folder = tempDirectoryURL.appendingPathComponent("album", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("not audio".utf8).write(to: folder.appendingPathComponent("bad.mp3"))
+        return folder
+    }
+
     // MARK: - Playlist.resolveEntry
 
     func testPlaylistEntriesResolveAsPaths() {

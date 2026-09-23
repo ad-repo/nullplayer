@@ -6270,6 +6270,21 @@ class MenuActions: NSObject {
                             return
                         }
                         DispatchQueue.global(qos: .userInitiated).async {
+                            // Abort if the backup fails — proceeding would remove the rollback path.
+                            do {
+                                try library.backupLibrary(customName: "pre_forget_missing_auto_backup")
+                            } catch {
+                                NSLog("Failed to create pre-forget-missing backup: %@", error.localizedDescription)
+                                DispatchQueue.main.async {
+                                    let errorAlert = NSAlert()
+                                    errorAlert.messageText = "Backup Failed"
+                                    errorAlert.informativeText = "Could not create a backup before forgetting missing files, so nothing was removed.\n\n\(error.localizedDescription)"
+                                    errorAlert.alertStyle = .critical
+                                    errorAlert.runModal()
+                                    self.isFindingMissingFiles = false
+                                }
+                                return
+                            }
                             let removed = library.forgetMissingFiles()
                             NSLog("MenuActions: forgot %d track(s), %d movie(s), %d episode(s)",
                                   removed.tracks, removed.movies, removed.episodes)
@@ -6317,7 +6332,8 @@ class MenuActions: NSObject {
         if pending.movies > 0 { parts.append("\(pending.movies) movie\(pending.movies == 1 ? "" : "s")") }
         if pending.episodes > 0 { parts.append("\(pending.episodes) episode\(pending.episodes == 1 ? "" : "s")") }
         lines.append("\(parts.joined(separator: ", ")) \(total == 1 ? "is" : "are") no longer on disk, in folders that are present. "
-                     + "Removing them also removes their play counts and ratings, and cannot be undone.")
+                     + "Removing them also removes their play counts and ratings. "
+                     + "A backup will be created automatically before removing.")
         lines.append("Anything on a disconnected drive or an unmounted share has been left alone — "
                      + "those files are not missing, just unavailable.")
         alert.informativeText = lines.joined(separator: "\n\n")

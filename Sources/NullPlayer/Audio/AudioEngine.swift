@@ -2532,8 +2532,10 @@ class AudioEngine {
             return
         }
         
+        let wasPlaying = state == .playing
         loadTrack(at: currentIndex)
-        if state == .playing {
+        // Same resume rule as `next()`: a skipped bad file leaves `.stopped` behind.
+        if currentTrack != nil, wasPlaying || state == .playing {
             play()
         }
     }
@@ -2681,8 +2683,10 @@ class AudioEngine {
             return
         }
         
+        let wasPlaying = state == .playing
         loadTrack(at: currentIndex)
-        if state == .playing { play() }
+        // Same resume rule as `next()`: a skipped bad file leaves `.stopped` behind.
+        if currentTrack != nil, wasPlaying || state == .playing { play() }
     }
     
     /// Track the current playback position (updated during seek)
@@ -3905,6 +3909,9 @@ class AudioEngine {
         playlist.removeAll()
         playlist.append(contentsOf: tracks)
         currentIndex = -1  // No track selected
+        // Cancels a pending failed-track advance: it would read `-1` as the failed position and
+        // start the new playlist's first track, which this call promises not to do.
+        deferredLocalTrackLoadToken &+= 1
         invalidateShufflePlaybackStateAfterPlaylistMutation()
         delegate?.audioEngineDidChangePlaylist()
         let missingDuration = tracks.filter { ($0.duration ?? 0) == 0 && $0.url.isFileURL }.map(\.id)
@@ -4182,6 +4189,9 @@ class AudioEngine {
         playlist.removeAll()
         playlist.append(contentsOf: tracks)
         currentIndex = -1  // No track selected
+        // Cancels a pending failed-track advance: it would read `-1` as the failed position and
+        // start the new playlist's first track, which this call promises not to do.
+        deferredLocalTrackLoadToken &+= 1
         invalidateShufflePlaybackStateAfterPlaylistMutation()
 
         delegate?.audioEngineDidChangePlaylist()
@@ -6470,6 +6480,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         switch state {
         case .playing:
             streamingPlaybackConfirmed = true
+            consecutiveTrackLoadFailures = 0  // A stream that plays ends the failure streak too.
             self.state = .playing
             playbackStartDate = Date()
             suspendedLocalPlaybackClockForSleep = false

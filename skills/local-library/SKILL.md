@@ -231,7 +231,9 @@ entry points, both reached through `forgetMissingFiles(dryRun:)`:
 `forgetMissingFiles(dryRun: true)` counts through the *same* gates that do the deleting, so a
 confirmation count cannot drift from what is removed. Surfaced as **Library → Find Missing Files…**
 (`MenuActions.findMissingFiles` in `App/ContextMenuBuilder.swift`): relocation is offered first and
-defaults to **Leave As Is**, deletion is always confirmed and defaults to **Keep**.
+defaults to **Leave As Is**, deletion is always confirmed and defaults to **Keep**. Like every other
+destructive library action it backs up first (`pre_forget_missing_auto_backup`) and removes nothing
+if the backup fails — the rows carry play counts and ratings a rescan cannot recover.
 
 **Both cleanups stat outside `dataQueue`.** `forgetRows(dryRun:where:)` snapshots the rows' URLs
 under the lock, runs the predicate without it, and takes the lock again only to drop the rows it

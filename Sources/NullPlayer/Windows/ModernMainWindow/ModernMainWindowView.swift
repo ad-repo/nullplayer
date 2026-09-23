@@ -828,6 +828,9 @@ class ModernMainWindowView: NSView {
             clearArtwork()
         }
         self.videoTitle = title
+        // A video starting is not an audio track change, so nothing else clears an earlier audio
+        // failure — it would sit over the film's title.
+        self.errorMessage = nil
         refreshMarqueeText()
         needsDisplay = true
     }

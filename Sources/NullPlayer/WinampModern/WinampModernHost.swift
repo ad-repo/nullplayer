@@ -689,8 +689,10 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     /// `display="songname"` — the readout most skins print, and the one `trackTitle` does *not*
     /// cover: only cPro-Bento happens to bind the `songtitle` that already substituted the film.
     var trackDisplayTitle: String {
-        if let trackLoadFailureMessage { return trackLoadFailureMessage }
+        // A video starting posts no `.audioTrackDidChange`, so an earlier audio failure is still
+        // stored; the film that is actually on screen wins over it.
         if let session = videoSession() { return session.title }
+        if let trackLoadFailureMessage { return trackLoadFailureMessage }
         guard let track = engine.currentTrack else { return "" }
         guard let artist = track.artist, !artist.isEmpty else { return track.title }
         return "\(artist) - \(track.title)"
