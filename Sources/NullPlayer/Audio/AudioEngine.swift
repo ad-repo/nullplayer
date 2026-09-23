@@ -4712,7 +4712,6 @@ class AudioEngine {
             NSLog("  Error domain: %@, code: %d", nsError.domain, nsError.code)
         }
 
-        let failedIndex = currentIndex
         stopPlaybackOnError()
         notifyTrackLoadFailure(track: track, error: error, message: errorMessage)
 
@@ -4721,12 +4720,15 @@ class AudioEngine {
             // the next track's title replaces it — the same half-second the streaming codec-error
             // fallback already uses for the same reason. Anything the user starts inside that
             // window bumps the load token and wins — `stopLocalOnly` bumps it too, so a manual
-            // Stop cancels the advance rather than being overridden by it.
+            // Stop cancels the advance rather than being overridden by it. The failed position is
+            // read when the timer fires, not captured now: removing or moving other rows inside the
+            // window shifts `currentIndex` without bumping the token, and a captured index would
+            // then skip a good track or land on the wrong neighbour.
             let token = deferredLocalTrackLoadToken
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 guard let self, self.deferredLocalTrackLoadToken == token,
                       self.state == .stopped else { return }
-                self.advancePastFailedTrack(at: failedIndex)
+                self.advancePastFailedTrack(at: self.currentIndex)
             }
         }
     }
