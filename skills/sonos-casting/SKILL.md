@@ -112,6 +112,9 @@ sliders use the skin's text color.
 - `Windows/Sonos/` owns the controller and shared controls; `Windows/ModernSonos/` supplies Original
   and Metal chrome. `.wal` uses the `.sonos` hosted-window registry entry and a chromeless
   `WinampModernHostedSurface`, with the standard hosted drag helper and palette.
+  `.wmz` draws the skin's borrowed frame through `SonosWindowChrome`'s `isRunningWMPUI` branch and
+  joins `hostedBorderWindows` in that mode only; the contract is `wmp-skin-guide` § *Current
+  hosting contract*.
 - WindowManager registers `.sonos` as a center-stack sizing policy with a double-height baseline.
   User-expanded height is preserved on restore; the window participates in snapping, scaling,
   stack collapse, Compact Mode, and live UI rebuilding. AppState stores visibility and frame with
@@ -573,7 +576,7 @@ SSDP requires multicast. Some routers/switches block this:
 | `Casting/CastManager.swift` | Central coordinator, `selectedSonosRooms` state, polling timer, sleep/wake handling |
 | `Casting/UPnPManager.swift` | SSDP/mDNS discovery, SOAP control, group topology, `pollSonosPlaybackState()` |
 | `Casting/SonosRoomMixer.swift` | Shared room actions, independent volume writes, bounded polling and stale-read protection |
-| `Windows/Sonos/` | Room mixer controls, window lifecycle, Classic and fallback chrome |
+| `Windows/Sonos/` | Room mixer controls, window lifecycle, Classic, `.wmz` and fallback chrome |
 | `Windows/ModernSonos/ModernSonosChrome.swift` | Original and Metal auxiliary chrome |
 | `WinampModern/WinampModernHostedWindows.swift` | `.sonos` skin-hosted window registration |
 | `App/ContextMenuBuilder.swift` | Menu UI, `SonosRoomCheckboxView`, casting actions |

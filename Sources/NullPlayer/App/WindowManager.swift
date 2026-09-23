@@ -1218,7 +1218,10 @@ class WindowManager {
             (peppyMeterWindowController?.window, .spectrumFamily),
             (waveformWindowController?.window, .waveform),
             (projectMWindowController?.window, .projectM),
-            (plexBrowserWindowController?.window, .plexBrowser)
+            (plexBrowserWindowController?.window, .plexBrowser),
+            // Sonos Rooms is one controller for Classic, Original and `.wal` too; it joins the rule
+            // only where a `.wmz` lends it a border.
+            (isRunningWMPUI ? sonosWindowController?.window : nil, .spectrumFamily)
         ]
     }
 
@@ -4263,6 +4266,7 @@ class WindowManager {
         } else if !window.isVisible, sonosWindowController?.wasDockedWhenHidden == true {
             positionSubWindow(window)
         }
+        presizeHostedWindow(window)
         sonosWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(window)
         notifyMainWindowVisibilityChanged()

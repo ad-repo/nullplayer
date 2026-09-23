@@ -80,10 +80,18 @@ window) is outside it; one that draws chrome is inside it, and there is no third
 
 ### Current hosting contract
 
-- Native library, Flow, PeppyMeter, Spectrum, AudioAnalysis, Cava, waveform, and ProjectM windows
-  receive WMP palette chrome and borrowed donor artwork when available. These eight are the
-  `WindowManager.hostedBorderWindows` participants; `HostedWindowBorderLayout` grows their frames
+- Native library, Flow, PeppyMeter, Spectrum, AudioAnalysis, Cava, waveform, ProjectM and Sonos
+  Rooms windows receive WMP palette chrome and borrowed donor artwork when available. These nine are
+  the `WindowManager.hostedBorderWindows` participants; `HostedWindowBorderLayout` grows their frames
   around saved interiors using donor reference insets.
+- **Sonos Rooms is one controller for all four families, so its entry is gated on
+  `isRunningWMPUI`** — every other participant has a family-specific controller and is listed
+  unconditionally. Its chrome (`SonosWindowChrome`) branches on `isRunningWMPUI` ahead of the `.wal`
+  palette, so Classic, Original and `.wal` run the code they ran before. Reported 2026-09-23 as the
+  window "wearing the classic skin": it asked only for `winampModernSurfaceStyle`, which is nil in
+  `.wmz`, and fell through to Classic sprites. **Palette alone was rejected the same day** as
+  "fallback chrome" — a window inside this rule takes the borrowed frame, the growth entry and the
+  pre-show `presizeHostedWindow` together.
 - Playlist and equalizer route to skin-provided surfaces first. Their native fallbacks receive
   WMP theming but **do not participate in border growth**: their classic sprite geometry does not
   follow the shared metrics. Video, radio sheets, compact mode, and debug windows have no skin
@@ -314,7 +322,7 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   not nodes.
 - **How the window and the border share the space: the window is grown (W207, closed 2026-09-16).**
   **The interior keeps its size and the border is added around it** — `HostedWindowBorderLayout`,
-  one central rule for the eight registered growth participants listed above, driven off
+  one central rule for the nine registered growth participants listed above, driven off
   `WMPHostedFrameProvider.donorInsets`, which answers a donor's four borders *without reference to any window* because a 600x150 analyser can
   never render a frame carrying `anemone`'s 173x145 and so could never learn its insets from one.
   A panel too small to carry its borders at 1:1 is answered nil and keeps palette chrome until
@@ -532,7 +540,7 @@ one-skin gap is the scan's, not the engine's.
 ### Adding a NullPlayer-native window in WMP mode
 
 The windows inside the rule today: playlist, library, equalizer, visualizations, spectrum, Cava,
-Flow, PeppyMeter, audio analyzer, waveform. The growth subset is the eight windows listed in the
+Flow, PeppyMeter, audio analyzer, waveform, Sonos Rooms. The growth subset is the nine windows listed in the
 current contract; playlist/EQ are explicit exceptions to step 8. A new metrics-based hosted window
 wires every applicable step in the same change; each prevents a previously reported defect.
 
