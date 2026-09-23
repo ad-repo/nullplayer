@@ -1329,6 +1329,92 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertFalse(WMPCorpusReportHarness.supportedEvents.contains("selecteditem_onchange"))
     }
 
+    // MARK: - The keyboard (W53)
+
+    /// **WMP hands a key handler a Windows virtual key code, and that is the whole contract.** It is
+    /// the opposite shape to the `.wal` one: `WinampModernKeyAccelerator` produces the string
+    /// `"alt+g"` because every Wasabi handler compares a string, and every WMP handler compares an
+    /// integer. Measured over 184 archives, `event.keyCode` is 405 of the 409 `event.` reads in a
+    /// key handler or a function one calls, and the literals are VK values.
+    func testAKeystrokeIsAnsweredWithItsWindowsVirtualKeyCode() {
+        // The arrows, which 796 of the corpus's `onkeydown` comparisons are.
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 123, charactersIgnoringModifiers: nil), 37)
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 126, charactersIgnoringModifiers: nil), 38)
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 124, charactersIgnoringModifiers: nil), 39)
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 125, charactersIgnoringModifiers: nil), 40)
+        // Return, which is every one of `onkeyup`'s 100 comparisons.
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 36, charactersIgnoringModifiers: "\r"), 13)
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 49, charactersIgnoringModifiers: " "), 32)
+        // A letter: VK_A…VK_Z are the ASCII values of the *uppercase* forms, so `ALXMorph`'s
+        // `case 86: player.controls.stop()` is reached by pressing the unshifted `v`. Verified end
+        // to end in the running app on `Age_of_Mythology_MP7`.
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 9, charactersIgnoringModifiers: "v"), 86)
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 9, charactersIgnoringModifiers: "V"), 86)
+    }
+
+    /// **`charactersIgnoringModifiers` is the key as engraved**, which is what a VK names: Option-G
+    /// is `g` there rather than the `©` that `characters` reports. And a key with no honest VK
+    /// answers nil rather than `0` — `0` is VK_NULL, a number `switch(event.keyCode)` can match,
+    /// which is W260's absent-is-not-a-zero trap in a second place. Punctuation is the OEM range,
+    /// whose meaning depended on the Windows keyboard layout, and no corpus handler compares one.
+    func testAKeyWithNoHonestVirtualCodeIsAbsentRatherThanZero() {
+        XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 5, charactersIgnoringModifiers: "g"), 71,
+                       "Option-G is the letter G, not the character it composes")
+        XCTAssertNil(WMPVirtualKeyCode.keyDown(keyCode: 41, charactersIgnoringModifiers: ";"))
+        XCTAssertNil(WMPVirtualKeyCode.keyDown(keyCode: 200, charactersIgnoringModifiers: nil))
+    }
+
+    /// **Recognising an event is not dispatching it, and the inverse is just as silent.** `onkeyup`
+    /// had a dispatch site before it had a name — `WMPMainView` already raised it for an
+    /// `<EDITBOX>`'s text — and with the name missing from `handlerNames` every one of those
+    /// handlers was classified `.literal`, invisible to the dispatcher and to the tally alike.
+    func testTheThreeKeyEventsAreClassifiedAndCountedAsImplemented() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60" onKeyPress="viewHotKeys();">
+            <SLIDER id="vol" left="0" top="0" width="50" height="10" onKeyDown="volUpDown(event);"/>
+            <EDITBOX id="find" left="0" top="20" width="50" height="10" onKeyUp="search();"/>
+        </VIEW></THEME>
+        """)
+        for (event, target) in [("keypress", "view"), ("keydown", "vol"), ("keyup", "find")] {
+            XCTAssertFalse(WMPMainWindowController.handlers(in: skin, event: event,
+                                                            targetID: target, viewID: "main").isEmpty,
+                           "\(event) must reach the element that authored it")
+        }
+        for event in ["onkeydown", "onkeypress", "onkeyup"] {
+            XCTAssertTrue(WMPCorpusReportHarness.supportedEvents.contains(event),
+                          "\(event) has a dispatch site and must not rank as demand")
+        }
+    }
+
+    /// **The key the handler reads is the key that was pressed**, bound the way the bare `value` and
+    /// the named `<PLAYER>` arguments are: for the duration of the transaction, then cleared.
+    /// `Age_of_Mythology_MP7`'s `viewHotKeys` switches over it and calls no argument of its own —
+    /// `event` is a global in WMP, not a handler parameter.
+    func testAKeyHandlerReadsTheKeyCodeOffTheEventObject() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60"
+                     onKeyPress="if (event.keyCode == 86) player.controls.stop();"/></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        func stopped(_ keyCode: Int?) async -> Bool {
+            let output = await runtime.transact(
+                skin: skin, viewID: "main", size: WMPSize(width: 100, height: 60),
+                snapshot: WMPHostSnapshot(),
+                event: WMPJScriptEvent(name: "keypress", targetID: "view",
+                                       handlers: ["if (event.keyCode == 86) player.controls.stop();"],
+                                       keyCode: keyCode))
+            return output.hostCommands.contains { $0.action == "stop" }
+        }
+        let onItsKey = await stopped(86), onAnother = await stopped(88), withNoKey = await stopped(nil)
+        XCTAssertTrue(onItsKey, "VK_V is the key this skin stops on")
+        XCTAssertFalse(onAnother, "a different key must not reach the same case")
+        // **Outside a keystroke there is no key.** `null` matches no numeric case and compares false
+        // against every literal in the corpus, and the member still *resolves*, so a handler reading
+        // it from a timer or a host event runs on rather than dying with a `ReferenceError`.
+        XCTAssertFalse(withNoKey)
+    }
+
     private func fixtureScript(_ name: String) throws -> String {
         let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/WMPSkin")

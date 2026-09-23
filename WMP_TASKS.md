@@ -392,6 +392,17 @@ in [the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
 `skills/wmp-skin-guide/reference/object-model.md` § *`sourceURL` is spelled the way WMP spells it
 (W41)*.
 
+**W53 headed this tier and closed 2026-09-22; it is archived.** Its reach was a hand count and short
+in all three numbers (`onkeydown` is **530 uses / 80 archives**, `onkeypress` **422 / 74**, `onkeyup`
+**100 / 33**), and the contract it asked to have decided turned out to be one already measurable:
+every corpus handler compares a Windows virtual key code, so there was no character-versus-code
+question to settle — `object-model.md` § *The keyboard*. **Two things it leaves behind.** *A dispatch
+site nothing can reach measures exactly like one that does not exist* — the view took first responder
+only on `mouseDown`, so an unclicked window received no key at all and the whole class was invisible;
+the first live run of a working implementation printed nothing. And *a diagnostic placed after the
+decision it is meant to explain cannot explain it*: the first trace printed only the dispatched case,
+which made "the key never arrived" and "no skin authored one" the same empty log.
+
 **W260 was opened and closed 2026-09-22, found while verifying W41 in the running app** — a view
 authoring `onTimer` with no `timerInterval` got no timer at all, because `authoredTimerInterval`
 answered `0` for an absent attribute and every caller reads `0` as *"this view has no timer"*.
@@ -415,9 +426,8 @@ measurement are in `object-model.md` § *Recognising an event is not dispatching
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W53 | Keyboard events (now reachable: the window could not take the keyboard at all until W79) | `onkeydown` 501/78, `onkeypress` 409/72, `onkeyup` 94/30 | `WMPMainView.keyDown` handles focus traversal and activation and raises no authored handler. Needs a key-code/character contract at the object-model boundary — decide what a skin may see of a keystroke before implementing. |
 | W56 | Video and playback-position events | `onvideostart` 190/140, `onvideoend` 132/130, `onpositionchange` 147/41 | Not blocked: W102 supplies the hosted video surface and W124 the live/event-state split, so the `onvideostart`/`onvideoend` half is directly measurable. **`currentposition_onchange` closed with W129 and must not be re-opened as a rendering row** — it changed no pixel, and that is the measured finding; `object-model.md` § *Ambient `<attribute>_onchange` handlers* says why. |
-| W121 | A handler that reads the `event` object | **30 handlers across the Skins Factory equaliser family**, measured 2026-09-09; unmeasured for the other event kinds | Not blocked. **Count the whole class first**: sweep the corpus's handler attributes for `event.` and split by event kind — a mouse handler's modifier state and a key handler's `keyCode` come from different places, and W53 needs the key half anyway. Evidence: `object-model.md` § *Event arguments*. |
+| W121 | A handler that reads the `event` object | **30 handlers across the Skins Factory equaliser family**, measured 2026-09-09; unmeasured for the other event kinds | Not blocked, and **smaller than it was: the key half closed 2026-09-22 with W53**, which bound `event.keyCode` — 405 of the 409 `event.` reads in a key handler, measured. What is left is the mouse and `value_onchange` half, where `event.shiftKey` is already answered from the live modifier flags, so **re-measure before taking it**: sweep the corpus's handler attributes for `event.` and split by event kind. Evidence: `object-model.md` § *Event arguments* and § *The keyboard* (W53). |
 
 **Verified *not* gaps — check before opening a row here.** The SDK conformance audit (2026-09-11)
 disproved nine candidate gaps, including the author-typo list (`scrollingAmmount`,

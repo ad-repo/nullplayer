@@ -593,7 +593,7 @@ final class WMPScriptContext: @unchecked Sendable {
                          tweenFrame: WMPTweenFrame? = nil) -> WMPScriptRunResult {
         model.beginTransaction(snapshot: snapshot, preferences: preferences,
                                viewID: currentViewID ?? plan.viewID, screen: screen,
-                               modifiers: event?.modifiers ?? [])
+                               modifiers: event?.modifiers ?? [], keyCode: event?.keyCode)
         model.animatesTweens = animatesTweens
         pendingTimers.removeAll()
         pendingClearedTimers.removeAll()

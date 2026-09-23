@@ -110,6 +110,10 @@ final class WMPObjectModel {
     /// The modifiers the transaction's own input event carried, answered as `event.shiftKey` and
     /// its two siblings. Empty outside an input transaction.
     var eventModifiers: WMPEventModifiers = []
+    /// The key this transaction's own event carried, answered as `event.keyCode` — the member
+    /// **405 of the 409** `event.` reads in the corpus's key handlers are (W53). Nil outside a
+    /// keystroke.
+    var eventKeyCode: Int?
     var elements: [String: WMPScriptElement] = [:]
     private var elementOrder: [String] = []
     /// The preset the skin last selected. WMP tracks one; the engine has no notion of a current
@@ -158,12 +162,13 @@ final class WMPObjectModel {
 
     func beginTransaction(snapshot: WMPHostSnapshot, preferences: [String: String], viewID: String,
                           screen: WMPSize = WMPObjectModel.defaultScreen,
-                          modifiers: WMPEventModifiers = []) {
+                          modifiers: WMPEventModifiers = [], keyCode: Int? = nil) {
         self.snapshot = snapshot
         self.preferences = preferences
         currentViewID = viewID
         self.screen = screen
         eventModifiers = modifiers
+        eventKeyCode = keyCode
         calls.removeAll(keepingCapacity: true)
         mutations.removeAll(keepingCapacity: true)
         hostCommands.removeAll(keepingCapacity: true)
@@ -641,6 +646,12 @@ final class WMPObjectModel {
         case "shiftkey": return .value(.bool(eventModifiers.contains(.shift)))
         case "ctrlkey": return .value(.bool(eventModifiers.contains(.control)))
         case "altkey": return .value(.bool(eventModifiers.contains(.alt)))
+        // **Absent is not zero.** Outside a keystroke there is no key, and `0` is VK_NULL — a
+        // number `switch(event.keyCode)` can match. `null` matches no numeric `case` and compares
+        // false against every literal in the corpus, which is the honest answer to "which key",
+        // and the member still *resolves*, so a handler reading it outside a keystroke runs on
+        // rather than dying with a `ReferenceError` (W53, and W260's absent-is-not-zero rule).
+        case "keycode": return .value(eventKeyCode.map { .number(Double($0)) } ?? .null)
         default: return .unrecognised("event member")
         }
     }

@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W261.** (**W41 and W260 closed 2026-09-22** and are archived below — `sourceURL` answered in a spelling no skin's classifier could read, and, found while verifying it in the running app, a view's `onTimer` with no `timerInterval` that never ticked. W41 was issued long ago and carried in Tier 2a, so it spends no new number.) (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W261.** (**W53 closed 2026-09-22** and is archived below — the keyboard: three events classified, dispatched and bound to `event.keyCode`. It was issued long ago and carried in Tier 2c, so it spends no new number, and it closed the key half of **W121** on the way past.) (**W41 and W260 closed 2026-09-22** and are archived below — `sourceURL` answered in a spelling no skin's classifier could read, and, found while verifying it in the running app, a view's `onTimer` with no `timerInterval` that never ticked. W41 was issued long ago and carried in Tier 2a, so it spends no new number.) (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -95,6 +95,68 @@ past and W115 had already closed its headline.
 Pinned by `Tests/NullPlayerAppTests/WMPMediaSourceURLTests.swift`, whose last test runs the shipped
 classifier verbatim against both spellings — the old value still takes the net branch there, which is
 the assertion that would fail if the spelling were quietly reverted.
+
+## W53 — the keyboard: three events nothing raised (closed 2026-09-22)
+
+**The corpus asks for the keyboard more than for almost anything else and got none of it.**
+`onkeydown` **530 uses / 80 archives**, `onkeypress` **422 / 74**, `onkeyup` **100 / 33**, re-measured
+2026-09-22 over 184 archives with the `WMPTextDecoder` decode — the row's recorded 501/78, 409/72 and
+94/30 were a hand count and short in all three. They are authored on `VIEW` (400, the skin's own
+hotkeys), `CUSTOMSLIDER` (290) and `BUTTON` (209). `WMPMainView.keyDown` handled focus traversal and
+activation and raised not one of them.
+
+**The contract the row asked to have decided was already measurable, and there was no question in
+it.** WMP hands a key handler a Windows virtual key code: `event.keyCode` is **405 of the 409**
+`event.` reads in a key handler or a function one calls (`event.shiftKey` is the other 4), and the
+literals are VK values — 37/38/39/40 for the arrows, 13 for Return, 88 and 90 for X and Z. **The
+`.wal` mapping next door is the opposite shape and was correctly not reused**: Wasabi handlers
+compare the string `"alt+g"`, so `WinampModernKeyAccelerator` produces a string and satisfying one
+corpus handler with it is impossible. What was reused is the shape underneath — a pure, `NSEvent`-free
+mapper — as `WMPVirtualKeyCode`.
+
+**One number answers all three events, and that is measured rather than assumed.** Every letter tested
+in an `onkeypress` handler is tested in both cases — `case 88: case 120:` for X, `case 90: case 122:`
+for Z, and the same for B, C, F, L, P, V, 72 times each — so the VK matches the uppercase half of
+every one. `onkeyup` compares only `13`, which is `VK_RETURN` and the carriage return alike;
+`onkeydown` compares the arrows and space, which have no character form. So one transaction carries
+both events' handlers, which it must anyway: dispatching them separately would cancel the first
+before it ran.
+
+**The skin before the built-in, and the ordering is the whole design.** `WMPMainView` steps a focused
+slider on the arrows and activates a focused button on space and Return, and it does so only because
+nothing used to raise the skin's handlers. Running both is one keypress acting twice — and worse:
+`Age_of_Mythology_MP7` maps right/down to *quieter* on its volume slider where the built-in has
+right/up hardcoded to *louder*, so the two pull in opposite directions. **66 of 184 archives** author
+a key handler on a slider. `onKeyEvent` answers synchronously, from the loaded skin's graph, whether
+a handler was authored — `keyDown` has to decide now whether to fall through — which is
+`handlerOwnsAction` asked of the markup rather than of the hit target. The focused control is asked
+first and the view answers what it declines, never both. **Tab stays the engine's**: it is the focus
+ring, and no corpus handler compares `VK_TAB`.
+
+**Verified by driving the app**, on `Age_of_Mythology_MP7` with a track playing: `v` → macOS keycode
+9 → `vk=86` → `targetID=view authored=1` → its `viewHotKeys()` → `AudioEngine.stop()` 2 ms later; and
+with `volume` focused, Right arrow → `targetID=volume stable=23 authored=1`, the skin's `volUpDown`
+running and the built-in step correctly standing aside.
+
+**What it leaves behind, and both are about instruments rather than about keys.** *A dispatch site
+nothing can reach measures exactly like one that does not exist.* The view took first responder on
+`mouseDown` and nowhere else, so a window that had never been clicked received no key event at all
+and all 1,052 corpus key handlers were unreachable — the same hole `.wal` had until Phase 43. The
+first live run of a working implementation printed **nothing**; `viewDidMoveToWindow` now claims the
+keyboard when nothing in the window holds it. And *a diagnostic placed after the decision it is meant
+to explain cannot explain it*: the first trace printed only the dispatched case, which made "the key
+never arrived" and "no skin authored a handler" the same empty log. Both lines now print before any
+decision is taken — `harness.md` § *The probe flags*.
+
+**It closed the key half of W121** without spending a number: `event.keyCode` is bound the way the
+bare `value` and the named `<PLAYER>` arguments are, for the transaction and then cleared. Outside a
+keystroke it answers `null` rather than `0` — `0` is VK_NULL, a number a `switch` can match, which is
+W260's absent-is-not-a-zero trap in a second place.
+
+Pinned by `testAKeystrokeIsAnsweredWithItsWindowsVirtualKeyCode`,
+`testAKeyWithNoHonestVirtualCodeIsAbsentRatherThanZero`,
+`testTheThreeKeyEventsAreClassifiedAndCountedAsImplemented` and
+`testAKeyHandlerReadsTheKeyCodeOffTheEventObject` in `WMPScriptRuntimeTests`.
 
 ## W260 — an `onTimer` with no `timerInterval` never ticked (closed 2026-09-22)
 

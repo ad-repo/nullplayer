@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- **Media Player skins answer the keyboard.** These skins carry their own shortcuts — on
+  `Age of Mythology` and `ALXMorph`, Z / X / C / V / B are previous, play, pause, stop and next, and
+  the arrow keys nudge volume and position — and none of them did anything before. 80 of the
+  installed skins define keys; they work now, including the ones a skin puts on its own sliders. A
+  skin's shortcut always wins over NullPlayer's own arrow stepping, so a key never does two things
+  at once, and the window answers the keyboard as soon as it opens rather than only after a click.
+
 ### Fixed
 
 - **A Media Player skin's elapsed time counts again.** On `Stealth` the readout sat at `00:00` for

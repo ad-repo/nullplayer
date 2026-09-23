@@ -78,7 +78,14 @@ enum WMPAttributeParser {
         // `onDragEnd` is the other kind — a user gesture, raised from `WMPMainView.mouseUp` — and
         // it is authored only on `SLIDER` (125) and `CUSTOMSLIDER` (16), where it is the seek
         // commit: 111 of its 141 sources are `player.controls.currentPosition = value`.
-        "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend"
+        "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend",
+        // **The keyboard (W53), each with a dispatch site in `WMPMainView`.** Measured over the 184
+        // archives: `onkeydown` 530 uses / 80 skins, `onkeypress` 422 / 74, `onkeyup` 100 / 33 —
+        // authored on `VIEW` (400) and on the control the key is meant to steer, chiefly
+        // `CUSTOMSLIDER` (290) and `BUTTON` (209). `onkeyup` already had half a site before it had
+        // a name: `WMPMainView` raises it for an `<EDITBOX>`'s text, and with the name absent here
+        // every one of those handlers was classified `.literal` and never found.
+        "onkeydown", "onkeypress", "onkeyup"
     ]
 
     /// **`<attribute>_onchange` is a general SDK mechanism, not a list (W129).** *Ambient Event

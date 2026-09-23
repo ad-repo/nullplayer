@@ -217,19 +217,27 @@ struct WMPJScriptEvent: Hashable, Codable, Sendable {
     /// transactions that are not input — a view timer, a host state change — which is what the
     /// skin's own `if (!event.shiftKey)` guards read as *no modifier*, the ordinary path.
     var modifiers: WMPEventModifiers = []
+    /// The key this event carries, as `event.keyCode` answers it — a Windows VK for `keydown` and
+    /// `keyup`, a character code for `keypress` (`WMPVirtualKeyCode`). Nil for every transaction
+    /// that is not a keystroke, and for a key with no honest VK, which is why `readEvent` answers
+    /// the absent case rather than `0`: `0` is VK_NULL and every corpus handler switches over the
+    /// number (W53, and W260's rule that an absent value is not a zero).
+    var keyCode: Int?
 
     init(name: String, targetID: String?, targetStableID: Int? = nil, handlers: [Handler],
-         modifiers: WMPEventModifiers = []) {
+         modifiers: WMPEventModifiers = [], keyCode: Int? = nil) {
         self.name = name; self.targetID = targetID; self.targetStableID = targetStableID
         self.handlers = handlers
         self.modifiers = modifiers
+        self.keyCode = keyCode
     }
 
     init(name: String, targetID: String?, targetStableID: Int? = nil, handlers: [String],
-         arguments: [String: WMPJSONValue] = [:], modifiers: WMPEventModifiers = []) {
+         arguments: [String: WMPJSONValue] = [:], modifiers: WMPEventModifiers = [],
+         keyCode: Int? = nil) {
         self.init(name: name, targetID: targetID, targetStableID: targetStableID,
                   handlers: handlers.map { Handler(source: $0, arguments: arguments) },
-                  modifiers: modifiers)
+                  modifiers: modifiers, keyCode: keyCode)
     }
 }
 
@@ -287,7 +295,7 @@ enum WMPJScriptCompatibility {
                   "closeView", "openViewRelative"],
         // The two members of WMP's `event` object that describe the display rather than a live
         // input event. The rest of it stays off this list on purpose — see `readEvent`.
-        "event": ["screenWidth", "screenHeight", "shiftKey", "ctrlKey", "altKey"],
+        "event": ["screenWidth", "screenHeight", "shiftKey", "ctrlKey", "altKey", "keyCode"],
         // `backgroundImage` is on this list because the view root resolves it the way every other
         // node does — a script override before the authored attribute (W75). Every skin with a
         // store-thumbnail `previewView` writes it, and the tally must not call it unknown.

@@ -76,6 +76,25 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// `(event, authored id, stable graph id)`. The stable id is what scopes the dispatch: a
 /// `.wmz` is free to leave a control unnamed, and an authored id is therefore optional.
     var onScriptEvent: ((String, String?, Int?) -> Void)?
+    /// A keystroke offered to the skin: `(event, authored id, stable graph id, keyCode)`, answering
+    /// **whether the skin authored a handler for it** — which is the ordering rule this engine's
+    /// keyboard is built on, and the whole of W53's design.
+    ///
+    /// The engine has its own keyboard behaviour for a focused control (the arrows step a slider,
+    /// space and Return activate a button), and it exists because nothing used to raise the skin's
+    /// own handlers. Now that they are raised, running both is one keypress acting twice — and
+    /// worse than twice: `Age_of_Mythology_MP7` deliberately maps right/down to *quieter* on its
+    /// volume slider, where the built-in step has right/up hardcoded to *louder*, so the two pull
+    /// in opposite directions. **66 of 184 archives** author a key handler on a `SLIDER` or
+    /// `CUSTOMSLIDER`, so this is the common case, not the corner.
+    ///
+    /// So the skin goes first and the built-in is the fallback: authored means handled, and the
+    /// two-thirds of the corpus that authors nothing keeps the arrows and the activation it has.
+    /// It is the same rule `handlerOwnsAction` already applies on the mouse path, asked of the
+    /// markup rather than of the hit target — and it is answered *synchronously*, from the loaded
+    /// skin's graph, because `keyDown` has to decide now whether to fall through, while the
+    /// transaction it starts runs on the script actor.
+    var onKeyEvent: ((String, String?, Int?, Int) -> Bool)?
     var onElementValueChanged: ((Int, String?, Double) -> Void)?
     /// A slider the user has just let go of: its value, then `mouseup`/`dragend`, **in that order
     /// and in one transaction**. See W151. The fourth argument is the seek the gesture is asking
@@ -336,7 +355,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         widgetViews.values.forEach { $0.removeFromSuperview() }; widgetViews.removeAll(); widgetValues.removeAll()
         image = nil; overlayView.image = nil; scene = nil; hitTester = nil; capturedTarget = nil; hoveredTarget = nil
         isDraggingWindow = false
-        onInteractionChanged = nil; onAction = nil; onScriptEvent = nil
+        onInteractionChanged = nil; onAction = nil; onScriptEvent = nil; onKeyEvent = nil
         onElementValueChanged = nil; onElementTextChanged = nil; onSpectrumDemandChanged = nil
     }
 
@@ -615,23 +634,79 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         cancelInputCapture()
     }
 
-    override func keyDown(with event: NSEvent) {
-        guard let scene else { return super.keyDown(with: event) }
-        // `tabStop="false"` is authored 544 times against `"true"`'s 170: a skin marks most of its
-        // controls out of the keyboard ring and leaves a handful in, and a ring built from every
-        // enabled control tabs through all of them instead.
-        let targets = scene.hits.filter(\.tabStop).flatMap { hit in hit.mappingTargets.isEmpty
+    /// The controls a keystroke can be aimed at, in tab order.
+    ///
+    /// `tabStop="false"` is authored 544 times against `"true"`'s 170: a skin marks most of its
+    /// controls out of the keyboard ring and leaves a handful in, and a ring built from every
+    /// enabled control tabs through all of them instead.
+    private func keyboardTargets(_ scene: WMPScene) -> [WMPHitTarget] {
+        scene.hits.filter(\.tabStop).flatMap { hit in hit.mappingTargets.isEmpty
             ? [WMPHitTarget(stableID: hit.stableID, nodeID: hit.nodeID, kind: hit.kind,
                 frame: hit.frame, action: hit.action, sticky: hit.sticky, enabled: hit.enabled,
                 handlerOwnsAction: hit.handlerOwnsAction)]
             : hit.mappingTargets }.filter(\.enabled)
+    }
+
+    /// Offer a keystroke to the skin, focused control first and then the view, and answer whether
+    /// one of them authored a handler for it (W53).
+    ///
+    /// **The focused control or the view, never both.** A skin hangs its hotkeys on the `<VIEW>`
+    /// (400 of the corpus's key handlers) and its stepping on the control (321 on a slider, 209 on
+    /// a button); raising the same keystroke on both would run a global hotkey alongside the
+    /// control's own handling of the same press, which is the double action this ordering exists to
+    /// prevent. So the focused control is asked first and the view answers what it declines.
+    private func skinHandled(_ event: NSEvent, named name: String, focused: WMPHitTarget?) -> Bool {
+        let code = WMPVirtualKeyCode.keyDown(keyCode: event.keyCode,
+                                             charactersIgnoringModifiers: event.charactersIgnoringModifiers)
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1" {
+            NSLog("[wmp/key] %@ mac=%d vk=%@ focused=%@ wired=%d", name, Int(event.keyCode),
+                  code.map(String.init) ?? "-", focused?.nodeID ?? "-", onKeyEvent == nil ? 0 : 1)
+        }
+        #endif
+        guard let onKeyEvent, let code else { return false }
+        if let focused, onKeyEvent(name, focused.nodeID, focused.stableID, code) { return true }
+        return onKeyEvent(name, "view", nil, code)
+    }
+
+    /// **Claim the keyboard for the window, so a skin's key handlers can be reached at all.**
+    ///
+    /// Until this, the view took first responder on `mouseDown` and nowhere else, so a window that
+    /// had never been clicked received no key event and every one of the corpus's 1,052 key
+    /// handlers was unreachable — the same hole `.wal` had until Phase 43, and it hides a working
+    /// dispatch site completely: verifying W53 on `Age_of_Mythology_MP7` printed nothing at all
+    /// until a click went in first.
+    ///
+    /// Safe to take on arrival because `keyDown` is a fall-through: menu equivalents go through
+    /// `performKeyEquivalent` first, and a key neither the skin nor a focused control consumes is
+    /// handed back to the responder chain, which is where it went when the view had no focus. It is
+    /// only taken when nothing in this window holds it, so a hosted `<EDITBOX>` or playlist surface
+    /// that has been clicked into keeps it.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window, window.firstResponder as? NSView == nil else { return }
+        window.makeFirstResponder(self)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard let scene else { return super.keyDown(with: event) }
+        let targets = keyboardTargets(scene)
+        // **Tab stays the engine's, ahead of the skin.** It is the focus ring rather than a key a
+        // skin acts on, and no corpus handler compares `VK_TAB` at all — the codes they switch over
+        // are the arrows, space, Return and the letter hotkeys. A skin swallowing Tab would strand
+        // the keyboard on whichever control happened to hold focus.
         if event.keyCode == 48, !targets.isEmpty {
             let current = targets.firstIndex { $0.stableID == interaction.focusedNode } ?? -1
             let delta = event.modifierFlags.contains(.shift) ? -1 : 1
             let next = (current + delta + targets.count) % targets.count
             notify(interaction.focus(targets[next].stableID)); return
         }
-        guard let target = targets.first(where: { $0.stableID == interaction.focusedNode }) else {
+        let focused = targets.first { $0.stableID == interaction.focusedNode }
+        // **The skin before the built-ins.** See `onKeyEvent`: the arrow stepping and the space /
+        // Return activation below exist because nothing used to raise the skin's own handlers, and
+        // running both is one keypress acting twice.
+        if skinHandled(event, named: "keydown", focused: focused) { return }
+        guard let target = focused else {
             if visualizationHandled(event) { return }
             return super.keyDown(with: event)
         }
@@ -653,6 +728,18 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
         if visualizationHandled(event) { return }
         super.keyDown(with: event)
+    }
+
+    /// The release half. **`onkeyup` had a dispatch site before it had a name** — `WMPMainView`
+    /// already raised it for an `<EDITBOX>`'s text — and with the name absent from
+    /// `WMPAttributeValue.handlerNames` every one of those handlers was classified `.literal` and
+    /// never found. Authored 100 times across 33 archives, and every one of them compares `13`:
+    /// it is the corpus's "the user pressed Return in the search box" edge.
+    override func keyUp(with event: NSEvent) {
+        guard let scene else { return super.keyUp(with: event) }
+        let focused = keyboardTargets(scene).first { $0.stableID == interaction.focusedNode }
+        if skinHandled(event, named: "keyup", focused: focused) { return }
+        super.keyUp(with: event)
     }
 
     /// The skin has refused the key: offer it to a hosted `<EFFECTS>` surface, which answers the

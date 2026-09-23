@@ -805,6 +805,41 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                      targetStableID: targetStableID,
                                      onlyWhenAuthored: Self.hoverEvents.contains(name))
         }
+        // **One transaction per keystroke, and the answer the view needs is synchronous** (W53).
+        //
+        // `keydown` carries `keypress`'s handlers with it: WMP raises both for one press, and
+        // dispatching them as two transactions would cancel the first before it ran — the hazard
+        // `onSliderRelease` documents above. They can share the one `event.keyCode` because the
+        // corpus compares both cases of every letter it tests in an `onkeypress`, so the VK matches
+        // either way; `WMPVirtualKeyCode` carries that measurement.
+        //
+        // The return value is the whole ordering rule: it says whether the skin authored a handler,
+        // so `WMPMainView` knows whether to also run its own built-in arrow stepping. It has to be
+        // answered now, from the loaded skin's graph, not after the script actor has run.
+        view.onKeyEvent = { [weak self, weak presentation] name, targetID, targetStableID, keyCode in
+            guard let self, let presentation, let skin = self.loadedSkin else { return false }
+            let names = name == "keydown" ? ["keydown", "keypress"] : [name]
+            let authored = names.contains { !Self.handlers(in: skin, event: $0, targetID: targetID,
+                                                           targetStableID: targetStableID,
+                                                           viewID: presentation.viewID).isEmpty }
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1" {
+                NSLog("[wmp/key] offer %@ keyCode=%d targetID=%@ stable=%@ authored=%d",
+                      name, keyCode, targetID ?? "-", targetStableID.map(String.init) ?? "-",
+                      authored ? 1 : 0)
+            }
+            #endif
+            guard authored else { return false }
+            let handlers = names.flatMap {
+                Self.handlers(in: skin, event: $0, targetID: targetID,
+                              targetStableID: targetStableID, viewID: presentation.viewID)
+            }
+            self.dispatchScriptTransaction(presentation,
+                WMPJScriptEvent(name: name, targetID: targetID, targetStableID: targetStableID,
+                                handlers: handlers, modifiers: Self.currentEventModifiers(),
+                                keyCode: keyCode))
+            return true
+        }
         view.onElementTextChanged = { [weak self, weak presentation] stableID, targetID, text in
             guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
             Task {
@@ -2130,7 +2165,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// a compact view that renders indistinguishably from the player and persisted it.
     private func dispatchScriptEvent(_ presentation: WMPViewPresentation, name: String,
                                      targetID: String?, targetStableID: Int? = nil,
-                                     onlyWhenAuthored: Bool = false) {
+                                     onlyWhenAuthored: Bool = false, keyCode: Int? = nil) {
         guard let skin = loadedSkin else { return }
         let handlers = Self.handlers(in: skin, event: name, targetID: targetID,
                                      targetStableID: targetStableID, viewID: presentation.viewID)
@@ -2170,7 +2205,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                   WMPJScriptEvent(name: name, targetID: targetID,
                                                   targetStableID: targetStableID,
                                                   handlers: handlers,
-                                                  modifiers: Self.currentEventModifiers()),
+                                                  modifiers: Self.currentEventModifiers(),
+                                                  keyCode: keyCode),
                                   stickyLatch: name == "click"
                                       ? Self.stickyLatch(presentation, targetStableID) : nil)
     }

@@ -775,7 +775,7 @@ objects, this engine has no JS object to stand for either, and all 77 of their c
 skin function (`updateAlbumArt()`, `getVisMeta()`, `updateMetadata('playlist')`) rather than reading
 the bare name. Binding a scalar in their place would answer a question the skin never asked.
 
-**The `event` object is the one named binding still missing, and it is W121.** WMP binds one `event`
+**The keyboard is bound and the rest of the `event` object is W121.** WMP binds one `event`
 object per handler with the modifier and key state on it.
 `value_onchange="toolTip = Math.round(value); if (!event.shiftKey) eq.gainLevel9 = value;"` is the
 shape — an equaliser band that skips its write while shift is held, which is how the Skins Factory
@@ -783,7 +783,8 @@ family links its ten bands. **30 handlers across that family** were measured 202
 `value_onchange: ReferenceError: Can't find variable: event`; the other event kinds are unmeasured.
 Surfaced by W51 rather than caused by it: those handlers had never run at all before the host-driven
 direction was raised. The same gap applies to the user-driven direction and to
-`onkeydown`/`onkeypress`, where W53 already needs a key. Bind it the way the bare `value` and the
+`onkeydown`/`onkeypress`, **whose half closed with W53 on 2026-09-22 — `event.keyCode` is bound, see
+below.** Bind the rest the way the bare `value` and the
 named arguments above are bound — for the duration of that one handler, then cleared. **Count the
 whole class first**: sweep the corpus's handler attributes for `event.` and split by event kind,
 since the modifier state a mouse handler wants and the `keyCode` a key handler wants come from
@@ -792,6 +793,67 @@ different places.
 **`WMPScriptConstants` carries the whole enumeration for the same reason.** A skin switches over all
 of `WMPOpenState`, and one missing global (`osMediaWaiting`, in Corona's case) is a `ReferenceError`
 that costs the handler — the W37 class rather than a gap in a table nothing reads.
+
+---
+
+## The keyboard: one number, and the skin before the built-in (W53)
+
+**WMP hands a key handler a Windows virtual key code, and that is the whole contract.** It is the
+opposite shape to the `.wal` one in `WinampModernKeyAccelerator`, which produces the string
+`"alt+g"` because every Wasabi handler compares a string; every WMP handler compares an integer.
+Measured 2026-09-22 over 184 archives, `event.keyCode` is **405 of the 409** `event.` reads in a key
+handler or a function one calls (`event.shiftKey` is the other 4), and the literals it is compared
+against are VK values. `WMPVirtualKeyCode` maps macOS keycodes onto them and is deliberately free of
+`NSEvent` at its core, so the mapping is testable without a window.
+
+**Reach, re-measured with the decoder rather than `grep`:** `onkeydown` **530 uses / 80 archives**,
+`onkeypress` **422 / 74**, `onkeyup` **100 / 33** — authored on `VIEW` (400, the skin's hotkeys),
+`CUSTOMSLIDER` (290) and `BUTTON` (209), the controls the keys steer. Reproduce with
+`scripts/wmp_handler_scope_census.py`'s decoder over each `.wms` tag span; the row's recorded
+501/78 was a hand count and short.
+
+**One transaction per keystroke, carrying both events' handlers.** WMP raises `onkeydown` and
+`onkeypress` for one press, and dispatching them as two transactions would cancel the first before
+it ran — the hazard `onSliderRelease` documents. They share the one `event.keyCode`, and **that is
+measured rather than assumed**: every letter tested in an `onkeypress` handler is tested in both
+cases (`case 88: case 120:` for X, `case 90: case 122:` for Z, and the same for B, C, F, L, P, V),
+72 times each, so the uppercase half is the VK and every one of them matches. `onkeyup` compares
+only `13`, which is `VK_RETURN` and the carriage return alike, and `onkeydown` compares the arrows
+and space, which have no character form at all. One number answers all three events; a second would
+only be a second thing to get wrong.
+
+**The skin goes first and the engine's own keyboard is the fallback.** `WMPMainView` steps a focused
+slider on the arrows and activates a focused button on space and Return, and it does so because
+nothing used to raise the skin's own handlers. Running both is one keypress acting twice — and worse
+than twice: `Age_of_Mythology_MP7` deliberately maps right/down to *quieter* on its volume slider
+where the built-in step has right/up hardcoded to *louder*, so the two pull in opposite directions.
+**66 of 184 archives** author a key handler on a `SLIDER` or `CUSTOMSLIDER`, so this is the common
+case. `WMPMainView.onKeyEvent` answers **synchronously, from the loaded skin's graph**, whether a
+handler was authored — `keyDown` has to decide now whether to fall through — which is
+`handlerOwnsAction` asked of the markup rather than of the hit target.
+
+**The focused control or the view, never both**, for the same reason: a skin hangs its hotkeys on
+the `<VIEW>` and its stepping on the control, and raising one press on both runs a global hotkey
+alongside the control's own handling of it. The focused control is asked first; the view answers
+what it declines.
+
+**Tab stays the engine's, ahead of the skin.** It is the focus ring rather than a key a skin acts
+on, and no corpus handler compares `VK_TAB` at all. A skin swallowing it would strand the keyboard
+on whichever control happened to hold focus.
+
+**Absent is not zero.** Outside a keystroke `event.keyCode` answers `null`, which matches no numeric
+`case` and compares false against every literal in the corpus — and the member still *resolves*, so
+a handler reading it from a timer or a host event runs on rather than dying with a `ReferenceError`.
+`0` would be VK_NULL, a number a `switch` can match. Same rule as W260's `timerInterval`.
+
+**The hole this work found, and it hid the dispatch site completely.** `WMPMainView` took first
+responder on `mouseDown` and nowhere else, so a window that had never been clicked received no key
+event at all and every one of the corpus's 1,052 key handlers was unreachable — the same hole `.wal`
+had until Phase 43. Verifying W53 in the running app printed *nothing* until a click went in first.
+`viewDidMoveToWindow` now claims the keyboard when nothing in the window holds it, so a hosted
+`<EDITBOX>` or playlist surface that has been clicked into keeps it. **A dispatch site nothing can
+reach measures exactly like one that does not exist** — which is this file's own rule about
+recognising an event, one step further out.
 
 ---
 
