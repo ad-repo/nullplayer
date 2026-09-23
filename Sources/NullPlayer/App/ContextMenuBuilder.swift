@@ -2402,6 +2402,12 @@ class ContextMenuBuilder {
         manageFoldersItem.target = MenuActions.shared
         libraryMenu.addItem(manageFoldersItem)
 
+        // Find Missing Files — re-points a watch folder that moved, then offers to forget the
+        // rows whose file really was deleted. Deletion is always confirmed and never automatic.
+        let missingFilesItem = NSMenuItem(title: "Find Missing Files...", action: #selector(MenuActions.findMissingFiles), keyEquivalent: "")
+        missingFilesItem.target = MenuActions.shared
+        libraryMenu.addItem(missingFilesItem)
+
         libraryMenu.addItem(NSMenuItem.separator())
 
         // Split .cue Albums on Import toggle
@@ -6235,6 +6241,55 @@ class MenuActions: NSObject {
     
     @objc func manageFolders() {
         WatchFolderManagerDialog.present {}
+    }
+
+    /// Re-point what moved, then offer to forget what was genuinely deleted.
+    ///
+    /// Relocation runs first and unprompted because it is not destructive — it rewrites a path
+    /// prefix and every row keeps its identity, play count and rating. Deletion is only ever
+    /// offered, with a count taken through the very same gates that will do the deleting, and
+    /// "Keep" is the default button.
+    @objc func findMissingFiles() {
+        let library = MediaLibrary.shared
+        let relocated = library.resolveRelocatedWatchFolders()
+        let pending = library.forgetMissingFiles(dryRun: true)
+        let total = pending.tracks + pending.movies + pending.episodes
+
+        let alert = NSAlert()
+        var lines: [String] = []
+        for move in relocated {
+            lines.append("Moved folder found:\n    \(move.from.path)\n  → \(move.to.path)")
+        }
+
+        if total == 0 {
+            alert.messageText = relocated.isEmpty ? "No Missing Files" : "Folders Relocated"
+            lines.append(relocated.isEmpty
+                ? "Every file in the library is where the library expects it."
+                : "Every remaining file is where the library expects it.")
+            alert.informativeText = lines.joined(separator: "\n\n")
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        alert.messageText = "Forget \(total) Missing \(total == 1 ? "Item" : "Items")?"
+        var parts: [String] = []
+        if pending.tracks > 0 { parts.append("\(pending.tracks) track\(pending.tracks == 1 ? "" : "s")") }
+        if pending.movies > 0 { parts.append("\(pending.movies) movie\(pending.movies == 1 ? "" : "s")") }
+        if pending.episodes > 0 { parts.append("\(pending.episodes) episode\(pending.episodes == 1 ? "" : "s")") }
+        lines.append("\(parts.joined(separator: ", ")) are no longer on disk, in folders that are present. "
+                     + "Removing them also removes their play counts and ratings, and cannot be undone.")
+        lines.append("Anything on a disconnected drive or an unmounted share has been left alone — "
+                     + "those files are not missing, just unavailable.")
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Keep")
+        alert.addButton(withTitle: "Forget")
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+
+        let removed = library.forgetMissingFiles()
+        NSLog("MenuActions: forgot %d track(s), %d movie(s), %d episode(s)",
+              removed.tracks, removed.movies, removed.episodes)
     }
 
     @objc func toggleCueSplitOnImport() {

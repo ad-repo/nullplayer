@@ -1550,6 +1550,59 @@ final class MediaLibraryStore {
         }
     }
 
+    /// Re-point every stored URL that begins with `oldPrefix` at `newPrefix`, across every table
+    /// that records a path, in one transaction.
+    ///
+    /// This is the primitive a relocated watch root needs. A root that moves takes its tracks, its
+    /// movies, its episodes, its playlists **and its own `library_watch_folders` row** with it —
+    /// miss the last one and the next scan runs against a directory that is no longer there and
+    /// finds nothing. Rows keep their identity, so play counts, ratings and play history survive;
+    /// that is the whole point of rewriting rather than deleting and rescanning.
+    ///
+    /// `substr` rather than `replace`: `replace` would rewrite a second occurrence of the prefix
+    /// further along the path as well. Anchoring on `substr(url, 1, n)` also avoids having to
+    /// escape `%` and `_`, both of which are legal in a filename, for a `LIKE`.
+    @discardableResult
+    func relocatePathPrefix(from oldPrefix: String, to newPrefix: String) -> [String: Int] {
+        guard let db = db, !oldPrefix.isEmpty, oldPrefix != newPrefix else { return [:] }
+        let tables = ["library_tracks", "library_movies", "library_episodes",
+                      "library_playlists", "library_watch_folders"]
+        var counts: [String: Int] = [:]
+        do {
+            try db.transaction {
+                for table in tables {
+                    // Both spellings: rows are written as `file://…` today, but older formats
+                    // stored a plain absolute path and those rows are still in live libraries.
+                    for (old, new) in Self.prefixSpellings(oldPrefix, newPrefix) {
+                        let length = old.utf8.count
+                        try db.run(
+                            "UPDATE \(table) SET url = ? || substr(url, ?) WHERE substr(url, 1, ?) = ?",
+                            [new, Int64(length + 1), Int64(length), old])
+                        counts[table, default: 0] += db.changes
+                    }
+                }
+            }
+        } catch {
+            NSLog("MediaLibraryStore: relocatePathPrefix failed: %@", error.localizedDescription)
+            return [:]
+        }
+        let total = counts.values.reduce(0, +)
+        NSLog("MediaLibraryStore: relocated %d row(s) from '%@' to '%@'", total, oldPrefix, newPrefix)
+        return counts.filter { $0.value > 0 }
+    }
+
+    /// The `file://` and plain-path spellings of one prefix rewrite, both with a trailing slash so
+    /// a sibling directory that merely starts with the same characters cannot match.
+    private static func prefixSpellings(_ oldPrefix: String, _ newPrefix: String) -> [(String, String)] {
+        func slashed(_ s: String) -> String { s.hasSuffix("/") ? s : s + "/" }
+        let oldURL = URL(fileURLWithPath: oldPrefix)
+        let newURL = URL(fileURLWithPath: newPrefix)
+        return [
+            (slashed(oldURL.absoluteString), slashed(newURL.absoluteString)),
+            (slashed(oldURL.path), slashed(newURL.path))
+        ]
+    }
+
     func deleteWatchFolder(_ path: String) {
         guard let db = db else { return }
         // Stored watch-folder URLs are *directory* URLs with a trailing slash
@@ -1927,11 +1980,15 @@ final class MediaLibraryStore {
     /// `URL(string:)` rejects paths containing unencoded spaces or special characters,
     /// so plain paths like "/Music/My Track.mp3" must be reconstructed via fileURLWithPath.
     private static func urlFromStoredString(_ urlString: String) -> URL? {
-        if let url = URL(string: urlString) { return url }
+        // A plain path has to be tested *first*. The comment below used to be true and is not any
+        // more: on current Foundation `URL(string: "/Music/My Track.mp3")` succeeds and returns a
+        // **schemeless, non-file** URL rather than nil, so the repair branch had become dead code
+        // and every legacy plain-path row came back as something `isFileURL` rejects. Same defect
+        // as the playlist loaders (L5 in docs/local-library/backlog.md), one layer down.
         if urlString.hasPrefix("/") {
-            NSLog("MediaLibraryStore: repairing plain-path URL: %@", urlString)
             return URL(fileURLWithPath: urlString)
         }
+        if let url = URL(string: urlString), url.scheme != nil { return url }
         NSLog("MediaLibraryStore: skipping unparseable URL: %@", urlString)
         return nil
     }
