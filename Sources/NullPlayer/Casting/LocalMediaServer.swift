@@ -4,6 +4,14 @@ import FlyingSocks
 import Network
 import Darwin
 
+/// A short correlation id for a capability token.
+///
+/// Capability tokens are secrets: anyone on the LAN holding one can pull the
+/// media it fronts, so the full value never reaches the log. The first four
+/// characters are enough to follow one stream across registration, proxying,
+/// and completion while leaving the remaining 48 bits unguessable.
+private func logToken(_ token: String) -> String { String(token.prefix(4)) }
+
 /// Embedded HTTP server for serving local audio files to cast devices.
 ///
 /// Cast protocols (UPnP, Chromecast) require HTTP-accessible media URLs.
@@ -144,7 +152,7 @@ class LocalMediaServer {
             private mutating func logProgressIfNeeded() {
                 guard bytesSent >= nextProgressLogBytes else { return }
                 NSLog("LocalMediaServer: Stream %@ sent %lld bytes (expected=%@, range=%@, label=%@)",
-                      "<redacted>",
+                      logToken(token),
                       bytesSent,
                       expectedLength.map(String.init) ?? "unknown",
                       rangeHeader ?? "none",
@@ -159,7 +167,7 @@ class LocalMediaServer {
                 didLogCompletion = true
                 let elapsed = Date().timeIntervalSince(startedAt)
                 NSLog("LocalMediaServer: Stream %@ completed after %.1fs, sent=%lld expected=%@ range=%@ label=%@",
-                      "<redacted>",
+                      logToken(token),
                       elapsed,
                       bytesSent,
                       expectedLength.map(String.init) ?? "unknown",
@@ -170,7 +178,7 @@ class LocalMediaServer {
             private func logStreamError(_ error: Error) {
                 let elapsed = Date().timeIntervalSince(startedAt)
                 NSLog("LocalMediaServer: Stream %@ ended with error after %.1fs, sent=%lld expected=%@ range=%@ label=%@ error=%@",
-                      "<redacted>",
+                      logToken(token),
                       elapsed,
                       bytesSent,
                       expectedLength.map(String.init) ?? "unknown",
@@ -641,7 +649,7 @@ class LocalMediaServer {
         let httpURL = URL(string: "http://\(ip):\(port)/stream/\(tokenString)")
         
         NSLog("LocalMediaServer: Registered stream proxy token=%@ host=%@ as %@, contentType=%@, label=%@",
-              "<redacted>",
+              logToken(tokenString),
               url.host ?? "unknown",
               httpURL?.redacted ?? "nil",
               contentType ?? "auto-detect",
@@ -799,7 +807,7 @@ class LocalMediaServer {
         // otherwise fall back to URL extension detection
         let contentType = storedContentType ?? CastManager.detectAudioContentType(for: url)
         NSLog("LocalMediaServer: HEAD /stream/%@ contentType=%@ label=%@",
-              "<redacted>", contentType, debugLabel ?? "nil")
+              logToken(token), contentType, debugLabel ?? "nil")
 
         var headers: [HTTPHeader: String] = [
             HTTPHeader("Content-Type"): contentType,
@@ -1012,7 +1020,7 @@ class LocalMediaServer {
         
         let rangeHeader = request.headers[HTTPHeader("Range")]
         NSLog("LocalMediaServer: Proxying stream token=%@ from host=%@ remote=%@ range=%@ label=%@",
-              "<redacted>",
+              logToken(token),
               originalURL.host ?? "unknown",
               remoteDescription(for: request),
               rangeHeader ?? "none",
@@ -1046,7 +1054,7 @@ class LocalMediaServer {
                 ?? "audio/mpeg"
             let upstreamContentLength = httpResponse.value(forHTTPHeaderField: "Content-Length")
             NSLog("LocalMediaServer: Upstream streaming token=%@ status=%d type=%@ length=%@ acceptRanges=%@ contentRange=%@ label=%@",
-                  "<redacted>",
+                  logToken(token),
                   httpResponse.statusCode,
                   upstreamContentType,
                   upstreamContentLength ?? "nil",

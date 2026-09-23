@@ -527,8 +527,14 @@ must retain the original values.
 The shared helper covers Plex, Subsonic/Navidrome, Jellyfin/Emby, common radio
 auth/signature parameters, URL user info, nested/escaped query delimiters, JSON
 credential fields, auth headers, and LocalMediaServer capability paths.
-Never log standalone capability tokens or raw server response bodies; retain
-status, endpoint, byte count, and parsed non-sensitive error details instead.
-UPnP's gated logger redacts the formatted message before emitting it.
+Never log a standalone capability token in full: log `logToken(_:)`'s
+four-character prefix, which keeps one stream followable across registration,
+proxying, and completion without publishing the token.
+
+Response bodies go through the helper rather than being dropped — a SOAP
+fault's `errorCode` and a server's error JSON are the primary diagnostics for
+casting and server failures. Bound them with `prefix(500)` (Plex: 1000) and
+redact. UPnP's gated logger redacts the formatted message before emitting it,
+so its call sites pass the body directly.
 
 Regression coverage lives in `Tests/NullPlayerAppTests/SensitiveURLRedactionTests.swift`.

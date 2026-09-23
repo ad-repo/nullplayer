@@ -138,11 +138,12 @@ class PlexServerClient {
             }
             
             guard httpResponse.statusCode == 200 else {
-                // Keep status and size diagnostics without exposing response credentials.
-                NSLog("PlexServerClient: HTTP %d error for %@: %d bytes",
+                // Log the error response body for debugging, credentials redacted.
+                let errorBody = String(data: data, encoding: .utf8) ?? "(non-UTF8 data)"
+                NSLog("PlexServerClient: HTTP %d error for %@: %@",
                       httpResponse.statusCode, 
                       request.url?.path ?? "unknown",
-                      data.count)
+                      String(errorBody.prefix(500)).redactingSensitiveURLQueryItems)
                 
                 if httpResponse.statusCode == 401 {
                     throw PlexServerError.unauthorized
@@ -153,7 +154,11 @@ class PlexServerClient {
             // Debug: Log response for troubleshooting
             #if DEBUG
             let endpoint = request.url?.path ?? "unknown"
-            NSLog("PlexServerClient: Response for %@: %d bytes", endpoint, data.count)
+            if let jsonString = String(data: data, encoding: .utf8) {
+                NSLog("PlexServerClient: Response for %@: %@",
+                      endpoint,
+                      String(jsonString.prefix(1000)).redactingSensitiveURLQueryItems)
+            }
             #endif
             
             // First try direct decoding

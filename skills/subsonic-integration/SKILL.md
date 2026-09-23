@@ -127,4 +127,5 @@ Subsonic streaming URLs contain auth query parameters which Sonos cannot handle.
 
 Use the shared URL and error-string helpers described in
 [audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
-Do not log raw authenticated URLs, credentials, or server response bodies.
+Do not log raw authenticated URLs or credentials; pass response bodies
+through the helper rather than omitting them.

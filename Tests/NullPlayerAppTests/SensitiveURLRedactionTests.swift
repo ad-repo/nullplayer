@@ -97,6 +97,23 @@ final class SensitiveURLRedactionTests: XCTestCase {
         }
     }
 
+    func testXMLAttributeCredentialsAndRetainedFaultDetail() {
+        let leaking = [
+            #"<Response code="1001" status="Invalid token" token="secret-token"/>"#,
+            #"<user authToken="secret-token" email="user@example.test"/>"#,
+            #"<Server accessToken="secret-token" name="Music"/>"#
+        ]
+        for message in leaking {
+            XCTAssertFalse(message.redactingSensitiveURLQueryItems.contains("secret-token"), message)
+        }
+
+        // SOAP faults and benign attributes are the diagnostics we log for; keep them.
+        let fault = "<UPnPError><errorCode>701</errorCode><errorDescription>Transition not available</errorDescription></UPnPError>"
+        XCTAssertEqual(fault.redactingSensitiveURLQueryItems, fault)
+        let track = #"<Track title="Song" id="42" duration="180000"/>"#
+        XCTAssertEqual(track.redactingSensitiveURLQueryItems, track)
+    }
+
     func testNonSensitiveDiagnosticsRemainReadable() throws {
         let url = try XCTUnwrap(URL(string: "https://music.example/Audio/42/stream?static=true&id=42"))
         XCTAssertEqual(url.redacted, url.absoluteString)

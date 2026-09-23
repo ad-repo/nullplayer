@@ -198,7 +198,11 @@ class JellyfinServerClient {
             }
             
             #if DEBUG
-            NSLog("JellyfinServerClient: Response for %@: %d bytes", request.url?.lastPathComponent ?? "unknown", data.count)
+            if let jsonString = String(data: data, encoding: .utf8) {
+                NSLog("JellyfinServerClient: Response for %@: %@",
+                      request.url?.lastPathComponent ?? "unknown",
+                      String(jsonString.prefix(500)).redactingSensitiveURLQueryItems)
+            }
             #endif
             
             let decoder = JSONDecoder()

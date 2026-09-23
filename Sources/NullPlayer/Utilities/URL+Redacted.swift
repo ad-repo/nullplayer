@@ -60,6 +60,8 @@ extension String {
             // Error descriptions may embed JSON credential fields or auth headers.
             (#"(?i)("(?:AccessToken|access_token|auth_token|api_key|apikey|X-Plex-Token|X-Emby-Token|token|password)"\s*:\s*")(?:\\.|[^"\\])*"#, "$1<redacted>"),
             (#"(?im)((?:Authorization|X-Plex-Token|X-Emby-Token):[ \t]*)[^\r\n]+"#, "$1<redacted>"),
+            // Plex and UPnP answer in XML; credentials arrive as attributes.
+            (#"(?i)(\b(?:authToken|authenticationToken|accessToken|token|password|api_?key|X-Plex-Token|X-Emby-Token)\s*=\s*")[^"]*"#, "$1<redacted>"),
             // User info can carry a basic-auth password, including in radio URLs.
             (#"(?i)([a-z][a-z0-9+.-]*://)[^/?#\s<>"]+@(?=[^/?#\s<>"]+)"#, "$1<redacted>@"),
             // LocalMediaServer issues 16-hex capability tokens in these paths.

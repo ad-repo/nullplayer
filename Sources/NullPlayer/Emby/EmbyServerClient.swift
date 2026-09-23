@@ -202,7 +202,11 @@ class EmbyServerClient {
             }
 
             #if DEBUG
-            NSLog("EmbyServerClient: Response for %@: %d bytes", request.url?.lastPathComponent ?? "unknown", data.count)
+            if let jsonString = String(data: data, encoding: .utf8) {
+                NSLog("EmbyServerClient: Response for %@: %@",
+                      request.url?.lastPathComponent ?? "unknown",
+                      String(jsonString.prefix(500)).redactingSensitiveURLQueryItems)
+            }
             #endif
 
             let decoder = JSONDecoder()
