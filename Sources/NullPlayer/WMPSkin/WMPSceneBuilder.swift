@@ -1207,7 +1207,19 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // and 32 `<EFFECTS>` across 30 skins use the same mechanism. Siblings are already
             // sorted by zIndex, so the eye still lands under the visualizer.
             let orderedChildren = node.children.sorted(by: paintOrder)
-            let childClip = inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
+            // **A container collapsed to nothing clips its children away too.** `nil` is "no clip
+            // at all" here, so a zero-area frame has to hand down a zero-area rect: `Classic` sets
+            // `view.height = 359 - 183` for audio, its `stretch` video pane collapses to zero
+            // height, and the centred `wmlogo` inside it drew unclipped across the nav bar.
+            //
+            // **Only a collapsed frame, not one that merely misses its parent.** `Back to the
+            // Future Trilogy` authors its "previous visualization" button at `left="-25"`, wholly
+            // outside the logo strip it belongs to, mirroring the next button on the other side —
+            // clipping that too took the button off the window. Whether WMP clips it is unproven;
+            // the corpus sweep said this is the one rule that moves only the reported skin.
+            let childClip = frame.isEmpty && inheritedClip != nil
+                ? WMPRect(x: frame.x, y: frame.y, width: 0, height: 0)
+                : inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
             // **A clipping shape shapes the element's contents, not only the element.** The mask
             // covers this node's frame and every descendant's paint is cut to it; see
             // `WMPSceneClipMask` for the two archives that state the rule and the one that guards

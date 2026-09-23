@@ -20,6 +20,11 @@
 
 ### Fixed
 
+- **The Media Player `Classic` skin no longer falls apart when a track plays.** For audio the skin
+  shrinks itself to just its controls, and the Windows logo from the hidden video screen was left
+  drawn over the top bar. Playing a film after that now opens the video screen back up instead of
+  playing into a window with no room for the picture.
+
 - **A Media Player skin's sliders run the skin's own code again.** These skins hang a handler off a
   slider — the seek bar's read-out of the time you are dragging to, `tubeframe`'s TruBass and WOW
   controls, the tooltips that show the value as it moves — and none of it ran. 42 of the installed

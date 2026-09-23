@@ -1363,6 +1363,22 @@ queue, with the object model as the security boundary — see Amendment 2 in
   (`WMPHostedFrameTemplate`), where it was three white blocks on every hosted window. The
   counter-evidence is pinned beside it: a target that states its own coordinate is read at that
   coordinate.
+- **A container collapsed to zero area clips its children away too — and only that one.**
+  `WMPSceneBuilder` passes children `nil` for "no clip at all", and `WMPRect.intersection` also
+  answers `nil` for an empty result, so a pane collapsed to zero height handed its children *no*
+  clip. `Classic` sets `view.height = 359 - 183` for audio, its `stretch` video pane goes to 0, and
+  the centred `wmlogo` inside it drew across the nav bar. A zero-area frame now hands down a
+  zero-area rect. **The wider rule — any frame that misses its parent's clip — was tried first and
+  rejected by the corpus sweep**: it also removed `Back to the Future Trilogy`'s "previous
+  visualization" button, authored at `left="-25"` wholly outside its logo strip and mirroring the
+  next button. **Whether WMP draws that button is unknown** — no WMP was available to check, and
+  the wider rule is the consistent one (a child 1px inside is clipped to 1px, one 0px inside draws
+  whole). Narrowed was kept because a wrong guess there costs a working control. A WMP screenshot
+  of that skin's visualization window settles it. Narrowed, the sweep (stopped and
+  `WMP_RENDER_HOST=playing`, 184 archives) moves `Classic/view-2` and nothing else in pixels;
+  `Blinx/mainView` hosts two fewer text widgets that were already `visible=none`. The cursor-rect
+  pass in `WMPMainView` treats a clip that misses a control as hidden, not unconfined.
+  `WMPAlignmentTests.testAChildOfACollapsedStretchPaneIsClippedAway` pins it.
 - **A hidden element still has a place, and the extent a binding gives it is not a baseline
   (W226).** Two more steps along the same read, both found by measuring `Compact`'s visualizer at
   two window sizes. **First: the walk returns on an invisible node before recording a geometry**, so
@@ -2255,6 +2271,15 @@ its own to show**, instead of `nil`. The old rule — a skin draws its own contr
 — holds right up until those controls are off the screen edge, and a borderless window with no
 titlebar then has no route back at all; `Snap To Default` and `Exit` are the two rows that matter.
 The video rect and the visualization rect still answer first, so nothing the skin owns changed.
+
+**A refused decoder resize gives the window back its authored size on any axis it is short of.**
+Refusing the formula is not refusing the video layout: `Classic` collapses its own video pane for
+audio (`view.height = 359 - 183`) and asks for it back for a film with the shell formula, so keeping
+the current canvas played the film into a zero-height pane. `WMPScriptRuntime.transact` now grows
+the root to `max(current, authored)` per axis, drops the baseline's expression values (they were
+resolved at the collapsed canvas) so the builder re-resolves them, and returns that size as
+`viewSize`. An axis the user made larger stays theirs. Pinned by
+`WMPVideoTests.testRefusedDecoderResizeRestoresAViewItsOwnScriptCollapsed`.
 
 ### A view sizes itself in its own `onLoad`, and the first scene is built at the size it asked for
 

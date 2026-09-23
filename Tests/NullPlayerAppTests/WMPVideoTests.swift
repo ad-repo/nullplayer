@@ -223,6 +223,53 @@ final class WMPVideoTests: XCTestCase {
         await runtime.teardown()
     }
 
+    /// `Classic`'s `StartPlaying()`: audio collapses the video pane with `view.height = 359 - 183`,
+    /// and a film asks for it back with the shell formula. Refusing that formula must still give
+    /// the film its pane — the authored view — rather than keep the collapsed audio canvas.
+    func testRefusedDecoderResizeRestoresAViewItsOwnScriptCollapsed() async throws {
+        let skin = try await load("""
+        <THEME><VIEW id="main" width="285" height="359">
+          <SUBVIEW id="videoview" top="25" width="jscript:view.width" height="183"
+                   horizontalAlignment="stretch" verticalAlignment="stretch">
+            <WMPVIDEO id="video" width="jscript:videoview.width" height="jscript:videoview.height"/>
+          </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let suite = "WMPVideoTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let runtime = WMPScriptRuntime(preferences: WMPPreferenceStore(
+            skinData: Data(suite.utf8), defaults: defaults))
+        let startPlaying = """
+          if (player.currentMedia.imageSourceHeight == 0) { view.height = 359 - 183; }
+          else { view.width = Math.max(285, player.currentMedia.imageSourceWidth);
+                 view.height = 359 - 183 + player.currentMedia.imageSourceHeight; }
+        """
+        let audio = await runtime.transact(skin: skin, viewID: "main",
+            size: WMPSize(width: 285, height: 359), snapshot: WMPHostSnapshot(),
+            event: .init(name: "playstatechange", targetID: nil, handlers: [startPlaying]))
+        XCTAssertEqual(audio.viewSize, WMPSize(width: 285, height: 176), "audio collapses the pane")
+
+        var film = WMPHostSnapshot()
+        film.video = WMPVideoSnapshot(width: 1920, height: 1080)
+        let video = await runtime.transact(skin: skin, viewID: "main",
+            size: WMPSize(width: 285, height: 176), snapshot: film,
+            event: .init(name: "playstatechange", targetID: nil, handlers: [startPlaying]))
+        XCTAssertEqual(video.viewSize, WMPSize(width: 285, height: 359),
+                       "the decoder's 1920x1256 is refused, and the authored pane comes back")
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main",
+                                                                      overrides: video.overrides)
+        XCTAssertEqual(scene.canvasSize, WMPSize(width: 285, height: 359))
+        let pane = try XCTUnwrap(scene.widgets.first { $0.kind == .video })
+        XCTAssertEqual(pane.frame.height, 183)
+
+        let larger = await runtime.transact(skin: skin, viewID: "main",
+            size: WMPSize(width: 500, height: 600), snapshot: film,
+            event: .init(name: "playstatechange", targetID: nil, handlers: [startPlaying]))
+        XCTAssertNil(larger.viewSize, "a window already past the authored size is left alone")
+        await runtime.teardown()
+    }
+
     func testRoutingIgnoresEventOnlyVideosAndUsesEitherAuthoredVideoSpelling() async throws {
         let skin = try await load("""
         <THEME>

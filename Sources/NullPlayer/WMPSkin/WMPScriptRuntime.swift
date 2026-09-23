@@ -878,6 +878,7 @@ actor WMPScriptRuntime {
                                                            property: "height")] = drawn.height
             }
         }
+        var restoredViewSize: WMPSize?
         if mediaDrivenResize {
             // **A refused resize takes its whole layout with it, not just the root's two numbers.**
             // Every `jscript:` expression in the view resolved against the size the handler
@@ -890,6 +891,29 @@ actor WMPScriptRuntime {
             // opens onto a film already playing) the builder resolves the expressions itself
             // against the authored canvas, which is exactly the layout that was wanted.
             overrides.geometry = baselineGeometry
+            // **Refusing the decoder's size is not refusing the video layout.** A skin that
+            // collapsed its own video pane for audio — `Classic`'s `view.height = 359 - 183` —
+            // asks for its film back with exactly the formula refused above, so keeping the
+            // current canvas left a film playing into a zero-height pane. The picture is fitted
+            // into the *authored* box, so the window grows back to the authored view on any axis
+            // it is short of; an axis the user has made larger is theirs and stays.
+            if let root = skin.views.first(where: {
+                $0.id.caseInsensitiveCompare(viewID) == .orderedSame
+            })?.node, let authored = Self.authoredSize(of: root),
+               size.width < authored.width || size.height < authored.height {
+                let restored = WMPSize(width: max(size.width, authored.width),
+                                       height: max(size.height, authored.height))
+                // The expressions in the baseline were resolved against the collapsed canvas;
+                // the builder re-resolves any address left unset against the restored one.
+                for address in plan.expressionAddresses.values where scriptAssigned[address] == nil {
+                    overrides.geometry[address] = nil
+                }
+                overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
+                                                           property: "width")] = restored.width
+                overrides.geometry[WMPScenePropertyAddress(stableID: root.stableID,
+                                                           property: "height")] = restored.height
+                restoredViewSize = restored
+            }
         }
         let repaint = Set(result.repaintHints.compactMap { plan.idToStableID[WMPPath.fold($0)] })
         scriptAssignedGeometry[scope] = scriptAssigned
@@ -901,7 +925,7 @@ actor WMPScriptRuntime {
                                calls: result.calls,
                                expressions: result.expressions, expressionOrder: result.expressionOrder,
                                listItems: context.listItems(),
-                               viewSize: mediaDrivenResize ? nil : assigned,
+                               viewSize: mediaDrivenResize ? restoredViewSize : assigned,
                                hasActiveTweens: !(activeTweens[scope] ?? []).isEmpty)
     }
 

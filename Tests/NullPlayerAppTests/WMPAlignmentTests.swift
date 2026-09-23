@@ -445,4 +445,33 @@ final class WMPAlignmentTests: XCTestCase {
                        + "grew since its markup")
     }
 
+
+    // MARK: - A container clipped away entirely clips its children away too
+
+    /// `Classic`'s audio mode: `view.height = 359 - 183` stretches `videoview` to zero height, and
+    /// the centred `wmlogo` inside it computes a frame above the pane. An empty clip used to read as
+    /// no clip at all, so the logo drew across the nav bar.
+    func testAChildOfACollapsedStretchPaneIsClippedAway() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="285" height="359">
+            <SUBVIEW id="videoview" top="25" width="285" height="183" verticalAlignment="stretch">
+                <BUTTON id="wmlogo" image="logo.png" horizontalAlignment="center"
+                        verticalAlignment="center"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, resources: ["logo.png": try sheet(150, 115)])
+        let view = try XCTUnwrap(skin.views.first { $0.id == "main" }?.node.stableID)
+        var overrides = WMPSceneOverrides.empty
+        overrides.geometry[.init(stableID: view, property: "height")] = 176
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+        XCTAssertEqual(try frame(skin, scene, "videoview").height, 0)
+        let logo = scene.commands.filter { $0.nodeID == "wmlogo" }
+        XCTAssertFalse(logo.isEmpty, "the logo is still emitted, so the clip is what hides it")
+        for command in logo {
+            let clip = try XCTUnwrap(command.clipRect, "an empty clip is not an absent one")
+            XCTAssertNil(command.frame.intersection(clip))
+        }
+    }
+
 }

@@ -787,8 +787,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // read the other way. AppKit resolves the last rect added for a point.
         for hit in scene.hits {
             guard hit.enabled, let cursor = hit.cursor else { continue }
-            let visible = hit.clipRect.flatMap { hit.frame.intersection($0) } ?? hit.frame
-            guard !visible.isEmpty else { continue }
+            // A clip that misses the frame is a fully hidden control, not an unconfined one.
+            guard let visible = hit.clipRect.map({ hit.frame.intersection($0) }) ?? hit.frame,
+                  !visible.isEmpty else { continue }
             addCursorRect(NSRect(x: visible.x * xScale, y: visible.y * yScale,
                                  width: visible.width * xScale, height: visible.height * yScale),
                           cursor: Self.cursor(for: cursor))
