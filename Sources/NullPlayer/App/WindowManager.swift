@@ -2807,7 +2807,7 @@ class WindowManager {
                     }
                 }
             } catch {
-                NSLog("WindowManager: Failed to route video '%@' to active cast device %@: %@", title, device.name, error.localizedDescription)
+                NSLog("WindowManager: Failed to route video '%@' to active cast device %@: %@", title, device.name, error.localizedDescription.redactingSensitiveURLQueryItems)
                 await MainActor.run {
                     if hasLocalVideoRunning,
                        let localController = self.videoPlayerWindowController,

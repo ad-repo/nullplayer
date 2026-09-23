@@ -131,7 +131,7 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
                             self.browserView.reloadData()
                         }
                     } catch {
-                        NSLog("PlexBrowserWindowController: Failed to refresh servers: %@", error.localizedDescription)
+                        NSLog("PlexBrowserWindowController: Failed to refresh servers: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     }
                 }
             }

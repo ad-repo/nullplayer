@@ -1618,7 +1618,7 @@ class AudioEngine {
                 
                 NSLog("AudioEngine: Re-scheduled local playback from %.2fs after config change (playing=%d)", resumePosition, wasPlaying ? 1 : 0)
             } catch {
-                NSLog("AudioEngine: Failed to restart after config change: %@", error.localizedDescription)
+                NSLog("AudioEngine: Failed to restart after config change: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 audioGraphNeedsReplacement = true
                 if wasPlaying {
                     audioGraphRecovery.addPendingIntentIfAbsent(.play)
@@ -2405,7 +2405,7 @@ class AudioEngine {
                     try await CastManager.shared.pause()
                     NSLog("AudioEngine.pause() - CastManager.pause() completed")
                 } catch {
-                    NSLog("AudioEngine.pause() - CastManager.pause() failed: %@", error.localizedDescription)
+                    NSLog("AudioEngine.pause() - CastManager.pause() failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
             return
@@ -2623,7 +2623,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("AudioEngine: previous() cast failed: %@", error.localizedDescription)
+                    NSLog("AudioEngine: previous() cast failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     await MainActor.run {
                         self.currentIndex = previousIndex
                         self.currentTrack = previousTrack
@@ -2686,7 +2686,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("AudioEngine: next() cast failed: %@", error.localizedDescription)
+                    NSLog("AudioEngine: next() cast failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     await MainActor.run {
                         self.currentIndex = previousIndex
                         self.currentTrack = previousTrack
@@ -2766,7 +2766,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("AudioEngine: skipTracks() cast failed: %@", error.localizedDescription)
+                    NSLog("AudioEngine: skipTracks() cast failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     // Restore index on failure to keep playlist navigation consistent
                     if isLocalFile {
                         await MainActor.run {
@@ -3573,7 +3573,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("castTrackDidFinish: failed to cast: %@", error.localizedDescription)
+                    NSLog("castTrackDidFinish: failed to cast: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     await MainActor.run {
                         self.currentIndex = previousIndex
                         self.currentTrack = previousTrack
@@ -3621,7 +3621,7 @@ class AudioEngine {
                             }
                         }
                     } catch {
-                        NSLog("castTrackDidFinish: failed to cast shuffle: %@", error.localizedDescription)
+                        NSLog("castTrackDidFinish: failed to cast shuffle: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                         await MainActor.run {
                             self.currentIndex = previousIndex
                             self.currentTrack = previousTrack
@@ -3665,7 +3665,7 @@ class AudioEngine {
                             }
                         }
                     } catch {
-                        NSLog("castTrackDidFinish: failed to cast next: %@", error.localizedDescription)
+                        NSLog("castTrackDidFinish: failed to cast next: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                         await MainActor.run {
                             self.currentIndex = previousIndex
                             self.currentTrack = previousTrack
@@ -3865,7 +3865,7 @@ class AudioEngine {
                             }
                         }
                     } catch {
-                        NSLog("loadTracks: failed to cast new track: %@", error.localizedDescription)
+                        NSLog("loadTracks: failed to cast new track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                         // Fall back to local playback if casting fails
                         await MainActor.run {
                             self.loadTrack(at: self.currentIndex)
@@ -4155,7 +4155,7 @@ class AudioEngine {
                             }
                         }
                     } catch {
-                        NSLog("insertTracksAfterCurrent: failed to cast track: %@", error.localizedDescription)
+                        NSLog("insertTracksAfterCurrent: failed to cast track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                         // Fall back to local playback if casting fails
                         await MainActor.run {
                             self.loadTrack(at: self.currentIndex)
@@ -4229,7 +4229,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("playNow: failed to cast track: %@", error.localizedDescription)
+                    NSLog("playNow: failed to cast track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     // Fall back to local playback if casting fails
                     await MainActor.run {
                         self.loadTrack(at: self.currentIndex)
@@ -4602,7 +4602,7 @@ class AudioEngine {
                 "%@: NAS temp copy failed for '%@': %@; falling back to original file",
                 logPrefix,
                 name,
-                error.localizedDescription
+                error.localizedDescription.redactingSensitiveURLQueryItems
             )
             return nil
         }
@@ -4635,7 +4635,7 @@ class AudioEngine {
                 NSLog(
                     "AudioEngine: Failed to remove stale temp playback copy '%@': %@",
                     url.lastPathComponent,
-                    error.localizedDescription
+                    error.localizedDescription.redactingSensitiveURLQueryItems
                 )
             }
         }
@@ -4761,7 +4761,7 @@ class AudioEngine {
         NSLog("loadLocalTrack: FAILED to load file")
         NSLog("  File: %@", track.url.path)
         NSLog("  Extension: %@", fileExtension)
-        NSLog("  Error: %@", error.localizedDescription)
+        NSLog("  Error: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         if let nsError = error as NSError? {
             NSLog("  Error domain: %@, code: %d", nsError.domain, nsError.code)
         }
@@ -5286,7 +5286,7 @@ class AudioEngine {
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
                         guard self.gaplessPreparationToken == token else { return }
-                        NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription)
+                        NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                         self.nextScheduledFile = nil
                         self.nextScheduledTrackIndex = -1
                     }
@@ -5434,7 +5434,7 @@ class AudioEngine {
                     guard let self,
                           self.crossfadeFileLoadToken == token,
                           self.isCrossfading else { return }
-                    NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription)
+                    NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     self.isCrossfading = false
                     self.crossfadeTargetIndex = -1
                     self.crossfadeIncomingStartDate = nil
@@ -5876,7 +5876,7 @@ class AudioEngine {
                     guard let self else { return }
                     guard self.normalizationAnalysisToken == token,
                           self.currentTrack?.url == analysisURL else { return }
-                    NSLog("Normalization: analysis skipped for '%@': %@", analysisURL.lastPathComponent, error.localizedDescription)
+                    NSLog("Normalization: analysis skipped for '%@': %@", analysisURL.lastPathComponent, error.localizedDescription.redactingSensitiveURLQueryItems)
                     self.normalizationGain = 1.0
                     self.applyNormalizationGain()
                 }
@@ -6149,7 +6149,7 @@ class AudioEngine {
                 let cue = try CueSheet.parse(from: url)
                 return CueSheet.expandToTracks(cue: cue, cueFileURL: url)
             } catch {
-                NSLog("AudioEngine: Failed to parse .cue file '%@': %@", url.lastPathComponent, error.localizedDescription)
+                NSLog("AudioEngine: Failed to parse .cue file '%@': %@", url.lastPathComponent, error.localizedDescription.redactingSensitiveURLQueryItems)
                 return nil
             }
         }
@@ -6163,7 +6163,7 @@ class AudioEngine {
                 // placeholder pointing at a nonexistent file.
                 return CueSheet.expandToTracks(cue: cue, cueFileURL: siblingCueURL, backingOverride: url)
             } catch {
-                NSLog("AudioEngine: Failed to parse sibling .cue for '%@': %@", url.lastPathComponent, error.localizedDescription)
+                NSLog("AudioEngine: Failed to parse sibling .cue for '%@': %@", url.lastPathComponent, error.localizedDescription.redactingSensitiveURLQueryItems)
                 return nil
             }
         }
@@ -6293,7 +6293,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("playTrack: failed to cast track: %@", error.localizedDescription)
+                    NSLog("playTrack: failed to cast track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     // Fall back to local playback if casting fails
                     await MainActor.run {
                         self.loadTrack(at: index)

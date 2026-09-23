@@ -2280,7 +2280,7 @@ class PlexBrowserView: NSView {
             } catch is CancellationError {
                 // Cancelled by newer selection - ignore
             } catch {
-                NSLog("PlexBrowser: Failed to rate track: %@", error.localizedDescription)
+                NSLog("PlexBrowser: Failed to rate track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -2303,7 +2303,7 @@ class PlexBrowserView: NSView {
                         }
                     }
                 } catch {
-                    NSLog("PlexBrowser: Failed to fetch track rating: %@", error.localizedDescription)
+                    NSLog("PlexBrowser: Failed to fetch track rating: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         } else if let subsonicId = currentTrack.subsonicId {
@@ -2317,7 +2317,7 @@ class PlexBrowserView: NSView {
                         }
                     }
                 } catch {
-                    NSLog("PlexBrowser: Failed to fetch Subsonic track rating: %@", error.localizedDescription)
+                    NSLog("PlexBrowser: Failed to fetch Subsonic track rating: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         } else if let jellyfinId = currentTrack.jellyfinId {
@@ -2331,7 +2331,7 @@ class PlexBrowserView: NSView {
                         }
                     }
                 } catch {
-                    NSLog("PlexBrowser: Failed to fetch Jellyfin track rating: %@", error.localizedDescription)
+                    NSLog("PlexBrowser: Failed to fetch Jellyfin track rating: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         } else if let embyId = currentTrack.embyId {
@@ -2345,7 +2345,7 @@ class PlexBrowserView: NSView {
                         }
                     }
                 } catch {
-                    NSLog("PlexBrowser: Failed to fetch Emby track rating: %@", error.localizedDescription)
+                    NSLog("PlexBrowser: Failed to fetch Emby track rating: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         } else if currentTrack.url.isFileURL {
@@ -7358,7 +7358,7 @@ class PlexBrowserView: NSView {
                 }
             }
         } catch {
-            NSLog("PlexBrowserView: Failed to load web artwork: %@", error.localizedDescription)
+            NSLog("PlexBrowserView: Failed to load web artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         
         return nil
@@ -7425,7 +7425,7 @@ class PlexBrowserView: NSView {
             return nil
         }
         
-        NSLog("PlexBrowserView: Loading artwork from: %@", artworkURL.absoluteString)
+        NSLog("PlexBrowserView: Loading artwork from: %@", artworkURL.redacted)
         
         // Download the image
         do {
@@ -7460,7 +7460,7 @@ class PlexBrowserView: NSView {
             
             return image
         } catch {
-            NSLog("PlexBrowserView: Failed to load Plex artwork: %@", error.localizedDescription)
+            NSLog("PlexBrowserView: Failed to load Plex artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -7501,7 +7501,7 @@ class PlexBrowserView: NSView {
             return nil
         }
         
-        NSLog("PlexBrowserView: Loading Subsonic artwork from: %@", artworkURL.absoluteString)
+        NSLog("PlexBrowserView: Loading Subsonic artwork from: %@", artworkURL.redacted)
         
         // Download the image
         do {
@@ -7527,7 +7527,7 @@ class PlexBrowserView: NSView {
             
             return image
         } catch {
-            NSLog("PlexBrowserView: Failed to load Subsonic artwork: %@", error.localizedDescription)
+            NSLog("PlexBrowserView: Failed to load Subsonic artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -7582,7 +7582,7 @@ class PlexBrowserView: NSView {
                 }
             }
         } catch {
-            NSLog("PlexBrowserView: Failed to load local artwork: %@", error.localizedDescription)
+            NSLog("PlexBrowserView: Failed to load local artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         
         return nil
@@ -7702,7 +7702,7 @@ class PlexBrowserView: NSView {
                 }
             }
         } catch {
-            NSLog("PlexBrowserView: Failed to load all local artwork: %@", error.localizedDescription)
+            NSLog("PlexBrowserView: Failed to load all local artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         
         return images
@@ -8134,7 +8134,7 @@ class PlexBrowserView: NSView {
                 }
             }
         } catch {
-            NSLog("PlexBrowserView: Failed to load TMDb poster: %@", error.localizedDescription)
+            NSLog("PlexBrowserView: Failed to load TMDb poster: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         
         return nil
@@ -9606,7 +9606,7 @@ class PlexBrowserView: NSView {
                     }
                     totalStations += stations.count
                 } catch {
-                    NSLog("Failed to read playlist file %@: %@", url.path, error.localizedDescription)
+                    NSLog("Failed to read playlist file %@: %@", url.path, error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
             
@@ -10405,7 +10405,7 @@ class PlexBrowserView: NSView {
                     }
                     totalStations += stations.count
                 } catch {
-                    NSLog("Failed to read playlist file %@: %@", url.path, error.localizedDescription)
+                    NSLog("Failed to read playlist file %@: %@", url.path, error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
             
@@ -10462,7 +10462,7 @@ class PlexBrowserView: NSView {
                 return detailed
             }
         } catch {
-            NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+            NSLog("Failed to fetch movie details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         return movie
     }
@@ -10480,7 +10480,7 @@ class PlexBrowserView: NSView {
                 return detailed
             }
         } catch {
-            NSLog("Failed to fetch show details: %@", error.localizedDescription)
+            NSLog("Failed to fetch show details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         return show
     }
@@ -10498,7 +10498,7 @@ class PlexBrowserView: NSView {
                 return detailed
             }
         } catch {
-            NSLog("Failed to fetch episode details: %@", error.localizedDescription)
+            NSLog("Failed to fetch episode details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         return episode
     }
@@ -11630,7 +11630,7 @@ class PlexBrowserView: NSView {
             do {
                 let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
                 WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(tracks))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -11640,7 +11640,7 @@ class PlexBrowserView: NSView {
             do {
                 let all = try await self.fetchTracksForPlexArtistGroup(artist)
                 WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(all))
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -11662,7 +11662,7 @@ class PlexBrowserView: NSView {
                 }
                 let tracks = PlexManager.shared.convertToTracks(allEpisodes)
                 if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -11673,7 +11673,7 @@ class PlexBrowserView: NSView {
                 let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
                 let tracks = PlexManager.shared.convertToTracks(episodes)
                 if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -11714,7 +11714,7 @@ class PlexBrowserView: NSView {
                 let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
                 let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
                 WindowManager.shared.audioEngine.loadTracks(tracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
 
@@ -11729,7 +11729,7 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
                 }
                 WindowManager.shared.audioEngine.loadTracks(allTracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
 
@@ -11740,7 +11740,7 @@ class PlexBrowserView: NSView {
                 let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
                 let tracks = JellyfinManager.shared.convertToTracks(songs)
                 WindowManager.shared.audioEngine.loadTracks(tracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
 
@@ -11755,7 +11755,7 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
                 }
                 WindowManager.shared.audioEngine.loadTracks(allTracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
 
@@ -11766,7 +11766,7 @@ class PlexBrowserView: NSView {
                 let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
                 let tracks = EmbyManager.shared.convertToTracks(songs)
                 WindowManager.shared.audioEngine.loadTracks(tracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
 
@@ -11781,7 +11781,7 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
                 }
                 WindowManager.shared.audioEngine.loadTracks(allTracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription) }
+            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -11950,7 +11950,7 @@ class PlexBrowserView: NSView {
             } catch is CancellationError { }
             catch where Task.isCancelled { }
             catch {
-                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription)
+                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
         rebuildCurrentModeItems(); needsDisplay = true
@@ -11989,7 +11989,7 @@ class PlexBrowserView: NSView {
                 } catch is CancellationError {
                     // Superseded by a newer download request; skip side effects.
                 } catch {
-                    NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                    NSLog("Failed to download YouTube video: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         }
@@ -12209,7 +12209,7 @@ class PlexBrowserView: NSView {
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "Cast Failed"
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = error.localizedDescription.redactingSensitiveURLQueryItems
                 alert.alertStyle = .warning
                 alert.runModal()
             }
@@ -12242,7 +12242,7 @@ class PlexBrowserView: NSView {
                 let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
                 WindowManager.shared.audioEngine.appendTracks(tracks)
             } catch {
-                NSLog("Failed to add subsonic album to playlist: %@", error.localizedDescription)
+                NSLog("Failed to add subsonic album to playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -12277,7 +12277,7 @@ class PlexBrowserView: NSView {
                 let convertedTracks = PlexManager.shared.convertToTracks(tracks)
                 WindowManager.shared.audioEngine.appendTracks(convertedTracks)
             } catch {
-                NSLog("Failed to add album to playlist: %@", error.localizedDescription)
+                NSLog("Failed to add album to playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -12320,7 +12320,7 @@ class PlexBrowserView: NSView {
                     NSLog("Added %d episodes from season to playlist: %@", tracks.count, season.title)
                 }
             } catch {
-                NSLog("Failed to add season to playlist: %@", error.localizedDescription)
+                NSLog("Failed to add season to playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -12341,7 +12341,7 @@ class PlexBrowserView: NSView {
                     NSLog("Added %d episodes from show to playlist: %@", allTracks.count, show.title)
                 }
             } catch {
-                NSLog("Failed to add show to playlist: %@", error.localizedDescription)
+                NSLog("Failed to add show to playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -12446,7 +12446,7 @@ class PlexBrowserView: NSView {
                 let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
                 let converted = PlexManager.shared.convertToTracks(tracks)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
-            } catch { NSLog("Failed to play album next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddAlbumToQueue(_ sender: NSMenuItem) {
@@ -12459,7 +12459,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(converted)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add album to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayLocalAlbumNext(_ sender: NSMenuItem) {
@@ -12482,7 +12482,7 @@ class PlexBrowserView: NSView {
                 let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
                 let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play subsonic album next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play subsonic album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddSubsonicAlbumToQueue(_ sender: NSMenuItem) {
@@ -12495,7 +12495,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(tracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add subsonic album to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add subsonic album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayArtistNext(_ sender: NSMenuItem) {
@@ -12505,7 +12505,7 @@ class PlexBrowserView: NSView {
                 let allTracks = try await self.fetchTracksForPlexArtistGroup(artist)
                 let converted = PlexManager.shared.convertToTracks(allTracks)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
-            } catch { NSLog("Failed to play artist next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddArtistToQueue(_ sender: NSMenuItem) {
@@ -12518,7 +12518,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(converted)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add artist to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayLocalArtistNext(_ sender: NSMenuItem) {
@@ -12551,7 +12551,7 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
                 }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play subsonic artist next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play subsonic artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddSubsonicArtistToQueue(_ sender: NSMenuItem) {
@@ -12568,7 +12568,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(allTracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add subsonic artist to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add subsonic artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     // MARK: - Jellyfin Context Menu Actions
@@ -12608,7 +12608,7 @@ class PlexBrowserView: NSView {
                 let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
                 let tracks = JellyfinManager.shared.convertToTracks(songs)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play Jellyfin album next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play Jellyfin album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddJellyfinAlbumToQueue(_ sender: NSMenuItem) {
@@ -12621,7 +12621,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(tracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add Jellyfin album to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add Jellyfin album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayJellyfinArtistNext(_ sender: NSMenuItem) {
@@ -12635,7 +12635,7 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
                 }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play Jellyfin artist next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play Jellyfin artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddJellyfinArtistToQueue(_ sender: NSMenuItem) {
@@ -12652,7 +12652,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(allTracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add Jellyfin artist to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add Jellyfin artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayMovieNext(_ sender: NSMenuItem) {
@@ -12688,7 +12688,7 @@ class PlexBrowserView: NSView {
                 let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
                 let tracks = PlexManager.shared.convertToTracks(episodes)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play season next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play season next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddSeasonToQueue(_ sender: NSMenuItem) {
@@ -12701,7 +12701,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(tracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add season to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add season to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayShowNext(_ sender: NSMenuItem) {
@@ -12715,7 +12715,7 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
                 }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play show next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play show next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddShowToQueue(_ sender: NSMenuItem) {
@@ -12732,7 +12732,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(allTracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add show to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add show to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     
@@ -13198,7 +13198,7 @@ class PlexBrowserView: NSView {
                 let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
                 let tracks = EmbyManager.shared.convertToTracks(songs)
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play Emby album next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play Emby album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddEmbyAlbumToQueue(_ sender: NSMenuItem) {
@@ -13211,7 +13211,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(tracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add Emby album to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add Emby album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayEmbyArtistNext(_ sender: NSMenuItem) {
@@ -13225,7 +13225,7 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
                 }
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play Emby artist next: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to play Emby artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuAddEmbyArtistToQueue(_ sender: NSMenuItem) {
@@ -13242,7 +13242,7 @@ class PlexBrowserView: NSView {
                 let wasEmpty = engine.playlist.isEmpty
                 engine.appendTracks(allTracks)
                 if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add Emby artist to queue: %@", error.localizedDescription) }
+            } catch { NSLog("Failed to add Emby artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
         }
     }
     @objc private func contextMenuPlayEmbyMovie(_ sender: NSMenuItem) {
@@ -13280,10 +13280,10 @@ class PlexBrowserView: NSView {
                 try await CastManager.shared.castPlexMovie(movie, to: device)
                 NSLog("PlexBrowserView: Cast movie '%@' to %@ - SUCCESS", movie.title, device.name)
             } catch {
-                NSLog("PlexBrowserView: Failed to cast movie: %@", error.localizedDescription)
+                NSLog("PlexBrowserView: Failed to cast movie: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 let alert = NSAlert()
                 alert.messageText = "Cast Failed"
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = error.localizedDescription.redactingSensitiveURLQueryItems
                 alert.alertStyle = .warning
                 alert.runModal()
             }
@@ -13310,11 +13310,11 @@ class PlexBrowserView: NSView {
                 try await CastManager.shared.castPlexEpisode(episode, to: device)
                 NSLog("PlexBrowserView: Cast episode '%@' to %@", episode.title, device.name)
             } catch {
-                NSLog("PlexBrowserView: Failed to cast episode: %@", error.localizedDescription)
+                NSLog("PlexBrowserView: Failed to cast episode: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Cast Failed"
-                    alert.informativeText = error.localizedDescription
+                    alert.informativeText = error.localizedDescription.redactingSensitiveURLQueryItems
                     alert.alertStyle = .warning
                     alert.runModal()
                 }
@@ -13345,7 +13345,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             } catch {
-                NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+                NSLog("Failed to fetch movie details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
             // Fallback to search if fetch fails
             if let url = movie.imdbURL {
@@ -13373,7 +13373,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             } catch {
-                NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+                NSLog("Failed to fetch movie details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
             if let url = movie.tmdbURL {
                 NSWorkspace.shared.open(url)
@@ -13406,7 +13406,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             } catch {
-                NSLog("Failed to fetch show details: %@", error.localizedDescription)
+                NSLog("Failed to fetch show details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
             if let url = show.imdbURL {
                 NSWorkspace.shared.open(url)
@@ -13433,7 +13433,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             } catch {
-                NSLog("Failed to fetch show details: %@", error.localizedDescription)
+                NSLog("Failed to fetch show details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
             if let url = show.tmdbURL {
                 NSWorkspace.shared.open(url)
@@ -13466,7 +13466,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             } catch {
-                NSLog("Failed to fetch episode details: %@", error.localizedDescription)
+                NSLog("Failed to fetch episode details: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
             if let url = episode.imdbURL {
                 NSWorkspace.shared.open(url)
@@ -13855,7 +13855,7 @@ class PlexBrowserView: NSView {
                 try await PlexManager.shared.refreshServers()
                 needsDisplay = true
             } catch {
-                NSLog("Failed to refresh servers: %@", error.localizedDescription)
+                NSLog("Failed to refresh servers: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -15736,7 +15736,7 @@ class PlexBrowserView: NSView {
                 catch where Task.isCancelled { return }
                 catch {
                     loadingChannelIds.remove(ch.id)
-                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription)
+                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         }
@@ -16300,7 +16300,7 @@ class PlexBrowserView: NSView {
                 await MainActor.run { self.jellyfinAlbumWarmTask = nil }
             } catch {
                 await MainActor.run { self.jellyfinAlbumWarmTask = nil }
-                NSLog("PlexBrowserView: Jellyfin album cache warm failed: %@", error.localizedDescription)
+                NSLog("PlexBrowserView: Jellyfin album cache warm failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -17689,7 +17689,7 @@ class PlexBrowserView: NSView {
                                 rebuildCurrentModeItems()
                                 needsDisplay = true
                             } catch {
-                                NSLog("PlexBrowser: Failed to load albums for '%@': %@", artist.title, error.localizedDescription)
+                                NSLog("PlexBrowser: Failed to load albums for '%@': %@", artist.title, error.localizedDescription.redactingSensitiveURLQueryItems)
                                 // Remove from expanded so user can retry
                                 expandedArtistNames.remove(normalizedName)
                                 rebuildCurrentModeItems()
@@ -17723,7 +17723,7 @@ class PlexBrowserView: NSView {
                                 rebuildCurrentModeItems()
                                 needsDisplay = true
                             } catch {
-                                NSLog("PlexBrowser: Failed to load albums for artist group '%@' (key=%@): %@", artist.title, groupKey, error.localizedDescription)
+                                NSLog("PlexBrowser: Failed to load albums for artist group '%@' (key=%@): %@", artist.title, groupKey, error.localizedDescription.redactingSensitiveURLQueryItems)
                                 // Remove from expanded so user can retry
                                 expandedArtists.remove(groupKey)
                                 rebuildCurrentModeItems()
@@ -17749,7 +17749,7 @@ class PlexBrowserView: NSView {
                             rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
-                            NSLog("PlexBrowser: Failed to load tracks for album '%@' (id=%@): %@", album.title, album.id, error.localizedDescription)
+                            NSLog("PlexBrowser: Failed to load tracks for album '%@' (id=%@): %@", album.title, album.id, error.localizedDescription.redactingSensitiveURLQueryItems)
                             expandedAlbums.remove(album.id)
                             rebuildCurrentModeItems()
                             needsDisplay = true
@@ -17773,7 +17773,7 @@ class PlexBrowserView: NSView {
                             rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
-                            NSLog("PlexBrowser: Failed to load seasons for show '%@' (id=%@): %@", show.title, show.id, error.localizedDescription)
+                            NSLog("PlexBrowser: Failed to load seasons for show '%@' (id=%@): %@", show.title, show.id, error.localizedDescription.redactingSensitiveURLQueryItems)
                             expandedShows.remove(show.id)
                             rebuildCurrentModeItems()
                             needsDisplay = true
@@ -17797,7 +17797,7 @@ class PlexBrowserView: NSView {
                             rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
-                            NSLog("PlexBrowser: Failed to load episodes for season '%@' (id=%@): %@", season.title, season.id, error.localizedDescription)
+                            NSLog("PlexBrowser: Failed to load episodes for season '%@' (id=%@): %@", season.title, season.id, error.localizedDescription.redactingSensitiveURLQueryItems)
                             expandedSeasons.remove(season.id)
                             rebuildCurrentModeItems()
                             needsDisplay = true
@@ -18306,7 +18306,7 @@ class PlexBrowserView: NSView {
                         } catch is CancellationError { }
                         catch where Task.isCancelled { }
                         catch {
-                            NSLog("Failed to load YouTube videos for channel '%@': %@", channel.title, error.localizedDescription)
+                            NSLog("Failed to load YouTube videos for channel '%@': %@", channel.title, error.localizedDescription.redactingSensitiveURLQueryItems)
                         }
                     }
                     rebuildCurrentModeItems()
@@ -18334,7 +18334,7 @@ class PlexBrowserView: NSView {
         NSLog("playTrack: %@", track.title)
         
         if let convertedTrack = PlexManager.shared.convertToTrack(track) {
-            NSLog("  streamURL: %@", convertedTrack.url.absoluteString)
+            NSLog("  streamURL: %@", convertedTrack.url.redacted)
             WindowManager.shared.audioEngine.playNow([convertedTrack])
             NSLog("  Called playNow()")
         } else {
@@ -18350,7 +18350,7 @@ class PlexBrowserView: NSView {
                 NSLog("Playing album %@ with %d tracks", album.title, convertedTracks.count)
                 WindowManager.shared.audioEngine.playNow(convertedTracks)
             } catch {
-                NSLog("Failed to play album: %@", error.localizedDescription)
+                NSLog("Failed to play album: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -18363,7 +18363,7 @@ class PlexBrowserView: NSView {
                 NSLog("Playing artist %@ with %d tracks", artist.title, convertedTracks.count)
                 WindowManager.shared.audioEngine.playNow(convertedTracks)
             } catch {
-                NSLog("Failed to play artist: %@", error.localizedDescription)
+                NSLog("Failed to play artist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -18413,10 +18413,10 @@ class PlexBrowserView: NSView {
                 
                 WindowManager.shared.audioEngine.playNow(convertedTracks)
             } catch {
-                NSLog("Failed to play Plex playlist '%@' (id=%@): %@", playlist.title, playlist.id, error.localizedDescription)
+                NSLog("Failed to play Plex playlist '%@' (id=%@): %@", playlist.title, playlist.id, error.localizedDescription.redactingSensitiveURLQueryItems)
                 isLoading = false
                 stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
                 needsDisplay = true
             }
         }
@@ -18569,7 +18569,7 @@ class PlexBrowserView: NSView {
                     } catch is CancellationError {
                         // Superseded by a newer download request; skip side effects.
                     } catch {
-                        NSLog("Failed to download YouTube video: %@", error.localizedDescription)
+                        NSLog("Failed to download YouTube video: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     }
                 }
             }
@@ -18786,7 +18786,7 @@ class PlexBrowserView: NSView {
                 NSLog("Playing subsonic album %@ with %d tracks", album.name, tracks.count)
                 WindowManager.shared.audioEngine.playNow(tracks)
             } catch {
-                NSLog("Failed to play subsonic album: %@", error.localizedDescription)
+                NSLog("Failed to play subsonic album: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -18804,7 +18804,7 @@ class PlexBrowserView: NSView {
                 NSLog("Playing subsonic artist %@ with %d tracks", artist.name, allTracks.count)
                 WindowManager.shared.audioEngine.playNow(allTracks)
             } catch {
-                NSLog("Failed to play subsonic artist: %@", error.localizedDescription)
+                NSLog("Failed to play subsonic artist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -18828,10 +18828,10 @@ class PlexBrowserView: NSView {
                 
                 WindowManager.shared.audioEngine.playNow(tracks)
             } catch {
-                NSLog("Failed to play subsonic playlist: %@", error.localizedDescription)
+                NSLog("Failed to play subsonic playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 isLoading = false
                 stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
                 needsDisplay = true
             }
         }
@@ -18854,7 +18854,7 @@ class PlexBrowserView: NSView {
                 NSLog("Playing Emby album %@ with %d tracks", album.name, tracks.count)
                 WindowManager.shared.audioEngine.playNow(tracks)
             } catch {
-                NSLog("Failed to play Emby album: %@", error.localizedDescription)
+                NSLog("Failed to play Emby album: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -18871,7 +18871,7 @@ class PlexBrowserView: NSView {
                 NSLog("Playing Emby artist %@ with %d tracks", artist.name, allTracks.count)
                 WindowManager.shared.audioEngine.playNow(allTracks)
             } catch {
-                NSLog("Failed to play Emby artist: %@", error.localizedDescription)
+                NSLog("Failed to play Emby artist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -18894,10 +18894,10 @@ class PlexBrowserView: NSView {
 
                 WindowManager.shared.audioEngine.playNow(tracks)
             } catch {
-                NSLog("Failed to play Emby playlist: %@", error.localizedDescription)
+                NSLog("Failed to play Emby playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 isLoading = false
                 stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
                 needsDisplay = true
             }
         }
@@ -18930,7 +18930,7 @@ class PlexBrowserView: NSView {
                 NSLog("Playing Jellyfin album %@ with %d tracks", album.name, tracks.count)
                 WindowManager.shared.audioEngine.playNow(tracks)
             } catch {
-                NSLog("Failed to play Jellyfin album: %@", error.localizedDescription)
+                NSLog("Failed to play Jellyfin album: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -18947,7 +18947,7 @@ class PlexBrowserView: NSView {
                 NSLog("Playing Jellyfin artist %@ with %d tracks", artist.name, allTracks.count)
                 WindowManager.shared.audioEngine.playNow(allTracks)
             } catch {
-                NSLog("Failed to play Jellyfin artist: %@", error.localizedDescription)
+                NSLog("Failed to play Jellyfin artist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -18970,10 +18970,10 @@ class PlexBrowserView: NSView {
                 
                 WindowManager.shared.audioEngine.playNow(tracks)
             } catch {
-                NSLog("Failed to play Jellyfin playlist: %@", error.localizedDescription)
+                NSLog("Failed to play Jellyfin playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 isLoading = false
                 stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
                 needsDisplay = true
             }
         }

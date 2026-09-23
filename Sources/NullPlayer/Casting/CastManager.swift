@@ -206,7 +206,7 @@ class CastManager {
             try await unjoinSonos(zoneUDN: oldCoordinatorUDN)
             NSLog("CastManager: Old coordinator %@ is now standalone", oldCoordinatorUDN)
         } catch {
-            NSLog("CastManager: Failed to make old coordinator standalone: %@", error.localizedDescription)
+            NSLog("CastManager: Failed to make old coordinator standalone: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             // Continue anyway - the cast to new coordinator may still work
         }
         
@@ -228,7 +228,7 @@ class CastManager {
             try await cast(to: newDevice, url: savedURL, metadata: savedMetadata, startPosition: savedPosition)
             NSLog("CastManager: Transfer successful - now casting to %@", newDevice.name)
         } catch {
-            NSLog("CastManager: Transfer cast failed: %@", error.localizedDescription)
+            NSLog("CastManager: Transfer cast failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             // Clean up whatever partial state exists
             await stopCasting()
             throw error
@@ -243,7 +243,7 @@ class CastManager {
                     try await joinSonosToGroup(zoneUDN: udn, coordinatorUDN: newDevice.id)
                     try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s between joins
                 } catch {
-                    NSLog("CastManager: Failed to join room %@ to new group: %@", udn, error.localizedDescription)
+                    NSLog("CastManager: Failed to join room %@ to new group: %@", udn, error.localizedDescription.redactingSensitiveURLQueryItems)
                     // Non-fatal: continue with other rooms
                 }
             }
@@ -856,7 +856,7 @@ class CastManager {
                 try await chromecastManager.cast(url: url, metadata: metadata)
                 NSLog("CastManager: Cast started successfully")
             } catch {
-                NSLog("CastManager: Chromecast error: %@", error.localizedDescription)
+                NSLog("CastManager: Chromecast error: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 throw error
             }
             
@@ -877,7 +877,7 @@ class CastManager {
                 try await upnpManager.cast(url: url, metadata: metadata)
                 NSLog("CastManager: Cast started successfully")
             } catch {
-                NSLog("CastManager: %@ error: %@", device.type.displayName, error.localizedDescription)
+                NSLog("CastManager: %@ error: %@", device.type.displayName, error.localizedDescription.redactingSensitiveURLQueryItems)
                 // Clean up partial session state - connect() may have succeeded before cast() failed
                 await upnpManager.disconnect()
 
@@ -912,7 +912,7 @@ class CastManager {
                     try await upnpManager.cast(url: url, metadata: metadata)
                     NSLog("CastManager: Sonos cast succeeded after topology refresh + retry")
                 } catch {
-                    NSLog("CastManager: Sonos retry after topology refresh failed: %@", error.localizedDescription)
+                    NSLog("CastManager: Sonos retry after topology refresh failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     await upnpManager.disconnect()
                     throw error
                 }
@@ -1463,7 +1463,7 @@ class CastManager {
                 try await upnpManager.cast(url: finalCastURL, metadata: metadata)
             }
         } catch {
-            NSLog("CastManager: castNewTrack '%@' failed: %@", trackToCast.title, error.localizedDescription)
+            NSLog("CastManager: castNewTrack '%@' failed: %@", trackToCast.title, error.localizedDescription.redactingSensitiveURLQueryItems)
             clearLoadingState()
             throw error
         }
@@ -1590,7 +1590,7 @@ class CastManager {
             try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
             NSLog("CastManager: Cast completed successfully")
         } catch {
-            NSLog("CastManager: Cast failed with error: %@", error.localizedDescription)
+            NSLog("CastManager: Cast failed with error: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             throw error
         }
     }
@@ -2116,7 +2116,7 @@ class CastManager {
             do {
                 try await stopPlayback()
             } catch {
-                NSLog("CastManager.softStopForActiveDevice: stopPlayback failed: %@", error.localizedDescription)
+                NSLog("CastManager.softStopForActiveDevice: stopPlayback failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
             return
         }

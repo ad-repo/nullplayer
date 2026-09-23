@@ -585,3 +585,11 @@ SSDP requires multicast. Some routers/switches block this:
 - [SoCo Python Library](https://github.com/SoCo/SoCo)
 - [Sonos Developer Docs](https://docs.sonos.com/)
 - [Sonos Connection Security](https://support.sonos.com/en-us/article/adjust-connection-security-settings)
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs or credentials; pass response bodies
+through the helper rather than omitting them.

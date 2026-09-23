@@ -5646,7 +5646,7 @@ class MenuActions: NSObject {
                     NotificationCenter.default.post(name: PlexManager.serversDidChangeNotification, object: nil)
                 }
             } catch {
-                NSLog("MenuActions: Failed to connect to server '%@': %@", server.name, error.localizedDescription)
+                NSLog("MenuActions: Failed to connect to server '%@': %@", server.name, error.localizedDescription.redactingSensitiveURLQueryItems)
                 
                 // Show error to user
                 await MainActor.run {
@@ -5715,7 +5715,7 @@ class MenuActions: NSObject {
                     NotificationCenter.default.post(name: SubsonicManager.serversDidChangeNotification, object: nil)
                 }
             } catch {
-                NSLog("MenuActions: Failed to connect to Subsonic server '%@': %@", server.name, error.localizedDescription)
+                NSLog("MenuActions: Failed to connect to Subsonic server '%@': %@", server.name, error.localizedDescription.redactingSensitiveURLQueryItems)
                 
                 await MainActor.run {
                     let alert = NSAlert()
@@ -5925,7 +5925,7 @@ class MenuActions: NSObject {
                 try await CastManager.shared.castCurrentTrack(to: device)
                 NSLog("MenuActions: Started casting to %@", device.name)
             } catch {
-                NSLog("MenuActions: Failed to cast: %@", error.localizedDescription)
+                NSLog("MenuActions: Failed to cast: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 
                 await MainActor.run {
                     let alert = NSAlert()
@@ -5995,7 +5995,7 @@ class MenuActions: NSObject {
                 )
                 NSLog("MenuActions: '%@' joined '%@'", action.roomName, coordinatorName)
             } catch {
-                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription)
+                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Sonos Grouping Failed"
@@ -6017,7 +6017,7 @@ class MenuActions: NSObject {
                 try await CastManager.shared.unjoinSonos(zoneUDN: action.roomUDN)
                 NSLog("MenuActions: '%@' is now standalone", action.roomName)
             } catch {
-                NSLog("MenuActions: Sonos ungrouping failed: %@", error.localizedDescription)
+                NSLog("MenuActions: Sonos ungrouping failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Sonos Ungrouping Failed"
@@ -6066,7 +6066,7 @@ class MenuActions: NSObject {
                     NSLog("MenuActions: Toggle complete for '%@'", info.roomName)
                     
                 } catch {
-                    NSLog("MenuActions: Toggle failed for '%@': %@", info.roomName, error.localizedDescription)
+                    NSLog("MenuActions: Toggle failed for '%@': %@", info.roomName, error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         } else {
@@ -6098,7 +6098,7 @@ class MenuActions: NSObject {
                     )
                 }
             } catch {
-                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription)
+                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -6130,7 +6130,7 @@ class MenuActions: NSObject {
                     try await CastManager.shared.unjoinSonos(zoneUDN: room.id)
                     NSLog("MenuActions: Ungrouped '%@'", room.name)
                 } catch {
-                    NSLog("MenuActions: Failed to ungroup '%@': %@", room.name, error.localizedDescription)
+                    NSLog("MenuActions: Failed to ungroup '%@': %@", room.name, error.localizedDescription.redactingSensitiveURLQueryItems)
                     await collector.add(room.name)
                 }
                 
@@ -6358,7 +6358,7 @@ class MenuActions: NSObject {
             do {
                 try MediaLibrary.shared.backupLibrary(customName: scope.backupName)
             } catch {
-                NSLog("Failed to create pre-clear backup: %@", error.localizedDescription)
+                NSLog("Failed to create pre-clear backup: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 let errorAlert = NSAlert()
                 errorAlert.messageText = "Backup Failed"
                 errorAlert.informativeText = "Could not create a backup before clearing, so nothing was removed.\n\n\(error.localizedDescription)"
@@ -6421,7 +6421,7 @@ class MenuActions: NSObject {
                     do {
                         try MediaLibrary.shared.backupLibrary(customName: "pre_orphan_cleanup_auto_backup")
                     } catch {
-                        NSLog("Failed to create pre-orphan-cleanup backup: %@", error.localizedDescription)
+                        NSLog("Failed to create pre-orphan-cleanup backup: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                         DispatchQueue.main.async {
                             let errorAlert = NSAlert()
                             errorAlert.messageText = "Backup Failed"

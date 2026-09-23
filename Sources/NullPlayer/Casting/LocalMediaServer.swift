@@ -4,6 +4,14 @@ import FlyingSocks
 import Network
 import Darwin
 
+/// A short correlation id for a capability token.
+///
+/// Capability tokens are secrets: anyone on the LAN holding one can pull the
+/// media it fronts, so the full value never reaches the log. The first four
+/// characters are enough to follow one stream across registration, proxying,
+/// and completion while leaving the remaining 48 bits unguessable.
+private func logToken(_ token: String) -> String { String(token.prefix(4)) }
+
 /// Embedded HTTP server for serving local audio files to cast devices.
 ///
 /// Cast protocols (UPnP, Chromecast) require HTTP-accessible media URLs.
@@ -144,7 +152,7 @@ class LocalMediaServer {
             private mutating func logProgressIfNeeded() {
                 guard bytesSent >= nextProgressLogBytes else { return }
                 NSLog("LocalMediaServer: Stream %@ sent %lld bytes (expected=%@, range=%@, label=%@)",
-                      token,
+                      logToken(token),
                       bytesSent,
                       expectedLength.map(String.init) ?? "unknown",
                       rangeHeader ?? "none",
@@ -159,7 +167,7 @@ class LocalMediaServer {
                 didLogCompletion = true
                 let elapsed = Date().timeIntervalSince(startedAt)
                 NSLog("LocalMediaServer: Stream %@ completed after %.1fs, sent=%lld expected=%@ range=%@ label=%@",
-                      token,
+                      logToken(token),
                       elapsed,
                       bytesSent,
                       expectedLength.map(String.init) ?? "unknown",
@@ -170,13 +178,13 @@ class LocalMediaServer {
             private func logStreamError(_ error: Error) {
                 let elapsed = Date().timeIntervalSince(startedAt)
                 NSLog("LocalMediaServer: Stream %@ ended with error after %.1fs, sent=%lld expected=%@ range=%@ label=%@ error=%@",
-                      token,
+                      logToken(token),
                       elapsed,
                       bytesSent,
                       expectedLength.map(String.init) ?? "unknown",
                       rangeHeader ?? "none",
                       debugLabel,
-                      error.localizedDescription)
+                      error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -431,7 +439,7 @@ class LocalMediaServer {
                 NSLog("LocalMediaServer: Starting on port %d", port)
                 try await server.start()
             } catch {
-                NSLog("LocalMediaServer: Failed to start - %@", error.localizedDescription)
+                NSLog("LocalMediaServer: Failed to start - %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
         
@@ -511,7 +519,7 @@ class LocalMediaServer {
     /// Note: Prefer calling start() explicitly before this method in async contexts.
     func registerFile(_ url: URL) -> URL? {
         guard url.isFileURL else {
-            NSLog("LocalMediaServer: Cannot register non-file URL: %@", url.absoluteString)
+            NSLog("LocalMediaServer: Cannot register non-file URL: %@", url.redacted)
             return nil
         }
         
@@ -522,7 +530,7 @@ class LocalMediaServer {
                 do {
                     try await start()
                 } catch {
-                    NSLog("LocalMediaServer: Failed to start server: %@", error.localizedDescription)
+                    NSLog("LocalMediaServer: Failed to start server: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
                 semaphore.signal()
             }
@@ -556,7 +564,7 @@ class LocalMediaServer {
         let ext = url.pathExtension.lowercased()
         let httpURL = URL(string: "http://\(ip):\(port)/media/\(tokenString).\(ext)")
         
-        NSLog("LocalMediaServer: Registered file '%@' as %@", url.lastPathComponent, httpURL?.absoluteString ?? "nil")
+        NSLog("LocalMediaServer: Registered file '%@' as %@", url.lastPathComponent, httpURL?.redacted ?? "nil")
         
         return httpURL
     }
@@ -600,7 +608,7 @@ class LocalMediaServer {
                 do {
                     try await start()
                 } catch {
-                    NSLog("LocalMediaServer: Failed to start server: %@", error.localizedDescription)
+                    NSLog("LocalMediaServer: Failed to start server: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
                 semaphore.signal()
             }
@@ -641,9 +649,9 @@ class LocalMediaServer {
         let httpURL = URL(string: "http://\(ip):\(port)/stream/\(tokenString)")
         
         NSLog("LocalMediaServer: Registered stream proxy token=%@ host=%@ as %@, contentType=%@, label=%@",
-              tokenString,
+              logToken(tokenString),
               url.host ?? "unknown",
-              httpURL?.absoluteString ?? "nil",
+              httpURL?.redacted ?? "nil",
               contentType ?? "auto-detect",
               debugLabel ?? "nil")
         
@@ -719,7 +727,7 @@ class LocalMediaServer {
         
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             if let error = error {
-                NSLog("LocalMediaServer: Health check failed: %@", error.localizedDescription)
+                NSLog("LocalMediaServer: Health check failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 self?.attemptRestart()
             }
             // Any HTTP response (even 404) means the server is alive
@@ -799,7 +807,7 @@ class LocalMediaServer {
         // otherwise fall back to URL extension detection
         let contentType = storedContentType ?? CastManager.detectAudioContentType(for: url)
         NSLog("LocalMediaServer: HEAD /stream/%@ contentType=%@ label=%@",
-              token, contentType, debugLabel ?? "nil")
+              logToken(token), contentType, debugLabel ?? "nil")
 
         var headers: [HTTPHeader: String] = [
             HTTPHeader("Content-Type"): contentType,
@@ -874,7 +882,7 @@ class LocalMediaServer {
         }
         
         guard let url = fileURL else {
-            NSLog("LocalMediaServer: Token not found: %@", token)
+            NSLog("LocalMediaServer: Token not found")
             return HTTPResponse(statusCode: .notFound)
         }
         
@@ -901,7 +909,7 @@ class LocalMediaServer {
         do {
             stream = try FileByteStream(fileURL: url, startOffset: 0, length: fileSize)
         } catch {
-            NSLog("LocalMediaServer: Failed to open file stream for %@: %@", url.path, error.localizedDescription)
+            NSLog("LocalMediaServer: Failed to open file stream for %@: %@", url.path, error.localizedDescription.redactingSensitiveURLQueryItems)
             return HTTPResponse(statusCode: .internalServerError)
         }
         return HTTPResponse(
@@ -960,7 +968,7 @@ class LocalMediaServer {
             stream = try FileByteStream(fileURL: fileURL, startOffset: UInt64(start), length: length)
         } catch {
             NSLog("LocalMediaServer: Failed to open or seek file stream for %@: %@",
-                  fileURL.path, error.localizedDescription)
+                  fileURL.path, error.localizedDescription.redactingSensitiveURLQueryItems)
             return HTTPResponse(statusCode: .internalServerError)
         }
         return HTTPResponse(
@@ -1006,13 +1014,13 @@ class LocalMediaServer {
         }
         
         guard let originalURL = streamURL else {
-            NSLog("LocalMediaServer: Stream token not found: %@", token)
+            NSLog("LocalMediaServer: Stream token not found")
             return HTTPResponse(statusCode: .notFound)
         }
         
         let rangeHeader = request.headers[HTTPHeader("Range")]
         NSLog("LocalMediaServer: Proxying stream token=%@ from host=%@ remote=%@ range=%@ label=%@",
-              token,
+              logToken(token),
               originalURL.host ?? "unknown",
               remoteDescription(for: request),
               rangeHeader ?? "none",
@@ -1046,7 +1054,7 @@ class LocalMediaServer {
                 ?? "audio/mpeg"
             let upstreamContentLength = httpResponse.value(forHTTPHeaderField: "Content-Length")
             NSLog("LocalMediaServer: Upstream streaming token=%@ status=%d type=%@ length=%@ acceptRanges=%@ contentRange=%@ label=%@",
-                  token,
+                  logToken(token),
                   httpResponse.statusCode,
                   upstreamContentType,
                   upstreamContentLength ?? "nil",
@@ -1104,7 +1112,7 @@ class LocalMediaServer {
             return HTTPResponse(statusCode: statusCode, headers: headers, body: body)
             
         } catch {
-            NSLog("LocalMediaServer: Failed to fetch from upstream: %@", error.localizedDescription)
+            NSLog("LocalMediaServer: Failed to fetch from upstream: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return HTTPResponse(statusCode: .badGateway)
         }
     }

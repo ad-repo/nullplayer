@@ -67,7 +67,7 @@ enum StreamingTrackResolver {
                 contentType: PlexManager.inferAudioContentType(from: media)
             )
         } catch {
-            NSLog("StreamingTrackResolver: failed Plex track refresh %@: %@", ratingKey, error.localizedDescription)
+            NSLog("StreamingTrackResolver: failed Plex track refresh %@: %@", ratingKey, error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -112,7 +112,7 @@ enum StreamingTrackResolver {
                 contentType: mimeType
             )
         } catch {
-            NSLog("StreamingTrackResolver: failed Subsonic track refresh %@: %@", songId, error.localizedDescription)
+            NSLog("StreamingTrackResolver: failed Subsonic track refresh %@: %@", songId, error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -159,7 +159,7 @@ enum StreamingTrackResolver {
                 contentType: mimeType
             )
         } catch {
-            NSLog("StreamingTrackResolver: failed Jellyfin track refresh %@: %@", songId, error.localizedDescription)
+            NSLog("StreamingTrackResolver: failed Jellyfin track refresh %@: %@", songId, error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -208,7 +208,7 @@ enum StreamingTrackResolver {
                 contentType: mimeType
             )
         } catch {
-            NSLog("StreamingTrackResolver: failed Emby track refresh %@: %@", songId, error.localizedDescription)
+            NSLog("StreamingTrackResolver: failed Emby track refresh %@: %@", songId, error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }

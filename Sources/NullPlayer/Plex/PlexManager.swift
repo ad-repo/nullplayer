@@ -292,7 +292,7 @@ class PlexManager {
                 do {
                     try await connect(to: server)
                 } catch {
-                    NSLog("PlexManager: Failed to connect to server %@: %@", server.name, error.localizedDescription)
+                    NSLog("PlexManager: Failed to connect to server %@: %@", server.name, error.localizedDescription.redactingSensitiveURLQueryItems)
                     // Don't throw - we still have the server list, just no active connection
                     connectionState = .disconnected
                 }
@@ -319,7 +319,7 @@ class PlexManager {
                 await self?.preloadLibraryContent()
             }
         } catch {
-            NSLog("PlexManager: Background refresh failed: %@", error.localizedDescription)
+            NSLog("PlexManager: Background refresh failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
     
@@ -358,7 +358,7 @@ class PlexManager {
                     }
                 }
             } catch {
-                NSLog("PlexManager: Music preload failed: %@", error.localizedDescription)
+                NSLog("PlexManager: Music preload failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
 
@@ -378,7 +378,7 @@ class PlexManager {
                     }
                 }
             } catch {
-                NSLog("PlexManager: Movie preload failed: %@", error.localizedDescription)
+                NSLog("PlexManager: Movie preload failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
 
@@ -398,7 +398,7 @@ class PlexManager {
                     }
                 }
             } catch {
-                NSLog("PlexManager: Show preload failed: %@", error.localizedDescription)
+                NSLog("PlexManager: Show preload failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
 
@@ -453,7 +453,7 @@ class PlexManager {
         
         for connection in sortedConnections {
             guard connection.url != nil else {
-                NSLog("PlexManager: Skipping connection with invalid URL: %@", connection.uri)
+                NSLog("PlexManager: Skipping connection with invalid URL: %@", connection.uri.redactingSensitiveURLQueryItems)
                 continue
             }
             
@@ -476,18 +476,18 @@ class PlexManager {
             )
             
             guard let client = PlexServerClient(server: testServer, authToken: token) else {
-                NSLog("PlexManager: Failed to create client for connection: %@", connection.uri)
+                NSLog("PlexManager: Failed to create client for connection: %@", connection.uri.redactingSensitiveURLQueryItems)
                 continue
             }
             
             // Check connection with short timeout
             let isOnline = await client.checkConnection()
             if isOnline {
-                NSLog("PlexManager: Connection successful: %@", connection.uri)
+                NSLog("PlexManager: Connection successful: %@", connection.uri.redactingSensitiveURLQueryItems)
                 workingClient = client
                 break
             } else {
-                NSLog("PlexManager: Connection failed: %@", connection.uri)
+                NSLog("PlexManager: Connection failed: %@", connection.uri.redactingSensitiveURLQueryItems)
                 lastError = PlexServerError.serverOffline
             }
         }
@@ -945,7 +945,7 @@ class PlexManager {
             NSLog("PlexManager: Track radio created with %d tracks", tracks.count)
             return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
-            NSLog("PlexManager: Failed to create track radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create track radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -971,7 +971,7 @@ class PlexManager {
             NSLog("PlexManager: Artist radio created with %d tracks", tracks.count)
             return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
-            NSLog("PlexManager: Failed to create artist radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create artist radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -997,7 +997,7 @@ class PlexManager {
             NSLog("PlexManager: Album radio created with %d tracks", tracks.count)
             return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
-            NSLog("PlexManager: Failed to create album radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create album radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1034,7 +1034,7 @@ class PlexManager {
                   genres.count, library.title, library.id, hasJazz ? "yes" : "no", genres.joined(separator: ", "))
             return genres
         } catch {
-            NSLog("PlexManager: Failed to fetch genres: %@, using fallback", error.localizedDescription)
+            NSLog("PlexManager: Failed to fetch genres: %@, using fallback", error.localizedDescription.redactingSensitiveURLQueryItems)
             return RadioConfig.fallbackGenres
         }
     }
@@ -1185,7 +1185,7 @@ class PlexManager {
                 return randomTrack.ratingKey
             }
         } catch {
-            NSLog("PlexManager: Failed to get random seed track: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to get random seed track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         
         return nil
@@ -1214,7 +1214,7 @@ class PlexManager {
             NSLog("PlexManager: Library radio created with %d tracks", tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create library radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create library radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1239,7 +1239,7 @@ class PlexManager {
             NSLog("PlexManager: Library radio (sonic) created with %d tracks", tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create library radio (sonic): %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create library radio (sonic): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1263,7 +1263,7 @@ class PlexManager {
             NSLog("PlexManager: Genre radio (%@) created with %d tracks", genre, tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create genre radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create genre radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1288,7 +1288,7 @@ class PlexManager {
             NSLog("PlexManager: Genre radio (sonic) (%@) created with %d tracks", genre, tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create genre radio (sonic): %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create genre radio (sonic): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1312,7 +1312,7 @@ class PlexManager {
             NSLog("PlexManager: Decade radio (%d-%d) created with %d tracks", startYear, endYear, tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create decade radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create decade radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1337,7 +1337,7 @@ class PlexManager {
             NSLog("PlexManager: Decade radio (sonic) (%d-%d) created with %d tracks", startYear, endYear, tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create decade radio (sonic): %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create decade radio (sonic): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1361,7 +1361,7 @@ class PlexManager {
             NSLog("PlexManager: Hits radio created with %d tracks", tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create hits radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create hits radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1386,7 +1386,7 @@ class PlexManager {
             NSLog("PlexManager: Hits radio (sonic) created with %d tracks", tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create hits radio (sonic): %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create hits radio (sonic): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1410,7 +1410,7 @@ class PlexManager {
             NSLog("PlexManager: Deep cuts radio created with %d tracks", tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create deep cuts radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create deep cuts radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1435,7 +1435,7 @@ class PlexManager {
             NSLog("PlexManager: Deep cuts radio (sonic) created with %d tracks", tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create deep cuts radio (sonic): %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create deep cuts radio (sonic): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1463,7 +1463,7 @@ class PlexManager {
             NSLog("PlexManager: Rating radio (%.1f+ stars) created with %d tracks", minRating / 2, tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create rating radio: %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create rating radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1492,7 +1492,7 @@ class PlexManager {
             NSLog("PlexManager: Rating radio (sonic, %.1f+ stars) created with %d tracks", minRating / 2, tracks.count)
             return tracks
         } catch {
-            NSLog("PlexManager: Failed to create rating radio (sonic): %@", error.localizedDescription)
+            NSLog("PlexManager: Failed to create rating radio (sonic): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }

@@ -772,7 +772,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         
         // Get full streaming headers (required for remote/relay connections)
         let headers = PlexManager.shared.streamingHeaders
-        NSLog("Playing Plex movie: %@ with URL: %@", movie.title, url.absoluteString)
+        NSLog("Playing Plex movie: %@ with URL: %@", movie.title, url.redacted)
         
         // Store Plex content for reporting
         currentPlexMovie = movie
@@ -829,7 +829,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Get full streaming headers (required for remote/relay connections)
         let headers = PlexManager.shared.streamingHeaders
         let title = "\(episode.grandparentTitle ?? "Unknown") - \(episode.episodeIdentifier) - \(episode.title)"
-        NSLog("Playing Plex episode: %@ with URL: %@", title, url.absoluteString)
+        NSLog("Playing Plex episode: %@ with URL: %@", title, url.redacted)
         
         // Store Plex content for reporting
         currentPlexMovie = nil
@@ -883,7 +883,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        NSLog("Playing Jellyfin movie: %@ with URL: %@", movie.title, url.absoluteString)
+        NSLog("Playing Jellyfin movie: %@ with URL: %@", movie.title, url.redacted)
 
         // Store Jellyfin content for reporting
         currentJellyfinMovie = movie
@@ -939,7 +939,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         } else {
             title = episode.title
         }
-        NSLog("Playing Jellyfin episode: %@ with URL: %@", title, url.absoluteString)
+        NSLog("Playing Jellyfin episode: %@ with URL: %@", title, url.redacted)
 
         // Store Jellyfin content for reporting
         currentJellyfinMovie = nil
@@ -989,7 +989,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        NSLog("Playing Emby movie: %@ with URL: %@", movie.title, url.absoluteString)
+        NSLog("Playing Emby movie: %@ with URL: %@", movie.title, url.redacted)
 
         // Store Emby content for reporting
         currentEmbyMovie = movie
@@ -1045,7 +1045,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         } else {
             title = episode.title
         }
-        NSLog("Playing Emby episode: %@ with URL: %@", title, url.absoluteString)
+        NSLog("Playing Emby episode: %@ with URL: %@", title, url.redacted)
 
         // Store Emby content for reporting
         currentEmbyMovie = nil
@@ -1311,7 +1311,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                           String(describing: CastManager.shared.activeSession?.state))
                 }
             } catch {
-                NSLog("VideoPlayerWindowController: Cast toggle failed: %@", error.localizedDescription)
+                NSLog("VideoPlayerWindowController: Cast toggle failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -1330,7 +1330,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 // CastManager has updated activeSession with new position
                 NSLog("VideoPlayerWindowController: Cast seek to %.1f (relative %.1f)", newPosition, seconds)
             } catch {
-                NSLog("VideoPlayerWindowController: Cast seek failed: %@", error.localizedDescription)
+                NSLog("VideoPlayerWindowController: Cast seek failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -1349,7 +1349,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 // CastManager has updated activeSession with new position
                 NSLog("VideoPlayerWindowController: Cast seek to %.1f", clampedTime)
             } catch {
-                NSLog("VideoPlayerWindowController: Cast seek failed: %@", error.localizedDescription)
+                NSLog("VideoPlayerWindowController: Cast seek failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -1461,11 +1461,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             do {
                 try await performCast(to: device, startPosition: startPosition, savePreference: selectedDevice != nil)
             } catch {
-                NSLog("VideoPlayerWindowController: Video cast failed: %@", error.localizedDescription)
+                NSLog("VideoPlayerWindowController: Video cast failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Cast Failed"
-                    alert.informativeText = error.localizedDescription
+                    alert.informativeText = "Unable to start casting. Check that the device is available and try again."
                     alert.alertStyle = .warning
                     alert.runModal()
                     self.clearVideoCastState()
