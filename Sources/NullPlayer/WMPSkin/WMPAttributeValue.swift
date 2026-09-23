@@ -79,6 +79,17 @@ enum WMPAttributeParser {
         // it is authored only on `SLIDER` (125) and `CUSTOMSLIDER` (16), where it is the seek
         // commit: 111 of its 141 sources are `player.controls.currentPosition = value`.
         "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend",
+        // **`onPositionChange` is the slider's own `change`, and its dispatch site has been here
+        // since W119** — `handlers(in:event:)` accepts `positionchange` wherever it raises
+        // `change`, which is `WMPMainView`'s captured-slider value edge. The name was never in
+        // this set, so no attribute ever became a `.handler` under it and the alias could never
+        // match: the engine raised `change targetID=<slider> handlers=0` while the markup sat in
+        // the graph as `.jScript` text. Measured over the 182 readable archives: **151 uses across
+        // 42 skins**, every one of them on a `SLIDER` (91) or `CUSTOMSLIDER` (60) — `tubeframe`
+        // alone authors 19 and the probe tallied all 19 as `UNKNOWN event`. It is a *user* gesture
+        // and not the clock: the position tick raises `hostsettle` and `currentposition_onchange`,
+        // neither of which accepts this spelling, which is the W119 trap staying shut.
+        "onpositionchange",
         // **The keyboard (W53), each with a dispatch site in `WMPMainView`.** Measured over the 184
         // archives: `onkeydown` 530 uses / 80 skins, `onkeypress` 422 / 74, `onkeyup` 100 / 33 —
         // authored on `VIEW` (400) and on the control the key is meant to steer, chiefly

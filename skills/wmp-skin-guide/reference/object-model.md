@@ -1215,6 +1215,60 @@ accepted spellings of events this engine does dispatch. Reproduce with
 
 ---
 
+## A dispatch site with no classification is as silent as the inverse (W56)
+
+**The rule above has a second direction, and it cost this engine 151 handlers.**
+`handlers(in:event:)` has accepted `positionchange` wherever it raises `change` since W119 — a
+comment there explains the alias and names the corpus — but **`onpositionchange` was never in
+`handlerNames`**, so no attribute ever became a `.handler` under that name and the alias could
+never match. The site was live, reachable and correct; nothing could arrive at it. In the running
+app the symptom is a dispatch line that looks like a working one:
+
+```
+[wmp/dispatch] change targetID=volume stable=20 view=TubeFrameView handlers=0
+```
+
+`handlers=0` beside a `targetID` whose markup plainly authors a handler is this class, and it reads
+identically to a control whose skin authored nothing. **Read a `handlers=0` against the node's own
+attributes**, the same check `WMP_RENDER_CLICK`'s `handlers=0` already needs.
+
+**Re-measured 2026-09-22 over the 182 readable archives: 151 uses across 42 archives**, every one
+on a `SLIDER` (91) or a `CUSTOMSLIDER` (60) — `wmp_markup_census.sh <outdir> onpositionchange`, then
+split by element with a decoder rather than `grep`.
+
+**It is a user gesture, not the clock, and that is W119 staying shut.** `change` is raised only from
+`WMPMainView.performSlider` and the popup/listbox selects; the position tick raises `hostsettle` and
+`currentposition_onchange`, neither of which is in the alias set. The tick was spelled
+`positionchange` once, and classifying this name is precisely the change that would have made that
+spelling live again — `testAClockTickDoesNotRaiseASlidersPositionChange` is the guard.
+
+**A correction the fix forced, and it is the more useful half.** The W119 comment in
+`refreshHostState` states that a clock tick "was raising all of them ten times a second". It never
+could have: the attribute was not a handler, so the tick reached nothing. The rename to `hostsettle`
+was right for other reasons and is what makes this fix safe, but **the stated cause was never
+verified** — a claim about a handler that was never classified is a claim about markup nothing ran.
+
+### What a binding was already carrying, and what it was not
+
+**Do not read "the event never ran" as "the control did nothing".** `WMPTransportAction.boundAction(for:)`
+maps a slider's `value="wmpprop:…"` straight to the host, so for most of these the host effect was
+already happening by another route and only the rest of the handler was lost. Split over the 151:
+
+| | uses | what was lost |
+|---|---:|---|
+| slider **has** a `wmpprop:` value binding | **124** | the rest of the handler — almost always a tooltip the skin writes (`updateSeekToolTip()`, `tooltip = 'Volume = ' + …`) |
+| slider has **no** binding | **27** | the handler was the only route: 25 `seek` sliders' tooltips, and `tubeframe`'s `TruBass`/`SrsWow`, the only two where the **host effect itself** never happened |
+
+This is why a live A/B on a volume or balance slider proves nothing — it moves either way. The
+signature that separates them is the tooltip: 25 archives author `toolTip="Seek"` and rewrite it to
+`MM:SS / total` from this handler, so a seek bar whose tooltip is still the word is the before-state.
+
+**The 124 now write the host twice per drag step**, once through the binding and once through the
+script. Every corpus case writes the same property with the same value, so it is idempotent — but a
+slider that fights the pointer is what a counter-example to that would look like.
+
+---
+
 ## Verified **not** gaps — check this before opening a row
 
 These were `WMP_TASKS.md` § *2c-note* until 2026-09-19; they rank nothing and cannot be taken, so

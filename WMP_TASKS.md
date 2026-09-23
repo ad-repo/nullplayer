@@ -424,9 +424,29 @@ real cost, and it is different per event.** Do not add a name to `handlerNames` 
 without its dispatch site — the rule, the instrument that made this class visible, and the 4,114-use
 measurement are in `object-model.md` § *Recognising an event is not dispatching it*.
 
+**W56 headed this tier and closed 2026-09-22; it is archived.** Two of its three events had been
+dispatched since W102 and nobody had measured it — one live run on a real film raised both
+(`VIDEOEDGE … events=["videostart"]`, then `["videoend", …]`, delivered to every open view). The
+third, `onPositionChange`, was dead for **the inverse of this tier's rule**: a *dispatch site
+nothing could arrive at*. `handlers(in:event:)` had accepted `positionchange` since W119 while the
+name was missing from `handlerNames`, so no attribute ever became a `.handler` under it — the live
+app raised `change targetID=<slider> handlers=0` while the markup sat in the graph as `.jScript`
+text. **Read a `handlers=0` against the node's own attributes**: it is indistinguishable from a
+control the skin authored nothing for. Re-measured over 182 archives, the row's three numbers came
+back **194/142, 135/130 and 151/42**.
+
+**The trap it leaves behind outlives it: "the event never ran" is not "the control did nothing".**
+`WMPTransportAction.boundAction(for:)` drives the host straight off a slider's `value="wmpprop:…"`,
+so **124 of the 151** were already reaching volume, balance, seek, the EQ bands, WOW and TruBass by
+a second route and only the rest of the handler — usually a tooltip — was lost. Only **27** had no
+binding. A live A/B on a volume slider therefore settles nothing, and this row spent one asserting
+it had; the separating signature is the 25 seek sliders whose `updateSeekToolTip()` rewrites an
+authored `toolTip="Seek"` to `MM:SS / total`. The measurement, the W119 comment it corrected and the
+`<VIDEO backgroundColor>` question it deliberately did not fold in are in
+[the archive](docs/wmp-skin/wmp-backlog-archive.md).
+
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W56 | Video and playback-position events | `onvideostart` 190/140, `onvideoend` 132/130, `onpositionchange` 147/41 | Not blocked: W102 supplies the hosted video surface and W124 the live/event-state split, so the `onvideostart`/`onvideoend` half is directly measurable. **`currentposition_onchange` closed with W129 and must not be re-opened as a rendering row** — it changed no pixel, and that is the measured finding; `object-model.md` § *Ambient `<attribute>_onchange` handlers* says why. |
 | W121 | A handler that reads the `event` object | **30 handlers across the Skins Factory equaliser family**, measured 2026-09-09; unmeasured for the other event kinds | Not blocked, and **smaller than it was: the key half closed 2026-09-22 with W53**, which bound `event.keyCode` — 405 of the 409 `event.` reads in a key handler, measured. What is left is the mouse and `value_onchange` half, where `event.shiftKey` is already answered from the live modifier flags, so **re-measure before taking it**: sweep the corpus's handler attributes for `event.` and split by event kind. Evidence: `object-model.md` § *Event arguments* and § *The keyboard* (W53). |
 
 **Verified *not* gaps — check before opening a row here.** The SDK conformance audit (2026-09-11)

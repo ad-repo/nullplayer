@@ -1329,6 +1329,56 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertFalse(WMPCorpusReportHarness.supportedEvents.contains("selecteditem_onchange"))
     }
 
+    // MARK: - The slider's own position change (W56)
+
+    /// **A dispatch site with no classification is as silent as a classification with no dispatch
+    /// site.** `handlers(in:event:)` has accepted `positionchange` wherever it raises `change`
+    /// since W119, but `onpositionchange` was never in `WMPAttributeValue.handlerNames`, so no
+    /// attribute ever became a `.handler` under that name and the alias could never match: the
+    /// running app raised `change targetID=<slider> handlers=0` while the markup sat in the graph
+    /// as `.jScript` text. 151 uses across 42 of the 182 readable archives, every one on a
+    /// `SLIDER` (91) or a `CUSTOMSLIDER` (60).
+    func testASliderPositionChangeReachesItsAuthoredHandler() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <CUSTOMSLIDER id="volume" left="0" top="0" width="50" height="10"
+                          onPositionChange="jscript: player.settings.volume = value;"/>
+            <SLIDER id="seek" left="0" top="20" width="50" height="10"
+                    onPositionChange="updateSeekToolTip();"/>
+        </VIEW></THEME>
+        """)
+        // `change` is the raise, and it carries the element, so the bare `value` these handlers
+        // read is bound. Both spellings reach it through the one alias set.
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "change", targetID: "volume",
+                                                        viewID: "main")
+                           .map { $0.trimmingCharacters(in: .whitespaces) },
+                       ["player.settings.volume = value;"])
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "change", targetID: "seek",
+                                                        viewID: "main"),
+                       ["updateSeekToolTip();"])
+        XCTAssertTrue(WMPCorpusReportHarness.supportedEvents.contains("onpositionchange"),
+                      "onPositionChange has a dispatch site and must not rank as demand")
+    }
+
+    /// **It is a user gesture and not the clock, which is W119 staying shut.** The position tick
+    /// raises `hostsettle` and `currentposition_onchange`; neither accepts this spelling, so the
+    /// 151 handlers cannot be run ten times a second with `value` unbound. The guard is worth a
+    /// test because the tick was spelled `positionchange` once, and classifying the name is
+    /// exactly the change that would have made that spelling live.
+    func testAClockTickDoesNotRaiseASlidersPositionChange() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <SLIDER id="seek" left="0" top="0" width="50" height="10"
+                    onPositionChange="updateSeekToolTip();"/>
+        </VIEW></THEME>
+        """)
+        for tick in ["hostsettle", "currentposition_onchange"] {
+            XCTAssertTrue(WMPMainWindowController.handlers(in: skin, event: tick, targetID: nil,
+                                                           viewID: "main").isEmpty,
+                          "\(tick) is the clock and must not reach an authored onPositionChange")
+        }
+    }
+
     // MARK: - The keyboard (W53)
 
     /// **WMP hands a key handler a Windows virtual key code, and that is the whole contract.** It is

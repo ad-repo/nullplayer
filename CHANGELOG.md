@@ -13,6 +13,16 @@
 
 ### Fixed
 
+- **A Media Player skin's sliders run the skin's own code again.** These skins hang a handler off a
+  slider — the seek bar's read-out of the time you are dragging to, `tubeframe`'s TruBass and WOW
+  controls, the tooltips that show the value as it moves — and none of it ran. 42 of the installed
+  skins are written this way, `Catwoman`, `STALKER`, `Star Wars`, `Half-Life 2`, `Halo 2` and the
+  Alienware family among them. NullPlayer had the machinery to run these handlers but never
+  recognised the name a skin writes them under, so they sat in the file doing nothing. Most sliders
+  still moved the thing they were pointed at, because NullPlayer also reads that from the slider
+  itself — what was missing was everything else the skin does on the way, and on `tubeframe`'s two
+  audio-effect sliders, the effect as well.
+
 - **A Media Player skin's elapsed time counts again.** On `Stealth` the readout sat at `00:00` for
   the whole track while the visualizer played beside it, which looks exactly like a file that will
   not play — and it was reported as one. These skins can ask for a once-a-second tick without

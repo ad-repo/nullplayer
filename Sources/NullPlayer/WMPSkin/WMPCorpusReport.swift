@@ -334,6 +334,9 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         // when a captured slider is released. `onEndResize` is not listed and not implemented:
         // zero archives author one, so there is nothing to dispatch it for.
         "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend",
+        // `onPositionChange`, raised as `change` by `WMPMainView` when the user moves a captured
+        // slider and accepted by `handlers(in:event:)`'s alias set (W56).
+        "onpositionchange",
         // The keyboard (W53), raised by `WMPMainView.keyDown`/`keyUp` against the focused element
         // and then the view, with `event.keyCode` bound. `onmousemove`, `ondblclick`, `onfocus` and
         // `onblur` stay off this list for the reason above: no dispatch site.

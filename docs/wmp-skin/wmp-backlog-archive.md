@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W261.** (**W53 closed 2026-09-22** and is archived below — the keyboard: three events classified, dispatched and bound to `event.keyCode`. It was issued long ago and carried in Tier 2c, so it spends no new number, and it closed the key half of **W121** on the way past.) (**W41 and W260 closed 2026-09-22** and are archived below — `sourceURL` answered in a spelling no skin's classifier could read, and, found while verifying it in the running app, a view's `onTimer` with no `timerInterval` that never ticked. W41 was issued long ago and carried in Tier 2a, so it spends no new number.) (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W261.** (**W56 closed 2026-09-22** and is archived below — the video and playback-position events; it was issued long ago and carried in Tier 2c, so it spends no new number. Two of its three events had been dispatched since W102 and only wanted measuring; the third was the inverse of that tier's rule, a dispatch site with no classification.) (**W53 closed 2026-09-22** and is archived below — the keyboard: three events classified, dispatched and bound to `event.keyCode`. It was issued long ago and carried in Tier 2c, so it spends no new number, and it closed the key half of **W121** on the way past.) (**W41 and W260 closed 2026-09-22** and are archived below — `sourceURL` answered in a spelling no skin's classifier could read, and, found while verifying it in the running app, a view's `onTimer` with no `timerInterval` that never ticked. W41 was issued long ago and carried in Tier 2a, so it spends no new number.) (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -95,6 +95,87 @@ past and W115 had already closed its headline.
 Pinned by `Tests/NullPlayerAppTests/WMPMediaSourceURLTests.swift`, whose last test runs the shipped
 classifier verbatim against both spellings — the old value still takes the net branch there, which is
 the assertion that would fail if the spelling were quietly reverted.
+
+## W56 — `onPositionChange`: a dispatch site nothing could arrive at (closed 2026-09-22)
+
+**The row was three events and two of them had been done since W102.** Verified live rather than
+from the source, on a real 2h48m film opened through the browser's MOVIES tab with the `Ice` skin —
+`Ice` authors `onvideostart` on its `<VIDEO>` in the startup view, which is the reachable half of
+that class:
+
+```
+VIDEOEDGE state=playing->playing openState=13->13 imageSource=2560x1440 events=["videostart"]
+[wmp/pref] view=videoView event=videostart,status_onchange,…
+[wmp/pref] view=mainView  event=videostart,status_onchange,…
+VIDEOEDGE state=playing->stopped openState=13->13 imageSource=0x0 events=["videoend", "playstatechange"]
+```
+
+Both raised, both delivered to every open view, no handler error. **Nobody had ever measured that
+half** — W102 added the dispatch and the row stayed open behind it, which is this page's
+re-measure rule in its usual shape.
+
+**Re-measured** with `scripts/wmp_markup_census.sh <outdir> onvideostart onvideoend onpositionchange`
+over the 182 readable archives, 2026-09-22: `onvideostart` **194 uses / 142 skins**, `onvideoend`
+**135 / 130**, `onpositionchange` **151 / 42**. The row's 190/140, 132/130 and 147/41 were taken over
+a smaller corpus and were not wrong.
+
+**The third event was dead for the inverse of this tier's rule, and that is the whole finding.** The
+tier is named for markup nothing raises; `onPositionChange` was a **dispatch site nothing could
+arrive at**. `handlers(in:event:)` has accepted `positionchange` wherever it raises `change` since
+W119 — with a comment explaining the alias and naming the corpus — but `onpositionchange` was never
+in `WMPAttributeValue.handlerNames`, so no attribute ever became a `.handler` under that name and
+the alias could never match. Live on `tubeframe`, which authors 19 of them:
+
+```
+[wmp/dispatch] change targetID=volume stable=20 view=TubeFrameView handlers=0
+```
+
+and the probe's own tally agreed, `UNKNOWN event onpositionchange ×19`. **A `handlers=0` beside a
+`targetID` whose markup plainly authors a handler is this class**, and it reads identically to a
+control the skin authored nothing for. The fix is the one line the tier's rule allows — the name,
+because the site was already there — plus the `supportedEvents` entry. After:
+
+```
+[wmp/dispatch] change targetID=volume stable=20 view=TubeFrameView handlers=1  player.settings.volume = value; …
+[wmp/dispatch] change targetID=seek   stable=28 view=mainView       handlers=2  updateSeekToolTip(); | drawSeekDigits(value);
+```
+
+**Where the 151 are**: `SLIDER` 91, `CUSTOMSLIDER` 60, nothing else. The sources are three idioms —
+`eq.truBassLevel=value` and `eq.wowLevel=value` at 36 archives each, and `updateSeekToolTip()` at 35.
+
+**The trap the row leaves behind, and it is worth more than the fix: a claim that an event never ran
+is not a claim that the control did nothing.** `WMPTransportAction.boundAction(for:)` maps a
+slider's `value="wmpprop:…"` straight to the host, so for most of these the host effect was arriving
+by a second route the whole time. Split over the 151: **124 carry a binding** — volume, balance,
+seek, the ten EQ bands, WOW and TruBass all already moved, and what was lost was the rest of the
+handler, almost always a tooltip the skin writes. **27 do not**, and there the handler was the only
+route: 25 `seek` sliders whose `updateSeekToolTip()` rewrites an authored `toolTip="Seek"` to
+`MM:SS / total`, plus `tubeframe`'s `TruBass` and `SrsWow`, the only two in the corpus where the
+**host effect itself** never happened. A live A/B on a volume slider therefore proves nothing: it
+moves either way, and this row spent a measurement asserting it had. The separating signature is the
+seek tooltip.
+
+**W119 stays shut, and classifying this name is exactly what could have re-opened it.** `change` is
+raised only from `WMPMainView.performSlider` and the popup/listbox selects — user gestures. The
+position tick raises `hostsettle` and `currentposition_onchange`, neither in the alias set. The tick
+*was* spelled `positionchange` once, and `testAClockTickDoesNotRaiseASlidersPositionChange` is the
+guard against it coming back.
+
+**And a correction the fix forced.** The W119 comment in `refreshHostState` states that a clock tick
+"was raising all of them ten times a second". It never could have — the attribute was not a handler,
+so the tick reached nothing. The rename to `hostsettle` was right for other reasons and is what
+makes this change safe, but **the stated cause was never verified**: a claim about a handler that
+was never classified is a claim about markup nothing ran.
+
+**What is left of the row's own class.** `onvideostart`/`onvideoend` reach their handlers; whether a
+`<VIDEO>` with no picture should paint its authored `backgroundColor` at all is a *rendering*
+question found while driving `Navigator` and deliberately not folded in here — 6 of 182 archives put
+such a box in their startup view (`Navigator`, `Classic`, `Alpine7618_v09`, `Israeli`,
+`cyberchannel`, `holiday_skin`), and the other 85 sit in a `videoView` that opens only for a film,
+where painting it is right. Measure that class before opening a row for it.
+
+Evidence: `skills/wmp-skin-guide/reference/object-model.md` § *A dispatch site with no classification
+is as silent as the inverse (W56)*.
 
 ## W53 — the keyboard: three events nothing raised (closed 2026-09-22)
 
